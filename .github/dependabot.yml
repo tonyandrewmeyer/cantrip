@@ -1,9 +1,3 @@
-# Dependabot configuration
-# Note: Dependabot doesn't have a built-in delay feature like Renovate's
-# minimumReleaseAge. Security updates are always processed immediately.
-# For non-security updates, we use weekly schedule and grouping to reduce noise.
-# Consider auto-merge rules with delay in branch protection for additional control.
-
 version: 2
 updates:
   # Python dependencies
@@ -12,8 +6,12 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 14
+      semver-major-days: 14
+      semver-minor-days: 14
+      semver-patch-days: 14
     groups:
-      # Group all minor and patch updates
       python-dependencies:
         patterns:
           - "*"
@@ -33,6 +31,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 14
     groups:
       github-actions:
         patterns:
