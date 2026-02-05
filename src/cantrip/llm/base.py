@@ -72,6 +72,14 @@ class Tool:
     parameters: dict[str, Any]  # JSON Schema
 
 
+class ProviderRateLimitError(Exception):
+    """Raised when the LLM provider returns a rate-limit / quota error."""
+
+
+class ProviderError(Exception):
+    """Raised for non-transient provider errors (auth, invalid request, etc.)."""
+
+
 class LLMProvider(ABC):
     """Abstract interface for LLM providers."""
 

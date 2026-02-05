@@ -11,6 +11,7 @@ from textual.worker import Worker, WorkerState
 from cantrip import __version__
 from cantrip.agent.core import CantripAgent
 from cantrip.llm import create_provider
+from cantrip.llm.base import ProviderRateLimitError
 from cantrip.tui.widgets.chat import ChatWidget
 from cantrip.tui.widgets.status import JujuStatusWidget
 
@@ -120,7 +121,10 @@ class CantripApp(App):
 
         elif event.state == WorkerState.ERROR:
             error = event.worker.error
-            chat.add_system_message(f"Error: {error}")
+            if isinstance(error, ProviderRateLimitError):
+                chat.add_system_message("Rate limited — please wait a moment and try again.")
+            else:
+                chat.add_system_message(f"Error: {error}")
             input_widget.disabled = False
             input_widget.focus()
 

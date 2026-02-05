@@ -6,6 +6,7 @@ import sys
 
 from cantrip.agent.core import CantripAgent
 from cantrip.llm import create_provider
+from cantrip.llm.base import ProviderError, ProviderRateLimitError
 
 
 def run_cli(args: argparse.Namespace) -> int:
@@ -48,5 +49,9 @@ async def _repl(agent: CantripAgent) -> None:
             print(f"\n{response}\n")
         except KeyboardInterrupt:
             print("\n[interrupted]")
+        except ProviderRateLimitError:
+            print("\nRate limited — please wait a moment and try again.\n")
+        except ProviderError as e:
+            print(f"\nProvider error: {e}\n", file=sys.stderr)
         except Exception as e:
-            print(f"\nError: {e}\n", file=sys.stderr)
+            print(f"\nUnexpected error: {e}\n", file=sys.stderr)

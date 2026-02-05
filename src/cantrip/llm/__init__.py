@@ -1,8 +1,15 @@
 """LLM provider implementations."""
 
-from cantrip.llm.base import LLMProvider, Message, Response
+from cantrip.llm.base import LLMProvider, Message, ProviderError, ProviderRateLimitError, Response
 
-__all__ = ["LLMProvider", "Message", "Response", "create_provider"]
+__all__ = [
+    "LLMProvider",
+    "Message",
+    "ProviderError",
+    "ProviderRateLimitError",
+    "Response",
+    "create_provider",
+]
 
 
 def create_provider(name: str, model: str | None = None) -> LLMProvider:

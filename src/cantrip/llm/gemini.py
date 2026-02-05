@@ -5,13 +5,25 @@ import os
 import warnings
 from collections.abc import AsyncIterator
 
+import google.api_core.exceptions
+
 # The google-generativeai package is deprecated; suppress the FutureWarning
 # until we migrate to google-genai (see ROADMAP.md Phase 1.0).
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", FutureWarning)
     import google.generativeai as genai
 
-from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role, Tool, ToolCall
+from cantrip.llm.base import (
+    Chunk,
+    LLMProvider,
+    Message,
+    ProviderError,
+    ProviderRateLimitError,
+    Response,
+    Role,
+    Tool,
+    ToolCall,
+)
 
 # Map JSON Schema type strings to Gemini protobuf Type enum values.
 _TYPE_MAP = {
@@ -174,11 +186,18 @@ class GeminiProvider(LLMProvider):
 
         last_message = history[-1]["parts"] if history else [""]
 
-        response = await chat.send_message_async(
-            last_message,
-            generation_config=generation_config,
-            tools=gemini_tools,
-        )
+        try:
+            response = await chat.send_message_async(
+                last_message,
+                generation_config=generation_config,
+                tools=gemini_tools,
+            )
+        except google.api_core.exceptions.ResourceExhausted as e:
+            raise ProviderRateLimitError(
+                "Gemini API rate limit exceeded. Please wait a moment and try again."
+            ) from e
+        except google.api_core.exceptions.GoogleAPICallError as e:
+            raise ProviderError(f"Gemini API error: {e}") from e
 
         # Parse tool calls if present.
         tool_calls = []
@@ -235,12 +254,19 @@ class GeminiProvider(LLMProvider):
 
         last_message = history[-1]["parts"] if history else [""]
 
-        response = await chat.send_message_async(
-            last_message,
-            generation_config=generation_config,
-            tools=gemini_tools,
-            stream=True,
-        )
+        try:
+            response = await chat.send_message_async(
+                last_message,
+                generation_config=generation_config,
+                tools=gemini_tools,
+                stream=True,
+            )
+        except google.api_core.exceptions.ResourceExhausted as e:
+            raise ProviderRateLimitError(
+                "Gemini API rate limit exceeded. Please wait a moment and try again."
+            ) from e
+        except google.api_core.exceptions.GoogleAPICallError as e:
+            raise ProviderError(f"Gemini API error: {e}") from e
 
         tool_calls = []
         async for chunk in response:

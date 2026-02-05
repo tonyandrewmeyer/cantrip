@@ -6,7 +6,17 @@ from collections.abc import AsyncIterator
 
 import anthropic
 
-from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role, Tool, ToolCall
+from cantrip.llm.base import (
+    Chunk,
+    LLMProvider,
+    Message,
+    ProviderError,
+    ProviderRateLimitError,
+    Response,
+    Role,
+    Tool,
+    ToolCall,
+)
 
 
 class ClaudeProvider(LLMProvider):
@@ -116,7 +126,14 @@ class ClaudeProvider(LLMProvider):
         if api_tools:
             kwargs["tools"] = api_tools
 
-        response = await self.client.messages.create(**kwargs)
+        try:
+            response = await self.client.messages.create(**kwargs)
+        except anthropic.RateLimitError as e:
+            raise ProviderRateLimitError(
+                "Claude API rate limit exceeded. Please wait a moment and try again."
+            ) from e
+        except anthropic.APIError as e:
+            raise ProviderError(f"Claude API error: {e}") from e
 
         # Parse response content blocks.
         text_parts = []
@@ -168,7 +185,16 @@ class ClaudeProvider(LLMProvider):
         tool_calls: list[ToolCall] = []
         current_tool: dict | None = None
 
-        async with self.client.messages.stream(**kwargs) as stream:
+        try:
+            stream_cm = self.client.messages.stream(**kwargs)
+        except anthropic.RateLimitError as e:
+            raise ProviderRateLimitError(
+                "Claude API rate limit exceeded. Please wait a moment and try again."
+            ) from e
+        except anthropic.APIError as e:
+            raise ProviderError(f"Claude API error: {e}") from e
+
+        async with stream_cm as stream:
             async for event in stream:
                 if event.type == "content_block_start":
                     if event.content_block.type == "tool_use":
