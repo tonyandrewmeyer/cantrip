@@ -1,0 +1,84 @@
+/* Cantrip TUI Styles */
+
+Screen {
+    background: $surface;
+}
+
+#main-container {
+    height: 1fr;
+}
+
+#left-panel {
+    width: 35%;
+    min-width: 30;
+    border-right: solid $primary;
+    padding: 1;
+}
+
+#right-panel {
+    width: 1fr;
+    padding: 1;
+}
+
+#juju-status {
+    height: 1fr;
+}
+
+#status-content {
+    height: 100%;
+}
+
+#chat {
+    height: 1fr;
+    border: solid $primary;
+    padding: 1;
+    overflow-y: auto;
+}
+
+#chat-history {
+    height: 100%;
+}
+
+#chat-input {
+    dock: bottom;
+    margin-top: 1;
+}
+
+/* Status indicators */
+.status-active {
+    color: $success;
+}
+
+.status-waiting {
+    color: $warning;
+}
+
+.status-blocked {
+    color: $error;
+}
+
+.status-maintenance {
+    color: $primary;
+}
+
+/* Chat messages */
+.user-message {
+    color: $text;
+    text-style: bold;
+}
+
+.agent-message {
+    color: $secondary;
+}
+
+.progress-indicator {
+    color: $primary;
+}
+
+.success-indicator {
+    color: $success;
+}
+
+.error-indicator {
+    color: $error;
+}

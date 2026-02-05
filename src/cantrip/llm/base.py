@@ -1,0 +1,98 @@
+"""Base LLM provider interface."""
+
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+
+class Role(str, Enum):
+    """Message role."""
+
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
+@dataclass
+class ToolCall:
+    """A tool call from the assistant."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class ToolResult:
+    """Result of a tool call."""
+
+    tool_call_id: str
+    content: str
+    is_error: bool = False
+
+
+@dataclass
+class Message:
+    """A conversation message."""
+
+    role: Role
+    content: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_results: list[ToolResult] = field(default_factory=list)
+
+
+@dataclass
+class Response:
+    """Response from the LLM."""
+
+    content: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    finish_reason: str = "stop"
+    usage: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class Chunk:
+    """A streaming chunk."""
+
+    content: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    is_final: bool = False
+
+
+@dataclass
+class Tool:
+    """Tool definition for the LLM."""
+
+    name: str
+    description: str
+    parameters: dict[str, Any]  # JSON Schema
+
+
+class LLMProvider(ABC):
+    """Abstract interface for LLM providers."""
+
+    @abstractmethod
+    async def complete(
+        self,
+        messages: list[Message],
+        tools: list[Tool] | None = None,
+        temperature: float = 0.7,
+    ) -> Response:
+        """Generate a completion."""
+
+    @abstractmethod
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[Tool] | None = None,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[Chunk]:
+        """Stream a completion."""
+
+    @abstractmethod
+    def count_tokens(self, messages: list[Message]) -> int:
+        """Count tokens in messages (approximate)."""

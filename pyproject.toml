@@ -1,0 +1,107 @@
+[project]
+name = "cantrip"
+version = "0.1.0"
+description = "A small spell for building Juju charms - an AI-powered charm development agent"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Canonical" },
+]
+keywords = ["juju", "charm", "agent", "ai", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+]
+
+dependencies = [
+    # TUI
+    "textual>=0.50.0",
+
+    # LLM providers
+    "google-generativeai>=0.3.0",  # Gemini
+    "anthropic>=0.18.0",           # Claude
+
+    # Juju integration
+    "jubilant>=0.1.0",             # Juju control
+
+    # Utilities
+    "pydantic>=2.0",               # Data validation
+    "pyyaml>=6.0",                 # YAML handling
+    "rich>=13.0",                  # Rich text formatting
+    "httpx>=0.27.0",               # HTTP client
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0",
+    "mypy>=1.8",
+    "ruff>=0.2.0",
+    "types-PyYAML",
+]
+
+[project.scripts]
+cantrip = "cantrip.main:main"
+
+[project.urls]
+Homepage = "https://github.com/canonical/cantrip"
+Documentation = "https://github.com/canonical/cantrip#readme"
+Repository = "https://github.com/canonical/cantrip"
+Issues = "https://github.com/canonical/cantrip/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cantrip"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "UP",    # pyupgrade
+    "ARG",   # flake8-unused-arguments
+    "SIM",   # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cantrip"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "jubilant.*",
+    "google.generativeai.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
