@@ -1,0 +1,30 @@
+# Based on the Toad report style
+name: Bug Report
+description: Report a bug or issue
+title: "BUG"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Issues require an initial discussion and approval by a Cantrip developer before creating an issue.
+  - type: input
+    id: discussion-link
+    attributes:
+      label: Discussion link
+      description: Please enter the discussion link here
+      placeholder: https://github.com/tonyandrewmeyer/cantrip/discussions/123
+    validations:
+      required: true
+
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Bug Description
+      description: Describe the bug you encountered
+      placeholder: |
+        What happened?
+        What did you expect to happen?
+        Steps to reproduce...
+    validations:
+      required: true
