@@ -69,7 +69,7 @@ The agent is thin. The ecosystem is the star.
 | CI | GitHub Actions | |
 | TUI Framework | Textual | |
 | Juju Control | Jubilant | |
-| Environment Setup | Concierge | |
+| Environment Setup | Concierge | LXD for machine, "k8s" preset for K8s (Canonical K8s, not MicroK8s) |
 | LLM (primary) | Gemini | Canonical preference, available tokens |
 | LLM (secondary) | Claude | Best performance |
 | LLM (future) | TBD | Figure out when we get there |
@@ -134,6 +134,38 @@ If user doesn't specify:
 ```
 
 Agent decides based on workload characteristics, asks user to confirm.
+
+### Environment Setup (Concierge)
+
+| Charm Type | Concierge Preset | Notes |
+|------------|------------------|-------|
+| Machine | LXD | Default for machine charms |
+| K8s | `k8s` | Canonical K8s, NOT MicroK8s |
+
+Agent uses concierge to set up the appropriate environment automatically.
+
+### Multi-Model Management
+
+Cantrip manages multiple Juju models - user doesn't do setup:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Cantrip-managed models                      │
+│                                                                 │
+│  ┌─────────────────────┐      ┌─────────────────────┐          │
+│  │   dev model         │      │   cos model         │          │
+│  │                     │      │                     │          │
+│  │  ┌─────────────┐    │      │  ┌─────┐ ┌─────┐   │          │
+│  │  │ charm under │────┼──────┼──│Tempo│ │Loki │   │          │
+│  │  │ development │    │traces│  └─────┘ └─────┘   │          │
+│  │  └─────────────┘    │ logs │  ┌─────┐ ┌─────┐   │          │
+│  │                     │metrics  │Prom │ │Graf │   │          │
+│  └─────────────────────┘      │  └─────┘ └─────┘   │          │
+│                               └─────────────────────┘          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Cross-model relations handle observability data flow.
 
 ### Path A: 12-Factor PaaS Apps (Fast Path)
 
@@ -302,12 +334,17 @@ That's it. That's success. Everything else happens *after* in the iterative conv
 ## Key Features
 
 ### Must Have (MVP)
-- [ ] Basic charm scaffolding from description
-- [ ] Pack and deploy to local environment (LXD/MicroK8s)
+- [ ] **Path A: 12-factor PaaS** (primary focus)
+- [ ] Pack and deploy to local environment (LXD/Canonical K8s)
 - [ ] Achieve active/running status
 - [ ] Juju status display in TUI
 - [ ] Conversational iteration (add actions, config)
 - [ ] Gemini API integration
+- [ ] Multi-model management (dev + COS)
+
+### Rapid Follow-on (not Stage 2 - move fast)
+- [ ] Path B: Custom applications
+- [ ] Path C: Infrastructure software
 
 ### Should Have
 - [ ] Visual model/app/integration graph

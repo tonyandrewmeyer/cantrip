@@ -11,10 +11,10 @@
 - **Path B: Custom App** - Doesn't fit 12-factor, needs full scaffolding
 - **Path C: Infrastructure** - MariaDB, Redis, etc. - complex operational patterns
 
-2. **Who is the primary user?**
-   - Developers charming their own applications? (Paths A & B)
-   - Ops folks charming existing open-source software? (Path C)
-   - Both?
+2. ~~Who is the primary user?~~
+   **DECIDED:**
+   - MVP: 12-factor developers (Path A)
+   - Rapid follow-on: Custom apps (B) and infrastructure (C) - not deferred to Stage 2
 
 3. ~~What's a typical "charm for X" request?~~ → Answered above
 
@@ -90,15 +90,14 @@
     **DECIDED:** Gemini first (Canonical preference), Claude second (best performance), others TBD.
 
 ## Environment
-13. **Concierge setup - what's the default environment?**
-    - LXD for machine charms?
-    - MicroK8s for K8s charms?
-    - User chooses?
-    - Detect from charm type?
+13. ~~Concierge setup - what's the default environment?~~
+    **DECIDED:**
+    - Machine charms: LXD
+    - K8s charms: Canonical K8s (`k8s` preset in concierge) - NOT MicroK8s
+    - Agent recommends based on workload, user confirms
 
-    **PARTIALLY ANSWERED:** Agent analyses workload, makes recommendation, asks user to confirm.
-
-14. **Should the agent manage multiple models/environments simultaneously?**
+14. ~~Should the agent manage multiple models/environments simultaneously?~~
+    **DECIDED:** Yes, Cantrip manages both dev model and COS model. User doesn't do setup.
 
 ## Persistence & Projects
 15. ~~How should charm projects be persisted?~~
