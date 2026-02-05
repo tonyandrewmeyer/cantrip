@@ -76,11 +76,11 @@
    - Agent uses traces internally - user focuses on describing functionality
 
 ## Testing
-10. **What testing frameworks/approaches for charms?**
-    - pytest-operator?
-    - Scenario testing?
-    - Integration tests with real Juju?
-    - All of the above?
+10. ~~What testing frameworks/approaches for charms?~~
+    **DECIDED:**
+    - Unit tests: Scenario (ops.testing Context, State) - NOT Harness
+    - Integration tests: Jubilant - NOT pytest-operator/python-libjuju
+    - `charmcraft init` scaffolds test structure
 
 ## LLM Architecture
 11. ~~Single agent or multi-agent?~~
@@ -101,30 +101,34 @@
 14. **Should the agent manage multiple models/environments simultaneously?**
 
 ## Persistence & Projects
-15. **How should charm projects be persisted?**
-    - Git repo per charm?
-    - Working directory structure?
-    - Project files that can be resumed?
+15. ~~How should charm projects be persisted?~~
+    **DECIDED:** Auto-persistence within charm folder (`.cantrip/` directory with session data).
 
-16. **Should the agent track "charm sessions" that can be continued later?**
+16. ~~Should the agent track "charm sessions" that can be continued later?~~
+    **DECIDED:** Yes, with context management (summarise old turns, keep recent verbatim, track decisions separately).
 
 ## Charm Libraries
-17. **Should the agent know about and fetch charm libraries?**
-    - ops library (core)
-    - Common interface libs (database, ingress, etc.)
-    - Custom libs from Charmhub?
+17. ~~Should the agent know about and fetch charm libraries?~~
+    **DECIDED:**
+    - Yes, auto-fetch common interface libs
+    - Prefer PyPI versions where available (list to be provided)
+    - Use charmcraft.yaml + `charmcraft fetch-libs` for Charmhub libs
 
 ## Scope Boundaries
-18. **What's explicitly OUT of scope for v1?**
-    - Bundle creation?
-    - Charm publishing to Charmhub?
-    - Cross-model relations?
-    - Production deployment advice?
+18. ~~What's explicitly OUT of scope for v1?~~
+    **DECIDED:**
+    - Bundles: OUT (deprecated)
+    - Charmhub publishing: Stage 2
+    - Cross-model relations: IN (especially for COS)
+    - pytest-operator/python-libjuju: OUT (use Jubilant)
+    - Harness: OUT (use Scenario)
 
 ## Your Expertise
-19. **You mentioned providing guidance for writing charms well - in what form?**
-    - A document I can feed to the agent?
-    - Interactive guidance during planning?
-    - Both?
+19. ~~You mentioned providing guidance for writing charms well - in what form?~~
+    **DECIDED:**
+    - Starting point: https://github.com/tonyandrewmeyer/charming-with-claude
+    - Additional docs/links to be provided during development
+    - User is on Canonical Charm Tech team, responsible for docs + tools
 
-20. **Are there existing charm templates or patterns you'd want baked in?**
+20. ~~Are there existing charm templates or patterns you'd want baked in?~~
+    **PARTIALLY ANSWERED:** `charmcraft init` provides scaffolding. Additional patterns via knowledge sources above.

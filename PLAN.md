@@ -315,7 +315,11 @@ That's it. That's success. Everything else happens *after* in the iterative conv
 - [ ] Debug mode with log viewing
 - [ ] Machine charm support
 - [ ] K8s charm support
-- [ ] Test generation
+- [ ] Test generation (Scenario for unit, Jubilant for integration)
+- [ ] Cross-model relations (especially for COS)
+
+### Stage 2
+- [ ] Charmhub publishing
 
 ## Observability Strategy
 
@@ -546,12 +550,133 @@ When the agent needs to suggest integrations (database, ingress, observability, 
 
 User never waits for background work to complete.
 
+## Testing Strategy
+
+### Unit Tests: Scenario
+
+Use `ops.testing` (Context, State, etc.) - the modern approach.
+
+```python
+from ops import testing
+
+def test_start():
+    ctx = testing.Context(MyCharm)
+    state = testing.State()
+    out = ctx.run(ctx.on.start(), state)
+    assert out.unit_status == testing.ActiveStatus()
+```
+
+**NOT:** Harness (legacy, deprecated)
+
+### Integration Tests: Jubilant
+
+Use Jubilant for real Juju integration tests.
+
+**NOT:** pytest-operator, python-libjuju
+
+### Setup
+
+`charmcraft init` scaffolds the test structure. Agent runs this as part of charm creation.
+
+*Links to Scenario and Jubilant docs to be added*
+
+## Charm Libraries
+
+### Strategy
+
+1. **Prefer PyPI versions** where libraries have migrated from Charmhub
+   - List of migrated libraries to be provided
+   - Add to pyproject.toml / requirements.txt
+
+2. **Charmhub libraries** for those still there
+   - Add to `charmcraft.yaml` lib section
+   - Run `charmcraft fetch-libs`
+
+3. **Auto-fetch common interface libs**
+   - database interfaces
+   - ingress
+   - observability (tracing, metrics, logging)
+   - etc.
+
+### Workflow
+
+```
+Agent identifies needed integration
+          │
+          ▼
+┌─────────────────────────┐
+│ Is there a PyPI version?│
+└───────────┬─────────────┘
+            │
+      ┌─────┴─────┐
+      │           │
+     YES          NO
+      │           │
+      ▼           ▼
+  Add to      Add to
+  pyproject   charmcraft.yaml
+  .toml       + fetch-libs
+```
+
+*List of PyPI-available libraries to be provided*
+
+## Persistence
+
+### Auto-persistence within charm folder
+
+```
+my-charm/
+├── src/
+├── tests/
+├── charmcraft.yaml
+├── ...
+└── .cantrip/                  # Cantrip session data
+    ├── session.json           # Conversation state
+    ├── context.md             # Summarised context for LLM
+    └── decisions.yaml         # Key decisions made
+```
+
+When user runs `cantrip` in a charm directory:
+1. Detect `.cantrip/` folder
+2. Load previous session context
+3. Resume where they left off
+
+### Context Management
+
+LLM context windows are finite. Strategy:
+- Summarise older conversation turns
+- Keep recent turns verbatim
+- Track key decisions separately (always in context)
+- Background agents get focused context (just what they need)
+
+## Knowledge Sources
+
+### Primary Reference
+- https://github.com/tonyandrewmeyer/charming-with-claude
+  - Starting point for charm development guidance
+  - Can be incorporated into agent system prompts
+
+### Additional (to be provided)
+- Scenario documentation
+- Jubilant documentation
+- 12-factor PaaS charm system details
+- COS integration patterns
+- List of PyPI-migrated libraries
+- Best practices from Canonical charm tech team
+
+### Domain Expert
+User works on the Charm Tech team at Canonical - responsible for docs and tools. Will provide guidance throughout development.
+
 ### Could Have
 - [ ] Multiple LLM providers
 - [ ] Rock building for OCI images
-- [ ] Multi-agent architecture
 - [ ] Charm library suggestions
 - [ ] Auto-integration recommendations
+
+### Explicitly Out of Scope
+- Bundles (deprecated)
+- pytest-operator / python-libjuju (use Jubilant instead)
+- Harness (use Scenario instead)
 
 ## Open Questions
 
