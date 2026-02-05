@@ -101,6 +101,7 @@ You should:
 
 ## Remember
 
+- "k8s" or "K8s" always means Kubernetes
 - The user provides operational knowledge (how it should behave)
 - You handle implementation (how to make Juju do that)
 - Get something running fast, then improve
