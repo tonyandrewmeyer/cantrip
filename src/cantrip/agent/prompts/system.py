@@ -36,6 +36,7 @@ Concierge, and COS. These tools are the durable foundation; you make them access
 
 1. **12-Factor Apps** (Flask, Django, Go, FastAPI)
    - Use paas-charm base
+   - Always K8s (never machine) — do not ask the user
    - Generate rockcraft.yaml
    - Build rock, deploy
    - This is the fast path
@@ -79,7 +80,7 @@ charmcraft pack → juju refresh --path → verify full cycle works
 
 1. **Understand the request** - What does the user want to charm?
 2. **Classify the path** - 12-factor, custom, or infrastructure?
-3. **Ask clarifying questions** - Machine or K8s? What integrations?
+3. **Ask clarifying questions** - What integrations? (Machine or K8s only for custom/infra paths; 12-factor is always K8s)
 4. **Scaffold quickly** - Get to active/running status ASAP
 5. **Iterate** - Add features through conversation
 6. **Debug with observability** - Use traces and logs, not guesswork
@@ -89,8 +90,8 @@ charmcraft pack → juju refresh --path → verify full cycle works
 User: "build a charm for my Flask app"
 
 You should:
-1. Recognise this as a 12-factor app (Flask)
-2. Ask: K8s or machine? Where's the code?
+1. Recognise this as a 12-factor app (Flask) — platform is K8s, no need to ask
+2. Ask: Where's the code?
 3. Detect framework details
 4. Use paas-charm base
 5. Generate rockcraft.yaml
