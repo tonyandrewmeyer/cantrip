@@ -12,7 +12,7 @@ from cantrip import __version__
 from cantrip.agent.core import CantripAgent
 from cantrip.llm import create_provider
 from cantrip.llm.base import ProviderRateLimitError
-from cantrip.tui.widgets.chat import ChatWidget
+from cantrip.tui.widgets.chat import ChatWidget, MessageWidget
 from cantrip.tui.widgets.status import JujuStatusWidget
 
 
@@ -42,18 +42,19 @@ class CantripApp(App):
         self.model_name = model
         self.charm_path = charm_path or Path.cwd()
         self._agent: CantripAgent | None = None
+        self._thinking_widget: MessageWidget | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
         yield Header()
         yield Horizontal(
             Vertical(
-                JujuStatusWidget(id="juju-status"),
+                ChatWidget(id="chat"),
+                Input(placeholder="Type your message...", id="chat-input"),
                 id="left-panel",
             ),
             Vertical(
-                ChatWidget(id="chat"),
-                Input(placeholder="Type your message...", id="chat-input"),
+                JujuStatusWidget(id="juju-status"),
                 id="right-panel",
             ),
             id="main-container",
@@ -63,6 +64,8 @@ class CantripApp(App):
     def on_mount(self) -> None:
         """Handle app mount."""
         self.query_one("#chat-input", Input).focus()
+        # Hide the status panel until there is something to show.
+        self.query_one("#right-panel").display = False
         self._init_agent()
 
     def _init_agent(self) -> None:
@@ -89,9 +92,10 @@ class CantripApp(App):
             chat.add_system_message("No LLM provider configured. Check your API key.")
             return
 
-        # Disable input while processing.
+        # Disable input and show thinking indicator while processing.
         input_widget = self.query_one("#chat-input", Input)
         input_widget.disabled = True
+        self._thinking_widget = chat.add_system_message("Thinking...")
 
         # Run agent processing in a background worker.
         self.run_worker(
@@ -111,6 +115,11 @@ class CantripApp(App):
 
         chat = self.query_one("#chat", ChatWidget)
         input_widget = self.query_one("#chat-input", Input)
+
+        # Remove the thinking indicator.
+        if self._thinking_widget is not None:
+            chat.remove_message(self._thinking_widget)
+            self._thinking_widget = None
 
         if event.state == WorkerState.SUCCESS:
             result = event.worker.result
@@ -132,10 +141,14 @@ class CantripApp(App):
         """Show help screen."""
         self.notify("Help screen not yet implemented", title="Help")
 
+    def on_juju_status_widget_status_available(self) -> None:
+        """Show the status panel when status data first arrives."""
+        self.query_one("#right-panel").display = True
+
     def action_toggle_status(self) -> None:
         """Toggle status panel visibility."""
-        left_panel = self.query_one("#left-panel")
-        left_panel.display = not left_panel.display
+        right_panel = self.query_one("#right-panel")
+        right_panel.display = not right_panel.display
 
     def action_logs(self) -> None:
         """Show logs view."""

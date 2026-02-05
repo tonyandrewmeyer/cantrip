@@ -235,6 +235,12 @@ class ChatWidget(Widget):
         """Add a system message."""
         return self.add_message(ChatMessage(role=MessageRole.SYSTEM, content=content))
 
+    def remove_message(self, widget: MessageWidget) -> None:
+        """Remove a message widget from the chat."""
+        if widget.message in self._messages:
+            self._messages.remove(widget.message)
+        widget.remove()
+
     def clear(self) -> None:
         """Clear chat history."""
         self._messages.clear()

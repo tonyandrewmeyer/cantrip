@@ -9,14 +9,14 @@ Screen {
 }
 
 #left-panel {
-    width: 35%;
-    min-width: 30;
-    border-right: solid $primary;
+    width: 1fr;
     padding: 1;
 }
 
 #right-panel {
-    width: 1fr;
+    width: 35%;
+    min-width: 30;
+    border-left: solid $primary;
     padding: 1;
 }
 

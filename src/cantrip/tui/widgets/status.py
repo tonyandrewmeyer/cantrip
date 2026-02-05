@@ -2,6 +2,7 @@
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
@@ -122,6 +123,9 @@ class RelationLine(Static):
 class JujuStatusWidget(Widget):
     """Widget displaying full Juju model status."""
 
+    class StatusAvailable(Message):
+        """Posted when status data first becomes available."""
+
     DEFAULT_CSS = """
     JujuStatusWidget {
         height: 100%;
@@ -162,8 +166,10 @@ class JujuStatusWidget(Widget):
         """Compose the status display."""
         yield Vertical(id="status-container")
 
-    def watch_status(self, _status: ModelStatus | None) -> None:
+    def watch_status(self, old: ModelStatus | None, new: ModelStatus | None) -> None:
         """React to status changes."""
+        if old is None and new is not None:
+            self.post_message(self.StatusAvailable())
         self._refresh_display()
 
     def watch_current_app(self, _app: str | None) -> None:
