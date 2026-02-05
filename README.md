@@ -31,7 +31,7 @@ Your charm is running! What would you like to add?
 
 ```bash
 # Clone the repository
-git clone https://github.com/canonical/cantrip
+git clone https://github.com/tonyandrewmeyer/cantrip
 cd cantrip
 
 # Install with uv
