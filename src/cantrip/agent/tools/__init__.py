@@ -21,6 +21,7 @@ from cantrip.agent.tools.juju import (
     JujuSSHTool,
     JujuStatusTool,
 )
+from cantrip.agent.tools.web import WebFetchTool
 
 __all__ = [
     # Base
@@ -44,4 +45,6 @@ __all__ = [
     "JujuRelateTool",
     "JujuSSHTool",
     "JujuRunActionTool",
+    # Web
+    "WebFetchTool",
 ]

@@ -24,6 +24,7 @@ from cantrip.agent.tools import (
     ReadFileTool,
     Tool,
     ToolResult,
+    WebFetchTool,
     WriteFileTool,
 )
 from cantrip.llm.base import LLMProvider, Message, Role
@@ -102,6 +103,8 @@ class CantripAgent:
             CharmcraftPackTool(),
             CharmcraftFetchLibsTool(),
             AnalyseFrameworkTool(),
+            # Web
+            WebFetchTool(),
             # Juju operations
             JujuStatusTool(),
             JujuDeployTool(),
