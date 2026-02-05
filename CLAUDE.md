@@ -99,6 +99,10 @@ The system prompt in `src/cantrip/agent/prompts/system.py` contains embedded cha
 2. **Path B (Custom Applications):** Full ops framework charm, analyse requirements
 3. **Path C (Infrastructure Software):** Databases, caches → check Charmhub first, complex operational logic
 
+## Workflow
+
+- **Commit at appropriate times.** Don't wait until the end of a large task — commit after each logical, self-contained piece of work (e.g. after finishing a feature, fixing a bug, or completing a refactor). Each commit should leave the tree in a working state (`make check` passes).
+
 ## Reference Documents
 
 - `PLAN.md` - Architecture decisions, philosophy, detailed design
