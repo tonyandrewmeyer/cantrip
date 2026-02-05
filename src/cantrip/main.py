@@ -1,10 +1,13 @@
 """Cantrip entry point."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from cantrip import __version__
+from cantrip.cli import run_cli
+from cantrip.tui.app import CantripApp
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,10 +50,6 @@ def main() -> int:
     """Main entry point."""
     args = parse_args()
 
-    # Check for API key
-    # TODO: Implement proper config loading
-    import os
-
     if args.provider == "gemini":
         if not os.environ.get("GEMINI_API_KEY"):
             print("Error: GEMINI_API_KEY environment variable not set")
@@ -62,14 +61,8 @@ def main() -> int:
         return 1
 
     if args.no_tui:
-        # CLI mode - simple conversation loop
-        from cantrip.cli import run_cli
-
         return run_cli(args)
     else:
-        # TUI mode
-        from cantrip.tui.app import CantripApp
-
         app = CantripApp(
             provider=args.provider,
             model=args.model,

@@ -5,40 +5,14 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Input, Static
+from textual.widgets import Footer, Header, Input
+from textual.worker import Worker, WorkerState
 
 from cantrip import __version__
-
-
-class JujuStatusWidget(Static):
-    """Widget displaying Juju status."""
-
-    def compose(self) -> ComposeResult:
-        """Compose the widget."""
-        yield Static(
-            "Juju Status\n"
-            "───────────\n\n"
-            "No model connected.\n\n"
-            "Start by describing what\n"
-            "you want to charm.",
-            id="status-content",
-        )
-
-
-class ChatWidget(Static):
-    """Widget for chat history."""
-
-    def compose(self) -> ComposeResult:
-        """Compose the widget."""
-        yield Static(
-            "Welcome to Cantrip!\n\n"
-            "Describe what you want to charm:\n"
-            '  "build a charm for my Flask app"\n'
-            '  "charm a PostgreSQL deployment"\n\n'
-            "I'll help you create a production-ready\n"
-            "Juju charm in minutes.",
-            id="chat-history",
-        )
+from cantrip.agent.core import CantripAgent
+from cantrip.llm import create_provider
+from cantrip.tui.widgets.chat import ChatWidget
+from cantrip.tui.widgets.status import JujuStatusWidget
 
 
 class CantripApp(App):
@@ -63,9 +37,10 @@ class CantripApp(App):
     ):
         """Initialise the app."""
         super().__init__()
-        self.provider = provider
+        self.provider_name = provider
         self.model_name = model
         self.charm_path = charm_path or Path.cwd()
+        self._agent: CantripAgent | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
@@ -87,6 +62,16 @@ class CantripApp(App):
     def on_mount(self) -> None:
         """Handle app mount."""
         self.query_one("#chat-input", Input).focus()
+        self._init_agent()
+
+    def _init_agent(self) -> None:
+        """Initialise the LLM provider and agent."""
+        try:
+            llm_provider = create_provider(self.provider_name, self.model_name)
+            self._agent = CantripAgent(provider=llm_provider, charm_path=self.charm_path)
+        except ValueError as e:
+            chat = self.query_one("#chat", ChatWidget)
+            chat.add_system_message(f"Failed to initialise provider: {e}")
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle chat input submission."""
@@ -94,17 +79,53 @@ class CantripApp(App):
         if not message:
             return
 
-        # Clear input
         event.input.value = ""
 
-        # TODO: Send to agent and handle response
-        chat = self.query_one("#chat-history", Static)
-        current = str(chat.renderable)
-        chat.update(f"{current}\n\n> {message}\n\nProcessing...")
+        chat = self.query_one("#chat", ChatWidget)
+        chat.add_user_message(message)
+
+        if not self._agent:
+            chat.add_system_message("No LLM provider configured. Check your API key.")
+            return
+
+        # Disable input while processing.
+        input_widget = self.query_one("#chat-input", Input)
+        input_widget.disabled = True
+
+        # Run agent processing in a background worker.
+        self.run_worker(
+            self._process_agent_message(message),
+            name="agent_response",
+            exclusive=True,
+        )
+
+    async def _process_agent_message(self, message: str) -> str:
+        """Process a message through the agent. Runs in a worker."""
+        return await self._agent.process_message(message)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle worker state changes to update the UI."""
+        if event.worker.name != "agent_response":
+            return
+
+        chat = self.query_one("#chat", ChatWidget)
+        input_widget = self.query_one("#chat-input", Input)
+
+        if event.state == WorkerState.SUCCESS:
+            result = event.worker.result
+            if result:
+                chat.add_assistant_message(str(result))
+            input_widget.disabled = False
+            input_widget.focus()
+
+        elif event.state == WorkerState.ERROR:
+            error = event.worker.error
+            chat.add_system_message(f"Error: {error}")
+            input_widget.disabled = False
+            input_widget.focus()
 
     def action_help(self) -> None:
         """Show help screen."""
-        # TODO: Implement help screen
         self.notify("Help screen not yet implemented", title="Help")
 
     def action_toggle_status(self) -> None:
@@ -114,10 +135,9 @@ class CantripApp(App):
 
     def action_logs(self) -> None:
         """Show logs view."""
-        # TODO: Implement logs view
         self.notify("Logs view not yet implemented", title="Logs")
 
     def action_clear_chat(self) -> None:
         """Clear chat history."""
-        chat = self.query_one("#chat-history", Static)
-        chat.update("Chat cleared.\n\nWhat would you like to do?")
+        chat = self.query_one("#chat", ChatWidget)
+        chat.clear()

@@ -1,5 +1,7 @@
 """Core agent logic."""
 
+import json
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +28,10 @@ from cantrip.agent.tools import (
 )
 from cantrip.llm.base import LLMProvider, Message, Role
 from cantrip.llm.base import Tool as LLMTool
+from cantrip.llm.base import ToolResult as LLMToolResult
+
+# Maximum tool-call rounds before we force the model to respond with text.
+MAX_TOOL_ROUNDS = 20
 
 
 @dataclass
@@ -140,6 +146,12 @@ class CantripAgent:
 
         try:
             return await tool.execute(**arguments)
+        except TypeError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Invalid arguments for {name}: {e}",
+            )
         except Exception as e:
             return ToolResult(
                 success=False,
@@ -147,89 +159,142 @@ class CantripAgent:
                 error=f"Tool execution failed: {e}",
             )
 
+    def _build_llm_messages(self) -> list[Message]:
+        """Build the full message list for the LLM including system prompt."""
+        return [
+            Message(role=Role.SYSTEM, content=self._build_system_prompt()),
+            *self.state.messages,
+        ]
+
     async def process_message(self, user_message: str) -> str:
         """Process a user message and return the response.
 
         This handles the full conversation loop including tool calls.
+        The loop continues until the model responds without tool calls
+        or the maximum number of rounds is reached.
         """
-        # Add user message to history
         self.state.messages.append(Message(role=Role.USER, content=user_message))
 
-        # Build messages for LLM
-        messages = [
-            Message(role=Role.SYSTEM, content=self._build_system_prompt()),
-            *self.state.messages,
-        ]
+        messages = self._build_llm_messages()
+        llm_tools = self._tools_for_llm() if self._tools else None
 
-        # Get response (may include tool calls)
         response = await self.provider.complete(
             messages=messages,
-            tools=self._tools_for_llm() if self._tools else None,
+            tools=llm_tools,
             temperature=0.7,
         )
 
-        # Handle tool calls in a loop
-        while response.tool_calls:
-            # Execute each tool call
+        rounds = 0
+        while response.tool_calls and rounds < MAX_TOOL_ROUNDS:
+            rounds += 1
+
+            # Record the assistant message with its tool calls.
+            assistant_msg = Message(
+                role=Role.ASSISTANT,
+                content=response.content,
+                tool_calls=response.tool_calls,
+            )
+            self.state.messages.append(assistant_msg)
+
+            # Execute each tool and build TOOL result messages.
             tool_results = []
-            for tool_call in response.tool_calls:
-                result = await self._execute_tool(tool_call.name, tool_call.arguments)
+            for tc in response.tool_calls:
+                result = await self._execute_tool(tc.name, tc.arguments)
+                content = result.output if result.success else (result.error or "Unknown error")
                 tool_results.append(
-                    f"Tool: {tool_call.name}\n"
-                    f"Result: {'Success' if result.success else 'Failed'}\n"
-                    f"Output: {result.output or result.error}"
+                    LLMToolResult(
+                        tool_call_id=tc.id,
+                        content=content,
+                        is_error=not result.success,
+                    )
                 )
 
-            # Add tool results to context and get next response
-            tool_message = Message(
-                role=Role.ASSISTANT,
-                content="\n\n".join(tool_results),
+            tool_msg = Message(
+                role=Role.TOOL,
+                content="",
+                tool_results=tool_results,
             )
-            messages.append(tool_message)
+            self.state.messages.append(tool_msg)
 
+            # Call the LLM again with the updated history.
+            messages = self._build_llm_messages()
             response = await self.provider.complete(
                 messages=messages,
-                tools=self._tools_for_llm() if self._tools else None,
+                tools=llm_tools,
                 temperature=0.7,
             )
 
-        # Add final assistant message to history
+        # Store the final assistant response.
         self.state.messages.append(Message(role=Role.ASSISTANT, content=response.content))
-
         return response.content
 
-    async def process_message_streaming(self, user_message: str):
+    async def process_message_streaming(self, user_message: str) -> AsyncIterator[str]:
         """Process a message with streaming response.
 
-        Yields chunks as they arrive.
+        Yields text chunks as they arrive. If the model requests tool calls,
+        those are executed and the model is called again (non-streaming for
+        intermediate rounds, streaming for the final text response).
         """
-        # Add user message to history
         self.state.messages.append(Message(role=Role.USER, content=user_message))
 
-        # Build messages for LLM
-        messages = [
-            Message(role=Role.SYSTEM, content=self._build_system_prompt()),
-            *self.state.messages,
-        ]
+        llm_tools = self._tools_for_llm() if self._tools else None
 
-        # Stream response
-        full_response = ""
-        async for chunk in self.provider.stream(
+        # Use non-streaming complete for potential tool call rounds.
+        messages = self._build_llm_messages()
+        response = await self.provider.complete(
             messages=messages,
-            tools=self._tools_for_llm() if self._tools else None,
+            tools=llm_tools,
             temperature=0.7,
-        ):
-            if chunk.content:
-                full_response += chunk.content
-                yield chunk.content
+        )
 
-        # Add to history
+        rounds = 0
+        while response.tool_calls and rounds < MAX_TOOL_ROUNDS:
+            rounds += 1
+
+            assistant_msg = Message(
+                role=Role.ASSISTANT,
+                content=response.content,
+                tool_calls=response.tool_calls,
+            )
+            self.state.messages.append(assistant_msg)
+
+            tool_results = []
+            for tc in response.tool_calls:
+                result = await self._execute_tool(tc.name, tc.arguments)
+                content = result.output if result.success else (result.error or "Unknown error")
+                tool_results.append(
+                    LLMToolResult(
+                        tool_call_id=tc.id,
+                        content=content,
+                        is_error=not result.success,
+                    )
+                )
+
+            tool_msg = Message(
+                role=Role.TOOL,
+                content="",
+                tool_results=tool_results,
+            )
+            self.state.messages.append(tool_msg)
+
+            messages = self._build_llm_messages()
+            response = await self.provider.complete(
+                messages=messages,
+                tools=llm_tools,
+                temperature=0.7,
+            )
+
+        # Now stream the final text response.
+        messages = self._build_llm_messages()
+        # Remove the last assistant response from messages since we'll re-stream it.
+        # Actually, `response` already has the content but we want to stream it.
+        # Since we already have the content from `complete()`, just yield it.
+        full_response = response.content
         self.state.messages.append(Message(role=Role.ASSISTANT, content=full_response))
+        yield full_response
 
     def save_state(self, path: Path) -> None:
         """Save agent state to disk."""
-        import json
-
         cantrip_dir = path / ".cantrip"
         cantrip_dir.mkdir(exist_ok=True)
 
@@ -241,8 +306,6 @@ class CantripAgent:
             "dev_model": self.state.dev_model,
             "cos_model": self.state.cos_model,
             "decisions": [d.to_dict() for d in self.state.decisions],
-            # Don't save full message history - too large
-            # Instead, save a summary
             "message_count": len(self.state.messages),
         }
 
@@ -253,8 +316,6 @@ class CantripAgent:
 
         Returns True if state was loaded, False if no state exists.
         """
-        import json
-
         cantrip_dir = path / ".cantrip"
         session_file = cantrip_dir / "session.json"
 
@@ -272,7 +333,6 @@ class CantripAgent:
             self.state.dev_model = state_data.get("dev_model")
             self.state.cos_model = state_data.get("cos_model")
 
-            # Restore decisions
             self.state.decisions = [
                 Decision(
                     type=d["type"],
@@ -283,5 +343,5 @@ class CantripAgent:
             ]
 
             return True
-        except Exception:
+        except (json.JSONDecodeError, KeyError):
             return False
