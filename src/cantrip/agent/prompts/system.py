@@ -155,8 +155,10 @@ def build_system_prompt(
         if recent_decisions:
             prompt += "\n\n**Recent Decisions**:"
             for decision in recent_decisions[-5:]:  # Last 5 decisions
-                prompt += f"\n- {decision.get('type', 'decision')}: {decision.get('choice', 'unknown')}"
-                if decision.get('reason'):
+                prompt += (
+                    f"\n- {decision.get('type', 'decision')}: {decision.get('choice', 'unknown')}"
+                )
+                if decision.get("reason"):
                     prompt += f" ({decision['reason']})"
 
     return prompt

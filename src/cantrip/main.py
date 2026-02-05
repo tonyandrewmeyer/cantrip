@@ -56,11 +56,10 @@ def main() -> int:
             print("Error: GEMINI_API_KEY environment variable not set")
             print("Set it with: export GEMINI_API_KEY='your-key-here'")
             return 1
-    elif args.provider == "claude":
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            print("Error: ANTHROPIC_API_KEY environment variable not set")
-            print("Set it with: export ANTHROPIC_API_KEY='your-key-here'")
-            return 1
+    elif args.provider == "claude" and not os.environ.get("ANTHROPIC_API_KEY"):
+        print("Error: ANTHROPIC_API_KEY environment variable not set")
+        print("Set it with: export ANTHROPIC_API_KEY='your-key-here'")
+        return 1
 
     if args.no_tui:
         # CLI mode - simple conversation loop

@@ -162,11 +162,11 @@ class JujuStatusWidget(Widget):
         """Compose the status display."""
         yield Vertical(id="status-container")
 
-    def watch_status(self, status: ModelStatus | None) -> None:
+    def watch_status(self, _status: ModelStatus | None) -> None:
         """React to status changes."""
         self._refresh_display()
 
-    def watch_current_app(self, app: str | None) -> None:
+    def watch_current_app(self, _app: str | None) -> None:
         """React to current app changes."""
         self._refresh_display()
 
@@ -178,9 +178,7 @@ class JujuStatusWidget(Widget):
         if not self.status:
             container.mount(
                 Static(
-                    "No model connected.\n\n"
-                    "Start by describing what\n"
-                    "you want to charm.",
+                    "No model connected.\n\nStart by describing what\nyou want to charm.",
                     classes="no-apps",
                 )
             )
@@ -270,11 +268,11 @@ class MultiModelStatusWidget(Widget):
         """Handle mount."""
         self._refresh_display()
 
-    def watch_dev_status(self, status: ModelStatus | None) -> None:
+    def watch_dev_status(self, _status: ModelStatus | None) -> None:
         """React to dev status changes."""
         self._refresh_display()
 
-    def watch_cos_status(self, status: ModelStatus | None) -> None:
+    def watch_cos_status(self, _status: ModelStatus | None) -> None:
         """React to COS status changes."""
         self._refresh_display()
 
@@ -287,9 +285,7 @@ class MultiModelStatusWidget(Widget):
         if self.dev_status:
             dev_section.mount(JujuStatusWidget(status=self.dev_status))
         else:
-            dev_section.mount(
-                Static("Dev model not connected", classes="collapsed-summary")
-            )
+            dev_section.mount(Static("Dev model not connected", classes="collapsed-summary"))
 
         # COS model section (collapsed by default)
         cos_section = self.query_one("#cos-section", Vertical)
@@ -302,9 +298,7 @@ class MultiModelStatusWidget(Widget):
                 cos_section.mount(JujuStatusWidget(status=self.cos_status))
             else:
                 # Collapsed summary
-                active_count = sum(
-                    1 for app in self.cos_status.apps if app.status == "active"
-                )
+                active_count = sum(1 for app in self.cos_status.apps if app.status == "active")
                 total = len(self.cos_status.apps)
                 health = "● healthy" if active_count == total else f"○ {active_count}/{total}"
                 cos_section.mount(
@@ -314,9 +308,7 @@ class MultiModelStatusWidget(Widget):
                     )
                 )
         else:
-            cos_section.mount(
-                Static("Not deployed", classes="collapsed-summary")
-            )
+            cos_section.mount(Static("Not deployed", classes="collapsed-summary"))
 
     def toggle_cos_expanded(self) -> None:
         """Toggle COS section expansion."""

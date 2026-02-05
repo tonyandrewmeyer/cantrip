@@ -50,8 +50,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run mypy
-        run: uv run mypy src
+      - name: Run ty
+        run: uv run ty check src
 
   test:
     name: Test (Python ${{ matrix.python-version }})

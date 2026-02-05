@@ -92,7 +92,9 @@ class WriteFileTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Write content to a file. Creates the file if it doesn't exist, overwrites if it does."
+        return (
+            "Write content to a file. Creates the file if it doesn't exist, overwrites if it does."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

@@ -23,7 +23,6 @@ from cantrip.agent.tools import (
     Tool,
     ToolResult,
     WriteFileTool,
-    tool_to_schema,
 )
 from cantrip.llm.base import LLMProvider, Message, Role
 from cantrip.llm.base import Tool as LLMTool

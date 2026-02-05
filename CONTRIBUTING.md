@@ -25,32 +25,34 @@ We welcome contributions to Cantrip! This document explains how to get involved.
 
 ```bash
 # Unit tests
-uv run pytest tests/unit -v
+make unit
+
+# All tests
+make test
 
 # With coverage
 uv run pytest tests/unit -v --cov=cantrip --cov-report=term-missing
 
 # Integration tests (requires Juju)
 uv run pytest tests/integration -v
+
+# Run all checks (lint + unit)
+make check
 ```
 
 ### Linting and Formatting
 
 ```bash
-# Check linting
+# Format code
+make format
+
+# Run all linting (ruff + ty type checker)
+make lint
+
+# Or individually:
 uv run ruff check src tests
-
-# Auto-fix linting issues
-uv run ruff check --fix src tests
-
-# Check formatting
-uv run ruff format --check src tests
-
-# Auto-format
 uv run ruff format src tests
-
-# Type checking
-uv run mypy src
+uv run ty check src
 ```
 
 ### Running the Application

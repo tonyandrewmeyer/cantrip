@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from cantrip.agent.tools.base import ToolResult
 from cantrip.agent.tools.files import (
     EditFileTool,
     ListDirectoryTool,
@@ -127,7 +126,7 @@ class TestListDirectoryTool:
         return ListDirectoryTool(base_path=temp_dir)
 
     @pytest.mark.asyncio
-    async def test_list_empty_directory(self, tool, temp_dir):
+    async def test_list_empty_directory(self, tool):
         """Test listing an empty directory."""
         result = await tool.execute(path=".")
 

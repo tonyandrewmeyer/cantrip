@@ -131,7 +131,7 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.7,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion."""
-        system_prompt = self._get_system_prompt(messages)
+        _system_prompt = self._get_system_prompt(messages)  # TODO: Use system prompt
         history = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools)
 

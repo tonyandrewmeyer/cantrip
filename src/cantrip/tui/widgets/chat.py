@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from textual.app import ComposeResult
 from textual.containers import ScrollableContainer, Vertical
@@ -11,7 +11,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 
-class MessageRole(str, Enum):
+class MessageRole(StrEnum):
     """Role of a chat message."""
 
     USER = "user"
@@ -19,7 +19,7 @@ class MessageRole(str, Enum):
     SYSTEM = "system"
 
 
-class MessageStatus(str, Enum):
+class MessageStatus(StrEnum):
     """Status of a message or action."""
 
     PENDING = "pending"
@@ -214,9 +214,7 @@ class ChatWidget(Widget):
 
     def add_user_message(self, content: str) -> MessageWidget:
         """Add a user message."""
-        return self.add_message(
-            ChatMessage(role=MessageRole.USER, content=content)
-        )
+        return self.add_message(ChatMessage(role=MessageRole.USER, content=content))
 
     def add_assistant_message(
         self,
@@ -235,9 +233,7 @@ class ChatWidget(Widget):
 
     def add_system_message(self, content: str) -> MessageWidget:
         """Add a system message."""
-        return self.add_message(
-            ChatMessage(role=MessageRole.SYSTEM, content=content)
-        )
+        return self.add_message(ChatMessage(role=MessageRole.SYSTEM, content=content))
 
     def clear(self) -> None:
         """Clear chat history."""

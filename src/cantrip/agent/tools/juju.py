@@ -58,7 +58,9 @@ class JujuStatusTool(Tool):
                 output_lines.append(f"\nApp: {app_name} ({status_str})")
 
                 for unit_name, unit in app.units.items():
-                    unit_status = unit.workload_status.current if unit.workload_status else "unknown"
+                    unit_status = (
+                        unit.workload_status.current if unit.workload_status else "unknown"
+                    )
                     output_lines.append(f"  - {unit_name}: {unit_status}")
 
             return ToolResult(
