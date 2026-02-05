@@ -46,9 +46,28 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _is_cantrip_source_tree(path: Path) -> bool:
+    """Check whether path is the cantrip source tree itself."""
+    pyproject = path / "pyproject.toml"
+    if not pyproject.exists():
+        return False
+    try:
+        content = pyproject.read_text()
+        return 'name = "cantrip"' in content and "cantrip.main:main" in content
+    except OSError:
+        return False
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
+
+    charm_path = args.path.resolve()
+    if _is_cantrip_source_tree(charm_path):
+        print("Error: refusing to use the cantrip source tree as a charm project.")
+        print("Run from your charm's directory, or pass a path:")
+        print("  cantrip /path/to/my-charm")
+        return 1
 
     if args.provider == "gemini":
         if not os.environ.get("GEMINI_API_KEY"):
