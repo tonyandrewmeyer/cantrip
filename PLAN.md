@@ -424,6 +424,23 @@ When the agent needs to suggest integrations (database, ingress, observability, 
 - Get accurate compatibility info
 - Avoid maintaining a curated list that goes stale
 
+### Default Integrations
+
+**Philosophy:** Show off the Canonical ecosystem. Add all integrations that make sense for the workload.
+
+| Integration | When | Notes |
+|-------------|------|-------|
+| **Observability (COS)** | Always | Grafana, Prometheus, Loki, Tempo, Alertmanager |
+| **Database** | Almost always | Support multiple if workload does (e.g., both MySQL and PostgreSQL) |
+| **Ingress** | K8s, almost always | Typically Traefik |
+| **Sloth** | When relevant | SLO management |
+| **Parca** | When relevant | Continuous profiling |
+| **Pyroscope** | When relevant | Profiling |
+| **Identity** | When workload needs auth | Identity management |
+| **Litmus** | For testing | Chaos testing |
+
+If workload supports multiple options (e.g., mysql OR postgresql), charm should support all of them automatically.
+
 ## Architecture: Single vs Multi-Agent
 
 ### Option A: Single Agent
@@ -580,6 +597,57 @@ Use Jubilant for real Juju integration tests.
 
 *Links to Scenario and Jubilant docs to be added*
 
+## Development Cycle
+
+### Fast Path (via juju ssh)
+
+For rapid iteration, agent can update charm code directly on the unit:
+
+```
+┌─────────────────────────────────────────────┐
+│  Edit code locally                          │
+│          │                                  │
+│          ▼                                  │
+│  juju ssh <unit> "cat > /path/to/charm.py"  │
+│          │                                  │
+│          ▼                                  │
+│  Trigger hook (juju run, config change)     │
+│          │                                  │
+│          ▼                                  │
+│  See result immediately                     │
+└─────────────────────────────────────────────┘
+```
+
+**Use for:** Quick iterations, debugging, experimenting
+
+### Full Path (pack + refresh)
+
+```
+┌─────────────────────────────────────────────┐
+│  charmcraft pack                            │
+│          │                                  │
+│          ▼                                  │
+│  juju refresh --path ./charm.charm          │
+│          │                                  │
+│          ▼                                  │
+│  Wait for upgrade                           │
+└─────────────────────────────────────────────┘
+```
+
+**Use for:**
+- Validating the full build process works
+- Testing charmcraft.yaml changes
+- Before committing/publishing
+- Periodically to ensure charm packs correctly
+
+### Agent Strategy
+
+Agent should:
+1. Default to fast path during active development
+2. Periodically do full pack+refresh to catch issues
+3. Always do full path before declaring "done"
+4. Switch to full path when changing metadata/config/actions
+
 ## Charm Libraries
 
 ### Strategy
@@ -653,8 +721,10 @@ LLM context windows are finite. Strategy:
 
 ### Primary Reference
 - https://github.com/tonyandrewmeyer/charming-with-claude
-  - Starting point for charm development guidance
-  - Can be incorporated into agent system prompts
+  - `claude-instructions/` - reusable guidance, commands, skills, settings
+  - `CLAUDE.md` - detailed charm development guidance
+  - `experiments/` - documented lessons learned
+  - Incorporate into Cantrip's system prompts
 
 ### Additional (to be provided)
 - Scenario documentation

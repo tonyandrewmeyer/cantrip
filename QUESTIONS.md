@@ -49,16 +49,16 @@
     - Or agent researches each time?
 
 ## Integrations
-6. **Which integrations should be "automatic" or strongly suggested?**
-   - Observability (Grafana, Prometheus, Loki)?
-   - Ingress for K8s?
-   - Database relations?
-   - What's the "default stack" you'd want?
+6. ~~Which integrations should be "automatic" or strongly suggested?~~
+   **DECIDED:**
+   - Observability (COS): Always
+   - Database: Almost always, support multiple if workload does (mysql + postgresql)
+   - Ingress (Traefik): K8s, almost always
+   - Also consider: Sloth, Parca, Pyroscope, Identity, Litmus
+   - Philosophy: Show off the Canonical ecosystem
 
-7. **For integration discovery, should the agent:**
-   - Query Charmhub for compatible charms?
-   - Have a curated list of common integration patterns?
-   - Both?
+7. ~~For integration discovery, should the agent:~~
+   **DECIDED:** Query Charmhub via API/charmcraft, stay current automatically.
 
 ## Observability
 
