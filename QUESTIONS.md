@@ -28,25 +28,37 @@
 
 ### New Questions - Three Paths
 
-6a. **Path A (12-Factor): What frameworks are currently supported?**
-    - Flask, Django, Go - what else?
-    - Is FastAPI supported?
-    - How does the agent detect which framework?
+6a. ~~**Path A (12-Factor): What frameworks are currently supported?**~~
+    **ANSWERED:** Run `charmcraft list-extensions` to get current list.
+    - **Stable (ubuntu@22.04):** Django, Flask
+    - **Experimental (ubuntu@24.04):** ExpressJS, FastAPI, Go, Spring Boot
+    - Agent should run this command to stay current rather than hardcoding the list
 
-6b. **Path A: What's the paas-charm workflow?**
-    - User provides code repo → agent generates rockcraft.yaml → builds rock → deploys?
-    - Are there specific files the agent needs to look for/generate?
+6b. ~~**Path A: What's the paas-charm workflow?**~~
+    **ANSWERED:** Documented in official tutorials:
+    - Rockcraft: https://documentation.ubuntu.com/rockcraft/stable/tutorial/
+    - Charmcraft: https://documentation.ubuntu.com/charmcraft/stable/tutorial/
+    - **Follow-up task:** Fetch and summarise all 12 tutorials (6 frameworks × 2) into agent knowledge (added to ROADMAP.md Phase 1.2)
 
-6c. **Path B (Custom): What's the threshold between "custom" and "should be 12-factor"?**
-    - e.g., A Python app that's not Flask/Django - try to fit 12-factor or go custom?
+6c. ~~**Path B (Custom): What's the threshold between "custom" and "should be 12-factor"?**~~
+    **DECIDED:** Strict matching only.
+    - Only use 12-factor path if framework is explicitly supported (`charmcraft list-extensions`)
+    - Must have standard structure for that framework
+    - Otherwise, go custom (Path B)
+    - No forcing unsupported frameworks into 12-factor extensions
 
-6d. **Path C (Infrastructure): Should the agent check Charmhub first?**
-    - "Charm MariaDB" → "There's already a mariadb charm, want to use that instead?"
-    - Or assume user wants a new/different charm?
+6d. ~~**Path C (Infrastructure): Should the agent check Charmhub first?**~~
+    **DECIDED:** Yes, check first and suggest existing.
+    - Agent searches Charmhub before building infrastructure charms
+    - "There's already a `mariadb-k8s` charm maintained by Canonical. Want to use that instead?"
+    - Only build new if user has specific reasons
+    - Rationale: Infrastructure charms have battle-tested operational logic; reinventing is wasteful
 
-6e. **Path C: How much infra knowledge should be baked in vs. researched?**
-    - Common patterns (primary/replica, clustering) as templates?
-    - Or agent researches each time?
+6e. ~~**Path C: How much infra knowledge should be baked in vs. researched?**~~
+    **DECIDED:** Hybrid approach.
+    - Bake in high-level patterns (databases need replication/backups, caches need clustering, etc.)
+    - Research specifics for each software (how does PostgreSQL streaming replication work?)
+    - Also study existing Charmhub charms when available (per 6d) before building alternatives
 
 ## Integrations
 6. ~~Which integrations should be "automatic" or strongly suggested?~~
@@ -131,3 +143,13 @@
 
 20. ~~Are there existing charm templates or patterns you'd want baked in?~~
     **PARTIALLY ANSWERED:** `charmcraft init` provides scaffolding. Additional patterns via knowledge sources above.
+
+## Knowledge Architecture
+
+21. ~~How should domain knowledge be structured in the agent?~~
+    **DECIDED:** Use [Agent Skills](https://agentskills.io/home) pattern.
+    - Lightweight skills index always loaded (name + brief description)
+    - Full skill document loaded on demand when needed
+    - Keeps context window lean
+    - Skills are shareable with other agent systems (interoperability)
+    - Example skills: `scenario-tests`, `jubilant-tests`, `relation-data-design`, `observability`, `ingress`, `adding-actions`, `spread-tests`, `rockcraft`

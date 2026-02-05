@@ -4,10 +4,36 @@
 
 - **Language:** UK English for all docs, variable names, comments, UI text
   - colour not color
-  - behaviour not behaviour
+  - behaviour not behavior
   - organisation not organization
-  - analyse not analyse
+  - analyse not analyze
   - etc.
+
+### Code Style
+
+**Comments:**
+- Comments explain *why*, not *how*
+- If you need a *how* comment, the code is probably too complex - refactor instead
+- Comments are rare; docstrings are essential
+- Comments are full sentences ending with punctuation.
+
+**Imports:**
+- Imports always at top of module - no lazy imports
+- No conditional imports (we control dependencies)
+- Import modules, not classes/methods/variables: `import datetime` not `from datetime import datetime`
+- Exception: importing only for type annotations is fine
+
+**Type annotations:**
+- Modern style: `str | None` not `Optional[str]`
+- Use `from __future__ import annotations` for forward references
+
+**Error handling:**
+- Never catch bare `Exception` - be specific
+- Minimise code inside try/except blocks
+
+**Data structures:**
+- Prefer `dataclasses` from stdlib
+- Avoid Pydantic
 
 ## Project Overview
 
@@ -773,6 +799,39 @@ LLM context windows are finite. Strategy:
 
 ### Domain Expert
 User works on the Charm Tech team at Canonical - responsible for docs and tools. Will provide guidance throughout development.
+
+## Skills Architecture
+
+Use the [Agent Skills](https://agentskills.io/home) pattern for modular, lazy-loaded knowledge.
+
+### Design Principles
+
+1. **Lightweight index always loaded** - Agent knows what skills exist (name + brief description) without loading full content
+2. **Full skill loaded on demand** - Only fetch complete skill document when actually needed
+3. **Interoperability** - Skills can be shared with other agent systems; we can use external skills, others can use ours
+
+### Example Skills
+
+| Skill | Description |
+|-------|-------------|
+| `relation-data-design` | How to design and implement relation data bags |
+| `scenario-tests` | Writing unit tests with ops.testing (Scenario) |
+| `jubilant-tests` | Writing integration tests with Jubilant |
+| `spread-tests` | Writing spread tests for multi-substrate testing |
+| `observability` | Adding COS integration, ops-tracing, metrics |
+| `ingress` | Configuring ingress with Traefik |
+| `adding-actions` | Implementing charm actions properly |
+| `adding-config` | Config options with validation |
+| `machine-charms` | Machine charm specific patterns |
+| `k8s-charms` | Kubernetes charm specific patterns |
+| `rockcraft` | Building OCI images with Rockcraft |
+
+### Benefits
+
+- **Context efficiency** - Don't bloat system prompt with everything
+- **Easy updates** - Update a skill without touching agent core
+- **Shareable** - Other teams/agents can use our charm skills
+- **Extensible** - Add new skills as patterns emerge
 
 ### Could Have
 - [ ] Multiple LLM providers

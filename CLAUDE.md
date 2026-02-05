@@ -30,6 +30,29 @@ uv run pytest tests/unit/test_tools.py::test_function_name -v
 - Line length: 99 characters
 - Python 3.11+
 
+### Code Style (Critical)
+
+**Comments & docstrings:**
+- Comments explain *why*, not *how* - if *how* is needed, refactor the code
+- Comments are rare; docstrings are essential
+- Comments are full sentences ending with punctuation.
+
+**Imports:**
+- Always at top of module - no lazy imports, no conditional imports
+- Import modules, not classes/methods/variables: `import datetime` not `from datetime import datetime`
+- Exception: importing only for type annotations is acceptable
+
+**Types:**
+- Modern style: `str | None` not `Optional[str]`
+
+**Error handling:**
+- Never catch bare `Exception` - always be specific
+- Minimise code inside try/except blocks
+
+**Data structures:**
+- Use `dataclasses` from stdlib
+- Do NOT use Pydantic
+
 ## Architecture
 
 ```

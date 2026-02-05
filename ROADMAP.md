@@ -21,6 +21,20 @@
 - [ ] Status parsing (JSON format)
 - [ ] Model management basics
 
+### 0.4 Skills Infrastructure
+- [ ] Skills loader (lazy-load from agentskills.io format)
+- [ ] Skills index (lightweight list of available skills + descriptions)
+- [ ] Core charm skills:
+  - [ ] `scenario-tests` - Writing unit tests with ops.testing
+  - [ ] `jubilant-tests` - Writing integration tests with Jubilant
+  - [ ] `relation-data-design` - Relation data bag patterns
+  - [ ] `observability` - COS integration, ops-tracing
+  - [ ] `ingress` - Traefik ingress configuration
+  - [ ] `adding-actions` - Implementing charm actions
+  - [ ] `adding-config` - Config options with validation
+- [ ] System prompt includes skill index (names + one-line descriptions)
+- [ ] Full skill content loaded only when agent needs it
+
 **Exit criteria:** Can have a conversation with Gemini that calls Jubilant to show juju status.
 
 ---
@@ -36,7 +50,14 @@
 - [ ] Cross-model relation setup
 
 ### 1.2 12-Factor Path (Path A)
+- [ ] **Fetch and summarise 12-factor tutorials** (prerequisite)
+  - Rockcraft tutorials: Flask, Django, FastAPI, Go, Express, Spring Boot
+    (https://documentation.ubuntu.com/rockcraft/stable/tutorial/)
+  - Charmcraft tutorials: same 6 frameworks
+    (https://documentation.ubuntu.com/charmcraft/stable/tutorial/)
+  - Extract common workflow pattern into knowledge file for agent
 - [ ] Framework detection (Flask, Django, Go, etc.)
+  - Run `charmcraft list-extensions` to get current supported list
 - [ ] paas-charm base integration
 - [ ] rockcraft.yaml generation
 - [ ] Rock building
@@ -170,7 +191,7 @@
 
 | Item | Blocked By | Notes |
 |------|------------|-------|
-| 12-factor path | paas-charm docs | Need workflow details |
+| 12-factor path | Tutorial summarisation | Fetch & summarise 12 tutorials from rockcraft/charmcraft docs |
 | Observability | COS deployment working | Need COS-lite reliable |
 | Testing | Scenario/Jubilant docs | Need links |
 | Libraries | PyPI migration list | Which libs are on PyPI |
