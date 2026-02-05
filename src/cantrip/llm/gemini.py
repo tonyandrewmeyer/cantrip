@@ -2,9 +2,14 @@
 
 import json
 import os
+import warnings
 from collections.abc import AsyncIterator
 
-import google.generativeai as genai
+# The google-generativeai package is deprecated; suppress the FutureWarning
+# until we migrate to google-genai (see ROADMAP.md Phase 1.0).
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", FutureWarning)
+    import google.generativeai as genai
 
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role, Tool, ToolCall
 
