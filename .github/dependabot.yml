@@ -1,0 +1,44 @@
+# Dependabot configuration
+# Note: Dependabot doesn't have a built-in delay feature like Renovate's
+# minimumReleaseAge. Security updates are always processed immediately.
+# For non-security updates, we use weekly schedule and grouping to reduce noise.
+# Consider auto-merge rules with delay in branch protection for additional control.
+
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      # Group all minor and patch updates
+      python-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"
