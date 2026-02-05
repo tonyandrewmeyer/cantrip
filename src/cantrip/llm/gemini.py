@@ -8,6 +8,43 @@ import google.generativeai as genai
 
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role, Tool, ToolCall
 
+# Map JSON Schema type strings to Gemini protobuf Type enum values.
+_TYPE_MAP = {
+    "string": genai.protos.Type.STRING,
+    "number": genai.protos.Type.NUMBER,
+    "integer": genai.protos.Type.INTEGER,
+    "boolean": genai.protos.Type.BOOLEAN,
+    "array": genai.protos.Type.ARRAY,
+    "object": genai.protos.Type.OBJECT,
+}
+
+
+def _json_schema_to_gemini(schema: dict) -> genai.protos.Schema:
+    """Convert a JSON Schema dict to a Gemini protobuf Schema."""
+    kwargs: dict = {}
+
+    if "type" in schema:
+        kwargs["type"] = _TYPE_MAP.get(schema["type"], genai.protos.Type.TYPE_UNSPECIFIED)
+
+    if "description" in schema:
+        kwargs["description"] = schema["description"]
+
+    if "enum" in schema:
+        kwargs["enum"] = schema["enum"]
+
+    if "properties" in schema:
+        kwargs["properties"] = {
+            name: _json_schema_to_gemini(prop) for name, prop in schema["properties"].items()
+        }
+
+    if "required" in schema:
+        kwargs["required"] = schema["required"]
+
+    if "items" in schema:
+        kwargs["items"] = _json_schema_to_gemini(schema["items"])
+
+    return genai.protos.Schema(**kwargs)
+
 
 class GeminiProvider(LLMProvider):
     """Google Gemini implementation."""
@@ -97,7 +134,7 @@ class GeminiProvider(LLMProvider):
                 genai.protos.FunctionDeclaration(
                     name=tool.name,
                     description=tool.description,
-                    parameters=tool.parameters,
+                    parameters=_json_schema_to_gemini(tool.parameters),
                 )
             )
         return [genai.protos.Tool(function_declarations=declarations)]

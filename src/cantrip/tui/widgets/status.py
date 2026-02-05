@@ -172,7 +172,11 @@ class JujuStatusWidget(Widget):
 
     def _refresh_display(self) -> None:
         """Refresh the status display."""
-        container = self.query_one("#status-container", Vertical)
+        results = self.query("#status-container")
+        if not results:
+            # Watcher fired before compose() has run.
+            return
+        container = results.first(Vertical)
         container.remove_children()
 
         if not self.status:
