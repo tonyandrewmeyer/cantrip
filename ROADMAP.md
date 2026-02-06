@@ -51,6 +51,7 @@
 ### 1.0 Housekeeping
 - [x] Migrate from `google-generativeai` to `google-genai` (the old package is deprecated and emits a FutureWarning)
 - [ ] Remove `simple` profile from `charmcraft_init` tool — it no longer exists; the default is `kubernetes`
+- [ ] Remove conditional Jubilant import guard in juju tools — Jubilant is a hard dependency, not optional. Replace with a proper "is Juju bootstrapped" check (and bootstrap in the background via Concierge if not)
 
 ### 1.1 Environment Setup
 - [ ] Concierge integration
@@ -111,10 +112,10 @@
 - [ ] Test results in TUI
 
 ### 2.4 Persistence
-- [ ] .cantrip/ folder structure
-- [ ] Session save/restore
+- [x] .cantrip SQLite database (session, decisions, token usage)
+- [x] Session save/restore
 - [ ] Context summarisation for long sessions
-- [ ] Decision tracking
+- [x] Decision tracking
 
 **Exit criteria:** Agent can debug a failing charm by looking at traces, fix the issue, and run tests.
 
