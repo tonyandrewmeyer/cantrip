@@ -1,6 +1,6 @@
-"""Tests for Juju status parsing."""
+"""Tests for Juju status parsing via Jubilant types."""
 
-from cantrip.juju.status import parse_status_json
+from jubilant import statustypes
 
 
 def test_parse_empty_status():
@@ -8,19 +8,23 @@ def test_parse_empty_status():
     data = {
         "model": {
             "name": "test-model",
+            "type": "iaas",
             "cloud": "localhost",
-            "region": None,
+            "region": "",
+            "version": "3.1.0",
             "controller": "test-controller",
+            "model-status": {"current": "available"},
         },
+        "machines": {},
         "applications": {},
     }
 
-    status = parse_status_json(data)
+    status = statustypes.Status._from_dict(data)
 
-    assert status.name == "test-model"
-    assert status.cloud == "localhost"
-    assert status.controller == "test-controller"
-    assert status.apps == []
+    assert status.model.name == "test-model"
+    assert status.model.cloud == "localhost"
+    assert status.model.controller == "test-controller"
+    assert status.apps == {}
 
 
 def test_parse_status_with_app():
@@ -28,13 +32,21 @@ def test_parse_status_with_app():
     data = {
         "model": {
             "name": "dev",
+            "type": "iaas",
             "cloud": "localhost",
-            "region": None,
+            "region": "",
+            "version": "3.1.0",
             "controller": "lxd",
+            "model-status": {"current": "available"},
         },
+        "machines": {},
         "applications": {
             "flask-app": {
                 "charm": "flask-app",
+                "charm-origin": "local",
+                "charm-name": "flask-app",
+                "charm-rev": 1,
+                "exposed": False,
                 "application-status": {
                     "current": "active",
                     "message": "Ready",
@@ -53,27 +65,31 @@ def test_parse_status_with_app():
                     }
                 },
                 "relations": {
-                    "database": ["postgresql"],
+                    "database": [
+                        {
+                            "related-application": "postgresql",
+                            "interface": "pgsql",
+                            "scope": "global",
+                        }
+                    ],
                 },
             }
         },
     }
 
-    status = parse_status_json(data)
+    status = statustypes.Status._from_dict(data)
 
-    assert status.name == "dev"
+    assert status.model.name == "dev"
     assert len(status.apps) == 1
 
-    app = status.apps[0]
-    assert app.name == "flask-app"
-    assert app.status == "active"
+    app = status.apps["flask-app"]
+    assert app.app_status.current == "active"
     assert len(app.units) == 1
 
-    unit = app.units[0]
-    assert unit.name == "flask-app/0"
-    assert unit.workload_status == "active"
+    unit = app.units["flask-app/0"]
+    assert unit.workload_status.current == "active"
     assert unit.address == "10.0.0.5"
-    assert "8000/tcp" in unit.ports
+    assert "8000/tcp" in unit.open_ports
 
     assert "database" in app.relations
-    assert "postgresql" in app.relations["database"]
+    assert app.relations["database"][0].related_app == "postgresql"

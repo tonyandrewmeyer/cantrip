@@ -54,13 +54,11 @@ class JujuStatusTool(Tool):
             output_lines = [f"Model: {status.model.name}"]
 
             for app_name, app in status.apps.items():
-                status_str = app.status.current if app.status else "unknown"
+                status_str = app.app_status.current or "unknown"
                 output_lines.append(f"\nApp: {app_name} ({status_str})")
 
                 for unit_name, unit in app.units.items():
-                    unit_status = (
-                        unit.workload_status.current if unit.workload_status else "unknown"
-                    )
+                    unit_status = unit.workload_status.current or "unknown"
                     output_lines.append(f"  - {unit_name}: {unit_status}")
 
             return ToolResult(

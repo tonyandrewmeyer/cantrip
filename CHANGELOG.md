@@ -17,6 +17,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Jinja prompt templating** — system prompt is now a Markdown Jinja template (`system.md.j2`) instead of a Python string
 - **Charmcraft init** — removed defunct `simple` profile; default is now `kubernetes`
 - **Juju tools** — Jubilant is now imported directly (hard dependency); tools check for the `juju` CLI instead
+- **Jubilant status types** — replaced hand-rolled `juju/status.py` dataclasses with `jubilant.statustypes`; TUI and tools now use upstream types directly
 - Migrated Gemini provider from deprecated `google-generativeai` to `google-genai` SDK
 
 ## 0.0.1 — Phase 0
