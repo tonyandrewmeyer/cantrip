@@ -18,7 +18,7 @@
 
 ### 0.3 Juju Integration
 - [ ] Jubilant wrapper for common operations
-- [ ] Status parsing (JSON format)
+- [ ] Replace hand-rolled status dataclasses (`src/cantrip/juju/status.py`) with Jubilant's own status types
 - [ ] Model management basics
 
 ### 0.4 Skills Infrastructure
