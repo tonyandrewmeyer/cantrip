@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from cantrip.agent.prompts import build_system_prompt
+from cantrip.agent.prompts import build_system_prompt, claude_md
 from cantrip.agent.state import AgentState, Decision
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import (
@@ -77,6 +77,17 @@ class CantripAgent:
 
         self._store = SessionStore(db_path)
         self._store.open()
+        self._ensure_claude_md(charm_path)
+
+    def _ensure_claude_md(self, charm_path: Path) -> None:
+        """Write a CLAUDE.md into the charm directory if one does not exist."""
+        target = charm_path / "CLAUDE.md"
+        if target.exists():
+            return
+        charm_name = self.state.charm_name or charm_path.name
+        content = claude_md.render_claude_md(charm_name, charm_type=self.state.charm_type)
+        target.write_text(content)
+        log.info("Wrote CLAUDE.md to %s", charm_path)
 
     def _record_usage(self, response: Response) -> None:
         """Record token usage from a provider response if a store is active."""
