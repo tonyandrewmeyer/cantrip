@@ -50,6 +50,7 @@
 
 ### 1.0 Housekeeping
 - [x] Migrate from `google-generativeai` to `google-genai` (the old package is deprecated and emits a FutureWarning)
+- [ ] Remove `simple` profile from `charmcraft_init` tool — it no longer exists; the default is `kubernetes`
 
 ### 1.1 Environment Setup
 - [ ] Concierge integration
