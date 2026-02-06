@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from cantrip.agent.prompts import build_system_prompt, claude_md
+from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import (
@@ -21,6 +22,7 @@ from cantrip.agent.tools import (
     JujuSSHTool,
     JujuStatusTool,
     ListDirectoryTool,
+    LoadSkillTool,
     ReadFileTool,
     Tool,
     ToolResult,
@@ -51,6 +53,8 @@ class CantripAgent:
         """Initialise the agent."""
         self.provider = provider
         self.state = AgentState(charm_path=charm_path)
+        self._skills_index = SkillsIndex()
+        self._skills_index.discover()
         self._tools = self._build_tools()
         self._tool_map = {tool.name: tool for tool in self._tools}
         self._store: SessionStore | None = None
@@ -116,6 +120,8 @@ class CantripAgent:
             AnalyseFrameworkTool(),
             # Web
             WebFetchTool(),
+            # Skills
+            LoadSkillTool(self._skills_index),
             # Juju operations
             JujuStatusTool(),
             JujuDeployTool(),
@@ -135,6 +141,7 @@ class CantripAgent:
             dev_model=self.state.dev_model,
             cos_model=self.state.cos_model,
             recent_decisions=[d.to_dict() for d in self.state.decisions],
+            skills_index=self._skills_index.format_for_prompt(),
         )
 
     def _tools_for_llm(self) -> list[LLMTool]:

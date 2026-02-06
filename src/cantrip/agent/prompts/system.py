@@ -21,6 +21,7 @@ SYSTEM_PROMPT = _SYSTEM_TEMPLATE.render(
     dev_model=None,
     cos_model=None,
     recent_decisions=None,
+    skills_index=None,
 )
 
 
@@ -32,6 +33,7 @@ def build_system_prompt(
     dev_model: str | None = None,
     cos_model: str | None = None,
     recent_decisions: list[dict] | None = None,
+    skills_index: str | None = None,
 ) -> str:
     """Build the full system prompt with current context.
 
@@ -43,6 +45,7 @@ def build_system_prompt(
         dev_model: Name of the development Juju model.
         cos_model: Name of the COS Juju model.
         recent_decisions: List of recent decisions made.
+        skills_index: Pre-rendered XML listing available skills.
 
     Returns:
         Complete system prompt with context.
@@ -55,4 +58,5 @@ def build_system_prompt(
         dev_model=dev_model,
         cos_model=cos_model,
         recent_decisions=recent_decisions,
+        skills_index=skills_index,
     )

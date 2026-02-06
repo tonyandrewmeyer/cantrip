@@ -104,6 +104,14 @@ You should:
 - You handle implementation (how to make Juju do that)
 - Get something running fast, then improve
 - Show off the Canonical ecosystem
+{% if skills_index %}
+
+## Available Skills
+
+Use the `load_skill` tool to load full instructions when you need detailed guidance on any of these topics.
+
+{{ skills_index }}
+{% endif %}
 {% if charm_name or charm_path or dev_model %}
 
 ## Current Context

@@ -22,18 +22,18 @@
 - [ ] Model management basics
 
 ### 0.4 Skills Infrastructure
-- [ ] Skills loader (lazy-load from agentskills.io format)
-- [ ] Skills index (lightweight list of available skills + descriptions)
-- [ ] Core charm skills:
-  - [ ] `scenario-tests` - Writing unit tests with ops.testing
-  - [ ] `jubilant-tests` - Writing integration tests with Jubilant
-  - [ ] `relation-data-design` - Relation data bag patterns
-  - [ ] `observability` - COS integration, ops-tracing
-  - [ ] `ingress` - Traefik ingress configuration
-  - [ ] `adding-actions` - Implementing charm actions
-  - [ ] `adding-config` - Config options with validation
-- [ ] System prompt includes skill index (names + one-line descriptions)
-- [ ] Full skill content loaded only when agent needs it
+- [x] Skills loader (lazy-load from agentskills.io format)
+- [x] Skills index (lightweight list of available skills + descriptions)
+- [x] Core charm skills:
+  - [x] `scenario-tests` - Writing unit tests with ops.testing
+  - [x] `jubilant-tests` - Writing integration tests with Jubilant
+  - [x] `relation-data-design` - Relation data bag patterns
+  - [x] `observability` - COS integration, ops-tracing
+  - [x] `ingress` - Traefik ingress configuration
+  - [x] `adding-actions` - Implementing charm actions
+  - [x] `adding-config` - Config options with validation
+- [x] System prompt includes skill index (names + one-line descriptions)
+- [x] Full skill content loaded only when agent needs it
 
 ### 0.5 Prompt Templating
 - [x] Move system prompt out of Python string (`system.py`) into a Markdown Jinja template
