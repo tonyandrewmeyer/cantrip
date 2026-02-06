@@ -29,6 +29,11 @@ from cantrip.agent.tools.juju import (
     JujuSSHTool,
     JujuStatusTool,
 )
+from cantrip.agent.tools.rockcraft import (
+    RockcraftInitTool,
+    RockcraftPackTool,
+    SkopeoRegistryPushTool,
+)
 from cantrip.agent.tools.skills import LoadSkillTool
 from cantrip.agent.tools.web import WebFetchTool
 
@@ -50,6 +55,10 @@ __all__ = [
     # Environment
     "ConciergePrepareTool",
     "ConciergeStatusTool",
+    # Rockcraft
+    "RockcraftInitTool",
+    "RockcraftPackTool",
+    "SkopeoRegistryPushTool",
     # Juju
     "JujuStatusTool",
     "JujuDeployTool",

@@ -60,18 +60,17 @@
 - [x] Cross-model relation setup
 
 ### 1.2 12-Factor Path (Path A)
-- [ ] **Fetch and summarise 12-factor tutorials** (prerequisite)
+- [x] **Fetch and summarise 12-factor tutorials** (prerequisite)
   - Rockcraft tutorials: Flask, Django, FastAPI, Go, Express, Spring Boot
     (https://documentation.ubuntu.com/rockcraft/stable/tutorial/)
   - Charmcraft tutorials: same 6 frameworks
     (https://documentation.ubuntu.com/charmcraft/stable/tutorial/)
   - Extract common workflow pattern into knowledge file for agent
-- [ ] Framework detection (Flask, Django, Go, etc.)
-  - Run `charmcraft list-extensions` to get current supported list
-- [ ] paas-charm base integration
-- [ ] rockcraft.yaml generation
-- [ ] Rock building
-- [ ] Deploy and verify active/running
+- [x] Framework detection (Flask, Django, Go, Express, Spring Boot, FastAPI)
+- [x] paas-charm base integration
+- [x] rockcraft.yaml generation
+- [x] Rock building
+- [x] Deploy and verify active/running
 
 ### 1.3 Basic TUI
 - [x] Textual app shell

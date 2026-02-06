@@ -30,6 +30,9 @@ from cantrip.agent.tools import (
     ListDirectoryTool,
     LoadSkillTool,
     ReadFileTool,
+    RockcraftInitTool,
+    RockcraftPackTool,
+    SkopeoRegistryPushTool,
     Tool,
     ToolResult,
     WebFetchTool,
@@ -128,6 +131,10 @@ class CantripAgent:
             WebFetchTool(),
             # Skills
             LoadSkillTool(self._skills_index),
+            # Rockcraft operations
+            RockcraftInitTool(),
+            RockcraftPackTool(),
+            SkopeoRegistryPushTool(),
             # Environment
             ConciergePrepareTool(),
             ConciergeStatusTool(),
