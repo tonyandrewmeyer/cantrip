@@ -38,8 +38,20 @@ class CharmcraftInitTool(Tool):
                 },
                 "profile": {
                     "type": "string",
-                    "description": "Charm profile: 'machine' or 'kubernetes'",
-                    "enum": ["machine", "kubernetes"],
+                    "description": (
+                        "Charm profile. Use 'machine' or 'kubernetes' for custom charms, "
+                        "or a framework profile for 12-factor apps."
+                    ),
+                    "enum": [
+                        "machine",
+                        "kubernetes",
+                        "flask-framework",
+                        "django-framework",
+                        "fastapi-framework",
+                        "go-framework",
+                        "express-framework",
+                        "spring-boot-framework",
+                    ],
                     "default": "kubernetes",
                 },
             },
