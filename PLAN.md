@@ -771,9 +771,28 @@ When user runs `cantrip` in a charm directory:
 
 ### Context Management
 
-LLM context windows are finite. Strategy:
-- Summarise older conversation turns
-- Keep recent turns verbatim
+LLM context windows are finite. Strongly considering the "virtual files" compaction algorithm
+from [Will Larson's write-up](https://lethain.com/agents-context-compaction/):
+
+1. **Token budget tracking** — after every user message (including tool responses), inject a
+   system message showing consumed vs available tokens and the current list of "virtual files".
+
+2. **Large-message virtualisation** — any user message or tool response over 10,000 tokens is
+   stored as a virtual file; only the first 1,000 tokens are kept inline. The agent uses file
+   manipulation tools to read the rest on demand.
+
+3. **Base tools** — a set of always-available internal tools, including virtual file read/search,
+   so that every agent can operate with mostly-invisible internal tooling.
+
+4. **Compaction at 80 %** — when a message pushes the context past 80 % of the model's window
+   (configurable), run a compaction prompt (the one Reddit attributes to Claude Code is a
+   reasonable starting point). After compacting, save the prior context window as a virtual file
+   so the agent can retrieve lost detail.
+
+5. **`file_regex` tool** — let the agent run regex searches against files, including the saved
+   prior-context virtual file, to recover specific information after compaction.
+
+Additional principles (retained from earlier design):
 - Track key decisions separately (always in context)
 - Background agents get focused context (just what they need)
 

@@ -114,7 +114,12 @@
 ### 2.4 Persistence
 - [x] .cantrip SQLite database (session, decisions, token usage)
 - [x] Session save/restore
-- [ ] Context summarisation for long sessions
+- [ ] Context compaction ([virtual files algorithm](https://lethain.com/agents-context-compaction/))
+  - [ ] Token budget tracking (system message after each turn)
+  - [ ] Large-message virtualisation (>10k tokens → virtual file, inline first 1k)
+  - [ ] Base tools: virtual file read/search, `file_regex`
+  - [ ] Compaction at configurable threshold (default 80 % of context window)
+  - [ ] Prior context saved as virtual file after compaction
 - [x] Decision tracking
 
 **Exit criteria:** Agent can debug a failing charm by looking at traces, fix the issue, and run tests.
