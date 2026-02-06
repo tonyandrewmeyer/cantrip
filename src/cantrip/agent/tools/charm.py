@@ -273,8 +273,10 @@ class AnalyseFrameworkTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Analyse a codebase to detect its framework (Flask, Django, FastAPI, Go, etc.) "
-            "and gather information for charm creation."
+            "Analyse a codebase to detect its framework "
+            "(Flask, Django, FastAPI, Go, Express, Spring Boot, etc.) "
+            "and gather information for charm creation. Returns a profile name "
+            "suitable for charmcraft_init and rockcraft_init."
         )
 
     @property
@@ -290,6 +292,19 @@ class AnalyseFrameworkTool(Tool):
             "required": ["path"],
         }
 
+    # Maps framework name to its charmcraft/rockcraft profile.
+    _PROFILE_MAP: dict[str, str] = {
+        "flask": "flask-framework",
+        "django": "django-framework",
+        "fastapi": "fastapi-framework",
+        "go": "go-framework",
+        "express": "express-framework",
+        "spring-boot": "spring-boot-framework",
+    }
+
+    # Frameworks requiring ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS.
+    _EXPERIMENTAL_FRAMEWORKS: frozenset[str] = frozenset({"go", "fastapi", "express"})
+
     async def execute(self, path: str) -> ToolResult:
         """Analyse the codebase."""
         try:
@@ -301,14 +316,21 @@ class AnalyseFrameworkTool(Tool):
                     error=f"Path not found: {path}",
                 )
 
-            findings = {
+            findings: dict[str, Any] = {
                 "framework": None,
                 "language": None,
+                "profile": None,
+                "needs_experimental": False,
                 "files_found": [],
                 "suggestions": [],
             }
 
-            # Check for Python frameworks
+            paas_hint = (
+                "Use 12-factor paas-charm base. "
+                "Load the 'twelve-factor' skill for step-by-step instructions."
+            )
+
+            # Check for Python frameworks.
             requirements = app_path / "requirements.txt"
             pyproject = app_path / "pyproject.toml"
             setup_py = app_path / "setup.py"
@@ -327,41 +349,73 @@ class AnalyseFrameworkTool(Tool):
                 findings["language"] = "python"
                 if "flask" in python_deps:
                     findings["framework"] = "flask"
-                    findings["suggestions"].append("Use 12-factor paas-charm base")
+                    findings["suggestions"].append(paas_hint)
                 elif "django" in python_deps:
                     findings["framework"] = "django"
-                    findings["suggestions"].append("Use 12-factor paas-charm base")
+                    findings["suggestions"].append(paas_hint)
                 elif "fastapi" in python_deps:
                     findings["framework"] = "fastapi"
-                    findings["suggestions"].append("Use 12-factor paas-charm base")
+                    findings["suggestions"].append(paas_hint)
 
-            # Check for Go
+            # Check for Go.
             go_mod = app_path / "go.mod"
             if go_mod.exists():
                 findings["files_found"].append("go.mod")
                 findings["language"] = "go"
                 findings["framework"] = "go"
-                findings["suggestions"].append("Use 12-factor paas-charm base")
+                findings["suggestions"].append(paas_hint)
 
-            # Check for Node.js
+            # Check for Node.js / Express.
             package_json = app_path / "package.json"
             if package_json.exists():
                 findings["files_found"].append("package.json")
                 findings["language"] = "javascript"
-                # Could check for express, next, etc.
+                pkg_content = package_json.read_text().lower()
+                if "express" in pkg_content:
+                    findings["framework"] = "express"
+                    findings["suggestions"].append(paas_hint)
 
-            # Check for existing charm structure
+            # Check for Spring Boot (Maven or Gradle).
+            pom_xml = app_path / "pom.xml"
+            build_gradle = app_path / "build.gradle"
+            build_gradle_kts = app_path / "build.gradle.kts"
+
+            for java_file in (pom_xml, build_gradle, build_gradle_kts):
+                if java_file.exists():
+                    findings["files_found"].append(java_file.name)
+                    java_content = java_file.read_text().lower()
+                    if (
+                        "spring-boot" in java_content
+                        or "spring.boot" in java_content
+                        or "springframework" in java_content
+                    ):
+                        findings["language"] = "java"
+                        findings["framework"] = "spring-boot"
+                        findings["suggestions"].append(paas_hint)
+                        break
+
+            # Map framework to profile.
+            framework = findings["framework"]
+            if framework and framework in self._PROFILE_MAP:
+                findings["profile"] = self._PROFILE_MAP[framework]
+                findings["needs_experimental"] = framework in self._EXPERIMENTAL_FRAMEWORKS
+
+            # Check for existing charm structure.
             charmcraft_yaml = app_path / "charmcraft.yaml"
             if charmcraft_yaml.exists():
                 findings["files_found"].append("charmcraft.yaml")
                 findings["suggestions"].append("Existing charm found - will modify")
 
-            # Build output
+            # Build output.
             output_lines = []
             if findings["language"]:
                 output_lines.append(f"Language: {findings['language']}")
             if findings["framework"]:
                 output_lines.append(f"Framework: {findings['framework']}")
+            if findings["profile"]:
+                output_lines.append(f"Profile: {findings['profile']}")
+            if findings["needs_experimental"]:
+                output_lines.append("Note: requires ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS")
             if findings["files_found"]:
                 output_lines.append(f"Files found: {', '.join(findings['files_found'])}")
             if findings["suggestions"]:
