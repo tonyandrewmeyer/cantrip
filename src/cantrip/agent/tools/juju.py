@@ -420,3 +420,245 @@ class JujuRunActionTool(Tool):
                 output="",
                 error=str(e),
             )
+
+
+class JujuAddModelTool(Tool):
+    """Tool to create a new Juju model."""
+
+    @property
+    def name(self) -> str:
+        return "juju_add_model"
+
+    @property
+    def description(self) -> str:
+        return "Create a new Juju model. Use this for dev models or a dedicated COS model."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string",
+                    "description": "Name for the new model",
+                },
+            },
+            "required": ["model"],
+        }
+
+    async def execute(self, model: str) -> ToolResult:
+        """Create a Juju model."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju()
+            juju.add_model(model)
+
+            return ToolResult(
+                success=True,
+                output=f"Model '{model}' created.",
+                data={"model": model},
+            )
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
+
+
+class JujuDestroyModelTool(Tool):
+    """Tool to destroy a Juju model."""
+
+    @property
+    def name(self) -> str:
+        return "juju_destroy_model"
+
+    @property
+    def description(self) -> str:
+        return "Destroy a Juju model and all its applications. Use with caution."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string",
+                    "description": "Name of the model to destroy",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Force destruction, ignoring errors",
+                    "default": False,
+                },
+            },
+            "required": ["model"],
+        }
+
+    async def execute(self, model: str, force: bool = False) -> ToolResult:
+        """Destroy a Juju model."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju()
+            juju.destroy_model(model, force=force, destroy_storage=True, no_wait=force)
+
+            return ToolResult(
+                success=True,
+                output=f"Model '{model}' destruction initiated.",
+                data={"model": model, "force": force},
+            )
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
+
+
+class JujuOfferTool(Tool):
+    """Tool to create a cross-model offer."""
+
+    @property
+    def name(self) -> str:
+        return "juju_offer"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create a cross-model offer for an application endpoint. "
+            "This makes the endpoint available for consumption from other models."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "app": {
+                    "type": "string",
+                    "description": "Application name to create the offer for",
+                },
+                "endpoint": {
+                    "type": "string",
+                    "description": "Endpoint name to offer (e.g. 'grafana-dashboard')",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model where the application lives (uses current if not set)",
+                },
+            },
+            "required": ["app", "endpoint"],
+        }
+
+    async def execute(
+        self,
+        app: str,
+        endpoint: str,
+        model: str | None = None,
+    ) -> ToolResult:
+        """Create a cross-model offer."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+            juju.offer(app, endpoint=endpoint)
+
+            return ToolResult(
+                success=True,
+                output=f"Offer created: {app}:{endpoint}",
+                data={"app": app, "endpoint": endpoint, "model": model},
+            )
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
+
+
+class JujuConsumeTool(Tool):
+    """Tool to consume a cross-model offer."""
+
+    @property
+    def name(self) -> str:
+        return "juju_consume"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Consume a cross-model offer in the current model. "
+            "After consuming, use juju_relate to integrate with local applications."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "model_and_app": {
+                    "type": "string",
+                    "description": "Remote offer in 'model.app' format (e.g. 'cos.grafana')",
+                },
+                "alias": {
+                    "type": "string",
+                    "description": "Local alias for the consumed offer",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model to consume the offer into (uses current if not set)",
+                },
+            },
+            "required": ["model_and_app"],
+        }
+
+    async def execute(
+        self,
+        model_and_app: str,
+        alias: str | None = None,
+        model: str | None = None,
+    ) -> ToolResult:
+        """Consume a cross-model offer."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+            juju.consume(model_and_app, alias)
+
+            label = alias or model_and_app.split(".")[-1]
+            return ToolResult(
+                success=True,
+                output=f"Consumed offer '{model_and_app}' as '{label}'.",
+                data={
+                    "model_and_app": model_and_app,
+                    "alias": alias,
+                    "model": model,
+                },
+            )
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )

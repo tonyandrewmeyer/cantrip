@@ -7,6 +7,10 @@ from cantrip.agent.tools.charm import (
     CharmcraftInitTool,
     CharmcraftPackTool,
 )
+from cantrip.agent.tools.environment import (
+    ConciergePrepareTool,
+    ConciergeStatusTool,
+)
 from cantrip.agent.tools.files import (
     EditFileTool,
     ListDirectoryTool,
@@ -14,7 +18,11 @@ from cantrip.agent.tools.files import (
     WriteFileTool,
 )
 from cantrip.agent.tools.juju import (
+    JujuAddModelTool,
+    JujuConsumeTool,
     JujuDeployTool,
+    JujuDestroyModelTool,
+    JujuOfferTool,
     JujuRefreshTool,
     JujuRelateTool,
     JujuRunActionTool,
@@ -39,6 +47,9 @@ __all__ = [
     "CharmcraftPackTool",
     "CharmcraftFetchLibsTool",
     "AnalyseFrameworkTool",
+    # Environment
+    "ConciergePrepareTool",
+    "ConciergeStatusTool",
     # Juju
     "JujuStatusTool",
     "JujuDeployTool",
@@ -46,6 +57,10 @@ __all__ = [
     "JujuRelateTool",
     "JujuSSHTool",
     "JujuRunActionTool",
+    "JujuAddModelTool",
+    "JujuDestroyModelTool",
+    "JujuOfferTool",
+    "JujuConsumeTool",
     # Skills
     "LoadSkillTool",
     # Web

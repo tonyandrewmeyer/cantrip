@@ -14,8 +14,14 @@ from cantrip.agent.tools import (
     CharmcraftFetchLibsTool,
     CharmcraftInitTool,
     CharmcraftPackTool,
+    ConciergePrepareTool,
+    ConciergeStatusTool,
     EditFileTool,
+    JujuAddModelTool,
+    JujuConsumeTool,
     JujuDeployTool,
+    JujuDestroyModelTool,
+    JujuOfferTool,
     JujuRefreshTool,
     JujuRelateTool,
     JujuRunActionTool,
@@ -122,6 +128,9 @@ class CantripAgent:
             WebFetchTool(),
             # Skills
             LoadSkillTool(self._skills_index),
+            # Environment
+            ConciergePrepareTool(),
+            ConciergeStatusTool(),
             # Juju operations
             JujuStatusTool(),
             JujuDeployTool(),
@@ -129,6 +138,10 @@ class CantripAgent:
             JujuRelateTool(),
             JujuSSHTool(),
             JujuRunActionTool(),
+            JujuAddModelTool(),
+            JujuDestroyModelTool(),
+            JujuOfferTool(),
+            JujuConsumeTool(),
         ]
 
     def _build_system_prompt(self) -> str:

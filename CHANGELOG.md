@@ -5,6 +5,9 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Environment setup tools** — `concierge_prepare` and `concierge_status` tools provision charm development environments via Concierge (LXD or Kubernetes)
+- **Juju model management tools** — `juju_add_model` and `juju_destroy_model` for creating and tearing down Juju models
+- **Cross-model relation tools** — `juju_offer` and `juju_consume` for wiring applications across models (e.g. connecting a dev model to COS-lite)
 - **Skills infrastructure** — agent skills following the agentskills.io format; 7 bundled charm development skills (scenario-tests, jubilant-tests, relation-data-design, observability, ingress, adding-actions, adding-config) loaded on demand via the `load_skill` tool
 - **Charm CLAUDE.md generation** — agent writes a tailored `CLAUDE.md` into the charm directory on startup, giving Claude Code context about Juju charm development
 - **SQLite session store** — replaced `.cantrip/session.json` with a single `.cantrip` SQLite file; tracks LLM token usage per request

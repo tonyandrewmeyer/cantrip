@@ -19,7 +19,7 @@
 ### 0.3 Juju Integration
 - [x] Jubilant wrapper for common operations
 - [x] Replace hand-rolled status dataclasses (`src/cantrip/juju/status.py`) with Jubilant's own status types
-- [ ] Model management basics
+- [x] Model management basics
 
 ### 0.4 Skills Infrastructure
 - [x] Skills loader (lazy-load from agentskills.io format)
@@ -54,10 +54,10 @@
 - [x] Remove conditional Jubilant import guard in juju tools — Jubilant is a hard dependency, not optional; tools now check for the `juju` CLI
 
 ### 1.1 Environment Setup
-- [ ] Concierge integration
-- [ ] Auto-setup LXD or Canonical K8s based on charm type
+- [x] Concierge integration
+- [x] Auto-setup LXD or Canonical K8s based on charm type
 - [ ] COS-lite deployment to separate model
-- [ ] Cross-model relation setup
+- [x] Cross-model relation setup
 
 ### 1.2 12-Factor Path (Path A)
 - [ ] **Fetch and summarise 12-factor tutorials** (prerequisite)

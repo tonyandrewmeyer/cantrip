@@ -2,9 +2,15 @@
 
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
+from cantrip.agent.tools.environment import (
+    ConciergePrepareTool,
+    ConciergeStatusTool,
+    _concierge_available,
+)
 from cantrip.agent.tools.files import (
     EditFileTool,
     ListDirectoryTool,
@@ -213,3 +219,199 @@ class TestEditFileTool:
 
         assert not result.success
         assert "2 times" in result.error
+
+
+def _make_fake_process(returncode: int = 0, stdout: str = "", stderr: str = ""):
+    """Build a mock async subprocess for Concierge tests."""
+    proc = mock.AsyncMock()
+    proc.communicate.return_value = (stdout.encode(), stderr.encode())
+    proc.returncode = returncode
+    return proc
+
+
+class TestConciergeAvailable:
+    """Tests for the _concierge_available helper."""
+
+    def test_available(self):
+        """Returns True when concierge is on PATH."""
+        with mock.patch(
+            "cantrip.agent.tools.environment.shutil.which", return_value="/usr/bin/concierge"
+        ):
+            assert _concierge_available() is True
+
+    def test_not_available(self):
+        """Returns False when concierge is not on PATH."""
+        with mock.patch("cantrip.agent.tools.environment.shutil.which", return_value=None):
+            assert _concierge_available() is False
+
+
+class TestConciergePrepareTool:
+    """Tests for ConciergePrepareTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return ConciergePrepareTool()
+
+    @pytest.mark.asyncio
+    async def test_concierge_not_installed(self, tool):
+        """Error when concierge is not on PATH."""
+        with mock.patch(
+            "cantrip.agent.tools.environment._concierge_available", return_value=False
+        ):
+            result = await tool.execute(preset="k8s")
+
+        assert not result.success
+        assert "not installed" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_already_provisioned(self, tool):
+        """Skips prepare when environment already succeeded."""
+        status_proc = _make_fake_process(stdout="Status: succeeded\n")
+
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch("asyncio.create_subprocess_exec", return_value=status_proc),
+        ):
+            result = await tool.execute(preset="k8s")
+
+        assert result.success
+        assert result.data.get("already_provisioned") is True
+        assert "already provisioned" in result.output.lower()
+
+    @pytest.mark.asyncio
+    async def test_prepare_success(self, tool):
+        """Runs prepare when not already provisioned."""
+        status_proc = _make_fake_process(stdout="Status: not provisioned\n")
+        prepare_proc = _make_fake_process(stdout="Done.\n")
+
+        call_count = 0
+
+        async def fake_exec(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return status_proc
+            return prepare_proc
+
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch("asyncio.create_subprocess_exec", side_effect=fake_exec),
+        ):
+            result = await tool.execute(preset="k8s")
+
+        assert result.success
+        assert result.data.get("preset") == "k8s"
+
+    @pytest.mark.asyncio
+    async def test_prepare_failure(self, tool):
+        """Reports error when prepare command fails."""
+        status_proc = _make_fake_process(stdout="Status: not provisioned\n")
+        prepare_proc = _make_fake_process(returncode=1, stderr="bootstrap failed")
+
+        call_count = 0
+
+        async def fake_exec(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return status_proc
+            return prepare_proc
+
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch("asyncio.create_subprocess_exec", side_effect=fake_exec),
+        ):
+            result = await tool.execute(preset="machine")
+
+        assert not result.success
+        assert "bootstrap failed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_prepare_timeout(self, tool):
+        """Reports error on timeout."""
+        status_proc = _make_fake_process(stdout="Status: not provisioned\n")
+
+        call_count = 0
+
+        async def fake_exec(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return status_proc
+            # Second call (prepare) will time out.
+            proc = mock.AsyncMock()
+            proc.communicate.side_effect = TimeoutError
+            proc.returncode = None
+            return proc
+
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch("asyncio.create_subprocess_exec", side_effect=fake_exec),
+            mock.patch("asyncio.wait_for", side_effect=TimeoutError),
+        ):
+            result = await tool.execute(preset="k8s")
+
+        assert not result.success
+        assert "timed out" in result.error.lower()
+
+
+class TestConciergeStatusTool:
+    """Tests for ConciergeStatusTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return ConciergeStatusTool()
+
+    @pytest.mark.asyncio
+    async def test_concierge_not_installed(self, tool):
+        """Error when concierge is not on PATH."""
+        with mock.patch(
+            "cantrip.agent.tools.environment._concierge_available", return_value=False
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "not installed" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_status_success(self, tool):
+        """Returns status output on success."""
+        proc = _make_fake_process(stdout="Status: succeeded\nPreset: k8s\n")
+
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch("asyncio.create_subprocess_exec", return_value=proc),
+        ):
+            result = await tool.execute()
+
+        assert result.success
+        assert "succeeded" in result.output.lower()
+
+    @pytest.mark.asyncio
+    async def test_status_failure(self, tool):
+        """Reports error when status command fails."""
+        proc = _make_fake_process(returncode=1, stderr="no provider")
+
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch("asyncio.create_subprocess_exec", return_value=proc),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "no provider" in result.error
+
+    @pytest.mark.asyncio
+    async def test_status_timeout(self, tool):
+        """Reports error on timeout."""
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch(
+                "cantrip.agent.tools.environment._run_concierge",
+                side_effect=TimeoutError,
+            ),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "timed out" in result.error.lower()
