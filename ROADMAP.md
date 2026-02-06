@@ -5,19 +5,19 @@
 **Goal:** Basic infrastructure that everything else builds on.
 
 ### 0.1 Project Skeleton
-- [ ] Set up uv project structure
-- [ ] Configure pyproject.toml with dependencies
-- [ ] Set up GitHub Actions CI (lint, type check, test)
-- [ ] Create basic CLI entry point
+- [x] Set up uv project structure
+- [x] Configure pyproject.toml with dependencies
+- [x] Set up GitHub Actions CI (lint, type check, test)
+- [x] Create basic CLI entry point
 
 ### 0.2 LLM Abstraction
-- [ ] Define LLM provider interface
-- [ ] Implement Gemini provider
-- [ ] Basic conversation loop (no TUI yet, just CLI)
-- [ ] API key configuration
+- [x] Define LLM provider interface
+- [x] Implement Gemini provider
+- [x] Basic conversation loop (no TUI yet, just CLI)
+- [x] API key configuration
 
 ### 0.3 Juju Integration
-- [ ] Jubilant wrapper for common operations
+- [x] Jubilant wrapper for common operations
 - [x] Replace hand-rolled status dataclasses (`src/cantrip/juju/status.py`) with Jubilant's own status types
 - [ ] Model management basics
 
@@ -38,7 +38,7 @@
 ### 0.5 Prompt Templating
 - [x] Move system prompt out of Python string (`system.py`) into a Markdown Jinja template
 - [x] `build_system_prompt()` renders the template with context variables (charm name, path, models, decisions, etc.)
-- [ ] Apply the same pattern to any future prompts
+- [x] Apply the same pattern to any future prompts
 
 **Exit criteria:** Can have a conversation with Gemini that calls Jubilant to show juju status.
 
@@ -74,11 +74,11 @@
 - [ ] Deploy and verify active/running
 
 ### 1.3 Basic TUI
-- [ ] Textual app shell
-- [ ] Split view: status + chat
-- [ ] Juju status display (from JSON)
-- [ ] Basic chat input/output
-- [ ] Status refresh
+- [x] Textual app shell
+- [x] Split view: status + chat
+- [x] Juju status display (from JSON)
+- [x] Basic chat input/output
+- [x] Status refresh
 
 ### 1.4 Conversational Iteration
 - [ ] Add config options via conversation
@@ -183,8 +183,8 @@
 - [ ] Trace viewer (or Grafana links)
 
 ### 4.3 Multi-LLM Support
-- [ ] Claude provider
-- [ ] Provider switching
+- [x] Claude provider
+- [x] Provider switching
 - [ ] Model selection per task (cost optimisation)
 
 ### 4.4 Charmhub Publishing (Stage 2)
