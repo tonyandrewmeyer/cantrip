@@ -4,37 +4,7 @@ from pathlib import Path
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.prompts.claude_md import render_claude_md
-from cantrip.llm.base import LLMProvider, Message, Response, Tool
-
-
-class FakeProvider(LLMProvider):
-    """Minimal fake provider for agent construction."""
-
-    @property
-    def name(self) -> str:
-        return "fake"
-
-    def __init__(self) -> None:
-        self.model_name = "fake-model"
-
-    async def complete(
-        self,
-        messages: list[Message],  # noqa: ARG002
-        tools: list[Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-    ) -> Response:
-        return Response(content="ok")  # pragma: no cover
-
-    async def stream(
-        self,
-        messages: list[Message],  # noqa: ARG002
-        tools: list[Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-    ):
-        yield  # pragma: no cover
-
-    def count_tokens(self, messages: list[Message]) -> int:  # noqa: ARG002
-        return 0
+from tests.conftest import FakeProvider
 
 
 class TestRenderClaudeMd:
