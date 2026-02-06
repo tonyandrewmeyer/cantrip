@@ -137,6 +137,22 @@
     from the COS stack. Reuses infrastructure we already deploy.
 - [ ] Only active in dev environments — never in production models
 
+### 2.6 Advanced Testing & Performance
+- [ ] **Performance skill** — bundled skill that identifies common charm performance pitfalls
+  (blocking I/O in hooks, expensive status polling, unindexed relation data, oversized config)
+- [ ] **Load testing** — generate k6 or Locust workloads targeting the charm's workload endpoint;
+  deploy multiple units and measure throughput / latency under load
+- [ ] **Benchmark harness** — timed hook execution via `juju debug-log` + Tempo traces; flag hooks
+  that exceed a configurable threshold (e.g. >5 s)
+- [ ] **Fuzz testing** — generate randomised relation data, config values, and action parameters to
+  exercise charm error-handling paths; run via Scenario (unit) and Jubilant (integration)
+- [ ] **Chaos testing** — use Litmus or simple Jubilant scripts to kill units, remove relations,
+  revoke storage, and verify the charm recovers to active/idle
+- [ ] **Scaling tests** — add/remove units under load and verify the charm handles peer-relation
+  changes, leader election, and data replication correctly
+- [ ] **Test report** — aggregate results (pass/fail, latency percentiles, error logs) into a
+  structured summary the agent can reason over and present in the TUI
+
 **Exit criteria:** Agent can debug a failing charm by looking at traces, fix the issue, and run tests.
 
 ---
@@ -225,6 +241,7 @@
 | Observability | COS deployment working | Need COS-lite reliable |
 | Testing | Scenario/Jubilant docs | Need links |
 | Libraries | PyPI migration list | Which libs are on PyPI |
+| Advanced testing | 2.2 Observability + 2.3 Testing | Needs COS traces for benchmarking; basic test infra for fuzz/chaos |
 
 ---
 
