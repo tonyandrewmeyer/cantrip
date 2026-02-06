@@ -13,7 +13,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Source-tree guard** — cantrip refuses to run from inside its own source tree
 
 ### Changed
-- Suppressed `google-generativeai` FutureWarning on import (pending migration to `google-genai`)
+- Migrated Gemini provider from deprecated `google-generativeai` to `google-genai` SDK
 
 ## 0.0.1 — Phase 0
 

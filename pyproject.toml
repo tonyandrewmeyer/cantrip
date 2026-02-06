@@ -26,7 +26,7 @@ dependencies = [
     "textual>=0.50.0",
 
     # LLM providers
-    "google-generativeai>=0.3.0",  # Gemini
+    "google-genai>=1.0.0",         # Gemini
     "anthropic>=0.18.0",           # Claude
 
     # Juju integration
@@ -93,6 +93,8 @@ python-version = "3.11"
 # Relax some rules for initial development - tighten later
 invalid-method-override = "warn"  # Tool.execute overrides
 possibly-missing-attribute = "ignore"  # Third-party lib types
+not-subscriptable = "warn"  # Third-party lib types (e.g. google-genai)
+no-matching-overload = "warn"  # Third-party lib types (e.g. google-genai)
 unresolved-attribute = "warn"  # Textual internals
 invalid-assignment = "warn"  # Reactive types
 not-iterable = "warn"  # Async iterator typing

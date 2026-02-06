@@ -2,16 +2,10 @@
 
 import json
 import os
-import warnings
 from collections.abc import AsyncIterator
 
-import google.api_core.exceptions
-
-# The google-generativeai package is deprecated; suppress the FutureWarning
-# until we migrate to google-genai (see ROADMAP.md Phase 1.0).
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", FutureWarning)
-    import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 
 from cantrip.llm.base import (
     Chunk,
@@ -24,43 +18,6 @@ from cantrip.llm.base import (
     Tool,
     ToolCall,
 )
-
-# Map JSON Schema type strings to Gemini protobuf Type enum values.
-_TYPE_MAP = {
-    "string": genai.protos.Type.STRING,
-    "number": genai.protos.Type.NUMBER,
-    "integer": genai.protos.Type.INTEGER,
-    "boolean": genai.protos.Type.BOOLEAN,
-    "array": genai.protos.Type.ARRAY,
-    "object": genai.protos.Type.OBJECT,
-}
-
-
-def _json_schema_to_gemini(schema: dict) -> genai.protos.Schema:
-    """Convert a JSON Schema dict to a Gemini protobuf Schema."""
-    kwargs: dict = {}
-
-    if "type" in schema:
-        kwargs["type"] = _TYPE_MAP.get(schema["type"], genai.protos.Type.TYPE_UNSPECIFIED)
-
-    if "description" in schema:
-        kwargs["description"] = schema["description"]
-
-    if "enum" in schema:
-        kwargs["enum"] = schema["enum"]
-
-    if "properties" in schema:
-        kwargs["properties"] = {
-            name: _json_schema_to_gemini(prop) for name, prop in schema["properties"].items()
-        }
-
-    if "required" in schema:
-        kwargs["required"] = schema["required"]
-
-    if "items" in schema:
-        kwargs["items"] = _json_schema_to_gemini(schema["items"])
-
-    return genai.protos.Schema(**kwargs)
 
 
 class GeminiProvider(LLMProvider):
@@ -76,48 +33,51 @@ class GeminiProvider(LLMProvider):
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not provided")
 
-        genai.configure(api_key=self.api_key)
+        self._client = genai.Client(api_key=self.api_key)
         self.model_name = model
 
-    def _create_model(self, system_prompt: str | None = None) -> genai.GenerativeModel:
-        """Create a GenerativeModel, optionally with a system instruction."""
-        kwargs = {}
-        if system_prompt:
-            kwargs["system_instruction"] = system_prompt
-        return genai.GenerativeModel(self.model_name, **kwargs)
-
-    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+    def _convert_messages(self, messages: list[Message]) -> list[genai_types.Content]:
         """Convert messages to Gemini format.
 
         Handles USER, ASSISTANT (with optional tool_calls), and TOOL messages.
         SYSTEM messages are handled separately via system_instruction.
         """
-        result = []
+        result: list[genai_types.Content] = []
         for msg in messages:
             if msg.role == Role.SYSTEM:
                 continue
 
             elif msg.role == Role.USER:
-                result.append({"role": "user", "parts": [msg.content]})
+                result.append(
+                    genai_types.Content(
+                        role="user",
+                        parts=[genai_types.Part(text=msg.content)],
+                    )
+                )
 
             elif msg.role == Role.ASSISTANT:
                 if msg.tool_calls:
                     # Assistant message that contains tool calls.
-                    parts = []
+                    parts: list[genai_types.Part] = []
                     if msg.content:
-                        parts.append(msg.content)
+                        parts.append(genai_types.Part(text=msg.content))
                     for tc in msg.tool_calls:
                         parts.append(
-                            genai.protos.Part(
-                                function_call=genai.protos.FunctionCall(
+                            genai_types.Part(
+                                function_call=genai_types.FunctionCall(
                                     name=tc.name,
                                     args=tc.arguments,
                                 )
                             )
                         )
-                    result.append({"role": "model", "parts": parts})
+                    result.append(genai_types.Content(role="model", parts=parts))
                 else:
-                    result.append({"role": "model", "parts": [msg.content]})
+                    result.append(
+                        genai_types.Content(
+                            role="model",
+                            parts=[genai_types.Part(text=msg.content)],
+                        )
+                    )
 
             elif msg.role == Role.TOOL:
                 # Tool results are sent as user-role function responses in Gemini.
@@ -129,18 +89,16 @@ class GeminiProvider(LLMProvider):
                     except (json.JSONDecodeError, TypeError):
                         response_data = {"result": tr.content}
                     parts.append(
-                        genai.protos.Part(
-                            function_response=genai.protos.FunctionResponse(
-                                name=tr.tool_call_id,
-                                response=response_data,
-                            )
+                        genai_types.Part.from_function_response(
+                            name=tr.tool_call_id,
+                            response=response_data,
                         )
                     )
-                result.append({"role": "user", "parts": parts})
+                result.append(genai_types.Content(role="user", parts=parts))
 
         return result
 
-    def _convert_tools(self, tools: list[Tool] | None) -> list | None:
+    def _convert_tools(self, tools: list[Tool] | None) -> list[genai_types.Tool] | None:
         """Convert tools to Gemini format."""
         if not tools:
             return None
@@ -148,13 +106,13 @@ class GeminiProvider(LLMProvider):
         declarations = []
         for tool in tools:
             declarations.append(
-                genai.protos.FunctionDeclaration(
+                genai_types.FunctionDeclaration(
                     name=tool.name,
                     description=tool.description,
-                    parameters=_json_schema_to_gemini(tool.parameters),
+                    parameters=tool.parameters,
                 )
             )
-        return [genai.protos.Tool(function_declarations=declarations)]
+        return [genai_types.Tool(function_declarations=declarations)]
 
     def _get_system_prompt(self, messages: list[Message]) -> str | None:
         """Extract system prompt from messages."""
@@ -171,32 +129,31 @@ class GeminiProvider(LLMProvider):
     ) -> Response:
         """Generate a completion."""
         system_prompt = self._get_system_prompt(messages)
-        model = self._create_model(system_prompt)
-        history = self._convert_messages(messages)
+        contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools)
 
-        generation_config = genai.types.GenerationConfig(
+        config = genai_types.GenerateContentConfig(
             temperature=temperature,
+            system_instruction=system_prompt,
+            tools=gemini_tools,
+            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
+                disable=True,
+            ),
         )
-
-        # Use chat API: history is everything except the last message.
-        chat = model.start_chat(
-            history=history[:-1] if len(history) > 1 else [],
-        )
-
-        last_message = history[-1]["parts"] if history else [""]
 
         try:
-            response = await chat.send_message_async(
-                last_message,
-                generation_config=generation_config,
-                tools=gemini_tools,
+            response = await self._client.aio.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=config,
             )
-        except google.api_core.exceptions.ResourceExhausted as e:
-            raise ProviderRateLimitError(
-                "Gemini API rate limit exceeded. Please wait a moment and try again."
-            ) from e
-        except google.api_core.exceptions.GoogleAPICallError as e:
+        except genai.errors.ClientError as e:
+            if e.code == 429:
+                raise ProviderRateLimitError(
+                    "Gemini API rate limit exceeded. Please wait a moment and try again."
+                ) from e
+            raise ProviderError(f"Gemini API error: {e}") from e
+        except genai.errors.APIError as e:
             raise ProviderError(f"Gemini API error: {e}") from e
 
         # Parse tool calls if present.
@@ -222,8 +179,8 @@ class GeminiProvider(LLMProvider):
             tool_calls=tool_calls,
             finish_reason="tool_calls" if tool_calls else "stop",
             usage={
-                "prompt_tokens": response.usage_metadata.prompt_token_count,
-                "completion_tokens": response.usage_metadata.candidates_token_count,
+                "prompt_tokens": response.usage_metadata.prompt_token_count or 0,
+                "completion_tokens": response.usage_metadata.candidates_token_count or 0,
             },
         )
 
@@ -240,38 +197,39 @@ class GeminiProvider(LLMProvider):
         incrementally.
         """
         system_prompt = self._get_system_prompt(messages)
-        model = self._create_model(system_prompt)
-        history = self._convert_messages(messages)
+        contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools)
 
-        generation_config = genai.types.GenerationConfig(
+        config = genai_types.GenerateContentConfig(
             temperature=temperature,
+            system_instruction=system_prompt,
+            tools=gemini_tools,
+            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
+                disable=True,
+            ),
         )
-
-        chat = model.start_chat(
-            history=history[:-1] if len(history) > 1 else [],
-        )
-
-        last_message = history[-1]["parts"] if history else [""]
 
         try:
-            response = await chat.send_message_async(
-                last_message,
-                generation_config=generation_config,
-                tools=gemini_tools,
-                stream=True,
+            response_stream = self._client.aio.models.generate_content_stream(
+                model=self.model_name,
+                contents=contents,
+                config=config,
             )
-        except google.api_core.exceptions.ResourceExhausted as e:
-            raise ProviderRateLimitError(
-                "Gemini API rate limit exceeded. Please wait a moment and try again."
-            ) from e
-        except google.api_core.exceptions.GoogleAPICallError as e:
+        except genai.errors.ClientError as e:
+            if e.code == 429:
+                raise ProviderRateLimitError(
+                    "Gemini API rate limit exceeded. Please wait a moment and try again."
+                ) from e
+            raise ProviderError(f"Gemini API error: {e}") from e
+        except genai.errors.APIError as e:
             raise ProviderError(f"Gemini API error: {e}") from e
 
         tool_calls = []
-        async for chunk in response:
-            if chunk.parts:
-                for part in chunk.parts:
+        async for chunk in response_stream:
+            if not chunk.candidates or not chunk.candidates[0].content:
+                continue
+            if chunk.candidates[0].content.parts:
+                for part in chunk.candidates[0].content.parts:
                     if part.function_call and part.function_call.name:
                         tool_calls.append(
                             ToolCall(

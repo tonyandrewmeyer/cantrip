@@ -44,7 +44,7 @@
 **Goal:** "Build a charm for my Flask app" → active/running in 2 minutes.
 
 ### 1.0 Housekeeping
-- [ ] Migrate from `google-generativeai` to `google-genai` (the old package is deprecated and emits a FutureWarning)
+- [x] Migrate from `google-generativeai` to `google-genai` (the old package is deprecated and emits a FutureWarning)
 
 ### 1.1 Environment Setup
 - [ ] Concierge integration

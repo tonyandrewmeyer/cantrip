@@ -18,7 +18,7 @@ class TestCreateProvider:
     @patch("cantrip.llm.gemini.genai")
     def test_create_gemini_default(self, mock_genai):
         """Test creating a Gemini provider with defaults."""
-        mock_genai.configure = MagicMock()
+        mock_genai.Client.return_value = MagicMock()
 
         with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}):
             provider = create_provider("gemini")
@@ -30,7 +30,7 @@ class TestCreateProvider:
     @patch("cantrip.llm.gemini.genai")
     def test_create_gemini_custom_model(self, mock_genai):
         """Test creating a Gemini provider with a custom model."""
-        mock_genai.configure = MagicMock()
+        mock_genai.Client.return_value = MagicMock()
 
         with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}):
             provider = create_provider("gemini", model="gemini-1.5-flash")
