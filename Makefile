@@ -1,4 +1,4 @@
-.PHONY: format lint unit test check all clean
+.PHONY: format lint unit integration e2e test check all clean
 
 # Format code with ruff
 format:
@@ -13,7 +13,15 @@ lint:
 unit:
 	uv run pytest tests/unit -v
 
-# Run all tests (unit + integration)
+# Run integration tests (real tools, no external services)
+integration:
+	uv run pytest tests/integration -v
+
+# Run end-to-end tests (multi-turn scripted scenarios)
+e2e:
+	uv run pytest tests/e2e -v
+
+# Run all tests (unit + integration + e2e)
 test:
 	uv run pytest tests -v
 
@@ -37,11 +45,13 @@ install:
 # Show help
 help:
 	@echo "Available targets:"
-	@echo "  format  - Format code with ruff"
-	@echo "  lint    - Run ruff check and ty type checker"
-	@echo "  unit    - Run unit tests"
-	@echo "  test    - Run all tests"
-	@echo "  check   - Run lint + unit tests"
-	@echo "  all     - Run format + check"
-	@echo "  clean   - Remove build artifacts"
-	@echo "  install - Install dependencies"
+	@echo "  format      - Format code with ruff"
+	@echo "  lint        - Run ruff check and ty type checker"
+	@echo "  unit        - Run unit tests"
+	@echo "  integration - Run integration tests (real tools, no external services)"
+	@echo "  e2e         - Run end-to-end scenario tests"
+	@echo "  test        - Run all tests (unit + integration + e2e)"
+	@echo "  check       - Run lint + unit tests"
+	@echo "  all         - Run format + check"
+	@echo "  clean       - Remove build artifacts"
+	@echo "  install     - Install dependencies"

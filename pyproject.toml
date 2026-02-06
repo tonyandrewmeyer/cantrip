@@ -104,3 +104,7 @@ invalid-argument-type = "warn"  # Third-party lib calls
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: tests with real tool execution (no external services)",
+    "e2e: end-to-end multi-turn conversation scenarios",
+]
