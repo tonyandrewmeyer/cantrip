@@ -80,7 +80,7 @@ src/cantrip/
 
 **Agent Loop:** LLM returns tool_calls → execute each → collect results → call LLM again until response has no tool calls.
 
-**State:** Saved to `.cantrip/session.json` in charm directory. Tracks charm_name, charm_path, charm_type, framework, models, decisions.
+**State:** Saved to a `.cantrip` SQLite file in the charm directory. Tracks charm_name, charm_path, charm_type, framework, models, decisions, and per-request LLM token usage.
 
 ## Charm Development Context
 

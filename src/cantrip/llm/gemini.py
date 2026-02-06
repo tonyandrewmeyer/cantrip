@@ -23,6 +23,11 @@ from cantrip.llm.base import (
 class GeminiProvider(LLMProvider):
     """Google Gemini implementation."""
 
+    @property
+    def name(self) -> str:
+        """Short identifier for this provider."""
+        return "gemini"
+
     def __init__(
         self,
         api_key: str | None = None,

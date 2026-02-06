@@ -761,14 +761,11 @@ my-charm/
 ├── tests/
 ├── charmcraft.yaml
 ├── ...
-└── .cantrip/                  # Cantrip session data
-    ├── session.json           # Conversation state
-    ├── context.md             # Summarised context for LLM
-    └── decisions.yaml         # Key decisions made
+└── .cantrip                   # SQLite database (session, decisions, token usage)
 ```
 
 When user runs `cantrip` in a charm directory:
-1. Detect `.cantrip/` folder
+1. Detect `.cantrip` database
 2. Load previous session context
 3. Resume where they left off
 

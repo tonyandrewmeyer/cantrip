@@ -72,6 +72,15 @@ class CharmcraftInitTool(Tool):
                     error=result.stderr or "charmcraft init failed",
                 )
 
+            # Ensure .cantrip is in the charm's .gitignore.
+            gitignore = target_path / ".gitignore"
+            if gitignore.exists():
+                content = gitignore.read_text()
+                if ".cantrip" not in content:
+                    gitignore.write_text(content.rstrip("\n") + "\n.cantrip\n")
+            else:
+                gitignore.write_text(".cantrip\n")
+
             return ToolResult(
                 success=True,
                 output=f"Initialised charm '{name}' at {target_path}\n{result.stdout}",

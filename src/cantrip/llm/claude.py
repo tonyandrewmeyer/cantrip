@@ -22,6 +22,11 @@ from cantrip.llm.base import (
 class ClaudeProvider(LLMProvider):
     """Anthropic Claude implementation."""
 
+    @property
+    def name(self) -> str:
+        """Short identifier for this provider."""
+        return "claude"
+
     def __init__(
         self,
         api_key: str | None = None,

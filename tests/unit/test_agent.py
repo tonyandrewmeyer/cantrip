@@ -1,5 +1,6 @@
 """Tests for agent core."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -18,9 +19,14 @@ from cantrip.llm.base import (
 class FakeProvider(LLMProvider):
     """A fake LLM provider for testing."""
 
+    @property
+    def name(self) -> str:
+        return "fake"
+
     def __init__(self, responses: list[Response] | None = None):
         self._responses = list(responses or [])
         self._call_count = 0
+        self.model_name = "fake-model"
 
     async def complete(
         self,
@@ -154,3 +160,117 @@ class TestCantripAgent:
         await agent.process_message("loop")
 
         assert agent._execute_tool.await_count == 20
+
+
+class TestUsageRecording:
+    """Tests for token usage recording."""
+
+    @pytest.mark.asyncio
+    async def test_usage_recorded_for_simple_message(self, tmp_path: Path) -> None:
+        """Usage is recorded once for a simple (no tool call) exchange."""
+        provider = FakeProvider(
+            [Response(content="hi", usage={"prompt_tokens": 10, "completion_tokens": 5})]
+        )
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        await agent.process_message("hello")
+
+        assert agent._store is not None
+        total = agent._store.get_total_usage()
+        assert total["prompt_tokens"] == 10
+        assert total["completion_tokens"] == 5
+
+    @pytest.mark.asyncio
+    async def test_usage_recorded_per_complete_call(self, tmp_path: Path) -> None:
+        """Each complete() call records its own usage row."""
+        tool_call = ToolCall(id="tc", name="juju_status", arguments={})
+        provider = FakeProvider(
+            [
+                Response(
+                    content="",
+                    tool_calls=[tool_call],
+                    usage={"prompt_tokens": 100, "completion_tokens": 20},
+                ),
+                Response(
+                    content="done",
+                    usage={"prompt_tokens": 200, "completion_tokens": 40},
+                ),
+            ]
+        )
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        agent._execute_tool = AsyncMock(
+            return_value=type("R", (), {"success": True, "output": "ok", "error": None})()
+        )
+
+        await agent.process_message("go")
+
+        assert agent._store is not None
+        total = agent._store.get_total_usage()
+        assert total["prompt_tokens"] == 300
+        assert total["completion_tokens"] == 60
+
+    @pytest.mark.asyncio
+    async def test_usage_recorded_in_streaming(self, tmp_path: Path) -> None:
+        """Usage is recorded during streaming message processing."""
+        provider = FakeProvider(
+            [Response(content="stream", usage={"prompt_tokens": 15, "completion_tokens": 8})]
+        )
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        chunks = []
+        async for chunk in agent.process_message_streaming("hi"):
+            chunks.append(chunk)
+
+        assert agent._store is not None
+        total = agent._store.get_total_usage()
+        assert total["prompt_tokens"] == 15
+
+    @pytest.mark.asyncio
+    async def test_no_store_without_charm_path(self) -> None:
+        """No store is created when charm_path is not set."""
+        provider = FakeProvider(
+            [Response(content="hi", usage={"prompt_tokens": 1, "completion_tokens": 1})]
+        )
+        agent = CantripAgent(provider=provider)
+
+        await agent.process_message("hello")
+
+        assert agent._store is None
+
+
+class TestStoreBackedPersistence:
+    """Tests for save_state / load_state with the session store."""
+
+    def test_save_and_load_state(self, tmp_path: Path) -> None:
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        agent.state.charm_name = "my-charm"
+        agent.state.charm_type = "k8s"
+        agent.state.add_decision("path", "12-factor", reason="Flask")
+        agent.save_state()
+
+        # Create a fresh agent pointing at the same path.
+        agent2 = CantripAgent(provider=provider, charm_path=tmp_path)
+        loaded = agent2.load_state()
+
+        assert loaded is True
+        assert agent2.state.charm_name == "my-charm"
+        assert agent2.state.charm_type == "k8s"
+        assert len(agent2.state.decisions) == 1
+
+    def test_load_state_returns_false_when_empty(self, tmp_path: Path) -> None:
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        assert agent.load_state() is False
+
+    def test_save_state_noop_without_store(self) -> None:
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        # Should not raise.
+        agent.save_state()
+
+    def test_load_state_returns_false_without_store(self) -> None:
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        assert agent.load_state() is False

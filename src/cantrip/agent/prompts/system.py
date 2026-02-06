@@ -71,6 +71,10 @@ For validation (do periodically and before "done"):
 charmcraft pack → juju refresh --path → verify full cycle works
 ```
 
+### Session Data
+- Cantrip stores session data in a `.cantrip` SQLite file in the charm directory
+- Always add `.cantrip` to the charm's `.gitignore`
+
 ### Code Style
 - UK English for all text
 - Type hints throughout

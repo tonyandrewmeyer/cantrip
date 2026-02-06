@@ -1,13 +1,13 @@
 """Core agent logic."""
 
-import json
+import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from cantrip.agent.prompts import build_system_prompt
+from cantrip.agent.state import AgentState, Decision
+from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import (
     AnalyseFrameworkTool,
     CharmcraftFetchLibsTool,
@@ -27,51 +27,17 @@ from cantrip.agent.tools import (
     WebFetchTool,
     WriteFileTool,
 )
-from cantrip.llm.base import LLMProvider, Message, Role
+from cantrip.llm.base import LLMProvider, Message, Response, Role
 from cantrip.llm.base import Tool as LLMTool
 from cantrip.llm.base import ToolResult as LLMToolResult
 
+log = logging.getLogger(__name__)
+
+# Re-export for backwards compatibility.
+__all__ = ["AgentState", "CantripAgent", "Decision"]
+
 # Maximum tool-call rounds before we force the model to respond with text.
 MAX_TOOL_ROUNDS = 20
-
-
-@dataclass
-class Decision:
-    """A decision made during the session."""
-
-    type: str
-    choice: str
-    reason: str | None = None
-    timestamp: datetime = field(default_factory=datetime.now)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "type": self.type,
-            "choice": self.choice,
-            "reason": self.reason,
-            "timestamp": self.timestamp.isoformat(),
-        }
-
-
-@dataclass
-class AgentState:
-    """Current agent state."""
-
-    charm_name: str | None = None
-    charm_path: Path | None = None
-    charm_type: str | None = None  # "machine" or "k8s"
-    framework: str | None = None
-
-    dev_model: str | None = None
-    cos_model: str | None = None
-
-    messages: list[Message] = field(default_factory=list)
-    decisions: list[Decision] = field(default_factory=list)
-
-    def add_decision(self, type: str, choice: str, reason: str | None = None) -> None:
-        """Record a decision."""
-        self.decisions.append(Decision(type=type, choice=choice, reason=reason))
 
 
 class CantripAgent:
@@ -87,6 +53,40 @@ class CantripAgent:
         self.state = AgentState(charm_path=charm_path)
         self._tools = self._build_tools()
         self._tool_map = {tool.name: tool for tool in self._tools}
+        self._store: SessionStore | None = None
+        if charm_path:
+            self._init_store(charm_path)
+
+    def _init_store(self, charm_path: Path) -> None:
+        """Initialise the session store, migrating from JSON if necessary."""
+        db_path = charm_path / ".cantrip"
+
+        # Migrate from the old directory-based layout.
+        old_dir = charm_path / ".cantrip"
+        if old_dir.is_dir():
+            json_file = old_dir / "session.json"
+            backup = charm_path / ".cantrip.bak"
+            if json_file.exists():
+                temp_db = charm_path / ".cantrip.tmp"
+                SessionStore.migrate_from_json(json_file, temp_db)
+                old_dir.rename(backup)
+                temp_db.rename(db_path)
+                log.info("Migrated .cantrip/ to SQLite (old directory saved as .cantrip.bak)")
+            else:
+                old_dir.rename(backup)
+
+        self._store = SessionStore(db_path)
+        self._store.open()
+
+    def _record_usage(self, response: Response) -> None:
+        """Record token usage from a provider response if a store is active."""
+        if self._store and response.usage:
+            self._store.record_usage(
+                provider=self.provider.name,
+                model=self.provider.model_name,
+                prompt_tokens=response.usage.get("prompt_tokens", 0),
+                completion_tokens=response.usage.get("completion_tokens", 0),
+            )
 
     def _build_tools(self) -> list[Tool]:
         """Build available tools."""
@@ -186,6 +186,7 @@ class CantripAgent:
             tools=llm_tools,
             temperature=0.7,
         )
+        self._record_usage(response)
 
         rounds = 0
         while response.tool_calls and rounds < MAX_TOOL_ROUNDS:
@@ -226,6 +227,7 @@ class CantripAgent:
                 tools=llm_tools,
                 temperature=0.7,
             )
+            self._record_usage(response)
 
         # Store the final assistant response.
         self.state.messages.append(Message(role=Role.ASSISTANT, content=response.content))
@@ -249,6 +251,7 @@ class CantripAgent:
             tools=llm_tools,
             temperature=0.7,
         )
+        self._record_usage(response)
 
         rounds = 0
         while response.tool_calls and rounds < MAX_TOOL_ROUNDS:
@@ -286,6 +289,7 @@ class CantripAgent:
                 tools=llm_tools,
                 temperature=0.7,
             )
+            self._record_usage(response)
 
         # Now stream the final text response.
         messages = self._build_llm_messages()
@@ -296,55 +300,28 @@ class CantripAgent:
         self.state.messages.append(Message(role=Role.ASSISTANT, content=full_response))
         yield full_response
 
-    def save_state(self, path: Path) -> None:
-        """Save agent state to disk."""
-        cantrip_dir = path / ".cantrip"
-        cantrip_dir.mkdir(exist_ok=True)
+    def save_state(self) -> None:
+        """Save agent state to the session store."""
+        if self._store:
+            self._store.save_session(self.state)
 
-        state_data = {
-            "charm_name": self.state.charm_name,
-            "charm_path": str(self.state.charm_path) if self.state.charm_path else None,
-            "charm_type": self.state.charm_type,
-            "framework": self.state.framework,
-            "dev_model": self.state.dev_model,
-            "cos_model": self.state.cos_model,
-            "decisions": [d.to_dict() for d in self.state.decisions],
-            "message_count": len(self.state.messages),
-        }
-
-        (cantrip_dir / "session.json").write_text(json.dumps(state_data, indent=2))
-
-    def load_state(self, path: Path) -> bool:
-        """Load agent state from disk.
+    def load_state(self) -> bool:
+        """Load agent state from the session store.
 
         Returns True if state was loaded, False if no state exists.
         """
-        cantrip_dir = path / ".cantrip"
-        session_file = cantrip_dir / "session.json"
-
-        if not session_file.exists():
+        if not self._store:
             return False
 
-        try:
-            state_data = json.loads(session_file.read_text())
-
-            self.state.charm_name = state_data.get("charm_name")
-            if state_data.get("charm_path"):
-                self.state.charm_path = Path(state_data["charm_path"])
-            self.state.charm_type = state_data.get("charm_type")
-            self.state.framework = state_data.get("framework")
-            self.state.dev_model = state_data.get("dev_model")
-            self.state.cos_model = state_data.get("cos_model")
-
-            self.state.decisions = [
-                Decision(
-                    type=d["type"],
-                    choice=d["choice"],
-                    reason=d.get("reason"),
-                )
-                for d in state_data.get("decisions", [])
-            ]
-
-            return True
-        except (json.JSONDecodeError, KeyError):
+        loaded = self._store.load_session()
+        if loaded is None:
             return False
+
+        self.state.charm_name = loaded.charm_name
+        self.state.charm_path = loaded.charm_path
+        self.state.charm_type = loaded.charm_type
+        self.state.framework = loaded.framework
+        self.state.dev_model = loaded.dev_model
+        self.state.cos_model = loaded.cos_model
+        self.state.decisions = loaded.decisions
+        return True

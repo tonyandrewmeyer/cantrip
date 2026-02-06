@@ -59,7 +59,7 @@ htmlcov/
 Thumbs.db
 
 # Cantrip session data
-.cantrip/
+.cantrip
 
 # Charms built during development
 *.charm

@@ -83,6 +83,11 @@ class ProviderError(Exception):
 class LLMProvider(ABC):
     """Abstract interface for LLM providers."""
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Short identifier for this provider (e.g. 'gemini', 'claude')."""
+
     @abstractmethod
     async def complete(
         self,
