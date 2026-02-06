@@ -35,6 +35,11 @@
 - [ ] System prompt includes skill index (names + one-line descriptions)
 - [ ] Full skill content loaded only when agent needs it
 
+### 0.5 Prompt Templating
+- [ ] Move system prompt out of Python string (`system.py`) into a Markdown Jinja template
+- [ ] `build_system_prompt()` renders the template with context variables (charm name, path, models, decisions, etc.)
+- [ ] Apply the same pattern to any future prompts
+
 **Exit criteria:** Can have a conversation with Gemini that calls Jubilant to show juju status.
 
 ---
