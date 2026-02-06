@@ -8,6 +8,7 @@ import pytest
 from cantrip.agent.tools.juju import (
     JujuAddModelTool,
     JujuConsumeTool,
+    JujuDeployTool,
     JujuDestroyModelTool,
     JujuOfferTool,
     _juju_available,
@@ -273,3 +274,63 @@ class TestJujuConsumeTool:
 
         assert not result.success
         assert "offer not found" in result.error
+
+
+class TestJujuDeployTool:
+    """Tests for JujuDeployTool resources and trust parameters."""
+
+    @pytest.fixture
+    def tool(self):
+        return JujuDeployTool()
+
+    @pytest.mark.asyncio
+    async def test_deploy_with_resources(self, tool):
+        """Passes resources to Jubilant deploy."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(
+                charm="./my-app.charm",
+                resources={"oci-image": "localhost:32000/my-app:latest"},
+            )
+
+        assert result.success
+        mock_juju.deploy.assert_called_once()
+        call_kwargs = mock_juju.deploy.call_args[1]
+        assert call_kwargs["resources"] == {"oci-image": "localhost:32000/my-app:latest"}
+
+    @pytest.mark.asyncio
+    async def test_deploy_with_trust(self, tool):
+        """Passes trust=True to Jubilant deploy."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(charm="traefik-k8s", trust=True)
+
+        assert result.success
+        mock_juju.deploy.assert_called_once()
+        call_kwargs = mock_juju.deploy.call_args[1]
+        assert call_kwargs["trust"] is True
+
+    @pytest.mark.asyncio
+    async def test_deploy_without_resources_or_trust(self, tool):
+        """Does not pass resources or trust when not specified."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(charm="my-charm")
+
+        assert result.success
+        mock_juju.deploy.assert_called_once()
+        call_kwargs = mock_juju.deploy.call_args[1]
+        assert "resources" not in call_kwargs
+        assert "trust" not in call_kwargs

@@ -111,6 +111,18 @@ class JujuDeployTool(Tool):
                     "description": "Number of units to deploy",
                     "default": 1,
                 },
+                "resources": {
+                    "type": "object",
+                    "description": (
+                        "Named resources as key-value pairs. "
+                        "For 12-factor charms: {'oci-image': 'localhost:32000/my-app:latest'}"
+                    ),
+                },
+                "trust": {
+                    "type": "boolean",
+                    "description": "Grant the charm access to cloud credentials.",
+                    "default": False,
+                },
             },
             "required": ["charm"],
         }
@@ -122,6 +134,8 @@ class JujuDeployTool(Tool):
         model: str | None = None,
         config: dict[str, Any] | None = None,
         num_units: int = 1,
+        resources: dict[str, str] | None = None,
+        trust: bool = False,
     ) -> ToolResult:
         """Deploy a charm."""
         if not _juju_available():
@@ -134,7 +148,7 @@ class JujuDeployTool(Tool):
         try:
             juju = jubilant.Juju(model=model)
 
-            # Build deploy arguments
+            # Build deploy arguments.
             deploy_args: dict[str, Any] = {"charm": charm}
             if app_name:
                 deploy_args["app"] = app_name
@@ -142,6 +156,10 @@ class JujuDeployTool(Tool):
                 deploy_args["config"] = config
             if num_units != 1:
                 deploy_args["num_units"] = num_units
+            if resources:
+                deploy_args["resources"] = resources
+            if trust:
+                deploy_args["trust"] = True
 
             juju.deploy(**deploy_args)
 
