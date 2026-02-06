@@ -122,6 +122,21 @@
   - [ ] Prior context saved as virtual file after compaction
 - [x] Decision tracking
 
+### 2.5 Event-Driven Agent (Juju → Cantrip)
+- [ ] Juju events automatically trigger the agent (new relation, hook failure, status change, etc.)
+- [ ] Agent reacts without waiting for user prompt — e.g. notices a relation was added, wires it up
+- [ ] Design decision: how to receive events. Options to explore:
+  - **Cantrip observer charm** — a small charm deployed in the dev model that receives Juju events
+    in the normal charm way and calls back to Cantrip (webhook or local socket). Gives per-app
+    granularity but only sees events on its own relations.
+  - **Controller-level watcher** — connect to the Juju controller for a full picture of all model
+    events. May need direct API access rather than a charm.
+  - **Background poller** — tail `debug-log` via Jubilant, or poll `juju status` on an interval.
+    Simplest but least real-time.
+  - **Observability pipeline** — watch for events via Loki log queries or Alertmanager webhooks
+    from the COS stack. Reuses infrastructure we already deploy.
+- [ ] Only active in dev environments — never in production models
+
 **Exit criteria:** Agent can debug a failing charm by looking at traces, fix the issue, and run tests.
 
 ---
