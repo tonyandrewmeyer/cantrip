@@ -1,17 +1,17 @@
 """Juju operation tools via Jubilant."""
 
 import json
+import shutil
 from typing import Any
+
+import jubilant
 
 from cantrip.agent.tools.base import Tool, ToolResult
 
-# Jubilant import - will fail gracefully if not available
-try:
-    import jubilant
 
-    JUBILANT_AVAILABLE = True
-except ImportError:
-    JUBILANT_AVAILABLE = False
+def _juju_available() -> bool:
+    """Check whether the juju CLI is installed."""
+    return shutil.which("juju") is not None
 
 
 class JujuStatusTool(Tool):
@@ -39,11 +39,11 @@ class JujuStatusTool(Tool):
 
     async def execute(self, model: str | None = None) -> ToolResult:
         """Get juju status."""
-        if not JUBILANT_AVAILABLE:
+        if not _juju_available():
             return ToolResult(
                 success=False,
                 output="",
-                error="Jubilant not available. Is Juju installed?",
+                error="Juju CLI not found. Is Juju installed?",
             )
 
         try:
@@ -126,11 +126,11 @@ class JujuDeployTool(Tool):
         num_units: int = 1,
     ) -> ToolResult:
         """Deploy a charm."""
-        if not JUBILANT_AVAILABLE:
+        if not _juju_available():
             return ToolResult(
                 success=False,
                 output="",
-                error="Jubilant not available. Is Juju installed?",
+                error="Juju CLI not found. Is Juju installed?",
             )
 
         try:
@@ -199,11 +199,11 @@ class JujuRefreshTool(Tool):
         model: str | None = None,
     ) -> ToolResult:
         """Refresh a charm."""
-        if not JUBILANT_AVAILABLE:
+        if not _juju_available():
             return ToolResult(
                 success=False,
                 output="",
-                error="Jubilant not available. Is Juju installed?",
+                error="Juju CLI not found. Is Juju installed?",
             )
 
         try:
@@ -266,11 +266,11 @@ class JujuRelateTool(Tool):
         model: str | None = None,
     ) -> ToolResult:
         """Create a relation."""
-        if not JUBILANT_AVAILABLE:
+        if not _juju_available():
             return ToolResult(
                 success=False,
                 output="",
-                error="Jubilant not available. Is Juju installed?",
+                error="Juju CLI not found. Is Juju installed?",
             )
 
         try:
@@ -332,11 +332,11 @@ class JujuSSHTool(Tool):
         model: str | None = None,
     ) -> ToolResult:
         """Run SSH command on a unit."""
-        if not JUBILANT_AVAILABLE:
+        if not _juju_available():
             return ToolResult(
                 success=False,
                 output="",
-                error="Jubilant not available. Is Juju installed?",
+                error="Juju CLI not found. Is Juju installed?",
             )
 
         try:
@@ -400,11 +400,11 @@ class JujuRunActionTool(Tool):
         model: str | None = None,
     ) -> ToolResult:
         """Run an action."""
-        if not JUBILANT_AVAILABLE:
+        if not _juju_available():
             return ToolResult(
                 success=False,
                 output="",
-                error="Jubilant not available. Is Juju installed?",
+                error="Juju CLI not found. Is Juju installed?",
             )
 
         try:

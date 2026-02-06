@@ -38,9 +38,9 @@ class CharmcraftInitTool(Tool):
                 },
                 "profile": {
                     "type": "string",
-                    "description": "Charm profile: 'simple', 'machine', or 'kubernetes'",
-                    "enum": ["simple", "machine", "kubernetes"],
-                    "default": "simple",
+                    "description": "Charm profile: 'machine' or 'kubernetes'",
+                    "enum": ["machine", "kubernetes"],
+                    "default": "kubernetes",
                 },
             },
             "required": ["name"],
@@ -50,7 +50,7 @@ class CharmcraftInitTool(Tool):
         self,
         name: str,
         path: str = ".",
-        profile: str = "simple",
+        profile: str = "kubernetes",
     ) -> ToolResult:
         """Run charmcraft init."""
         try:
