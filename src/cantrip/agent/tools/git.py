@@ -12,6 +12,29 @@ _GIT_TIMEOUT = 30
 # Timeout for network git operations (seconds).
 _GIT_NETWORK_TIMEOUT = 120
 
+# Patterns in stderr that indicate an authentication or permission failure.
+_AUTH_PATTERNS = (
+    "Authentication failed",
+    "Permission denied",
+    "could not read Username",
+    "terminal prompts disabled",
+    "Invalid username or password",
+    "denied to",
+)
+
+
+def _auth_hint(stderr: str) -> str:
+    """Return a user-friendly message when a git network operation fails due to auth."""
+    for pattern in _AUTH_PATTERNS:
+        if pattern in stderr:
+            return (
+                f"{stderr.strip()}\n\n"
+                "It looks like git could not authenticate with the remote. "
+                "Please configure credentials (e.g. SSH keys or a credential helper) "
+                "and try again."
+            )
+    return stderr or "git operation failed"
+
 
 class GitCloneTool(Tool):
     """Tool to clone a git repository."""
@@ -84,7 +107,7 @@ class GitCloneTool(Tool):
                 return ToolResult(
                     success=False,
                     output=result.stdout,
-                    error=result.stderr or "git clone failed",
+                    error=_auth_hint(result.stderr),
                 )
 
             return ToolResult(
@@ -513,7 +536,7 @@ class GitCommitTool(Tool):
 
         try:
             result = subprocess.run(
-                ["git", "commit", "-m", message],
+                ["git", "commit", "--no-gpg-sign", "-m", message],
                 cwd=path,
                 capture_output=True,
                 text=True,
@@ -536,4 +559,98 @@ class GitCommitTool(Tool):
                 success=False,
                 output="",
                 error="git commit timed out",
+            )
+
+
+class GitPushTool(Tool):
+    """Tool to push commits to a remote repository."""
+
+    @property
+    def name(self) -> str:
+        return "git_push"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Push local commits to a remote repository. "
+            "Requires that the remote is configured and that you have push access."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the git repository",
+                    "default": ".",
+                },
+                "remote": {
+                    "type": "string",
+                    "description": "Remote name to push to",
+                    "default": "origin",
+                },
+                "branch": {
+                    "type": "string",
+                    "description": ("Branch to push. Defaults to the current branch."),
+                },
+                "set_upstream": {
+                    "type": "boolean",
+                    "description": "Set the upstream tracking reference (-u)",
+                    "default": False,
+                },
+            },
+        }
+
+    async def execute(
+        self,
+        path: str = ".",
+        remote: str = "origin",
+        branch: str | None = None,
+        set_upstream: bool = False,
+    ) -> ToolResult:
+        """Run git push."""
+        if not shutil.which("git"):
+            return ToolResult(
+                success=False,
+                output="",
+                error="git not found. Is it installed?",
+            )
+
+        cmd = ["git", "push"]
+        if set_upstream:
+            cmd.append("-u")
+        cmd.append(remote)
+        if branch:
+            cmd.append(branch)
+
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=path,
+                capture_output=True,
+                text=True,
+                timeout=_GIT_NETWORK_TIMEOUT,
+            )
+
+            if result.returncode != 0:
+                return ToolResult(
+                    success=False,
+                    output=result.stdout,
+                    error=_auth_hint(result.stderr),
+                )
+
+            # git push writes progress to stderr on success.
+            output = result.stderr.strip() or result.stdout.strip()
+            return ToolResult(
+                success=True,
+                output=output or "Pushed successfully.",
+                data={"remote": remote, "branch": branch},
+            )
+        except subprocess.TimeoutExpired:
+            return ToolResult(
+                success=False,
+                output="",
+                error="git push timed out",
             )

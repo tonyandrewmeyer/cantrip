@@ -24,6 +24,7 @@ from cantrip.agent.tools.git import (
     GitDiffTool,
     GitInitTool,
     GitLogTool,
+    GitPushTool,
     GitStatusTool,
 )
 from cantrip.agent.tools.github import (
@@ -92,6 +93,7 @@ __all__ = [
     "GitLogTool",
     "GitAddTool",
     "GitCommitTool",
+    "GitPushTool",
     # GitHub
     "GhRepoCreateTool",
     "GhPrCreateTool",

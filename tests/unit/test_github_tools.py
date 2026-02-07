@@ -9,7 +9,53 @@ from cantrip.agent.tools.github import (
     GhIssueListTool,
     GhPrCreateTool,
     GhRepoCreateTool,
+    _check_gh_auth,
 )
+
+# All tests that exercise the actual gh command (rather than the auth pre-check)
+# patch _check_gh_auth to return None so the auth gate is skipped.
+_PATCH_AUTH_OK = mock.patch("cantrip.agent.tools.github._check_gh_auth", return_value=None)
+
+
+class TestCheckGhAuth:
+    """Tests for the _check_gh_auth helper."""
+
+    def test_authenticated(self):
+        """Returns None when gh auth status succeeds."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+
+        with mock.patch(
+            "cantrip.agent.tools.github.subprocess.run",
+            return_value=mock_result,
+        ):
+            assert _check_gh_auth() is None
+
+    def test_not_authenticated(self):
+        """Returns an error message when gh auth status fails."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "not logged in"
+
+        with mock.patch(
+            "cantrip.agent.tools.github.subprocess.run",
+            return_value=mock_result,
+        ):
+            err = _check_gh_auth()
+
+        assert err is not None
+        assert "gh auth login" in err
+
+    def test_timeout(self):
+        """Returns an error message when auth status check times out."""
+        with mock.patch(
+            "cantrip.agent.tools.github.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=10),
+        ):
+            err = _check_gh_auth()
+
+        assert err is not None
+        assert "Timed out" in err
 
 
 class TestGhRepoCreateTool:
@@ -29,6 +75,25 @@ class TestGhRepoCreateTool:
         assert "gh CLI not found" in result.error
 
     @pytest.mark.asyncio
+    async def test_not_authenticated(self, tool):
+        """Reports a friendly error when gh is not authenticated."""
+        with (
+            mock.patch(
+                "cantrip.agent.tools.github.shutil.which",
+                return_value="/usr/bin/gh",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.github._check_gh_auth",
+                return_value="The GitHub CLI is not authenticated. "
+                "Please run `gh auth login` and follow the prompts, then try again.",
+            ),
+        ):
+            result = await tool.execute(name="my-charm")
+
+        assert not result.success
+        assert "gh auth login" in result.error
+
+    @pytest.mark.asyncio
     async def test_create_private_repo(self, tool):
         """Creates a private repository by default."""
         mock_result = mock.MagicMock()
@@ -37,6 +102,7 @@ class TestGhRepoCreateTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -64,6 +130,7 @@ class TestGhRepoCreateTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -89,6 +156,7 @@ class TestGhRepoCreateTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -115,6 +183,7 @@ class TestGhRepoCreateTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -132,14 +201,15 @@ class TestGhRepoCreateTool:
         assert "--source=." in call_args
 
     @pytest.mark.asyncio
-    async def test_create_auth_failure(self, tool):
-        """Reports error when gh authentication fails."""
+    async def test_create_failure(self, tool):
+        """Reports error when gh repo create fails."""
         mock_result = mock.MagicMock()
         mock_result.returncode = 1
         mock_result.stdout = ""
-        mock_result.stderr = "To get started with GitHub CLI, please run: gh auth login"
+        mock_result.stderr = "repository name already exists"
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -152,12 +222,13 @@ class TestGhRepoCreateTool:
             result = await tool.execute(name="my-charm")
 
         assert not result.success
-        assert "auth login" in result.error
+        assert "already exists" in result.error
 
     @pytest.mark.asyncio
     async def test_create_timeout(self, tool):
         """Reports error on timeout."""
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -190,6 +261,25 @@ class TestGhPrCreateTool:
         assert "gh CLI not found" in result.error
 
     @pytest.mark.asyncio
+    async def test_not_authenticated(self, tool):
+        """Reports a friendly error when gh is not authenticated."""
+        with (
+            mock.patch(
+                "cantrip.agent.tools.github.shutil.which",
+                return_value="/usr/bin/gh",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.github._check_gh_auth",
+                return_value="The GitHub CLI is not authenticated. "
+                "Please run `gh auth login` and follow the prompts, then try again.",
+            ),
+        ):
+            result = await tool.execute(title="Add feature", body="Description")
+
+        assert not result.success
+        assert "gh auth login" in result.error
+
+    @pytest.mark.asyncio
     async def test_create_pr(self, tool):
         """Creates a pull request and returns the URL."""
         mock_result = mock.MagicMock()
@@ -198,6 +288,7 @@ class TestGhPrCreateTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -225,6 +316,7 @@ class TestGhPrCreateTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -255,6 +347,7 @@ class TestGhPrCreateTool:
         mock_result.stderr = "pull request create failed: No commits between main and feature"
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -273,6 +366,7 @@ class TestGhPrCreateTool:
     async def test_create_pr_timeout(self, tool):
         """Reports error on timeout."""
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -305,6 +399,25 @@ class TestGhIssueListTool:
         assert "gh CLI not found" in result.error
 
     @pytest.mark.asyncio
+    async def test_not_authenticated(self, tool):
+        """Reports a friendly error when gh is not authenticated."""
+        with (
+            mock.patch(
+                "cantrip.agent.tools.github.shutil.which",
+                return_value="/usr/bin/gh",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.github._check_gh_auth",
+                return_value="The GitHub CLI is not authenticated. "
+                "Please run `gh auth login` and follow the prompts, then try again.",
+            ),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "gh auth login" in result.error
+
+    @pytest.mark.asyncio
     async def test_list_issues(self, tool):
         """Lists open issues."""
         mock_result = mock.MagicMock()
@@ -313,6 +426,7 @@ class TestGhIssueListTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -341,6 +455,7 @@ class TestGhIssueListTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -364,6 +479,7 @@ class TestGhIssueListTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -390,6 +506,7 @@ class TestGhIssueListTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -415,6 +532,7 @@ class TestGhIssueListTool:
         mock_result.stderr = ""
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -440,6 +558,7 @@ class TestGhIssueListTool:
         mock_result.stderr = "could not determine base repo"
 
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",
@@ -458,6 +577,7 @@ class TestGhIssueListTool:
     async def test_list_timeout(self, tool):
         """Reports error on timeout."""
         with (
+            _PATCH_AUTH_OK,
             mock.patch(
                 "cantrip.agent.tools.github.shutil.which",
                 return_value="/usr/bin/gh",

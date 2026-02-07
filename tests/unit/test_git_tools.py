@@ -12,6 +12,7 @@ from cantrip.agent.tools.git import (
     GitDiffTool,
     GitInitTool,
     GitLogTool,
+    GitPushTool,
     GitStatusTool,
 )
 
@@ -137,6 +138,32 @@ class TestGitCloneTool:
 
         assert not result.success
         assert "not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_clone_auth_failure(self, tool):
+        """Gives a friendly hint when clone fails due to authentication."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 128
+        mock_result.stdout = ""
+        mock_result.stderr = (
+            "fatal: Authentication failed for 'https://github.com/private/repo.git'"
+        )
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ),
+        ):
+            result = await tool.execute(url="https://github.com/private/repo.git")
+
+        assert not result.success
+        assert "could not authenticate" in result.error
+        assert "Authentication failed" in result.error
 
     @pytest.mark.asyncio
     async def test_clone_timeout(self, tool):
@@ -792,7 +819,7 @@ class TestGitCommitTool:
 
     @pytest.mark.asyncio
     async def test_commit_success(self, tool):
-        """Creates a commit."""
+        """Creates a commit without GPG signing."""
         mock_result = mock.MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "[main abc1234] Initial commit\n 1 file changed, 10 insertions(+)\n"
@@ -813,7 +840,7 @@ class TestGitCommitTool:
         assert result.success
         assert "Initial commit" in result.output
         call_args = mock_run.call_args[0][0]
-        assert call_args == ["git", "commit", "-m", "Initial commit"]
+        assert call_args == ["git", "commit", "--no-gpg-sign", "-m", "Initial commit"]
 
     @pytest.mark.asyncio
     async def test_commit_empty_staging(self, tool):
@@ -878,3 +905,187 @@ class TestGitCommitTool:
 
         assert not result.success
         assert "timed out" in result.error
+
+
+class TestGitPushTool:
+    """Tests for GitPushTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return GitPushTool()
+
+    @pytest.mark.asyncio
+    async def test_git_not_installed(self, tool):
+        """Error when git is not on PATH."""
+        with mock.patch("cantrip.agent.tools.git.shutil.which", return_value=None):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "git not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_push_success(self, tool):
+        """Pushes to the remote."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "To github.com:user/repo.git\n   abc123..def456  main -> main\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            result = await tool.execute()
+
+        assert result.success
+        assert "main -> main" in result.output
+        assert result.data["remote"] == "origin"
+        call_args = mock_run.call_args[0][0]
+        assert call_args == ["git", "push", "origin"]
+
+    @pytest.mark.asyncio
+    async def test_push_with_branch(self, tool):
+        """Pushes a specific branch."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "Everything up-to-date\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            result = await tool.execute(branch="feature")
+
+        assert result.success
+        call_args = mock_run.call_args[0][0]
+        assert call_args == ["git", "push", "origin", "feature"]
+        assert result.data["branch"] == "feature"
+
+    @pytest.mark.asyncio
+    async def test_push_set_upstream(self, tool):
+        """Passes -u flag when set_upstream is True."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "Branch 'main' set up to track 'origin/main'.\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            result = await tool.execute(set_upstream=True, branch="main")
+
+        assert result.success
+        call_args = mock_run.call_args[0][0]
+        assert call_args == ["git", "push", "-u", "origin", "main"]
+
+    @pytest.mark.asyncio
+    async def test_push_auth_failure(self, tool):
+        """Gives a friendly hint when push fails due to authentication."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 128
+        mock_result.stdout = ""
+        mock_result.stderr = (
+            "remote: Permission denied to user/repo.git\n"
+            "fatal: unable to access 'https://github.com/user/repo.git/'"
+        )
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "could not authenticate" in result.error
+        assert "Permission denied" in result.error
+
+    @pytest.mark.asyncio
+    async def test_push_generic_failure(self, tool):
+        """Reports non-auth errors without the auth hint."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "error: failed to push some refs to 'origin'"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "failed to push" in result.error
+        assert "could not authenticate" not in result.error
+
+    @pytest.mark.asyncio
+    async def test_push_timeout(self, tool):
+        """Reports error on timeout."""
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="git", timeout=120),
+            ),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "timed out" in result.error
+
+    @pytest.mark.asyncio
+    async def test_push_uses_network_timeout(self, tool):
+        """Uses the longer network timeout, not the local one."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "Everything up-to-date\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            await tool.execute()
+
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["timeout"] == 120

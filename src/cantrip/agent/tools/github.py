@@ -9,6 +9,28 @@ from cantrip.agent.tools.base import Tool, ToolResult
 # Timeout for all gh operations (seconds).
 _GH_TIMEOUT = 30
 
+_GH_NOT_AUTHENTICATED = (
+    "The GitHub CLI is not authenticated. "
+    "Please run `gh auth login` and follow the prompts, then try again."
+)
+
+
+def _check_gh_auth() -> str | None:
+    """Return an error message if gh is not authenticated, or None if all is well."""
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        return "Timed out checking gh authentication status."
+
+    if result.returncode != 0:
+        return _GH_NOT_AUTHENTICATED
+    return None
+
 
 class GhRepoCreateTool(Tool):
     """Tool to create a GitHub repository."""
@@ -62,6 +84,10 @@ class GhRepoCreateTool(Tool):
                 output="",
                 error="gh CLI not found. Is it installed?",
             )
+
+        auth_err = _check_gh_auth()
+        if auth_err:
+            return ToolResult(success=False, output="", error=auth_err)
 
         cmd = ["gh", "repo", "create", name]
         cmd.append("--private" if private else "--public")
@@ -151,6 +177,10 @@ class GhPrCreateTool(Tool):
                 error="gh CLI not found. Is it installed?",
             )
 
+        auth_err = _check_gh_auth()
+        if auth_err:
+            return ToolResult(success=False, output="", error=auth_err)
+
         cmd = ["gh", "pr", "create", "--title", title, "--body", body]
         if base:
             cmd.extend(["--base", base])
@@ -239,6 +269,10 @@ class GhIssueListTool(Tool):
                 output="",
                 error="gh CLI not found. Is it installed?",
             )
+
+        auth_err = _check_gh_auth()
+        if auth_err:
+            return ToolResult(success=False, output="", error=auth_err)
 
         cmd = ["gh", "issue", "list", "--state", state, "--limit", str(limit)]
         if repo:

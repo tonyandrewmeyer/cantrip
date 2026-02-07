@@ -32,6 +32,7 @@ from cantrip.agent.tools import (
     GitDiffTool,
     GitInitTool,
     GitLogTool,
+    GitPushTool,
     GitStatusTool,
     JujuAddModelTool,
     JujuConsumeTool,
@@ -163,6 +164,7 @@ class CantripAgent:
             GitLogTool(),
             GitAddTool(),
             GitCommitTool(),
+            GitPushTool(),
             # GitHub operations
             GhRepoCreateTool(),
             GhPrCreateTool(),
