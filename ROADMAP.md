@@ -56,7 +56,7 @@
 ### 1.1 Environment Setup
 - [x] Concierge integration
 - [x] Auto-setup LXD or Canonical K8s based on charm type
-- [ ] COS-lite deployment to separate model
+- [x] COS-lite deployment to separate model
 - [x] Cross-model relation setup
 
 ### 1.2 12-Factor Path (Path A)
