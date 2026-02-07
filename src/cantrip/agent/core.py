@@ -21,6 +21,7 @@ from cantrip.agent.tools import (
     GhPrCreateTool,
     GhRepoCreateTool,
     GitAddTool,
+    GitCloneTool,
     GitCommitTool,
     GitDiffTool,
     GitInitTool,
@@ -148,6 +149,7 @@ class CantripAgent:
             ConciergePrepareTool(),
             ConciergeStatusTool(),
             # Git operations
+            GitCloneTool(),
             GitInitTool(),
             GitStatusTool(),
             GitDiffTool(),

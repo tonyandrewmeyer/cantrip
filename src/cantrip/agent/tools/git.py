@@ -6,8 +6,98 @@ from typing import Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
 
-# Timeout for all git operations (seconds).
+# Timeout for local git operations (seconds).
 _GIT_TIMEOUT = 30
+
+# Timeout for network git operations (seconds).
+_GIT_NETWORK_TIMEOUT = 120
+
+
+class GitCloneTool(Tool):
+    """Tool to clone a git repository."""
+
+    @property
+    def name(self) -> str:
+        return "git_clone"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Clone a git repository into a local directory. "
+            "Useful for fetching the source code of an application to be charmed."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Repository URL (HTTPS or SSH)",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Directory to clone into (defaults to repo name)",
+                },
+                "depth": {
+                    "type": "integer",
+                    "description": (
+                        "Create a shallow clone with this many commits of history. "
+                        "Use 1 for the fastest clone when full history is not needed."
+                    ),
+                },
+            },
+            "required": ["url"],
+        }
+
+    async def execute(
+        self,
+        url: str,
+        path: str | None = None,
+        depth: int | None = None,
+    ) -> ToolResult:
+        """Run git clone."""
+        if not shutil.which("git"):
+            return ToolResult(
+                success=False,
+                output="",
+                error="git not found. Is it installed?",
+            )
+
+        cmd = ["git", "clone"]
+        if depth is not None:
+            cmd.extend(["--depth", str(depth)])
+        cmd.append(url)
+        if path:
+            cmd.append(path)
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=_GIT_NETWORK_TIMEOUT,
+            )
+
+            if result.returncode != 0:
+                return ToolResult(
+                    success=False,
+                    output=result.stdout,
+                    error=result.stderr or "git clone failed",
+                )
+
+            return ToolResult(
+                success=True,
+                output=result.stderr.strip(),
+                data={"url": url, "path": path},
+            )
+        except subprocess.TimeoutExpired:
+            return ToolResult(
+                success=False,
+                output="",
+                error="git clone timed out",
+            )
 
 
 class GitInitTool(Tool):

@@ -7,12 +7,177 @@ import pytest
 
 from cantrip.agent.tools.git import (
     GitAddTool,
+    GitCloneTool,
     GitCommitTool,
     GitDiffTool,
     GitInitTool,
     GitLogTool,
     GitStatusTool,
 )
+
+
+class TestGitCloneTool:
+    """Tests for GitCloneTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return GitCloneTool()
+
+    @pytest.mark.asyncio
+    async def test_git_not_installed(self, tool):
+        """Error when git is not on PATH."""
+        with mock.patch("cantrip.agent.tools.git.shutil.which", return_value=None):
+            result = await tool.execute(url="https://github.com/user/repo.git")
+
+        assert not result.success
+        assert "git not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_clone_success(self, tool):
+        """Clones a repository."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "Cloning into 'repo'...\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            result = await tool.execute(url="https://github.com/user/repo.git")
+
+        assert result.success
+        assert "Cloning into" in result.output
+        assert result.data["url"] == "https://github.com/user/repo.git"
+        call_args = mock_run.call_args[0][0]
+        assert call_args == ["git", "clone", "https://github.com/user/repo.git"]
+
+    @pytest.mark.asyncio
+    async def test_clone_into_path(self, tool):
+        """Clones into a specified directory."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "Cloning into '/tmp/my-app'...\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            result = await tool.execute(
+                url="https://github.com/user/repo.git",
+                path="/tmp/my-app",
+            )
+
+        assert result.success
+        assert result.data["path"] == "/tmp/my-app"
+        call_args = mock_run.call_args[0][0]
+        assert call_args == ["git", "clone", "https://github.com/user/repo.git", "/tmp/my-app"]
+
+    @pytest.mark.asyncio
+    async def test_clone_shallow(self, tool):
+        """Creates a shallow clone with --depth."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "Cloning into 'repo'...\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            result = await tool.execute(
+                url="https://github.com/user/repo.git",
+                depth=1,
+            )
+
+        assert result.success
+        call_args = mock_run.call_args[0][0]
+        assert "--depth" in call_args
+        depth_idx = call_args.index("--depth")
+        assert call_args[depth_idx + 1] == "1"
+
+    @pytest.mark.asyncio
+    async def test_clone_failure(self, tool):
+        """Reports error when clone fails."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 128
+        mock_result.stdout = ""
+        mock_result.stderr = "fatal: repository 'https://bad-url/' not found"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ),
+        ):
+            result = await tool.execute(url="https://bad-url/")
+
+        assert not result.success
+        assert "not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_clone_timeout(self, tool):
+        """Reports error on timeout."""
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="git", timeout=120),
+            ),
+        ):
+            result = await tool.execute(url="https://github.com/user/repo.git")
+
+        assert not result.success
+        assert "timed out" in result.error
+
+    @pytest.mark.asyncio
+    async def test_clone_uses_network_timeout(self, tool):
+        """Uses the longer network timeout, not the local one."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "Cloning into 'repo'...\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            await tool.execute(url="https://github.com/user/repo.git")
+
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["timeout"] == 120
 
 
 class TestGitInitTool:

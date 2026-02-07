@@ -80,7 +80,7 @@
 - [x] Status refresh
 
 ### 1.5 Version Control
-- [x] Git tools (init, status, diff, log, add, commit)
+- [x] Git tools (clone, init, status, diff, log, add, commit)
 - [x] GitHub CLI tools (repo create, PR create, issue list)
 - [ ] Push support (deferred — requires explicit user confirmation model)
 

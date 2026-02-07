@@ -19,6 +19,7 @@ from cantrip.agent.tools.files import (
 )
 from cantrip.agent.tools.git import (
     GitAddTool,
+    GitCloneTool,
     GitCommitTool,
     GitDiffTool,
     GitInitTool,
@@ -84,6 +85,7 @@ __all__ = [
     "JujuOfferTool",
     "JujuConsumeTool",
     # Git
+    "GitCloneTool",
     "GitInitTool",
     "GitStatusTool",
     "GitDiffTool",
