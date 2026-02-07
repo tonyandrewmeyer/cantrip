@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 
 from cantrip import __version__
-from cantrip.cli import run_cli
-from cantrip.tui.app import CantripApp
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,8 +78,12 @@ def main() -> int:
         return 1
 
     if args.no_tui:
+        from cantrip.cli import run_cli
+
         return run_cli(args)
     else:
+        from cantrip.tui.app import CantripApp
+
         app = CantripApp(
             provider=args.provider,
             model=args.model,

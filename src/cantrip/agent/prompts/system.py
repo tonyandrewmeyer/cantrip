@@ -1,29 +1,67 @@
 """System prompt for the Cantrip agent."""
 
 from pathlib import Path
-
-import jinja2
+from typing import Any
 
 _TEMPLATE_DIR = Path(__file__).parent
-_ENV = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(_TEMPLATE_DIR),
-    keep_trailing_newline=True,
-    undefined=jinja2.StrictUndefined,
-)
-_SYSTEM_TEMPLATE = _ENV.get_template("system.md.j2")
 
-# Pre-rendered default prompt (no context injected).
-SYSTEM_PROMPT = _SYSTEM_TEMPLATE.render(
-    charm_name=None,
-    charm_path=None,
-    charm_type=None,
-    framework=None,
-    dev_model=None,
-    cos_model=None,
-    recent_decisions=None,
-    skills_index=None,
-    environment_ready=None,
-)
+# Jinja2 environment and template are loaded lazily to avoid import-time I/O.
+_SYSTEM_TEMPLATE: Any = None
+
+
+def _get_template() -> Any:
+    """Return the Jinja2 template, loading it on first call."""
+    global _SYSTEM_TEMPLATE  # noqa: PLW0603
+    if _SYSTEM_TEMPLATE is None:
+        import jinja2
+
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(_TEMPLATE_DIR),
+            keep_trailing_newline=True,
+            undefined=jinja2.StrictUndefined,
+        )
+        _SYSTEM_TEMPLATE = env.get_template("system.md.j2")
+    return _SYSTEM_TEMPLATE
+
+
+class _LazyPrompt:
+    """Lazy string that renders the default system prompt on first access.
+
+    Behaves like a str so that existing code (``len(SYSTEM_PROMPT)``,
+    ``"x" in SYSTEM_PROMPT``, etc.) keeps working without change.
+    """
+
+    def __init__(self) -> None:
+        self._value: str | None = None
+
+    def _resolve(self) -> str:
+        if self._value is None:
+            self._value = build_system_prompt()
+        return self._value
+
+    def __str__(self) -> str:
+        return self._resolve()
+
+    def __repr__(self) -> str:
+        return repr(self._resolve())
+
+    def __contains__(self, item: str) -> bool:
+        return item in self._resolve()
+
+    def __len__(self) -> int:
+        return len(self._resolve())
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str):
+            return self._resolve() == other
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._resolve())
+
+
+# Default prompt rendered lazily on first access.
+SYSTEM_PROMPT: Any = _LazyPrompt()
 
 
 def build_system_prompt(
@@ -53,7 +91,7 @@ def build_system_prompt(
     Returns:
         Complete system prompt with context.
     """
-    return _SYSTEM_TEMPLATE.render(
+    return _get_template().render(
         charm_name=charm_name,
         charm_path=charm_path,
         charm_type=charm_type,

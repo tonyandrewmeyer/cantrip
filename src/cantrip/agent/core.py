@@ -76,17 +76,56 @@ class CantripAgent:
         provider: LLMProvider,
         charm_path: Path | None = None,
     ):
-        """Initialise the agent."""
+        """Initialise the agent.
+
+        Heavy work (skills discovery, tool creation, session store) is
+        deferred until first use so that startup stays fast.
+        """
         self.provider = provider
         self.state = AgentState(charm_path=charm_path)
-        self._skills_index = SkillsIndex()
-        self._skills_index.discover()
-        self._tools = self._build_tools()
-        self._tool_map = {tool.name: tool for tool in self._tools}
         self._preflight = PreflightRunner(self.state)
+
+        # Lazy-initialised on first access via properties.
+        self._skills_index_cache: SkillsIndex | None = None
+        self._tools_cache: list[Tool] | None = None
+        self._tool_map_cache: dict[str, Tool] | None = None
         self._store: SessionStore | None = None
+        self._store_initialised = False
+
         if charm_path:
-            self._init_store(charm_path)
+            self._ensure_claude_md(charm_path)
+
+    @property
+    def _skills_index(self) -> SkillsIndex:
+        """Skills index, discovered lazily on first access."""
+        if self._skills_index_cache is None:
+            self._skills_index_cache = SkillsIndex()
+            self._skills_index_cache.discover()
+        return self._skills_index_cache
+
+    @property
+    def _tools(self) -> list[Tool]:
+        """Tool instances, built lazily on first access."""
+        if self._tools_cache is None:
+            self._tools_cache = self._build_tools()
+            self._tool_map_cache = {t.name: t for t in self._tools_cache}
+        return self._tools_cache
+
+    @property
+    def _tool_map(self) -> dict[str, Tool]:
+        """Tool lookup by name, built lazily alongside _tools."""
+        if self._tool_map_cache is None:
+            # Accessing _tools triggers the build.
+            _ = self._tools
+        return self._tool_map_cache  # type: ignore[return-value]
+
+    def _ensure_store(self) -> None:
+        """Initialise the session store on first need."""
+        if self._store_initialised:
+            return
+        self._store_initialised = True
+        if self.state.charm_path:
+            self._init_store(self.state.charm_path)
 
     def _init_store(self, charm_path: Path) -> None:
         """Initialise the session store, migrating from JSON if necessary."""
@@ -107,8 +146,6 @@ class CantripAgent:
                 old_dir.rename(backup)
 
         self._store = SessionStore(db_path)
-        self._store.open()
-        self._ensure_claude_md(charm_path)
 
     def _ensure_claude_md(self, charm_path: Path) -> None:
         """Write a CLAUDE.md into the charm directory if one does not exist."""
@@ -122,6 +159,7 @@ class CantripAgent:
 
     def _record_usage(self, response: Response) -> None:
         """Record token usage from a provider response if a store is active."""
+        self._ensure_store()
         if self._store and response.usage:
             self._store.record_usage(
                 provider=self.provider.name,
@@ -372,6 +410,7 @@ class CantripAgent:
 
     def save_state(self) -> None:
         """Save agent state to the session store."""
+        self._ensure_store()
         if self._store:
             self._store.save_session(self.state)
 
@@ -380,6 +419,7 @@ class CantripAgent:
 
         Returns True if state was loaded, False if no state exists.
         """
+        self._ensure_store()
         if not self._store:
             return False
 

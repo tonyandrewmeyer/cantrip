@@ -38,10 +38,12 @@ class TestOpenClose:
         store.close()
         store.close()
 
-    def test_operations_fail_when_closed(self, db_path: Path) -> None:
+    def test_auto_opens_on_first_access(self, db_path: Path) -> None:
+        """Store opens the database automatically when accessed without explicit open()."""
         store = SessionStore(db_path)
-        with pytest.raises(RuntimeError, match="not open"):
-            store.load_session()
+        assert store.load_session() is None
+        assert db_path.exists()
+        store.close()
 
 
 class TestSessionCRUD:

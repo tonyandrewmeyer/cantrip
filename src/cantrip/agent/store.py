@@ -77,10 +77,10 @@ class SessionStore:
 
     @property
     def _db(self) -> sqlite3.Connection:
-        """Return the active connection, raising if not open."""
+        """Return the active connection, opening the database on first access."""
         if self._conn is None:
-            raise RuntimeError("SessionStore is not open")
-        return self._conn
+            self.open()
+        return self._conn  # type: ignore[return-value]
 
     # ── Session CRUD ─────────────────────────────────────────────────────
 

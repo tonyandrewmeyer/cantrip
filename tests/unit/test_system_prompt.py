@@ -7,9 +7,9 @@ class TestDefaultSystemPrompt:
     """Tests for the pre-rendered SYSTEM_PROMPT constant."""
 
     def test_default_prompt_is_non_empty(self):
-        """SYSTEM_PROMPT should be a non-empty string."""
-        assert isinstance(SYSTEM_PROMPT, str)
+        """SYSTEM_PROMPT should behave like a non-empty string."""
         assert len(SYSTEM_PROMPT) > 0
+        assert "Cantrip" in SYSTEM_PROMPT
 
     def test_default_prompt_contains_core_sections(self):
         """The default prompt should contain key sections from the template."""
