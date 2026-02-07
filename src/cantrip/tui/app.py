@@ -10,10 +10,26 @@ from textual.worker import Worker, WorkerState
 
 from cantrip import __version__
 from cantrip.agent.core import CantripAgent
+from cantrip.agent.preflight import CheckStatus, PreflightEvent
 from cantrip.llm import create_provider
 from cantrip.llm.base import ProviderRateLimitError
-from cantrip.tui.widgets.chat import ChatWidget, MessageWidget
+from cantrip.tui.widgets.chat import ChatWidget, MessageStatus, MessageWidget
 from cantrip.tui.widgets.status import JujuStatusWidget
+
+# Map preflight statuses to chat progress statuses.
+_STATUS_MAP = {
+    CheckStatus.PENDING: MessageStatus.PENDING,
+    CheckStatus.RUNNING: MessageStatus.IN_PROGRESS,
+    CheckStatus.PASSED: MessageStatus.COMPLETE,
+    CheckStatus.FAILED: MessageStatus.ERROR,
+    CheckStatus.SKIPPED: MessageStatus.COMPLETE,
+}
+
+# Preflight check names shown during warm-up (phase 1).
+_WARMUP_CHECKS = ["concierge", "snap_install", "juju"]
+
+# Preflight check names shown during bootstrap (phase 2).
+_BOOTSTRAP_CHECKS = ["bootstrap", "controller", "cos"]
 
 
 class CantripApp(App):
@@ -43,6 +59,9 @@ class CantripApp(App):
         self.charm_path = charm_path or Path.cwd()
         self._agent: CantripAgent | None = None
         self._thinking_widget: MessageWidget | None = None
+        self._warmup_widget: MessageWidget | None = None
+        self._bootstrap_widget: MessageWidget | None = None
+        self._bootstrap_started = False
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
@@ -67,6 +86,7 @@ class CantripApp(App):
         # Hide the status panel until there is something to show.
         self.query_one("#right-panel").display = False
         self._init_agent()
+        self._start_warm_up()
 
     def _init_agent(self) -> None:
         """Initialise the LLM provider and agent."""
@@ -76,6 +96,63 @@ class CantripApp(App):
         except ValueError as e:
             chat = self.query_one("#chat", ChatWidget)
             chat.add_system_message(f"Failed to initialise provider: {e}")
+
+    # -- Preflight integration ------------------------------------------------
+
+    def _start_warm_up(self) -> None:
+        """Start phase 1 preflight in a background worker."""
+        if not self._agent:
+            return
+        chat = self.query_one("#chat", ChatWidget)
+        self._warmup_widget = chat.add_system_message(
+            "Preparing environment...",
+            progress_items=["Concierge", "Snap install", "Juju CLI"],
+        )
+        self.run_worker(
+            self._agent.warm_up(callback=self._on_warmup_event),
+            name="preflight_warmup",
+            exclusive=False,
+        )
+
+    def _on_warmup_event(self, event: PreflightEvent) -> None:
+        """Handle a phase 1 preflight event — update progress items."""
+        if self._warmup_widget is None:
+            return
+        if event.check_name in _WARMUP_CHECKS:
+            idx = _WARMUP_CHECKS.index(event.check_name)
+            self._warmup_widget.update_progress(idx, _STATUS_MAP[event.status])
+
+    def _start_bootstrap(self) -> None:
+        """Start phase 2 preflight in a background worker."""
+        if not self._agent or self._bootstrap_started:
+            return
+        preset = self._agent.state.charm_type
+        if not preset:
+            return
+        self._bootstrap_started = True
+        chat = self.query_one("#chat", ChatWidget)
+        self._bootstrap_widget = chat.add_system_message(
+            f"Bootstrapping environment ({preset})...",
+            progress_items=["Controller", "Controller check", "COS"],
+        )
+        self.run_worker(
+            self._agent.bootstrap_environment(
+                preset=preset,
+                callback=self._on_bootstrap_event,
+            ),
+            name="preflight_bootstrap",
+            exclusive=False,
+        )
+
+    def _on_bootstrap_event(self, event: PreflightEvent) -> None:
+        """Handle a phase 2 preflight event — update progress items."""
+        if self._bootstrap_widget is None:
+            return
+        if event.check_name in _BOOTSTRAP_CHECKS:
+            idx = _BOOTSTRAP_CHECKS.index(event.check_name)
+            self._bootstrap_widget.update_progress(idx, _STATUS_MAP[event.status])
+
+    # -- Chat -----------------------------------------------------------------
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle chat input submission."""
@@ -110,9 +187,12 @@ class CantripApp(App):
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle worker state changes to update the UI."""
-        if event.worker.name != "agent_response":
-            return
+        if event.worker.name == "agent_response":
+            self._on_agent_response_done(event)
+        # Preflight workers don't need special handling on completion.
 
+    def _on_agent_response_done(self, event: Worker.StateChanged) -> None:
+        """Handle agent response worker completion."""
         chat = self.query_one("#chat", ChatWidget)
         input_widget = self.query_one("#chat-input", Input)
 
@@ -127,6 +207,8 @@ class CantripApp(App):
                 chat.add_assistant_message(str(result))
             input_widget.disabled = False
             input_widget.focus()
+            # Check whether charm_type was set during this exchange.
+            self._start_bootstrap()
 
         elif event.state == WorkerState.ERROR:
             error = event.worker.error

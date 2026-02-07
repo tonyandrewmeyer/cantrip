@@ -231,9 +231,20 @@ class ChatWidget(Widget):
             )
         )
 
-    def add_system_message(self, content: str) -> MessageWidget:
-        """Add a system message."""
-        return self.add_message(ChatMessage(role=MessageRole.SYSTEM, content=content))
+    def add_system_message(
+        self,
+        content: str,
+        progress_items: list[str] | None = None,
+    ) -> MessageWidget:
+        """Add a system message with optional progress items."""
+        items = [ProgressItem(text=item) for item in (progress_items or [])]
+        return self.add_message(
+            ChatMessage(
+                role=MessageRole.SYSTEM,
+                content=content,
+                progress_items=items,
+            )
+        )
 
     def remove_message(self, widget: MessageWidget) -> None:
         """Remove a message widget from the chat."""

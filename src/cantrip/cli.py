@@ -5,10 +5,25 @@ import asyncio
 import sys
 
 from cantrip.agent.core import CantripAgent
+from cantrip.agent.preflight import CheckStatus, PreflightEvent
 from cantrip.llm import create_provider
 from cantrip.llm.base import ProviderError, ProviderRateLimitError
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+_STATUS_ICONS = {
+    CheckStatus.PENDING: "○",
+    CheckStatus.RUNNING: "⟳",
+    CheckStatus.PASSED: "✓",
+    CheckStatus.FAILED: "✗",
+    CheckStatus.SKIPPED: "–",
+}
+
+
+def _print_preflight_event(event: PreflightEvent) -> None:
+    """Print a preflight event as a single status line."""
+    icon = _STATUS_ICONS.get(event.status, "?")
+    print(f"  {icon} {event.message}")
 
 
 def run_cli(args: argparse.Namespace) -> int:
@@ -47,6 +62,10 @@ async def _spinner(label: str = "Thinking") -> None:
 
 async def _repl(agent: CantripAgent) -> None:
     """Run the interactive read-eval-print loop."""
+    # Start warm-up in the background.
+    warmup_task = asyncio.create_task(_warm_up_cli(agent))
+    bootstrap_started = False
+
     while True:
         try:
             user_input = input("> ")
@@ -66,6 +85,12 @@ async def _repl(agent: CantripAgent) -> None:
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
             print(f"\n{response}\n")
+
+            # Trigger phase 2 if charm_type was just determined.
+            if agent.state.charm_type and not bootstrap_started:
+                bootstrap_started = True
+                asyncio.create_task(_bootstrap_cli(agent))
+
         except KeyboardInterrupt:
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
@@ -82,3 +107,26 @@ async def _repl(agent: CantripAgent) -> None:
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
             print(f"\nUnexpected error: {e}\n", file=sys.stderr)
+
+    warmup_task.cancel()
+    await asyncio.gather(warmup_task, return_exceptions=True)
+
+
+async def _warm_up_cli(agent: CantripAgent) -> None:
+    """Run phase 1 preflight in the background."""
+    print("[preflight] Preparing environment...")
+    await agent.warm_up(callback=_print_preflight_event)
+    print("[preflight] Warm-up complete.\n")
+
+
+async def _bootstrap_cli(agent: CantripAgent) -> None:
+    """Run phase 2 preflight in the background."""
+    preset = agent.state.charm_type
+    if not preset:
+        return
+    print(f"\n[preflight] Bootstrapping environment ({preset})...")
+    await agent.bootstrap_environment(preset=preset, callback=_print_preflight_event)
+    if agent.state.environment_ready:
+        print("[preflight] Environment ready.\n")
+    else:
+        print("[preflight] Environment setup had errors.\n")
