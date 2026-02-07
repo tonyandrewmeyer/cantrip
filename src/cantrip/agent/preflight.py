@@ -27,6 +27,11 @@ from cantrip.agent.tools.environment import _concierge_available, _run_concierge
 
 log = logging.getLogger(__name__)
 
+# Default preset used when the charm type is not yet known.  k8s is the most
+# common substrate, and if the user later picks "machine" a re-bootstrap is
+# fast because snaps are already cached.
+DEFAULT_PRESET = "k8s"
+
 # Concierge config that installs LXD + craft tools but skips bootstrap.
 _WARMUP_CONFIG = """\
 providers:
@@ -65,6 +70,7 @@ class PreflightResult:
     controller_ready: bool = False
     cos_model: str | None = None
     cos_ready: bool = False
+    preset: str | None = None
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -152,6 +158,79 @@ class PreflightRunner:
                 config_path.unlink()
 
         self._check_juju()
+        return self.result
+
+    async def prepare(self, preset: str = DEFAULT_PRESET) -> PreflightResult:
+        """Run the full environment preparation in one pass.
+
+        Runs ``concierge prepare --preset {preset}`` (which installs snaps
+        *and* bootstraps a controller), then verifies the controller and
+        deploys COS.  This is the eager path used at startup so the
+        environment is ready by the time the user finishes describing their
+        charm.
+        """
+        self.result.preset = preset
+
+        # Check concierge availability.
+        self._emit("concierge", CheckStatus.RUNNING, "Checking for Concierge")
+        if not _concierge_available():
+            self._emit("concierge", CheckStatus.SKIPPED, "Concierge not installed")
+            self.result.concierge_available = False
+            self._check_juju()
+            self._emit("controller", CheckStatus.SKIPPED, "No concierge — skipping bootstrap")
+            self._emit("cos", CheckStatus.SKIPPED, "No concierge — skipping COS")
+            return self.result
+
+        self.result.concierge_available = True
+        self._emit("concierge", CheckStatus.PASSED, "Concierge found")
+
+        # Run the full concierge prepare with the preset.
+        self._emit(
+            "prepare",
+            CheckStatus.RUNNING,
+            f"Preparing environment ({preset})",
+        )
+        try:
+            rc, stdout, stderr = await _run_concierge(
+                "prepare",
+                "--preset",
+                preset,
+                timeout=600,
+            )
+            if rc != 0:
+                msg = f"concierge prepare --preset {preset} failed (exit {rc})"
+                self._emit("prepare", CheckStatus.FAILED, msg, detail=stderr.strip())
+                self.result.errors.append(f"{msg}: {stderr.strip()}")
+                self._check_juju()
+                return self.result
+            self._emit("prepare", CheckStatus.PASSED, "Environment prepared")
+        except TimeoutError:
+            msg = "concierge prepare timed out"
+            self._emit("prepare", CheckStatus.FAILED, msg)
+            self.result.errors.append(msg)
+            self._check_juju()
+            return self.result
+
+        self._check_juju()
+
+        # Check controller.
+        self._emit("controller", CheckStatus.RUNNING, "Checking controller")
+        try:
+            juju = jubilant.Juju()
+            juju.status()
+            self.result.controller_ready = True
+            self._emit("controller", CheckStatus.PASSED, "Controller ready")
+        except jubilant.CLIError as exc:
+            self.result.controller_ready = False
+            self._emit("controller", CheckStatus.FAILED, "Controller not ready", detail=str(exc))
+            self.result.errors.append(f"Controller check failed: {exc}")
+            return self.result
+
+        # Check / deploy COS.
+        cos_model_name = self._state.cos_model or "cos"
+        self._emit("cos", CheckStatus.RUNNING, f"Checking COS model ({cos_model_name})")
+        await self._ensure_cos(cos_model_name)
+
         return self.result
 
     def _check_juju(self) -> None:

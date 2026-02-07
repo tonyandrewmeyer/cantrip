@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from cantrip.agent.preflight import (
+    DEFAULT_PRESET,
     CheckStatus,
     PreflightCallback,
     PreflightEvent,
@@ -63,6 +64,7 @@ class TestPreflightResult:
         assert result.controller_ready is False
         assert result.cos_model is None
         assert result.cos_ready is False
+        assert result.preset is None
         assert result.errors == []
         assert result.fully_ready is False
 
@@ -531,3 +533,178 @@ class TestBootstrap:
 
         assert result1.juju_available is True
         assert result2.juju_available is True
+
+
+class TestPrepare:
+    """Tests for PreflightRunner.prepare()."""
+
+    @pytest.mark.asyncio
+    async def test_full_success(self):
+        """prepare succeeds when concierge, controller, and COS are all ready."""
+        events: list[PreflightEvent] = []
+        state = AgentState()
+        runner = PreflightRunner(state, callback=events.append)
+
+        mock_status = MagicMock()
+        mock_status.apps = {"grafana": MagicMock()}
+
+        mock_juju_cls = MagicMock()
+        mock_juju_instance = MagicMock()
+        mock_juju_instance.status.return_value = mock_status
+        mock_juju_cls.return_value = mock_juju_instance
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+        ):
+            result = await runner.prepare("k8s")
+
+        assert result.concierge_available is True
+        assert result.juju_available is True
+        assert result.controller_ready is True
+        assert result.cos_ready is True
+        assert result.preset == "k8s"
+        assert result.fully_ready is True
+
+    @pytest.mark.asyncio
+    async def test_default_preset(self):
+        """prepare uses DEFAULT_PRESET when no preset is specified."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+        ):
+            result = await runner.prepare()
+
+        assert result.preset == DEFAULT_PRESET
+
+    @pytest.mark.asyncio
+    async def test_concierge_not_installed(self):
+        """prepare skips everything gracefully when concierge is missing."""
+        events: list[PreflightEvent] = []
+        state = AgentState()
+        runner = PreflightRunner(state, callback=events.append)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+        ):
+            result = await runner.prepare("k8s")
+
+        assert result.concierge_available is False
+        assert result.fully_ready is False
+        names = [e.check_name for e in events]
+        assert "concierge" in names
+        assert "juju" in names
+        assert "controller" in names
+        assert "cos" in names
+
+    @pytest.mark.asyncio
+    async def test_concierge_prepare_fails(self):
+        """prepare records error and returns early when concierge prepare fails."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(1, "", "boom"),
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+        ):
+            result = await runner.prepare("k8s")
+
+        assert len(result.errors) == 1
+        assert "failed" in result.errors[0]
+        assert result.controller_ready is False
+
+    @pytest.mark.asyncio
+    async def test_concierge_prepare_timeout(self):
+        """prepare records error when concierge prepare times out."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                side_effect=TimeoutError,
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+        ):
+            result = await runner.prepare("machine")
+
+        assert len(result.errors) == 1
+        assert "timed out" in result.errors[0]
+
+    @pytest.mark.asyncio
+    async def test_controller_not_ready(self):
+        """prepare returns early when the controller check fails."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        cli_error = type("CLIError", (Exception,), {})
+
+        mock_juju_cls = MagicMock()
+        mock_juju_cls.return_value.status.side_effect = cli_error("no controller")
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
+        ):
+            result = await runner.prepare("k8s")
+
+        assert result.controller_ready is False
+        assert result.cos_ready is False
+
+    @pytest.mark.asyncio
+    async def test_events_emitted_in_order(self):
+        """Events are emitted in the expected order during a successful prepare."""
+        events: list[PreflightEvent] = []
+        state = AgentState()
+        runner = PreflightRunner(state, callback=events.append)
+
+        mock_status = MagicMock()
+        mock_status.apps = {"grafana": MagicMock()}
+
+        mock_juju_cls = MagicMock()
+        mock_juju_cls.return_value.status.return_value = mock_status
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+        ):
+            await runner.prepare("k8s")
+
+        check_names = [e.check_name for e in events]
+        assert check_names[0] == "concierge"
+        assert "prepare" in check_names
+        assert "juju" in check_names
+        assert "controller" in check_names
+        assert check_names[-1] == "cos"

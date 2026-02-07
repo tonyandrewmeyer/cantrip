@@ -10,7 +10,7 @@ from textual.worker import Worker, WorkerState
 
 from cantrip import __version__
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.preflight import CheckStatus, PreflightEvent
+from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.llm import create_provider
 from cantrip.llm.base import ProviderRateLimitError
 from cantrip.tui.widgets.chat import ChatWidget, MessageStatus, MessageWidget
@@ -25,10 +25,10 @@ _STATUS_MAP = {
     CheckStatus.SKIPPED: MessageStatus.COMPLETE,
 }
 
-# Preflight check names shown during warm-up (phase 1).
-_WARMUP_CHECKS = ["concierge", "snap_install", "juju"]
+# Preflight check names shown during the eager prepare (full bootstrap).
+_PREPARE_CHECKS = ["concierge", "prepare", "juju", "controller", "cos"]
 
-# Preflight check names shown during bootstrap (phase 2).
+# Preflight check names shown if a re-bootstrap is needed (different preset).
 _BOOTSTRAP_CHECKS = ["bootstrap", "controller", "cos"]
 
 
@@ -59,7 +59,7 @@ class CantripApp(App):
         self.charm_path = charm_path or Path.cwd()
         self._agent: CantripAgent | None = None
         self._thinking_widget: MessageWidget | None = None
-        self._warmup_widget: MessageWidget | None = None
+        self._prepare_widget: MessageWidget | None = None
         self._bootstrap_widget: MessageWidget | None = None
         self._bootstrap_started = False
 
@@ -86,7 +86,7 @@ class CantripApp(App):
         # Hide the status panel until there is something to show.
         self.query_one("#right-panel").display = False
         self._init_agent()
-        self._start_warm_up()
+        self._start_prepare()
 
     def _init_agent(self) -> None:
         """Initialise the LLM provider and agent."""
@@ -99,40 +99,61 @@ class CantripApp(App):
 
     # -- Preflight integration ------------------------------------------------
 
-    def _start_warm_up(self) -> None:
-        """Start phase 1 preflight in a background worker."""
+    def _start_prepare(self) -> None:
+        """Eagerly start a full environment preparation in a background worker.
+
+        Uses the default preset (k8s) so the environment is ready by the
+        time the user finishes describing their charm.
+        """
         if not self._agent:
             return
         chat = self.query_one("#chat", ChatWidget)
-        self._warmup_widget = chat.add_system_message(
+        self._prepare_widget = chat.add_system_message(
             "Preparing environment...",
-            progress_items=["Concierge", "Snap install", "Juju CLI"],
+            progress_items=[
+                "Concierge",
+                "Environment",
+                "Juju CLI",
+                "Controller",
+                "COS",
+            ],
         )
         self.run_worker(
-            self._agent.warm_up(callback=self._on_warmup_event),
-            name="preflight_warmup",
+            self._agent.prepare(
+                preset=DEFAULT_PRESET,
+                callback=self._on_prepare_event,
+            ),
+            name="preflight_prepare",
             exclusive=False,
         )
 
-    def _on_warmup_event(self, event: PreflightEvent) -> None:
-        """Handle a phase 1 preflight event — update progress items."""
-        if self._warmup_widget is None:
+    def _on_prepare_event(self, event: PreflightEvent) -> None:
+        """Handle an eager-prepare preflight event — update progress items."""
+        if self._prepare_widget is None:
             return
-        if event.check_name in _WARMUP_CHECKS:
-            idx = _WARMUP_CHECKS.index(event.check_name)
-            self._warmup_widget.update_progress(idx, _STATUS_MAP[event.status])
+        if event.check_name in _PREPARE_CHECKS:
+            idx = _PREPARE_CHECKS.index(event.check_name)
+            self._prepare_widget.update_progress(idx, _STATUS_MAP[event.status])
 
     def _start_bootstrap(self) -> None:
-        """Start phase 2 preflight in a background worker."""
+        """Re-bootstrap if the user picked a different preset than the default.
+
+        If the eager prepare already completed with the same preset (or the
+        user hasn't specified a charm type yet), this is a no-op.
+        """
         if not self._agent or self._bootstrap_started:
             return
         preset = self._agent.state.charm_type
         if not preset:
             return
+        # Skip if the eager prepare already used the right preset.
+        if preset == DEFAULT_PRESET and self._agent.preflight_result.fully_ready:
+            self._bootstrap_started = True
+            return
         self._bootstrap_started = True
         chat = self.query_one("#chat", ChatWidget)
         self._bootstrap_widget = chat.add_system_message(
-            f"Bootstrapping environment ({preset})...",
+            f"Re-bootstrapping environment ({preset})...",
             progress_items=["Controller", "Controller check", "COS"],
         )
         self.run_worker(
@@ -145,7 +166,7 @@ class CantripApp(App):
         )
 
     def _on_bootstrap_event(self, event: PreflightEvent) -> None:
-        """Handle a phase 2 preflight event — update progress items."""
+        """Handle a re-bootstrap preflight event — update progress items."""
         if self._bootstrap_widget is None:
             return
         if event.check_name in _BOOTSTRAP_CHECKS:

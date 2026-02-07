@@ -5,7 +5,12 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from cantrip.agent.preflight import PreflightCallback, PreflightResult, PreflightRunner
+from cantrip.agent.preflight import (
+    DEFAULT_PRESET,
+    PreflightCallback,
+    PreflightResult,
+    PreflightRunner,
+)
 from cantrip.agent.prompts import build_system_prompt, claude_md
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision
@@ -389,6 +394,22 @@ class CantripAgent:
         self.state.decisions = loaded.decisions
         return True
 
+    async def prepare(
+        self,
+        preset: str = DEFAULT_PRESET,
+        callback: PreflightCallback | None = None,
+    ) -> PreflightResult:
+        """Run the full environment preparation eagerly.
+
+        Calls ``concierge prepare --preset {preset}`` (installing snaps *and*
+        bootstrapping) so the environment is ready by the time the user
+        finishes describing their charm.
+        """
+        self._preflight = PreflightRunner(self.state, callback=callback)
+        result = await self._preflight.prepare(preset)
+        self.state.environment_ready = result.fully_ready
+        return result
+
     async def warm_up(self, callback: PreflightCallback | None = None) -> PreflightResult:
         """Run phase 1 preflight: install snaps without bootstrapping."""
         self._preflight = PreflightRunner(self.state, callback=callback)
@@ -399,7 +420,14 @@ class CantripAgent:
         preset: str,
         callback: PreflightCallback | None = None,
     ) -> PreflightResult:
-        """Run phase 2 preflight: bootstrap controller and deploy COS."""
+        """Run phase 2 preflight: bootstrap controller and deploy COS.
+
+        If ``prepare()`` already completed with the same preset, this is a
+        no-op.
+        """
+        if self._preflight.result.fully_ready and self._preflight.result.preset == preset:
+            return self._preflight.result
+
         self._preflight._callback = callback
         result = await self._preflight.bootstrap(preset)
         self.state.environment_ready = result.fully_ready
