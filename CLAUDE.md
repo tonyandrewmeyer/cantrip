@@ -57,26 +57,36 @@ uv run pytest tests/unit/test_tools.py::test_function_name -v
 
 ```
 src/cantrip/
-├── main.py              # CLI entry point
+├── main.py              # Entry point, arg parsing
+├── cli.py               # CLI mode (no TUI)
 ├── agent/
 │   ├── core.py          # CantripAgent - conversation loop, tool execution
-│   ├── tools/           # Agent tools (file ops, charm ops, juju ops)
-│   └── prompts/         # System prompts with context injection
+│   ├── state.py         # AgentState and Decision dataclasses
+│   ├── store.py         # SQLite-backed session store
+│   ├── skills.py        # Skills index and loading
+│   ├── preflight.py     # Pre-flight environment checks
+│   ├── tools/           # Agent tools (file ops, charm ops, juju, git, web)
+│   └── prompts/         # System prompts (Jinja2 templates + builders)
 ├── llm/
 │   ├── base.py          # Abstract LLMProvider interface
-│   └── gemini.py        # Google Gemini implementation
+│   ├── gemini.py        # Google Gemini implementation
+│   └── claude.py        # Anthropic Claude implementation
+├── charm/
+│   └── templates/       # Charm project templates
+├── skills/              # Skill definitions (SKILL.md per skill)
 ├── tui/
 │   ├── app.py           # Main Textual app (CantripApp)
+│   ├── cantrip.tcss     # Textual CSS
+│   ├── screens/         # TUI screens
 │   └── widgets/         # Status, chat widgets
-└── juju/
-    └── status.py        # Juju status parsing
+└── juju/                # Juju integration via Jubilant
 ```
 
 ### Key Patterns
 
 **Tool Pattern:** Tools inherit from abstract `Tool` class with `name`, `description`, `parameters` (JSON Schema), and async `execute()` method.
 
-**LLM Provider Pattern:** Abstract base with `complete()` and `stream()` methods. Messages use `Role` enum (SYSTEM, USER, ASSISTANT, TOOL).
+**LLM Provider Pattern:** Abstract `LLMProvider` base with `complete()`, `stream()`, and `count_tokens()` methods. Messages use `Role` enum (SYSTEM, USER, ASSISTANT, TOOL).
 
 **Agent Loop:** LLM returns tool_calls → execute each → collect results → call LLM again until response has no tool calls.
 
