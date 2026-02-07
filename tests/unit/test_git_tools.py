@@ -206,6 +206,29 @@ class TestGitCloneTool:
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 120
 
+    @pytest.mark.asyncio
+    async def test_clone_disables_terminal_prompt(self, tool):
+        """Sets GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "Cloning into 'repo'...\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            await tool.execute(url="https://github.com/user/repo.git")
+
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
 
 class TestGitInitTool:
     """Tests for GitInitTool."""
@@ -1089,3 +1112,26 @@ class TestGitPushTool:
 
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 120
+
+    @pytest.mark.asyncio
+    async def test_push_disables_terminal_prompt(self, tool):
+        """Sets GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = "Everything up-to-date\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            await tool.execute()
+
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"

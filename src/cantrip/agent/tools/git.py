@@ -1,5 +1,6 @@
 """Git version control tools."""
 
+import os
 import shutil
 import subprocess
 from typing import Any
@@ -21,6 +22,13 @@ _AUTH_PATTERNS = (
     "Invalid username or password",
     "denied to",
 )
+
+
+def _no_prompt_env() -> dict[str, str]:
+    """Return an environment dict that prevents git from prompting for credentials."""
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
 
 
 def _auth_hint(stderr: str) -> str:
@@ -101,6 +109,7 @@ class GitCloneTool(Tool):
                 capture_output=True,
                 text=True,
                 timeout=_GIT_NETWORK_TIMEOUT,
+                env=_no_prompt_env(),
             )
 
             if result.returncode != 0:
@@ -632,6 +641,7 @@ class GitPushTool(Tool):
                 capture_output=True,
                 text=True,
                 timeout=_GIT_NETWORK_TIMEOUT,
+                env=_no_prompt_env(),
             )
 
             if result.returncode != 0:
