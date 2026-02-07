@@ -84,14 +84,16 @@ class CharmcraftInitTool(Tool):
                     error=result.stderr or "charmcraft init failed",
                 )
 
-            # Ensure .cantrip is in the charm's .gitignore.
+            # Ensure Cantrip-managed paths are in the charm's .gitignore.
             gitignore = target_path / ".gitignore"
+            entries_to_add = [".cantrip", ".source/"]
             if gitignore.exists():
                 content = gitignore.read_text()
-                if ".cantrip" not in content:
-                    gitignore.write_text(content.rstrip("\n") + "\n.cantrip\n")
+                missing = [e for e in entries_to_add if e not in content]
+                if missing:
+                    gitignore.write_text(content.rstrip("\n") + "\n" + "\n".join(missing) + "\n")
             else:
-                gitignore.write_text(".cantrip\n")
+                gitignore.write_text("\n".join(entries_to_add) + "\n")
 
             return ToolResult(
                 success=True,

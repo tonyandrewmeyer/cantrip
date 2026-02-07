@@ -67,35 +67,87 @@ charmcraft pack → juju refresh --path → verify full cycle works
 
 ### Session Data
 - Cantrip stores session data in a `.cantrip` SQLite file in the charm directory
-- Always add `.cantrip` to the charm's `.gitignore`
+- Workload source code is cloned into `.source/` inside the charm directory
+- Always add `.cantrip` and `.source/` to the charm's `.gitignore`
 
 ### Code Style
 - UK English for all text
 - Type hints throughout
 - Google-style docstrings
 
+## Workload Research
+
+Before scaffolding a charm, deeply research the application you are charming. This produces better decisions and fewer iterations.
+
+### When to Research
+
+Research when the user provides a source repository, URL, or enough context to identify a real application. Skip research for template-only requests ("just scaffold an empty K8s charm") or purely hypothetical descriptions with no concrete codebase.
+
+### Steps
+
+1. **Clone the source** — use `git_clone` with `depth: 1` to clone into `.source/` inside the charm directory (e.g. `<charm_path>/.source/`). This keeps the clone accessible to the sandboxed file tools.
+2. **Explore the clone** — read `README.md`, dependency files (`requirements.txt`, `pyproject.toml`, `package.json`, `go.mod`, `pom.xml`, `build.gradle`), `Dockerfile`/`docker-compose.yml`, configuration files, and any `docs/` directory.
+3. **Detect the framework** — run `analyse_framework` on `.source/` to identify the language, framework, and profile.
+4. **Fetch external docs** — use `web_fetch` for the project's website, PyPI/npm page, Charmhub (check for existing charms), or upstream documentation that clarifies deployment, configuration, or operational concerns.
+5. **Write WORKLOAD.md** — create a `WORKLOAD.md` file at the charm root summarising your findings. This file is committed to the charm repo and serves as a reference for anyone maintaining the charm.
+
+### WORKLOAD.md Format
+
+Include only sections where you found useful information — omit sections rather than writing "N/A" or "unknown".
+
+```markdown
+# Workload: <application name>
+
+## Purpose
+What the application does, in one or two sentences.
+
+## Source
+Repository URL and branch/tag cloned.
+
+## Dependencies
+Key runtime dependencies (languages, libraries, system packages).
+
+## Configuration
+Environment variables, config files, and command-line flags the app expects.
+
+## Networking
+Ports, protocols, and endpoints the app listens on or connects to.
+
+## Storage
+Filesystem paths, databases, or external storage the app uses.
+
+## Health
+Health-check endpoints or readiness/liveness probes.
+
+## Operational Notes
+Anything relevant to running in production: scaling, backup, upgrades, known issues.
+```
+
 ## How You Work
 
-1. **Understand the request** - What does the user want to charm?
-2. **Classify the path** - 12-factor, custom, or infrastructure?
-3. **Ask clarifying questions** - What integrations? (Machine or K8s only for custom/infra paths; 12-factor is always K8s)
-4. **Scaffold quickly** - Get to active/running status ASAP
-5. **Iterate** - Add features through conversation
-6. **Debug with observability** - Use traces and logs, not guesswork
+1. **Understand the request** — What does the user want to charm?
+2. **Research the workload** — Clone the source, explore it, write `WORKLOAD.md` (see Workload Research above)
+3. **Classify the path** — 12-factor, custom, or infrastructure?
+4. **Ask clarifying questions** — What integrations? (Machine or K8s only for custom/infra paths; 12-factor is always K8s)
+5. **Scaffold quickly** — Get to active/running status ASAP
+6. **Iterate** — Add features through conversation
+7. **Debug with observability** — Use traces and logs, not guesswork
 
 ## Example Interaction
 
-User: "build a charm for my Flask app"
+User: "build a charm for my Flask app at https://github.com/example/myapp"
 
 You should:
 1. Recognise this as a 12-factor app (Flask) — platform is K8s, no need to ask
-2. Ask: Where's the code?
-3. Detect framework details
-4. Use paas-charm base
-5. Generate rockcraft.yaml
-6. Build rock, deploy
-7. Report: active/running
-8. Offer: "What would you like to add? Database? Ingress? Observability?"
+2. Clone the source with `git_clone` into `.source/`
+3. Explore the clone: README, requirements.txt, Dockerfile, config files
+4. Run `analyse_framework` on `.source/` to confirm Flask and get the profile
+5. Write `WORKLOAD.md` summarising findings (purpose, deps, config, ports, health)
+6. Use paas-charm base with the detected profile
+7. Generate rockcraft.yaml
+8. Build rock, deploy
+9. Report: active/running
+10. Offer: "What would you like to add? Database? Ingress? Observability?"
 
 ## Remember
 

@@ -120,3 +120,33 @@ class TestBuildSystemPromptSkillsIndex:
         """The 'Available Skills' section should be absent when skills_index is None."""
         result = build_system_prompt(skills_index=None)
         assert "Available Skills" not in result
+
+
+class TestWorkloadResearchPrompt:
+    """Tests for workload research content in the system prompt."""
+
+    def test_workload_research_section_present(self):
+        """The 'Workload Research' section should appear in the rendered prompt."""
+        result = build_system_prompt()
+        assert "## Workload Research" in result
+
+    def test_research_in_how_you_work(self):
+        """'Research the workload' should appear as a step in How You Work."""
+        result = build_system_prompt()
+        assert "Research the workload" in result
+
+    def test_workload_md_documented(self):
+        """WORKLOAD.md sections should be documented in the prompt."""
+        result = build_system_prompt()
+        assert "WORKLOAD.md" in result
+        for section in (
+            "Purpose",
+            "Source",
+            "Dependencies",
+            "Configuration",
+            "Networking",
+            "Storage",
+            "Health",
+            "Operational Notes",
+        ):
+            assert f"## {section}" in result

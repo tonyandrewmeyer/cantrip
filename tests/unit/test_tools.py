@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from cantrip.agent.tools.charm import AnalyseFrameworkTool
+from cantrip.agent.tools.charm import AnalyseFrameworkTool, CharmcraftInitTool
 from cantrip.agent.tools.environment import (
     ConciergePrepareTool,
     ConciergeStatusTool,
@@ -545,3 +545,66 @@ class TestAnalyseFrameworkTool:
         assert result.data["language"] == "javascript"
         assert result.data["framework"] is None
         assert result.data["profile"] is None
+
+
+class TestCharmcraftInitGitignore:
+    """Tests for CharmcraftInitTool .gitignore handling."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory."""
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+
+    @pytest.fixture
+    def tool(self):
+        return CharmcraftInitTool()
+
+    def _mock_charmcraft(self):
+        """Return a mock that simulates a successful charmcraft init."""
+        return mock.patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=mock.Mock(returncode=0, stdout="Initialised.", stderr=""),
+        )
+
+    @pytest.mark.asyncio
+    async def test_gitignore_created_with_cantrip_and_source(self, tool, temp_dir):
+        """A new .gitignore should contain both .cantrip and .source/ entries."""
+        with self._mock_charmcraft():
+            await tool.execute(name="test-charm", path=str(temp_dir))
+
+        gitignore = temp_dir / "test-charm" / ".gitignore"
+        content = gitignore.read_text()
+        assert ".cantrip" in content
+        assert ".source/" in content
+
+    @pytest.mark.asyncio
+    async def test_gitignore_appends_missing_entries(self, tool, temp_dir):
+        """Existing .gitignore gets missing entries appended."""
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        gitignore = charm_dir / ".gitignore"
+        gitignore.write_text("*.pyc\n__pycache__/\n")
+
+        with self._mock_charmcraft():
+            await tool.execute(name="test-charm", path=str(temp_dir))
+
+        content = gitignore.read_text()
+        assert ".cantrip" in content
+        assert ".source/" in content
+        assert "*.pyc" in content
+
+    @pytest.mark.asyncio
+    async def test_gitignore_does_not_duplicate(self, tool, temp_dir):
+        """Entries already present are not repeated."""
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        gitignore = charm_dir / ".gitignore"
+        gitignore.write_text(".cantrip\n.source/\n")
+
+        with self._mock_charmcraft():
+            await tool.execute(name="test-charm", path=str(temp_dir))
+
+        content = gitignore.read_text()
+        assert content.count(".cantrip") == 1
+        assert content.count(".source/") == 1

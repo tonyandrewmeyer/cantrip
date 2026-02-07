@@ -5,6 +5,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Workload research** — agent proactively clones and analyses application source code before scaffolding, producing a `WORKLOAD.md` summary; `.source/` directory automatically gitignored
 - **Background preflight checks** — proactively installs snaps (Juju, LXD, craft tools) on startup and bootstraps a controller + COS model once the charm type is known, so the environment is ready before the user needs it
 - **Git tools** — `git_clone`, `git_init`, `git_status`, `git_diff`, `git_log`, `git_add`, `git_commit` for version control without a general-purpose shell
 - **GitHub CLI tools** — `gh_repo_create`, `gh_pr_create`, `gh_issue_list` for repository management and collaboration via the `gh` CLI
