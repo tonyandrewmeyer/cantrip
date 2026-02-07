@@ -1,0 +1,533 @@
+"""Tests for background environment preflight checks."""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from cantrip.agent.preflight import (
+    CheckStatus,
+    PreflightCallback,
+    PreflightEvent,
+    PreflightResult,
+    PreflightRunner,
+)
+from cantrip.agent.state import AgentState
+
+
+class TestCheckStatus:
+    """Tests for the CheckStatus enum."""
+
+    def test_values(self):
+        """All expected statuses exist."""
+        assert CheckStatus.PENDING == "pending"
+        assert CheckStatus.RUNNING == "running"
+        assert CheckStatus.PASSED == "passed"
+        assert CheckStatus.FAILED == "failed"
+        assert CheckStatus.SKIPPED == "skipped"
+
+
+class TestPreflightEvent:
+    """Tests for the PreflightEvent dataclass."""
+
+    def test_creation(self):
+        """Basic event creation."""
+        event = PreflightEvent(
+            check_name="juju",
+            status=CheckStatus.PASSED,
+            message="Juju CLI found",
+        )
+        assert event.check_name == "juju"
+        assert event.status == CheckStatus.PASSED
+        assert event.message == "Juju CLI found"
+        assert event.detail == ""
+
+    def test_detail_field(self):
+        """Detail field is stored correctly."""
+        event = PreflightEvent(
+            check_name="cos",
+            status=CheckStatus.FAILED,
+            message="COS failed",
+            detail="exit code 1",
+        )
+        assert event.detail == "exit code 1"
+
+
+class TestPreflightResult:
+    """Tests for the PreflightResult dataclass."""
+
+    def test_defaults(self):
+        """All fields default to false/empty."""
+        result = PreflightResult()
+        assert result.concierge_available is False
+        assert result.juju_available is False
+        assert result.controller_ready is False
+        assert result.cos_model is None
+        assert result.cos_ready is False
+        assert result.errors == []
+        assert result.fully_ready is False
+
+    def test_fully_ready_true(self):
+        """fully_ready is True when juju, controller, and COS are all ready."""
+        result = PreflightResult(
+            juju_available=True,
+            controller_ready=True,
+            cos_ready=True,
+        )
+        assert result.fully_ready is True
+
+    def test_fully_ready_false_without_juju(self):
+        """fully_ready is False when juju is missing."""
+        result = PreflightResult(controller_ready=True, cos_ready=True)
+        assert result.fully_ready is False
+
+    def test_fully_ready_false_without_controller(self):
+        """fully_ready is False when controller is not ready."""
+        result = PreflightResult(juju_available=True, cos_ready=True)
+        assert result.fully_ready is False
+
+    def test_fully_ready_false_without_cos(self):
+        """fully_ready is False when COS is not ready."""
+        result = PreflightResult(juju_available=True, controller_ready=True)
+        assert result.fully_ready is False
+
+
+class TestPreflightCallback:
+    """Tests for the callback type alias."""
+
+    def test_callable_annotation(self):
+        """PreflightCallback accepts a callable that takes a PreflightEvent."""
+        events: list[PreflightEvent] = []
+
+        def cb(event: PreflightEvent) -> None:
+            events.append(event)
+
+        callback: PreflightCallback = cb
+        callback(PreflightEvent("test", CheckStatus.PASSED, "ok"))
+        assert len(events) == 1
+
+
+class TestWarmUp:
+    """Tests for PreflightRunner.warm_up()."""
+
+    @pytest.mark.asyncio
+    async def test_concierge_not_installed(self):
+        """warm_up skips concierge and checks juju when concierge is missing."""
+        events: list[PreflightEvent] = []
+        state = AgentState()
+        runner = PreflightRunner(state, callback=events.append)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+        ):
+            result = await runner.warm_up()
+
+        assert result.concierge_available is False
+        assert result.juju_available is False
+        names = [e.check_name for e in events]
+        assert "concierge" in names
+        assert "juju" in names
+        # Concierge should be skipped, not failed.
+        concierge_event = next(
+            e for e in events if e.check_name == "concierge" and e.status != CheckStatus.RUNNING
+        )
+        assert concierge_event.status == CheckStatus.SKIPPED
+
+    @pytest.mark.asyncio
+    async def test_concierge_prepare_succeeds(self):
+        """warm_up installs snaps and finds juju on success."""
+        events: list[PreflightEvent] = []
+        state = AgentState()
+        runner = PreflightRunner(state, callback=events.append)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+        ):
+            result = await runner.warm_up()
+
+        assert result.concierge_available is True
+        assert result.juju_available is True
+        assert result.errors == []
+
+    @pytest.mark.asyncio
+    async def test_concierge_prepare_fails(self):
+        """warm_up records error when concierge prepare fails."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(1, "", "install error"),
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+        ):
+            result = await runner.warm_up()
+
+        assert len(result.errors) == 1
+        assert "failed" in result.errors[0]
+
+    @pytest.mark.asyncio
+    async def test_concierge_prepare_timeout(self):
+        """warm_up records error when concierge prepare times out."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                side_effect=TimeoutError,
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+        ):
+            result = await runner.warm_up()
+
+        assert len(result.errors) == 1
+        assert "timed out" in result.errors[0]
+
+    @pytest.mark.asyncio
+    async def test_no_callback_runs_silently(self):
+        """warm_up works without a callback."""
+        state = AgentState()
+        runner = PreflightRunner(state, callback=None)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+        ):
+            result = await runner.warm_up()
+
+        assert result.juju_available is True
+
+    @pytest.mark.asyncio
+    async def test_callback_receives_events_in_order(self):
+        """Events are emitted in the expected order during a successful warm_up."""
+        events: list[PreflightEvent] = []
+        state = AgentState()
+        runner = PreflightRunner(state, callback=events.append)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+        ):
+            await runner.warm_up()
+
+        check_names = [e.check_name for e in events]
+        # Concierge checked first, then snap install, then juju.
+        assert check_names[0] == "concierge"
+        assert "snap_install" in check_names
+        assert check_names[-1] == "juju"
+
+    @pytest.mark.asyncio
+    async def test_temp_config_cleaned_up(self):
+        """The temporary config file is removed after warm_up."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+        written_paths: list[str] = []
+
+        original_run = AsyncMock(return_value=(0, "ok", ""))
+
+        async def capture_path(*args: str, timeout: int = 600) -> tuple[int, str, str]:
+            for arg in args:
+                if "cantrip-warmup" in arg:
+                    written_paths.append(arg)
+            return await original_run(*args, timeout=timeout)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.preflight._run_concierge", side_effect=capture_path),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+        ):
+            await runner.warm_up()
+
+        # A temp file path should have been passed to concierge.
+        assert len(written_paths) == 1
+        # The file should be cleaned up.
+        import os
+
+        assert not os.path.exists(written_paths[0])
+
+
+class TestBootstrap:
+    """Tests for PreflightRunner.bootstrap()."""
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_full_success(self):
+        """bootstrap succeeds when controller and COS are ready."""
+        events: list[PreflightEvent] = []
+        state = AgentState()
+        runner = PreflightRunner(state, callback=events.append)
+
+        mock_status = MagicMock()
+        mock_status.apps = {"grafana": MagicMock()}
+
+        mock_juju_cls = MagicMock()
+        mock_juju_instance = MagicMock()
+        mock_juju_instance.status.return_value = mock_status
+        mock_juju_cls.return_value = mock_juju_instance
+
+        with (
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+        ):
+            result = await runner.bootstrap("machine")
+
+        assert result.controller_ready is True
+        assert result.cos_ready is True
+        assert result.cos_model == "cos"
+        assert state.cos_model == "cos"
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_concierge_fails(self):
+        """bootstrap returns early when concierge prepare fails."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        with patch(
+            "cantrip.agent.preflight._run_concierge",
+            new_callable=AsyncMock,
+            return_value=(1, "", "boom"),
+        ):
+            result = await runner.bootstrap("k8s")
+
+        assert result.controller_ready is False
+        assert len(result.errors) == 1
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_concierge_timeout(self):
+        """bootstrap records error when concierge times out."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        with patch(
+            "cantrip.agent.preflight._run_concierge",
+            new_callable=AsyncMock,
+            side_effect=TimeoutError,
+        ):
+            result = await runner.bootstrap("machine")
+
+        assert result.controller_ready is False
+        assert "timed out" in result.errors[0]
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_controller_not_ready(self):
+        """bootstrap returns early when the controller check fails."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        cli_error = type("CLIError", (Exception,), {})
+
+        mock_juju_cls = MagicMock()
+        mock_juju_cls.return_value.status.side_effect = cli_error("no controller")
+
+        with (
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
+        ):
+            result = await runner.bootstrap("machine")
+
+        assert result.controller_ready is False
+        assert result.cos_ready is False
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_cos_model_missing_creates_and_deploys(self):
+        """bootstrap creates the COS model and deploys cos-lite."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        cli_error = type("CLIError", (Exception,), {})
+
+        # Default Juju (no model) — controller check passes.
+        default_juju = MagicMock()
+        default_juju.status.return_value = MagicMock()
+        default_juju.add_model = MagicMock()
+
+        # COS-specific Juju — first call raises (model missing), second succeeds.
+        cos_juju = MagicMock()
+        cos_juju.status.side_effect = cli_error("model not found")
+        cos_juju.deploy = MagicMock()
+
+        call_count = {"n": 0}
+
+        def juju_factory(model: str | None = None) -> MagicMock:
+            if model is None:
+                call_count["n"] += 1
+                return default_juju
+            # After add_model, the second Juju(model=cos) should work.
+            if call_count["n"] >= 2:
+                fresh = MagicMock()
+                fresh.deploy = MagicMock()
+                return fresh
+            return cos_juju
+
+        with (
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
+            patch(
+                "cantrip.agent.preflight.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_to_thread,
+        ):
+            await runner.bootstrap("machine")
+
+        # add_model and deploy should have been called.
+        assert mock_to_thread.await_count >= 1
+        assert state.cos_model == "cos"
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_cos_model_empty_deploys(self):
+        """bootstrap deploys cos-lite into an empty existing COS model."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        # Controller check — passes.
+        default_juju = MagicMock()
+        default_juju.status.return_value = MagicMock()
+
+        # COS model exists but has no apps.
+        cos_juju = MagicMock()
+        cos_status = MagicMock()
+        cos_status.apps = {}
+        cos_juju.status.return_value = cos_status
+        cos_juju.deploy = MagicMock()
+
+        def juju_factory(model: str | None = None) -> MagicMock:
+            if model is None:
+                return default_juju
+            return cos_juju
+
+        with (
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch(
+                "cantrip.agent.preflight.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_to_thread,
+        ):
+            result = await runner.bootstrap("machine")
+
+        assert mock_to_thread.await_count == 1
+        assert result.cos_ready is True
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_cos_deploy_fails(self):
+        """bootstrap records error when COS deployment fails."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        cli_error = type("CLIError", (Exception,), {})
+
+        # Controller check — passes.
+        default_juju = MagicMock()
+        default_juju.status.return_value = MagicMock()
+
+        # COS model exists but is empty, deploy will fail.
+        cos_juju = MagicMock()
+        cos_status = MagicMock()
+        cos_status.apps = {}
+        cos_juju.status.return_value = cos_status
+
+        def juju_factory(model: str | None = None) -> MagicMock:
+            if model is None:
+                return default_juju
+            return cos_juju
+
+        with (
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
+            patch(
+                "cantrip.agent.preflight.asyncio.to_thread",
+                new_callable=AsyncMock,
+                side_effect=cli_error("deploy failed"),
+            ),
+        ):
+            result = await runner.bootstrap("machine")
+
+        assert result.cos_ready is False
+        assert any("COS deployment failed" in e for e in result.errors)
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_uses_state_cos_model_name(self):
+        """bootstrap uses the cos_model name from state if set."""
+        state = AgentState(cos_model="my-cos")
+        runner = PreflightRunner(state)
+
+        mock_status = MagicMock()
+        mock_status.apps = {"grafana": MagicMock()}
+
+        mock_juju_cls = MagicMock()
+        mock_juju_cls.return_value.status.return_value = mock_status
+
+        with (
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+        ):
+            result = await runner.bootstrap("machine")
+
+        assert result.cos_model == "my-cos"
+        # Juju was called with the custom model name.
+        mock_juju_cls.assert_any_call(model="my-cos")
+
+    @pytest.mark.asyncio
+    async def test_idempotent_rerun(self):
+        """Running warm_up twice does not fail."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+        ):
+            result1 = await runner.warm_up()
+            result2 = await runner.warm_up()
+
+        assert result1.juju_available is True
+        assert result2.juju_available is True
