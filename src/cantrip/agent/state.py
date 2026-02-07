@@ -39,6 +39,9 @@ class AgentState:
     dev_model: str | None = None
     cos_model: str | None = None
 
+    # Transient — not persisted to SQLite, re-determined each startup.
+    environment_ready: bool = False
+
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
 

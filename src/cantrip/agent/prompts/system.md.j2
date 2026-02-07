@@ -112,9 +112,12 @@ Use the `load_skill` tool to load full instructions when you need detailed guida
 
 {{ skills_index }}
 {% endif %}
-{% if charm_name or charm_path or dev_model %}
+{% if charm_name or charm_path or dev_model or environment_ready is not none %}
 
 ## Current Context
+{% if environment_ready is not none %}
+**Environment**: {{ "Ready" if environment_ready else "Warming up" }}
+{%- endif %}
 {% if charm_name %}
 **Charm**: {{ charm_name }}
 {%- endif %}

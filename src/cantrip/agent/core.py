@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+from cantrip.agent.preflight import PreflightCallback, PreflightResult, PreflightRunner
 from cantrip.agent.prompts import build_system_prompt, claude_md
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision
@@ -76,6 +77,7 @@ class CantripAgent:
         self._skills_index.discover()
         self._tools = self._build_tools()
         self._tool_map = {tool.name: tool for tool in self._tools}
+        self._preflight = PreflightRunner(self.state)
         self._store: SessionStore | None = None
         if charm_path:
             self._init_store(charm_path)
@@ -184,6 +186,7 @@ class CantripAgent:
             cos_model=self.state.cos_model,
             recent_decisions=[d.to_dict() for d in self.state.decisions],
             skills_index=self._skills_index.format_for_prompt(),
+            environment_ready=self.state.environment_ready,
         )
 
     def _tools_for_llm(self) -> list[LLMTool]:
@@ -385,3 +388,24 @@ class CantripAgent:
         self.state.cos_model = loaded.cos_model
         self.state.decisions = loaded.decisions
         return True
+
+    async def warm_up(self, callback: PreflightCallback | None = None) -> PreflightResult:
+        """Run phase 1 preflight: install snaps without bootstrapping."""
+        self._preflight = PreflightRunner(self.state, callback=callback)
+        return await self._preflight.warm_up()
+
+    async def bootstrap_environment(
+        self,
+        preset: str,
+        callback: PreflightCallback | None = None,
+    ) -> PreflightResult:
+        """Run phase 2 preflight: bootstrap controller and deploy COS."""
+        self._preflight._callback = callback
+        result = await self._preflight.bootstrap(preset)
+        self.state.environment_ready = result.fully_ready
+        return result
+
+    @property
+    def preflight_result(self) -> PreflightResult:
+        """Current preflight result."""
+        return self._preflight.result
