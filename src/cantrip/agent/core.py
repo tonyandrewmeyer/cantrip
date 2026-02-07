@@ -17,6 +17,15 @@ from cantrip.agent.tools import (
     ConciergePrepareTool,
     ConciergeStatusTool,
     EditFileTool,
+    GhIssueListTool,
+    GhPrCreateTool,
+    GhRepoCreateTool,
+    GitAddTool,
+    GitCommitTool,
+    GitDiffTool,
+    GitInitTool,
+    GitLogTool,
+    GitStatusTool,
     JujuAddModelTool,
     JujuConsumeTool,
     JujuDeployTool,
@@ -138,6 +147,17 @@ class CantripAgent:
             # Environment
             ConciergePrepareTool(),
             ConciergeStatusTool(),
+            # Git operations
+            GitInitTool(),
+            GitStatusTool(),
+            GitDiffTool(),
+            GitLogTool(),
+            GitAddTool(),
+            GitCommitTool(),
+            # GitHub operations
+            GhRepoCreateTool(),
+            GhPrCreateTool(),
+            GhIssueListTool(),
             # Juju operations
             JujuStatusTool(),
             JujuDeployTool(),

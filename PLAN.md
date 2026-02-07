@@ -630,6 +630,16 @@ If workload supports multiple options (e.g., mysql OR postgresql), charm should 
 
 User never waits for background work to complete.
 
+## No Shell Access
+
+Cantrip deliberately does **not** provide a general-purpose shell or bash tool. Every capability the agent has is exposed through a purpose-built tool with typed parameters, structured output, and scoped permissions. This is a conscious safety and design choice:
+
+- **Prompt-injection containment.** Without a shell escape hatch, a prompt-injection attack cannot escalate to arbitrary command execution. The agent can only do what its tools allow.
+- **Domain scoping.** Cantrip is a charm-building agent, not a general coding assistant. Its tools cover file operations, charm operations, Juju, Rockcraft, Git, and GitHub — everything needed for the charm development workflow, nothing more.
+- **Auditability.** Every action the agent takes is a named tool call with typed arguments, making it straightforward to log, review, and restrict.
+
+When a new CLI capability is needed (e.g. `git`, `gh`, `charmcraft`), the correct approach is always to add a dedicated tool — never to introduce a general-purpose shell.
+
 ## Testing Strategy
 
 ### Unit Tests: Scenario

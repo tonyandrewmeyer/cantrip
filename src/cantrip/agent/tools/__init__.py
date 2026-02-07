@@ -17,6 +17,19 @@ from cantrip.agent.tools.files import (
     ReadFileTool,
     WriteFileTool,
 )
+from cantrip.agent.tools.git import (
+    GitAddTool,
+    GitCommitTool,
+    GitDiffTool,
+    GitInitTool,
+    GitLogTool,
+    GitStatusTool,
+)
+from cantrip.agent.tools.github import (
+    GhIssueListTool,
+    GhPrCreateTool,
+    GhRepoCreateTool,
+)
 from cantrip.agent.tools.juju import (
     JujuAddModelTool,
     JujuConsumeTool,
@@ -70,6 +83,17 @@ __all__ = [
     "JujuDestroyModelTool",
     "JujuOfferTool",
     "JujuConsumeTool",
+    # Git
+    "GitInitTool",
+    "GitStatusTool",
+    "GitDiffTool",
+    "GitLogTool",
+    "GitAddTool",
+    "GitCommitTool",
+    # GitHub
+    "GhRepoCreateTool",
+    "GhPrCreateTool",
+    "GhIssueListTool",
     # Skills
     "LoadSkillTool",
     # Web

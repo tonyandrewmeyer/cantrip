@@ -79,6 +79,11 @@
 - [x] Basic chat input/output
 - [x] Status refresh
 
+### 1.5 Version Control
+- [x] Git tools (init, status, diff, log, add, commit)
+- [x] GitHub CLI tools (repo create, PR create, issue list)
+- [ ] Push support (deferred — requires explicit user confirmation model)
+
 ### 1.4 Conversational Iteration
 - [ ] Add config options via conversation
 - [ ] Add actions via conversation
