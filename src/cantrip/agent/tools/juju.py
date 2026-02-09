@@ -2,6 +2,7 @@
 
 import json
 import shutil
+from pathlib import Path
 from typing import Any
 
 import jubilant
@@ -148,6 +149,14 @@ class JujuDeployTool(Tool):
         try:
             juju = jubilant.Juju(model=model)
 
+            # Resolve local .charm paths to absolute so juju doesn't
+            # misinterpret them as Charmhub names.
+            charm_path = Path(charm)
+            if charm_path.suffix == ".charm" and charm_path.exists():
+                charm = str(charm_path.resolve())
+            elif not charm_path.is_absolute() and (Path.cwd() / charm_path).exists():
+                charm = str((Path.cwd() / charm_path).resolve())
+
             # Build deploy arguments.
             deploy_args: dict[str, Any] = {"charm": charm}
             if app_name:
@@ -204,6 +213,13 @@ class JujuRefreshTool(Tool):
                     "type": "string",
                     "description": "Model name",
                 },
+                "resources": {
+                    "type": "object",
+                    "description": (
+                        "Named resources as key-value pairs. "
+                        "For 12-factor charms: {'oci-image': 'localhost:32000/my-app:latest'}"
+                    ),
+                },
             },
             "required": ["app_name"],
         }
@@ -213,6 +229,7 @@ class JujuRefreshTool(Tool):
         app_name: str,
         path: str | None = None,
         model: str | None = None,
+        resources: dict[str, str] | None = None,
     ) -> ToolResult:
         """Refresh a charm."""
         if not _juju_available():
@@ -227,6 +244,8 @@ class JujuRefreshTool(Tool):
             refresh_args: dict[str, Any] = {"app": app_name}
             if path:
                 refresh_args["path"] = path
+            if resources:
+                refresh_args["resources"] = resources
 
             juju.refresh(**refresh_args)
 
@@ -235,7 +254,7 @@ class JujuRefreshTool(Tool):
                 output=f"Refreshed {app_name}" + (f" from {path}" if path else ""),
                 data={"app_name": app_name, "path": path},
             )
-        except Exception as e:
+        except jubilant.CLIError as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -449,7 +468,11 @@ class JujuAddModelTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Create a new Juju model. Use this for dev models or a dedicated COS model."
+        return (
+            "Create a new Juju model. Use this for dev models or a dedicated COS model. "
+            "For 12-factor / PaaS charms (flask-framework, django-framework, etc.), "
+            "specify cloud='k8s' to create the model on a Kubernetes cloud."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -460,11 +483,19 @@ class JujuAddModelTool(Tool):
                     "type": "string",
                     "description": "Name for the new model",
                 },
+                "cloud": {
+                    "type": "string",
+                    "description": (
+                        "Cloud (or cloud/region) to create the model on. "
+                        "Use 'k8s' for Kubernetes charms, 'localhost' for machine charms. "
+                        "Defaults to the controller's default cloud."
+                    ),
+                },
             },
             "required": ["model"],
         }
 
-    async def execute(self, model: str) -> ToolResult:
+    async def execute(self, model: str, cloud: str | None = None) -> ToolResult:
         """Create a Juju model."""
         if not _juju_available():
             return ToolResult(
@@ -475,12 +506,13 @@ class JujuAddModelTool(Tool):
 
         try:
             juju = jubilant.Juju()
-            juju.add_model(model)
+            juju.add_model(model, cloud=cloud)
 
+            suffix = f" on cloud '{cloud}'" if cloud else ""
             return ToolResult(
                 success=True,
-                output=f"Model '{model}' created.",
-                data={"model": model},
+                output=f"Model '{model}' created{suffix}.",
+                data={"model": model, "cloud": cloud},
             )
         except jubilant.CLIError as e:
             return ToolResult(
@@ -673,6 +705,170 @@ class JujuConsumeTool(Tool):
                     "alias": alias,
                     "model": model,
                 },
+            )
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
+
+
+class JujuConfigTool(Tool):
+    """Tool to get or set application configuration."""
+
+    @property
+    def name(self) -> str:
+        return "juju_config"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Get or set configuration values for a deployed application. "
+            "Call without values to read the current config, or with values to set them."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string",
+                    "description": "Application name",
+                },
+                "values": {
+                    "type": "object",
+                    "description": (
+                        "Config values to set as key-value pairs. "
+                        "Omit to read the current configuration."
+                    ),
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified)",
+                },
+            },
+            "required": ["app_name"],
+        }
+
+    async def execute(
+        self,
+        app_name: str,
+        values: dict[str, str] | None = None,
+        model: str | None = None,
+    ) -> ToolResult:
+        """Get or set application config."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+            result = juju.config(app_name, values=values)
+
+            if values:
+                return ToolResult(
+                    success=True,
+                    output=f"Config updated for {app_name}: {values}",
+                    data={"app_name": app_name, "values": values},
+                )
+
+            # Get mode — format the returned config for display.
+            return ToolResult(
+                success=True,
+                output=json.dumps(result, indent=2, default=str),
+                data={"app_name": app_name, "config": result},
+            )
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
+
+
+class JujuWaitTool(Tool):
+    """Tool to wait for an application to reach active/idle."""
+
+    @property
+    def name(self) -> str:
+        return "juju_wait"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Wait for an application to reach active/idle status. "
+            "Use after deploy or refresh instead of polling juju_status."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string",
+                    "description": "Application name to wait for",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified)",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default 300)",
+                    "default": 300,
+                },
+            },
+            "required": ["app_name"],
+        }
+
+    async def execute(
+        self,
+        app_name: str,
+        model: str | None = None,
+        timeout: int = 300,
+    ) -> ToolResult:
+        """Wait for an application to settle."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+            status = juju.wait(
+                lambda s: (
+                    app_name in s.apps
+                    and s.apps[app_name].app_status.current == "active"
+                    and all(
+                        u.workload_status.current == "active" and u.agent_status.current == "idle"
+                        for u in s.apps[app_name].units.values()
+                    )
+                ),
+                timeout=timeout,
+            )
+
+            app = status.apps[app_name]
+            units_info = ", ".join(
+                f"{name}: {u.workload_status.current}" for name, u in app.units.items()
+            )
+            return ToolResult(
+                success=True,
+                output=f"{app_name} is active/idle. Units: {units_info}",
+                data={"app_name": app_name, "status": app.app_status.current},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Timed out waiting for {app_name} to reach active/idle after {timeout}s.",
             )
         except jubilant.CLIError as e:
             return ToolResult(

@@ -85,9 +85,9 @@
 - [ ] Push support (deferred — requires explicit user confirmation model)
 
 ### 1.4 Conversational Iteration
-- [ ] Add config options via conversation
-- [ ] Add actions via conversation
-- [ ] Re-deploy after changes
+- [x] Add config options via conversation
+- [x] Add actions via conversation
+- [x] Re-deploy after changes
 
 **Exit criteria:** User can say "build a charm for my Flask app", point at a repo, and have it running with basic COS integration.
 

@@ -154,7 +154,7 @@ class CharmcraftPackTool(Tool):
                 cwd=charm_path,
                 capture_output=True,
                 text=True,
-                timeout=300,  # Packing can take a while
+                timeout=600,  # 12-factor charms need LXD builds
             )
 
             if result.returncode != 0:

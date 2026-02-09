@@ -62,8 +62,33 @@ Edit code locally → juju ssh to update in-place → trigger hook → see resul
 
 For validation (do periodically and before "done"):
 ```
-charmcraft pack → juju refresh --path → verify full cycle works
+charmcraft pack → juju refresh --path → juju_wait → verify full cycle works
 ```
+
+### Iterative Improvement
+
+After the charm is deployed and active, improve it through conversation:
+
+**Adding config options or actions:**
+1. Load the relevant skill (`adding-config` or `adding-actions`)
+2. Read `charmcraft.yaml` and add the new section
+3. Read `src/charm.py` and add event observers + handlers
+4. Re-pack and re-deploy (see below)
+5. Verify with `juju_config` (for config) or `juju_run_action` (for actions)
+
+**Re-deploying after changes:**
+
+For standard charms:
+1. `charmcraft_pack`
+2. `juju_refresh` with the new `.charm` file
+3. `juju_wait` for the app to settle
+
+For 12-factor charms (flask-framework, django-framework, etc.):
+1. `rockcraft_pack` (rebuild the rock)
+2. `skopeo_registry_push` (push to local registry)
+3. `charmcraft_pack`
+4. `juju_refresh` with the new `.charm` and updated `resources`
+5. `juju_wait` for the app to settle
 
 ### Session Data
 - Cantrip stores session data in a `.cantrip` SQLite file in the charm directory
@@ -147,7 +172,7 @@ You should:
 7. Generate rockcraft.yaml
 8. Build rock, deploy
 9. Report: active/running
-10. Offer: "What would you like to add? Database? Ingress? Observability?"
+10. Offer: "What would you like to add? Config options? Actions? Database? Ingress? Observability?"
 
 ## Remember
 

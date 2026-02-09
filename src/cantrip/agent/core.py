@@ -1,5 +1,6 @@
 """Core agent logic."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -35,6 +36,7 @@ from cantrip.agent.tools import (
     GitPushTool,
     GitStatusTool,
     JujuAddModelTool,
+    JujuConfigTool,
     JujuConsumeTool,
     JujuDeployTool,
     JujuDestroyModelTool,
@@ -44,6 +46,7 @@ from cantrip.agent.tools import (
     JujuRunActionTool,
     JujuSSHTool,
     JujuStatusTool,
+    JujuWaitTool,
     ListDirectoryTool,
     LoadSkillTool,
     ReadFileTool,
@@ -55,7 +58,7 @@ from cantrip.agent.tools import (
     WebFetchTool,
     WriteFileTool,
 )
-from cantrip.llm.base import LLMProvider, Message, Response, Role
+from cantrip.llm.base import LLMProvider, Message, ProviderRateLimitError, Response, Role
 from cantrip.llm.base import Tool as LLMTool
 from cantrip.llm.base import ToolResult as LLMToolResult
 
@@ -66,6 +69,10 @@ __all__ = ["AgentState", "CantripAgent", "Decision"]
 
 # Maximum tool-call rounds before we force the model to respond with text.
 MAX_TOOL_ROUNDS = 20
+
+# Retry settings for rate-limited LLM calls during the tool loop.
+_RATE_LIMIT_RETRIES = 3
+_RATE_LIMIT_BASE_DELAY = 30  # seconds
 
 
 class CantripAgent:
@@ -218,6 +225,8 @@ class CantripAgent:
             JujuDestroyModelTool(),
             JujuOfferTool(),
             JujuConsumeTool(),
+            JujuConfigTool(),
+            JujuWaitTool(),
         ]
 
     def _build_system_prompt(self) -> str:
@@ -277,6 +286,36 @@ class CantripAgent:
             *self.state.messages,
         ]
 
+    async def _complete_with_retry(
+        self,
+        messages: list[Message],
+        tools: list[LLMTool] | None,
+        temperature: float = 0.7,
+    ) -> Response:
+        """Call provider.complete() with rate-limit retry and exponential backoff."""
+        last_error: ProviderRateLimitError | None = None
+        for attempt in range(1, _RATE_LIMIT_RETRIES + 1):
+            try:
+                return await self.provider.complete(
+                    messages=messages,
+                    tools=tools,
+                    temperature=temperature,
+                )
+            except ProviderRateLimitError as exc:
+                last_error = exc
+                if attempt == _RATE_LIMIT_RETRIES:
+                    raise
+                delay = _RATE_LIMIT_BASE_DELAY * attempt
+                log.warning(
+                    "Rate limited — retrying in %ds (attempt %d/%d)",
+                    delay,
+                    attempt,
+                    _RATE_LIMIT_RETRIES,
+                )
+                await asyncio.sleep(delay)
+        # All retries exhausted (should be unreachable due to the raise above).
+        raise last_error  # type: ignore[misc]
+
     async def process_message(self, user_message: str) -> str:
         """Process a user message and return the response.
 
@@ -289,11 +328,7 @@ class CantripAgent:
         messages = self._build_llm_messages()
         llm_tools = self._tools_for_llm() if self._tools else None
 
-        response = await self.provider.complete(
-            messages=messages,
-            tools=llm_tools,
-            temperature=0.7,
-        )
+        response = await self._complete_with_retry(messages, llm_tools)
         self._record_usage(response)
 
         rounds = 0
@@ -330,11 +365,7 @@ class CantripAgent:
 
             # Call the LLM again with the updated history.
             messages = self._build_llm_messages()
-            response = await self.provider.complete(
-                messages=messages,
-                tools=llm_tools,
-                temperature=0.7,
-            )
+            response = await self._complete_with_retry(messages, llm_tools)
             self._record_usage(response)
 
         # Store the final assistant response.
@@ -354,11 +385,7 @@ class CantripAgent:
 
         # Use non-streaming complete for potential tool call rounds.
         messages = self._build_llm_messages()
-        response = await self.provider.complete(
-            messages=messages,
-            tools=llm_tools,
-            temperature=0.7,
-        )
+        response = await self._complete_with_retry(messages, llm_tools)
         self._record_usage(response)
 
         rounds = 0
@@ -392,11 +419,7 @@ class CantripAgent:
             self.state.messages.append(tool_msg)
 
             messages = self._build_llm_messages()
-            response = await self.provider.complete(
-                messages=messages,
-                tools=llm_tools,
-                temperature=0.7,
-            )
+            response = await self._complete_with_retry(messages, llm_tools)
             self._record_usage(response)
 
         # Now stream the final text response.

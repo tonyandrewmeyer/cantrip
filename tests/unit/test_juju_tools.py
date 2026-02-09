@@ -7,10 +7,13 @@ import pytest
 
 from cantrip.agent.tools.juju import (
     JujuAddModelTool,
+    JujuConfigTool,
     JujuConsumeTool,
     JujuDeployTool,
     JujuDestroyModelTool,
     JujuOfferTool,
+    JujuRefreshTool,
+    JujuWaitTool,
     _juju_available,
 )
 
@@ -58,7 +61,7 @@ class TestJujuAddModelTool:
 
         assert result.success
         assert result.data["model"] == "dev"
-        mock_juju.add_model.assert_called_once_with("dev")
+        mock_juju.add_model.assert_called_once_with("dev", cloud=None)
 
     @pytest.mark.asyncio
     async def test_add_model_error(self, tool):
@@ -334,3 +337,241 @@ class TestJujuDeployTool:
         call_kwargs = mock_juju.deploy.call_args[1]
         assert "resources" not in call_kwargs
         assert "trust" not in call_kwargs
+
+
+class TestJujuRefreshTool:
+    """Tests for JujuRefreshTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return JujuRefreshTool()
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool):
+        """Error when juju CLI is missing."""
+        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+            result = await tool.execute(app_name="my-app")
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_refresh_success(self, tool):
+        """Refreshes a charm successfully."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app", path="./my-app.charm")
+
+        assert result.success
+        assert "my-app" in result.output
+        mock_juju.refresh.assert_called_once_with(app="my-app", path="./my-app.charm")
+
+    @pytest.mark.asyncio
+    async def test_refresh_with_resources(self, tool):
+        """Passes resources to Jubilant refresh."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(
+                app_name="my-app",
+                path="./my-app.charm",
+                resources={"oci-image": "localhost:32000/my-app:latest"},
+            )
+
+        assert result.success
+        mock_juju.refresh.assert_called_once_with(
+            app="my-app",
+            path="./my-app.charm",
+            resources={"oci-image": "localhost:32000/my-app:latest"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_refresh_without_resources(self, tool):
+        """Does not pass resources when not specified."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app")
+
+        assert result.success
+        mock_juju.refresh.assert_called_once_with(app="my-app")
+
+    @pytest.mark.asyncio
+    async def test_refresh_error(self, tool):
+        """Reports CLI errors."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.refresh.side_effect = jubilant.CLIError(
+            returncode=1,
+            cmd=["juju", "refresh"],
+            stderr="app not found",
+        )
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app")
+
+        assert not result.success
+        assert "app not found" in result.error
+
+
+class TestJujuConfigTool:
+    """Tests for JujuConfigTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return JujuConfigTool()
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool):
+        """Error when juju CLI is missing."""
+        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+            result = await tool.execute(app_name="my-app")
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_get_config(self, tool):
+        """Returns current config when values is omitted."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.config.return_value = {"port": "8080", "debug": "false"}
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app")
+
+        assert result.success
+        assert "8080" in result.output
+        mock_juju.config.assert_called_once_with("my-app", values=None)
+
+    @pytest.mark.asyncio
+    async def test_set_config(self, tool):
+        """Sets config values when values is provided."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.config.return_value = None
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(
+                app_name="my-app",
+                values={"port": "9090"},
+            )
+
+        assert result.success
+        assert "Config updated" in result.output
+        mock_juju.config.assert_called_once_with("my-app", values={"port": "9090"})
+
+    @pytest.mark.asyncio
+    async def test_config_error(self, tool):
+        """Reports CLI errors."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.config.side_effect = jubilant.CLIError(
+            returncode=1,
+            cmd=["juju", "config"],
+            stderr="app not found",
+        )
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="nonexistent")
+
+        assert not result.success
+        assert "app not found" in result.error
+
+
+class TestJujuWaitTool:
+    """Tests for JujuWaitTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return JujuWaitTool()
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool):
+        """Error when juju CLI is missing."""
+        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+            result = await tool.execute(app_name="my-app")
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_wait_success(self, tool):
+        """Returns status when app reaches active/idle."""
+        mock_unit = mock.MagicMock()
+        mock_unit.workload_status.current = "active"
+        mock_unit.agent_status.current = "idle"
+
+        mock_app = mock.MagicMock()
+        mock_app.app_status.current = "active"
+        mock_app.units = {"my-app/0": mock_unit}
+
+        mock_status = mock.MagicMock()
+        mock_status.apps = {"my-app": mock_app}
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.wait.return_value = mock_status
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app")
+
+        assert result.success
+        assert "active/idle" in result.output
+        assert "my-app/0" in result.output
+        mock_juju.wait.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_wait_timeout(self, tool):
+        """Reports timeout when app does not settle."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.wait.side_effect = TimeoutError()
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app", timeout=60)
+
+        assert not result.success
+        assert "Timed out" in result.error
+        assert "60" in result.error
+
+    @pytest.mark.asyncio
+    async def test_wait_error(self, tool):
+        """Reports CLI errors."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.wait.side_effect = jubilant.CLIError(
+            returncode=1,
+            cmd=["juju", "status"],
+            stderr="model not found",
+        )
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app")
+
+        assert not result.success
+        assert "model not found" in result.error

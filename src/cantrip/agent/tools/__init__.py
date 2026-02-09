@@ -34,6 +34,7 @@ from cantrip.agent.tools.github import (
 )
 from cantrip.agent.tools.juju import (
     JujuAddModelTool,
+    JujuConfigTool,
     JujuConsumeTool,
     JujuDeployTool,
     JujuDestroyModelTool,
@@ -43,6 +44,7 @@ from cantrip.agent.tools.juju import (
     JujuRunActionTool,
     JujuSSHTool,
     JujuStatusTool,
+    JujuWaitTool,
 )
 from cantrip.agent.tools.rockcraft import (
     RockcraftInitTool,
@@ -84,7 +86,9 @@ __all__ = [
     "JujuAddModelTool",
     "JujuDestroyModelTool",
     "JujuOfferTool",
+    "JujuConfigTool",
     "JujuConsumeTool",
+    "JujuWaitTool",
     # Git
     "GitCloneTool",
     "GitInitTool",
