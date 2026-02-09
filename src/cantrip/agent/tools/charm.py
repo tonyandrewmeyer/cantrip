@@ -1,5 +1,6 @@
 """Charm scaffolding and management tools."""
 
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,69 @@ def _inject_ops_tracing(target_path: Path, profile: str) -> list[str]:
     return actions
 
 
+_PRE_COMMIT_CONFIG = """\
+repos:
+  - repo: local
+    hooks:
+      - id: format
+        name: format (ruff)
+        entry: tox -e format
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: lint
+        name: lint (ruff + pyright)
+        entry: tox -e lint
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: unit
+        name: unit tests
+        entry: tox -e unit
+        language: system
+        types: [python]
+        pass_filenames: false
+"""
+
+
+def _inject_pre_commit(target_path: Path) -> list[str]:
+    """Set up pre-commit hooks that delegate to tox environments.
+
+    Writes a ``.pre-commit-config.yaml`` that runs the ``format``, ``lint``,
+    and ``unit`` tox environments on every commit, then runs ``pre-commit
+    install`` if the binary is available.
+
+    Returns a list of human-readable descriptions of what was done.
+    """
+    actions: list[str] = []
+
+    config_path = target_path / ".pre-commit-config.yaml"
+    if config_path.exists():
+        actions.append(".pre-commit-config.yaml already exists — skipped")
+        return actions
+
+    tox_ini = target_path / "tox.ini"
+    if not tox_ini.exists():
+        actions.append("tox.ini not found — skipped pre-commit setup")
+        return actions
+
+    config_path.write_text(_PRE_COMMIT_CONFIG)
+    actions.append("Created .pre-commit-config.yaml with format, lint, and unit hooks")
+
+    if shutil.which("pre-commit"):
+        subprocess.run(
+            ["pre-commit", "install"],
+            cwd=target_path,
+            capture_output=True,
+            timeout=30,
+        )
+        actions.append("Ran pre-commit install")
+    else:
+        actions.append("pre-commit not found on PATH — run 'pre-commit install' manually")
+
+    return actions
+
+
 class CharmcraftInitTool(Tool):
     """Tool to initialise a new charm with charmcraft."""
 
@@ -192,18 +256,23 @@ class CharmcraftInitTool(Tool):
 
             # Inject ops-tracing into the scaffolded charm.
             tracing_actions = _inject_ops_tracing(target_path, profile)
-            tracing_summary = "\n".join(tracing_actions)
+
+            # Set up pre-commit hooks delegating to tox environments.
+            pre_commit_actions = _inject_pre_commit(target_path)
+
+            post_init_summary = "\n".join(tracing_actions + pre_commit_actions)
 
             return ToolResult(
                 success=True,
                 output=(
                     f"Initialised charm '{name}' at {target_path}\n"
-                    f"{result.stdout}\n{tracing_summary}"
+                    f"{result.stdout}\n{post_init_summary}"
                 ),
                 data={
                     "path": str(target_path),
                     "profile": profile,
                     "tracing_injected": True,
+                    "pre_commit_installed": True,
                 },
             )
         except FileNotFoundError:

@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from cantrip.agent.tools.charm import AnalyseFrameworkTool, CharmcraftInitTool
+from cantrip.agent.tools.charm import AnalyseFrameworkTool, CharmcraftInitTool, _inject_pre_commit
 from cantrip.agent.tools.environment import (
     ConciergePrepareTool,
     ConciergeStatusTool,
@@ -774,3 +774,79 @@ if __name__ == "__main__":
 
         assert result.success
         assert "skipped" in result.output.lower() or "not found" in result.output.lower()
+
+
+class TestCharmcraftInitPreCommit:
+    """Tests for pre-commit injection in CharmcraftInitTool."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory."""
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+
+    def test_pre_commit_config_written(self, temp_dir):
+        """Writes .pre-commit-config.yaml with format, lint, and unit hooks."""
+        (temp_dir / "tox.ini").write_text("[testenv:format]\n")
+
+        actions = _inject_pre_commit(temp_dir)
+
+        config = temp_dir / ".pre-commit-config.yaml"
+        assert config.exists()
+        content = config.read_text()
+        assert "id: format" in content
+        assert "id: lint" in content
+        assert "id: unit" in content
+        assert "tox -e format" in content
+        assert "tox -e lint" in content
+        assert "tox -e unit" in content
+        assert any("Created" in a for a in actions)
+
+    def test_pre_commit_skipped_when_exists(self, temp_dir):
+        """Skips writing when .pre-commit-config.yaml already exists."""
+        (temp_dir / "tox.ini").write_text("[testenv:format]\n")
+        existing = temp_dir / ".pre-commit-config.yaml"
+        existing.write_text("repos: []\n")
+
+        actions = _inject_pre_commit(temp_dir)
+
+        # File should be unchanged.
+        assert existing.read_text() == "repos: []\n"
+        assert any("already exists" in a for a in actions)
+
+    def test_pre_commit_skipped_without_tox_ini(self, temp_dir):
+        """Skips pre-commit setup when tox.ini is absent."""
+        actions = _inject_pre_commit(temp_dir)
+
+        assert not (temp_dir / ".pre-commit-config.yaml").exists()
+        assert any("tox.ini not found" in a for a in actions)
+
+    def test_pre_commit_install_runs(self, temp_dir):
+        """Runs pre-commit install when the binary is on PATH."""
+        (temp_dir / "tox.ini").write_text("[testenv:format]\n")
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.charm.shutil.which", return_value="/usr/bin/pre-commit"
+            ),
+            mock.patch("cantrip.agent.tools.charm.subprocess.run") as mock_run,
+        ):
+            actions = _inject_pre_commit(temp_dir)
+
+        mock_run.assert_called_once_with(
+            ["pre-commit", "install"],
+            cwd=temp_dir,
+            capture_output=True,
+            timeout=30,
+        )
+        assert any("Ran pre-commit install" in a for a in actions)
+
+    def test_pre_commit_install_skipped(self, temp_dir):
+        """Gracefully skips when pre-commit is not on PATH."""
+        (temp_dir / "tox.ini").write_text("[testenv:format]\n")
+
+        with mock.patch("cantrip.agent.tools.charm.shutil.which", return_value=None):
+            actions = _inject_pre_commit(temp_dir)
+
+        assert (temp_dir / ".pre-commit-config.yaml").exists()
+        assert any("pre-commit not found" in a for a in actions)
