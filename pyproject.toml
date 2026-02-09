@@ -107,4 +107,6 @@ asyncio_mode = "auto"
 markers = [
     "integration: tests with real tool execution (no external services)",
     "e2e: end-to-end multi-turn conversation scenarios",
+    "tui: Textual app tests",
+    "live: tests requiring real external services (Juju, LLM APIs)",
 ]

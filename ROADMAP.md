@@ -113,11 +113,11 @@
 - [x] Unit tests for all LLM providers (Claude + Gemini) and prompt rendering
 - [x] Integration tests (real file tools, state persistence, skills loading)
 - [x] End-to-end scripted scenarios (multi-turn conversations with FakeProvider)
-- [ ] **TUI tests** — Textual app test coverage (widget rendering, user input, status display)
-- [ ] **Live Juju integration tests** — tests against a real Juju controller and model (require Concierge or pre-provisioned environment); exercise the full deploy/relate/status cycle
-- [ ] **Live LLM tests** — small suite using a real (local or API) model to verify the agent produces sensible tool calls for known prompts; guards against prompt regressions
-- [ ] **Spread adoption** — adopt [Spread](https://github.com/snapcore/spread) for system-level testing across multiple substrates (LXD, MicroK8s); model after Charmcraft and Rockcraft test patterns
-- [ ] **CI gating** — unit + integration in every PR; e2e and live tests in nightly or pre-release pipeline
+- [x] **TUI tests** — Textual app test coverage (widget rendering, user input, status display)
+- [x] **Live Juju integration tests** — tests against a real Juju controller and model (require Concierge or pre-provisioned environment); exercise the full deploy/relate/status cycle
+- [x] **Live LLM tests** — small suite using a real (local or API) model to verify the agent produces sensible tool calls for known prompts; guards against prompt regressions
+- [x] **Spread adoption** — adopt [Spread](https://github.com/snapcore/spread) for system-level testing across multiple substrates (LXD, MicroK8s); model after Charmcraft and Rockcraft test patterns
+- [x] **CI gating** — unit + integration in every PR; e2e and live tests in nightly or pre-release pipeline
 
 ### 2.4 Generated Charm Testing
 - [ ] Scenario test generation

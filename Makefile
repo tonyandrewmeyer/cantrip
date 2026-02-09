@@ -1,4 +1,4 @@
-.PHONY: format lint unit integration e2e test check all clean
+.PHONY: format lint unit integration e2e tui live test check all clean
 
 # Format code with ruff
 format:
@@ -20,6 +20,14 @@ integration:
 # Run end-to-end tests (multi-turn scripted scenarios)
 e2e:
 	uv run pytest tests/e2e -v
+
+# Run TUI tests
+tui:
+	uv run pytest tests/unit/test_tui.py -v
+
+# Run live tests (require real Juju/LLM services)
+live:
+	uv run pytest tests/live -v
 
 # Run all tests (unit + integration + e2e)
 test:
@@ -50,6 +58,8 @@ help:
 	@echo "  unit        - Run unit tests"
 	@echo "  integration - Run integration tests (real tools, no external services)"
 	@echo "  e2e         - Run end-to-end scenario tests"
+	@echo "  tui         - Run TUI tests"
+	@echo "  live        - Run live tests (Juju, LLM APIs)"
 	@echo "  test        - Run all tests (unit + integration + e2e)"
 	@echo "  check       - Run lint + unit tests"
 	@echo "  all         - Run format + check"

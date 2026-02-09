@@ -1,0 +1,24 @@
+summary: Smoke test — install Cantrip and run checks
+
+systems:
+  - ubuntu-24.04
+  - ubuntu-22.04
+
+prepare: |
+  # Install uv.
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+  # Copy project into the spread working directory.
+  cp -r "$SPREAD_PATH" "$PROJECT_PATH"
+  cd "$PROJECT_PATH"
+  uv sync --dev
+
+execute: |
+  export PATH="$HOME/.local/bin:$PATH"
+  cd "$PROJECT_PATH"
+  make check
+  # Verify the CLI entry point starts.
+  uv run cantrip --help
+
+restore: |
+  rm -rf "$PROJECT_PATH"

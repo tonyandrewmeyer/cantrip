@@ -1,0 +1,18 @@
+project: cantrip
+
+environment:
+  PROJECT_PATH: /root/spread/cantrip
+
+backends:
+  lxd:
+    type: lxd
+
+systems:
+  - ubuntu-24.04:
+      workers: 1
+  - ubuntu-22.04:
+      workers: 1
+
+suites:
+  tests/spread/:
+    summary: Spread test tasks
