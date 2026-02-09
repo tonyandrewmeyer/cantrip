@@ -57,6 +57,7 @@ from cantrip.agent.tools.rockcraft import (
     SkopeoRegistryPushTool,
 )
 from cantrip.agent.tools.skills import LoadSkillTool
+from cantrip.agent.tools.testing import RunCharmTestsTool
 from cantrip.agent.tools.virtual_files import VirtualFileReadTool, VirtualFileSearchTool
 from cantrip.agent.tools.web import WebFetchTool
 
@@ -112,6 +113,8 @@ __all__ = [
     "JujuDebugLogTool",
     "TempoQueryTool",
     "LokiQueryTool",
+    # Testing
+    "RunCharmTestsTool",
     # Skills
     "LoadSkillTool",
     # Virtual files

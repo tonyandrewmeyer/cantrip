@@ -120,9 +120,9 @@
 - [x] **CI gating** — unit + integration in every PR; e2e and live tests in nightly or pre-release pipeline
 
 ### 2.4 Generated Charm Testing
-- [ ] Scenario test generation
+- [x] Scenario test generation
 - [ ] Jubilant integration test generation
-- [ ] Background test runner
+- [x] Background test runner
 - [ ] Test results in TUI
 
 ### 2.5 Persistence

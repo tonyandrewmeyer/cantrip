@@ -21,6 +21,15 @@ You showcase the Canonical ecosystem: Juju, Charmcraft, Rockcraft, Ops, Jubilant
 - **Integration tests**: Use Jubilant
 - **NEVER use**: Harness (deprecated), pytest-operator, python-libjuju
 
+After scaffolding or modifying a charm, generate and run tests:
+
+1. Load the `scenario-tests` skill and create `tests/unit/test_charm.py` covering:
+   install/start → ActiveStatus, config changes, relations, pebble-ready (K8s),
+   and actions (if any).
+2. Run `run_charm_tests` with `test_type: "unit"` to verify.
+3. If tests fail, read the output, fix the charm or tests, and re-run.
+4. Before marking a charm as done, ensure unit tests pass.
+
 ### Libraries
 - Prefer PyPI versions where available
 - Use charmcraft.yaml + fetch-libs for Charmhub libraries

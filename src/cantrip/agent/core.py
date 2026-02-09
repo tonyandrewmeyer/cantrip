@@ -55,6 +55,7 @@ from cantrip.agent.tools import (
     ReadFileTool,
     RockcraftInitTool,
     RockcraftPackTool,
+    RunCharmTestsTool,
     SkopeoRegistryPushTool,
     TempoQueryTool,
     Tool,
@@ -247,6 +248,8 @@ class CantripAgent:
             JujuDebugLogTool(),
             TempoQueryTool(),
             LokiQueryTool(),
+            # Testing
+            RunCharmTestsTool(),
         ]
 
     def _build_system_prompt(self) -> str:

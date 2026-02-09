@@ -334,3 +334,12 @@ class TestContextManagement:
 
         assert "virtual_file_read" in tool_names
         assert "virtual_file_search" in tool_names
+
+    def test_run_charm_tests_tool_is_registered(self):
+        """The run_charm_tests tool is included in the tool list."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+
+        tool_names = {t.name for t in agent._tools}
+
+        assert "run_charm_tests" in tool_names
