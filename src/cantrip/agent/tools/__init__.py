@@ -46,6 +46,11 @@ from cantrip.agent.tools.juju import (
     JujuStatusTool,
     JujuWaitTool,
 )
+from cantrip.agent.tools.observability import (
+    JujuDebugLogTool,
+    LokiQueryTool,
+    TempoQueryTool,
+)
 from cantrip.agent.tools.rockcraft import (
     RockcraftInitTool,
     RockcraftPackTool,
@@ -102,6 +107,10 @@ __all__ = [
     "GhRepoCreateTool",
     "GhPrCreateTool",
     "GhIssueListTool",
+    # Observability
+    "JujuDebugLogTool",
+    "TempoQueryTool",
+    "LokiQueryTool",
     # Skills
     "LoadSkillTool",
     # Web

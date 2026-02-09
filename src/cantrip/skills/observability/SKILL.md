@@ -152,6 +152,49 @@ After deployment, verify:
 3. **Logs** — check Loki for workload log streams
 4. **Dashboards** — open Grafana and find the auto-provisioned dashboard
 
+## Querying for Debugging
+
+Once COS is deployed and related, use the observability tools to investigate charm issues.
+
+### Step-by-step debugging workflow
+
+1. **Start with `juju_debug_log`** — no COS needed:
+   ```
+   juju_debug_log(unit="my-charm/0", level="ERROR")
+   ```
+
+2. **Query traces in Tempo** — see hook execution timelines:
+   ```
+   tempo_query(service_name="my-charm", cos_model="cos")
+   ```
+
+3. **Search for specific errors with TraceQL**:
+   ```
+   tempo_query(query="{ status = error }", cos_model="cos")
+   ```
+
+4. **Fetch a specific trace for details**:
+   ```
+   tempo_query(trace_id="abc123def456", cos_model="cos")
+   ```
+
+5. **Query logs in Loki** — find workload errors:
+   ```
+   loki_query(query='{juju_application="my-charm"} |= "error"', cos_model="cos")
+   ```
+
+6. **Search wider time ranges**:
+   ```
+   loki_query(query='{juju_application="my-charm"}', hours=24, cos_model="cos")
+   ```
+
+### Tips
+
+- `juju_debug_log` works without COS — use it as the first debugging step.
+- Tempo traces show the full timeline of a hook execution, including which relation events fired and in what order.
+- Loki logs capture workload stdout/stderr — look here for application-level tracebacks.
+- Both `tempo_query` and `loki_query` use SSH into the COS units, so the COS model must be accessible.
+
 ## Best Practices
 
 1. **Always include ops-tracing.** It has minimal overhead and provides invaluable debugging information. Traces show the full hook execution timeline.

@@ -38,6 +38,7 @@ from cantrip.agent.tools import (
     JujuAddModelTool,
     JujuConfigTool,
     JujuConsumeTool,
+    JujuDebugLogTool,
     JujuDeployTool,
     JujuDestroyModelTool,
     JujuOfferTool,
@@ -49,10 +50,12 @@ from cantrip.agent.tools import (
     JujuWaitTool,
     ListDirectoryTool,
     LoadSkillTool,
+    LokiQueryTool,
     ReadFileTool,
     RockcraftInitTool,
     RockcraftPackTool,
     SkopeoRegistryPushTool,
+    TempoQueryTool,
     Tool,
     ToolResult,
     WebFetchTool,
@@ -227,6 +230,10 @@ class CantripAgent:
             JujuConsumeTool(),
             JujuConfigTool(),
             JujuWaitTool(),
+            # Observability
+            JujuDebugLogTool(),
+            TempoQueryTool(),
+            LokiQueryTool(),
         ]
 
     def _build_system_prompt(self) -> str:

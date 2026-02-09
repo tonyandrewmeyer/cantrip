@@ -65,6 +65,15 @@ For validation (do periodically and before "done"):
 charmcraft pack → juju refresh --path → juju_wait → verify full cycle works
 ```
 
+### Debugging with Observability
+
+When a charm misbehaves, use real data — never guess.
+
+1. **Check `juju_debug_log` first** — always works, no COS needed. Filter by unit and level to narrow down hook failures.
+2. **Query `tempo_query` for traces** — see full hook execution timelines, find error spans, understand the sequence of events. Search by service name or use TraceQL for advanced filtering.
+3. **Query `loki_query` for logs** — find workload errors, tracebacks, and application log output. Use LogQL to filter by application, unit, or error patterns.
+4. **Never guess** — always consult observability data before proposing a fix. Traces and logs reveal the actual problem faster than speculation.
+
 ### Iterative Improvement
 
 After the charm is deployed and active, improve it through conversation:

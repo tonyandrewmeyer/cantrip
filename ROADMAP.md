@@ -105,9 +105,9 @@
 
 ### 2.2 Observability Integration
 - [ ] ops-tracing integration in generated charms
-- [ ] Tempo query for trace analysis
-- [ ] Loki query for log analysis
-- [ ] Agent uses traces to debug issues
+- [x] Tempo query for trace analysis
+- [x] Loki query for log analysis
+- [x] Agent uses traces to debug issues
 
 ### 2.3 Cantrip's Own Test Suite
 - [x] Unit tests for all LLM providers (Claude + Gemini) and prompt rendering
