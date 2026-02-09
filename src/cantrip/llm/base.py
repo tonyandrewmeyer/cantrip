@@ -88,6 +88,11 @@ class LLMProvider(ABC):
     def name(self) -> str:
         """Short identifier for this provider (e.g. 'gemini', 'claude')."""
 
+    @property
+    @abstractmethod
+    def context_window_tokens(self) -> int:
+        """Maximum context window size in tokens for the current model."""
+
     @abstractmethod
     async def complete(
         self,

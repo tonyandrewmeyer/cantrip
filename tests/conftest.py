@@ -17,10 +17,19 @@ class FakeProvider(LLMProvider):
     def name(self) -> str:
         return "fake"
 
-    def __init__(self, responses: list[Response] | None = None):
+    @property
+    def context_window_tokens(self) -> int:
+        return self._context_window_tokens
+
+    def __init__(
+        self,
+        responses: list[Response] | None = None,
+        context_window_tokens: int = 200_000,
+    ):
         self._responses = list(responses or [])
         self._call_count = 0
         self.model_name = "fake-model"
+        self._context_window_tokens = context_window_tokens
 
     async def complete(
         self,
@@ -42,8 +51,16 @@ class FakeProvider(LLMProvider):
     ):
         yield  # pragma: no cover
 
-    def count_tokens(self, messages: list[Message]) -> int:  # noqa: ARG002
-        return 0
+    def count_tokens(self, messages: list[Message]) -> int:
+        """Count tokens in messages (approximate)."""
+        total = 0
+        for msg in messages:
+            total += len(msg.content)
+            for tc in msg.tool_calls:
+                total += len(tc.name) + len(str(tc.arguments))
+            for tr in msg.tool_results:
+                total += len(tr.content)
+        return total // 4
 
 
 @pytest.fixture

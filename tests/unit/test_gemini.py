@@ -362,6 +362,24 @@ class TestGeminiProviderStream:
         assert chunks[0].tool_calls[0].name == "read_file"
 
 
+class TestGeminiProviderContextWindow:
+    """Tests for GeminiProvider.context_window_tokens."""
+
+    def test_known_model(self):
+        """Known model returns its mapped context window size."""
+        provider, _ = _make_provider()
+        assert provider.context_window_tokens == 1_048_576
+
+    def test_unknown_model_returns_default(self):
+        """Unknown model falls back to the default context window."""
+        with patch("cantrip.llm.gemini.genai") as mock_genai:
+            mock_genai.Client.return_value = MagicMock()
+            from cantrip.llm.gemini import GeminiProvider
+
+            provider = GeminiProvider(api_key="test-key", model="gemini-unknown")
+        assert provider.context_window_tokens == 1_048_576
+
+
 class TestGeminiProviderCountTokens:
     """Tests for GeminiProvider.count_tokens."""
 
@@ -376,3 +394,29 @@ class TestGeminiProviderCountTokens:
         result = provider.count_tokens(messages)
 
         assert result == 300 // 4
+
+    def test_counts_tool_calls(self):
+        """Tool call names and arguments contribute to the count."""
+        provider, _ = _make_provider()
+        messages = [
+            Message(
+                role=Role.ASSISTANT,
+                content="",
+                tool_calls=[ToolCall(id="tc1", name="read_file", arguments={"path": "x"})],
+            ),
+        ]
+        result = provider.count_tokens(messages)
+        expected = (len("read_file") + len(str({"path": "x"}))) // 4
+        assert result == expected
+
+    def test_counts_tool_results(self):
+        """Tool result content contributes to the count."""
+        provider, _ = _make_provider()
+        messages = [
+            Message(
+                role=Role.TOOL,
+                content="",
+                tool_results=[LLMToolResult(tool_call_id="tc1", content="A" * 400)],
+            ),
+        ]
+        assert provider.count_tokens(messages) == 400 // 4

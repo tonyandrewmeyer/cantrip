@@ -18,6 +18,11 @@ from cantrip.llm.base import (
     ToolCall,
 )
 
+_CONTEXT_WINDOWS: dict[str, int] = {
+    "claude-sonnet-4-5-20250929": 200_000,
+}
+_DEFAULT_CONTEXT_WINDOW = 200_000
+
 
 class ClaudeProvider(LLMProvider):
     """Anthropic Claude implementation."""
@@ -26,6 +31,11 @@ class ClaudeProvider(LLMProvider):
     def name(self) -> str:
         """Short identifier for this provider."""
         return "claude"
+
+    @property
+    def context_window_tokens(self) -> int:
+        """Maximum context window size in tokens for the current model."""
+        return _CONTEXT_WINDOWS.get(self.model_name, _DEFAULT_CONTEXT_WINDOW)
 
     def __init__(
         self,
@@ -232,6 +242,16 @@ class ClaudeProvider(LLMProvider):
         yield Chunk(tool_calls=tool_calls, is_final=True)
 
     def count_tokens(self, messages: list[Message]) -> int:
-        """Count tokens in messages (approximate)."""
-        total_chars = sum(len(msg.content) for msg in messages)
-        return total_chars // 4
+        """Count tokens in messages (approximate).
+
+        Accounts for message content, tool call names/arguments,
+        and tool result content.
+        """
+        total = 0
+        for msg in messages:
+            total += len(msg.content)
+            for tc in msg.tool_calls:
+                total += len(tc.name) + len(str(tc.arguments))
+            for tr in msg.tool_results:
+                total += len(tr.content)
+        return total // 4

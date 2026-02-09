@@ -6,6 +6,73 @@ from cantrip.llm.base import Message, Role, ToolCall
 from cantrip.llm.base import ToolResult as LLMToolResult
 
 
+class TestClaudeProviderContextWindow:
+    """Tests for ClaudeProvider.context_window_tokens."""
+
+    def _make_provider(self, model: str = "claude-sonnet-4-5-20250929"):
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            from cantrip.llm.claude import ClaudeProvider
+
+            return ClaudeProvider(api_key="test-key", model=model)
+
+    def test_known_model(self):
+        """Known model returns its mapped context window size."""
+        provider = self._make_provider("claude-sonnet-4-5-20250929")
+        assert provider.context_window_tokens == 200_000
+
+    def test_unknown_model_returns_default(self):
+        """Unknown model falls back to the default context window."""
+        provider = self._make_provider("claude-unknown-model")
+        assert provider.context_window_tokens == 200_000
+
+
+class TestClaudeProviderCountTokens:
+    """Tests for ClaudeProvider.count_tokens with tool data."""
+
+    def _make_provider(self):
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            from cantrip.llm.claude import ClaudeProvider
+
+            return ClaudeProvider(api_key="test-key")
+
+    def test_counts_content_only(self):
+        """Basic content-only messages are counted."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.USER, content="A" * 100),
+            Message(role=Role.ASSISTANT, content="B" * 200),
+        ]
+        assert provider.count_tokens(messages) == 300 // 4
+
+    def test_counts_tool_calls(self):
+        """Tool call names and arguments contribute to the count."""
+        provider = self._make_provider()
+        messages = [
+            Message(
+                role=Role.ASSISTANT,
+                content="",
+                tool_calls=[ToolCall(id="tc1", name="read_file", arguments={"path": "x"})],
+            ),
+        ]
+        result = provider.count_tokens(messages)
+        expected = (len("read_file") + len(str({"path": "x"}))) // 4
+        assert result == expected
+
+    def test_counts_tool_results(self):
+        """Tool result content contributes to the count."""
+        provider = self._make_provider()
+        messages = [
+            Message(
+                role=Role.TOOL,
+                content="",
+                tool_results=[LLMToolResult(tool_call_id="tc1", content="A" * 400)],
+            ),
+        ]
+        assert provider.count_tokens(messages) == 400 // 4
+
+
 class TestClaudeProviderMessageConversion:
     """Tests for ClaudeProvider._convert_messages."""
 
