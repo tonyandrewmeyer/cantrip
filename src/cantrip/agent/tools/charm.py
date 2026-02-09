@@ -6,6 +6,101 @@ from typing import Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
 
+_PAAS_PROFILES = frozenset(
+    {
+        "flask-framework",
+        "django-framework",
+        "fastapi-framework",
+        "go-framework",
+        "express-framework",
+        "spring-boot-framework",
+    }
+)
+
+_TRACING_RELATION_BLOCK = """
+requires:
+  tracing:
+    interface: tracing
+    limit: 1
+"""
+
+
+def _inject_ops_tracing(target_path: Path, profile: str) -> list[str]:
+    """Inject ops-tracing into a freshly scaffolded charm.
+
+    For standard profiles (``kubernetes``, ``machine``) the full stack is injected:
+    ``requirements.txt``, ``charmcraft.yaml``, and ``src/charm.py``.  For PaaS /
+    framework profiles only the tracing relation is added to ``charmcraft.yaml``
+    (PaaS charms have no user-editable ``src/charm.py`` or ``requirements.txt``).
+
+    Returns a list of human-readable descriptions of what was done.
+    """
+    actions: list[str] = []
+    is_paas = profile in _PAAS_PROFILES
+
+    # --- charmcraft.yaml: add tracing relation ---
+    charmcraft_yaml = target_path / "charmcraft.yaml"
+    if charmcraft_yaml.exists():
+        content = charmcraft_yaml.read_text()
+        if "tracing" not in content:
+            charmcraft_yaml.write_text(content.rstrip("\n") + "\n" + _TRACING_RELATION_BLOCK)
+            actions.append("Added tracing relation to charmcraft.yaml")
+        else:
+            actions.append("charmcraft.yaml already declares tracing — skipped")
+    else:
+        actions.append("charmcraft.yaml not found — skipped tracing relation")
+
+    if is_paas:
+        return actions
+
+    # --- requirements.txt: append ops-tracing ---
+    requirements = target_path / "requirements.txt"
+    if requirements.exists():
+        content = requirements.read_text()
+        if "ops-tracing" not in content:
+            requirements.write_text(content.rstrip("\n") + "\nops-tracing\n")
+            actions.append("Added ops-tracing to requirements.txt")
+        else:
+            actions.append("requirements.txt already contains ops-tracing — skipped")
+    else:
+        requirements.write_text("ops-tracing\n")
+        actions.append("Created requirements.txt with ops-tracing")
+
+    # --- src/charm.py: insert import and setup call ---
+    charm_py = target_path / "src" / "charm.py"
+    if charm_py.exists():
+        content = charm_py.read_text()
+        changed = False
+
+        if "ops_tracing" not in content:
+            # Insert ``import ops_tracing`` after ``import ops``.
+            if "import ops" in content:
+                content = content.replace("import ops\n", "import ops\nimport ops_tracing\n", 1)
+                changed = True
+
+            # Insert ``ops_tracing.setup(self)`` after the super().__init__ call.
+            if "super().__init__(framework)" in content:
+                content = content.replace(
+                    "super().__init__(framework)",
+                    "super().__init__(framework)\n        ops_tracing.setup(self)",
+                    1,
+                )
+                changed = True
+
+            if changed:
+                charm_py.write_text(content)
+                actions.append("Injected ops_tracing import and setup into src/charm.py")
+            else:
+                actions.append(
+                    "src/charm.py did not match expected patterns — skipped ops-tracing"
+                )
+        else:
+            actions.append("src/charm.py already contains ops_tracing — skipped")
+    else:
+        actions.append("src/charm.py not found — skipped ops-tracing injection")
+
+    return actions
+
 
 class CharmcraftInitTool(Tool):
     """Tool to initialise a new charm with charmcraft."""
@@ -95,10 +190,21 @@ class CharmcraftInitTool(Tool):
             else:
                 gitignore.write_text("\n".join(entries_to_add) + "\n")
 
+            # Inject ops-tracing into the scaffolded charm.
+            tracing_actions = _inject_ops_tracing(target_path, profile)
+            tracing_summary = "\n".join(tracing_actions)
+
             return ToolResult(
                 success=True,
-                output=f"Initialised charm '{name}' at {target_path}\n{result.stdout}",
-                data={"path": str(target_path), "profile": profile},
+                output=(
+                    f"Initialised charm '{name}' at {target_path}\n"
+                    f"{result.stdout}\n{tracing_summary}"
+                ),
+                data={
+                    "path": str(target_path),
+                    "profile": profile,
+                    "tracing_injected": True,
+                },
             )
         except FileNotFoundError:
             return ToolResult(

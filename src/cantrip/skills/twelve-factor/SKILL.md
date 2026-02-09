@@ -153,6 +153,16 @@ juju deploy traefik-k8s --trust
 juju integrate my-app:ingress traefik-k8s:ingress
 ```
 
+## Observability
+
+The `charmcraft_init` tool automatically adds the `tracing` relation to `charmcraft.yaml` for all profiles (including PaaS framework profiles). Once COS is deployed, wire up tracing:
+
+```bash
+juju integrate my-app:tracing cos.tempo:tracing
+```
+
+For standard (non-PaaS) charms, `charmcraft_init` also injects `ops-tracing` into `requirements.txt` and `src/charm.py` — no manual setup needed. For full observability (metrics, logs, dashboards), load the `observability` skill.
+
 ## Config Options and Environment Variables
 
 12-factor apps are configured through environment variables. The paas-charm base auto-converts charm config options to environment variables with a framework-specific prefix.

@@ -608,3 +608,169 @@ class TestCharmcraftInitGitignore:
         content = gitignore.read_text()
         assert content.count(".cantrip") == 1
         assert content.count(".source/") == 1
+
+
+class TestCharmcraftInitOpsTracing:
+    """Tests for ops-tracing injection in CharmcraftInitTool."""
+
+    _CHARMCRAFT_YAML = """\
+name: test-charm
+type: charm
+bases:
+  - build-on:
+      - name: ubuntu
+        channel: "22.04"
+    run-on:
+      - name: ubuntu
+        channel: "22.04"
+"""
+
+    _CHARM_PY = """\
+#!/usr/bin/env python3
+import ops
+
+
+class TestCharmCharm(ops.CharmBase):
+    def __init__(self, framework: ops.Framework):
+        super().__init__(framework)
+        framework.observe(self.on.start, self._on_start)
+
+    def _on_start(self, event: ops.StartEvent):
+        self.unit.status = ops.ActiveStatus()
+
+
+if __name__ == "__main__":
+    ops.main(TestCharmCharm)
+"""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory."""
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+
+    @pytest.fixture
+    def tool(self):
+        return CharmcraftInitTool()
+
+    def _mock_charmcraft(self):
+        """Return a mock that simulates a successful charmcraft init."""
+        return mock.patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=mock.Mock(returncode=0, stdout="Initialised.", stderr=""),
+        )
+
+    def _scaffold_standard(self, charm_dir: Path) -> None:
+        """Pre-create files that charmcraft init would generate for a standard profile."""
+        charm_dir.mkdir(parents=True, exist_ok=True)
+        (charm_dir / "charmcraft.yaml").write_text(self._CHARMCRAFT_YAML)
+        (charm_dir / "requirements.txt").write_text("ops >= 2.0\n")
+        src = charm_dir / "src"
+        src.mkdir(parents=True, exist_ok=True)
+        (src / "charm.py").write_text(self._CHARM_PY)
+
+    @pytest.mark.asyncio
+    async def test_tracing_injected_standard_charm(self, tool, temp_dir):
+        """Standard profile gets full ops-tracing injection."""
+        charm_dir = temp_dir / "test-charm"
+        self._scaffold_standard(charm_dir)
+
+        with self._mock_charmcraft():
+            result = await tool.execute(
+                name="test-charm", path=str(temp_dir), profile="kubernetes"
+            )
+
+        assert result.success
+        assert result.data["tracing_injected"] is True
+
+        # requirements.txt should contain ops-tracing.
+        reqs = (charm_dir / "requirements.txt").read_text()
+        assert "ops-tracing" in reqs
+
+        # charmcraft.yaml should have the tracing relation.
+        charmcraft = (charm_dir / "charmcraft.yaml").read_text()
+        assert "tracing" in charmcraft
+        assert "interface: tracing" in charmcraft
+
+        # src/charm.py should have the import and setup call.
+        charm_py = (charm_dir / "src" / "charm.py").read_text()
+        assert "import ops_tracing" in charm_py
+        assert "ops_tracing.setup(self)" in charm_py
+
+    @pytest.mark.asyncio
+    async def test_tracing_charmcraft_yaml_only_for_paas(self, tool, temp_dir):
+        """PaaS profile only modifies charmcraft.yaml, not requirements.txt or src/charm.py."""
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        (charm_dir / "charmcraft.yaml").write_text(self._CHARMCRAFT_YAML)
+        (charm_dir / "requirements.txt").write_text("ops >= 2.0\n")
+
+        with self._mock_charmcraft():
+            result = await tool.execute(
+                name="test-charm", path=str(temp_dir), profile="flask-framework"
+            )
+
+        assert result.success
+
+        # charmcraft.yaml should have tracing.
+        charmcraft = (charm_dir / "charmcraft.yaml").read_text()
+        assert "interface: tracing" in charmcraft
+
+        # requirements.txt should be untouched.
+        reqs = (charm_dir / "requirements.txt").read_text()
+        assert "ops-tracing" not in reqs
+
+    @pytest.mark.asyncio
+    async def test_tracing_no_duplicate(self, tool, temp_dir):
+        """Files that already contain tracing are not modified again."""
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+
+        charmcraft_with_tracing = self._CHARMCRAFT_YAML + (
+            "\nrequires:\n  tracing:\n    interface: tracing\n    limit: 1\n"
+        )
+        (charm_dir / "charmcraft.yaml").write_text(charmcraft_with_tracing)
+        (charm_dir / "requirements.txt").write_text("ops >= 2.0\nops-tracing\n")
+
+        src = charm_dir / "src"
+        src.mkdir(parents=True, exist_ok=True)
+        charm_py_with_tracing = self._CHARM_PY.replace(
+            "import ops\n", "import ops\nimport ops_tracing\n"
+        ).replace(
+            "super().__init__(framework)",
+            "super().__init__(framework)\n        ops_tracing.setup(self)",
+        )
+        (src / "charm.py").write_text(charm_py_with_tracing)
+
+        with self._mock_charmcraft():
+            result = await tool.execute(
+                name="test-charm", path=str(temp_dir), profile="kubernetes"
+            )
+
+        assert result.success
+
+        # No duplicates in any file.
+        reqs = (charm_dir / "requirements.txt").read_text()
+        assert reqs.count("ops-tracing") == 1
+
+        charmcraft = (charm_dir / "charmcraft.yaml").read_text()
+        assert charmcraft.count("interface: tracing") == 1
+
+        charm_py = (charm_dir / "src" / "charm.py").read_text()
+        assert charm_py.count("import ops_tracing") == 1
+        assert charm_py.count("ops_tracing.setup") == 1
+
+    @pytest.mark.asyncio
+    async def test_tracing_missing_files_still_succeeds(self, tool, temp_dir):
+        """Tool succeeds even when expected files are absent."""
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        # No files pre-created — simulates charmcraft init producing nothing.
+
+        with self._mock_charmcraft():
+            result = await tool.execute(
+                name="test-charm", path=str(temp_dir), profile="kubernetes"
+            )
+
+        assert result.success
+        assert "skipped" in result.output.lower() or "not found" in result.output.lower()

@@ -104,7 +104,7 @@
 - [ ] Pack validation before "done"
 
 ### 2.2 Observability Integration
-- [ ] ops-tracing integration in generated charms
+- [x] ops-tracing integration in generated charms
 - [x] Tempo query for trace analysis
 - [x] Loki query for log analysis
 - [x] Agent uses traces to debug issues

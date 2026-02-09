@@ -5,6 +5,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Automatic ops-tracing injection** — `charmcraft_init` now injects ops-tracing into scaffolded charms: for standard profiles (`kubernetes`/`machine`) it adds the dependency, tracing relation, and setup call; for PaaS framework profiles it adds the tracing relation to `charmcraft.yaml`
 - **Observability query tools** — `juju_debug_log` retrieves Juju debug log output (no COS needed), `tempo_query` searches Tempo for distributed traces, and `loki_query` queries Loki for logs; the agent now debugs charm failures using real observability data instead of guessing
 - **Conversational iteration** — `juju_config` tool to get/set application configuration, `juju_wait` tool to block until an app reaches active/idle (saves tool-call rounds vs polling `juju_status`), and `juju_refresh` now accepts `resources` for 12-factor re-deploys; system prompt includes step-by-step guidance for the edit-pack-refresh cycle
 - **Workload research** — agent proactively clones and analyses application source code before scaffolding, producing a `WORKLOAD.md` summary; `.source/` directory automatically gitignored
@@ -18,7 +19,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Environment setup tools** — `concierge_prepare` and `concierge_status` tools provision charm development environments via Concierge (LXD or Kubernetes)
 - **Juju model management tools** — `juju_add_model` and `juju_destroy_model` for creating and tearing down Juju models
 - **Cross-model relation tools** — `juju_offer` and `juju_consume` for wiring applications across models (e.g. connecting a dev model to COS-lite)
-- **Skills infrastructure** — agent skills following the agentskills.io format; 7 bundled charm development skills (scenario-tests, jubilant-tests, relation-data-design, observability, ingress, adding-actions, adding-config) loaded on demand via the `load_skill` tool
+- **Skills infrastructure** — agent skills following the agentskills.io format; 11 bundled charm development skills loaded on demand via the `load_skill` tool; includes charmcraft workflows, concierge environment provisioning, jhack debugging utilities, scenario tests, jubilant integration tests, relation data design, observability, ingress, actions, and config
 - **Charm CLAUDE.md generation** — agent writes a tailored `CLAUDE.md` into the charm directory on startup, giving Claude Code context about Juju charm development
 - **SQLite session store** — replaced `.cantrip/session.json` with a single `.cantrip` SQLite file; tracks LLM token usage per request
 - **Web fetch tool** — agent can retrieve content from URLs (documentation, Charmhub, PyPI, GitHub) with automatic HTML-to-text conversion

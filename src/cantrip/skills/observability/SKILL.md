@@ -20,6 +20,8 @@ Every production charm should integrate with the **Canonical Observability Stack
 
 ## Step 1: Add ops-tracing
 
+> **Note:** The `charmcraft_init` tool now automatically injects ops-tracing for standard charms (`kubernetes`/`machine` profiles) — it adds the dependency to `requirements.txt`, the tracing relation to `charmcraft.yaml`, and the import/setup call to `src/charm.py`. For PaaS framework profiles, it adds the tracing relation to `charmcraft.yaml` only. If your charm was scaffolded with `charmcraft_init`, you can skip to Step 2.
+
 ops-tracing instruments charm code so every hook execution, relation event, and Pebble interaction produces a trace span.
 
 Install from PyPI:
