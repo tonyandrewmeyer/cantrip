@@ -128,12 +128,12 @@
 ### 2.5 Persistence
 - [x] .cantrip SQLite database (session, decisions, token usage)
 - [x] Session save/restore
-- [ ] Context compaction ([virtual files algorithm](https://lethain.com/agents-context-compaction/))
-  - [ ] Token budget tracking (system message after each turn)
-  - [ ] Large-message virtualisation (>10k tokens → virtual file, inline first 1k)
-  - [ ] Base tools: virtual file read/search, `file_regex`
-  - [ ] Compaction at configurable threshold (default 80 % of context window)
-  - [ ] Prior context saved as virtual file after compaction
+- [x] Context compaction ([virtual files algorithm](https://lethain.com/agents-context-compaction/))
+  - [x] Token budget tracking (system message after each turn)
+  - [x] Large-message virtualisation (>10k tokens → virtual file, inline first 1k)
+  - [x] Base tools: virtual file read/search, `file_regex`
+  - [x] Compaction at configurable threshold (default 80 % of context window)
+  - [x] Prior context saved as virtual file after compaction
 - [x] Decision tracking
 
 ### 2.6 Event-Driven Agent (Juju → Cantrip)

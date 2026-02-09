@@ -5,6 +5,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Context compaction** — agent manages context window growth using the virtual files algorithm: large tool results and messages are virtualised with inline previews; token budget is tracked and shown to the LLM; conversations are automatically compacted (summarised) when usage exceeds 80% of the context window; `virtual_file_read` and `virtual_file_search` tools let the agent access virtualised content; LLM providers now expose `context_window_tokens` and improved `count_tokens` covering tool calls and results
 - **TUI, live, and Spread test suites** — Textual headless tests for widget rendering and key bindings; live Juju tests against a real controller; live LLM tests that guard against prompt regressions; Spread smoke test for system-level verification; nightly CI workflow for e2e and live tests; PR CI now runs integration tests alongside unit tests
 - **Automatic ops-tracing injection** — `charmcraft_init` now injects ops-tracing into scaffolded charms: for standard profiles (`kubernetes`/`machine`) it adds the dependency, tracing relation, and setup call; for PaaS framework profiles it adds the tracing relation to `charmcraft.yaml`
 - **Observability query tools** — `juju_debug_log` retrieves Juju debug log output (no COS needed), `tempo_query` searches Tempo for distributed traces, and `loki_query` queries Loki for logs; the agent now debugs charm failures using real observability data instead of guessing
