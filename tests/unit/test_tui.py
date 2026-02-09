@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from cantrip.tui.app import CantripApp
+from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.widgets.chat import ChatWidget, MessageRole, MessageWidget
+from cantrip.tui.widgets.statusbar import StatusBar
 
 pytestmark = pytest.mark.tui
 
@@ -175,3 +177,79 @@ class TestTuiWidgets:
                 # from preflight may exist, but that's fine).
                 user_messages = [m for m in chat._messages if m.role == MessageRole.USER]
                 assert len(user_messages) == 0
+
+    @pytest.mark.asyncio
+    async def test_f1_opens_help_screen(self):
+        """Press F1 to open HelpScreen, then Esc to dismiss."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("f1")
+                await pilot.pause()
+                assert isinstance(pilot.app.screen, HelpScreen)
+
+                await pilot.press("escape")
+                await pilot.pause()
+                assert not isinstance(pilot.app.screen, HelpScreen)
+
+    @pytest.mark.asyncio
+    async def test_help_screen_content(self):
+        """HelpScreen contains expected sections."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("f1")
+                await pilot.pause()
+
+                container = pilot.app.screen.query_one("#help-container")
+                assert container is not None
+                # Check via the static widgets inside the container.
+                statics = container.query("Static")
+                combined = " ".join(str(s.render()) for s in statics)
+                assert "Quick Start" in combined
+                assert "Keyboard Shortcuts" in combined
+                assert "Links" in combined
+
+    @pytest.mark.asyncio
+    async def test_status_bar_mounted(self):
+        """StatusBar widget is mounted with the expected id."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                status_bar = pilot.app.query_one("#status-bar")
+                assert isinstance(status_bar, StatusBar)
+
+    @pytest.mark.asyncio
+    async def test_status_bar_reactives(self):
+        """Setting reactive properties updates status bar content."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                status_bar = pilot.app.query_one("#status-bar", StatusBar)
+                status_bar.task_label = "⟳ Building rock"
+                status_bar.cos_health = "● COS healthy"
+                await pilot.pause()
+
+                content = pilot.app.query_one("#status-bar-content")
+                text = str(content.render())
+                assert "Building rock" in text
+                assert "COS healthy" in text
+
+    @pytest.mark.asyncio
+    async def test_header_subtitle_shows_help(self):
+        """Header subtitle contains 'F1 Help' on mount."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                assert "F1 Help" in pilot.app.sub_title
+
+    @pytest.mark.asyncio
+    async def test_f4_debug_stub(self):
+        """Press F4 posts a notification."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test(notifications=True) as pilot:
+                await pilot.press("f4")
+                await pilot.pause()
+                assert len(pilot.app._notifications) >= 1
+                assert any("Debug" in str(n.title) for n in pilot.app._notifications)

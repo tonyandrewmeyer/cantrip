@@ -14,6 +14,7 @@ from cantrip.tui.widgets.status import (
     MultiModelStatusWidget,
     RelationLine,
 )
+from cantrip.tui.widgets.statusbar import StatusBar
 
 __all__ = [
     "AppBox",
@@ -26,4 +27,5 @@ __all__ = [
     "MultiModelStatusWidget",
     "ProgressItem",
     "RelationLine",
+    "StatusBar",
 ]

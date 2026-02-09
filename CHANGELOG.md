@@ -5,6 +5,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **TUI improvements** — F1 help screen modal with quick start, keyboard shortcuts, and links; custom status bar replacing Textual's default Footer, with reactive task/COS/test segments; header subtitle showing model info and F1 hint; F4 debug binding (stub)
 - **Automatic pre-commit hooks** — `charmcraft_init` now injects a `.pre-commit-config.yaml` that delegates to the `format`, `lint`, and `unit` tox environments scaffolded by charmcraft; runs `pre-commit install` automatically when the binary is available
 - **Charm test runner** — `run_charm_tests` tool executes unit or integration tests inside a charm directory, preferring tox when available and falling back to pytest; parses the pytest summary line for pass/fail/error/skipped counts; system prompt now instructs the agent to generate and run Scenario unit tests after scaffolding or modifying a charm
 - **Context compaction** — agent manages context window growth using the virtual files algorithm: large tool results and messages are virtualised with inline previews; token budget is tracked and shown to the LLM; conversations are automatically compacted (summarised) when usage exceeds 80% of the context window; `virtual_file_read` and `virtual_file_search` tools let the agent access virtualised content; LLM providers now expose `context_window_tokens` and improved `count_tokens` covering tool calls and results

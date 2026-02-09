@@ -5,7 +5,7 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Input
+from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
 from cantrip import __version__
@@ -13,8 +13,10 @@ from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.llm import create_provider
 from cantrip.llm.base import ProviderRateLimitError
+from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.widgets.chat import ChatWidget, MessageStatus, MessageWidget
 from cantrip.tui.widgets.status import JujuStatusWidget
+from cantrip.tui.widgets.statusbar import StatusBar
 
 # Map preflight statuses to chat progress statuses.
 _STATUS_MAP = {
@@ -42,6 +44,7 @@ class CantripApp(App):
         Binding("f1", "help", "Help"),
         Binding("f2", "toggle_status", "Toggle Status"),
         Binding("f3", "logs", "Logs"),
+        Binding("f4", "debug", "Debug"),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+l", "clear_chat", "Clear"),
     ]
@@ -78,7 +81,7 @@ class CantripApp(App):
             ),
             id="main-container",
         )
-        yield Footer()
+        yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
         """Handle app mount."""
@@ -87,6 +90,7 @@ class CantripApp(App):
         self.query_one("#right-panel").display = False
         self._init_agent()
         self._start_prepare()
+        self._update_header_subtitle()
 
     def _init_agent(self) -> None:
         """Initialise the LLM provider and agent."""
@@ -96,6 +100,19 @@ class CantripApp(App):
         except ValueError as e:
             chat = self.query_one("#chat", ChatWidget)
             chat.add_system_message(f"Failed to initialise provider: {e}")
+
+    def _update_header_subtitle(self) -> None:
+        """Rebuild the header subtitle from agent state."""
+        parts: list[str] = []
+        if self._agent:
+            state = self._agent.state
+            if state.dev_model:
+                substrate = "lxd" if state.charm_type == "machine" else "k8s"
+                parts.append(f"[{state.dev_model}:{substrate}]")
+            if state.cos_model:
+                parts.append(f"[{state.cos_model}:k8s]")
+        parts.append("[F1 Help]")
+        self.sub_title = " ".join(parts)
 
     # -- Preflight integration ------------------------------------------------
 
@@ -134,6 +151,10 @@ class CantripApp(App):
         if event.check_name in _PREPARE_CHECKS:
             idx = _PREPARE_CHECKS.index(event.check_name)
             self._prepare_widget.update_progress(idx, _STATUS_MAP[event.status])
+        if event.check_name == "cos" and event.status == CheckStatus.PASSED:
+            status_bar = self.query_one("#status-bar", StatusBar)
+            status_bar.cos_health = "● COS healthy"
+            self._update_header_subtitle()
 
     def _start_bootstrap(self) -> None:
         """Re-bootstrap if the user picked a different preset than the default.
@@ -230,6 +251,7 @@ class CantripApp(App):
             input_widget.focus()
             # Check whether charm_type was set during this exchange.
             self._start_bootstrap()
+            self._update_header_subtitle()
 
         elif event.state == WorkerState.ERROR:
             error = event.worker.error
@@ -242,7 +264,11 @@ class CantripApp(App):
 
     def action_help(self) -> None:
         """Show help screen."""
-        self.notify("Help screen not yet implemented", title="Help")
+        self.push_screen(HelpScreen())
+
+    def action_debug(self) -> None:
+        """Show debug mode (stub)."""
+        self.notify("Debug mode not yet implemented", title="Debug")
 
     def on_juju_status_widget_status_available(self) -> None:
         """Show the status panel when status data first arrives."""

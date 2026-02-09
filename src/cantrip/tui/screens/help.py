@@ -1,0 +1,76 @@
+"""Help screen modal for Cantrip TUI."""
+
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Center, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Static
+
+
+class HelpScreen(ModalScreen):
+    """Modal help screen showing quick start, shortcuts, and links."""
+
+    DEFAULT_CSS = """
+    HelpScreen {
+        align: center middle;
+    }
+
+    #help-container {
+        width: 70;
+        max-height: 80%;
+        border: thick $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #help-title {
+        text-style: bold;
+        width: 100%;
+        content-align: center middle;
+        padding-bottom: 1;
+    }
+
+    .help-section-header {
+        text-style: bold;
+        padding-top: 1;
+    }
+
+    .help-separator {
+        color: $text-muted;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        """Compose the help screen layout."""
+        with Center(), Vertical(id="help-container"):
+            yield Static("Cantrip Help                              [Esc Close]", id="help-title")
+            yield Static("─" * 66, classes="help-separator")
+
+            yield Static("Quick Start", classes="help-section-header")
+            yield Static("───────────", classes="help-separator")
+            yield Static(
+                "Just describe what you want to charm:\n"
+                "  > build a charm for my flask app\n"
+                "  > add postgresql integration\n"
+                "  > add a backup action"
+            )
+
+            yield Static("Keyboard Shortcuts", classes="help-section-header")
+            yield Static("──────────────────", classes="help-separator")
+            yield Static(
+                "F1        This help\n"
+                "F2        Toggle status panel\n"
+                "F3        View logs\n"
+                "F4        Debug mode\n"
+                "Ctrl+L    Clear chat\n"
+                "Ctrl+C    Cancel operation\n"
+                "q         Quit"
+            )
+
+            yield Static("Links", classes="help-section-header")
+            yield Static("─────", classes="help-separator")
+            yield Static("Grafana:  http://localhost:3000\nDocs:     https://juju.is/docs")
