@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.preflight import (
     DEFAULT_PRESET,
     PreflightCallback,
@@ -58,6 +59,8 @@ from cantrip.agent.tools import (
     TempoQueryTool,
     Tool,
     ToolResult,
+    VirtualFileReadTool,
+    VirtualFileSearchTool,
     WebFetchTool,
     WriteFileTool,
 )
@@ -94,6 +97,13 @@ class CantripAgent:
         self.provider = provider
         self.state = AgentState(charm_path=charm_path)
         self._preflight = PreflightRunner(self.state)
+
+        # Context window management.
+        self._virtual_store = VirtualFileStore()
+        self._context_manager = ContextManager(
+            virtual_store=self._virtual_store,
+            context_window_tokens=provider.context_window_tokens,
+        )
 
         # Lazy-initialised on first access via properties.
         self._skills_index_cache: SkillsIndex | None = None
@@ -197,6 +207,9 @@ class CantripAgent:
             WebFetchTool(),
             # Skills
             LoadSkillTool(self._skills_index),
+            # Virtual files
+            VirtualFileReadTool(self._virtual_store),
+            VirtualFileSearchTool(self._virtual_store),
             # Rockcraft operations
             RockcraftInitTool(),
             RockcraftPackTool(),
@@ -286,12 +299,19 @@ class CantripAgent:
                 error=f"Tool execution failed: {e}",
             )
 
-    def _build_llm_messages(self) -> list[Message]:
-        """Build the full message list for the LLM including system prompt."""
-        return [
+    def _build_llm_messages(self, include_budget: bool = False) -> list[Message]:
+        """Build the full message list for the LLM including system prompt.
+
+        When *include_budget* is True, a transient context budget message
+        is appended (not stored in state.messages).
+        """
+        messages = [
             Message(role=Role.SYSTEM, content=self._build_system_prompt()),
             *self.state.messages,
         ]
+        if include_budget:
+            messages.append(self._context_manager.build_budget_message(messages))
+        return messages
 
     async def _complete_with_retry(
         self,
@@ -330,9 +350,11 @@ class CantripAgent:
         The loop continues until the model responds without tool calls
         or the maximum number of rounds is reached.
         """
-        self.state.messages.append(Message(role=Role.USER, content=user_message))
+        user_msg = Message(role=Role.USER, content=user_message)
+        user_msg = self._context_manager.virtualise_message(user_msg)
+        self.state.messages.append(user_msg)
 
-        messages = self._build_llm_messages()
+        messages = self._build_llm_messages(include_budget=True)
         llm_tools = self._tools_for_llm() if self._tools else None
 
         response = await self._complete_with_retry(messages, llm_tools)
@@ -368,10 +390,21 @@ class CantripAgent:
                 content="",
                 tool_results=tool_results,
             )
+            # Virtualise large tool results before storing.
+            tool_msg = self._context_manager.virtualise_message(tool_msg)
             self.state.messages.append(tool_msg)
 
+            # Compact if the context window is getting full.
+            if self._context_manager.should_compact(self.state.messages):
+                log.info("Compacting conversation context")
+                self.state.messages = await self._context_manager.compact(
+                    self.state.messages,
+                    system_prompt=self._build_system_prompt(),
+                    provider=self.provider,
+                )
+
             # Call the LLM again with the updated history.
-            messages = self._build_llm_messages()
+            messages = self._build_llm_messages(include_budget=True)
             response = await self._complete_with_retry(messages, llm_tools)
             self._record_usage(response)
 
@@ -386,12 +419,14 @@ class CantripAgent:
         those are executed and the model is called again (non-streaming for
         intermediate rounds, streaming for the final text response).
         """
-        self.state.messages.append(Message(role=Role.USER, content=user_message))
+        user_msg = Message(role=Role.USER, content=user_message)
+        user_msg = self._context_manager.virtualise_message(user_msg)
+        self.state.messages.append(user_msg)
 
         llm_tools = self._tools_for_llm() if self._tools else None
 
         # Use non-streaming complete for potential tool call rounds.
-        messages = self._build_llm_messages()
+        messages = self._build_llm_messages(include_budget=True)
         response = await self._complete_with_retry(messages, llm_tools)
         self._record_usage(response)
 
@@ -423,17 +458,25 @@ class CantripAgent:
                 content="",
                 tool_results=tool_results,
             )
+            # Virtualise large tool results before storing.
+            tool_msg = self._context_manager.virtualise_message(tool_msg)
             self.state.messages.append(tool_msg)
 
-            messages = self._build_llm_messages()
+            # Compact if the context window is getting full.
+            if self._context_manager.should_compact(self.state.messages):
+                log.info("Compacting conversation context")
+                self.state.messages = await self._context_manager.compact(
+                    self.state.messages,
+                    system_prompt=self._build_system_prompt(),
+                    provider=self.provider,
+                )
+
+            messages = self._build_llm_messages(include_budget=True)
             response = await self._complete_with_retry(messages, llm_tools)
             self._record_usage(response)
 
         # Now stream the final text response.
-        messages = self._build_llm_messages()
-        # Remove the last assistant response from messages since we'll re-stream it.
-        # Actually, `response` already has the content but we want to stream it.
-        # Since we already have the content from `complete()`, just yield it.
+        # Since we already have the content from complete(), just yield it.
         full_response = response.content
         self.state.messages.append(Message(role=Role.ASSISTANT, content=full_response))
         yield full_response

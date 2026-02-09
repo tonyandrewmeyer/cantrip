@@ -198,6 +198,10 @@ Use the `load_skill` tool to load full instructions when you need detailed guida
 
 {{ skills_index }}
 {% endif %}
+## Virtual Files
+
+When tool results or conversation content is too large for the context window, it is stored as a virtual file with only the first portion shown inline. Use `virtual_file_read` to access full content and `virtual_file_search` to search by regex. After context compaction, prior conversation history is available as a virtual file.
+
 {% if charm_name or charm_path or dev_model or environment_ready is not none %}
 
 ## Current Context
