@@ -164,3 +164,27 @@ class TestCompletionChecklist:
         """The prompt should reference charm_validate."""
         result = build_system_prompt()
         assert "charm_validate" in result
+
+
+class TestJubilantIntegrationTestPrompt:
+    """Tests for Jubilant integration test content in the system prompt."""
+
+    def test_jubilant_tests_skill_referenced(self):
+        """The prompt should reference the jubilant-tests skill."""
+        result = build_system_prompt()
+        assert "jubilant-tests" in result
+
+    def test_integration_conftest_referenced(self):
+        """The prompt should reference the integration conftest file."""
+        result = build_system_prompt()
+        assert "tests/integration/conftest.py" in result
+
+    def test_integration_test_file_referenced(self):
+        """The prompt should reference the integration test file."""
+        result = build_system_prompt()
+        assert "tests/integration/test_charm.py" in result
+
+    def test_integration_tests_excluded_from_validate(self):
+        """The prompt should state integration tests are not included in charm_validate."""
+        result = build_system_prompt()
+        assert "not included in `charm_validate`" in result

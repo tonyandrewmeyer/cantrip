@@ -121,7 +121,7 @@
 
 ### 2.4 Generated Charm Testing
 - [x] Scenario test generation
-- [ ] Jubilant integration test generation
+- [x] Jubilant integration test generation
 - [x] Background test runner
 - [ ] Test results in TUI
 
