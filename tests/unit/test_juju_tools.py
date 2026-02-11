@@ -6,14 +6,18 @@ import jubilant
 import pytest
 
 from cantrip.agent.tools.juju import (
+    CharmSyncTool,
     JujuAddModelTool,
     JujuConfigTool,
     JujuConsumeTool,
     JujuDeployTool,
     JujuDestroyModelTool,
+    JujuDispatchTool,
     JujuOfferTool,
     JujuRefreshTool,
     JujuWaitTool,
+    _agent_charm_dir,
+    _is_k8s_model,
     _juju_available,
 )
 
@@ -575,3 +579,305 @@ class TestJujuWaitTool:
 
         assert not result.success
         assert "model not found" in result.error
+
+
+class TestAgentCharmDir:
+    """Tests for the _agent_charm_dir helper."""
+
+    def test_simple_unit(self):
+        """Converts a standard unit name to the on-disk path."""
+        assert _agent_charm_dir("my-app/0") == "/var/lib/juju/agents/unit-my-app-0/charm"
+
+    def test_unit_with_higher_number(self):
+        """Works with multi-digit unit numbers."""
+        assert _agent_charm_dir("postgresql/12") == "/var/lib/juju/agents/unit-postgresql-12/charm"
+
+
+class TestIsK8sModel:
+    """Tests for the _is_k8s_model helper."""
+
+    def test_caas_model(self):
+        """Returns True for a Kubernetes (CAAS) model."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "caas"
+        mock_juju.show_model.return_value = mock_info
+
+        assert _is_k8s_model(mock_juju) is True
+
+    def test_iaas_model(self):
+        """Returns False for a machine (IAAS) model."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "iaas"
+        mock_juju.show_model.return_value = mock_info
+
+        assert _is_k8s_model(mock_juju) is False
+
+
+class TestCharmSyncTool:
+    """Tests for CharmSyncTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return CharmSyncTool()
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool):
+        """Error when juju CLI is missing."""
+        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+            result = await tool.execute(unit="my-app/0")
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_sync_k8s_charm(self, tool, tmp_path):
+        """Syncs files to a K8s unit using scp with container='charm'."""
+        # Create a local charm directory with a source file.
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        charm_py = src_dir / "charm.py"
+        charm_py.write_text("# charm code")
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "caas"
+        mock_juju.show_model.return_value = mock_info
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
+
+        assert result.success
+        assert result.data["files_synced"] == 1
+
+        # Verify ssh called with container="charm" for mkdir.
+        mock_juju.ssh.assert_called_once()
+        ssh_call = mock_juju.ssh.call_args
+        assert ssh_call.kwargs.get("container") == "charm"
+
+        # Verify scp called with container="charm".
+        mock_juju.scp.assert_called_once()
+        scp_call = mock_juju.scp.call_args
+        assert scp_call.kwargs.get("container") == "charm"
+        assert "my-app/0:" in scp_call.args[1]
+
+    @pytest.mark.asyncio
+    async def test_sync_machine_charm(self, tool, tmp_path):
+        """Syncs files to a machine unit using cli('ssh', ..., stdin=...)."""
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        charm_py = src_dir / "charm.py"
+        charm_py.write_text("# charm code")
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "iaas"
+        mock_juju.show_model.return_value = mock_info
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
+
+        assert result.success
+        assert result.data["files_synced"] == 1
+
+        # Verify ssh called with sudo mkdir (no container kwarg).
+        mock_juju.ssh.assert_called_once()
+        ssh_call = mock_juju.ssh.call_args
+        assert "sudo mkdir" in ssh_call.args[1]
+        assert "container" not in ssh_call.kwargs
+
+        # Verify cli called with stdin containing the file content.
+        mock_juju.cli.assert_called_once()
+        cli_call = mock_juju.cli.call_args
+        assert cli_call.args[0] == "ssh"
+        assert cli_call.kwargs.get("stdin") == "# charm code"
+
+    @pytest.mark.asyncio
+    async def test_sync_no_matching_files(self, tool, tmp_path):
+        """Returns success with 0 files when directories are empty."""
+        # Create empty src directory (no .py files).
+        (tmp_path / "src").mkdir()
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "caas"
+        mock_juju.show_model.return_value = mock_info
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
+
+        assert result.success
+        assert result.data["files_synced"] == 0
+
+    @pytest.mark.asyncio
+    async def test_sync_correct_remote_path(self, tool, tmp_path):
+        """Verifies the remote path is correctly constructed."""
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "charm.py").write_text("# code")
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "caas"
+        mock_juju.show_model.return_value = mock_info
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
+
+        assert result.success
+        scp_call = mock_juju.scp.call_args
+        expected_remote = "my-app/0:/var/lib/juju/agents/unit-my-app-0/charm/src/charm.py"
+        assert scp_call.args[1] == expected_remote
+
+    @pytest.mark.asyncio
+    async def test_sync_cli_error(self, tool, tmp_path):
+        """CLIError produces a failed ToolResult."""
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "charm.py").write_text("# code")
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "caas"
+        mock_juju.show_model.return_value = mock_info
+        mock_juju.ssh.side_effect = jubilant.CLIError(
+            returncode=1,
+            cmd=["juju", "ssh"],
+            stderr="connection refused",
+        )
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
+
+        assert not result.success
+        assert "connection refused" in result.error
+
+    @pytest.mark.asyncio
+    async def test_sync_custom_directories(self, tool, tmp_path):
+        """Respects a custom directories list."""
+        custom_dir = tmp_path / "custom"
+        custom_dir.mkdir()
+        (custom_dir / "module.py").write_text("# custom")
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "caas"
+        mock_juju.show_model.return_value = mock_info
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(
+                unit="my-app/0",
+                charm_dir=str(tmp_path),
+                directories=["custom"],
+            )
+
+        assert result.success
+        assert result.data["files_synced"] == 1
+        assert "custom/module.py" in result.data["files"][0]
+
+
+class TestJujuDispatchTool:
+    """Tests for JujuDispatchTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return JujuDispatchTool()
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool):
+        """Error when juju CLI is missing."""
+        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+            result = await tool.execute(unit="my-app/0", event="update-status")
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_k8s(self, tool):
+        """Dispatches on K8s with container='charm'."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "caas"
+        mock_juju.show_model.return_value = mock_info
+        mock_juju.ssh.return_value = "hook output"
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(unit="my-app/0", event="update-status")
+
+        assert result.success
+        assert "hook output" in result.output
+        assert result.data["event"] == "update-status"
+
+        ssh_call = mock_juju.ssh.call_args
+        assert ssh_call.kwargs.get("container") == "charm"
+        cmd = ssh_call.args[1]
+        assert "JUJU_DISPATCH_PATH=hooks/update-status" in cmd
+        assert "/var/lib/juju/agents/unit-my-app-0/charm/dispatch" in cmd
+
+    @pytest.mark.asyncio
+    async def test_dispatch_machine(self, tool):
+        """Dispatches on a machine model with sudo."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "iaas"
+        mock_juju.show_model.return_value = mock_info
+        mock_juju.ssh.return_value = "machine output"
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(unit="my-app/0", event="config-changed")
+
+        assert result.success
+        assert "machine output" in result.output
+
+        ssh_call = mock_juju.ssh.call_args
+        assert "container" not in ssh_call.kwargs
+        cmd = ssh_call.args[1]
+        assert cmd.startswith("sudo ")
+        assert "JUJU_DISPATCH_PATH=hooks/config-changed" in cmd
+
+    @pytest.mark.asyncio
+    async def test_dispatch_cli_error(self, tool):
+        """CLIError produces a failed ToolResult."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_info = mock.MagicMock()
+        mock_info.model_type = "caas"
+        mock_juju.show_model.return_value = mock_info
+        mock_juju.ssh.side_effect = jubilant.CLIError(
+            returncode=1,
+            cmd=["juju", "ssh"],
+            stderr="unit not found",
+        )
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(unit="my-app/0", event="update-status")
+
+        assert not result.success
+        assert "unit not found" in result.error

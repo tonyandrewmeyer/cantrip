@@ -98,9 +98,9 @@
 **Goal:** Fast iteration loop, observability-driven debugging.
 
 ### 2.1 Fast Dev Cycle
-- [ ] juju ssh code injection for quick updates
-- [ ] Automatic hook triggering
-- [ ] Smart switching between fast/full paths
+- [x] juju ssh code injection for quick updates
+- [x] Automatic hook triggering
+- [x] Smart switching between fast/full paths
 - [ ] Pack validation before "done"
 
 ### 2.2 Observability Integration

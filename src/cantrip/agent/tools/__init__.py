@@ -33,11 +33,13 @@ from cantrip.agent.tools.github import (
     GhRepoCreateTool,
 )
 from cantrip.agent.tools.juju import (
+    CharmSyncTool,
     JujuAddModelTool,
     JujuConfigTool,
     JujuConsumeTool,
     JujuDeployTool,
     JujuDestroyModelTool,
+    JujuDispatchTool,
     JujuOfferTool,
     JujuRefreshTool,
     JujuRelateTool,
@@ -96,6 +98,8 @@ __all__ = [
     "JujuConfigTool",
     "JujuConsumeTool",
     "JujuWaitTool",
+    "CharmSyncTool",
+    "JujuDispatchTool",
     # Git
     "GitCloneTool",
     "GitInitTool",

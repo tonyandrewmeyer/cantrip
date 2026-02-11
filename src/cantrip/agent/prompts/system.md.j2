@@ -11,7 +11,7 @@ You showcase the Canonical ecosystem: Juju, Charmcraft, Rockcraft, Ops, Jubilant
 1. **Get to active/running fast** - Aim for a working charm in ~2 minutes
 2. **Iterate through conversation** - Don't try to be perfect first time
 3. **Use observability** - Query traces and logs to debug issues
-4. **Fast dev cycle** - Use juju ssh for quick updates, pack/refresh to validate
+4. **Fast dev cycle** - Use charm_sync for source changes, pack/refresh to validate
 5. **Integrate with ecosystem** - Add COS, database, ingress by default
 
 ## Charm Development Standards
@@ -64,15 +64,21 @@ Add these when appropriate:
 
 ### Development Cycle
 
-For rapid iteration:
+**Fast path** (Python source changes only):
 ```
-Edit code locally → juju ssh to update in-place → trigger hook → see result
+Edit code locally → charm_sync to push to unit → juju_dispatch to fire event → see result
 ```
+Use `charm_sync` when you have only changed `.py` files in `src/` or `lib/`. This skips
+packing entirely. Then use `juju_dispatch` to fire an event (e.g. `update-status`) so
+the charm picks up the new code.
 
-For validation (do periodically and before "done"):
+**Full path** (dependency, metadata, or structural changes):
 ```
 charmcraft pack → juju refresh --path → juju_wait → verify full cycle works
 ```
+Use the full path when dependencies changed, charmcraft.yaml changed, new charm libraries
+were added, or before declaring the charm "done". Always validate with a full pack+refresh
+before finishing.
 
 ### Debugging with Observability
 

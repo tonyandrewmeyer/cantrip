@@ -1,6 +1,7 @@
 """Juju operation tools via Jubilant."""
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,18 @@ from cantrip.agent.tools.base import Tool, ToolResult
 def _juju_available() -> bool:
     """Check whether the juju CLI is installed."""
     return shutil.which("juju") is not None
+
+
+def _agent_charm_dir(unit: str) -> str:
+    """Convert a unit name like ``my-app/0`` to its on-disk charm directory."""
+    app, number = unit.split("/")
+    return f"/var/lib/juju/agents/unit-{app}-{number}/charm"
+
+
+def _is_k8s_model(juju: jubilant.Juju) -> bool:
+    """Return True if the current model is a Kubernetes (CAAS) model."""
+    info = juju.show_model()
+    return info.model_type == "caas"
 
 
 class JujuStatusTool(Tool):
@@ -869,6 +882,218 @@ class JujuWaitTool(Tool):
                 success=False,
                 output="",
                 error=f"Timed out waiting for {app_name} to reach active/idle after {timeout}s.",
+            )
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
+
+
+class CharmSyncTool(Tool):
+    """Tool to push local Python source files directly to a running unit.
+
+    This bypasses the pack/refresh cycle for rapid iteration on Python-only
+    changes. Each hook invocation starts a fresh Python process, so
+    overwriting ``.py`` files on disk is sufficient.
+    """
+
+    @property
+    def name(self) -> str:
+        return "charm_sync"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Push local Python source files (src/, lib/) directly to a running unit, "
+            "bypassing charmcraft pack. Use for rapid iteration on Python-only changes. "
+            "Always validate with a full pack/refresh before declaring the charm done."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "unit": {
+                    "type": "string",
+                    "description": "Unit name (e.g., 'my-app/0')",
+                },
+                "charm_dir": {
+                    "type": "string",
+                    "description": (
+                        "Local charm directory containing src/ and lib/. "
+                        "Defaults to the current working directory."
+                    ),
+                },
+                "directories": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Directories to sync (default: ['src', 'lib'])",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified)",
+                },
+            },
+            "required": ["unit"],
+        }
+
+    async def execute(
+        self,
+        unit: str,
+        charm_dir: str | None = None,
+        directories: list[str] | None = None,
+        model: str | None = None,
+    ) -> ToolResult:
+        """Sync local Python source to a running unit."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        local_root = Path(charm_dir) if charm_dir else Path.cwd()
+        dirs_to_sync = directories or ["src", "lib"]
+        remote_root = _agent_charm_dir(unit)
+
+        try:
+            juju = jubilant.Juju(model=model)
+            k8s = _is_k8s_model(juju)
+
+            # Collect all .py files from the requested directories.
+            files: list[tuple[Path, str]] = []
+            for dir_name in dirs_to_sync:
+                local_dir = local_root / dir_name
+                if not local_dir.is_dir():
+                    continue
+                for root, _dirs, filenames in os.walk(local_dir):
+                    for fname in filenames:
+                        if not fname.endswith(".py"):
+                            continue
+                        local_path = Path(root) / fname
+                        relative = local_path.relative_to(local_root)
+                        remote_path = f"{remote_root}/{relative}"
+                        files.append((local_path, remote_path))
+
+            if not files:
+                return ToolResult(
+                    success=True,
+                    output=f"No .py files found in {dirs_to_sync}. Nothing to sync.",
+                    data={"files_synced": 0},
+                )
+
+            # Push each file to the unit.
+            for local_path, remote_path in files:
+                remote_parent = str(Path(remote_path).parent)
+
+                if k8s:
+                    juju.ssh(
+                        unit,
+                        f"mkdir -p {remote_parent}",
+                        container="charm",
+                    )
+                    juju.scp(
+                        str(local_path),
+                        f"{unit}:{remote_path}",
+                        container="charm",
+                    )
+                else:
+                    juju.ssh(unit, f"sudo mkdir -p {remote_parent}")
+                    content = local_path.read_text()
+                    juju.cli("ssh", unit, f"sudo tee {remote_path}", stdin=content)
+
+            synced_names = [str(f[0].relative_to(local_root)) for f in files]
+            return ToolResult(
+                success=True,
+                output=(
+                    f"Synced {len(files)} file(s) to {unit}:\n"
+                    + "\n".join(f"  {n}" for n in synced_names)
+                ),
+                data={"files_synced": len(files), "files": synced_names},
+            )
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
+
+
+class JujuDispatchTool(Tool):
+    """Tool to fire a charm event on a unit via dispatch.
+
+    Best suited for simple events like ``update-status`` or
+    ``config-changed``. Relation events lack the full context that Juju
+    normally provides, so prefer a real ``juju config`` or ``juju relate``
+    for those.
+    """
+
+    @property
+    def name(self) -> str:
+        return "juju_dispatch"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Fire a charm event on a unit by invoking the dispatch script directly. "
+            "Use after charm_sync to trigger the new code. Best for simple events "
+            "like update-status or config-changed; relation events lack full context."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "unit": {
+                    "type": "string",
+                    "description": "Unit name (e.g., 'my-app/0')",
+                },
+                "event": {
+                    "type": "string",
+                    "description": ("Event to dispatch (e.g., 'update-status', 'config-changed')"),
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified)",
+                },
+            },
+            "required": ["unit", "event"],
+        }
+
+    async def execute(
+        self,
+        unit: str,
+        event: str,
+        model: str | None = None,
+    ) -> ToolResult:
+        """Fire a charm event on a unit."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        charm_dir = _agent_charm_dir(unit)
+        dispatch_cmd = f"JUJU_DISPATCH_PATH=hooks/{event} {charm_dir}/dispatch"
+
+        try:
+            juju = jubilant.Juju(model=model)
+            k8s = _is_k8s_model(juju)
+
+            if k8s:
+                output = juju.ssh(unit, dispatch_cmd, container="charm")
+            else:
+                output = juju.ssh(unit, f"sudo {dispatch_cmd}")
+
+            return ToolResult(
+                success=True,
+                output=output or f"Event '{event}' dispatched on {unit} (no output).",
+                data={"unit": unit, "event": event},
             )
         except jubilant.CLIError as e:
             return ToolResult(
