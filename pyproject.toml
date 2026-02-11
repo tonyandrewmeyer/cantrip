@@ -32,6 +32,9 @@ dependencies = [
     # Juju integration
     "jubilant>=0.1.0",             # Juju control
 
+    # Security
+    "cryptography>=46.0.5",        # Transitive; pinned for CVE fix
+
     # Utilities
     "pyyaml>=6.0",                 # YAML handling
     "rich>=13.0",                  # Rich text formatting
