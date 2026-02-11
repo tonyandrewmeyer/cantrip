@@ -546,6 +546,66 @@ class TestAnalyseFrameworkTool:
         assert result.data["framework"] is None
         assert result.data["profile"] is None
 
+    @pytest.mark.asyncio
+    async def test_custom_app_detects_dockerfile(self, tool, temp_dir):
+        """Dockerfile present with no framework suggests K8s substrate."""
+        (temp_dir / "Dockerfile").write_text("FROM ubuntu:22.04\nCMD /app\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        hints = result.data["workload_hints"]
+        assert hints["has_dockerfile"] is True
+        assert hints["suggested_substrate"] == "k8s"
+
+    @pytest.mark.asyncio
+    async def test_custom_app_detects_systemd(self, tool, temp_dir):
+        """Systemd service file present suggests machine substrate."""
+        (temp_dir / "my-app.service").write_text("[Unit]\nDescription=My App\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        hints = result.data["workload_hints"]
+        assert hints["has_systemd"] is True
+        assert hints["suggested_substrate"] == "machine"
+
+    @pytest.mark.asyncio
+    async def test_custom_app_detects_docker_compose(self, tool, temp_dir):
+        """Docker-compose file is detected in workload hints."""
+        (temp_dir / "docker-compose.yml").write_text("services:\n  app:\n    build: .\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        hints = result.data["workload_hints"]
+        assert hints["has_docker_compose"] is True
+
+    @pytest.mark.asyncio
+    async def test_custom_app_suggests_custom_charm_skill(self, tool, temp_dir):
+        """No framework detected mentions custom-charm skill."""
+        (temp_dir / "main.rs").write_text("fn main() {}")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        assert "custom-charm" in result.output.lower()
+
+    @pytest.mark.asyncio
+    async def test_custom_app_workload_hints_structure(self, tool, temp_dir):
+        """Workload hints dict is present with all expected keys."""
+        (temp_dir / "main.c").write_text("int main() { return 0; }")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        hints = result.data["workload_hints"]
+        assert "has_dockerfile" in hints
+        assert "has_docker_compose" in hints
+        assert "has_systemd" in hints
+        assert "has_config_files" in hints
+        assert "suggested_substrate" in hints
+
 
 class TestCharmcraftInitGitignore:
     """Tests for CharmcraftInitTool .gitignore handling."""

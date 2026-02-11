@@ -680,6 +680,66 @@ class AnalyseFrameworkTool(Tool):
                 findings["profile"] = self._PROFILE_MAP[framework]
                 findings["needs_experimental"] = framework in self._EXPERIMENTAL_FRAMEWORKS
 
+            # --- Custom workload hints (when no PaaS framework was detected) ---
+            workload_hints: dict[str, Any] = {
+                "has_dockerfile": False,
+                "has_docker_compose": False,
+                "has_systemd": False,
+                "has_config_files": False,
+                "suggested_substrate": None,
+            }
+
+            dockerfile = app_path / "Dockerfile"
+            if dockerfile.exists():
+                findings["files_found"].append("Dockerfile")
+                workload_hints["has_dockerfile"] = True
+
+            for compose_name in ("docker-compose.yml", "docker-compose.yaml", "compose.yml"):
+                compose_file = app_path / compose_name
+                if compose_file.exists():
+                    findings["files_found"].append(compose_name)
+                    workload_hints["has_docker_compose"] = True
+                    break
+
+            # Look for systemd .service files in the repo root or common locations.
+            service_locations = [app_path] + [
+                app_path / d for d in ("systemd", "contrib", "deploy", "packaging")
+            ]
+            for location in service_locations:
+                if location.is_dir() and list(location.glob("*.service")):
+                    workload_hints["has_systemd"] = True
+                    break
+
+            # Check for common config file patterns.
+            config_patterns = [
+                "config.yaml",
+                "config.yml",
+                "config.json",
+                "config.toml",
+                ".env.example",
+                ".env.sample",
+                "settings.yaml",
+                "settings.yml",
+            ]
+            for pattern in config_patterns:
+                if (app_path / pattern).exists():
+                    workload_hints["has_config_files"] = True
+                    break
+
+            # Suggest a substrate when no PaaS framework was detected.
+            if not findings["framework"]:
+                if workload_hints["has_systemd"]:
+                    workload_hints["suggested_substrate"] = "machine"
+                elif workload_hints["has_dockerfile"] or workload_hints["has_docker_compose"]:
+                    workload_hints["suggested_substrate"] = "k8s"
+
+                findings["suggestions"].append(
+                    "No recognised PaaS framework. "
+                    "Load the 'custom-charm' skill for the step-by-step custom charm workflow."
+                )
+
+            findings["workload_hints"] = workload_hints
+
             # Check for existing charm structure.
             charmcraft_yaml = app_path / "charmcraft.yaml"
             if charmcraft_yaml.exists():
