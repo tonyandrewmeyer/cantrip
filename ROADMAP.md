@@ -176,10 +176,10 @@
 **Goal:** Support custom apps and infrastructure, not just 12-factor.
 
 ### 3.1 Path B: Custom Applications
-- [ ] Full charm scaffolding (not paas-charm base)
-- [ ] Workload analysis
-- [ ] Config/action inference
-- [ ] Machine and K8s support
+- [x] Full charm scaffolding (not paas-charm base)
+- [x] Workload analysis
+- [x] Config/action inference
+- [x] Machine and K8s support
 
 ### 3.2 Path C: Infrastructure
 - [ ] Charmhub search for existing charms
