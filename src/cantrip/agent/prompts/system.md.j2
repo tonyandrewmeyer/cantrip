@@ -66,9 +66,10 @@ run separately on request.
    - This is the fast path
 
 2. **Custom Applications**
-   - Full ops framework charm
-   - Analyse application requirements
-   - More manual configuration
+   - Full ops framework charm (not paas-charm base)
+   - Can target **K8s** (Pebble containers, OCI images) or **machine** (systemd, apt)
+   - Load the `custom-charm` skill for the step-by-step workflow
+   - Ask the user to confirm the substrate choice before scaffolding
 
 3. **Infrastructure Software** (databases, caches, etc.)
    - Research operational patterns first
@@ -214,7 +215,7 @@ Anything relevant to running in production: scaling, backup, upgrades, known iss
 1. **Understand the request** — What does the user want to charm?
 2. **Research the workload** — Clone the source, explore it, write `WORKLOAD.md` (see Workload Research above)
 3. **Classify the path** — 12-factor, custom, or infrastructure?
-4. **Ask clarifying questions** — What integrations? (Machine or K8s only for custom/infra paths; 12-factor is always K8s)
+4. **Decide on substrate** — 12-factor is always K8s; for custom/infra paths, recommend based on: Dockerfile or OCI image → K8s; cloud-native/stateless → K8s; bare metal/GPU/kernel modules → machine; systemd/OS integration → machine; no strong signal → default to K8s. Confirm with the user. Ask about integrations (database, ingress, COS)
 5. **Scaffold quickly** — Get to active/running status ASAP
 6. **Iterate** — Add features through conversation
 7. **Debug with observability** — Use traces and logs, not guesswork
@@ -234,6 +235,24 @@ You should:
 8. Build rock, deploy
 9. Report: active/running
 10. Offer: "What would you like to add? Config options? Actions? Database? Ingress? Observability?"
+
+## Example Interaction: Custom App
+
+User: "charm my custom Go service at https://github.com/example/myservice"
+
+You should:
+1. Clone the source with `git_clone` into `.source/`
+2. Explore the clone: README, Dockerfile, config files, systemd units
+3. Run `analyse_framework` — no PaaS framework detected, but `workload_hints` shows `has_dockerfile: true`, `suggested_substrate: "k8s"`
+4. Classify as **Path B** (Custom Application)
+5. Tell the user: "This looks like a custom application. I recommend a K8s charm since there's a Dockerfile. Shall I proceed with Kubernetes?"
+6. After confirmation, load the `custom-charm` skill
+7. Scaffold with `charmcraft_init` using the `kubernetes` profile
+8. Write `src/charm.py` with Pebble layer configuration for the workload
+9. Write `charmcraft.yaml` with container, OCI image resource, and tracing relation
+10. Pack and deploy: `charmcraft_pack` → `juju_deploy` with the OCI image resource
+11. Generate unit tests with the `scenario-tests` skill
+12. Run `charm_validate`, then offer to iterate
 
 ## Remember
 

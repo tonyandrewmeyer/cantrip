@@ -190,6 +190,29 @@ class TestJubilantIntegrationTestPrompt:
         assert "not included in `charm_validate`" in result
 
 
+class TestPathBPrompt:
+    """Tests for Path B (Custom Applications) content in the system prompt."""
+
+    def test_custom_charm_skill_referenced(self):
+        """The prompt should reference the custom-charm skill."""
+        result = build_system_prompt()
+        assert "custom-charm" in result
+
+    def test_substrate_decision_heuristics(self):
+        """The prompt should contain substrate decision heuristics."""
+        result = build_system_prompt()
+        assert "Dockerfile or OCI image" in result
+        assert "bare metal/GPU/kernel modules" in result
+        assert "default to K8s" in result
+
+    def test_custom_app_example_interaction(self):
+        """The prompt should contain a custom app example interaction."""
+        result = build_system_prompt()
+        assert "Example Interaction: Custom App" in result
+        assert "Path B" in result
+        assert "workload_hints" in result
+
+
 class TestGitPushConfirmation:
     """Tests for git push confirmation guidance in the system prompt."""
 
