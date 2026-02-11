@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from cantrip.agent.core import CantripAgent
+from cantrip.agent.tools.base import ToolResult
 from cantrip.llm.base import Message, Response, Role, ToolCall
 from tests.conftest import FakeProvider
 
@@ -343,3 +344,104 @@ class TestContextManagement:
         tool_names = {t.name for t in agent._tools}
 
         assert "run_charm_tests" in tool_names
+
+
+class TestTestResultsCapture:
+    """Tests for _capture_test_results integration in the agent loop."""
+
+    @pytest.mark.asyncio
+    async def test_run_charm_tests_sets_state(self):
+        """Running run_charm_tests populates state.test_results."""
+        tool_call = ToolCall(id="tc1", name="run_charm_tests", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Tests done."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(
+                success=True,
+                output="5 passed",
+                data={"summary": {"passed": 5, "failed": 0, "error": 0, "skipped": 1}},
+            )
+        )
+
+        await agent.process_message("Run tests")
+
+        assert agent.state.test_results is not None
+        assert agent.state.test_results.passed == 5
+        assert agent.state.test_results.skipped == 1
+        assert agent.state.test_results.failed == 0
+
+    @pytest.mark.asyncio
+    async def test_charm_validate_sets_state(self):
+        """Running charm_validate with nested test data populates state.test_results."""
+        tool_call = ToolCall(id="tc1", name="charm_validate", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Validation done."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(
+                success=True,
+                output="ok",
+                data={"tests": {"summary": {"passed": 3, "failed": 1, "error": 0, "skipped": 0}}},
+            )
+        )
+
+        await agent.process_message("Validate charm")
+
+        assert agent.state.test_results is not None
+        assert agent.state.test_results.passed == 3
+        assert agent.state.test_results.failed == 1
+
+    @pytest.mark.asyncio
+    async def test_unrelated_tool_does_not_set_state(self):
+        """A tool that is not in _TEST_RESULT_TOOLS leaves test_results as None."""
+        tool_call = ToolCall(id="tc1", name="juju_status", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Status ok."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(success=True, output="active/idle")
+        )
+
+        await agent.process_message("Show status")
+
+        assert agent.state.test_results is None
+
+    @pytest.mark.asyncio
+    async def test_empty_summary_does_not_set_state(self):
+        """An empty summary dict from run_charm_tests leaves test_results as None."""
+        tool_call = ToolCall(id="tc1", name="run_charm_tests", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="No results."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(
+                success=True,
+                output="no tests found",
+                data={"summary": {}},
+            )
+        )
+
+        await agent.process_message("Run tests")
+
+        assert agent.state.test_results is None

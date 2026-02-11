@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from cantrip.agent.state import TestResults
 from cantrip.tui.app import CantripApp
 from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.widgets.chat import ChatWidget, MessageRole, MessageWidget
@@ -28,6 +29,7 @@ def _mock_agent() -> MagicMock:
     agent.process_message = AsyncMock(return_value="Test reply")
     agent.state = MagicMock()
     agent.state.charm_type = None
+    agent.state.test_results = None
     agent.preflight_result = MagicMock()
     agent.preflight_result.fully_ready = True
     return agent
@@ -253,3 +255,56 @@ class TestTuiWidgets:
                 await pilot.pause()
                 assert len(pilot.app._notifications) >= 1
                 assert any("Debug" in str(n.title) for n in pilot.app._notifications)
+
+    @pytest.mark.asyncio
+    async def test_test_summary_shown_after_agent_response(self):
+        """Test results appear in status bar after successful agent response."""
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.state.test_results = TestResults(
+            test_type="unit", passed=5, failed=0, error=0, skipped=0
+        )
+        mock_agent.process_message = AsyncMock(return_value="All tests passed.")
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("H", "i")
+                await pilot.press("enter")
+                await pilot.pause(delay=0.5)
+
+                content = pilot.app.query_one("#status-bar-content")
+                text = str(content.render())
+                assert "✓" in text
+                assert "5 passed" in text
+
+    @pytest.mark.asyncio
+    async def test_test_summary_shows_failures(self):
+        """Failed test results show cross icon in status bar."""
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.state.test_results = TestResults(
+            test_type="unit", passed=3, failed=2, error=0, skipped=0
+        )
+        mock_agent.process_message = AsyncMock(return_value="Some tests failed.")
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("H", "i")
+                await pilot.press("enter")
+                await pilot.pause(delay=0.5)
+
+                content = pilot.app.query_one("#status-bar-content")
+                text = str(content.render())
+                assert "✗" in text
+                assert "2 failed" in text
+
+    @pytest.mark.asyncio
+    async def test_test_summary_not_set_when_no_results(self):
+        """Status bar test summary stays empty when test_results is None."""
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.state.test_results = None
+        mock_agent.process_message = AsyncMock(return_value="No tests run.")
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("H", "i")
+                await pilot.press("enter")
+                await pilot.pause(delay=0.5)
+
+                status_bar = pilot.app.query_one("#status-bar", StatusBar)
+                assert status_bar.test_summary == ""

@@ -252,6 +252,7 @@ class CantripApp(App):
             # Check whether charm_type was set during this exchange.
             self._start_bootstrap()
             self._update_header_subtitle()
+            self._update_test_summary()
 
         elif event.state == WorkerState.ERROR:
             error = event.worker.error
@@ -261,6 +262,13 @@ class CantripApp(App):
                 chat.add_system_message(f"Error: {error}")
             input_widget.disabled = False
             input_widget.focus()
+
+    def _update_test_summary(self) -> None:
+        """Update the status bar test summary from agent state."""
+        if not self._agent or not self._agent.state.test_results:
+            return
+        status_bar = self.query_one("#status-bar", StatusBar)
+        status_bar.test_summary = self._agent.state.test_results.format_summary()
 
     def action_help(self) -> None:
         """Show help screen."""

@@ -15,7 +15,7 @@ from cantrip.agent.preflight import (
 )
 from cantrip.agent.prompts import build_system_prompt, claude_md
 from cantrip.agent.skills import SkillsIndex
-from cantrip.agent.state import AgentState, Decision
+from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import (
     AnalyseFrameworkTool,
@@ -83,6 +83,9 @@ MAX_TOOL_ROUNDS = 20
 # Retry settings for rate-limited LLM calls during the tool loop.
 _RATE_LIMIT_RETRIES = 3
 _RATE_LIMIT_BASE_DELAY = 30  # seconds
+
+# Tools whose results may contain a test summary to surface in the TUI.
+_TEST_RESULT_TOOLS = frozenset({"run_charm_tests", "charm_validate"})
 
 
 class CantripAgent:
@@ -308,6 +311,25 @@ class CantripAgent:
                 error=f"Tool execution failed: {e}",
             )
 
+    def _capture_test_results(self, tool_name: str, result: ToolResult) -> None:
+        """Update state with test results if the tool produced a test summary."""
+        if tool_name not in _TEST_RESULT_TOOLS:
+            return
+        data = result.data if hasattr(result, "data") else {}
+        if tool_name == "charm_validate":
+            summary = data.get("tests", {}).get("summary", {})
+        else:
+            summary = data.get("summary", {})
+        if not summary:
+            return
+        self.state.test_results = TestResults(
+            test_type="unit",
+            passed=summary.get("passed", 0),
+            failed=summary.get("failed", 0),
+            error=summary.get("error", 0),
+            skipped=summary.get("skipped", 0),
+        )
+
     def _build_llm_messages(self, include_budget: bool = False) -> list[Message]:
         """Build the full message list for the LLM including system prompt.
 
@@ -386,6 +408,7 @@ class CantripAgent:
             tool_results = []
             for tc in response.tool_calls:
                 result = await self._execute_tool(tc.name, tc.arguments)
+                self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
                 tool_results.append(
                     LLMToolResult(
@@ -457,6 +480,7 @@ class CantripAgent:
             tool_results = []
             for tc in response.tool_calls:
                 result = await self._execute_tool(tc.name, tc.arguments)
+                self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
                 tool_results.append(
                     LLMToolResult(

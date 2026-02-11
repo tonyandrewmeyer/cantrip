@@ -28,6 +28,33 @@ class Decision:
 
 
 @dataclass
+class TestResults:
+    """Parsed results from the most recent test run."""
+
+    test_type: str  # "unit" or "integration"
+    passed: int = 0
+    failed: int = 0
+    error: int = 0
+    skipped: int = 0
+
+    def format_summary(self) -> str:
+        """Format a one-line summary for the status bar."""
+        parts: list[str] = []
+        if self.failed:
+            parts.append(f"{self.failed} failed")
+        if self.error:
+            parts.append(f"{self.error} error")
+        if self.passed:
+            parts.append(f"{self.passed} passed")
+        if self.skipped:
+            parts.append(f"{self.skipped} skipped")
+        if not parts:
+            return ""
+        icon = "✗" if (self.failed or self.error) else "✓"
+        return f"{icon} {', '.join(parts)}"
+
+
+@dataclass
 class AgentState:
     """Current agent state."""
 
@@ -41,6 +68,7 @@ class AgentState:
 
     # Transient — not persisted to SQLite, re-determined each startup.
     environment_ready: bool = False
+    test_results: TestResults | None = None
 
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)

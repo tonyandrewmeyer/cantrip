@@ -123,7 +123,7 @@
 - [x] Scenario test generation
 - [x] Jubilant integration test generation
 - [x] Background test runner
-- [ ] Test results in TUI
+- [x] Test results in TUI
 
 ### 2.5 Persistence
 - [x] .cantrip SQLite database (session, decisions, token usage)

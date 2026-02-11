@@ -8,6 +8,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Gemini 3 provider** — default model upgraded from `gemini-2.0-flash` to `gemini-3-flash-preview`; dynamic thinking enabled with thought signature round-trip for function calling; temperature forced to 1.0 for Gemini 3 models (lower values cause looping); Gemini 2 continues to work when passed explicitly via `--model`
 
 ### Added
+- **Test results in status bar** — unit and integration test pass/fail/skip counts appear in the TUI status bar after the agent runs tests or validates a charm
 - **Integration test generation** — system prompt now instructs the agent to generate Jubilant integration tests (`tests/integration/conftest.py` and `test_charm.py`) after scaffolding a charm; integration tests run on request, not included in `charm_validate`
 - **Completion validation** — `charm_validate` tool runs unit tests and charmcraft pack as a pre-completion checklist; system prompt requires calling it before declaring a charm done
 - **Fast dev cycle** — `charm_sync` tool pushes local Python source directly to a running unit (skipping pack+refresh); `juju_dispatch` fires charm events to trigger the new code; system prompt guides the agent to use the fast path for source changes and the full path for dependency or metadata changes
