@@ -148,7 +148,7 @@ class TestSkillsIndexWithBundledSkills:
         index.discover()
         skills = index.list_skills()
         names = {s.name for s in skills}
-        assert len(skills) >= 7
+        assert len(skills) >= 8
         assert "scenario-tests" in names
         assert "jubilant-tests" in names
         assert "relation-data-design" in names
@@ -156,6 +156,7 @@ class TestSkillsIndexWithBundledSkills:
         assert "ingress" in names
         assert "adding-actions" in names
         assert "adding-config" in names
+        assert "custom-charm" in names
 
     def test_bundled_skills_loadable(self) -> None:
         index = SkillsIndex()
