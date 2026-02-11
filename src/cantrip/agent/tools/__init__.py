@@ -6,6 +6,7 @@ from cantrip.agent.tools.charm import (
     CharmcraftFetchLibsTool,
     CharmcraftInitTool,
     CharmcraftPackTool,
+    CharmValidateTool,
 )
 from cantrip.agent.tools.environment import (
     ConciergePrepareTool,
@@ -76,6 +77,7 @@ __all__ = [
     # Charm
     "CharmcraftInitTool",
     "CharmcraftPackTool",
+    "CharmValidateTool",
     "CharmcraftFetchLibsTool",
     "AnalyseFrameworkTool",
     # Environment

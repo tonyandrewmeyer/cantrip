@@ -23,6 +23,7 @@ from cantrip.agent.tools import (
     CharmcraftInitTool,
     CharmcraftPackTool,
     CharmSyncTool,
+    CharmValidateTool,
     ConciergePrepareTool,
     ConciergeStatusTool,
     EditFileTool,
@@ -204,6 +205,7 @@ class CantripAgent:
             # Charm operations
             CharmcraftInitTool(),
             CharmcraftPackTool(),
+            CharmValidateTool(),
             CharmcraftFetchLibsTool(),
             AnalyseFrameworkTool(),
             # Web

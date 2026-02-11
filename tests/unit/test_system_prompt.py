@@ -150,3 +150,17 @@ class TestWorkloadResearchPrompt:
             "Operational Notes",
         ):
             assert f"## {section}" in result
+
+
+class TestCompletionChecklist:
+    """Tests for completion checklist content in the system prompt."""
+
+    def test_completion_checklist_section_present(self):
+        """The 'Completion Checklist' section should appear in the rendered prompt."""
+        result = build_system_prompt()
+        assert "Completion Checklist" in result
+
+    def test_charm_validate_referenced(self):
+        """The prompt should reference charm_validate."""
+        result = build_system_prompt()
+        assert "charm_validate" in result

@@ -101,7 +101,7 @@
 - [x] juju ssh code injection for quick updates
 - [x] Automatic hook triggering
 - [x] Smart switching between fast/full paths
-- [ ] Pack validation before "done"
+- [x] Pack validation before "done"
 
 ### 2.2 Observability Integration
 - [x] ops-tracing integration in generated charms

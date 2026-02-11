@@ -28,7 +28,7 @@ After scaffolding or modifying a charm, generate and run tests:
    and actions (if any).
 2. Run `run_charm_tests` with `test_type: "unit"` to verify.
 3. If tests fail, read the output, fix the charm or tests, and re-run.
-4. Before marking a charm as done, ensure unit tests pass.
+4. Before marking a charm as done, run `charm_validate` to verify tests pass and the charm packs successfully.
 
 ### Libraries
 - Prefer PyPI versions where available
@@ -77,8 +77,15 @@ the charm picks up the new code.
 charmcraft pack → juju refresh --path → juju_wait → verify full cycle works
 ```
 Use the full path when dependencies changed, charmcraft.yaml changed, new charm libraries
-were added, or before declaring the charm "done". Always validate with a full pack+refresh
-before finishing.
+were added, or before declaring the charm "done". Always run `charm_validate` before finishing
+to verify tests pass and the charm packs successfully.
+
+### Completion Checklist
+
+Before telling the user a charm is "done" or "ready", you MUST call `charm_validate`. This runs
+unit tests and charmcraft pack, producing a pass/fail checklist. If any step fails, fix the issue
+and run `charm_validate` again. Only declare the charm complete when the overall result is PASSED.
+After validation passes, deploy with `juju_refresh` + `juju_wait` if the charm is deployed.
 
 ### Debugging with Observability
 

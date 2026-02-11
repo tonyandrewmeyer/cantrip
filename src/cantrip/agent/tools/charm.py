@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.agent.tools.testing import RunCharmTestsTool
 
 _PAAS_PROFILES = frozenset(
     {
@@ -369,6 +370,108 @@ class CharmcraftPackTool(Tool):
                 output="",
                 error=str(e),
             )
+
+
+class CharmValidateTool(Tool):
+    """Pre-completion validation: unit tests + charmcraft pack."""
+
+    @property
+    def name(self) -> str:
+        return "charm_validate"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Validate a charm before declaring it done. "
+            "Runs unit tests and charmcraft pack, producing a pass/fail checklist. "
+            "Call this before telling the user a charm is complete."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the charm directory",
+                    "default": ".",
+                },
+                "skip_tests": {
+                    "type": "boolean",
+                    "description": "Skip unit tests (only run charmcraft pack)",
+                    "default": False,
+                },
+            },
+        }
+
+    async def execute(self, path: str = ".", skip_tests: bool = False) -> ToolResult:
+        """Run unit tests and charmcraft pack, returning a checklist report."""
+        charm_path = Path(path).resolve()
+        if not charm_path.is_dir():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Path not found: {path}",
+            )
+
+        # Step 1 — Unit tests.
+        tests_status = "skipped"
+        tests_summary: dict[str, Any] = {}
+        tests_detail = "skipped"
+
+        if not skip_tests:
+            test_dir = charm_path / "tests" / "unit"
+            if test_dir.is_dir():
+                test_result = await RunCharmTestsTool().execute(
+                    path=str(charm_path), test_type="unit"
+                )
+                tests_summary = test_result.data.get("summary", {})
+                if test_result.success:
+                    tests_status = "passed"
+                    passed = tests_summary.get("passed", 0)
+                    failed = tests_summary.get("failed", 0)
+                    tests_detail = f"PASSED ({passed} passed, {failed} failed)"
+                else:
+                    tests_status = "failed"
+                    passed = tests_summary.get("passed", 0)
+                    failed = tests_summary.get("failed", 0)
+                    tests_detail = f"FAILED ({passed} passed, {failed} failed)"
+            else:
+                tests_detail = "SKIPPED (no tests/unit/ directory)"
+
+        # Step 2 — Charmcraft pack (always runs).
+        pack_status = "failed"
+        pack_charm_file: str | None = None
+
+        pack_result = await CharmcraftPackTool().execute(path=str(charm_path))
+        if pack_result.success:
+            pack_status = "passed"
+            pack_charm_file = pack_result.data.get("charm_file")
+            charm_label = Path(pack_charm_file).name if pack_charm_file else "unknown"
+            pack_detail = f"PASSED ({charm_label})"
+        else:
+            pack_detail = f"FAILED ({pack_result.error or 'unknown error'})"
+
+        # Build report.
+        overall = "passed" if tests_status != "failed" and pack_status == "passed" else "failed"
+
+        report = (
+            "## Validation Report\n\n"
+            f"- Unit tests: {tests_detail}\n"
+            f"- Charmcraft pack: {pack_detail}\n\n"
+            f"Overall: {overall.upper()}"
+        )
+
+        return ToolResult(
+            success=overall == "passed",
+            output=report,
+            data={
+                "tests": {"status": tests_status, "summary": tests_summary},
+                "pack": {"status": pack_status, "charm_file": pack_charm_file},
+                "overall": overall,
+            },
+        )
 
 
 class CharmcraftFetchLibsTool(Tool):
