@@ -42,6 +42,7 @@ class Message:
     content: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_results: list[ToolResult] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -52,6 +53,7 @@ class Response:
     tool_calls: list[ToolCall] = field(default_factory=list)
     finish_reason: str = "stop"
     usage: dict[str, int] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -61,6 +63,7 @@ class Chunk:
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     is_final: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

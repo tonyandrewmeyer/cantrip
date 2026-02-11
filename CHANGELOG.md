@@ -4,6 +4,9 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Gemini 3 provider** — default model upgraded from `gemini-2.0-flash` to `gemini-3-flash-preview`; dynamic thinking enabled with thought signature round-trip for function calling; temperature forced to 1.0 for Gemini 3 models (lower values cause looping); Gemini 2 continues to work when passed explicitly via `--model`
+
 ### Added
 - **TUI improvements** — F1 help screen modal with quick start, keyboard shortcuts, and links; custom status bar replacing Textual's default Footer, with reactive task/COS/test segments; header subtitle showing model info and F1 hint; F4 debug binding (stub)
 - **Automatic pre-commit hooks** — `charmcraft_init` now injects a `.pre-commit-config.yaml` that delegates to the `format`, `lint`, and `unit` tox environments scaffolded by charmcraft; runs `pre-commit install` automatically when the binary is available

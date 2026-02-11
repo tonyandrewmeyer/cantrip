@@ -372,6 +372,7 @@ class CantripAgent:
                 role=Role.ASSISTANT,
                 content=response.content,
                 tool_calls=response.tool_calls,
+                metadata=response.metadata,
             )
             self.state.messages.append(assistant_msg)
 
@@ -412,7 +413,9 @@ class CantripAgent:
             self._record_usage(response)
 
         # Store the final assistant response.
-        self.state.messages.append(Message(role=Role.ASSISTANT, content=response.content))
+        self.state.messages.append(
+            Message(role=Role.ASSISTANT, content=response.content, metadata=response.metadata)
+        )
         return response.content
 
     async def process_message_streaming(self, user_message: str) -> AsyncIterator[str]:
@@ -481,7 +484,13 @@ class CantripAgent:
         # Now stream the final text response.
         # Since we already have the content from complete(), just yield it.
         full_response = response.content
-        self.state.messages.append(Message(role=Role.ASSISTANT, content=full_response))
+        self.state.messages.append(
+            Message(
+                role=Role.ASSISTANT,
+                content=full_response,
+                metadata=response.metadata,
+            )
+        )
         yield full_response
 
     def save_state(self) -> None:

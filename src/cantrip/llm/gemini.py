@@ -1,8 +1,10 @@
 """Google Gemini LLM provider."""
 
+import base64
 import json
 import os
 from collections.abc import AsyncIterator
+from typing import Any
 
 from google import genai
 from google.genai import types as genai_types
@@ -21,8 +23,13 @@ from cantrip.llm.base import (
 
 _CONTEXT_WINDOWS: dict[str, int] = {
     "gemini-2.0-flash": 1_048_576,
+    "gemini-3-flash-preview": 1_048_576,
+    "gemini-3-pro-preview": 1_048_576,
 }
 _DEFAULT_CONTEXT_WINDOW = 1_048_576
+
+# Gemini 3 strongly recommends temperature 1.0 (lower values cause looping).
+_GEMINI_3_TEMPERATURE = 1.0
 
 
 class GeminiProvider(LLMProvider):
@@ -41,7 +48,7 @@ class GeminiProvider(LLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-3-flash-preview",
     ):
         """Initialise the Gemini provider."""
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
@@ -51,11 +58,38 @@ class GeminiProvider(LLMProvider):
         self._client = genai.Client(api_key=self.api_key)
         self.model_name = model
 
+    def _is_gemini_3(self) -> bool:
+        """Whether the current model is a Gemini 3 variant."""
+        return self.model_name.startswith("gemini-3")
+
+    def _build_config(
+        self,
+        temperature: float,
+        system_prompt: str | None,
+        gemini_tools: list[genai_types.Tool] | None,
+    ) -> genai_types.GenerateContentConfig:
+        """Build the generation config, applying Gemini 3 overrides when needed."""
+        thinking_config = None
+        if self._is_gemini_3():
+            temperature = _GEMINI_3_TEMPERATURE
+            thinking_config = genai_types.ThinkingConfig(include_thoughts=False)
+
+        return genai_types.GenerateContentConfig(
+            temperature=temperature,
+            system_instruction=system_prompt,
+            tools=gemini_tools,
+            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
+                disable=True,
+            ),
+            thinking_config=thinking_config,
+        )
+
     def _convert_messages(self, messages: list[Message]) -> list[genai_types.Content]:
         """Convert messages to Gemini format.
 
         Handles USER, ASSISTANT (with optional tool_calls), and TOOL messages.
         SYSTEM messages are handled separately via system_instruction.
+        Gemini 3 thought signature parts are restored from message metadata.
         """
         result: list[genai_types.Content] = []
         for msg in messages:
@@ -71,9 +105,18 @@ class GeminiProvider(LLMProvider):
                 )
 
             elif msg.role == Role.ASSISTANT:
+                parts: list[genai_types.Part] = []
+
+                # Restore thought signature parts for Gemini 3 round-trip.
+                for tp in msg.metadata.get("_gemini_thought_parts", []):
+                    parts.append(
+                        genai_types.Part(
+                            thought=True,
+                            thought_signature=base64.b64decode(tp["thought_signature"]),
+                        )
+                    )
+
                 if msg.tool_calls:
-                    # Assistant message that contains tool calls.
-                    parts: list[genai_types.Part] = []
                     if msg.content:
                         parts.append(genai_types.Part(text=msg.content))
                     for tc in msg.tool_calls:
@@ -87,12 +130,11 @@ class GeminiProvider(LLMProvider):
                         )
                     result.append(genai_types.Content(role="model", parts=parts))
                 else:
-                    result.append(
-                        genai_types.Content(
-                            role="model",
-                            parts=[genai_types.Part(text=msg.content)],
-                        )
-                    )
+                    if not parts:
+                        parts.append(genai_types.Part(text=msg.content))
+                    else:
+                        parts.append(genai_types.Part(text=msg.content))
+                    result.append(genai_types.Content(role="model", parts=parts))
 
             elif msg.role == Role.TOOL:
                 # Tool results are sent as user-role function responses in Gemini.
@@ -136,6 +178,28 @@ class GeminiProvider(LLMProvider):
                 return msg.content
         return None
 
+    @staticmethod
+    def _collect_thought_parts(
+        parts: list[Any],
+    ) -> list[dict[str, str]]:
+        """Collect thought signature parts from a Gemini response for round-trip.
+
+        Returns a list of dicts with base64-encoded signatures that can be
+        stored in ``Message.metadata["_gemini_thought_parts"]`` and later
+        reconstructed into ``genai_types.Part`` objects.
+        """
+        thought_parts: list[dict[str, str]] = []
+        for part in parts:
+            if getattr(part, "thought", False) and getattr(part, "thought_signature", None):
+                thought_parts.append(
+                    {
+                        "thought_signature": base64.b64encode(part.thought_signature).decode(
+                            "ascii"
+                        ),
+                    }
+                )
+        return thought_parts
+
     async def complete(
         self,
         messages: list[Message],
@@ -146,15 +210,7 @@ class GeminiProvider(LLMProvider):
         system_prompt = self._get_system_prompt(messages)
         contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools)
-
-        config = genai_types.GenerateContentConfig(
-            temperature=temperature,
-            system_instruction=system_prompt,
-            tools=gemini_tools,
-            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
-                disable=True,
-            ),
-        )
+        config = self._build_config(temperature, system_prompt, gemini_tools)
 
         try:
             response = await self._client.aio.models.generate_content(
@@ -171,23 +227,28 @@ class GeminiProvider(LLMProvider):
         except genai.errors.APIError as e:
             raise ProviderError(f"Gemini API error: {e}") from e
 
-        # Parse tool calls if present.
+        # Parse tool calls, text, and thought signatures from response parts.
         tool_calls = []
         text_parts = []
-        if response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if part.function_call and part.function_call.name:
-                    tool_calls.append(
-                        ToolCall(
-                            id=part.function_call.name,
-                            name=part.function_call.name,
-                            arguments=dict(part.function_call.args),
-                        )
+        response_parts = response.candidates[0].content.parts or []
+        thought_parts = self._collect_thought_parts(response_parts)
+
+        for part in response_parts:
+            if part.function_call and part.function_call.name:
+                tool_calls.append(
+                    ToolCall(
+                        id=part.function_call.name,
+                        name=part.function_call.name,
+                        arguments=dict(part.function_call.args),
                     )
-                elif part.text:
-                    text_parts.append(part.text)
+                )
+            elif part.text:
+                text_parts.append(part.text)
 
         content = "".join(text_parts)
+        metadata: dict[str, Any] = {}
+        if thought_parts:
+            metadata["_gemini_thought_parts"] = thought_parts
 
         return Response(
             content=content,
@@ -197,6 +258,7 @@ class GeminiProvider(LLMProvider):
                 "prompt_tokens": response.usage_metadata.prompt_token_count or 0,
                 "completion_tokens": response.usage_metadata.candidates_token_count or 0,
             },
+            metadata=metadata,
         )
 
     async def stream(
@@ -214,15 +276,7 @@ class GeminiProvider(LLMProvider):
         system_prompt = self._get_system_prompt(messages)
         contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools)
-
-        config = genai_types.GenerateContentConfig(
-            temperature=temperature,
-            system_instruction=system_prompt,
-            tools=gemini_tools,
-            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
-                disable=True,
-            ),
-        )
+        config = self._build_config(temperature, system_prompt, gemini_tools)
 
         try:
             response_stream = self._client.aio.models.generate_content_stream(
@@ -240,10 +294,14 @@ class GeminiProvider(LLMProvider):
             raise ProviderError(f"Gemini API error: {e}") from e
 
         tool_calls = []
+        all_thought_parts: list[dict[str, str]] = []
         async for chunk in response_stream:
             if not chunk.candidates or not chunk.candidates[0].content:
                 continue
             if chunk.candidates[0].content.parts:
+                all_thought_parts.extend(
+                    self._collect_thought_parts(chunk.candidates[0].content.parts)
+                )
                 for part in chunk.candidates[0].content.parts:
                     if part.function_call and part.function_call.name:
                         tool_calls.append(
@@ -256,7 +314,10 @@ class GeminiProvider(LLMProvider):
                     elif part.text:
                         yield Chunk(content=part.text)
 
-        yield Chunk(tool_calls=tool_calls, is_final=True)
+        metadata: dict[str, Any] = {}
+        if all_thought_parts:
+            metadata["_gemini_thought_parts"] = all_thought_parts
+        yield Chunk(tool_calls=tool_calls, is_final=True, metadata=metadata)
 
     def count_tokens(self, messages: list[Message]) -> int:
         """Count tokens in messages (approximate).

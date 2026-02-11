@@ -1,5 +1,6 @@
 """Tests for Gemini LLM provider."""
 
+import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,13 +15,46 @@ from cantrip.llm.base import Tool as LLMTool
 from cantrip.llm.base import ToolResult as LLMToolResult
 
 
-def _make_provider():
+def _make_provider(model: str = "gemini-3-flash-preview"):
     """Create a GeminiProvider with a mocked client."""
     with patch("cantrip.llm.gemini.genai") as mock_genai:
         mock_genai.Client.return_value = MagicMock()
         from cantrip.llm.gemini import GeminiProvider
 
-        return GeminiProvider(api_key="test-key"), mock_genai
+        return GeminiProvider(api_key="test-key", model=model), mock_genai
+
+
+def _make_text_part(text: str) -> MagicMock:
+    """Build a mock response part that contains only text (no thought data)."""
+    part = MagicMock()
+    part.function_call = None
+    part.text = text
+    part.thought = False
+    part.thought_signature = None
+    return part
+
+
+def _make_function_call_part(name: str, args: dict) -> MagicMock:
+    """Build a mock response part that contains a function call."""
+    fc = MagicMock()
+    fc.name = name
+    fc.args = args
+    part = MagicMock()
+    part.function_call = fc
+    part.text = None
+    part.thought = False
+    part.thought_signature = None
+    return part
+
+
+def _make_thought_part(signature: bytes) -> MagicMock:
+    """Build a mock response part that carries a thought signature."""
+    part = MagicMock()
+    part.function_call = None
+    part.text = None
+    part.thought = True
+    part.thought_signature = signature
+    return part
 
 
 class TestGeminiProviderMessageConversion:
@@ -217,13 +251,8 @@ class TestGeminiProviderComplete:
         """Test that a text response is parsed correctly."""
         provider, mock_genai = _make_provider()
 
-        # Build a mock response with text parts.
-        mock_part = MagicMock()
-        mock_part.function_call = None
-        mock_part.text = "Hello there!"
-
         mock_candidate = MagicMock()
-        mock_candidate.content.parts = [mock_part]
+        mock_candidate.content.parts = [_make_text_part("Hello there!")]
 
         mock_response = MagicMock()
         mock_response.candidates = [mock_candidate]
@@ -245,16 +274,8 @@ class TestGeminiProviderComplete:
         """Test that function_call parts produce tool_calls."""
         provider, mock_genai = _make_provider()
 
-        mock_fc = MagicMock()
-        mock_fc.name = "juju_status"
-        mock_fc.args = {"model": "dev"}
-
-        mock_part = MagicMock()
-        mock_part.function_call = mock_fc
-        mock_part.text = None
-
         mock_candidate = MagicMock()
-        mock_candidate.content.parts = [mock_part]
+        mock_candidate.content.parts = [_make_function_call_part("juju_status", {"model": "dev"})]
 
         mock_response = MagicMock()
         mock_response.candidates = [mock_candidate]
@@ -296,20 +317,13 @@ class TestGeminiProviderStream:
         """Test that text parts are yielded as chunks."""
         provider, _ = _make_provider()
 
-        # Build mock stream chunks.
-        chunk1_part = MagicMock()
-        chunk1_part.function_call = None
-        chunk1_part.text = "Hello "
         chunk1 = MagicMock()
         chunk1.candidates = [MagicMock()]
-        chunk1.candidates[0].content.parts = [chunk1_part]
+        chunk1.candidates[0].content.parts = [_make_text_part("Hello ")]
 
-        chunk2_part = MagicMock()
-        chunk2_part.function_call = None
-        chunk2_part.text = "world!"
         chunk2 = MagicMock()
         chunk2.candidates = [MagicMock()]
-        chunk2.candidates[0].content.parts = [chunk2_part]
+        chunk2.candidates[0].content.parts = [_make_text_part("world!")]
 
         async def mock_stream(*args, **kwargs):  # noqa: ARG001
             yield chunk1
@@ -334,16 +348,11 @@ class TestGeminiProviderStream:
         """Test that function_calls are batched into the final chunk."""
         provider, _ = _make_provider()
 
-        mock_fc = MagicMock()
-        mock_fc.name = "read_file"
-        mock_fc.args = {"path": "README.md"}
-
-        chunk_part = MagicMock()
-        chunk_part.function_call = mock_fc
-        chunk_part.text = None
         chunk = MagicMock()
         chunk.candidates = [MagicMock()]
-        chunk.candidates[0].content.parts = [chunk_part]
+        chunk.candidates[0].content.parts = [
+            _make_function_call_part("read_file", {"path": "README.md"})
+        ]
 
         async def mock_stream(*args, **kwargs):  # noqa: ARG001
             yield chunk
@@ -372,11 +381,22 @@ class TestGeminiProviderContextWindow:
 
     def test_unknown_model_returns_default(self):
         """Unknown model falls back to the default context window."""
-        with patch("cantrip.llm.gemini.genai") as mock_genai:
-            mock_genai.Client.return_value = MagicMock()
-            from cantrip.llm.gemini import GeminiProvider
+        provider, _ = _make_provider(model="gemini-unknown")
+        assert provider.context_window_tokens == 1_048_576
 
-            provider = GeminiProvider(api_key="test-key", model="gemini-unknown")
+    def test_gemini3_flash_context_window(self):
+        """Gemini 3 flash preview has an explicit context window entry."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+        assert provider.context_window_tokens == 1_048_576
+
+    def test_gemini3_pro_context_window(self):
+        """Gemini 3 pro preview has an explicit context window entry."""
+        provider, _ = _make_provider(model="gemini-3-pro-preview")
+        assert provider.context_window_tokens == 1_048_576
+
+    def test_gemini2_flash_context_window(self):
+        """Gemini 2.0 flash still has its context window entry."""
+        provider, _ = _make_provider(model="gemini-2.0-flash")
         assert provider.context_window_tokens == 1_048_576
 
 
@@ -420,3 +440,220 @@ class TestGeminiProviderCountTokens:
             ),
         ]
         assert provider.count_tokens(messages) == 400 // 4
+
+
+class TestGemini3ThinkingConfig:
+    """Tests for Gemini 3 thinking configuration."""
+
+    def test_is_gemini_3_flash(self):
+        """Gemini 3 flash is detected as a Gemini 3 model."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+        assert provider._is_gemini_3() is True
+
+    def test_is_gemini_3_pro(self):
+        """Gemini 3 pro is detected as a Gemini 3 model."""
+        provider, _ = _make_provider(model="gemini-3-pro-preview")
+        assert provider._is_gemini_3() is True
+
+    def test_is_not_gemini_3(self):
+        """Gemini 2 models are not Gemini 3."""
+        provider, _ = _make_provider(model="gemini-2.0-flash")
+        assert provider._is_gemini_3() is False
+
+    def test_gemini3_thinking_config_in_build_config(self):
+        """Gemini 3 models get ThinkingConfig with include_thoughts=False."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+        config = provider._build_config(
+            temperature=0.7,
+            system_prompt=None,
+            gemini_tools=None,
+        )
+        assert config.thinking_config is not None
+        assert config.thinking_config.include_thoughts is False
+
+    def test_gemini2_no_thinking_config(self):
+        """Gemini 2 models do not get a ThinkingConfig."""
+        provider, _ = _make_provider(model="gemini-2.0-flash")
+        config = provider._build_config(
+            temperature=0.7,
+            system_prompt=None,
+            gemini_tools=None,
+        )
+        assert config.thinking_config is None
+
+    def test_gemini3_temperature_override(self):
+        """Gemini 3 forces temperature to 1.0 regardless of the caller value."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+        config = provider._build_config(
+            temperature=0.3,
+            system_prompt=None,
+            gemini_tools=None,
+        )
+        assert config.temperature == 1.0
+
+    def test_gemini2_temperature_passthrough(self):
+        """Gemini 2 uses the caller-supplied temperature."""
+        provider, _ = _make_provider(model="gemini-2.0-flash")
+        config = provider._build_config(
+            temperature=0.3,
+            system_prompt=None,
+            gemini_tools=None,
+        )
+        assert config.temperature == 0.3
+
+    @pytest.mark.asyncio
+    async def test_gemini3_complete_uses_thinking_config(self):
+        """Verify complete() passes ThinkingConfig for Gemini 3 models."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [_make_text_part("OK")]
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 5
+        mock_response.usage_metadata.candidates_token_count = 2
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        await provider.complete([Message(role=Role.USER, content="Hi")])
+
+        call_kwargs = provider._client.aio.models.generate_content.call_args
+        config = call_kwargs.kwargs["config"]
+        assert config.thinking_config is not None
+        assert config.thinking_config.include_thoughts is False
+        assert config.temperature == 1.0
+
+
+class TestThoughtSignatureRoundTrip:
+    """Tests for preserving thought signatures across the Gemini round-trip."""
+
+    @pytest.mark.asyncio
+    async def test_thought_signature_preserved_in_response(self):
+        """Response metadata contains thought parts from the Gemini response."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+        sig = b"\x01\x02\x03\x04"
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [
+            _make_thought_part(sig),
+            _make_text_part("Hello!"),
+        ]
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 10
+        mock_response.usage_metadata.candidates_token_count = 5
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        result = await provider.complete([Message(role=Role.USER, content="Hi")])
+
+        assert "_gemini_thought_parts" in result.metadata
+        thought_parts = result.metadata["_gemini_thought_parts"]
+        assert len(thought_parts) == 1
+        # Signature should be base64-encoded.
+        assert base64.b64decode(thought_parts[0]["thought_signature"]) == sig
+        # Text should still be parsed normally.
+        assert result.content == "Hello!"
+
+    @pytest.mark.asyncio
+    async def test_no_thought_parts_means_no_metadata_key(self):
+        """When there are no thought parts the metadata key is absent."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [_make_text_part("Just text")]
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 5
+        mock_response.usage_metadata.candidates_token_count = 3
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        result = await provider.complete([Message(role=Role.USER, content="Hi")])
+
+        assert "_gemini_thought_parts" not in result.metadata
+
+    def test_thought_signature_restored_in_convert_messages(self):
+        """Assistant messages with thought metadata are round-tripped to Gemini parts."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+        sig = b"\xaa\xbb\xcc"
+        encoded_sig = base64.b64encode(sig).decode("ascii")
+
+        messages = [
+            Message(
+                role=Role.ASSISTANT,
+                content="Let me check.",
+                tool_calls=[
+                    ToolCall(id="read_file", name="read_file", arguments={"path": "x"}),
+                ],
+                metadata={
+                    "_gemini_thought_parts": [{"thought_signature": encoded_sig}],
+                },
+            ),
+        ]
+
+        result = provider._convert_messages(messages)
+
+        assert len(result) == 1
+        parts = result[0].parts
+        # First part should be the thought signature, then text, then function call.
+        assert len(parts) == 3
+        assert parts[0].thought is True
+        assert parts[0].thought_signature == sig
+        assert parts[1].text == "Let me check."
+        assert parts[2].function_call.name == "read_file"
+
+    def test_text_only_message_with_thought_metadata(self):
+        """Text-only assistant message with thought metadata prepends thought parts."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+        sig = b"\x01\x02"
+        encoded_sig = base64.b64encode(sig).decode("ascii")
+
+        messages = [
+            Message(
+                role=Role.ASSISTANT,
+                content="Sure thing.",
+                metadata={
+                    "_gemini_thought_parts": [{"thought_signature": encoded_sig}],
+                },
+            ),
+        ]
+
+        result = provider._convert_messages(messages)
+
+        parts = result[0].parts
+        assert len(parts) == 2
+        assert parts[0].thought is True
+        assert parts[0].thought_signature == sig
+        assert parts[1].text == "Sure thing."
+
+    @pytest.mark.asyncio
+    async def test_stream_collects_thought_parts(self):
+        """Thought parts from streamed chunks appear in the final chunk metadata."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+        sig = b"\xde\xad"
+
+        chunk1 = MagicMock()
+        chunk1.candidates = [MagicMock()]
+        chunk1.candidates[0].content.parts = [
+            _make_thought_part(sig),
+            _make_text_part("Hi"),
+        ]
+
+        async def mock_stream(*args, **kwargs):  # noqa: ARG001
+            yield chunk1
+
+        provider._client.aio.models.generate_content_stream = mock_stream
+
+        chunks = []
+        async for c in provider.stream([Message(role=Role.USER, content="Hey")]):
+            chunks.append(c)
+
+        # Final chunk should carry thought metadata.
+        final = chunks[-1]
+        assert final.is_final is True
+        assert "_gemini_thought_parts" in final.metadata
+        assert (
+            base64.b64decode(final.metadata["_gemini_thought_parts"][0]["thought_signature"])
+            == sig
+        )
