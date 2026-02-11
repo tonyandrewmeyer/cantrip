@@ -444,6 +444,7 @@ class CantripAgent:
                 role=Role.ASSISTANT,
                 content=response.content,
                 tool_calls=response.tool_calls,
+                metadata=response.metadata,
             )
             self.state.messages.append(assistant_msg)
 
