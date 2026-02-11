@@ -609,6 +609,14 @@ class GitPushTool(Tool):
                     "description": "Set the upstream tracking reference (-u)",
                     "default": False,
                 },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to execute. Ask the user to confirm the push "
+                        "(remote, branch, what will be pushed) before setting this."
+                    ),
+                    "default": False,
+                },
             },
         }
 
@@ -618,8 +626,20 @@ class GitPushTool(Tool):
         remote: str = "origin",
         branch: str | None = None,
         set_upstream: bool = False,
+        confirmed: bool = False,
     ) -> ToolResult:
         """Run git push."""
+        if not confirmed:
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    "Push requires explicit user confirmation. "
+                    "Show the user what will be pushed (remote, branch, commits) "
+                    "and ask them to confirm, then call again with confirmed=true."
+                ),
+            )
+
         if not shutil.which("git"):
             return ToolResult(
                 success=False,

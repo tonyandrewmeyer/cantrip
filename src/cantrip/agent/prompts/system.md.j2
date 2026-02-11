@@ -108,6 +108,15 @@ unit tests and charmcraft pack, producing a pass/fail checklist. If any step fai
 and run `charm_validate` again. Only declare the charm complete when the overall result is PASSED.
 After validation passes, deploy with `juju_refresh` + `juju_wait` if the charm is deployed.
 
+### Git push
+
+**Always confirm before pushing.** Before calling `git_push`, show the user:
+- The remote and branch
+- A summary of the commits that will be pushed (use `git_log`)
+- Ask for explicit confirmation
+
+Only call `git_push` with `confirmed: true` after the user agrees.
+
 ### Debugging with Observability
 
 When a charm misbehaves, use real data — never guess.

@@ -82,7 +82,7 @@
 ### 1.5 Version Control
 - [x] Git tools (clone, init, status, diff, log, add, commit)
 - [x] GitHub CLI tools (repo create, PR create, issue list)
-- [ ] Push support (deferred — requires explicit user confirmation model)
+- [x] Push support
 
 ### 1.4 Conversational Iteration
 - [x] Add config options via conversation

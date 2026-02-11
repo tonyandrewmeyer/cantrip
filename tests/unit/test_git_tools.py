@@ -938,17 +938,33 @@ class TestGitPushTool:
         return GitPushTool()
 
     @pytest.mark.asyncio
+    async def test_push_refused_without_confirmation(self, tool):
+        """Calling without confirmed returns a refusal."""
+        result = await tool.execute()
+
+        assert not result.success
+        assert "requires explicit user confirmation" in result.error
+
+    @pytest.mark.asyncio
+    async def test_push_refused_with_confirmed_false(self, tool):
+        """Explicitly passing confirmed=False returns the same refusal."""
+        result = await tool.execute(confirmed=False)
+
+        assert not result.success
+        assert "requires explicit user confirmation" in result.error
+
+    @pytest.mark.asyncio
     async def test_git_not_installed(self, tool):
         """Error when git is not on PATH."""
         with mock.patch("cantrip.agent.tools.git.shutil.which", return_value=None):
-            result = await tool.execute()
+            result = await tool.execute(confirmed=True)
 
         assert not result.success
         assert "git not found" in result.error
 
     @pytest.mark.asyncio
     async def test_push_success(self, tool):
-        """Pushes to the remote."""
+        """Pushes to the remote when confirmed."""
         mock_result = mock.MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = ""
@@ -964,7 +980,7 @@ class TestGitPushTool:
                 return_value=mock_result,
             ) as mock_run,
         ):
-            result = await tool.execute()
+            result = await tool.execute(confirmed=True)
 
         assert result.success
         assert "main -> main" in result.output
@@ -990,7 +1006,7 @@ class TestGitPushTool:
                 return_value=mock_result,
             ) as mock_run,
         ):
-            result = await tool.execute(branch="feature")
+            result = await tool.execute(branch="feature", confirmed=True)
 
         assert result.success
         call_args = mock_run.call_args[0][0]
@@ -1015,7 +1031,7 @@ class TestGitPushTool:
                 return_value=mock_result,
             ) as mock_run,
         ):
-            result = await tool.execute(set_upstream=True, branch="main")
+            result = await tool.execute(set_upstream=True, branch="main", confirmed=True)
 
         assert result.success
         call_args = mock_run.call_args[0][0]
@@ -1042,7 +1058,7 @@ class TestGitPushTool:
                 return_value=mock_result,
             ),
         ):
-            result = await tool.execute()
+            result = await tool.execute(confirmed=True)
 
         assert not result.success
         assert "could not authenticate" in result.error
@@ -1066,7 +1082,7 @@ class TestGitPushTool:
                 return_value=mock_result,
             ),
         ):
-            result = await tool.execute()
+            result = await tool.execute(confirmed=True)
 
         assert not result.success
         assert "failed to push" in result.error
@@ -1085,7 +1101,7 @@ class TestGitPushTool:
                 side_effect=subprocess.TimeoutExpired(cmd="git", timeout=120),
             ),
         ):
-            result = await tool.execute()
+            result = await tool.execute(confirmed=True)
 
         assert not result.success
         assert "timed out" in result.error
@@ -1108,7 +1124,7 @@ class TestGitPushTool:
                 return_value=mock_result,
             ) as mock_run,
         ):
-            await tool.execute()
+            await tool.execute(confirmed=True)
 
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 120
@@ -1131,7 +1147,7 @@ class TestGitPushTool:
                 return_value=mock_result,
             ) as mock_run,
         ):
-            await tool.execute()
+            await tool.execute(confirmed=True)
 
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"

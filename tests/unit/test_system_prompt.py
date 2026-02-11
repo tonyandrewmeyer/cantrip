@@ -188,3 +188,22 @@ class TestJubilantIntegrationTestPrompt:
         """The prompt should state integration tests are not included in charm_validate."""
         result = build_system_prompt()
         assert "not included in `charm_validate`" in result
+
+
+class TestGitPushConfirmation:
+    """Tests for git push confirmation guidance in the system prompt."""
+
+    def test_push_confirmation_section_present(self):
+        """The 'Git push' section should appear in the rendered prompt."""
+        result = build_system_prompt()
+        assert "### Git push" in result
+
+    def test_confirm_before_pushing(self):
+        """The prompt should instruct the agent to confirm before pushing."""
+        result = build_system_prompt()
+        assert "confirm before pushing" in result.lower()
+
+    def test_confirmed_true_referenced(self):
+        """The prompt should reference confirmed: true."""
+        result = build_system_prompt()
+        assert "confirmed: true" in result
