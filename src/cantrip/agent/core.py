@@ -22,6 +22,8 @@ from cantrip.agent.tools import (
     CharmcraftFetchLibsTool,
     CharmcraftInitTool,
     CharmcraftPackTool,
+    CharmhubInfoTool,
+    CharmhubSearchTool,
     CharmSyncTool,
     CharmValidateTool,
     ConciergePrepareTool,
@@ -213,6 +215,9 @@ class CantripAgent:
             AnalyseFrameworkTool(),
             # Web
             WebFetchTool(),
+            # Charmhub
+            CharmhubSearchTool(),
+            CharmhubInfoTool(),
             # Skills
             LoadSkillTool(self._skills_index),
             # Virtual files

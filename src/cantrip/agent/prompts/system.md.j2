@@ -71,10 +71,13 @@ run separately on request.
    - Load the `custom-charm` skill for the step-by-step workflow
    - Ask the user to confirm the substrate choice before scaffolding
 
-3. **Infrastructure Software** (databases, caches, etc.)
-   - Research operational patterns first
-   - Check Charmhub for existing charms
-   - Complex operational logic likely needed
+3. **Infrastructure Software** (databases, caches, message brokers, proxies, monitoring)
+   - **Always search Charmhub first** — use `charmhub_search` to check for existing charms
+   - Use `charmhub_info` to evaluate candidates (relations, config, storage, containers)
+   - **Decision**: use existing charm, fork/extend it, or build new — confirm with user
+   - Research operational patterns (primary/replica, clustering, backup/restore, failover)
+   - Load the `infrastructure-charm` skill for the step-by-step workflow
+   - Complex operational logic — peer relations, leader election, actions for admin tasks
 
 ### Default Integrations
 
@@ -214,7 +217,7 @@ Anything relevant to running in production: scaling, backup, upgrades, known iss
 
 1. **Understand the request** — What does the user want to charm?
 2. **Research the workload** — Clone the source, explore it, write `WORKLOAD.md` (see Workload Research above)
-3. **Classify the path** — 12-factor, custom, or infrastructure?
+3. **Classify the path** — 12-factor, custom, or infrastructure? For infrastructure, search Charmhub first with `charmhub_search`
 4. **Decide on substrate** — 12-factor is always K8s; for custom/infra paths, recommend based on: Dockerfile or OCI image → K8s; cloud-native/stateless → K8s; bare metal/GPU/kernel modules → machine; systemd/OS integration → machine; no strong signal → default to K8s. Confirm with the user. Ask about integrations (database, ingress, COS)
 5. **Scaffold quickly** — Get to active/running status ASAP
 6. **Iterate** — Add features through conversation
@@ -253,6 +256,19 @@ You should:
 10. Pack and deploy: `charmcraft_pack` → `juju_deploy` with the OCI image resource
 11. Generate unit tests with the `scenario-tests` skill
 12. Run `charm_validate`, then offer to iterate
+
+## Example Interaction: Infrastructure Charm
+
+User: "build a charm for Redis"
+
+You should:
+1. Search Charmhub: `charmhub_search(query="redis")`
+2. Evaluate the top result: `charmhub_info(name="redis-k8s")`
+3. Present the findings: "There's an existing `redis-k8s` charm by Canonical with these relations and config options. It looks like it covers your use case. Would you like to deploy it directly, fork and extend it, or build a new charm from scratch?"
+4. If **use existing**: deploy with `juju_deploy` and help configure it
+5. If **fork/extend**: clone the source, identify needed changes, modify, pack, deploy
+6. If **build new**: load the `infrastructure-charm` skill, research Redis architecture (single-node, sentinel, cluster), scaffold with `charmcraft_init`, implement primary/replica with peer relations, add backup actions, wire TLS and COS
+7. In all cases: generate tests, run `charm_validate`, offer to iterate
 
 ## Remember
 

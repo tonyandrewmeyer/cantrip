@@ -182,10 +182,10 @@
 - [x] Machine and K8s support
 
 ### 3.2 Path C: Infrastructure
-- [ ] Charmhub search for existing charms
-- [ ] Fork/extend existing charm workflow
-- [ ] Operational pattern templates (primary/replica, etc.)
-- [ ] Research mode for unknown software
+- [x] Charmhub search for existing charms
+- [x] Fork/extend existing charm workflow
+- [x] Operational pattern templates (primary/replica, etc.)
+- [x] Research mode for unknown software
 
 ### 3.3 OCI Image Handling
 - [ ] Registry search (Docker Hub, GHCR, etc.)

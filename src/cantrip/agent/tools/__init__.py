@@ -8,6 +8,10 @@ from cantrip.agent.tools.charm import (
     CharmcraftPackTool,
     CharmValidateTool,
 )
+from cantrip.agent.tools.charmhub import (
+    CharmhubInfoTool,
+    CharmhubSearchTool,
+)
 from cantrip.agent.tools.environment import (
     ConciergePrepareTool,
     ConciergeStatusTool,
@@ -80,6 +84,9 @@ __all__ = [
     "CharmValidateTool",
     "CharmcraftFetchLibsTool",
     "AnalyseFrameworkTool",
+    # Charmhub
+    "CharmhubSearchTool",
+    "CharmhubInfoTool",
     # Environment
     "ConciergePrepareTool",
     "ConciergeStatusTool",
