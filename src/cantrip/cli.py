@@ -6,7 +6,7 @@ import sys
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
-from cantrip.llm import create_provider
+from cantrip.llm import create_provider, resolve_light_model
 from cantrip.llm.base import ProviderError, ProviderRateLimitError
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -34,8 +34,22 @@ def run_cli(args: argparse.Namespace) -> int:
         print(f"Error: {e}")
         return 1
 
-    agent = CantripAgent(provider=provider, charm_path=args.path)
-    print(f"Cantrip CLI — provider: {args.provider}, path: {args.path}")
+    # Resolve light model for internal tasks (e.g. compaction).
+    main_model = provider.model_name
+    light_model_name = args.light_model or resolve_light_model(args.provider, main_model)
+    light_provider = None
+    if light_model_name != main_model:
+        light_provider = create_provider(args.provider, light_model_name)
+
+    agent = CantripAgent(
+        provider=provider,
+        charm_path=args.path,
+        light_provider=light_provider,
+    )
+    banner = f"Cantrip CLI — provider: {args.provider}, path: {args.path}"
+    if light_provider:
+        banner += f", light model: {light_model_name}"
+    print(banner)
     print("Type your message (Ctrl+C to quit).\n")
 
     try:

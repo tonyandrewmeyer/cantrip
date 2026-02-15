@@ -91,6 +91,9 @@ _RATE_LIMIT_BASE_DELAY = 30  # seconds
 # Tools whose results may contain a test summary to surface in the TUI.
 _TEST_RESULT_TOOLS = frozenset({"run_charm_tests", "charm_validate"})
 
+# Purposes that can use the light model.
+_LIGHT_PURPOSES = frozenset({"compaction"})
+
 
 class CantripAgent:
     """Main Cantrip agent."""
@@ -99,13 +102,18 @@ class CantripAgent:
         self,
         provider: LLMProvider,
         charm_path: Path | None = None,
+        light_provider: LLMProvider | None = None,
     ):
         """Initialise the agent.
 
         Heavy work (skills discovery, tool creation, session store) is
         deferred until first use so that startup stays fast.
+
+        When *light_provider* is given it is used for internal tasks
+        like context compaction, saving cost on the primary model.
         """
         self.provider = provider
+        self._light_provider = light_provider
         self.state = AgentState(charm_path=charm_path)
         self._preflight = PreflightRunner(self.state)
 
@@ -198,6 +206,16 @@ class CantripAgent:
                 prompt_tokens=response.usage.get("prompt_tokens", 0),
                 completion_tokens=response.usage.get("completion_tokens", 0),
             )
+
+    def _get_provider(self, purpose: str) -> LLMProvider:
+        """Select the appropriate provider for a given purpose.
+
+        Purposes listed in ``_LIGHT_PURPOSES`` are routed to the light
+        provider when one is available; everything else uses the primary.
+        """
+        if self._light_provider and purpose in _LIGHT_PURPOSES:
+            return self._light_provider
+        return self.provider
 
     def _build_tools(self) -> list[Tool]:
         """Build available tools."""
@@ -443,7 +461,7 @@ class CantripAgent:
                 self.state.messages = await self._context_manager.compact(
                     self.state.messages,
                     system_prompt=self._build_system_prompt(),
-                    provider=self.provider,
+                    provider=self._get_provider("compaction"),
                 )
 
             # Call the LLM again with the updated history.
@@ -515,7 +533,7 @@ class CantripAgent:
                 self.state.messages = await self._context_manager.compact(
                     self.state.messages,
                     system_prompt=self._build_system_prompt(),
-                    provider=self.provider,
+                    provider=self._get_provider("compaction"),
                 )
 
             messages = self._build_llm_messages(include_budget=True)

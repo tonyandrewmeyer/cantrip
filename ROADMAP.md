@@ -215,7 +215,7 @@
 ### 4.3 Multi-LLM Support
 - [x] Claude provider
 - [x] Provider switching
-- [ ] Model selection per task (cost optimisation)
+- [x] Model selection per task (cost optimisation)
 
 ### 4.4 Charmhub Publishing (Stage 2)
 - [ ] charmcraft upload integration

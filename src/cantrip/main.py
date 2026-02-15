@@ -30,6 +30,10 @@ def parse_args() -> argparse.Namespace:
         help="Specific model to use (provider-dependent)",
     )
     parser.add_argument(
+        "--light-model",
+        help="Cheaper model for internal tasks like compaction (auto-detected if omitted)",
+    )
+    parser.add_argument(
         "--no-tui",
         action="store_true",
         help="Run in CLI mode without TUI",
@@ -88,6 +92,7 @@ def main() -> int:
             provider=args.provider,
             model=args.model,
             charm_path=args.path,
+            light_model=args.light_model,
         )
         app.run()
         return 0

@@ -11,7 +11,7 @@ from textual.worker import Worker, WorkerState
 from cantrip import __version__
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
-from cantrip.llm import create_provider
+from cantrip.llm import create_provider, resolve_light_model
 from cantrip.llm.base import ProviderRateLimitError
 from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.widgets.chat import ChatWidget, MessageStatus, MessageWidget
@@ -54,12 +54,15 @@ class CantripApp(App):
         provider: str = "gemini",
         model: str | None = None,
         charm_path: Path | None = None,
+        light_model: str | None = None,
     ):
         """Initialise the app."""
         super().__init__()
         self.provider_name = provider
         self.model_name = model
         self.charm_path = charm_path or Path.cwd()
+        self._light_model_override = light_model
+        self._light_model_name: str | None = None
         self._agent: CantripAgent | None = None
         self._thinking_widget: MessageWidget | None = None
         self._prepare_widget: MessageWidget | None = None
@@ -96,7 +99,22 @@ class CantripApp(App):
         """Initialise the LLM provider and agent."""
         try:
             llm_provider = create_provider(self.provider_name, self.model_name)
-            self._agent = CantripAgent(provider=llm_provider, charm_path=self.charm_path)
+
+            # Resolve light model for internal tasks (e.g. compaction).
+            main_model = llm_provider.model_name
+            light_model_name = self._light_model_override or resolve_light_model(
+                self.provider_name, main_model
+            )
+            light_provider = None
+            if light_model_name != main_model:
+                light_provider = create_provider(self.provider_name, light_model_name)
+                self._light_model_name = light_model_name
+
+            self._agent = CantripAgent(
+                provider=llm_provider,
+                charm_path=self.charm_path,
+                light_provider=light_provider,
+            )
         except ValueError as e:
             chat = self.query_one("#chat", ChatWidget)
             chat.add_system_message(f"Failed to initialise provider: {e}")
@@ -111,6 +129,8 @@ class CantripApp(App):
                 parts.append(f"[{state.dev_model}:{substrate}]")
             if state.cos_model:
                 parts.append(f"[{state.cos_model}:k8s]")
+        if self._light_model_name:
+            parts.append(f"[light: {self._light_model_name}]")
         parts.append("[F1 Help]")
         self.sub_title = " ".join(parts)
 
