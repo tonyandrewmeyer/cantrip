@@ -336,7 +336,30 @@ juju deploy ./my-app_amd64.charm --resource oci-image=docker.io/library/my-app:l
 
 Use the `charmcraft_pack` and `juju_deploy` tools. For K8s charms, pass the OCI image via `resources={"oci-image": "..."}`.
 
-### 8. Fast Dev Cycle
+### 8. OCI Image Selection (K8s Charms)
+
+K8s charms need an OCI image for the container resource. There are two options:
+
+**Option A: Use an existing registry image**
+
+1. Search Docker Hub: `registry_search(query="<workload>")`
+2. Evaluate candidates: `registry_image_info(image="<name>", tag="<version>")`
+3. Prefer official images, recent updates, specific version tags, and amd64+arm64 support
+4. Confirm the image choice with the user
+5. Deploy with the image reference: `juju_deploy(..., resources={"oci-image": "docker.io/library/<name>:<tag>"})`
+
+**Option B: Build a rock**
+
+When no suitable image exists or the workload needs custom packaging:
+
+1. Write `rockcraft.yaml` for the application
+2. `rockcraft_pack` to build the rock
+3. `skopeo_registry_push` to push to the local registry
+4. Deploy with the local image reference
+
+Option A is the common case for custom charms wrapping well-known software. Option B is needed when the application is custom code or requires modifications to the base image.
+
+### 9. Fast Dev Cycle
 
 For Python source changes only, use the fast path:
 
@@ -349,7 +372,7 @@ Use the full `charmcraft_pack` → `juju_refresh` cycle when:
 - Dependencies changed (`requirements.txt`)
 - Before declaring the charm done
 
-### 9. Generate Tests
+### 10. Generate Tests
 
 **Unit tests:** Load the `scenario-tests` skill. Cover:
 - `install` / `start` → `ActiveStatus`
@@ -364,7 +387,7 @@ Use the full `charmcraft_pack` → `juju_refresh` cycle when:
 - Config changes take effect
 - Actions produce expected results
 
-### 10. Validate
+### 11. Validate
 
 Run `charm_validate` before declaring the charm complete. This runs unit tests and `charmcraft pack`, producing a pass/fail checklist.
 

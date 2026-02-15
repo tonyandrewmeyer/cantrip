@@ -54,6 +54,16 @@ Review the relations, config options, storage, and containers. Check whether the
 
 Present the decision to the user with reasoning and wait for confirmation.
 
+### 4. Find the Upstream OCI Image (K8s Charms)
+
+When building a new K8s infrastructure charm, search Docker Hub for the upstream image:
+
+1. `registry_search(query="<workload>")` — find the official or most-used image
+2. `registry_image_info(image="<name>")` — check tags, architectures, and freshness
+3. Pick a specific version tag (not `latest`) and confirm with the user
+
+This image becomes the OCI resource in `charmcraft.yaml`.
+
 ## Research Mode
 
 Before building, deeply research the workload. This is even more important for infrastructure software than for applications because operational patterns are complex and getting them wrong is costly.

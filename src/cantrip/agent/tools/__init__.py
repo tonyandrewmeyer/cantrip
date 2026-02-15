@@ -58,6 +58,10 @@ from cantrip.agent.tools.observability import (
     LokiQueryTool,
     TempoQueryTool,
 )
+from cantrip.agent.tools.registry import (
+    RegistryImageInfoTool,
+    RegistrySearchTool,
+)
 from cantrip.agent.tools.rockcraft import (
     RockcraftInitTool,
     RockcraftPackTool,
@@ -90,6 +94,9 @@ __all__ = [
     # Environment
     "ConciergePrepareTool",
     "ConciergeStatusTool",
+    # Registry
+    "RegistrySearchTool",
+    "RegistryImageInfoTool",
     # Rockcraft
     "RockcraftInitTool",
     "RockcraftPackTool",

@@ -188,9 +188,9 @@
 - [x] Research mode for unknown software
 
 ### 3.3 OCI Image Handling
-- [ ] Registry search (Docker Hub, GHCR, etc.)
-- [ ] Image evaluation
-- [ ] Rockcraft for building when needed
+- [x] Registry search (Docker Hub)
+- [x] Image evaluation
+- [x] Rockcraft for building when needed
 
 **Exit criteria:** Can charm a custom Python app and MariaDB with appropriate operational patterns.
 

@@ -79,6 +79,27 @@ run separately on request.
    - Load the `infrastructure-charm` skill for the step-by-step workflow
    - Complex operational logic — peer relations, leader election, actions for admin tasks
 
+### OCI Image Strategy
+
+K8s charms need an OCI image as a container resource. Choose the right approach:
+
+**Use an existing image** when the workload is well-known upstream software (Redis, PostgreSQL, Nginx, etc.). Most infrastructure and many custom K8s charms fall here.
+
+**Build a rock** when the application is custom code, needs framework extensions baked in, or no suitable image exists on a public registry. All 12-factor (Path A) charms build a rock.
+
+**Two-step workflow for existing images:**
+1. `registry_search` — find candidate images on Docker Hub
+2. `registry_image_info` — inspect tags, sizes, architectures, and update dates
+
+**Evaluation heuristics:**
+- Prefer **official** images (`[official]` badge) over community alternatives
+- Prefer images **updated recently** (within the last few months)
+- Verify the image supports the **right architecture** (amd64 at minimum; arm64 is a bonus)
+- Use a **specific version tag** (e.g. `7-alpine`) rather than `latest`
+- Check **pull count** — high pulls indicate community trust
+
+Always confirm the chosen image with the user before deploying.
+
 ### Default Integrations
 
 Add these when appropriate:

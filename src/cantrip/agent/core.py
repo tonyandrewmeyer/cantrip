@@ -58,6 +58,8 @@ from cantrip.agent.tools import (
     LoadSkillTool,
     LokiQueryTool,
     ReadFileTool,
+    RegistryImageInfoTool,
+    RegistrySearchTool,
     RockcraftInitTool,
     RockcraftPackTool,
     RunCharmTestsTool,
@@ -223,6 +225,9 @@ class CantripAgent:
             # Virtual files
             VirtualFileReadTool(self._virtual_store),
             VirtualFileSearchTool(self._virtual_store),
+            # Registry
+            RegistrySearchTool(),
+            RegistryImageInfoTool(),
             # Rockcraft operations
             RockcraftInitTool(),
             RockcraftPackTool(),
