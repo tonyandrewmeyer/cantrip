@@ -24,6 +24,7 @@ class StatusBar(Widget):
     task_label: reactive[str] = reactive("", init=False)
     cos_health: reactive[str] = reactive("", init=False)
     test_summary: reactive[str] = reactive("", init=False)
+    watcher_status: reactive[str] = reactive("", init=False)
 
     def compose(self) -> ComposeResult:
         """Compose the status bar."""
@@ -31,7 +32,11 @@ class StatusBar(Widget):
 
     def _refresh_content(self) -> None:
         """Rebuild the bar text from current reactive values."""
-        segments = [s for s in (self.task_label, self.cos_health, self.test_summary) if s]
+        segments = [
+            s
+            for s in (self.task_label, self.cos_health, self.test_summary, self.watcher_status)
+            if s
+        ]
         text = "  ".join(segments)
         with contextlib.suppress(NoMatches):
             self.query_one("#status-bar-content", Static).update(text)
@@ -46,4 +51,8 @@ class StatusBar(Widget):
 
     def watch_test_summary(self) -> None:
         """React to test_summary changes."""
+        self._refresh_content()
+
+    def watch_watcher_status(self) -> None:
+        """React to watcher_status changes."""
         self._refresh_content()

@@ -11,6 +11,7 @@ from textual.worker import Worker, WorkerState
 from cantrip import __version__
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
+from cantrip.agent.watcher import WatcherEvent
 from cantrip.llm import create_provider, resolve_light_model
 from cantrip.llm.base import ProviderRateLimitError
 from cantrip.tui.screens.help import HelpScreen
@@ -33,6 +34,9 @@ _PREPARE_CHECKS = ["concierge", "prepare", "juju", "controller", "cos"]
 # Preflight check names shown if a re-bootstrap is needed (different preset).
 _BOOTSTRAP_CHECKS = ["bootstrap", "controller", "cos"]
 
+# How often (seconds) the TUI checks for pending watcher events.
+_WATCHER_POLL_INTERVAL = 2.0
+
 
 class CantripApp(App):
     """Cantrip TUI application."""
@@ -45,6 +49,7 @@ class CantripApp(App):
         Binding("f2", "toggle_status", "Toggle Status"),
         Binding("f3", "logs", "Logs"),
         Binding("f4", "debug", "Debug"),
+        Binding("f5", "toggle_watcher", "Watcher"),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+l", "clear_chat", "Clear"),
     ]
@@ -55,6 +60,7 @@ class CantripApp(App):
         model: str | None = None,
         charm_path: Path | None = None,
         light_model: str | None = None,
+        watcher: bool = False,
     ):
         """Initialise the app."""
         super().__init__()
@@ -68,6 +74,9 @@ class CantripApp(App):
         self._prepare_widget: MessageWidget | None = None
         self._bootstrap_widget: MessageWidget | None = None
         self._bootstrap_started = False
+        self._watcher_autostart = watcher
+        self._watcher_poll_timer = None
+        self._watcher_processing = False
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
@@ -94,6 +103,8 @@ class CantripApp(App):
         self._init_agent()
         self._start_prepare()
         self._update_header_subtitle()
+        if self._watcher_autostart:
+            self._start_watcher()
 
     def _init_agent(self) -> None:
         """Initialise the LLM provider and agent."""
@@ -214,6 +225,97 @@ class CantripApp(App):
             idx = _BOOTSTRAP_CHECKS.index(event.check_name)
             self._bootstrap_widget.update_progress(idx, _STATUS_MAP[event.status])
 
+    # -- Watcher integration --------------------------------------------------
+
+    def _start_watcher(self) -> None:
+        """Start the event watcher if possible."""
+        if not self._agent:
+            return
+        chat = self.query_one("#chat", ChatWidget)
+        if not self._agent.state.dev_model:
+            chat.add_system_message(
+                "Cannot start watcher: no development model is set. "
+                "Deploy a charm first, then press F5 to start watching."
+            )
+            return
+        started = self._agent.start_watcher(on_event=self._on_watcher_event)
+        if started:
+            self._update_status_bar_watcher()
+            self._watcher_poll_timer = self.set_interval(
+                _WATCHER_POLL_INTERVAL, self._check_watcher_events
+            )
+            chat.add_system_message("Watcher started — monitoring development model for events.")
+        else:
+            chat.add_system_message("Failed to start watcher.")
+
+    async def _stop_watcher(self) -> None:
+        """Stop the event watcher."""
+        if not self._agent:
+            return
+        await self._agent.stop_watcher()
+        if self._watcher_poll_timer is not None:
+            self._watcher_poll_timer.stop()
+            self._watcher_poll_timer = None
+        self._update_status_bar_watcher()
+
+    def _on_watcher_event(self, event: WatcherEvent) -> None:
+        """Callback from the watcher when a new event is enqueued."""
+        chat = self.query_one("#chat", ChatWidget)
+        chat.add_system_message(f"[Watcher] {event.summary}")
+
+    async def _check_watcher_events(self) -> None:
+        """Periodic timer callback that processes pending watcher events.
+
+        Only processes one event at a time, and only when the agent is not
+        already handling a user message or another watcher event.
+        """
+        if not self._agent or not self._agent.watcher_running:
+            return
+        if self._watcher_processing:
+            return
+        # Do not interrupt if the agent is already responding to a user message.
+        input_widget = self.query_one("#chat-input", Input)
+        if input_widget.disabled:
+            return
+
+        if not self._agent._watcher or not self._agent._watcher.has_events:
+            return
+
+        self._watcher_processing = True
+        chat = self.query_one("#chat", ChatWidget)
+        input_widget.disabled = True
+        self._thinking_widget = chat.add_system_message("Investigating watcher event...")
+
+        self.run_worker(
+            self._process_watcher_event(),
+            name="agent_response",
+            exclusive=True,
+        )
+
+    async def _process_watcher_event(self) -> str:
+        """Process a single watcher event through the agent."""
+        result = await self._agent.process_watcher_event()
+        return result or ""
+
+    def _update_status_bar_watcher(self) -> None:
+        """Update the status bar watcher indicator."""
+        status_bar = self.query_one("#status-bar", StatusBar)
+        if self._agent and self._agent.watcher_running:
+            status_bar.watcher_status = "👁 Watching"
+        else:
+            status_bar.watcher_status = ""
+
+    def action_toggle_watcher(self) -> None:
+        """Toggle the event watcher on or off."""
+        if not self._agent:
+            return
+        if self._agent.watcher_running:
+            self.run_worker(self._stop_watcher(), name="stop_watcher", exclusive=False)
+            chat = self.query_one("#chat", ChatWidget)
+            chat.add_system_message("Watcher stopped.")
+        else:
+            self._start_watcher()
+
     # -- Chat -----------------------------------------------------------------
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -282,6 +384,9 @@ class CantripApp(App):
                 chat.add_system_message(f"Error: {error}")
             input_widget.disabled = False
             input_widget.focus()
+
+        # Clear watcher processing flag.
+        self._watcher_processing = False
 
     def _update_test_summary(self) -> None:
         """Update the status bar test summary from agent state."""
