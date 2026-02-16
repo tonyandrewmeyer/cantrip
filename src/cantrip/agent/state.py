@@ -68,6 +68,7 @@ class AgentState:
 
     # Transient — not persisted to SQLite, re-determined each startup.
     environment_ready: bool = False
+    watcher_enabled: bool = False
     test_results: TestResults | None = None
 
     messages: list[Message] = field(default_factory=list)

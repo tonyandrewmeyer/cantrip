@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +72,7 @@ from cantrip.agent.tools import (
     WebFetchTool,
     WriteFileTool,
 )
+from cantrip.agent.watcher import EventWatcher, WatcherConfig, format_event_for_agent
 from cantrip.llm.base import LLMProvider, Message, ProviderRateLimitError, Response, Role
 from cantrip.llm.base import Tool as LLMTool
 from cantrip.llm.base import ToolResult as LLMToolResult
@@ -130,6 +131,8 @@ class CantripAgent:
         self._tool_map_cache: dict[str, Tool] | None = None
         self._store: SessionStore | None = None
         self._store_initialised = False
+
+        self._watcher: EventWatcher | None = None
 
         if charm_path:
             self._ensure_claude_md(charm_path)
@@ -301,6 +304,7 @@ class CantripAgent:
             recent_decisions=[d.to_dict() for d in self.state.decisions],
             skills_index=self._skills_index.format_for_prompt(),
             environment_ready=self.state.environment_ready,
+            watcher_enabled=self.state.watcher_enabled,
         )
 
     def _tools_for_llm(self) -> list[LLMTool]:
@@ -551,6 +555,56 @@ class CantripAgent:
             )
         )
         yield full_response
+
+    # -- Watcher integration ---------------------------------------------------
+
+    @property
+    def watcher_running(self) -> bool:
+        """Whether the event watcher is currently running."""
+        return self._watcher is not None and self._watcher.running
+
+    def start_watcher(
+        self,
+        config: WatcherConfig | None = None,
+        on_event: Callable | None = None,
+    ) -> bool:
+        """Create and start the event watcher.
+
+        Returns ``False`` if no ``dev_model`` is set (the watcher requires a
+        development model to monitor).
+        """
+        if not self.state.dev_model:
+            return False
+        self._watcher = EventWatcher(
+            dev_model=self.state.dev_model,
+            cos_model=self.state.cos_model,
+            config=config,
+            on_event=on_event,
+        )
+        self._watcher.start()
+        self.state.watcher_enabled = True
+        return True
+
+    async def stop_watcher(self) -> None:
+        """Stop the event watcher if it is running."""
+        if self._watcher:
+            await self._watcher.stop()
+            self._watcher = None
+        self.state.watcher_enabled = False
+
+    async def process_watcher_event(self) -> str | None:
+        """Dequeue one watcher event, format it, and process it as a message.
+
+        Returns the agent's response text, or ``None`` if no events are
+        pending.
+        """
+        if not self._watcher:
+            return None
+        event = await self._watcher.dequeue()
+        if event is None:
+            return None
+        message = format_event_for_agent(event)
+        return await self.process_message(message)
 
     def save_state(self) -> None:
         """Save agent state to the session store."""

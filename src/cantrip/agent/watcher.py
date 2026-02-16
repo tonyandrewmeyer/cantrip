@@ -107,20 +107,15 @@ def capture_snapshot(status: jubilant.Status) -> StatusSnapshot:
 
         # Collect relation endpoint names for topology diffing.
         relation_names: set[str] = set()
-        for rel in status.relations:
-            if rel.provider == app_name or rel.requirer == app_name:
-                relation_names.add(f"{rel.provider}:{rel.endpoint}-{rel.requirer}:{rel.endpoint}")
-        # Fallback: if the status object stores relations on the app.
-        if hasattr(app, "relations") and isinstance(app.relations, dict):
-            for endpoint, rels in app.relations.items():
-                for rel_app in rels:
-                    relation_names.add(f"{app_name}:{endpoint}-{rel_app}")
+        for endpoint, rels in app.relations.items():
+            for rel_app in rels:
+                relation_names.add(f"{app_name}:{endpoint}-{rel_app.related_app}")
 
         apps.append(
             AppSnapshot(
                 name=app_name,
-                status=app.application_status.current,
-                status_message=app.application_status.message,
+                status=app.app_status.current,
+                status_message=app.app_status.message,
                 units=tuple(units),
                 relations=frozenset(relation_names),
             )
@@ -384,8 +379,8 @@ class EventWatcher:
         self._dedup: dict[str, float] = {}
         self._last_snapshot: StatusSnapshot | None = None
 
-        self._status_task: asyncio.Task | None = None  # type: ignore[type-arg]
-        self._loki_task: asyncio.Task | None = None  # type: ignore[type-arg]
+        self._status_task: asyncio.Task | None = None
+        self._loki_task: asyncio.Task | None = None
         self._running = False
 
     # -- Lifecycle -----------------------------------------------------------

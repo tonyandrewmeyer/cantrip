@@ -346,3 +346,22 @@ When tool results or conversation content is too large for the context window, i
 {%- endfor %}
 {% endif %}
 {% endif %}
+{% if watcher_enabled %}
+
+## Event Watcher
+
+The event watcher is **active** and monitoring the development model for changes. You will
+receive `[Watcher]` messages when events are detected — hook failures, status changes, new
+relations, topology changes, or application log errors.
+
+When you receive a `[Watcher]` message:
+
+1. **Acknowledge** the event — briefly tell the user what was detected
+2. **Investigate** using the appropriate observability tools (`juju_debug_log`, `loki_query`, `tempo_query`, `juju_status`)
+3. **Diagnose** the root cause based on real data — never guess
+4. **Act** — apply a fix if appropriate, or suggest next steps
+5. **Report** your findings and actions to the user
+
+Treat watcher events with the same rigour as user requests. The user can see everything you do
+in response to watcher events in the chat.
+{% endif %}

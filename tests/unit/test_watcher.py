@@ -298,13 +298,13 @@ class TestCaptureSnapshot:
         mock_unit.juju_status.current = "idle"
 
         mock_app = mock.MagicMock()
-        mock_app.application_status.current = "active"
-        mock_app.application_status.message = ""
+        mock_app.app_status.current = "active"
+        mock_app.app_status.message = ""
         mock_app.units = {"myapp/0": mock_unit}
+        mock_app.relations = {}
 
         mock_status = mock.MagicMock(spec=jubilant.Status)
         mock_status.apps = {"myapp": mock_app}
-        mock_status.relations = []
 
         snapshot = capture_snapshot(mock_status)
 
@@ -516,13 +516,13 @@ class TestStatusPolling:
         mock_unit.juju_status.current = "idle"
 
         mock_app = mock.MagicMock()
-        mock_app.application_status.current = "active"
-        mock_app.application_status.message = ""
+        mock_app.app_status.current = "active"
+        mock_app.app_status.message = ""
         mock_app.units = {"myapp/0": mock_unit}
+        mock_app.relations = {}
 
         mock_status = mock.MagicMock(spec=jubilant.Status)
         mock_status.apps = {"myapp": mock_app}
-        mock_status.relations = []
 
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         mock_juju.status.return_value = mock_status
@@ -546,13 +546,13 @@ class TestStatusPolling:
         mock_unit_1.juju_status.current = "idle"
 
         mock_app_1 = mock.MagicMock()
-        mock_app_1.application_status.current = "active"
-        mock_app_1.application_status.message = ""
+        mock_app_1.app_status.current = "active"
+        mock_app_1.app_status.message = ""
         mock_app_1.units = {"myapp/0": mock_unit_1}
+        mock_app_1.relations = {}
 
         mock_status_1 = mock.MagicMock(spec=jubilant.Status)
         mock_status_1.apps = {"myapp": mock_app_1}
-        mock_status_1.relations = []
 
         # Second poll: myapp/0 is in error.
         mock_unit_2 = mock.MagicMock()
@@ -561,13 +561,13 @@ class TestStatusPolling:
         mock_unit_2.juju_status.current = "idle"
 
         mock_app_2 = mock.MagicMock()
-        mock_app_2.application_status.current = "active"
-        mock_app_2.application_status.message = ""
+        mock_app_2.app_status.current = "active"
+        mock_app_2.app_status.message = ""
         mock_app_2.units = {"myapp/0": mock_unit_2}
+        mock_app_2.relations = {}
 
         mock_status_2 = mock.MagicMock(spec=jubilant.Status)
         mock_status_2.apps = {"myapp": mock_app_2}
-        mock_status_2.relations = []
 
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         mock_juju.status.side_effect = [mock_status_1, mock_status_2]

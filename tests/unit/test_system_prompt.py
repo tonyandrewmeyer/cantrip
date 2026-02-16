@@ -230,3 +230,30 @@ class TestGitPushConfirmation:
         """The prompt should reference confirmed: true."""
         result = build_system_prompt()
         assert "confirmed: true" in result
+
+
+class TestWatcherPrompt:
+    """Tests for watcher-related content in the system prompt."""
+
+    def test_watcher_section_present_when_enabled(self):
+        """The 'Event Watcher' section appears when watcher_enabled is True."""
+        result = build_system_prompt(watcher_enabled=True)
+        assert "## Event Watcher" in result
+        assert "[Watcher]" in result
+
+    def test_watcher_section_absent_when_disabled(self):
+        """The 'Event Watcher' section is absent when watcher_enabled is False."""
+        result = build_system_prompt(watcher_enabled=False)
+        assert "## Event Watcher" not in result
+
+    def test_watcher_section_absent_when_none(self):
+        """The 'Event Watcher' section is absent when watcher_enabled is None."""
+        result = build_system_prompt(watcher_enabled=None)
+        assert "## Event Watcher" not in result
+
+    def test_watcher_instructions_include_investigation_steps(self):
+        """The watcher section includes investigation instructions."""
+        result = build_system_prompt(watcher_enabled=True)
+        assert "Investigate" in result
+        assert "Diagnose" in result
+        assert "observability" in result.lower()

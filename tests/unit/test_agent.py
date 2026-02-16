@@ -7,6 +7,7 @@ import pytest
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.tools.base import ToolResult
+from cantrip.agent.watcher import WatcherEvent
 from cantrip.llm.base import Message, Response, Role, ToolCall
 from tests.conftest import FakeProvider
 
@@ -445,3 +446,122 @@ class TestTestResultsCapture:
         await agent.process_message("Run tests")
 
         assert agent.state.test_results is None
+
+
+class TestWatcherIntegration:
+    """Tests for watcher integration in CantripAgent."""
+
+    def test_start_watcher_requires_dev_model(self):
+        """start_watcher returns False without a dev_model."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+
+        assert agent.start_watcher() is False
+        assert not agent.watcher_running
+        assert not agent.state.watcher_enabled
+
+    @pytest.mark.asyncio
+    async def test_start_watcher_with_dev_model(self):
+        """start_watcher succeeds with a dev_model set."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+
+        result = agent.start_watcher()
+
+        assert result is True
+        assert agent.watcher_running
+        assert agent.state.watcher_enabled
+
+        await agent.stop_watcher()
+
+    @pytest.mark.asyncio
+    async def test_stop_watcher(self):
+        """stop_watcher stops the watcher and clears the flag."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+        agent.start_watcher()
+
+        await agent.stop_watcher()
+
+        assert not agent.watcher_running
+        assert not agent.state.watcher_enabled
+
+    @pytest.mark.asyncio
+    async def test_stop_watcher_when_not_running(self):
+        """stop_watcher is a no-op when no watcher is active."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+
+        await agent.stop_watcher()
+
+        assert not agent.watcher_running
+
+    @pytest.mark.asyncio
+    async def test_process_watcher_event_no_watcher(self):
+        """process_watcher_event returns None when no watcher is active."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+
+        result = await agent.process_watcher_event()
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_process_watcher_event_empty_queue(self):
+        """process_watcher_event returns None when queue is empty."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+        agent.start_watcher()
+
+        result = await agent.process_watcher_event()
+
+        assert result is None
+        await agent.stop_watcher()
+
+    @pytest.mark.asyncio
+    async def test_process_watcher_event_processes_event(self):
+        """process_watcher_event dequeues and processes an event."""
+        provider = FakeProvider([Response(content="I see the hook failure.")])
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+        agent.start_watcher()
+
+        # Manually enqueue an event.
+        event = WatcherEvent(
+            source="status",
+            category="hook_failure",
+            summary="Hook failure on myapp/0",
+            detail="hook failed: install",
+            app="myapp",
+            unit="myapp/0",
+        )
+        agent._watcher._enqueue(event)
+
+        result = await agent.process_watcher_event()
+
+        assert result == "I see the hook failure."
+        await agent.stop_watcher()
+
+    def test_watcher_enabled_in_system_prompt(self):
+        """watcher_enabled appears in the system prompt when active."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+        agent.state.watcher_enabled = True
+
+        prompt = agent._build_system_prompt()
+
+        assert "Event Watcher" in prompt
+        assert "[Watcher]" in prompt
+
+    def test_watcher_disabled_not_in_system_prompt(self):
+        """Watcher section absent from system prompt when disabled."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+
+        prompt = agent._build_system_prompt()
+
+        assert "Event Watcher" not in prompt

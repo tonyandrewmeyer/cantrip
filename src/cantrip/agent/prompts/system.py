@@ -74,6 +74,7 @@ def build_system_prompt(
     recent_decisions: list[dict] | None = None,
     skills_index: str | None = None,
     environment_ready: bool | None = None,
+    watcher_enabled: bool | None = None,
 ) -> str:
     """Build the full system prompt with current context.
 
@@ -87,6 +88,7 @@ def build_system_prompt(
         recent_decisions: List of recent decisions made.
         skills_index: Pre-rendered XML listing available skills.
         environment_ready: Whether the dev environment is fully provisioned.
+        watcher_enabled: Whether the event-driven watcher is active.
 
     Returns:
         Complete system prompt with context.
@@ -101,4 +103,5 @@ def build_system_prompt(
         recent_decisions=recent_decisions,
         skills_index=skills_index,
         environment_ready=environment_ready,
+        watcher_enabled=watcher_enabled,
     )
