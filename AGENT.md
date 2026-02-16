@@ -2,35 +2,44 @@
 
 ## Overview
 
-Hybrid architecture: main agent handles conversation and coordination, background agents handle async tasks.
+Two-loop autonomous architecture: a **conversation loop** handles user interaction
+(confirmations, steering, domain expertise) while an **autonomous work loop** executes
+tasks from a work queue via disposable subagents. The user describes what to charm;
+the agent independently researches, designs, builds, deploys, tests, and debugs.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Main Agent                               │
-│                                                                 │
-│  • Conversation with user                                       │
-│  • Charm code writing                                           │
-│  • Decision making                                              │
-│  • Tool orchestration                                           │
-│  • Background agent spawning                                    │
-│                                                                 │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-         ┌───────────────┼───────────────┬───────────────┐
-         │               │               │               │
-         ▼               ▼               ▼               ▼
-   ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐
-   │   Test    │  │  Research │  │   Trace   │  │  Charmhub │
-   │   Agent   │  │   Agent   │  │   Agent   │  │   Agent   │
-   │           │  │           │  │           │  │           │
-   │ • Scenario│  │ • Web     │  │ • Tempo   │  │ • Search  │
-   │ • Jubilant│  │ • Docs    │  │ • Loki    │  │ • Libs    │
-   └───────────┘  └───────────┘  └───────────┘  └───────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           CantripAgent                                  │
+│                                                                         │
+│  ┌───────────────────────┐              ┌────────────────────────────┐  │
+│  │   Conversation Loop   │    steer/    │    Autonomous Work Loop    │  │
+│  │                       │◄────────────►│                            │  │
+│  │  process_message()    │    notify    │  Executor picks tasks      │  │
+│  │  User chat, proposals │              │  Spawns subagents          │  │
+│  │  Decision collection  │              │  Records results           │  │
+│  └───────────┬───────────┘              └─────────────┬──────────────┘  │
+│              │                                        │                 │
+│              └───────────► WorkQueue ◄────────────────┘                 │
+│                                ▲                                        │
+│                                │                                        │
+│                           Watcher events                                │
+│                           User steering                                 │
+│                           Adaptive replanning                           │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Main Agent
+## Main Agent (Conversation Loop)
+
+The main agent handles the user-facing conversation. It:
+- Talks to the user (design proposals, status updates, questions)
+- Collects decisions and records them in `AgentState`
+- Steers the work queue (reprioritise, cancel, add tasks based on user input)
+- Handles the existing `process_message()` / `process_message_streaming()` loops
 
 ### System Prompt Structure
+
+The system prompt is rendered from a Jinja2 template (`prompts/system.md.j2`) with
+context variables injected at runtime:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -38,510 +47,319 @@ Hybrid architecture: main agent handles conversation and coordination, backgroun
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  1. Identity & Purpose                                          │
-│     "You are Cantrip, an AI agent that builds Juju charms..."   │
+│     "You are Cantrip, an autonomous agent that builds charms.   │
+│      You work independently — research, design, build, deploy,  │
+│      test, debug — with the user confirming key decisions."     │
 │                                                                 │
 │  2. Core Principles                                             │
-│     - Get to active/running fast                                │
-│     - User provides operational knowledge                       │
-│     - Agent handles implementation                              │
-│     - Show off the Canonical ecosystem                          │
+│     - Research first, then propose, then build                  │
+│     - Present grounded design proposals for confirmation        │
+│     - Keep the task checklist moving autonomously               │
+│     - Use observability (traces, logs) to debug                 │
+│     - Showcase the Canonical ecosystem                          │
 │                                                                 │
 │  3. Charm Development Guidance                                  │
-│     (from charming-with-claude + additional docs)               │
 │     - Modern patterns (Scenario, Jubilant)                      │
-│     - Avoid deprecated (Harness, pytest-operator)               │
 │     - Library preferences (PyPI > Charmhub)                     │
+│     - Three charm paths (12-factor, custom, infrastructure)     │
 │                                                                 │
-│  4. Tools Available                                             │
-│     (see Tools section below)                                   │
+│  4. Skills Index                                                │
+│     Lightweight list of available skills (loaded on demand)     │
 │                                                                 │
-│  5. Current Context                                             │
-│     - Active charm project                                      │
-│     - Environment state                                         │
+│  5. Current Context (injected at runtime)                       │
+│     - Active charm project (name, path, type, framework)        │
+│     - Environment state (dev model, COS model)                  │
 │     - Recent decisions                                          │
+│     - Watcher status                                            │
+│                                                                 │
+│  6. Context Budget                                              │
+│     Token usage, virtual files list (appended per turn)         │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Identity & Purpose
+## Work Queue
 
-```markdown
-You are Cantrip, an AI agent specialised in building Juju charms.
+The `WorkQueue` (in `agent/queue.py`) is the central coordination mechanism.
 
-Your goal is to help users create production-quality charms through natural
-conversation. You handle the implementation; the user provides operational
-knowledge about how their application should behave.
-
-You showcase the Canonical ecosystem: Juju, Charmcraft, Rockcraft, Ops,
-Jubilant, Concierge, and COS. These tools are the durable foundation;
-you make them accessible.
-
-Key principles:
-1. Get to active/running status fast (2 minutes for simple charms)
-2. Iterate through conversation - don't try to be perfect first time
-3. Use observability (traces, logs) to debug issues
-4. Default to fast dev cycle (juju ssh), validate with full pack/refresh
-5. Integrate with the ecosystem - observability, databases, ingress
-```
-
-### Charm Development Guidance
-
-This section incorporates content from charming-with-claude and additional docs:
-
-```markdown
-## Charm Development Standards
-
-### Testing
-- Unit tests: Use Scenario (ops.testing Context, State)
-- Integration tests: Use Jubilant
-- NEVER use: Harness (deprecated), pytest-operator, python-libjuju
-
-### Libraries
-- Prefer PyPI versions where available: [list]
-- Use charmcraft.yaml + fetch-libs for Charmhub libraries
-- Always include: ops-tracing for observability
-
-### Patterns
-- 12-factor apps: Use paas-charm base
-- Custom apps: Full ops framework charm
-- Infrastructure: Research operational patterns first
-
-### Code Style
-- UK English for all text
-- Type hints throughout
-- Pydantic for config models where appropriate
-
-### Common Integrations
-- Observability: Always include COS integration
-- Database: Support all databases the workload supports
-- Ingress: Traefik for K8s charms
-```
-
-### Current Context
-
-Injected at runtime based on session state:
-
-```markdown
-## Current Project
-
-Charm: flask-app-charm
-Path: /home/user/flask-app-charm
-Type: K8s (12-factor)
-Framework: Flask 2.3
-
-## Environment
-
-Dev Model: dev (Canonical K8s)
-- flask-app: active (1 unit)
-- postgresql: active (1 unit)
-
-COS Model: cos (Canonical K8s)
-- All components healthy
-
-## Recent Decisions
-
-- Using PostgreSQL (user choice over MySQL)
-- Added custom /health endpoint
-- Tracing enabled
-```
-
-## Tools
-
-### Juju Operations (via Jubilant)
-
-```python
-class JujuTools:
-    """Tools for Juju operations via Jubilant."""
-
-    def get_status(self, model: str = None) -> JujuStatus:
-        """Get current juju status as structured data."""
-
-    def deploy(self, charm: str, app_name: str, config: dict = None) -> None:
-        """Deploy a charm."""
-
-    def refresh(self, app_name: str, path: str = None) -> None:
-        """Refresh a deployed charm."""
-
-    def relate(self, app1: str, app2: str, relation: str = None) -> None:
-        """Create a relation between apps."""
-
-    def run_action(self, unit: str, action: str, params: dict = None) -> ActionResult:
-        """Run an action on a unit."""
-
-    def ssh(self, unit: str, command: str) -> str:
-        """Execute command on a unit via SSH."""
-
-    def ssh_write(self, unit: str, path: str, content: str) -> None:
-        """Write content to a file on a unit (fast dev cycle)."""
-```
-
-### Charm Operations
-
-```python
-class CharmTools:
-    """Tools for charm creation and modification."""
-
-    def init(self, name: str, profile: str = "machine") -> Path:
-        """Run charmcraft init to scaffold a charm."""
-
-    def pack(self, path: str = ".") -> Path:
-        """Pack a charm, return path to .charm file."""
-
-    def fetch_libs(self, path: str = ".") -> None:
-        """Fetch charm libraries defined in charmcraft.yaml."""
-
-    def add_lib(self, charm: str, lib: str) -> None:
-        """Add a library to charmcraft.yaml."""
-```
-
-### File Operations
-
-```python
-class FileTools:
-    """Tools for reading and writing charm files."""
-
-    def read(self, path: str) -> str:
-        """Read a file."""
-
-    def write(self, path: str, content: str) -> None:
-        """Write a file."""
-
-    def edit(self, path: str, old: str, new: str) -> None:
-        """Replace text in a file."""
-
-    def list_dir(self, path: str) -> list[str]:
-        """List directory contents."""
-```
-
-### Environment (via Concierge)
-
-```python
-class EnvironmentTools:
-    """Tools for environment management via Concierge."""
-
-    def setup(self, preset: str) -> None:
-        """Set up environment: 'lxd' or 'k8s'."""
-
-    def status(self) -> EnvironmentStatus:
-        """Get current environment status."""
-
-    def teardown(self, model: str = None) -> None:
-        """Tear down a model or entire environment."""
-```
-
-### Observability
-
-```python
-class ObservabilityTools:
-    """Tools for querying COS."""
-
-    def query_traces(self, service: str, since: str = "1h") -> list[Trace]:
-        """Query Tempo for traces."""
-
-    def query_logs(self, app: str, since: str = "1h", filter: str = None) -> list[LogEntry]:
-        """Query Loki for logs."""
-
-    def get_metrics(self, app: str, metric: str) -> MetricData:
-        """Query Prometheus for metrics."""
-
-    def grafana_url(self, dashboard: str = None) -> str:
-        """Get Grafana URL for a dashboard."""
-```
-
-### Charmhub
-
-```python
-class CharmhubTools:
-    """Tools for Charmhub interaction."""
-
-    def search(self, query: str, type: str = None) -> list[CharmInfo]:
-        """Search Charmhub for charms."""
-
-    def info(self, charm: str) -> CharmDetails:
-        """Get detailed info about a charm."""
-
-    def get_libs(self, charm: str) -> list[LibraryInfo]:
-        """List libraries provided by a charm."""
-```
-
-### Background Agents
-
-```python
-class AgentTools:
-    """Tools for spawning background agents."""
-
-    def run_tests(self, test_type: str = "all") -> TaskHandle:
-        """Spawn background agent to run tests."""
-
-    def research(self, query: str) -> TaskHandle:
-        """Spawn background agent to research a topic."""
-
-    def analyse_traces(self, issue: str) -> TaskHandle:
-        """Spawn background agent to analyse traces for an issue."""
-
-    def task_status(self, handle: TaskHandle) -> TaskStatus:
-        """Check status of a background task."""
-
-    def task_result(self, handle: TaskHandle) -> TaskResult:
-        """Get result of a completed background task."""
-```
-
-## Background Agents
-
-Each background agent has a focused system prompt and limited tools.
-
-### Test Agent
-
-```markdown
-You are a test runner agent for Cantrip.
-
-Your job is to run charm tests and report results clearly.
-
-Tools available:
-- Run Scenario unit tests
-- Run Jubilant integration tests
-- Report results
-
-Do not modify code. Report what passed, what failed, and why.
-```
-
-### Research Agent
-
-```markdown
-You are a research agent for Cantrip.
-
-Your job is to find information about software, patterns, and best practices.
-
-Tools available:
-- Web search
-- Documentation fetch
-- Charmhub search
-
-Return structured findings. Be thorough but concise.
-```
-
-### Trace Agent
-
-```markdown
-You are a trace analysis agent for Cantrip.
-
-Your job is to analyse traces and logs to identify issues.
-
-Tools available:
-- Tempo trace queries
-- Loki log queries
-- Prometheus metric queries
-
-Identify the root cause. Explain what's happening and suggest fixes.
-```
-
-### Charmhub Agent
-
-```markdown
-You are a Charmhub agent for Cantrip.
-
-Your job is to search Charmhub and find relevant charms and libraries.
-
-Tools available:
-- Charmhub search
-- Charm info
-- Library listing
-
-Find charms that could integrate with the user's charm.
-Check compatibility and recommend integrations.
-```
-
-## Conversation Flow
-
-### Initial Charm Request
-
-```
-User: build a charm for my flask app
-
-Agent thinking:
-1. This is a 12-factor app (Flask)
-2. Need to determine: K8s or machine?
-3. Need to find the code (ask or detect)
-4. Use paas-charm base
-5. Goal: active/running in 2 minutes
-
-Agent response:
-"I'll create a 12-factor charm for your Flask application.
-
-Is this a K8s charm or machine charm? (I'd suggest K8s since Flask apps
-typically work well containerised)
-
-And where's the code? Current directory, or a specific path?"
-```
-
-### Adding Integrations
-
-```
-User: add postgresql integration
-
-Agent thinking:
-1. User wants database integration
-2. Check if workload supports PostgreSQL
-3. Add relation to charmcraft.yaml
-4. Add integration code to charm.py
-5. Deploy postgresql charm and relate
-
-Agent actions:
-1. Edit charmcraft.yaml to add postgresql relation
-2. Edit src/charm.py to handle relation events
-3. Deploy postgresql if not present
-4. juju relate flask-app postgresql
-5. Verify connection via traces
-```
-
-### Debugging
-
-```
-User: the app isn't starting
-
-Agent thinking:
-1. Something's wrong - need to investigate
-2. Check traces first (observability-driven)
-3. Check logs if traces don't show issue
-4. Identify root cause
-5. Fix and verify
-
-Agent actions:
-1. Query Tempo for recent traces
-2. "I can see the startup is failing at database connection"
-3. Query Loki for detailed logs
-4. "The DATABASE_URL environment variable isn't set"
-5. Fix charm.py to set env var from relation data
-6. Fast path: juju ssh to update code
-7. Trigger hook re-run
-8. Verify via traces
-```
-
-## Context Management
-
-### Session State
+### AgentTask
 
 ```python
 @dataclass
-class SessionState:
-    """Persisted in .cantrip/session.json"""
-
-    charm_name: str
-    charm_path: Path
-    charm_type: Literal["machine", "k8s"]
-    framework: str | None  # Flask, Django, etc.
-
-    dev_model: str
-    cos_model: str
-
-    decisions: list[Decision]  # Key decisions made
-
-    conversation_summary: str  # Summarised older turns
-    recent_turns: list[Turn]   # Recent turns verbatim
+class AgentTask:
+    id: str
+    title: str                          # Human-readable, shown in TUI checklist
+    status: TaskStatus                  # pending, active, done, failed, blocked
+    category: TaskCategory              # research, build, deploy, test, debug, infra
+    description: str                    # Detailed instructions for the subagent
+    dependencies: list[str]             # Task IDs that must complete first
+    result: str | None                  # Summary of what the task produced
+    blocked_reason: str | None          # Why it's blocked (e.g. "awaiting user confirmation")
 ```
 
-### Context Window Strategy
+### Task Lifecycle
 
-1. **Always include:**
-   - System prompt (identity, principles, guidance)
-   - Current project state
-   - Recent decisions
-   - Last 5-10 conversation turns
-
-2. **Summarise:**
-   - Older conversation turns
-   - Completed tasks
-   - Resolved issues
-
-3. **On demand:**
-   - File contents (read when needed)
-   - Full trace data (query when debugging)
-   - Test results (fetch when relevant)
-
-### Decision Tracking
-
-```yaml
-# .cantrip/decisions.yaml
-decisions:
-  - id: 1
-    timestamp: "2024-01-15T10:30:00Z"
-    type: database
-    choice: postgresql
-    reason: "User preference over MySQL"
-
-  - id: 2
-    timestamp: "2024-01-15T10:35:00Z"
-    type: integration
-    choice: traefik-ingress
-    reason: "Standard ingress for K8s charms"
+```
+pending ──► active ──► done
+  │            │
+  │            └──► failed
+  │
+  └──► blocked ──► pending (when unblocked)
 ```
 
-## Error Handling
+Tasks enter `blocked` when they need user input (e.g. "confirm this design proposal").
+The conversation loop unblocks them when the user responds.
 
-### User-Facing Errors
+### Task Sources
+
+1. **Task planner** — LLM decomposes user intent into ordered tasks (initial plan)
+2. **Adaptive replanning** — planner inserts/reorders tasks when context changes
+3. **Watcher events** — status changes, hook failures, new relations create tasks
+4. **User steering** — user can add, cancel, or reprioritise tasks via chat
+
+## Task Planner
+
+The `TaskPlanner` (in `agent/planner.py`) uses an LLM call to decompose user intent
+into a structured task list.
+
+### Planning Flow
+
+```
+User: "build a charm for Redis"
+           │
+           ▼
+    ┌──────────────┐
+    │ Classify      │  12-factor? Custom? Infrastructure?
+    └──────┬───────┘
+           │
+           ▼
+    ┌──────────────┐
+    │ Plan tasks   │  LLM generates ordered AgentTask list
+    └──────┬───────┘
+           │
+           ▼
+    ┌──────────────────────────────────────────┐
+    │  1. Set up environment (infra)           │
+    │  2. Research workload (research)         │
+    │  3. Survey Charmhub (research)           │
+    │  4. Present design proposal (blocked)    │
+    │  5. Scaffold charm (build)               │
+    │  6. Deploy to dev model (deploy)         │
+    │  7. Add observability (build)            │
+    │  8. Run unit tests (test)                │
+    │  9. Add integrations (build)             │
+    │ 10. Run integration tests (test)         │
+    │ 11. Validate (test)                      │
+    └──────────────────────────────────────────┘
+```
+
+### Adaptive Replanning
+
+When context changes mid-execution:
+- **User override** ("skip Sentinel for now") → planner cancels/modifies relevant tasks
+- **New context** ("it also needs Redis caching") → planner inserts research + build tasks
+- **Watcher event** ("hook failed in redis-k8s/0") → planner inserts diagnostic task
+- **Task failure** → planner may insert a retry or alternative task
+
+## Background Executor
+
+The `BackgroundExecutor` (in `agent/executor.py`) is an asyncio task that runs
+alongside the conversation loop.
+
+### Execution Loop
 
 ```python
-class CantripError(Exception):
-    """Base error with user-friendly message."""
+# Simplified — actual implementation in agent/executor.py
+async def run(self):
+    while True:
+        task = self.queue.next_ready()
+        if task is None:
+            await asyncio.sleep(1)
+            continue
 
-    def __init__(self, message: str, suggestion: str = None):
-        self.message = message
-        self.suggestion = suggestion
-
-class CharmPackError(CantripError):
-    """Charm failed to pack."""
-
-class DeployError(CantripError):
-    """Deployment failed."""
-
-class TestError(CantripError):
-    """Tests failed."""
+        self.queue.set_active(task)
+        result = await self._execute_task(task)
+        self.queue.set_done(task, result)
 ```
 
-### Recovery Strategies
+### Concurrency Model
 
-1. **Pack failure:** Show error, suggest fixes, offer to attempt auto-fix
-2. **Deploy failure:** Show juju status, check for common issues
-3. **Test failure:** Show which tests failed, offer to investigate
-4. **Connection failure:** Check environment, offer to reset
+- Initially sequential (one task at a time)
+- Independent tasks (e.g. research + environment setup) can run in parallel later
+- The executor pauses during user interactions that affect the work queue
 
-## LLM Provider Interface
+## Subagent Pattern
+
+Each background task runs as a **subagent**: a fresh LLM context with a focused system
+prompt and a subset of tools. Subagents are created by `SubagentRunner` (in
+`agent/subagent.py`).
+
+### Why Subagents
+
+- **Clean context** — main agent's conversation history stays focused on user interaction
+- **Focused prompts** — each subagent gets instructions tailored to its task category
+- **Cost routing** — research and testing tasks use the light model; code writing uses primary
+- **Parallel potential** — subagents can run while the user chats with the main agent
+
+### Subagent Categories
+
+| Category | System prompt focus | Tools available | Model |
+|----------|-------------------|-----------------|-------|
+| Research | "Find information about X. Search the web, read docs, check Charmhub." | WebFetch, CharmhubSearch, CharmhubInfo, RegistrySearch | Light |
+| Build | "Write charm code for X. Follow the design proposal." | ReadFile, WriteFile, EditFile, CharmcraftInit, CharmcraftPack, etc. | Primary |
+| Deploy | "Deploy/refresh the charm and verify it reaches active status." | JujuDeploy, JujuRefresh, JujuStatus, JujuWait, CharmSync | Light |
+| Test | "Run tests and report results." | RunCharmTests, ReadFile | Light |
+| Debug | "Diagnose this issue using traces and logs. Suggest a fix." | TempoQuery, LokiQuery, JujuDebugLog, ReadFile | Light |
+| Infra | "Set up the environment." | ConciergePrepare, ConciergeStatus, JujuAddModel | Light |
+
+### Context Handoff
+
+Subagents receive:
+- Their focused system prompt (category-specific)
+- The task description from the AgentTask
+- Result summaries from completed dependency tasks
+- Relevant files (charm source, charmcraft.yaml, etc.) as needed
+
+Subagents return a structured result:
+- Summary (injected into the next dependent task's context)
+- Files modified (if any)
+- Errors encountered (if any)
+
+## Conversation Flow Examples
+
+### Autonomous Charm Building
+
+```
+User: "build a charm for redis"
+
+[Task planner creates 11 tasks, visible in TUI checklist]
+
+Agent (chat): "I'll build a Redis charm. Setting up the environment
+and starting research — you'll see progress in the task list on the left."
+
+[Executor runs tasks autonomously: setup → research → Charmhub survey]
+
+Agent (chat): "I've researched how Redis is typically operated. Here's
+my proposed design:
+
+  • K8s charm (official redis:7 OCI image)
+  • Primary/replica topology with Sentinel for failover
+  • AOF persistence enabled by default
+  • Config: maxmemory, maxmemory-policy, bind-address
+  • Actions: backup (redis-cli BGSAVE), failover (Sentinel)
+  • Integrations: COS (metrics + tracing), ingress (Traefik)
+
+Sources: redis.io/docs/management, redis.io/docs/management/sentinel
+
+Shall I proceed, or would you like to adjust anything?"
+
+User: "looks good, but skip sentinel for now — keep it simple"
+
+[Agent records decision, planner replans without Sentinel]
+
+Agent (chat): "Got it — single-instance Redis without Sentinel.
+Proceeding with build."
+
+[Executor continues: scaffold → deploy → observability → tests → validate]
+[All visible as checklist items completing in the TUI]
+```
+
+### User Steering Mid-Build
+
+```
+[Agent is autonomously building, currently on "Add integrations"]
+
+User: "actually, it needs to support both Redis and KeyDB — they use
+the same protocol but KeyDB has multithreading"
+
+[Planner inserts research task for KeyDB, modifies build tasks]
+
+Agent (chat): "Interesting — I'll research KeyDB compatibility and
+adjust the charm to support both. I've added a research task to the queue."
+
+[Research subagent runs, results feed back into build]
+```
+
+### Watcher-Driven Debugging
+
+```
+[Watcher detects: redis-k8s/0 entered error status]
+
+[Planner creates task: "Diagnose hook failure in redis-k8s/0"]
+
+[Debug subagent runs: queries Loki → reads traces → identifies root cause]
+
+Agent (chat): "The watcher detected a hook failure in redis-k8s/0.
+I've investigated — the install hook is failing because the redis.conf
+template references a variable that isn't set yet. Fixing now."
+
+[Build subagent fixes the code, deploy subagent redeploys]
+[All visible in the task checklist]
+```
+
+## State and Persistence
+
+### AgentState
 
 ```python
-from abc import ABC, abstractmethod
+@dataclass
+class AgentState:
+    charm_name: str | None
+    charm_path: Path | None
+    charm_type: str | None              # "machine" or "k8s"
+    framework: str | None
 
-class LLMProvider(ABC):
-    """Abstract interface for LLM providers."""
+    dev_model: str | None
+    cos_model: str | None
 
-    @abstractmethod
-    async def complete(
-        self,
-        messages: list[Message],
-        tools: list[Tool] = None,
-        temperature: float = 0.7,
-    ) -> Response:
-        """Generate a completion."""
+    environment_ready: bool             # Transient
+    watcher_enabled: bool               # Transient
+    test_results: TestResults | None    # Transient
 
-    @abstractmethod
-    async def stream(
-        self,
-        messages: list[Message],
-        tools: list[Tool] = None,
-        temperature: float = 0.7,
-    ) -> AsyncIterator[Chunk]:
-        """Stream a completion."""
-
-
-class GeminiProvider(LLMProvider):
-    """Google Gemini implementation."""
-
-    def __init__(self, api_key: str, model: str = "gemini-pro"):
-        ...
-
-
-class ClaudeProvider(LLMProvider):
-    """Anthropic Claude implementation."""
-
-    def __init__(self, api_key: str, model: str = "claude-3-opus"):
-        ...
+    messages: list[Message]             # Conversation history
+    decisions: list[Decision]           # Key decisions (always in context)
 ```
+
+### SQLite Store (.cantrip)
+
+The `.cantrip` SQLite file in the charm directory stores:
+- Session state (charm name, path, type, models, decisions)
+- Token usage per request
+- Work queue tasks (status, results, dependencies)
+- Conversation history (for session restore)
+
+### Context Management
+
+- **Virtual files** — large tool results (>10k tokens) are virtualised; only a preview
+  is kept inline; the agent can read the full content on demand
+- **Compaction** — when context exceeds 80% of the window, older messages are summarised
+  (using the light model) and the original is saved as a virtual file
+- **Budget tracking** — a transient system message shows token usage and virtual file list
+- **Decisions always in context** — key decisions are never compacted away
+
+## Tools
+
+Tools are the agent's capabilities. All tools inherit from the abstract `Tool` class
+with `name`, `description`, `parameters` (JSON Schema), and async `execute()` method.
+
+### Tool Categories
+
+| Category | Tools | Used by |
+|----------|-------|---------|
+| File operations | ReadFile, WriteFile, EditFile, ListDirectory | Build subagent, main agent |
+| Charm operations | CharmcraftInit, CharmcraftPack, CharmValidate, CharmcraftFetchLibs, AnalyseFramework | Build subagent |
+| Rockcraft | RockcraftInit, RockcraftPack, SkopeoRegistryPush | Build subagent |
+| Juju operations | JujuStatus, JujuDeploy, JujuRefresh, JujuRelate, JujuSSH, JujuRunAction, JujuConfig, JujuWait, JujuAddModel, JujuDestroyModel, JujuOffer, JujuConsume, CharmSync, JujuDispatch | Deploy subagent, main agent |
+| Observability | JujuDebugLog, TempoQuery, LokiQuery | Debug subagent |
+| Registry | RegistrySearch, RegistryImageInfo | Research subagent |
+| Charmhub | CharmhubSearch, CharmhubInfo | Research subagent |
+| Git | GitClone, GitInit, GitStatus, GitDiff, GitLog, GitAdd, GitCommit, GitPush | Main agent |
+| GitHub | GhRepoCreate, GhPrCreate, GhIssueList | Main agent |
+| Web | WebFetch | Research subagent |
+| Testing | RunCharmTests | Test subagent |
+| Environment | ConciergePrepare, ConciergeStatus | Infra subagent |
+| Skills | LoadSkill | Main agent |
+| Context | VirtualFileRead, VirtualFileSearch | All agents |
+
+Subagents receive only the tools relevant to their category. The main agent has
+access to all tools for direct execution when needed.

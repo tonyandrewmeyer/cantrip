@@ -37,7 +37,9 @@
 
 ## Project Overview
 
-An AI-powered agent specialised in building, deploying, and iterating on Juju charms. The agent encapsulates operational knowledge and makes charm development accessible through natural conversation.
+An AI-powered **autonomous agent** specialised in building, deploying, and iterating on Juju
+charms. The agent independently researches workloads, designs charms, writes code, deploys,
+tests, and debugs — with the user confirming key decisions and providing domain expertise.
 
 ### Why This Project Exists
 
@@ -52,19 +54,26 @@ An AI-powered agent specialised in building, deploying, and iterating on Juju ch
 - **Concierge** - Environment setup
 - **COS** - Observability stack
 
-The agent proves that with this foundation, charm development is accessible. The infrastructure does the heavy lifting; the agent just makes it conversational.
+The agent proves that with this foundation, charm development is accessible. The infrastructure
+does the heavy lifting; the agent drives the workflow autonomously.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         This Agent                              │
-│                    (conversational layer)                       │
-├─────────────────────────────────────────────────────────────────┤
-│  Juju │ Jubilant │ Charmcraft │ Rockcraft │ Ops │ Concierge    │
-│                    (durable foundation)                         │
-└─────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                          This Agent                                │
+│              (autonomous orchestration layer)                      │
+│                                                                    │
+│   ┌─────────────────────┐       ┌────────────────────────────┐    │
+│   │  Conversation Loop  │◄─────►│   Autonomous Work Loop     │    │
+│   │  (user confirms,    │ steer/│   (research, build, deploy,│    │
+│   │   overrides, guides)│ notify│    test, debug, redeploy)  │    │
+│   └─────────────────────┘       └────────────────────────────┘    │
+├────────────────────────────────────────────────────────────────────┤
+│  Juju │ Jubilant │ Charmcraft │ Rockcraft │ Ops │ Concierge │ COS │
+│                      (durable foundation)                          │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-The agent is thin. The ecosystem is the star.
+The agent is the driver. The ecosystem is the engine. The user is the navigator.
 
 ## Name
 
@@ -98,8 +107,8 @@ The agent is thin. The ecosystem is the star.
 | Environment Setup | Concierge | LXD for machine, "k8s" preset for K8s (Canonical K8s, not MicroK8s) |
 | LLM (primary) | Gemini | Canonical preference, available tokens |
 | LLM (secondary) | Claude | Best performance |
-| LLM (future) | TBD | Figure out when we get there |
-| Multi-agent? | TBD | See Architecture section |
+| LLM (light) | Auto-detected | Cheaper model for research/test/compaction tasks |
+| Architecture | Two-loop + subagents | Conversation loop + autonomous work loop; see Architecture section |
 
 ## Core Workflow
 
@@ -275,113 +284,150 @@ Works? Broken/   │
 └─────────────────────────────────────┘
 ```
 
-### Common Steps (All Paths)
+### Common Steps (All Paths) — Autonomous Task Pipeline
+
+Once the charm path is identified, the agent autonomously plans and executes
+a task pipeline. The user sees a live checklist in the TUI and confirms key
+decisions (e.g. the design proposal) but does not drive each step.
 
 ```
-    │
-    ▼
-┌─────────────────────────────┐
-│  Auto-deploy locally        │
-│     - concierge setup env   │
-│     - jubilant deploy       │
-└─────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────┐
-│  Background tasks           │
-│     - Add tests             │
-│     - Add observability     │
-│     - Infrastructure setup  │
-└─────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────┐
-│  Interactive iteration      │
-│     - Add actions           │
-│     - Add config options    │
-│     - Add integrations      │
-│     - Debug issues          │
-└─────────────────────────────┘
+User: "build a charm for X"
+           │
+           ▼
+    ┌──────────────┐
+    │ Task Planner │  LLM decomposes intent into ordered tasks
+    └──────┬───────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Work Queue (visible as checklist in TUI)                        │
+│                                                                  │
+│  ✓ Set up environment (concierge prepare)                        │
+│  ✓ Clone and analyse source code                                 │
+│  ✓ Research workload (web search, docs, best practices)          │
+│  ✓ Survey Charmhub for existing charms / libraries               │
+│  ◌ Present design proposal ← blocks on user confirmation         │
+│  ○ Scaffold charm                                                │
+│  ○ Deploy to dev model                                           │
+│  ○ Add observability (COS integration)                           │
+│  ○ Run unit tests                                                │
+│  ○ Add integrations (database, ingress, etc.)                    │
+│  ○ Run integration tests                                         │
+│  ○ Validate (pack + full test suite + status check)              │
+│                                                                  │
+│  Legend: ✓ done  ⟳ active  ○ pending  ◌ blocked  ✗ failed        │
+└──────────────────────────────────────────────────────────────────┘
+           │
+           │  Background executor picks next ready task,
+           │  runs it (LLM + tools), records result, repeats.
+           │
+           │  Watcher events insert new tasks (e.g. "hook failed → diagnose")
+           │  User messages can reprioritise, cancel, or add tasks.
+           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Auto-deploy loop                                                │
+│                                                                  │
+│  Code changed → pack/sync → deploy → verify status               │
+│       ▲                                        │                 │
+│       │              ┌───────────┐             │                 │
+│       └──── fix ◄────│  Watcher  │◄── detect ──┘                 │
+│                      │  (events) │                               │
+│                      └───────────┘                               │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## TUI Design (Textual)
 
+The TUI has three panels: task checklist (what the agent is doing), Juju status
+(current state of the deployment), and chat (conversation with the user). The
+task checklist is the primary way the user understands agent activity.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Cantrip                                          [model: lxd]  │
-├─────────────────────────────────────────────────────────────────┤
-│                           │                                     │
-│   Juju Status             │   Chat                              │
-│   ─────────────           │   ────                              │
-│                           │                                     │
-│   Model: dev              │   > build a charm for postgres      │
-│   ┌─────────┐             │                                     │
-│   │ my-app  │────────┐    │   Creating postgres-charm...        │
-│   │ active  │        │    │   ✓ Scaffolded charm structure      │
-│   └─────────┘        │    │   ✓ Deploying to lxd model          │
-│        │             │    │   ⟳ Adding observability...         │
-│        │ db          │    │                                     │
-│        ▼             │    │                                     │
-│   ┌─────────┐        │    │                                     │
-│   │postgres │        │    │                                     │
-│   │ active  │        │    │                                     │
-│   └─────────┘        │    │                                     │
-│        │             │    │                                     │
-│        │ metrics     │    │                                     │
-│        ▼             │    │                                     │
-│   ┌─────────┐        │    │                                     │
-│   │ grafana │◄───────┘    │                                     │
-│   │ active  │  dashboard  │                                     │
-│   └─────────┘             │                                     │
-│                           │                                     │
-├───────────────────────────┴─────────────────────────────────────┤
-│ [F1 Help] [F2 Status] [F3 Logs] [F4 Debug]           [q Quit]   │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Cantrip v0.1.0                                [dev:k8s] [cos:k8s] [F1 Help]│
+├──────────────────────┬──────────────────┬───────────────────────────────────┤
+│                      │                  │                                   │
+│  Tasks               │  Juju Status     │  Chat                             │
+│  ─────               │  ───────────     │  ────                             │
+│                      │                  │                                   │
+│  ✓ Set up environ.   │  Model: dev (k8s)│  > build a charm for redis       │
+│  ✓ Clone + analyse   │  Apps: 1         │                                   │
+│  ✓ Research Redis    │                  │  Researching Redis operational    │
+│    operations        │  ┌────────────┐  │  patterns...                      │
+│  ✓ Survey Charmhub   │  │ redis-k8s  │  │                                   │
+│  ✓ Design proposal   │  │ ⟳ waiting  │  │  I've researched how Redis is     │
+│  ✓ Scaffold charm    │  │ 1 unit     │  │  typically operated. Here's my    │
+│  ⟳ Deploy to dev     │  └─────┬──────┘  │  proposed design:                 │
+│  ○ Add observability │        │ cos     │                                   │
+│  ○ Run unit tests    │        ▼         │  • K8s charm (official OCI image) │
+│  ○ Add integrations  │  ┌────────────┐  │  • Primary/replica with Sentinel  │
+│  ○ Integration tests │  │ COS (6)    │  │  • AOF persistence by default     │
+│  ○ Validate          │  │ ● healthy  │  │  • Backup action via redis-cli    │
+│                      │  └────────────┘  │  • COS + ingress integrations     │
+│                      │                  │                                   │
+│                      │                  │  Shall I proceed with this, or     │
+│                      │                  │  would you like to adjust?         │
+│                      │                  │                                   │
+│                      │                  │  [Type your message...]            │
+│                      │                  │                                   │
+├──────────────────────┴──────────────────┴───────────────────────────────────┤
+│  [⟳ Deploying redis-k8s] [● COS healthy] [👁 Watching]                      │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## The "2-Minute Charm" Definition
 
-**Goal:** From "build a charm for X" to seeing this in the TUI:
-- Charm packed successfully
-- Deployed to local model
-- Status: **active**
-- Workload: **running**
+**Goal:** From "build a charm for X" to the agent autonomously working through the full
+pipeline — research, design, build, deploy, test, observe — with the user only confirming
+the design proposal.
 
-That's it. That's success. Everything else happens *after* in the iterative conversation:
-- Health checks
-- Config options
-- Actions
-- Integrations
-- Observability
-- Tests
+Success looks like:
+- Agent researched the workload and proposed a grounded design
+- User confirmed (or adjusted) the design
+- Charm packed, deployed, and reaching **active/running**
+- Observability wired up
+- Tests passing
+- All visible as a completed checklist in the TUI
 
-**Philosophy:** Get something real running fast, then improve it through conversation.
+The user's involvement: one sentence to start, one confirmation to approve the design,
+optional steering if something looks wrong. The agent does the rest.
+
+**Philosophy:** The agent drives. The user navigates.
 
 ## Key Features
 
-### Must Have (MVP)
-- [ ] **Path A: 12-factor PaaS** (primary focus)
-- [ ] Pack and deploy to local environment (LXD/Canonical K8s)
-- [ ] Achieve active/running status
-- [ ] Juju status display in TUI
-- [ ] Conversational iteration (add actions, config)
-- [ ] Gemini API integration
-- [ ] Multi-model management (dev + COS)
+### Done (Phases 0–3)
+- [x] **All three charm paths** — 12-factor PaaS, custom applications, infrastructure
+- [x] Pack and deploy to local environment (LXD/Canonical K8s)
+- [x] Juju status display in TUI
+- [x] Conversational iteration (add actions, config)
+- [x] Gemini + Claude LLM providers with cost-routed light model
+- [x] Multi-model management (dev + COS) with cross-model relations
+- [x] Observability integration (ops-tracing, Tempo, Loki queries)
+- [x] Test generation (Scenario unit, Jubilant integration)
+- [x] Event-driven watcher (status diffing + Loki polling)
+- [x] Fast dev cycle (juju ssh sync + full pack/refresh)
+- [x] Context compaction (virtual files algorithm)
+- [x] Git + GitHub tools, skills infrastructure, session persistence
 
-### Rapid Follow-on (not Stage 2 - move fast)
-- [ ] Path B: Custom applications
-- [ ] Path C: Infrastructure software
+### Next (Phase 4: Autonomous Core)
+- [ ] **Work queue and task planner** — LLM decomposes user intent into ordered tasks
+- [ ] **Background executor** — tasks run autonomously via subagents
+- [ ] **Task checklist widget** — live TUI panel showing all task status
+- [ ] **Auto-deploy loop** — code change → pack → deploy → verify, automatically
+- [ ] **Watcher → task queue** — events create tasks, not raw messages
+- [ ] **User steering** — user input reprioritises, cancels, or redirects tasks
 
-### Should Have
+### Then (Phase 5: Research-Driven Design)
+- [ ] **Proactive workload research** — web search for devops best practices
+- [ ] **Operational story discovery** — how does this software run, scale, fail, recover?
+- [ ] **Design proposals** — agent presents grounded design, user confirms/overrides
+- [ ] **Research → build pipeline** — confirmed design feeds into task planner
+
+### Later (Phase 6: Polish)
 - [ ] Visual model/app/integration graph
-- [ ] Observability integration (see below)
-- [ ] Debug mode with log viewing
-- [ ] Machine charm support
-- [ ] K8s charm support
-- [ ] Test generation (Scenario for unit, Jubilant for integration)
-- [ ] Cross-model relations (especially for COS)
-
-### Stage 2
+- [ ] Log viewer, trace viewer
+- [ ] Advanced testing (load, fuzz, chaos, scaling)
 - [ ] Charmhub publishing
 
 ## Observability Strategy
@@ -443,28 +489,37 @@ Deploy to local environment, agent uses it during development:
 
 *Links and skills for COS to be provided later*
 
-## User/Agent Division of Labor
+## User/Agent Division of Labour
 
 ```
 ┌─────────────────────────────────┐    ┌─────────────────────────────────┐
 │           USER                  │    │           AGENT                 │
 ├─────────────────────────────────┤    ├─────────────────────────────────┤
 │                                 │    │                                 │
-│  • Describe what to charm       │    │  • Scaffold the charm           │
-│  • Provide operational knowledge│    │  • Write the code               │
-│    - How should it scale?       │    │  • Debug issues (using traces)  │
-│    - What needs backup?         │    │  • Write tests                  │
-│    - Failure modes?             │    │  • Add integrations             │
-│  • Approve/reject agent choices │    │  • Query observability          │
-│  • Guide priorities             │    │  • Iterate until working        │
+│  • Name the workload            │    │  • Research the workload        │
+│    "build a charm for Redis"    │    │    (web search, docs, Charmhub) │
+│                                 │    │  • Discover operational story   │
+│  • Confirm or override design   │    │    (best practices, failure     │
+│    "yes, but skip Sentinel      │    │     modes, scaling patterns)    │
+│     for now"                    │    │  • Propose a design             │
+│                                 │    │  • Scaffold the charm           │
+│  • Provide domain expertise     │    │  • Write the code               │
+│    when asked                   │    │  • Deploy and redeploy          │
+│    "we use pgBackRest for       │    │  • Debug issues (using traces)  │
+│     backups, not pg_dump"       │    │  • Write and run tests          │
+│                                 │    │  • Add integrations             │
+│  • Steer priorities             │    │  • React to watcher events      │
+│    "focus on HA before          │    │  • Iterate until working        │
+│     backup actions"             │    │  • Keep the checklist moving    │
 │                                 │    │                                 │
-│  "It should have 3 replicas     │    │  (looks at Tempo traces)        │
-│   with automatic failover"      │    │  "I see the replica sync is     │
-│                                 │    │   failing, fixing..."           │
 └─────────────────────────────────┘    └─────────────────────────────────┘
 ```
 
-**Philosophy:** User is the domain expert (knows how the app should operate). Agent is the implementation expert (knows how to make Juju do that).
+**Philosophy:** The agent is both the researcher and the implementer. It proactively
+discovers how the workload should be operated (via web research and ecosystem knowledge),
+proposes a grounded design, and builds it. The user confirms, overrides, and provides
+domain expertise that the agent can't find online. The user should rarely need to say
+"now do X" — the agent's task queue handles sequencing.
 
 ## Integration Discovery
 
@@ -504,131 +559,111 @@ When the agent needs to suggest integrations (database, ingress, observability, 
 
 If workload supports multiple options (e.g., mysql OR postgresql), charm should support all of them automatically.
 
-## Architecture: Single vs Multi-Agent
+## Architecture: Two-Loop Autonomous Agent
 
-### Option A: Single Agent
+### Design Decision
 
-```
-┌─────────────────────────────────────────────┐
-│              Main Agent                     │
-│                                             │
-│  • Handles all conversation                 │
-│  • Scaffolds charms                         │
-│  • Debugs issues                            │
-│  • Writes tests                             │
-│  • Manages integrations                     │
-│  • Everything in one context                │
-│                                             │
-└─────────────────────────────────────────────┘
-```
+Phases 0–3 built a reactive single-agent architecture: user sends a message, agent responds.
+This worked for proving out tools and conversation, but does not match the product vision
+where the agent works independently and the user mostly confirms.
 
-**Pros:**
-- Simpler to implement
-- Full context always available
-- No coordination overhead
-- Easier to debug the agent itself
-- One set of prompts to maintain
+The architecture is now **two concurrent loops** sharing a work queue, with **subagents**
+executing background tasks.
 
-**Cons:**
-- Context window fills up on complex charms
-- Can't parallelise (user waits while agent debugs)
-- System prompt becomes massive
-- Hard to use different models for different tasks
-
-### Option B: Multi-Agent (Specialised)
+### Runtime Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│           Orchestrator Agent                │
-│         (talks to user, coordinates)        │
-└───────────────────┬─────────────────────────┘
-                    │
-        ┌───────────┼───────────┬─────────────┐
-        │           │           │             │
-        ▼           ▼           ▼             ▼
-   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
-   │Scaffold │ │ Debug   │ │  Test   │ │Research │
-   │ Agent   │ │ Agent   │ │ Agent   │ │ Agent   │
-   └─────────┘ └─────────┘ └─────────┘ └─────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           CantripAgent                                  │
+│                                                                         │
+│  ┌───────────────────────┐              ┌────────────────────────────┐  │
+│  │   Conversation Loop   │    steer/    │    Autonomous Work Loop    │  │
+│  │                       │◄────────────►│                            │  │
+│  │  Handles user chat    │    notify    │  Picks tasks from queue    │  │
+│  │  Presents proposals   │              │  Spawns subagents          │  │
+│  │  Collects decisions   │              │  Records results           │  │
+│  └───────────┬───────────┘              └─────────────┬──────────────┘  │
+│              │                                        │                 │
+│              │         ┌──────────────────┐            │                 │
+│              └────────►│   Work Queue     │◄───────────┘                 │
+│                        │                  │                              │
+│                        │  AgentTask list  │◄──── Watcher events          │
+│                        │  with deps and   │◄──── User steering           │
+│                        │  status tracking │◄──── Adaptive replanning     │
+│                        └────────┬─────────┘                              │
+│                                 │                                        │
+│              ┌──────────────────┼──────────────────┐                    │
+│              ▼                  ▼                   ▼                    │
+│  ┌───────────────────┐ ┌──────────────┐ ┌────────────────────┐         │
+│  │ Research Subagent │ │Build Subagent│ │ Test/Debug Subagent│         │
+│  │                   │ │              │ │                    │         │
+│  │ Focused prompt,   │ │ Full charm   │ │ Runs tests, reads │         │
+│  │ web + Charmhub    │ │ writing with │ │ traces/logs, fixes│         │
+│  │ tools, light model│ │ all tools,   │ │ issues, light     │         │
+│  │                   │ │ primary model│ │ model              │         │
+│  └───────────────────┘ └──────────────┘ └────────────────────┘         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Pros:**
-- Specialised prompts per task
-- Can run in parallel (test while chatting)
-- Cleaner separation of concerns
-- Can use cheaper models for simple tasks
-- Scales better as complexity grows
+### Work Queue
 
-**Cons:**
-- Coordination complexity
-- Context handoff between agents
-- More infrastructure to build
-- Debugging agent interactions is hard
+The `WorkQueue` is the central coordination mechanism. It holds `AgentTask` objects with:
+- **id** — unique identifier
+- **title** — human-readable, shown in the TUI checklist
+- **status** — pending, active, done, failed, blocked
+- **category** — research, build, deploy, test, debug, infra
+- **dependencies** — list of task IDs that must complete first
+- **result** — summary of what the task produced (for context handoff)
 
-### Option C: Hybrid ✓ CHOSEN
+The task planner (an LLM call) generates the initial task list from user intent. Tasks can
+be added, reordered, or cancelled at any time — by the planner (adaptive replanning), by the
+watcher (events create new tasks), or by the user (steering via chat).
 
-```
-┌─────────────────────────────────────────────┐
-│              Main Agent                     │
-│                                             │
-│  • Handles conversation                     │
-│  • Simple tasks directly                    │
-│  • Spawns sub-agents for complex tasks      │
-│                                             │
-└───────────────────┬─────────────────────────┘
-                    │ (when needed)
-        ┌───────────┴───────────┐
-        ▼                       ▼
-   ┌──────────────┐      ┌──────────────┐
-   │ Background   │      │ Background   │
-   │ Debug Agent  │      │ Test Agent   │
-   │ (async)      │      │ (async)      │
-   └──────────────┘      └──────────────┘
-```
+### Subagent Pattern
 
-**Pros:**
-- Simple path for simple tasks
-- Background work doesn't block user
-- Main agent keeps full context
-- Sub-agents are disposable workers
+Each background task runs as a **subagent**: a fresh LLM context with a focused system prompt
+and a subset of tools. Subagents are disposable — they execute one task, return a result
+summary, and are discarded.
 
-**Cons:**
-- Still need coordination logic
-- When does main agent hand off?
+**Why subagents, not the main agent?**
+- Main agent context stays clean for conversation and design decisions.
+- Subagents get focused context (just the task, relevant files, prior results).
+- Different tasks can use different models (research on light, code on primary).
+- Subagents can run while the user is chatting with the main agent.
 
-### Key Questions for Architecture
+**Cost routing:**
 
-1. **What tasks benefit from parallelism?**
-   - Running tests while user continues chatting? YES
-   - Debugging while user adds more requirements? MAYBE
-   - Research while scaffolding? YES
+| Task category | Model | Rationale |
+|---------------|-------|-----------|
+| Research (web search, Charmhub) | Light | High volume, low complexity |
+| Test running, log queries | Light | Structured output, doesn't need creativity |
+| Charm code writing | Primary | Needs best reasoning |
+| Design proposal | Primary | User-facing, needs quality |
+| Context compaction | Light | Already implemented |
 
-2. **What tasks need full conversation context?**
-   - Understanding user requirements: YES (main agent)
-   - Writing charm code: SOMEWHAT
-   - Running tests: NO (just needs the charm)
-   - Debugging: SOMEWHAT (needs to know intent)
+### Conversation ↔ Work Queue Coordination
 
-3. **Where do we want to use cheaper models?**
-   - Research/search: Could use Haiku-equivalent
-   - Test running: Could use Haiku-equivalent
-   - Core charm writing: Needs best model
+The two loops coordinate through the work queue:
 
-### Decision: Hybrid
+1. **Task needs user input** — the task enters `blocked` status and the conversation loop
+   posts a question in the chat. User's reply unblocks the task.
+2. **User sends a message** — if it's steering ("skip database integration for now"), the
+   conversation loop updates the work queue (cancels/reorders tasks). If it's new context
+   ("it also needs Redis caching"), the planner inserts new tasks.
+3. **Watcher detects an issue** — a new task is created in the queue (e.g. "diagnose hook
+   failure in redis-k8s/0"). The executor picks it up when ready.
+4. **Task completes** — result summary is stored; dependent tasks unblock; TUI updates.
 
-**Main agent** handles:
-- Conversation with user
-- Writing charm code
-- Architectural decisions
-- Coordinating background work
+### Migration from Current Architecture
 
-**Background agents** handle:
-- Running tests
-- Querying Charmhub
-- Querying Tempo/Loki for traces
-- Research tasks
+The current `process_message()` loop (reactive, single-agent) continues to handle
+conversation. The new work loop runs alongside it. The watcher, which currently injects
+raw event text into `process_message()`, is migrated to create tasks in the queue instead.
 
-User never waits for background work to complete.
+Existing tools and skills are reused — subagents call the same `Tool` instances.
+The `ContextManager` and virtual file store are shared (subagents can virtualise large
+results). The `SessionStore` gains a `tasks` table for persistence.
 
 ## No Shell Access
 
@@ -860,10 +895,10 @@ Use the [Agent Skills](https://agentskills.io/home) pattern for modular, lazy-lo
 - **Extensible** - Add new skills as patterns emerge
 
 ### Could Have
-- [ ] Multiple LLM providers
-- [ ] Rock building for OCI images
-- [ ] Charm library suggestions
-- [ ] Auto-integration recommendations
+- [x] Multiple LLM providers (Gemini + Claude, done)
+- [x] Rock building for OCI images (done)
+- [ ] Charm library suggestions (PyPI vs Charmhub, partially in prompt)
+- [ ] Auto-integration recommendations (partially in prompt, needs research-driven grounding)
 
 ### Explicitly Out of Scope
 - Bundles (deprecated)
@@ -874,7 +909,7 @@ Use the [Agent Skills](https://agentskills.io/home) pattern for modular, lazy-lo
 
 See QUESTIONS.md for items needing clarification.
 
-## File Structure (Proposed)
+## File Structure
 
 ```
 cantrip/
@@ -883,38 +918,39 @@ cantrip/
 ├── src/
 │   └── cantrip/
 │       ├── __init__.py
-│       ├── main.py           # Entry point
-│       ├── tui/
-│       │   ├── __init__.py
-│       │   ├── app.py        # Main Textual app
-│       │   ├── widgets/
-│       │   │   ├── juju_status.py
-│       │   │   ├── chat.py
-│       │   │   └── model_graph.py
-│       │   └── screens/
+│       ├── main.py               # Entry point, arg parsing
+│       ├── cli.py                # CLI mode (no TUI)
 │       ├── agent/
-│       │   ├── __init__.py
-│       │   ├── core.py       # Main agent logic
-│       │   ├── tools/        # Agent tools
-│       │   │   ├── scaffold.py
-│       │   │   ├── deploy.py
-│       │   │   ├── debug.py
-│       │   │   └── test.py
-│       │   └── prompts/      # System prompts, templates
+│       │   ├── core.py           # CantripAgent — conversation loop, tool execution
+│       │   ├── state.py          # AgentState, Decision, TestResults dataclasses
+│       │   ├── store.py          # SQLite-backed session store
+│       │   ├── skills.py         # Skills index and loading
+│       │   ├── context.py        # Context compaction, virtual file store
+│       │   ├── preflight.py      # Pre-flight environment checks (Concierge)
+│       │   ├── watcher.py        # Event-driven watcher (status diffing, Loki polling)
+│       │   ├── queue.py          # ← NEW: WorkQueue, AgentTask, task lifecycle
+│       │   ├── planner.py        # ← NEW: Task planner (LLM decomposes intent → tasks)
+│       │   ├── executor.py       # ← NEW: Background executor (picks tasks, runs subagents)
+│       │   ├── subagent.py       # ← NEW: Subagent runner (isolated LLM context per task)
+│       │   ├── tools/            # Agent tools (file ops, charm ops, juju, git, web)
+│       │   └── prompts/          # System prompts (Jinja2 templates + builders)
 │       ├── llm/
-│       │   ├── __init__.py
-│       │   ├── base.py       # Abstract LLM interface
-│       │   ├── gemini.py
-│       │   └── ...           # Other providers
-│       ├── juju/
-│       │   ├── __init__.py
-│       │   ├── status.py     # Status parsing/display
-│       │   └── integration.py
-│       └── charm/
-│           ├── __init__.py
-│           ├── templates/    # Charm templates
-│           ├── scaffolder.py
-│           └── analyser.py   # Analyse existing charms
+│       │   ├── base.py           # Abstract LLMProvider interface
+│       │   ├── gemini.py         # Google Gemini implementation
+│       │   └── claude.py         # Anthropic Claude implementation
+│       ├── charm/
+│       │   └── templates/        # Charm project templates
+│       ├── skills/               # Skill definitions (SKILL.md per skill)
+│       ├── tui/
+│       │   ├── app.py            # Main Textual app (CantripApp)
+│       │   ├── cantrip.tcss      # Textual CSS
+│       │   ├── screens/          # TUI screens (help, etc.)
+│       │   └── widgets/
+│       │       ├── chat.py       # Chat panel
+│       │       ├── status.py     # Juju status panel
+│       │       ├── statusbar.py  # Bottom status bar
+│       │       └── tasklist.py   # ← NEW: Task checklist widget
+│       └── juju/                 # Juju integration via Jubilant
 ├── tests/
 ├── docs/
 └── .github/

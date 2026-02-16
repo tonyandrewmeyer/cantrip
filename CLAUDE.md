@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cantrip is an AI-powered agent that helps developers build Juju charms through natural conversation. It demonstrates the Canonical ecosystem (Juju, Charmcraft, Rockcraft, Ops, Jubilant, Concierge, COS).
+Cantrip is an AI-powered **autonomous agent** that builds Juju charms independently — researching workloads, designing charms, writing code, deploying, testing, and debugging — with the user confirming key decisions and providing domain expertise. It demonstrates the Canonical ecosystem (Juju, Charmcraft, Rockcraft, Ops, Jubilant, Concierge, COS).
 
 ## Commands
 
@@ -55,16 +55,24 @@ uv run pytest tests/unit/test_tools.py::test_function_name -v
 
 ## Architecture
 
+Two concurrent loops: a **conversation loop** (user confirms/steers) and an **autonomous work loop** (agent executes tasks from a work queue via subagents). See PLAN.md for the full architecture diagram.
+
 ```
 src/cantrip/
 ├── main.py              # Entry point, arg parsing
 ├── cli.py               # CLI mode (no TUI)
 ├── agent/
-│   ├── core.py          # CantripAgent - conversation loop, tool execution
+│   ├── core.py          # CantripAgent — conversation loop, tool execution
 │   ├── state.py         # AgentState and Decision dataclasses
 │   ├── store.py         # SQLite-backed session store
 │   ├── skills.py        # Skills index and loading
+│   ├── context.py       # Context compaction, virtual file store
 │   ├── preflight.py     # Pre-flight environment checks
+│   ├── watcher.py       # Event-driven watcher (status diffing, Loki polling)
+│   ├── queue.py         # WorkQueue, AgentTask — autonomous work scheduling
+│   ├── planner.py       # Task planner — LLM decomposes intent into tasks
+│   ├── executor.py      # Background executor — picks tasks, runs subagents
+│   ├── subagent.py      # Subagent runner — isolated LLM context per task
 │   ├── tools/           # Agent tools (file ops, charm ops, juju, git, web)
 │   └── prompts/         # System prompts (Jinja2 templates + builders)
 ├── llm/
@@ -78,7 +86,7 @@ src/cantrip/
 │   ├── app.py           # Main Textual app (CantripApp)
 │   ├── cantrip.tcss     # Textual CSS
 │   ├── screens/         # TUI screens
-│   └── widgets/         # Status, chat widgets
+│   └── widgets/         # Task checklist, status, chat, status bar
 └── juju/                # Juju integration via Jubilant
 ```
 
@@ -88,9 +96,13 @@ src/cantrip/
 
 **LLM Provider Pattern:** Abstract `LLMProvider` base with `complete()`, `stream()`, and `count_tokens()` methods. Messages use `Role` enum (SYSTEM, USER, ASSISTANT, TOOL).
 
-**Agent Loop:** LLM returns tool_calls → execute each → collect results → call LLM again until response has no tool calls.
+**Conversation Loop:** User message → LLM → tool_calls → execute → LLM again → until text response. Also handles steering (reprioritising tasks, providing context).
 
-**State:** Saved to a `.cantrip` SQLite file in the charm directory. Tracks charm_name, charm_path, charm_type, framework, models, decisions, and per-request LLM token usage.
+**Autonomous Work Loop:** Picks next ready task from WorkQueue → spawns a subagent (isolated LLM context + focused tools) → records result → unblocks dependents → picks next task. Runs concurrently with the conversation loop.
+
+**Work Queue:** Central coordination. AgentTask objects with status (pending/active/done/failed/blocked), dependencies, and category-based cost routing (research → light model, code writing → primary model).
+
+**State:** Saved to a `.cantrip` SQLite file in the charm directory. Tracks charm_name, charm_path, charm_type, framework, models, decisions, tasks, and per-request LLM token usage.
 
 ## Charm Development Context
 

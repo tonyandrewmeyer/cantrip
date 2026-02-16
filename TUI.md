@@ -2,42 +2,43 @@
 
 ## Overview
 
-Textual-based TUI with split layout. Primary focus is the conversation; status display supports awareness without requiring user attention.
+Textual-based TUI with three-panel layout. The **task checklist** is the primary way the
+user understands what the agent is doing. The **Juju status** panel shows the current state
+of the deployment. The **chat** panel is for conversation — mostly the agent presenting
+findings and the user confirming or steering.
 
 ## Main Screen
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Cantrip v0.1.0                              [dev:lxd] [cos:k8s]  [F1 Help] │
-├───────────────────────────────────┬─────────────────────────────────────────┤
-│                                   │                                         │
-│  Juju Status                      │  Chat                                   │
-│  ───────────                      │  ────                                   │
-│                                   │                                         │
-│  Model: dev (lxd)                 │  ┌─────────────────────────────────────┐│
-│  Apps: 2  Units: 3                │  │ > build a charm for my flask app   ││
-│                                   │  │                                     ││
-│  ┌─────────────┐                  │  │ I'll create a 12-factor charm for  ││
-│  │ flask-app   │ ← you are here   │  │ your Flask application.            ││
-│  │ ● active    │                  │  │                                     ││
-│  │ 1 unit      │                  │  │ Detecting framework... Flask 2.3   ││
-│  └──────┬──────┘                  │  │ ✓ Generated rockcraft.yaml         ││
-│         │ postgresql              │  │ ✓ Building rock...                 ││
-│         ▼                         │  │ ⟳ Deploying to dev model           ││
-│  ┌─────────────┐                  │  │                                     ││
-│  │ postgresql  │                  │  │                                     ││
-│  │ ● active    │                  │  │                                     ││
-│  │ 1 unit      │                  │  │                                     ││
-│  └─────────────┘                  │  │                                     ││
-│                                   │  │                                     ││
-│  ─────────────────                │  └─────────────────────────────────────┘│
-│  Model: cos (k8s)                 │                                         │
-│  Apps: 6  ● healthy               │  ┌─────────────────────────────────────┐│
-│                                   │  │ Type your message...               ││
-│                                   │  └─────────────────────────────────────┘│
-│                                   │                                         │
-├───────────────────────────────────┴─────────────────────────────────────────┤
-│  [⟳ Building rock] [● COS healthy] [Tests: 3/5 passing]                     │
+│  Cantrip v0.1.0                                [dev:k8s] [cos:k8s] [F1 Help]│
+├──────────────────────┬──────────────────┬───────────────────────────────────┤
+│                      │                  │                                   │
+│  Tasks               │  Juju Status     │  Chat                             │
+│  ─────               │  ───────────     │  ────                             │
+│                      │                  │                                   │
+│  ✓ Set up environ.   │  Model: dev (k8s)│  > build a charm for redis       │
+│  ✓ Clone + analyse   │  Apps: 1         │                                   │
+│  ✓ Research Redis    │                  │  Researching Redis operational    │
+│    operations        │  ┌────────────┐  │  patterns...                      │
+│  ✓ Survey Charmhub   │  │ redis-k8s  │  │                                   │
+│  ✓ Design proposal   │  │ ⟳ waiting  │  │  I've researched how Redis is     │
+│  ✓ Scaffold charm    │  │ 1 unit     │  │  typically operated. Here's my    │
+│  ⟳ Deploy to dev     │  └─────┬──────┘  │  proposed design:                 │
+│  ○ Add observability │        │ cos     │                                   │
+│  ○ Run unit tests    │        ▼         │  • K8s charm (official OCI image) │
+│  ○ Add integrations  │  ┌────────────┐  │  • Primary/replica with Sentinel  │
+│  ○ Integration tests │  │ COS (6)    │  │  • AOF persistence by default     │
+│  ○ Validate          │  │ ● healthy  │  │  • Backup action via redis-cli    │
+│                      │  └────────────┘  │  • COS + ingress integrations     │
+│                      │                  │                                   │
+│                      │                  │  Shall I proceed with this, or     │
+│                      │                  │  would you like to adjust?         │
+│                      │                  │                                   │
+│                      │                  │  [Type your message...]            │
+│                      │                  │                                   │
+├──────────────────────┴──────────────────┴───────────────────────────────────┤
+│  [⟳ Deploying redis-k8s] [● COS healthy] [👁 Watching]                      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -45,33 +46,66 @@ Textual-based TUI with split layout. Primary focus is the conversation; status d
 
 ### Header Bar
 ```
-│  Cantrip v0.1.0                              [dev:lxd] [cos:k8s]  [F1 Help] │
+│  Cantrip v0.1.0                                [dev:k8s] [cos:k8s] [F1 Help]│
 ```
 - Product name and version
 - Active models with substrate type
 - Help shortcut
 
-### Left Panel: Juju Status
+### Left Panel: Task Checklist
 
-Two sections - dev model (main) and cos model (collapsed summary).
+The primary panel. Shows every task in the work queue with live status updates.
+
+```
+  Tasks
+  ─────
+
+  ✓ Set up environ.
+  ✓ Clone + analyse
+  ✓ Research Redis operations
+  ✓ Survey Charmhub
+  ✓ Design proposal
+  ✓ Scaffold charm
+  ⟳ Deploy to dev
+  ○ Add observability
+  ○ Run unit tests
+  ○ Add integrations
+  ○ Integration tests
+  ○ Validate
+```
+
+**Status indicators:**
+- `✓` done (green)
+- `⟳` active (blue, with optional elapsed time)
+- `○` pending (grey)
+- `◌` blocked — waiting for user input or a dependency (yellow)
+- `✗` failed (red)
+
+Selecting a task shows its result summary and any errors. Tasks added by the
+watcher (e.g. "diagnose hook failure") appear dynamically.
+
+### Centre Panel: Juju Status
+
+Shows the current state of the deployment — app boxes, status indicators,
+relation lines. Smaller than in the old two-panel layout because the task
+checklist now carries the primary information load.
 
 **Dev Model (expanded):**
 ```
-  Model: dev (lxd)
-  Apps: 2  Units: 3
+  Model: dev (k8s)
+  Apps: 1
 
-  ┌─────────────┐
-  │ flask-app   │ ← you are here
-  │ ● active    │
-  │ 1 unit      │
-  └──────┬──────┘
-         │ postgresql
-         ▼
-  ┌─────────────┐
-  │ postgresql  │
-  │ ● active    │
-  │ 1 unit      │
-  └─────────────┘
+  ┌────────────┐
+  │ redis-k8s  │
+  │ ● active   │
+  │ 1 unit     │
+  └─────┬──────┘
+        │ cos
+        ▼
+  ┌────────────┐
+  │ COS (6)    │
+  │ ● healthy  │
+  └────────────┘
 ```
 
 **Status indicators:**
@@ -80,50 +114,37 @@ Two sections - dev model (main) and cos model (collapsed summary).
 - `◌` blocked (red)
 - `◐` maintenance (blue)
 
-**Integration lines:**
-- `│` vertical connection
-- `─` horizontal connection
-- Labelled with relation name
-
-**COS Model (collapsed):**
-```
-  Model: cos (k8s)
-  Apps: 6  ● healthy
-```
-
-Expandable with click/key to show full COS status.
-
 ### Right Panel: Chat
+
+Conversation between user and agent. The chat is where:
+- The agent presents design proposals for confirmation
+- The user steers priorities or provides domain expertise
+- The agent notifies about watcher events that need user input
 
 Standard chat interface:
 - Scrollable message history
-- User messages right-aligned or prefixed with `>`
+- User messages prefixed with `>`
 - Agent messages left-aligned
-- Progress indicators inline:
-  - `✓` completed step
-  - `⟳` in progress
-  - `✗` failed
+- Inline progress indicators (`✓` `⟳` `✗`) for preflight steps
 
 ### Input Area
 ```
-  ┌─────────────────────────────────────┐
-  │ Type your message...               │
-  └─────────────────────────────────────┘
+  [Type your message...]
 ```
 
 - Single line, expands if needed
 - Enter to send
 - Up arrow for history
-- Tab completion for common commands
 
 ### Status Bar
 ```
-│  [⟳ Building rock] [● COS healthy] [Tests: 3/5 passing]                     │
+│  [⟳ Deploying redis-k8s] [● COS healthy] [👁 Watching]                      │
 ```
 
-- Background task indicators
+- Current active task (from work queue)
 - COS health summary
-- Test status (if running)
+- Test results (when available)
+- Watcher status
 - Compact, doesn't demand attention
 
 ## Keyboard Shortcuts
@@ -221,39 +242,55 @@ Standard chat interface:
 
 ## Responsive Behaviour
 
-### Narrow Terminal (< 100 cols)
+### Medium Terminal (< 120 cols)
 
-Stack panels vertically:
+Drop Juju status panel; tasks + chat side by side:
+```
+┌──────────────────────────────────────────┐
+│  Cantrip v0.1.0        [dev:k8s] [F1]    │
+├───────────────┬──────────────────────────┤
+│  Tasks        │  Chat                    │
+│  ─────        │  ────                    │
+│  ✓ Setup env  │  > build a charm for     │
+│  ✓ Research   │    redis                 │
+│  ⟳ Deploy     │                          │
+│  ○ Tests      │  Deploying redis-k8s...  │
+│               │                          │
+│               │  [Type here...]          │
+├───────────────┴──────────────────────────┤
+│  [⟳ Deploying] [● COS] [👁 Watching]     │
+└──────────────────────────────────────────┘
+```
+
+### Narrow Terminal (< 80 cols)
+
+Stack tasks (collapsed) above chat:
 ```
 ┌─────────────────────────┐
-│  Cantrip      [dev:lxd] │
+│  Cantrip      [dev:k8s] │
 ├─────────────────────────┤
-│  Status (collapsed)     │
-│  flask-app ● active     │
-│  postgresql ● active    │
+│  ✓✓✓⟳○○○○  7/12 tasks   │
 ├─────────────────────────┤
 │  Chat                   │
 │  > build a charm...     │
-│  Creating charm...      │
-│  ✓ Done                 │
+│  Deploying redis-k8s... │
 │                         │
 │  [Type here...]         │
 ├─────────────────────────┤
-│  [⟳ Building]           │
+│  [⟳ Deploying]          │
 └─────────────────────────┘
 ```
 
 ### Very Narrow (< 60 cols)
 
-Chat only, status in bar:
+Chat only, task progress in status bar:
 ```
 ┌───────────────────────┐
-│ Cantrip  2 apps ● ok  │
+│ Cantrip  7/12 tasks   │
 ├───────────────────────┤
 │ > build a charm       │
 │                       │
-│ Creating...           │
-│ ✓ Done                │
+│ Deploying...          │
 │                       │
 │ [Type here...]        │
 └───────────────────────┘
@@ -284,22 +321,27 @@ class CantripApp(App):
     CSS_PATH = "cantrip.tcss"
     BINDINGS = [
         ("f1", "help", "Help"),
-        ("f2", "toggle_status", "Status"),
+        ("f2", "toggle_status", "Toggle Status"),
         ("f3", "logs", "Logs"),
         ("f4", "debug", "Debug"),
+        ("f5", "toggle_watcher", "Toggle Watcher"),
         ("q", "quit", "Quit"),
     ]
 
 # Key widgets
+class TaskListWidget(Widget):
+    """Live task checklist driven by WorkQueue state."""
+
 class JujuStatusWidget(Widget):
     """Displays juju status with app boxes and relations."""
 
 class ChatWidget(Widget):
     """Chat history and input."""
 
-class ModelGraphWidget(Widget):
-    """Visual representation of model topology."""
-
 class StatusBar(Widget):
-    """Bottom bar with background task status."""
+    """Bottom bar with active task, COS health, test summary, watcher status."""
+
+# Future
+class ModelGraphWidget(Widget):
+    """Visual representation of model topology (Phase 6)."""
 ```
