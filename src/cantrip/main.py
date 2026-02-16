@@ -39,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         help="Run in CLI mode without TUI",
     )
     parser.add_argument(
+        "--watcher",
+        action="store_true",
+        help="Start the event watcher on launch (monitors dev model for changes)",
+    )
+    parser.add_argument(
         "path",
         nargs="?",
         type=Path,
@@ -93,6 +98,7 @@ def main() -> int:
             model=args.model,
             charm_path=args.path,
             light_model=args.light_model,
+            watcher=args.watcher,
         )
         app.run()
         return 0
