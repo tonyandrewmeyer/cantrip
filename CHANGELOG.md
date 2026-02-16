@@ -4,6 +4,9 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Work queue** — `AgentTask` dataclass and `WorkQueue` for autonomous task scheduling; tasks have status lifecycle (pending/active/done/failed/blocked), category-based routing, dependency tracking, and an optional change callback; SQLite persistence via `save_tasks`/`load_tasks` on `SessionStore`
+
 ### Changed
 - **Gemini 3 provider** — default model upgraded from `gemini-2.0-flash` to `gemini-3-flash-preview`; dynamic thinking enabled with thought signature round-trip for function calling; temperature forced to 1.0 for Gemini 3 models (lower values cause looping); Gemini 2 continues to work when passed explicitly via `--model`
 
