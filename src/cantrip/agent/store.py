@@ -1,12 +1,14 @@
 """SQLite-backed session store."""
 
+import datetime
 import json
 import sqlite3
 from pathlib import Path
 
+from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState, Decision
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -39,6 +41,18 @@ CREATE TABLE IF NOT EXISTS token_usage (
     prompt_tokens INTEGER NOT NULL,
     completion_tokens INTEGER NOT NULL,
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    category TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    dependencies TEXT NOT NULL DEFAULT '[]',
+    result TEXT,
+    blocked_reason TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -150,6 +164,53 @@ class SessionStore:
             )
 
         return state
+
+    # ── Task persistence ────────────────────────────────────────────────
+
+    def save_tasks(self, tasks: list[AgentTask]) -> None:
+        """Replace all stored tasks with *tasks*."""
+        db = self._db
+        db.execute("DELETE FROM tasks")
+        for t in tasks:
+            db.execute(
+                """\
+                INSERT INTO tasks (id, title, status, category, description,
+                                   dependencies, result, blocked_reason, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    t.id,
+                    t.title,
+                    t.status.value,
+                    t.category.value,
+                    t.description,
+                    json.dumps(t.dependencies),
+                    t.result,
+                    t.blocked_reason,
+                    t.created_at.isoformat(),
+                ),
+            )
+        db.commit()
+
+    def load_tasks(self) -> list[AgentTask]:
+        """Load all tasks from the database."""
+        rows = self._db.execute("SELECT * FROM tasks ORDER BY created_at").fetchall()
+        tasks: list[AgentTask] = []
+        for r in rows:
+            tasks.append(
+                AgentTask(
+                    id=r["id"],
+                    title=r["title"],
+                    status=TaskStatus(r["status"]),
+                    category=TaskCategory(r["category"]),
+                    description=r["description"],
+                    dependencies=json.loads(r["dependencies"]),
+                    result=r["result"],
+                    blocked_reason=r["blocked_reason"],
+                    created_at=datetime.datetime.fromisoformat(r["created_at"]),
+                )
+            )
+        return tasks
 
     # ── Token usage ──────────────────────────────────────────────────────
 

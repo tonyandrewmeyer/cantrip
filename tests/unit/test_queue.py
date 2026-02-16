@@ -1,0 +1,318 @@
+"""Tests for the work queue and agent task model."""
+
+import datetime
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.store import SessionStore
+
+# -- Fixtures ---------------------------------------------------------------
+
+
+@pytest.fixture
+def db_path(tmp_path: Path) -> Path:
+    """Return a temporary database path."""
+    return tmp_path / ".cantrip"
+
+
+@pytest.fixture
+def store(db_path: Path) -> Iterator[SessionStore]:
+    """Return an open SessionStore backed by a temporary file."""
+    s = SessionStore(db_path)
+    s.open()
+    yield s
+    s.close()
+
+
+def _task(
+    title: str = "Do something",
+    category: TaskCategory = TaskCategory.BUILD,
+    **kwargs: object,
+) -> AgentTask:
+    """Shorthand factory for test tasks."""
+    return AgentTask(title=title, category=category, **kwargs)  # type: ignore[arg-type]
+
+
+# -- AgentTask dataclass ----------------------------------------------------
+
+
+class TestAgentTask:
+    """Tests for AgentTask construction and defaults."""
+
+    def test_default_id_generated(self) -> None:
+        """An ID is auto-generated when not provided."""
+        task = _task()
+        assert task.id
+        assert len(task.id) == 12
+
+    def test_explicit_id(self) -> None:
+        """A provided ID is preserved."""
+        task = _task(id="custom-id")
+        assert task.id == "custom-id"
+
+    def test_default_status_is_pending(self) -> None:
+        """New tasks default to pending status."""
+        task = _task()
+        assert task.status == TaskStatus.PENDING
+
+    def test_default_dependencies_empty(self) -> None:
+        """Dependencies default to an empty list."""
+        task = _task()
+        assert task.dependencies == []
+
+    def test_default_created_at(self) -> None:
+        """created_at is auto-set to approximately now."""
+        before = datetime.datetime.now()
+        task = _task()
+        after = datetime.datetime.now()
+        assert before <= task.created_at <= after
+
+
+# -- WorkQueue core operations ----------------------------------------------
+
+
+class TestWorkQueue:
+    """Tests for core WorkQueue operations."""
+
+    def test_add_task(self) -> None:
+        """A single task can be added and retrieved."""
+        q = WorkQueue()
+        task = _task()
+        q.add_task(task)
+        assert q.all_tasks() == [task]
+
+    def test_add_tasks_bulk(self) -> None:
+        """Multiple tasks can be added in bulk."""
+        q = WorkQueue()
+        tasks = [_task(title="A"), _task(title="B")]
+        q.add_tasks(tasks)
+        assert len(q.all_tasks()) == 2
+
+    def test_next_ready_returns_first_pending(self) -> None:
+        """next_ready returns the first pending task."""
+        q = WorkQueue()
+        t1 = _task(title="First")
+        t2 = _task(title="Second")
+        q.add_tasks([t1, t2])
+        assert q.next_ready() is t1
+
+    def test_next_ready_skips_blocked(self) -> None:
+        """Blocked tasks are skipped by next_ready."""
+        q = WorkQueue()
+        t1 = _task(title="Blocked")
+        t2 = _task(title="Ready")
+        q.add_tasks([t1, t2])
+        q.set_blocked(t1.id, "waiting")
+        assert q.next_ready() is t2
+
+    def test_next_ready_skips_active(self) -> None:
+        """Active tasks are skipped by next_ready."""
+        q = WorkQueue()
+        t1 = _task(title="Active")
+        t2 = _task(title="Ready")
+        q.add_tasks([t1, t2])
+        q.set_active(t1.id)
+        assert q.next_ready() is t2
+
+    def test_next_ready_respects_dependencies(self) -> None:
+        """A task is not ready until its dependencies are done."""
+        q = WorkQueue()
+        t1 = _task(title="Prerequisite", id="prereq")
+        t2 = _task(title="Dependent", dependencies=["prereq"])
+        q.add_tasks([t1, t2])
+
+        # t2 depends on t1 which is still pending — only t1 is ready.
+        assert q.next_ready() is t1
+
+        q.set_active(t1.id)
+        q.set_done(t1.id)
+
+        # Now t2 should be ready.
+        assert q.next_ready() is t2
+
+    def test_next_ready_returns_none_when_empty(self) -> None:
+        """An empty queue returns None."""
+        q = WorkQueue()
+        assert q.next_ready() is None
+
+    def test_next_ready_returns_none_when_all_done(self) -> None:
+        """Returns None when every task is already done."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+        q.set_done(t.id)
+        assert q.next_ready() is None
+
+    def test_set_active(self) -> None:
+        """set_active transitions a task to active status."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+        q.set_active(t.id)
+        assert t.status == TaskStatus.ACTIVE
+
+    def test_set_done(self) -> None:
+        """set_done transitions a task to done status."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+        q.set_done(t.id)
+        assert t.status == TaskStatus.DONE
+
+    def test_set_done_with_result(self) -> None:
+        """set_done stores an optional result string."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+        q.set_done(t.id, result="Charm deployed")
+        assert t.status == TaskStatus.DONE
+        assert t.result == "Charm deployed"
+
+    def test_set_failed(self) -> None:
+        """set_failed transitions a task to failed status and stores error."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+        q.set_failed(t.id, error="Build error")
+        assert t.status == TaskStatus.FAILED
+        assert t.result == "Build error"
+
+    def test_set_blocked_and_unblock(self) -> None:
+        """set_blocked and unblock round-trip correctly."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+
+        q.set_blocked(t.id, "Waiting for model")
+        assert t.status == TaskStatus.BLOCKED
+        assert t.blocked_reason == "Waiting for model"
+
+        q.unblock(t.id)
+        assert t.status == TaskStatus.PENDING
+        assert t.blocked_reason is None
+
+    def test_cancel_removes_task(self) -> None:
+        """cancel removes the task from the queue."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+        q.cancel(t.id)
+        assert q.all_tasks() == []
+
+    def test_get_task(self) -> None:
+        """get_task returns the task by ID."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+        assert q.get_task(t.id) is t
+
+    def test_get_task_unknown_returns_none(self) -> None:
+        """get_task returns None for an unknown ID."""
+        q = WorkQueue()
+        assert q.get_task("nonexistent") is None
+
+    def test_all_tasks_returns_copy(self) -> None:
+        """all_tasks returns a copy, not the internal list."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+        result = q.all_tasks()
+        result.clear()
+        assert len(q.all_tasks()) == 1
+
+    def test_count_properties(self) -> None:
+        """Count properties reflect current task statuses."""
+        q = WorkQueue()
+        q.add_tasks([_task(title="A"), _task(title="B"), _task(title="C")])
+        tasks = q.all_tasks()
+
+        q.set_active(tasks[0].id)
+        q.set_done(tasks[1].id)
+
+        assert q.pending_count == 1
+        assert q.active_count == 1
+        assert q.done_count == 1
+
+    def test_clear(self) -> None:
+        """clear removes all tasks."""
+        q = WorkQueue()
+        q.add_tasks([_task(), _task()])
+        q.clear()
+        assert q.all_tasks() == []
+
+
+# -- Callbacks --------------------------------------------------------------
+
+
+class TestWorkQueueCallbacks:
+    """Tests for callback firing on task mutations."""
+
+    def test_callback_on_add(self) -> None:
+        """Callback fires when a task is added."""
+        received: list[AgentTask] = []
+        q = WorkQueue(on_task_changed=received.append)
+        t = _task()
+        q.add_task(t)
+        assert received == [t]
+
+    def test_callback_on_status_change(self) -> None:
+        """Callback fires on status transitions."""
+        received: list[AgentTask] = []
+        q = WorkQueue(on_task_changed=received.append)
+        t = _task()
+        q.add_task(t)
+        q.set_active(t.id)
+        q.set_done(t.id, result="ok")
+        # add + active + done = 3 callbacks.
+        assert len(received) == 3
+
+    def test_no_callback_when_none(self) -> None:
+        """No error when callback is None."""
+        q = WorkQueue(on_task_changed=None)
+        t = _task()
+        q.add_task(t)
+        q.set_done(t.id)
+
+
+# -- SQLite persistence round-trip ------------------------------------------
+
+
+class TestWorkQueuePersistence:
+    """Tests for saving and loading tasks via SessionStore."""
+
+    def test_save_and_load_tasks(self, store: SessionStore) -> None:
+        """Tasks survive a save/load round-trip."""
+        t1 = _task(title="Research workload", category=TaskCategory.RESEARCH)
+        t2 = _task(title="Write charm", category=TaskCategory.BUILD, description="Build it")
+        store.save_tasks([t1, t2])
+
+        loaded = store.load_tasks()
+        assert len(loaded) == 2
+        assert loaded[0].title == "Research workload"
+        assert loaded[0].category == TaskCategory.RESEARCH
+        assert loaded[1].title == "Write charm"
+        assert loaded[1].description == "Build it"
+
+    def test_save_replaces_tasks(self, store: SessionStore) -> None:
+        """Saving twice replaces rather than duplicating."""
+        store.save_tasks([_task(title="First")])
+        store.save_tasks([_task(title="Second")])
+
+        loaded = store.load_tasks()
+        assert len(loaded) == 1
+        assert loaded[0].title == "Second"
+
+    def test_load_empty_returns_empty_list(self, store: SessionStore) -> None:
+        """Loading from an empty table returns an empty list."""
+        assert store.load_tasks() == []
+
+    def test_dependencies_round_trip(self, store: SessionStore) -> None:
+        """Dependency lists survive JSON serialisation."""
+        t = _task(title="Deploy", dependencies=["task-a", "task-b"])
+        store.save_tasks([t])
+
+        loaded = store.load_tasks()
+        assert loaded[0].dependencies == ["task-a", "task-b"]
