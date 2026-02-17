@@ -83,6 +83,8 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "juju_consume",
             "juju_config",
             "juju_wait",
+            "charm_sync",
+            "juju_dispatch",
             "read_file",
             "list_directory",
             "virtual_file_read",

@@ -201,6 +201,21 @@ class TestFilterTools:
         assert "concierge_status" in names
         assert "read_file" not in names
 
+    def test_deploy_includes_fast_path_tools(self) -> None:
+        tools = [
+            _make_tool("charm_sync"),
+            _make_tool("juju_dispatch"),
+            _make_tool("juju_deploy"),
+            _make_tool("write_file"),
+        ]
+        filtered = _filter_tools(tools, TaskCategory.DEPLOY)
+
+        names = {t.name for t in filtered}
+        assert "charm_sync" in names
+        assert "juju_dispatch" in names
+        assert "juju_deploy" in names
+        assert "write_file" not in names
+
     def test_empty_tools_returns_empty(self) -> None:
         assert _filter_tools([], TaskCategory.BUILD) == []
 

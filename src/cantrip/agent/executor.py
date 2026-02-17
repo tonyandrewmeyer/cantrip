@@ -5,6 +5,7 @@ import contextlib
 import logging
 from collections.abc import Callable
 
+from cantrip.agent.autodeploy import followup_tasks
 from cantrip.agent.queue import AgentTask, TaskCategory, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
@@ -135,7 +136,27 @@ class BackgroundExecutor:
             if self._on_task_failed:
                 self._on_task_failed(task)
         finally:
+            self._create_followups(task)
             self._persist()
+
+    # -- Follow-up creation --------------------------------------------------
+
+    def _create_followups(self, task: AgentTask) -> None:
+        """Create follow-up tasks for a completed or failed task.
+
+        Only creates follow-ups when a development model is set (no point
+        verifying or diagnosing without a deployment target).
+        """
+        if not self._state.dev_model:
+            return
+        new_tasks = followup_tasks(task)
+        if new_tasks:
+            self._queue.add_tasks(new_tasks)
+            log.info(
+                "Created %d follow-up task(s) for '%s'",
+                len(new_tasks),
+                task.title,
+            )
 
     # -- Context building ----------------------------------------------------
 

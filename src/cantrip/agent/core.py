@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
+from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.executor import BackgroundExecutor
 from cantrip.agent.preflight import (
@@ -75,7 +76,7 @@ from cantrip.agent.tools import (
     WebFetchTool,
     WriteFileTool,
 )
-from cantrip.agent.watcher import EventWatcher, WatcherConfig, format_event_for_agent
+from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.llm.base import LLMProvider, Message, ProviderRateLimitError, Response, Role
 from cantrip.llm.base import Tool as LLMTool
 from cantrip.llm.base import ToolResult as LLMToolResult
@@ -587,15 +588,23 @@ class CantripAgent:
         """Create and start the event watcher.
 
         Returns ``False`` if no ``dev_model`` is set (the watcher requires a
-        development model to monitor).
+        development model to monitor).  Every watcher event is automatically
+        routed to the task queue before the external callback fires.
         """
         if not self.state.dev_model:
             return False
+
+        def _auto_route(event: WatcherEvent) -> None:
+            """Route the event to the task queue, then fire the external callback."""
+            self.route_watcher_event(event)
+            if on_event is not None:
+                on_event(event)
+
         self._watcher = EventWatcher(
             dev_model=self.state.dev_model,
             cos_model=self.state.cos_model,
             config=config,
-            on_event=on_event,
+            on_event=_auto_route,
         )
         self._watcher.start()
         self.state.watcher_enabled = True
@@ -608,19 +617,31 @@ class CantripAgent:
             self._watcher = None
         self.state.watcher_enabled = False
 
-    async def process_watcher_event(self) -> str | None:
-        """Dequeue one watcher event, format it, and process it as a message.
+    def route_watcher_event(self, event: WatcherEvent) -> AgentTask | None:
+        """Convert a watcher event into a task and add it to the work queue.
 
-        Returns the agent's response text, or ``None`` if no events are
-        pending.
+        Returns the created task, or ``None`` if the event did not map to a
+        task (e.g. no dev_model or unrecognised category).
+        """
+        task = task_for_watcher_event(event, self.state)
+        if task is not None:
+            self._work_queue.add_task(task)
+        return task
+
+    async def process_watcher_event(self) -> str | None:
+        """Dequeue one watcher event and route it to the task queue.
+
+        Returns the task title, or ``None`` if no events are pending.
         """
         if not self._watcher:
             return None
         event = await self._watcher.dequeue()
         if event is None:
             return None
-        message = format_event_for_agent(event)
-        return await self.process_message(message)
+        task = self.route_watcher_event(event)
+        if task is not None:
+            return task.title
+        return None
 
     # -- Executor integration -------------------------------------------------
 

@@ -235,12 +235,12 @@ The agent keeps the deployed charm in sync with the code.
 - [ ] **After code changes** — when the agent modifies charm source, it automatically
   queues a deploy task (fast path for source-only changes, full pack+refresh for
   metadata/dependency changes)
-- [ ] **Post-deploy verification** — after deploy, queue a status check task; if the
+- [x] **Post-deploy verification** — after deploy, queue a status check task; if the
   charm enters error/blocked, queue a diagnostic task
-- [ ] **Watcher → task queue** — watcher events (hook failures, status changes, new
+- [x] **Watcher → task queue** — watcher events (hook failures, status changes, new
   relations) create tasks in the work queue instead of being injected as raw chat
   messages; this lets the agent prioritise and batch related events
-- [ ] **COS-driven diagnostics** — when the watcher detects an issue, the diagnostic
+- [x] **COS-driven diagnostics** — when the watcher detects an issue, the diagnostic
   task automatically queries Tempo traces and Loki logs before attempting a fix
 
 **Exit criteria:** User says "build a charm for X" and the agent independently researches,

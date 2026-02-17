@@ -522,9 +522,9 @@ class TestWatcherIntegration:
         await agent.stop_watcher()
 
     @pytest.mark.asyncio
-    async def test_process_watcher_event_processes_event(self):
-        """process_watcher_event dequeues and processes an event."""
-        provider = FakeProvider([Response(content="I see the hook failure.")])
+    async def test_process_watcher_event_routes_to_queue(self):
+        """process_watcher_event dequeues and routes to the task queue."""
+        provider = FakeProvider()
         agent = CantripAgent(provider=provider)
         agent.state.dev_model = "dev"
         agent.start_watcher()
@@ -542,7 +542,78 @@ class TestWatcherIntegration:
 
         result = await agent.process_watcher_event()
 
-        assert result == "I see the hook failure."
+        assert result is not None
+        assert "Hook failure on myapp/0" in result
+        # Task should be in the work queue.
+        tasks = agent.work_queue.all_tasks()
+        assert len(tasks) >= 1
+        assert any("Hook failure" in t.title for t in tasks)
+        await agent.stop_watcher()
+
+    def test_route_watcher_event_creates_task(self):
+        """route_watcher_event creates a DEBUG task for a hook_failure event."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+
+        event = WatcherEvent(
+            source="status",
+            category="hook_failure",
+            summary="Hook failure on myapp/0",
+            detail="hook failed: install",
+            app="myapp",
+            unit="myapp/0",
+        )
+        task = agent.route_watcher_event(event)
+
+        assert task is not None
+        assert task.category.value == "debug"
+        assert task in agent.work_queue.all_tasks()
+
+    def test_route_watcher_event_no_dev_model_returns_none(self):
+        """route_watcher_event returns None without a dev_model."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        # No dev_model set.
+
+        event = WatcherEvent(
+            source="status",
+            category="hook_failure",
+            summary="Hook failure",
+            detail="boom",
+        )
+        result = agent.route_watcher_event(event)
+
+        assert result is None
+        assert len(agent.work_queue.all_tasks()) == 0
+
+    @pytest.mark.asyncio
+    async def test_start_watcher_auto_routes_events(self):
+        """Events enqueued by the watcher are automatically routed to the task queue."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+
+        events_received: list[WatcherEvent] = []
+        agent.start_watcher(on_event=lambda e: events_received.append(e))
+
+        # Simulate an event through the watcher's internal enqueue.
+        event = WatcherEvent(
+            source="status",
+            category="hook_failure",
+            summary="Hook failure on myapp/0",
+            detail="hook failed: install",
+            app="myapp",
+            unit="myapp/0",
+        )
+        agent._watcher._enqueue(event)
+
+        # The auto-route callback fires synchronously during _enqueue.
+        tasks = agent.work_queue.all_tasks()
+        assert len(tasks) >= 1
+        assert any("Hook failure" in t.title for t in tasks)
+        # External callback should also have fired.
+        assert len(events_received) == 1
         await agent.stop_watcher()
 
     def test_watcher_enabled_in_system_prompt(self):

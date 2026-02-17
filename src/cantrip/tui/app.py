@@ -35,9 +35,6 @@ _PREPARE_CHECKS = ["concierge", "prepare", "juju", "controller", "cos"]
 # Preflight check names shown if a re-bootstrap is needed (different preset).
 _BOOTSTRAP_CHECKS = ["bootstrap", "controller", "cos"]
 
-# How often (seconds) the TUI checks for pending watcher events.
-_WATCHER_POLL_INTERVAL = 2.0
-
 
 class CantripApp(App):
     """Cantrip TUI application."""
@@ -76,8 +73,6 @@ class CantripApp(App):
         self._bootstrap_widget: MessageWidget | None = None
         self._bootstrap_started = False
         self._watcher_autostart = watcher
-        self._watcher_poll_timer = None
-        self._watcher_processing = False
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
@@ -253,7 +248,12 @@ class CantripApp(App):
     # -- Watcher integration --------------------------------------------------
 
     def _start_watcher(self) -> None:
-        """Start the event watcher if possible."""
+        """Start the event watcher if possible.
+
+        Events are automatically routed to the task queue by the agent's
+        ``start_watcher`` method.  The TUI only needs the ``on_event``
+        callback to display a chat notification.
+        """
         if not self._agent:
             return
         chat = self.query_one("#chat", ChatWidget)
@@ -266,9 +266,6 @@ class CantripApp(App):
         started = self._agent.start_watcher(on_event=self._on_watcher_event)
         if started:
             self._update_status_bar_watcher()
-            self._watcher_poll_timer = self.set_interval(
-                _WATCHER_POLL_INTERVAL, self._check_watcher_events
-            )
             chat.add_system_message("Watcher started — monitoring development model for events.")
         else:
             chat.add_system_message("Failed to start watcher.")
@@ -278,49 +275,12 @@ class CantripApp(App):
         if not self._agent:
             return
         await self._agent.stop_watcher()
-        if self._watcher_poll_timer is not None:
-            self._watcher_poll_timer.stop()
-            self._watcher_poll_timer = None
         self._update_status_bar_watcher()
 
     def _on_watcher_event(self, event: WatcherEvent) -> None:
         """Callback from the watcher when a new event is enqueued."""
         chat = self.query_one("#chat", ChatWidget)
         chat.add_system_message(f"[Watcher] {event.summary}")
-
-    async def _check_watcher_events(self) -> None:
-        """Periodic timer callback that processes pending watcher events.
-
-        Only processes one event at a time, and only when the agent is not
-        already handling a user message or another watcher event.
-        """
-        if not self._agent or not self._agent.watcher_running:
-            return
-        if self._watcher_processing:
-            return
-        # Do not interrupt if the agent is already responding to a user message.
-        input_widget = self.query_one("#chat-input", Input)
-        if input_widget.disabled:
-            return
-
-        if not self._agent._watcher or not self._agent._watcher.has_events:
-            return
-
-        self._watcher_processing = True
-        chat = self.query_one("#chat", ChatWidget)
-        input_widget.disabled = True
-        self._thinking_widget = chat.add_system_message("Investigating watcher event...")
-
-        self.run_worker(
-            self._process_watcher_event(),
-            name="agent_response",
-            exclusive=True,
-        )
-
-    async def _process_watcher_event(self) -> str:
-        """Process a single watcher event through the agent."""
-        result = await self._agent.process_watcher_event()
-        return result or ""
 
     def _update_status_bar_watcher(self) -> None:
         """Update the status bar watcher indicator."""
@@ -409,9 +369,6 @@ class CantripApp(App):
                 chat.add_system_message(f"Error: {error}")
             input_widget.disabled = False
             input_widget.focus()
-
-        # Clear watcher processing flag.
-        self._watcher_processing = False
 
     def _update_test_summary(self) -> None:
         """Update the status bar test summary from agent state."""
