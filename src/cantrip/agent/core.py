@@ -14,6 +14,7 @@ from cantrip.agent.preflight import (
     PreflightRunner,
 )
 from cantrip.agent.prompts import build_system_prompt, claude_md
+from cantrip.agent.queue import WorkQueue
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
@@ -57,6 +58,7 @@ from cantrip.agent.tools import (
     ListDirectoryTool,
     LoadSkillTool,
     LokiQueryTool,
+    PlanTasksTool,
     ReadFileTool,
     RegistryImageInfoTool,
     RegistrySearchTool,
@@ -116,6 +118,7 @@ class CantripAgent:
         self.provider = provider
         self._light_provider = light_provider
         self.state = AgentState(charm_path=charm_path)
+        self._work_queue = WorkQueue()
         self._preflight = PreflightRunner(self.state)
 
         # Context window management.
@@ -136,6 +139,11 @@ class CantripAgent:
 
         if charm_path:
             self._ensure_claude_md(charm_path)
+
+    @property
+    def work_queue(self) -> WorkQueue:
+        """The agent's work queue, for TUI and executor access."""
+        return self._work_queue
 
     @property
     def _skills_index(self) -> SkillsIndex:
@@ -290,6 +298,12 @@ class CantripAgent:
             LokiQueryTool(),
             # Testing
             RunCharmTestsTool(),
+            # Planning
+            PlanTasksTool(
+                provider=self.provider,
+                state=self.state,
+                queue=self._work_queue,
+            ),
         ]
 
     def _build_system_prompt(self) -> str:

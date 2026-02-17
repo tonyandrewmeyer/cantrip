@@ -58,6 +58,7 @@ from cantrip.agent.tools.observability import (
     LokiQueryTool,
     TempoQueryTool,
 )
+from cantrip.agent.tools.planning import PlanTasksTool
 from cantrip.agent.tools.registry import (
     RegistryImageInfoTool,
     RegistrySearchTool,
@@ -135,6 +136,8 @@ __all__ = [
     "LokiQueryTool",
     # Testing
     "RunCharmTestsTool",
+    # Planning
+    "PlanTasksTool",
     # Skills
     "LoadSkillTool",
     # Virtual files

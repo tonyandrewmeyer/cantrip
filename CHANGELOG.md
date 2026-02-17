@@ -5,6 +5,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Task planner** — `plan_tasks` tool decomposes charm-building intent into an ordered task list; the LLM generates concrete tasks (research, design, build, deploy, test) with dependencies; supports adaptive replanning when context changes; tasks are added to the work queue for autonomous execution
 - **Work queue** — `AgentTask` dataclass and `WorkQueue` for autonomous task scheduling; tasks have status lifecycle (pending/active/done/failed/blocked), category-based routing, dependency tracking, and an optional change callback; SQLite persistence via `save_tasks`/`load_tasks` on `SessionStore`
 
 ### Changed
