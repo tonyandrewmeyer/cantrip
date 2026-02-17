@@ -18,6 +18,7 @@ from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.widgets.chat import ChatWidget, MessageStatus, MessageWidget
 from cantrip.tui.widgets.status import JujuStatusWidget
 from cantrip.tui.widgets.statusbar import StatusBar
+from cantrip.tui.widgets.tasks import TaskChecklistWidget
 
 # Map preflight statuses to chat progress statuses.
 _STATUS_MAP = {
@@ -88,6 +89,7 @@ class CantripApp(App):
                 id="left-panel",
             ),
             Vertical(
+                TaskChecklistWidget(id="task-checklist"),
                 JujuStatusWidget(id="juju-status"),
                 id="right-panel",
             ),
@@ -102,6 +104,7 @@ class CantripApp(App):
         self.query_one("#right-panel").display = False
         self._init_agent()
         self._start_prepare()
+        self._start_executor()
         self._update_header_subtitle()
         if self._watcher_autostart:
             self._start_watcher()
@@ -224,6 +227,28 @@ class CantripApp(App):
         if event.check_name in _BOOTSTRAP_CHECKS:
             idx = _BOOTSTRAP_CHECKS.index(event.check_name)
             self._bootstrap_widget.update_progress(idx, _STATUS_MAP[event.status])
+
+    # -- Executor integration -------------------------------------------------
+
+    def _start_executor(self) -> None:
+        """Start the background executor and wire task-change notifications."""
+        if not self._agent:
+            return
+        checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+
+        def _on_task_changed(_task) -> None:
+            checklist.notify_changed(self._agent.work_queue.all_tasks())
+
+        self._agent.start_executor(on_task_changed=_on_task_changed)
+
+        # Prime the display with any tasks restored from a previous session.
+        existing = self._agent.work_queue.all_tasks()
+        if existing:
+            checklist.notify_changed(existing)
+
+    def on_task_checklist_widget_tasks_available(self) -> None:
+        """Show the status panel when tasks first appear."""
+        self.query_one("#right-panel").display = True
 
     # -- Watcher integration --------------------------------------------------
 
@@ -415,6 +440,15 @@ class CantripApp(App):
     def action_logs(self) -> None:
         """Show logs view."""
         self.notify("Logs view not yet implemented", title="Logs")
+
+    async def action_quit(self) -> None:
+        """Stop background services and quit."""
+        if self._agent:
+            if self._agent.executor_running:
+                await self._agent.stop_executor()
+            if self._agent.watcher_running:
+                await self._agent.stop_watcher()
+        self.exit()
 
     def action_clear_chat(self) -> None:
         """Clear chat history."""

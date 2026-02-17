@@ -20,6 +20,15 @@ Screen {
     padding: 1;
 }
 
+#task-checklist {
+    height: auto;
+    max-height: 50%;
+    overflow-y: auto;
+    border-bottom: solid $primary;
+    padding-bottom: 1;
+    margin-bottom: 1;
+}
+
 #juju-status {
     height: 1fr;
 }

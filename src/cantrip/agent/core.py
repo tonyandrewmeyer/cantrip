@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from cantrip.agent.context import ContextManager, VirtualFileStore
+from cantrip.agent.executor import BackgroundExecutor
 from cantrip.agent.preflight import (
     DEFAULT_PRESET,
     PreflightCallback,
@@ -14,7 +15,7 @@ from cantrip.agent.preflight import (
     PreflightRunner,
 )
 from cantrip.agent.prompts import build_system_prompt, claude_md
-from cantrip.agent.queue import WorkQueue
+from cantrip.agent.queue import AgentTask, WorkQueue
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
@@ -136,6 +137,7 @@ class CantripAgent:
         self._store_initialised = False
 
         self._watcher: EventWatcher | None = None
+        self._executor: BackgroundExecutor | None = None
 
         if charm_path:
             self._ensure_claude_md(charm_path)
@@ -620,6 +622,43 @@ class CantripAgent:
         message = format_event_for_agent(event)
         return await self.process_message(message)
 
+    # -- Executor integration -------------------------------------------------
+
+    @property
+    def executor_running(self) -> bool:
+        """Whether the background executor is currently running."""
+        return self._executor is not None and self._executor.running
+
+    def start_executor(
+        self,
+        on_task_changed: Callable[[AgentTask], None] | None = None,
+    ) -> None:
+        """Create and start the background executor.
+
+        Mirrors the ``start_watcher`` / ``stop_watcher`` pattern.  The
+        *on_task_changed* callback is installed on the work queue so every
+        task mutation can drive TUI updates.
+        """
+        if self._executor is not None and self._executor.running:
+            return
+        self._ensure_store()
+        self._work_queue._on_task_changed = on_task_changed
+        self._executor = BackgroundExecutor(
+            queue=self._work_queue,
+            tools=self._tools,
+            provider=self.provider,
+            state=self.state,
+            store=self._store,
+            light_provider=self._light_provider,
+        )
+        self._executor.start()
+
+    async def stop_executor(self) -> None:
+        """Stop the background executor if it is running."""
+        if self._executor:
+            await self._executor.stop()
+            self._executor = None
+
     def save_state(self) -> None:
         """Save agent state to the session store."""
         self._ensure_store()
@@ -646,6 +685,12 @@ class CantripAgent:
         self.state.dev_model = loaded.dev_model
         self.state.cos_model = loaded.cos_model
         self.state.decisions = loaded.decisions
+
+        # Restore persisted tasks into the work queue.
+        tasks = self._store.load_tasks()
+        if tasks:
+            self._work_queue.add_tasks(tasks)
+
         return True
 
     async def prepare(

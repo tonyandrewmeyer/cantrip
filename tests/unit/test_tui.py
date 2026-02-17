@@ -13,6 +13,7 @@ from cantrip.tui.app import CantripApp
 from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.widgets.chat import ChatWidget, MessageRole, MessageWidget
 from cantrip.tui.widgets.statusbar import StatusBar
+from cantrip.tui.widgets.tasks import TaskChecklistWidget
 
 pytestmark = pytest.mark.tui
 
@@ -32,6 +33,12 @@ def _mock_agent() -> MagicMock:
     agent.state.test_results = None
     agent.preflight_result = MagicMock()
     agent.preflight_result.fully_ready = True
+    # Executor mocks.
+    agent.start_executor = MagicMock()
+    agent.stop_executor = AsyncMock()
+    agent.executor_running = False
+    agent.work_queue = MagicMock()
+    agent.work_queue.all_tasks = MagicMock(return_value=[])
     return agent
 
 
@@ -308,3 +315,30 @@ class TestTuiWidgets:
 
                 status_bar = pilot.app.query_one("#status-bar", StatusBar)
                 assert status_bar.test_summary == ""
+
+    @pytest.mark.asyncio
+    async def test_task_checklist_widget_mounted(self):
+        """#task-checklist widget exists after mount."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                checklist = pilot.app.query_one("#task-checklist")
+                assert isinstance(checklist, TaskChecklistWidget)
+
+    @pytest.mark.asyncio
+    async def test_right_panel_shown_on_tasks_available(self):
+        """Right panel becomes visible when TasksAvailable is posted."""
+        from cantrip.agent.queue import AgentTask, TaskCategory
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                right_panel = pilot.app.query_one("#right-panel")
+                assert right_panel.display is False
+
+                checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+                task = AgentTask(title="Do something", category=TaskCategory.BUILD)
+                checklist.notify_changed([task])
+                await pilot.pause(delay=0.7)
+
+                assert right_panel.display is True

@@ -15,6 +15,7 @@ from cantrip.tui.widgets.status import (
     RelationLine,
 )
 from cantrip.tui.widgets.statusbar import StatusBar
+from cantrip.tui.widgets.tasks import TaskChecklistWidget
 
 __all__ = [
     "AppBox",
@@ -28,4 +29,5 @@ __all__ = [
     "ProgressItem",
     "RelationLine",
     "StatusBar",
+    "TaskChecklistWidget",
 ]

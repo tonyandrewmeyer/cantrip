@@ -162,22 +162,22 @@ This is the fundamental architectural shift from reactive to proactive.
 
 The internal representation of autonomous work.
 
-- [ ] `AgentTask` dataclass — id, title, status (pending/active/done/failed/blocked),
+- [x] `AgentTask` dataclass — id, title, status (pending/active/done/failed/blocked),
   category (research/build/deploy/test/debug/infra), result summary, dependencies
-- [ ] `WorkQueue` — ordered list of tasks with dependency resolution; tasks can be
+- [x] `WorkQueue` — ordered list of tasks with dependency resolution; tasks can be
   added, reordered, cancelled, and blocked/unblocked
-- [ ] Task persistence — tasks stored in the `.cantrip` SQLite database alongside
+- [x] Task persistence — tasks stored in the `.cantrip` SQLite database alongside
   session state; survives restarts
-- [ ] Task lifecycle hooks — callbacks when tasks change status (drives TUI updates)
+- [x] Task lifecycle hooks — callbacks when tasks change status (drives TUI updates)
 
 ### 4.2 Task Planner
 
 The LLM generates a structured task list from user intent.
 
-- [ ] **Planning prompt** — when the user describes a charm ("build a charm for Redis"),
+- [x] **Planning prompt** — when the user describes a charm ("build a charm for Redis"),
   the agent calls the LLM with a planning prompt that produces a structured task list
   rather than immediately starting work
-- [ ] **Task decomposition** — high-level intent → concrete, ordered tasks:
+- [x] **Task decomposition** — high-level intent → concrete, ordered tasks:
   1. Research workload (web search, docs, existing charms)
   2. Draft design proposal (operational story, integrations, substrate)
   3. Present design to user for confirmation
@@ -187,25 +187,25 @@ The LLM generates a structured task list from user intent.
   7. Run tests
   8. Add integrations
   9. Validate (pack + test + status check)
-- [ ] **Adaptive replanning** — when user provides new context, overrides a decision,
+- [x] **Adaptive replanning** — when user provides new context, overrides a decision,
   or the watcher detects an issue, the planner can insert, reorder, or cancel tasks
-- [ ] **User-visible plan** — the task list is shown to the user before execution begins;
+- [x] **User-visible plan** — the task list is shown to the user before execution begins;
   user can approve, modify, or add tasks
 
 ### 4.3 Background Execution Engine
 
 Executes tasks from the work queue without waiting for user input.
 
-- [ ] **Worker loop** — an asyncio task that picks the next ready task from the queue,
+- [x] **Worker loop** — an asyncio task that picks the next ready task from the queue,
   executes it (LLM call + tool calls), records the result, and moves to the next
-- [ ] **Subagent pattern** — each background task runs in its own LLM context with a
+- [x] **Subagent pattern** — each background task runs in its own LLM context with a
   focused system prompt and only the tools it needs; results are summarised back to the
   main conversation context
-- [ ] **Concurrency** — initially sequential (one task at a time); later, independent
+- [x] **Concurrency** — initially sequential (one task at a time); later, independent
   tasks can run in parallel (e.g. research + environment setup)
-- [ ] **Cost routing** — infrastructure tasks (research, test running, log queries) use
+- [x] **Cost routing** — infrastructure tasks (research, test running, log queries) use
   the light model; design and code-writing tasks use the primary model
-- [ ] **Conversation coordination** — when a task needs user input (e.g. "confirm this
+- [x] **Conversation coordination** — when a task needs user input (e.g. "confirm this
   design"), it blocks and posts a question to the chat; user's reply unblocks it
 - [ ] **Interruption** — user messages can pause the work loop, reprioritise tasks, or
   cancel the current task; the agent resumes autonomously after the user interaction
@@ -214,15 +214,15 @@ Executes tasks from the work queue without waiting for user input.
 
 A visible, real-time view of autonomous work in the TUI.
 
-- [ ] **Task list panel** — a new TUI panel (left side, below or replacing the Juju
-  status widget, or a dedicated tab) showing all tasks with status indicators:
+- [x] **Task list panel** — a new TUI panel (right side, above the Juju status widget)
+  showing all tasks with status indicators:
   - `○` pending
   - `⟳` active (with elapsed time)
   - `✓` done
   - `✗` failed
   - `◌` blocked (waiting for user or dependency)
-- [ ] **Live updates** — task status changes are reflected immediately via Textual
-  reactive properties
+- [x] **Live updates** — task status changes are reflected via dirty-flag polling
+  (thread-safe `notify_changed` + 0.5 s timer)
 - [ ] **Expandable detail** — clicking/selecting a task shows its result summary,
   tools used, and any errors
 - [ ] **Category grouping** — tasks grouped by phase (research, build, deploy, test)
