@@ -5,6 +5,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Subagent runner** — `Subagent` executes a single `AgentTask` in an isolated LLM context with a focused system prompt and category-filtered tool subset; supports six task categories (research, build, deploy, test, debug, infra) with per-category tool allowlists and guidance; research/infra tasks route to the light model for cost savings; capped at 12 tool-call rounds with rate-limit retry
 - **Task planner** — `plan_tasks` tool decomposes charm-building intent into an ordered task list; the LLM generates concrete tasks (research, design, build, deploy, test) with dependencies; supports adaptive replanning when context changes; tasks are added to the work queue for autonomous execution
 - **Work queue** — `AgentTask` dataclass and `WorkQueue` for autonomous task scheduling; tasks have status lifecycle (pending/active/done/failed/blocked), category-based routing, dependency tracking, and an optional change callback; SQLite persistence via `save_tasks`/`load_tasks` on `SessionStore`
 
