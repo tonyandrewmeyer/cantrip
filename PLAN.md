@@ -410,13 +410,13 @@ optional steering if something looks wrong. The agent does the rest.
 - [x] Context compaction (virtual files algorithm)
 - [x] Git + GitHub tools, skills infrastructure, session persistence
 
-### Next (Phase 4: Autonomous Core)
-- [ ] **Work queue and task planner** — LLM decomposes user intent into ordered tasks
-- [ ] **Background executor** — tasks run autonomously via subagents
-- [ ] **Task checklist widget** — live TUI panel showing all task status
-- [ ] **Auto-deploy loop** — code change → pack → deploy → verify, automatically
-- [ ] **Watcher → task queue** — events create tasks, not raw messages
-- [ ] **User steering** — user input reprioritises, cancels, or redirects tasks
+### Done (Phase 4: Autonomous Core)
+- [x] **Work queue and task planner** — LLM decomposes user intent into ordered tasks
+- [x] **Background executor** — tasks run autonomously via subagents
+- [x] **Task checklist widget** — live TUI panel showing all task status with expandable detail
+- [x] **Auto-deploy loop** — build → deploy → verify → diagnose, automatically
+- [x] **Watcher → task queue** — events create tasks, not raw messages
+- [x] **User steering** — executor pauses during user interaction; manage_tasks tool for cancel/reprioritise
 
 ### Then (Phase 5: Research-Driven Design)
 - [ ] **Proactive workload research** — web search for devops best practices

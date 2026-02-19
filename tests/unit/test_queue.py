@@ -243,6 +243,56 @@ class TestWorkQueue:
         q.clear()
         assert q.all_tasks() == []
 
+    def test_move_to_front(self) -> None:
+        """move_to_front makes a task the first picked by next_ready."""
+        q = WorkQueue()
+        t1 = _task(title="First", id="t1")
+        t2 = _task(title="Second", id="t2")
+        t3 = _task(title="Third", id="t3")
+        q.add_tasks([t1, t2, t3])
+
+        q.move_to_front(t3.id)
+
+        assert q.next_ready() is t3
+
+    def test_move_to_front_with_non_pending_prefix(self) -> None:
+        """move_to_front places the task after done/active tasks."""
+        q = WorkQueue()
+        t1 = _task(title="Done", id="t1")
+        t2 = _task(title="Pending1", id="t2")
+        t3 = _task(title="Pending2", id="t3")
+        q.add_tasks([t1, t2, t3])
+        q.set_done(t1.id)
+
+        q.move_to_front(t3.id)
+
+        # t3 should be the first pending (next_ready).
+        assert q.next_ready() is t3
+
+    def test_move_to_front_raises_for_non_pending(self) -> None:
+        """Cannot move a non-pending task."""
+        q = WorkQueue()
+        t = _task()
+        q.add_task(t)
+        q.set_active(t.id)
+
+        with pytest.raises(ValueError, match="active"):
+            q.move_to_front(t.id)
+
+    def test_move_to_front_fires_callback(self) -> None:
+        """Callback fires when a task is reprioritised."""
+        received: list[AgentTask] = []
+        q = WorkQueue(on_task_changed=received.append)
+        t1 = _task(title="First", id="t1")
+        t2 = _task(title="Second", id="t2")
+        q.add_tasks([t1, t2])
+        received.clear()
+
+        q.move_to_front(t2.id)
+
+        assert len(received) == 1
+        assert received[0] is t2
+
 
 # -- Callbacks --------------------------------------------------------------
 

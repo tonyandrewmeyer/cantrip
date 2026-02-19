@@ -5,12 +5,58 @@ from cantrip.agent.autodeploy import (
     _WATCHER_PREFIX,
     followup_tasks,
     task_for_watcher_event,
+    tasks_after_build,
     tasks_after_deploy,
     tasks_after_verify,
 )
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
+
+# ===================================================================
+# TestTasksAfterBuild
+# ===================================================================
+
+
+class TestTasksAfterBuild:
+    """Tests for tasks_after_build — auto-deploy after code changes."""
+
+    def test_creates_deploy_for_successful_build(self) -> None:
+        task = AgentTask(id="b1", title="Scaffold charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.DONE
+
+        result = tasks_after_build(task)
+
+        assert len(result) == 1
+        assert result[0].category == TaskCategory.DEPLOY
+        assert "Scaffold charm" in result[0].title
+
+    def test_no_deploy_for_failed_build(self) -> None:
+        task = AgentTask(id="b1", title="Scaffold charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+
+        assert tasks_after_build(task) == []
+
+    def test_no_deploy_for_non_build(self) -> None:
+        task = AgentTask(id="r1", title="Research Redis", category=TaskCategory.RESEARCH)
+        task.status = TaskStatus.DONE
+
+        assert tasks_after_build(task) == []
+
+    def test_deploy_depends_on_build(self) -> None:
+        task = AgentTask(id="b1", title="Build", category=TaskCategory.BUILD)
+        task.status = TaskStatus.DONE
+
+        result = tasks_after_build(task)
+
+        assert result[0].dependencies == ["b1"]
+
+    def test_no_deploy_for_pending_build(self) -> None:
+        task = AgentTask(id="b1", title="Build", category=TaskCategory.BUILD)
+        task.status = TaskStatus.PENDING
+
+        assert tasks_after_build(task) == []
+
 
 # ===================================================================
 # TestTasksAfterDeploy
@@ -164,6 +210,15 @@ class TestFollowupTasks:
 
         assert len(result) == 1
         assert "Diagnose" in result[0].title
+
+    def test_dispatches_to_build_handler(self) -> None:
+        task = AgentTask(id="b1", title="Scaffold charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.DONE
+
+        result = followup_tasks(task)
+
+        assert len(result) == 1
+        assert result[0].category == TaskCategory.DEPLOY
 
     def test_empty_for_non_deploy(self) -> None:
         task = AgentTask(id="r1", title="Research Redis", category=TaskCategory.RESEARCH)

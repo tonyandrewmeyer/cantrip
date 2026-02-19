@@ -69,6 +69,7 @@ from cantrip.agent.tools.rockcraft import (
     SkopeoRegistryPushTool,
 )
 from cantrip.agent.tools.skills import LoadSkillTool
+from cantrip.agent.tools.task_management import ManageTasksTool
 from cantrip.agent.tools.testing import RunCharmTestsTool
 from cantrip.agent.tools.virtual_files import VirtualFileReadTool, VirtualFileSearchTool
 from cantrip.agent.tools.web import WebFetchTool
@@ -138,6 +139,8 @@ __all__ = [
     "RunCharmTestsTool",
     # Planning
     "PlanTasksTool",
+    # Task management
+    "ManageTasksTool",
     # Skills
     "LoadSkillTool",
     # Virtual files

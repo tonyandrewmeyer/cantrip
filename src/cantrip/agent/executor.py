@@ -28,6 +28,10 @@ class BackgroundExecutor:
     Runs as a background ``asyncio.Task`` concurrently with the conversation
     loop.  Each ready task is executed in an isolated ``Subagent`` context;
     results and failures are recorded back on the queue and persisted.
+
+    The executor can be *paused* (e.g. while the user is steering via chat)
+    and *resumed* afterwards.  While paused the poll loop sleeps without
+    picking new tasks, but any task already running continues to completion.
     """
 
     def __init__(
@@ -51,6 +55,7 @@ class BackgroundExecutor:
         self._on_task_failed = on_task_failed
 
         self._running = False
+        self._paused = False
         self._task: asyncio.Task | None = None
 
     # -- Lifecycle -----------------------------------------------------------
@@ -60,11 +65,17 @@ class BackgroundExecutor:
         """Whether the executor loop is currently running."""
         return self._running
 
+    @property
+    def paused(self) -> bool:
+        """Whether the executor is paused (not picking new tasks)."""
+        return self._paused
+
     def start(self) -> None:
         """Start the background poll-and-execute loop."""
         if self._running:
             return
         self._running = True
+        self._paused = False
         self._task = asyncio.create_task(self._run_loop())
         log.info("Background executor started")
 
@@ -73,6 +84,7 @@ class BackgroundExecutor:
         if not self._running:
             return
         self._running = False
+        self._paused = False
         if self._task:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -80,12 +92,34 @@ class BackgroundExecutor:
             self._task = None
         log.info("Background executor stopped")
 
+    def pause(self) -> None:
+        """Pause the executor — it will stop picking new tasks.
+
+        Any task already running continues to completion.  Call
+        ``resume()`` to allow new tasks to be picked again.
+        """
+        if not self._running or self._paused:
+            return
+        self._paused = True
+        log.info("Background executor paused")
+
+    def resume(self) -> None:
+        """Resume a paused executor so it picks tasks again."""
+        if not self._paused:
+            return
+        self._paused = False
+        log.info("Background executor resumed")
+
     # -- Core loop -----------------------------------------------------------
 
     async def _run_loop(self) -> None:
         """Poll for ready tasks and execute them until stopped."""
         while self._running:
             try:
+                if self._paused:
+                    await asyncio.sleep(_POLL_INTERVAL)
+                    continue
+
                 task = self._queue.next_ready()
                 if task is None:
                     await asyncio.sleep(_POLL_INTERVAL)

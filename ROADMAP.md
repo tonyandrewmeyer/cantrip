@@ -207,8 +207,9 @@ Executes tasks from the work queue without waiting for user input.
   the light model; design and code-writing tasks use the primary model
 - [x] **Conversation coordination** — when a task needs user input (e.g. "confirm this
   design"), it blocks and posts a question to the chat; user's reply unblocks it
-- [ ] **Interruption** — user messages can pause the work loop, reprioritise tasks, or
-  cancel the current task; the agent resumes autonomously after the user interaction
+- [x] **Interruption** — user messages pause the executor while the conversation loop
+  handles them; `manage_tasks` tool lets the LLM cancel, reprioritise, and inspect
+  tasks; the executor resumes autonomously after the user interaction
 
 ### 4.4 Task Checklist Widget
 
@@ -223,8 +224,8 @@ A visible, real-time view of autonomous work in the TUI.
   - `◌` blocked (waiting for user or dependency)
 - [x] **Live updates** — task status changes are reflected via dirty-flag polling
   (thread-safe `notify_changed` + 0.5 s timer)
-- [ ] **Expandable detail** — clicking/selecting a task shows its result summary,
-  tools used, and any errors
+- [x] **Expandable detail** — clicking a task row toggles a detail panel showing
+  result summary, category, status, description, and blocked reason
 - [ ] **Category grouping** — tasks grouped by phase (research, build, deploy, test)
   or shown as a flat ordered list — TBD based on what reads better in practice
 
@@ -232,9 +233,8 @@ A visible, real-time view of autonomous work in the TUI.
 
 The agent keeps the deployed charm in sync with the code.
 
-- [ ] **After code changes** — when the agent modifies charm source, it automatically
-  queues a deploy task (fast path for source-only changes, full pack+refresh for
-  metadata/dependency changes)
+- [x] **After code changes** — successful BUILD tasks automatically queue a DEPLOY
+  follow-up task via `tasks_after_build()`, closing the build → deploy gap
 - [x] **Post-deploy verification** — after deploy, queue a status check task; if the
   charm enters error/blocked, queue a diagnostic task
 - [x] **Watcher → task queue** — watcher events (hook failures, status changes, new

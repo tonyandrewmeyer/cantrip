@@ -60,6 +60,7 @@ from cantrip.agent.tools import (
     ListDirectoryTool,
     LoadSkillTool,
     LokiQueryTool,
+    ManageTasksTool,
     PlanTasksTool,
     ReadFileTool,
     RegistryImageInfoTool,
@@ -307,6 +308,8 @@ class CantripAgent:
                 state=self.state,
                 queue=self._work_queue,
             ),
+            # Task management
+            ManageTasksTool(queue=self._work_queue),
         ]
 
     def _build_system_prompt(self) -> str:
@@ -423,13 +426,34 @@ class CantripAgent:
         # All retries exhausted (should be unreachable due to the raise above).
         raise last_error  # type: ignore[misc]
 
+    def _pause_executor(self) -> None:
+        """Pause the background executor while handling a user message."""
+        if self._executor and self._executor.running:
+            self._executor.pause()
+
+    def _resume_executor(self) -> None:
+        """Resume the background executor after handling a user message."""
+        if self._executor and self._executor.running:
+            self._executor.resume()
+
     async def process_message(self, user_message: str) -> str:
         """Process a user message and return the response.
 
         This handles the full conversation loop including tool calls.
         The loop continues until the model responds without tool calls
         or the maximum number of rounds is reached.
+
+        The background executor is paused while the conversation loop is
+        active so that user steering takes priority over autonomous work.
         """
+        self._pause_executor()
+        try:
+            return await self._process_message_inner(user_message)
+        finally:
+            self._resume_executor()
+
+    async def _process_message_inner(self, user_message: str) -> str:
+        """Inner implementation of process_message (executor already paused)."""
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self.state.messages.append(user_msg)
@@ -502,7 +526,19 @@ class CantripAgent:
         Yields text chunks as they arrive. If the model requests tool calls,
         those are executed and the model is called again (non-streaming for
         intermediate rounds, streaming for the final text response).
+
+        The background executor is paused while the conversation loop is
+        active so that user steering takes priority over autonomous work.
         """
+        self._pause_executor()
+        try:
+            async for chunk in self._process_message_streaming_inner(user_message):
+                yield chunk
+        finally:
+            self._resume_executor()
+
+    async def _process_message_streaming_inner(self, user_message: str) -> AsyncIterator[str]:
+        """Inner implementation of streaming (executor already paused)."""
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self.state.messages.append(user_msg)

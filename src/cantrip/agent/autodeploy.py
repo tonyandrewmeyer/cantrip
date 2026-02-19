@@ -94,14 +94,43 @@ def tasks_after_verify(task: AgentTask) -> list[AgentTask]:
     ]
 
 
+def tasks_after_build(task: AgentTask) -> list[AgentTask]:
+    """Return a deploy task to run after a successful BUILD task.
+
+    Closes the build → deploy gap so that code changes are automatically
+    deployed without waiting for the user to request it.  Only fires for
+    BUILD tasks that completed successfully.
+    """
+    if task.category != TaskCategory.BUILD:
+        return []
+    if task.status != TaskStatus.DONE:
+        return []
+
+    return [
+        AgentTask(
+            title=f"Deploy changes: {task.title}",
+            category=TaskCategory.DEPLOY,
+            description=(
+                "The build task completed. Pack and deploy the updated charm.\n\n"
+                "1. Run `charmcraft_pack` to produce a .charm file.\n"
+                "2. Run `juju_refresh` with the new charm path.\n"
+                "3. Run `juju_wait` to confirm the application is ready.\n"
+                "4. Report success or failure with details."
+            ),
+            dependencies=[task.id],
+        ),
+    ]
+
+
 def followup_tasks(task: AgentTask) -> list[AgentTask]:
     """Return any follow-up tasks for a completed or failed task.
 
     Single entry point that dispatches to the specific handlers.  The chain
-    is bounded: DEPLOY → Verify → (fail) → DEBUG → done.  DEBUG tasks
-    produce no further follow-ups.
+    is bounded: BUILD → DEPLOY → Verify → (fail) → DEBUG → done.  DEBUG
+    tasks produce no further follow-ups.
     """
     results: list[AgentTask] = []
+    results.extend(tasks_after_build(task))
     results.extend(tasks_after_deploy(task))
     results.extend(tasks_after_verify(task))
     return results

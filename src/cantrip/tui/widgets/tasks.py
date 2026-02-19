@@ -27,6 +27,35 @@ def _status_display(status: TaskStatus) -> tuple[str, str]:
     return _STATUS_DISPLAY.get(status, ("\u25cb", "task-pending"))
 
 
+def _format_detail(task: AgentTask) -> str:
+    """Build the detail text shown when a task row is expanded."""
+    lines: list[str] = []
+    lines.append(f"  Category: {task.category.value}")
+    lines.append(f"  Status: {task.status.value}")
+    if task.blocked_reason:
+        lines.append(f"  Blocked: {task.blocked_reason}")
+    if task.result:
+        # Truncate very long results for the panel.
+        result = task.result
+        if len(result) > 200:
+            result = result[:197] + "..."
+        lines.append(f"  Result: {result}")
+    if task.description:
+        desc = task.description
+        if len(desc) > 200:
+            desc = desc[:197] + "..."
+        lines.append(f"  Info: {desc}")
+    return "\n".join(lines)
+
+
+class _TaskRow(Static):
+    """A clickable task row that toggles detail expansion."""
+
+    def __init__(self, task_id: str, content: str, **kwargs: object) -> None:
+        super().__init__(content, **kwargs)
+        self.task_id = task_id
+
+
 class TaskChecklistWidget(Widget):
     """Live checklist of autonomous agent tasks.
 
@@ -34,6 +63,8 @@ class TaskChecklistWidget(Widget):
     Uses an imperative refresh pattern: the ``notify_changed`` method is
     called from any thread (e.g. the executor callback) and sets a dirty
     flag; a 0.5 s timer polls the flag and rebuilds the display.
+
+    Click a task row to expand/collapse its detail (result, category, etc.).
     """
 
     class TasksAvailable(Message):
@@ -80,15 +111,26 @@ class TaskChecklistWidget(Widget):
         color: $text-muted;
         text-style: italic;
     }
+
+    TaskChecklistWidget .task-detail {
+        color: $text-muted;
+        margin-left: 2;
+        margin-bottom: 1;
+    }
+
+    TaskChecklistWidget .task-row {
+        height: auto;
+    }
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: object) -> None:
         """Initialise the checklist widget."""
         super().__init__(**kwargs)
         self._tasks: list[AgentTask] = []
         self._dirty = False
         self._lock = threading.Lock()
         self._tasks_available_posted = False
+        self._expanded_id: str | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the initial layout."""
@@ -108,6 +150,32 @@ class TaskChecklistWidget(Widget):
         with self._lock:
             self._tasks = list(tasks)
             self._dirty = True
+
+    def on_click(self, event: object) -> None:
+        """Handle click events on task rows to toggle detail."""
+        # Walk up the widget tree from the click target to find a _TaskRow.
+        from textual.events import Click
+
+        if not isinstance(event, Click):
+            return
+        widget = self.screen.get_widget_at(event.screen_x, event.screen_y)[0]
+        # Walk up to find a _TaskRow ancestor (or the widget itself).
+        node = widget
+        while node is not None:
+            if isinstance(node, _TaskRow):
+                self._toggle_detail(node.task_id)
+                return
+            if node is self:
+                break
+            node = node.parent
+
+    def _toggle_detail(self, task_id: str) -> None:
+        """Toggle the expanded detail for a task."""
+        if self._expanded_id == task_id:
+            self._expanded_id = None
+        else:
+            self._expanded_id = task_id
+        self._refresh_display()
 
     def _check_dirty(self) -> None:
         """Timer callback — refresh the display if the dirty flag is set."""
@@ -143,4 +211,10 @@ class TaskChecklistWidget(Widget):
             title = task.title
             if len(title) > _TITLE_MAX_LEN:
                 title = title[: _TITLE_MAX_LEN - 1] + "\u2026"
-            container.mount(Static(f"{char} {title}", classes=css_class))
+            row = _TaskRow(task.id, f"{char} {title}", classes=f"task-row {css_class}")
+            container.mount(row)
+
+            # Show detail panel if this task is expanded.
+            if self._expanded_id == task.id:
+                detail_text = _format_detail(task)
+                container.mount(Static(detail_text, classes="task-detail"))

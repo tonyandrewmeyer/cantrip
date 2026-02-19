@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
-from cantrip.tui.widgets.tasks import TaskChecklistWidget, _status_display
+from cantrip.tui.widgets.tasks import TaskChecklistWidget, _format_detail, _status_display
 
 pytestmark = pytest.mark.tui
 
@@ -53,14 +53,62 @@ def _make_task(
     title: str = "Test task",
     status: TaskStatus = TaskStatus.PENDING,
     category: TaskCategory = TaskCategory.BUILD,
+    result: str | None = None,
+    description: str = "",
+    task_id: str = "",
 ) -> AgentTask:
     """Create a minimal AgentTask for testing."""
-    return AgentTask(
+    task = AgentTask(
+        id=task_id,
         title=title,
         category=category,
         status=status,
+        description=description,
         created_at=datetime(2025, 1, 1),
     )
+    task.result = result
+    return task
+
+
+# ---------------------------------------------------------------------------
+# Pure format_detail tests
+# ---------------------------------------------------------------------------
+
+
+class TestFormatDetail:
+    """Tests for the _format_detail helper."""
+
+    def test_includes_category(self):
+        task = _make_task(category=TaskCategory.RESEARCH)
+        detail = _format_detail(task)
+        assert "research" in detail
+
+    def test_includes_status(self):
+        task = _make_task(status=TaskStatus.DONE)
+        detail = _format_detail(task)
+        assert "done" in detail
+
+    def test_includes_result(self):
+        task = _make_task(result="Charm built successfully")
+        detail = _format_detail(task)
+        assert "Charm built successfully" in detail
+
+    def test_includes_description(self):
+        task = _make_task(description="Scaffold the charm")
+        detail = _format_detail(task)
+        assert "Scaffold the charm" in detail
+
+    def test_truncates_long_result(self):
+        task = _make_task(result="x" * 300)
+        detail = _format_detail(task)
+        assert "..." in detail
+        assert len(detail) < 350
+
+    def test_includes_blocked_reason(self):
+        task = _make_task(status=TaskStatus.BLOCKED)
+        task.blocked_reason = "Waiting for user"
+        detail = _format_detail(task)
+        assert "Waiting for user" in detail
 
 
 class _ChecklistApp:
@@ -203,3 +251,53 @@ class TestTaskChecklistWidget:
             assert long_title not in combined
             # The truncated version (39 chars + ellipsis) should be present.
             assert "\u2026" in combined
+
+    @pytest.mark.asyncio
+    async def test_toggle_detail_shows_result(self):
+        """Toggling a task shows its detail including result text."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            task = _make_task(
+                "Build charm",
+                task_id="b1",
+                result="Charm built ok",
+                status=TaskStatus.DONE,
+            )
+            checklist.notify_changed([task])
+            await pilot.pause(delay=0.7)
+
+            # Expand by calling _toggle_detail directly.
+            checklist._toggle_detail("b1")
+            await pilot.pause(delay=0.1)
+
+            container = checklist.query_one("#task-container")
+            statics = container.query("Static")
+            combined = " ".join(str(s.render()) for s in statics)
+            assert "Charm built ok" in combined
+
+    @pytest.mark.asyncio
+    async def test_toggle_detail_collapses(self):
+        """Toggling the same task twice collapses the detail."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            task = _make_task(
+                "Build charm",
+                task_id="b1",
+                result="Charm built ok",
+                status=TaskStatus.DONE,
+            )
+            checklist.notify_changed([task])
+            await pilot.pause(delay=0.7)
+
+            # Expand then collapse.
+            checklist._toggle_detail("b1")
+            await pilot.pause(delay=0.1)
+            checklist._toggle_detail("b1")
+            await pilot.pause(delay=0.1)
+
+            container = checklist.query_one("#task-container")
+            statics = container.query("Static")
+            combined = " ".join(str(s.render()) for s in statics)
+            assert "Charm built ok" not in combined

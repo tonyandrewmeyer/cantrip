@@ -120,6 +120,75 @@ class TestBackgroundExecutorLifecycle:
         executor = _make_executor()
         assert executor.running is False
 
+    def test_not_paused_initially(self) -> None:
+        executor = _make_executor()
+        assert executor.paused is False
+
+
+# ===================================================================
+# TestBackgroundExecutorPauseResume
+# ===================================================================
+
+
+class TestBackgroundExecutorPauseResume:
+    """Tests for pause/resume behaviour."""
+
+    @pytest.mark.asyncio
+    async def test_pause_sets_paused(self) -> None:
+        executor = _make_executor()
+        executor.start()
+        executor.pause()
+        assert executor.paused is True
+        await executor.stop()
+
+    @pytest.mark.asyncio
+    async def test_resume_clears_paused(self) -> None:
+        executor = _make_executor()
+        executor.start()
+        executor.pause()
+        executor.resume()
+        assert executor.paused is False
+        await executor.stop()
+
+    @pytest.mark.asyncio
+    async def test_pause_when_not_running_is_noop(self) -> None:
+        executor = _make_executor()
+        executor.pause()
+        assert executor.paused is False
+
+    @pytest.mark.asyncio
+    async def test_resume_when_not_paused_is_noop(self) -> None:
+        executor = _make_executor()
+        executor.start()
+        executor.resume()
+        assert executor.paused is False
+        await executor.stop()
+
+    @pytest.mark.asyncio
+    async def test_paused_executor_does_not_pick_tasks(self) -> None:
+        queue = WorkQueue()
+        task = AgentTask(id="t1", title="Build", category=TaskCategory.BUILD)
+        queue.add_task(task)
+
+        executor = _make_executor(queue=queue)
+        executor.start()
+        executor.pause()
+
+        # Give the loop time to run while paused.
+        await asyncio.sleep(0.15)
+
+        # Task should still be pending (not picked up).
+        assert task.status == TaskStatus.PENDING
+        await executor.stop()
+
+    @pytest.mark.asyncio
+    async def test_stop_clears_paused(self) -> None:
+        executor = _make_executor()
+        executor.start()
+        executor.pause()
+        await executor.stop()
+        assert executor.paused is False
+
 
 # ===================================================================
 # TestBuildContext
@@ -564,13 +633,13 @@ class TestFollowupTaskCreation:
         assert verify.dependencies == ["d1"]
 
     @pytest.mark.asyncio
-    async def test_non_deploy_task_creates_no_followup(self) -> None:
+    async def test_research_task_creates_no_followup(self) -> None:
         queue = WorkQueue()
-        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task = AgentTask(id="r1", title="Research Redis", category=TaskCategory.RESEARCH)
         queue.add_task(task)
 
         state = AgentState(dev_model="dev")
-        provider = FakeProvider(responses=[Response(content="Built.")])
+        provider = FakeProvider(responses=[Response(content="Researched.")])
         executor = _make_executor(queue=queue, provider=provider, state=state)
 
         await executor._execute_task(task)
@@ -606,6 +675,25 @@ class TestFollowupTaskCreation:
         await executor._execute_task(task)
 
         assert len(queue.all_tasks()) == 1
+
+    @pytest.mark.asyncio
+    async def test_build_task_creates_deploy_followup(self) -> None:
+        queue = WorkQueue()
+        task = AgentTask(id="b1", title="Scaffold charm", category=TaskCategory.BUILD)
+        queue.add_task(task)
+
+        state = AgentState(dev_model="dev")
+        provider = FakeProvider(responses=[Response(content="Charm built.")])
+        executor = _make_executor(queue=queue, provider=provider, state=state)
+
+        await executor._execute_task(task)
+
+        all_tasks = queue.all_tasks()
+        assert len(all_tasks) == 2
+        deploy = all_tasks[1]
+        assert "Deploy changes:" in deploy.title
+        assert deploy.category == TaskCategory.DEPLOY
+        assert deploy.dependencies == ["b1"]
 
     @pytest.mark.asyncio
     async def test_failed_verify_creates_debug_followup(self) -> None:

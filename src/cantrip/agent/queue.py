@@ -144,6 +144,28 @@ class WorkQueue:
         self._tasks.remove(task)
         self._notify(task)
 
+    def move_to_front(self, task_id: str) -> None:
+        """Move a pending task to the front of the queue.
+
+        Only pending tasks can be moved.  The task is repositioned so that
+        ``next_ready()`` picks it up as soon as its dependencies are met.
+        """
+        task = self._get_or_raise(task_id)
+        if task.status != TaskStatus.PENDING:
+            raise ValueError(f"Cannot reprioritise task in {task.status.value} status")
+        self._tasks.remove(task)
+        # Insert after any non-pending tasks (active/done/failed/blocked)
+        # so it becomes the first pending task.
+        insert_idx = 0
+        for i, t in enumerate(self._tasks):
+            if t.status == TaskStatus.PENDING:
+                insert_idx = i
+                break
+        else:
+            insert_idx = len(self._tasks)
+        self._tasks.insert(insert_idx, task)
+        self._notify(task)
+
     # -- Lookup -------------------------------------------------------------
 
     def get_task(self, task_id: str) -> AgentTask | None:
