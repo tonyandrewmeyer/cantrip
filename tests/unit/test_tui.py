@@ -11,7 +11,10 @@ import pytest
 from cantrip.agent.state import TestResults
 from cantrip.tui.app import CantripApp
 from cantrip.tui.screens.help import HelpScreen
+from cantrip.tui.screens.logs import LogScreen
+from cantrip.tui.screens.traces import TraceScreen
 from cantrip.tui.widgets.chat import ChatWidget, MessageRole, MessageWidget
+from cantrip.tui.widgets.status import MultiModelStatusWidget
 from cantrip.tui.widgets.statusbar import StatusBar
 from cantrip.tui.widgets.tasks import TaskChecklistWidget
 
@@ -253,15 +256,46 @@ class TestTuiWidgets:
                 assert "F1 Help" in pilot.app.sub_title
 
     @pytest.mark.asyncio
-    async def test_f4_debug_stub(self):
-        """Press F4 posts a notification."""
+    async def test_f4_opens_trace_screen(self):
+        """Press F4 to open TraceScreen, then Esc to dismiss."""
         p1, p2, _ = _patch_app()
         with p1, p2:
-            async with CantripApp().run_test(notifications=True) as pilot:
+            async with CantripApp().run_test() as pilot:
                 await pilot.press("f4")
                 await pilot.pause()
-                assert len(pilot.app._notifications) >= 1
-                assert any("Debug" in str(n.title) for n in pilot.app._notifications)
+                assert isinstance(pilot.app.screen, TraceScreen)
+
+                await pilot.press("escape")
+                await pilot.pause()
+                assert not isinstance(pilot.app.screen, TraceScreen)
+
+    @pytest.mark.asyncio
+    async def test_f3_opens_log_screen(self):
+        """Press F3 to open LogScreen, then Esc to dismiss."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                # Patch subprocess to avoid real juju calls.
+                with patch("cantrip.tui.screens.logs.subprocess.run") as mock_run:
+                    mock_run.return_value = MagicMock(
+                        returncode=0, stdout="log line 1\nlog line 2", stderr=""
+                    )
+                    await pilot.press("f3")
+                    await pilot.pause()
+                    assert isinstance(pilot.app.screen, LogScreen)
+
+                await pilot.press("escape")
+                await pilot.pause()
+                assert not isinstance(pilot.app.screen, LogScreen)
+
+    @pytest.mark.asyncio
+    async def test_multi_model_status_widget_mounted(self):
+        """#juju-status is a MultiModelStatusWidget after mount."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                widget = pilot.app.query_one("#juju-status")
+                assert isinstance(widget, MultiModelStatusWidget)
 
     @pytest.mark.asyncio
     async def test_test_summary_shown_after_agent_response(self):

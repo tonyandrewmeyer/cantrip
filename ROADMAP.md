@@ -249,7 +249,7 @@ shows a live checklist of everything the agent is doing.
 
 ---
 
-## Phase 5: Research-Driven Charm Design
+## Phase 5: Research-Driven Charm Design ✓
 
 **Goal:** The agent does quality web research to understand the operational story for a
 workload, proposes a design grounded in real devops best practices, and lets the user
@@ -259,17 +259,17 @@ confirm or override before building.
 
 When a workload is identified, the agent autonomously researches it.
 
-- [ ] **Source analysis** — clone the application repo (if provided), analyse framework,
+- [x] **Source analysis** — clone the application repo (if provided), analyse framework,
   dependencies, config patterns, Dockerfile, CI/CD setup
-- [ ] **Web research** — search for and read:
+- [x] **Web research** — search for and read:
   - Official documentation (installation, configuration, operations guides)
   - DevOps best practices for this specific workload
   - Common deployment patterns (containerised, systemd, clustering)
   - Known failure modes and recovery procedures
   - Monitoring and observability recommendations
-- [ ] **Charmhub survey** — search for existing charms, related charms, and relevant
+- [x] **Charmhub survey** — search for existing charms, related charms, and relevant
   charm libraries; assess whether to build new, fork, or extend
-- [ ] **Research summary** — produce a structured `WORKLOAD.md` (already partially
+- [x] **Research summary** — produce a structured `WORKLOAD.md` (already partially
   implemented) covering: what the software does, how it's configured, how it runs,
   how it scales, how it fails, how it's monitored
 
@@ -277,7 +277,7 @@ When a workload is identified, the agent autonomously researches it.
 
 Translate research into charm design decisions.
 
-- [ ] **Operational questions** — for each workload, the agent identifies the key
+- [x] **Operational questions** — for each workload, the agent identifies the key
   operational questions:
   - Does it need persistent storage? What kind?
   - Does it cluster? How (leader election, consensus, replication)?
@@ -286,16 +286,16 @@ Translate research into charm design decisions.
   - What are the failure modes and recovery procedures?
   - What integrations make sense (database, ingress, cache, identity)?
   - What metrics/logs/traces does it expose?
-- [ ] **Best-practice grounding** — answers are grounded in web research, not
+- [x] **Best-practice grounding** — answers are grounded in web research, not
   hallucinated; the agent cites sources (documentation URLs, blog posts)
-- [ ] **Gap identification** — when the agent can't determine something from research,
+- [x] **Gap identification** — when the agent can't determine something from research,
   it explicitly marks it as a question for the user
 
 ### 5.3 Design Proposal
 
 The agent presents a design for user confirmation before writing code.
 
-- [ ] **Structured proposal** — the agent formats a clear design proposal covering:
+- [x] **Structured proposal** — the agent formats a clear design proposal covering:
   - Substrate recommendation (K8s vs machine) with reasoning
   - Charm path (12-factor PaaS, custom, infrastructure) with reasoning
   - Proposed integrations (database, ingress, COS, etc.)
@@ -303,24 +303,24 @@ The agent presents a design for user confirmation before writing code.
   - Actions to implement
   - Scaling strategy
   - Key operational patterns (backup, failover, etc.)
-- [ ] **User confirmation** — the proposal is presented in the chat; the user can
+- [x] **User confirmation** — the proposal is presented in the chat; the user can
   approve, override specific decisions, or ask for changes
-- [ ] **Override handling** — user overrides are recorded as `Decision` objects and
+- [x] **Override handling** — user overrides are recorded as `Decision` objects and
   feed back into the task planner; the task list is regenerated to match
 
 ### 5.4 Research → Build Pipeline
 
 Confirmed design feeds directly into autonomous execution.
 
-- [ ] **Design-to-tasks** — once the user approves (or the agent proceeds with defaults
+- [x] **Design-to-tasks** — once the user approves (or the agent proceeds with defaults
   after a timeout/no-response), the planner generates concrete build tasks from the
   approved design
-- [ ] **Context handoff** — research findings and design decisions are summarised and
+- [x] **Context handoff** — research findings and design decisions are summarised and
   injected into the system prompt / task context so subagents have the full picture
   without re-researching
-- [ ] **Incremental research** — when the user adds context mid-build ("it also needs
+- [x] **Incremental research** — when the user adds context mid-build ("it also needs
   Redis for caching"), the agent does targeted research on the new requirement and
-  adjusts the plan
+  adjusts the plan (via the existing replan mechanism)
 
 **Exit criteria:** User says "build a charm for PostgreSQL". The agent researches how
 PostgreSQL is operated (primary/replica, WAL shipping, pgbouncer, backup with pg_dump or
@@ -335,12 +335,12 @@ user confirmation, then builds it — all autonomously.
 
 ### 6.1 TUI Enhancements
 - [ ] Visual model/app/integration graph
-- [ ] Multiple model views (dev + COS side by side)
-- [ ] Log viewer (F3)
-- [ ] Trace viewer or Grafana deep links (F4)
+- [x] Multiple model views (dev + COS side by side)
+- [x] Log viewer (F3)
+- [x] Trace viewer or Grafana deep links (F4)
 
 ### 6.2 Advanced Testing and Performance
-- [ ] **Performance skill** — identifies common charm performance pitfalls (blocking I/O
+- [x] **Performance skill** — identifies common charm performance pitfalls (blocking I/O
   in hooks, expensive status polling, unindexed relation data, oversized config)
 - [ ] **Load testing** — generate k6 or Locust workloads; deploy multiple units and
   measure throughput/latency under load
@@ -361,9 +361,9 @@ user confirmation, then builds it — all autonomously.
 - [ ] Litmus chaos testing integration
 
 ### 6.4 Charmhub Publishing
-- [ ] charmcraft upload integration
-- [ ] Release management
-- [ ] README generation
+- [x] charmcraft upload integration
+- [x] Release management
+- [x] README generation
 
 ### 6.5 Advanced Workflows
 - [ ] Charm pairs (app + database deployed and related together)

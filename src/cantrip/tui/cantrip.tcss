@@ -91,3 +91,14 @@ Screen {
 .error-indicator {
     color: $error;
 }
+
+/* Log viewer screen */
+#log-output {
+    border: solid $primary;
+    overflow-y: auto;
+}
+
+/* Trace/debug screen */
+#trace-container {
+    overflow-y: auto;
+}

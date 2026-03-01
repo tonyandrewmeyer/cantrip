@@ -15,8 +15,10 @@ from cantrip.agent.watcher import WatcherEvent
 from cantrip.llm import create_provider, resolve_light_model
 from cantrip.llm.base import ProviderRateLimitError
 from cantrip.tui.screens.help import HelpScreen
+from cantrip.tui.screens.logs import LogScreen
+from cantrip.tui.screens.traces import TraceScreen
 from cantrip.tui.widgets.chat import ChatWidget, MessageStatus, MessageWidget
-from cantrip.tui.widgets.status import JujuStatusWidget
+from cantrip.tui.widgets.status import MultiModelStatusWidget
 from cantrip.tui.widgets.statusbar import StatusBar
 from cantrip.tui.widgets.tasks import TaskChecklistWidget
 
@@ -85,7 +87,7 @@ class CantripApp(App):
             ),
             Vertical(
                 TaskChecklistWidget(id="task-checklist"),
-                JujuStatusWidget(id="juju-status"),
+                MultiModelStatusWidget(id="juju-status"),
                 id="right-panel",
             ),
             id="main-container",
@@ -282,6 +284,13 @@ class CantripApp(App):
         chat = self.query_one("#chat", ChatWidget)
         chat.add_system_message(f"[Watcher] {event.summary}")
 
+        # Feed the latest status snapshot into the multi-model widget.
+        if self._agent and self._agent._watcher:
+            latest = self._agent._watcher.latest_status
+            if latest is not None:
+                status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
+                status_widget.dev_status = latest
+
     def _update_status_bar_watcher(self) -> None:
         """Update the status bar watcher indicator."""
         status_bar = self.query_one("#status-bar", StatusBar)
@@ -382,8 +391,9 @@ class CantripApp(App):
         self.push_screen(HelpScreen())
 
     def action_debug(self) -> None:
-        """Show debug mode (stub)."""
-        self.notify("Debug mode not yet implemented", title="Debug")
+        """Show trace/debug screen."""
+        cos_model = self._agent.state.cos_model if self._agent else None
+        self.push_screen(TraceScreen(cos_model=cos_model))
 
     def on_juju_status_widget_status_available(self) -> None:
         """Show the status panel when status data first arrives."""
@@ -395,8 +405,9 @@ class CantripApp(App):
         right_panel.display = not right_panel.display
 
     def action_logs(self) -> None:
-        """Show logs view."""
-        self.notify("Logs view not yet implemented", title="Logs")
+        """Show log viewer screen."""
+        dev_model = self._agent.state.dev_model if self._agent else None
+        self.push_screen(LogScreen(model=dev_model))
 
     async def action_quit(self) -> None:
         """Stop background services and quit."""

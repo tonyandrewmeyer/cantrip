@@ -27,6 +27,8 @@ from cantrip.agent.tools import (
     CharmcraftFetchLibsTool,
     CharmcraftInitTool,
     CharmcraftPackTool,
+    CharmcraftReleaseTool,
+    CharmcraftUploadTool,
     CharmhubInfoTool,
     CharmhubSearchTool,
     CharmSyncTool,
@@ -34,6 +36,7 @@ from cantrip.agent.tools import (
     ConciergePrepareTool,
     ConciergeStatusTool,
     EditFileTool,
+    GenerateReadmeTool,
     GhIssueListTool,
     GhPrCreateTool,
     GhRepoCreateTool,
@@ -250,6 +253,10 @@ class CantripAgent:
             CharmValidateTool(),
             CharmcraftFetchLibsTool(),
             AnalyseFrameworkTool(),
+            # Publishing
+            CharmcraftUploadTool(),
+            CharmcraftReleaseTool(),
+            GenerateReadmeTool(),
             # Web
             WebFetchTool(),
             # Charmhub

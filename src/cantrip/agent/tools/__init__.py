@@ -59,6 +59,11 @@ from cantrip.agent.tools.observability import (
     TempoQueryTool,
 )
 from cantrip.agent.tools.planning import PlanTasksTool
+from cantrip.agent.tools.publishing import (
+    CharmcraftReleaseTool,
+    CharmcraftUploadTool,
+    GenerateReadmeTool,
+)
 from cantrip.agent.tools.registry import (
     RegistryImageInfoTool,
     RegistrySearchTool,
@@ -146,6 +151,10 @@ __all__ = [
     # Virtual files
     "VirtualFileReadTool",
     "VirtualFileSearchTool",
+    # Publishing
+    "CharmcraftUploadTool",
+    "CharmcraftReleaseTool",
+    "GenerateReadmeTool",
     # Web
     "WebFetchTool",
 ]

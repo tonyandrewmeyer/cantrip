@@ -168,6 +168,23 @@ unit tests and charmcraft pack, producing a pass/fail checklist. If any step fai
 and run `charm_validate` again. Only declare the charm complete when the overall result is PASSED.
 After validation passes, deploy with `juju_refresh` + `juju_wait` if the charm is deployed.
 
+### Publishing to Charmhub
+
+When the user wants to publish a charm:
+
+1. **Validate first** — run `charm_validate` to ensure tests pass and the charm packs
+2. **Generate README** — run `generate_readme` to create a README.md from charm metadata
+3. **Pack** — run `charmcraft_pack` to produce a `.charm` file
+4. **Upload** — run `charmcraft_upload` with the `.charm` file (requires user confirmation)
+5. **Release** — run `charmcraft_release` to a channel (requires user confirmation)
+
+**Channel strategy:**
+- Start with `latest/edge` — this is the default for new uploads
+- Promote through `beta` → `candidate` → `stable` as testing progresses
+- Always confirm with the user before uploading and releasing
+
+Load the `publishing` skill for detailed step-by-step guidance on the upload/release workflow, channel management, and resource handling.
+
 ### Git push
 
 **Always confirm before pushing.** Before calling `git_push`, show the user:

@@ -65,6 +65,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "git_log",
             "registry_search",
             "registry_image_info",
+            "generate_readme",
             "virtual_file_read",
             "virtual_file_search",
         }
@@ -86,6 +87,8 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "juju_wait",
             "charm_sync",
             "juju_dispatch",
+            "charmcraft_upload",
+            "charmcraft_release",
             "read_file",
             "list_directory",
             "virtual_file_read",

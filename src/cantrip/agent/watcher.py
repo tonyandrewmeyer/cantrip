@@ -378,6 +378,7 @@ class EventWatcher:
         )
         self._dedup: dict[str, float] = {}
         self._last_snapshot: StatusSnapshot | None = None
+        self._latest_status: jubilant.Status | None = None
 
         self._status_task: asyncio.Task | None = None
         self._loki_task: asyncio.Task | None = None
@@ -389,6 +390,11 @@ class EventWatcher:
     def running(self) -> bool:
         """Whether the watcher is currently running."""
         return self._running
+
+    @property
+    def latest_status(self) -> "jubilant.Status | None":
+        """The most recent Juju status snapshot, or ``None`` if never polled."""
+        return self._latest_status
 
     def start(self) -> None:
         """Start the polling loops as asyncio tasks."""
@@ -484,6 +490,7 @@ class EventWatcher:
         loop = asyncio.get_running_loop()
         juju = jubilant.Juju(model=self._dev_model)
         status = await loop.run_in_executor(None, juju.status)
+        self._latest_status = status
         snapshot = capture_snapshot(status)
         events = diff_snapshots(self._last_snapshot, snapshot)
         self._last_snapshot = snapshot
