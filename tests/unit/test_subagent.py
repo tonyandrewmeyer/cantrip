@@ -133,13 +133,15 @@ class TestFilterTools:
             _make_tool("web_fetch"),
             _make_tool("write_file"),
             _make_tool("charmhub_search"),
+            _make_tool("juju_deploy"),
         ]
         filtered = _filter_tools(tools, TaskCategory.RESEARCH)
 
         names = {t.name for t in filtered}
         assert "web_fetch" in names
         assert "charmhub_search" in names
-        assert "write_file" not in names
+        assert "write_file" in names
+        assert "juju_deploy" not in names
 
     def test_build_gets_correct_tools(self) -> None:
         tools = [
@@ -347,7 +349,7 @@ class TestBuildSubagentPrompt:
         ctx = _make_context(task=task)
         prompt = _build_subagent_prompt(ctx)
         assert "Guidance" in prompt
-        assert "gathering information" in prompt
+        assert "Cite sources" in prompt
 
     def test_contains_prior_results(self) -> None:
         ctx = _make_context(prior_results={"research-task": "Found Redis docs at..."})
@@ -628,3 +630,121 @@ class TestSubagentToolExecution:
         result = await subagent.run()
 
         assert result == "Error handled."
+
+
+# ===================================================================
+# TestResearchGuidance
+# ===================================================================
+
+
+class TestResearchGuidance:
+    """Tests for the enhanced RESEARCH category guidance."""
+
+    def test_cite_sources_in_guidance(self) -> None:
+        task = AgentTask(id="r", title="Research", category=TaskCategory.RESEARCH)
+        ctx = _make_context(task=task)
+        prompt = _build_subagent_prompt(ctx)
+        assert "Cite sources" in prompt
+
+    def test_unknown_markers_in_guidance(self) -> None:
+        task = AgentTask(id="r", title="Research", category=TaskCategory.RESEARCH)
+        ctx = _make_context(task=task)
+        prompt = _build_subagent_prompt(ctx)
+        assert "[UNKNOWN]" in prompt
+
+    def test_operational_story_questions(self) -> None:
+        task = AgentTask(
+            id="od",
+            title="Synthesise design proposal",
+            category=TaskCategory.RESEARCH,
+        )
+        ctx = _make_context(task=task)
+        prompt = _build_subagent_prompt(ctx)
+        assert "Storage" in prompt
+        assert "Clustering" in prompt
+        assert "Health" in prompt
+        assert "Failure modes" in prompt
+        assert "Observability" in prompt
+
+
+# ===================================================================
+# TestDesignContentInjection
+# ===================================================================
+
+
+class TestDesignContentInjection:
+    """Tests for design content injection into the subagent prompt."""
+
+    def test_design_content_in_build_prompt(self) -> None:
+        """Design content appears in the prompt when set."""
+        task = AgentTask(id="b", title="Build charm", category=TaskCategory.BUILD)
+        ctx = _make_context(
+            task=task,
+            design_content="## Substrate\nK8s\n## Integrations\n- COS\n- TLS",
+        )
+        prompt = _build_subagent_prompt(ctx)
+        assert "Approved design" in prompt
+        assert "## Substrate" in prompt
+        assert "- COS" in prompt
+
+    def test_design_content_omitted_when_none(self) -> None:
+        """When design_content is None, the section is absent."""
+        task = AgentTask(id="b", title="Build charm", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task, design_content=None)
+        prompt = _build_subagent_prompt(ctx)
+        assert "Approved design" not in prompt
+
+
+# ===================================================================
+# TestResearchToolAllowlist
+# ===================================================================
+
+
+class TestResearchToolAllowlist:
+    """Tests for write_file being in the RESEARCH tool allowlist."""
+
+    def test_write_file_in_research_tools(self) -> None:
+        tools = [_make_tool("write_file"), _make_tool("read_file")]
+        filtered = _filter_tools(tools, TaskCategory.RESEARCH)
+        names = {t.name for t in filtered}
+        assert "write_file" in names
+
+
+# ===================================================================
+# TestOperationalDiscoveryUsePrimaryModel
+# ===================================================================
+
+
+class TestOperationalDiscoveryUsePrimaryModel:
+    """Tests for routing operational-discovery tasks to the primary model."""
+
+    def test_operational_discovery_uses_primary(self) -> None:
+        primary = FakeProvider()
+        light = FakeProvider()
+        result = _select_provider(
+            TaskCategory.RESEARCH, primary, light, task_title="operational-discovery"
+        )
+        assert result is primary
+
+    def test_synthesise_uses_primary(self) -> None:
+        primary = FakeProvider()
+        light = FakeProvider()
+        result = _select_provider(
+            TaskCategory.RESEARCH, primary, light, task_title="Synthesise design proposal"
+        )
+        assert result is primary
+
+    def test_regular_research_uses_light(self) -> None:
+        primary = FakeProvider()
+        light = FakeProvider()
+        result = _select_provider(
+            TaskCategory.RESEARCH, primary, light, task_title="Research the workload"
+        )
+        assert result is light
+
+    def test_no_light_provider_uses_primary(self) -> None:
+        primary = FakeProvider()
+        result = _select_provider(
+            TaskCategory.RESEARCH, primary, None, task_title="operational-discovery"
+        )
+        assert result is primary

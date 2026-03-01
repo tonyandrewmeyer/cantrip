@@ -718,3 +718,40 @@ class TestFollowupTaskCreation:
         debug = all_tasks[1]
         assert "Diagnose" in debug.title
         assert debug.category == TaskCategory.DEBUG
+
+
+# ===================================================================
+# TestDesignContentHandoff
+# ===================================================================
+
+
+class TestDesignContentHandoff:
+    """Tests for design content passthrough from state to SubagentContext."""
+
+    def test_build_context_includes_design_content(self) -> None:
+        """When state.design_proposal is set, design_content is passed through."""
+        from cantrip.agent.design import DesignProposal
+
+        queue = WorkQueue()
+        task = AgentTask(id="b1", title="Build", category=TaskCategory.BUILD)
+        queue.add_task(task)
+
+        state = AgentState()
+        state.design_proposal = DesignProposal(raw_design_md="# Design: Redis\n## Substrate\nK8s")
+
+        executor = _make_executor(queue=queue, state=state)
+        ctx = executor._build_context(task)
+
+        assert ctx.design_content == "# Design: Redis\n## Substrate\nK8s"
+
+    def test_build_context_none_without_proposal(self) -> None:
+        """When state.design_proposal is None, design_content is None."""
+        queue = WorkQueue()
+        task = AgentTask(id="b1", title="Build", category=TaskCategory.BUILD)
+        queue.add_task(task)
+
+        state = AgentState()
+        executor = _make_executor(queue=queue, state=state)
+        ctx = executor._build_context(task)
+
+        assert ctx.design_content is None

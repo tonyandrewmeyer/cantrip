@@ -30,6 +30,7 @@ class PlanningContext:
     environment_ready: bool = False
     existing_tasks: list[AgentTask] = field(default_factory=list)
     new_context: str | None = None
+    source_url: str | None = None
 
 
 class TaskPlanner:
@@ -48,6 +49,32 @@ class TaskPlanner:
         messages = [
             llm.Message(role=llm.Role.SYSTEM, content=prompt),
             llm.Message(role=llm.Role.USER, content=context.intent),
+        ]
+        response = await self._provider.complete(
+            messages=messages,
+            tools=None,
+            temperature=_PLANNING_TEMPERATURE,
+        )
+        return _parse_task_list(response.content)
+
+    async def plan_from_design(
+        self,
+        design_content: str,
+        context: PlanningContext,
+        overrides: str | None = None,
+    ) -> list[AgentTask]:
+        """Generate build/deploy/test tasks from an approved design.
+
+        Called after the user confirms the design proposal.  Uses a
+        dedicated prompt that focuses on the implementation phase.
+        """
+        prompt = _build_design_to_build_prompt(context)
+        user_msg = f"## Approved design\n\n{design_content}"
+        if overrides:
+            user_msg += f"\n\n## User overrides\n\n{overrides}"
+        messages = [
+            llm.Message(role=llm.Role.SYSTEM, content=prompt),
+            llm.Message(role=llm.Role.USER, content=user_msg),
         ]
         response = await self._provider.complete(
             messages=messages,
@@ -90,8 +117,8 @@ Given the user's intent, decompose it into a concrete, ordered list of tasks. Re
 **only** a JSON array — no surrounding text or explanation.
 
 Each task object must have:
-- "id": short unique slug (e.g. "research-workload", "scaffold-charm")
-- "title": concise imperative title (e.g. "Research the Redis workload")
+- "id": short unique slug (e.g. "source-analysis", "scaffold-charm")
+- "title": concise imperative title (e.g. "Analyse the source repository")
 - "category": one of {categories}
 - "description": one or two sentences explaining what the task does
 - "dependencies": list of task IDs that must complete before this one starts (may be empty)
@@ -106,19 +133,46 @@ Each task object must have:
 - **infra** — set up the development environment, bootstrap controllers
 - **confirm** — present a decision to the user and wait for approval
 
-### Decomposition patterns
+### Research-first decomposition
 
-For a typical charm build:
-1. Research the workload (clone source, analyse framework, check Charmhub)
-2. Confirm the approach with the user (path, substrate, key decisions)
-3. Scaffold the charm (charmcraft init, write charm code, add integrations)
-4. Write unit tests
-5. Pack and deploy
-6. Run tests and validate
-7. Commit and offer next steps
+For a typical charm build, always follow a **research → synthesis → confirm → build** \
+pattern. Do NOT generate build tasks upfront — they are created after the user approves \
+the design.
 
-Adapt the pattern to the specific request — skip steps that do not apply, add steps
-for complex requirements (e.g. multiple relations, custom actions, rock builds).
+**Phase 1 — Research** (multiple parallel tasks, category: research):
+
+- **source-analysis**: Clone the source repository, explore README, dependency files, \
+Dockerfiles, configuration files, and entry points. Run `analyse_framework` to detect \
+language and framework. Write findings into WORKLOAD.md.
+
+- **web-research**: Fetch external documentation, project website, PyPI/npm pages, and \
+deployment guides. Gather operational patterns: how the workload is typically deployed, \
+configured, monitored, and scaled.
+
+- **charmhub-survey**: Search Charmhub for existing charms that cover this workload. \
+Use `charmhub_search` and `charmhub_info` to evaluate candidates — check relations, \
+config, storage, containers, and maintenance status.
+
+These three tasks have no dependencies on each other and can run in parallel.
+
+**Phase 2 — Synthesis** (two tasks):
+
+- **operational-discovery** (category: research, depends on all Phase 1 tasks): \
+Synthesise the research findings into a structured design proposal. Cover: substrate \
+choice (K8s vs machine) with reasoning, charm path (12-factor / custom / infrastructure), \
+Charmhub recommendation (use existing / fork / build new), integrations, config options, \
+actions, scaling strategy, operational patterns, and open questions for the user. \
+Format the output as a DESIGN.md.
+
+- **confirm-design** (category: confirm, depends on operational-discovery): \
+Present the design proposal to the user for approval.
+
+**Phase 3 — Build** is NOT generated at this stage. Build, deploy, and test tasks are \
+created dynamically after the user confirms the design.
+
+Adapt the pattern to the specific request — skip research tasks that do not apply (e.g. \
+skip source-analysis if no source URL is given, skip charmhub-survey for a clearly novel \
+workload). Always include operational-discovery and confirm-design.
 
 ### Context
 {context_block}
@@ -126,16 +180,66 @@ for complex requirements (e.g. multiple relations, custom actions, rock builds).
 Return a JSON array of task objects. Example:
 ```json
 [
-  {{"id": "research", "title": "Research the workload", "category": "research", "description": "Clone and analyse the source repository.", "dependencies": []}},
-  {{"id": "confirm-approach", "title": "Confirm approach with user", "category": "confirm", "description": "Present substrate and path choice for approval.", "dependencies": ["research"]}}
+  {{"id": "source-analysis", "title": "Analyse the source repository", "category": \
+"research", "description": "Clone the repo and explore the codebase structure, \
+dependencies, and framework.", "dependencies": []}},
+  {{"id": "web-research", "title": "Research workload documentation", "category": \
+"research", "description": "Fetch external docs, deployment guides, and operational \
+patterns.", "dependencies": []}},
+  {{"id": "charmhub-survey", "title": "Survey Charmhub for existing charms", "category": \
+"research", "description": "Search Charmhub and evaluate existing charms for this \
+workload.", "dependencies": []}},
+  {{"id": "operational-discovery", "title": "Synthesise design proposal", "category": \
+"research", "description": "Combine all research into a structured design proposal \
+(DESIGN.md).", "dependencies": ["source-analysis", "web-research", "charmhub-survey"]}},
+  {{"id": "confirm-design", "title": "Confirm design with user", "category": "confirm", \
+"description": "Present the design proposal for user approval.", "dependencies": \
+["operational-discovery"]}}
 ]
 ```
+"""
+
+_DESIGN_TO_BUILD_PROMPT = """\
+You are a task planner for Cantrip, an AI agent that builds Juju charms autonomously.
+
+The user has approved a design proposal. Generate the **build, deploy, and test** tasks \
+needed to implement it. Return **only** a JSON array — no surrounding text.
+
+Each task object must have:
+- "id": short unique slug (e.g. "scaffold-charm", "write-tests")
+- "title": concise imperative title
+- "category": one of {categories}
+- "description": one or two sentences explaining what the task does
+- "dependencies": list of task IDs that must complete before this one starts
+
+### Typical build sequence
+
+1. Scaffold the charm (charmcraft init, write metadata)
+2. Write charm code (src/charm.py, Pebble layers, integrations)
+3. Write unit tests (Scenario-based)
+4. Pack and deploy
+5. Run tests and validate
+6. Commit and offer next steps
+
+Adapt for the design — add rock-building steps for 12-factor charms, add integration \
+wiring for complex workloads, skip steps that do not apply. Honour any user overrides.
+
+### Context
+{context_block}
 """
 
 
 def _build_planning_prompt(context: PlanningContext) -> str:
     """Build the system prompt for a fresh planning call."""
     return _PLANNING_PROMPT.format(
+        categories=", ".join(sorted(_VALID_CATEGORIES)),
+        context_block=_format_context_block(context),
+    )
+
+
+def _build_design_to_build_prompt(context: PlanningContext) -> str:
+    """Build the system prompt for generating build tasks from a design."""
+    return _DESIGN_TO_BUILD_PROMPT.format(
         categories=", ".join(sorted(_VALID_CATEGORIES)),
         context_block=_format_context_block(context),
     )
@@ -184,6 +288,8 @@ def _format_context_block(context: PlanningContext) -> str:
         lines.append(f"- Dev model: {context.dev_model}")
     if context.cos_model:
         lines.append(f"- COS model: {context.cos_model}")
+    if context.source_url:
+        lines.append(f"- Source URL: {context.source_url}")
     if context.environment_ready:
         lines.append("- Environment: ready")
     else:

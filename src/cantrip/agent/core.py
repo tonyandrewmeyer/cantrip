@@ -8,7 +8,9 @@ from typing import Any
 
 from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.context import ContextManager, VirtualFileStore
+from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.executor import BackgroundExecutor
+from cantrip.agent.planner import PlanningContext, TaskPlanner
 from cantrip.agent.preflight import (
     DEFAULT_PRESET,
     PreflightCallback,
@@ -608,6 +610,73 @@ class CantripAgent:
             )
         )
         yield full_response
+
+    # -- Design confirmation ---------------------------------------------------
+
+    async def handle_design_confirmation(
+        self,
+        confirm_task_id: str,
+        overrides: str | None = None,
+    ) -> list[AgentTask]:
+        """Process an approved design-confirm task and generate build tasks.
+
+        1. Finds the synthesis task result from the dependency chain.
+        2. Parses it into a ``DesignProposal``.
+        3. Records key decisions.
+        4. Generates build tasks via the planner.
+        5. Adds build tasks to the work queue.
+        """
+        confirm_task = self._work_queue.get_task(confirm_task_id)
+        if confirm_task is None:
+            log.warning("Design confirm task %s not found", confirm_task_id)
+            return []
+
+        # Walk dependencies to find the synthesis result.
+        design_text = ""
+        for dep_id in confirm_task.dependencies:
+            dep = self._work_queue.get_task(dep_id)
+            if dep is not None and dep.result:
+                design_text = dep.result
+                break
+
+        if not design_text:
+            log.warning("No synthesis result found for design confirmation")
+            return []
+
+        # Parse the design and store on state.
+        proposal = parse_design_from_result(design_text)
+        self.state.design_proposal = proposal
+
+        # Record key decisions.
+        if proposal.substrate:
+            self.state.add_decision(
+                "substrate", proposal.substrate, proposal.substrate_reasoning or None
+            )
+        if proposal.charm_path:
+            self.state.add_decision(
+                "charm_path", proposal.charm_path, proposal.charm_path_reasoning or None
+            )
+        if proposal.charmhub_recommendation:
+            self.state.add_decision("charmhub", proposal.charmhub_recommendation)
+
+        # Generate build tasks from the approved design.
+        planner = TaskPlanner(self.provider)
+        context = PlanningContext(
+            intent=f"Build a charm for {proposal.workload_name or 'the workload'}",
+            charm_name=self.state.charm_name,
+            charm_type=self.state.charm_type or proposal.substrate or None,
+            framework=self.state.framework,
+            dev_model=self.state.dev_model,
+            cos_model=self.state.cos_model,
+            environment_ready=self.state.environment_ready,
+        )
+        build_tasks = await planner.plan_from_design(
+            design_content=proposal.to_design_md(),
+            context=context,
+            overrides=overrides,
+        )
+        self._work_queue.add_tasks(build_tasks)
+        return build_tasks
 
     # -- Watcher integration ---------------------------------------------------
 

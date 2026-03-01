@@ -71,6 +71,9 @@ class AgentState:
     watcher_enabled: bool = False
     test_results: TestResults | None = None
 
+    # Transient design proposal — not persisted, populated after synthesis.
+    design_proposal: object | None = None
+
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
 

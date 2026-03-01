@@ -37,6 +37,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "registry_image_info",
             "git_clone",
             "read_file",
+            "write_file",
             "list_directory",
             "analyse_framework",
             "load_skill",
@@ -154,6 +155,7 @@ class SubagentContext:
     cos_model: str | None = None
     decisions: list[dict[str, Any]] = field(default_factory=list)
     prior_results: dict[str, str] = field(default_factory=dict)
+    design_content: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -162,9 +164,36 @@ class SubagentContext:
 
 _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
     TaskCategory.RESEARCH: (
-        "Focus on gathering information efficiently. Clone repositories, read "
-        "documentation, query Charmhub and container registries. Summarise your "
-        "findings clearly so downstream tasks can act on them."
+        "### Research principles\n\n"
+        "- **Cite sources**: include URLs, file paths, and version numbers for every claim.\n"
+        "- **Structured output**: use Markdown with clear headings so downstream tasks "
+        "can parse your findings.\n"
+        "- **Flag gaps**: mark anything you could not determine as `[UNKNOWN]` rather than "
+        "guessing.\n\n"
+        "### Task-type guidance\n\n"
+        "**source-analysis**: Clone the repository, read README, dependency files "
+        "(requirements.txt, pyproject.toml, package.json, go.mod, pom.xml), "
+        "Dockerfile/docker-compose.yml, configuration files, and entry points. "
+        "Run `analyse_framework` to detect language and framework. "
+        "Write findings into WORKLOAD.md at the charm root.\n\n"
+        "**web-research**: Fetch external documentation, project website, PyPI/npm "
+        "pages, and deployment guides. Focus on operational patterns: how the workload "
+        "is deployed, configured, monitored, and scaled in production.\n\n"
+        "**charmhub-survey**: Search Charmhub for existing charms covering this workload. "
+        "Use `charmhub_search` and `charmhub_info` to evaluate candidates — check "
+        "relations, config, storage, containers, and maintenance status.\n\n"
+        "**operational-discovery**: Synthesise all research into a structured design "
+        "proposal. Answer the operational story questions:\n"
+        "- **Storage**: What data does the workload persist? File paths, databases, volumes?\n"
+        "- **Clustering**: Does it support clustering, replication, or federation?\n"
+        "- **Health**: What health/readiness endpoints or probes does it offer?\n"
+        "- **Config**: What are the critical configuration knobs?\n"
+        "- **Failure modes**: How does it fail? What recovery mechanisms exist?\n"
+        "- **Integrations**: What external services does it connect to?\n"
+        "- **Observability**: What metrics, logs, and traces does it emit?\n"
+        "- **Scaling**: How does it scale — horizontally, vertically, or both?\n"
+        "- **Backup**: What backup/restore procedures does it support?\n\n"
+        "Format the output as DESIGN.md with clear headings for each section."
     ),
     TaskCategory.BUILD: (
         "Write clean, well-structured code following ops framework conventions. "
@@ -203,9 +232,17 @@ def _select_provider(
     category: TaskCategory,
     provider: llm.LLMProvider,
     light_provider: llm.LLMProvider | None,
+    task_title: str = "",
 ) -> llm.LLMProvider:
-    """Return the light provider for research/infra categories, primary otherwise."""
+    """Return the light provider for research/infra categories, primary otherwise.
+
+    Operational-discovery tasks are an exception: their output is
+    user-facing (the design proposal), so they use the primary model.
+    """
     if light_provider is not None and category in _LIGHT_CATEGORIES:
+        # Route synthesis tasks to the primary model for quality.
+        if "operational-discovery" in task_title or "synthesise" in task_title.lower():
+            return provider
         return light_provider
     return provider
 
@@ -310,7 +347,15 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
             + "\n".join(decision_lines)
         )
 
-    # 7. Completion instruction.
+    # 7. Approved design (for build/deploy/test subagents).
+    if context.design_content:
+        sections.append(
+            "## Approved design\n\n"
+            "The user has approved the following design — implement according to it:\n\n"
+            + context.design_content
+        )
+
+    # 8. Completion instruction.
     sections.append(
         "## Completion\n\n"
         "When you have finished, respond with a clear summary of what you "
@@ -344,6 +389,7 @@ class Subagent:
             context.task.category,
             provider,
             light_provider,
+            task_title=context.task.title,
         )
         self._tools = _filter_tools(tools, context.task.category)
         self._tool_map: dict[str, Tool] = {t.name: t for t in self._tools}

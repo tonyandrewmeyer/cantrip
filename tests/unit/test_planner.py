@@ -7,6 +7,7 @@ import pytest
 from cantrip.agent.planner import (
     PlanningContext,
     TaskPlanner,
+    _build_design_to_build_prompt,
     _build_planning_prompt,
     _build_replanning_prompt,
     _extract_json,
@@ -504,3 +505,156 @@ class TestPlanningPrompt:
         prompt = _build_planning_prompt(context)
         for cat in ("research", "build", "deploy", "test", "debug", "infra", "confirm"):
             assert cat in prompt
+
+    def test_includes_research_decomposition_guide(self) -> None:
+        """Verify the research-first decomposition guidance is present."""
+        context = PlanningContext(intent="test")
+        prompt = _build_planning_prompt(context)
+        assert "source-analysis" in prompt
+        assert "web-research" in prompt
+        assert "charmhub-survey" in prompt
+        assert "operational-discovery" in prompt
+        assert "confirm-design" in prompt
+
+    def test_includes_source_url(self) -> None:
+        context = PlanningContext(
+            intent="test",
+            source_url="https://github.com/example/repo",
+        )
+        prompt = _build_planning_prompt(context)
+        assert "https://github.com/example/repo" in prompt
+
+
+# ===================================================================
+# TestPlanFromDesign
+# ===================================================================
+
+
+class TestPlanFromDesign:
+    """Tests for TaskPlanner.plan_from_design()."""
+
+    @pytest.mark.asyncio
+    async def test_generates_build_tasks(self) -> None:
+        build_json = json.dumps(
+            [
+                {
+                    "id": "scaffold",
+                    "title": "Scaffold the charm",
+                    "category": "build",
+                    "description": "Run charmcraft init.",
+                    "dependencies": [],
+                },
+                {
+                    "id": "write-tests",
+                    "title": "Write unit tests",
+                    "category": "build",
+                    "description": "Write Scenario tests.",
+                    "dependencies": ["scaffold"],
+                },
+            ]
+        )
+        provider = FakeProvider(responses=[Response(content=build_json)])
+        planner = TaskPlanner(provider)
+        context = PlanningContext(intent="Build a charm for Redis")
+
+        tasks = await planner.plan_from_design(
+            design_content="# Design: Redis\n## Substrate\nK8s",
+            context=context,
+        )
+
+        assert len(tasks) == 2
+        assert tasks[0].title == "Scaffold the charm"
+        assert tasks[0].category == TaskCategory.BUILD
+        assert tasks[1].dependencies == ["scaffold"]
+
+    @pytest.mark.asyncio
+    async def test_includes_overrides(self) -> None:
+        """Verify overrides are passed in the user message."""
+        recorded_messages: list = []
+
+        class RecordingProvider(FakeProvider):
+            async def complete(self, messages, tools=None, temperature=0.7):  # noqa: ARG002
+                recorded_messages.extend(messages)
+                return Response(content="[]")
+
+        provider = RecordingProvider()
+        planner = TaskPlanner(provider)
+        context = PlanningContext(intent="Build")
+
+        await planner.plan_from_design(
+            design_content="# Design",
+            context=context,
+            overrides="Use machine instead of K8s",
+        )
+
+        user_msg = recorded_messages[-1].content
+        assert "User overrides" in user_msg
+        assert "machine instead of K8s" in user_msg
+
+    @pytest.mark.asyncio
+    async def test_no_overrides_omits_section(self) -> None:
+        """When overrides is None, the user message should not contain 'User overrides'."""
+        recorded_messages: list = []
+
+        class RecordingProvider(FakeProvider):
+            async def complete(self, messages, tools=None, temperature=0.7):  # noqa: ARG002
+                recorded_messages.extend(messages)
+                return Response(content="[]")
+
+        provider = RecordingProvider()
+        planner = TaskPlanner(provider)
+        context = PlanningContext(intent="Build")
+
+        await planner.plan_from_design(
+            design_content="# Design",
+            context=context,
+            overrides=None,
+        )
+
+        user_msg = recorded_messages[-1].content
+        assert "User overrides" not in user_msg
+
+
+# ===================================================================
+# TestDesignToBuildPrompt
+# ===================================================================
+
+
+class TestDesignToBuildPrompt:
+    """Tests for the design-to-build prompt builder."""
+
+    def test_includes_categories(self) -> None:
+        context = PlanningContext(intent="test")
+        prompt = _build_design_to_build_prompt(context)
+        for cat in ("build", "deploy", "test"):
+            assert cat in prompt
+
+    def test_includes_context(self) -> None:
+        context = PlanningContext(
+            intent="test",
+            charm_name="redis-k8s",
+            dev_model="dev",
+        )
+        prompt = _build_design_to_build_prompt(context)
+        assert "redis-k8s" in prompt
+        assert "dev" in prompt
+
+
+# ===================================================================
+# TestPlanningContextNewFields
+# ===================================================================
+
+
+class TestPlanningContextNewFields:
+    """Tests for the new source_url field on PlanningContext."""
+
+    def test_source_url_defaults_to_none(self) -> None:
+        ctx = PlanningContext(intent="test")
+        assert ctx.source_url is None
+
+    def test_source_url_set(self) -> None:
+        ctx = PlanningContext(
+            intent="test",
+            source_url="https://github.com/example/repo",
+        )
+        assert ctx.source_url == "https://github.com/example/repo"

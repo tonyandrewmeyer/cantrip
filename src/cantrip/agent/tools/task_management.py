@@ -39,17 +39,18 @@ class ManageTasksTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "cancel", "reprioritise", "detail"],
+                    "enum": ["list", "cancel", "reprioritise", "detail", "approve"],
                     "description": (
                         "'list' — show all tasks and their statuses; "
                         "'cancel' — remove a pending/blocked task; "
                         "'reprioritise' — move a pending task to the front; "
-                        "'detail' — show full result/description of a task"
+                        "'detail' — show full result/description of a task; "
+                        "'approve' — approve a blocked CONFIRM task, unblocking it"
                     ),
                 },
                 "task_id": {
                     "type": "string",
-                    "description": "Task ID (required for cancel, reprioritise, detail)",
+                    "description": "Task ID (required for cancel, reprioritise, detail, approve)",
                 },
             },
             "required": ["action"],
@@ -70,6 +71,8 @@ class ManageTasksTool(Tool):
             return self._reprioritise_task(task_id)
         if action == "detail":
             return self._task_detail(task_id)
+        if action == "approve":
+            return self._approve_task(task_id)
         return ToolResult(success=False, output="", error=f"Unknown action: {action}")
 
     def _list_tasks(self) -> ToolResult:
@@ -129,6 +132,25 @@ class ManageTasksTool(Tool):
             )
         self._queue.move_to_front(task_id)
         return ToolResult(success=True, output=f"Moved to front: {task.title}")
+
+    def _approve_task(self, task_id: str | None) -> ToolResult:
+        """Approve a blocked CONFIRM task, marking it as done."""
+        if not task_id:
+            return ToolResult(success=False, output="", error="task_id is required for approve.")
+        task = self._queue.get_task(task_id)
+        if task is None:
+            return ToolResult(success=False, output="", error=f"Task {task_id} not found.")
+        if task.status != TaskStatus.BLOCKED:
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Cannot approve task {task_id} — status is {task.status.value}. "
+                    "Only blocked tasks can be approved."
+                ),
+            )
+        self._queue.set_done(task_id, "Approved by user")
+        return ToolResult(success=True, output=f"Approved: {task.title}")
 
     def _task_detail(self, task_id: str | None) -> ToolResult:
         """Return detailed information about a single task."""

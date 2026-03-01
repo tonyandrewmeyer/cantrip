@@ -202,6 +202,13 @@ class BackgroundExecutor:
             if dep is not None and dep.result is not None:
                 prior_results[dep_id] = dep.result
 
+        # Extract design content for build/deploy/test subagents.
+        design_content: str | None = None
+        if self._state.design_proposal is not None:
+            design_md = getattr(self._state.design_proposal, "to_design_md", None)
+            if callable(design_md):
+                design_content = design_md()
+
         return SubagentContext(
             task=task,
             charm_name=self._state.charm_name,
@@ -212,6 +219,7 @@ class BackgroundExecutor:
             cos_model=self._state.cos_model,
             decisions=[d.to_dict() for d in self._state.decisions],
             prior_results=prior_results,
+            design_content=design_content,
         )
 
     # -- Persistence ---------------------------------------------------------
