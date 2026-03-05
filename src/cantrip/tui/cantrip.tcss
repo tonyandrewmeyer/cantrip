@@ -47,8 +47,6 @@ Screen {
 
 #chat {
     height: 1fr;
-    border: solid $primary;
-    padding: 1;
     overflow-y: auto;
 }
 
