@@ -47,6 +47,9 @@ def tasks_after_deploy(task: AgentTask) -> list[AgentTask]:
         return []
     if task.status != TaskStatus.DONE:
         return []
+    # Don't create a verify for a task that is already a verification.
+    if task.title.startswith(_VERIFY_PREFIX):
+        return []
 
     return [
         AgentTask(
