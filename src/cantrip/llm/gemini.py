@@ -26,6 +26,7 @@ _CONTEXT_WINDOWS: dict[str, int] = {
     "gemini-2.0-flash": 1_048_576,
     "gemini-3-flash-preview": 1_048_576,
     "gemini-3-pro-preview": 1_048_576,
+    "gemini-3.1-pro-preview": 1_048_576,
 }
 _DEFAULT_CONTEXT_WINDOW = 1_048_576
 
@@ -49,7 +50,7 @@ class GeminiProvider(LLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "gemini-3-flash-preview",
+        model: str = "gemini-3.1-pro-preview",
     ):
         """Initialise the Gemini provider."""
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")

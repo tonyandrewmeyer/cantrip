@@ -26,6 +26,7 @@ _LIGHT_MODEL_MAP: dict[str, str] = {
     "claude-sonnet-4-5-20250929": "claude-haiku-4-5-20251001",
     "claude-opus-4-6-20250917": "claude-sonnet-4-5-20250929",
     # Gemini: route Pro to Flash; Flash stays as-is.
+    "gemini-3.1-pro-preview": "gemini-3-flash-preview",
     "gemini-3-pro-preview": "gemini-3-flash-preview",
 }
 
