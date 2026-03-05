@@ -120,15 +120,19 @@ class GeminiProvider(LLMProvider):
                 if msg.tool_calls:
                     if msg.content:
                         parts.append(genai_types.Part(text=msg.content))
-                    for tc in msg.tool_calls:
-                        parts.append(
-                            genai_types.Part(
-                                function_call=genai_types.FunctionCall(
-                                    name=tc.name,
-                                    args=tc.arguments,
-                                )
+                    fc_sigs = msg.metadata.get("_gemini_fc_signatures", [])
+                    for i, tc in enumerate(msg.tool_calls):
+                        fc_part = genai_types.Part(
+                            function_call=genai_types.FunctionCall(
+                                name=tc.name,
+                                args=tc.arguments,
                             )
                         )
+                        if i < len(fc_sigs) and fc_sigs[i].get("thought_signature"):
+                            fc_part.thought_signature = base64.b64decode(
+                                fc_sigs[i]["thought_signature"]
+                            )
+                        parts.append(fc_part)
                     result.append(genai_types.Content(role="model", parts=parts))
                 else:
                     if not parts:
@@ -238,6 +242,7 @@ class GeminiProvider(LLMProvider):
         response_parts = response.candidates[0].content.parts or []
         thought_parts = self._collect_thought_parts(response_parts)
 
+        fc_signatures: list[dict[str, str]] = []
         for part in response_parts:
             if part.function_call and part.function_call.name:
                 tool_calls.append(
@@ -247,6 +252,11 @@ class GeminiProvider(LLMProvider):
                         arguments=dict(part.function_call.args),
                     )
                 )
+                sig = getattr(part, "thought_signature", None)
+                if sig:
+                    fc_signatures.append(
+                        {"thought_signature": base64.b64encode(sig).decode("ascii")}
+                    )
             elif part.text:
                 text_parts.append(part.text)
 
@@ -254,6 +264,8 @@ class GeminiProvider(LLMProvider):
         metadata: dict[str, Any] = {}
         if thought_parts:
             metadata["_gemini_thought_parts"] = thought_parts
+        if fc_signatures:
+            metadata["_gemini_fc_signatures"] = fc_signatures
 
         return Response(
             content=content,
@@ -304,6 +316,7 @@ class GeminiProvider(LLMProvider):
 
         tool_calls = []
         all_thought_parts: list[dict[str, str]] = []
+        all_fc_signatures: list[dict[str, str]] = []
         async for chunk in response_stream:
             if not chunk.candidates or not chunk.candidates[0].content:
                 continue
@@ -320,12 +333,19 @@ class GeminiProvider(LLMProvider):
                                 arguments=dict(part.function_call.args),
                             )
                         )
+                        sig = getattr(part, "thought_signature", None)
+                        if sig:
+                            all_fc_signatures.append(
+                                {"thought_signature": base64.b64encode(sig).decode("ascii")}
+                            )
                     elif part.text:
                         yield Chunk(content=part.text)
 
         metadata: dict[str, Any] = {}
         if all_thought_parts:
             metadata["_gemini_thought_parts"] = all_thought_parts
+        if all_fc_signatures:
+            metadata["_gemini_fc_signatures"] = all_fc_signatures
         yield Chunk(tool_calls=tool_calls, is_final=True, metadata=metadata)
 
     def count_tokens(self, messages: list[Message]) -> int:
