@@ -190,7 +190,7 @@ class ChatWidget(Widget):
                 "Describe what you want to charm:\n"
                 '  "build a charm for my Flask app"\n'
                 '  "charm a PostgreSQL deployment"\n\n'
-                "I'll help you create a production-ready\n"
+                "I'll help you create a production-ready "
                 "Juju charm in minutes.",
                 classes="welcome-message",
             )
