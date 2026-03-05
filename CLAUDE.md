@@ -67,7 +67,9 @@ src/cantrip/
 │   ├── store.py         # SQLite-backed session store
 │   ├── skills.py        # Skills index and loading
 │   ├── context.py       # Context compaction, virtual file store
+│   ├── design.py        # Design document generation
 │   ├── preflight.py     # Pre-flight environment checks
+│   ├── autodeploy.py    # Automatic deploy after charm build
 │   ├── watcher.py       # Event-driven watcher (status diffing, Loki polling)
 │   ├── queue.py         # WorkQueue, AgentTask — autonomous work scheduling
 │   ├── planner.py       # Task planner — LLM decomposes intent into tasks
