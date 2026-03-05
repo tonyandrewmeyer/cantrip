@@ -48,6 +48,7 @@ class TestAgentStatePersistence:
 
         # New agent at the same path should see the usage.
         agent2 = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent2._ensure_store()
         total = agent2._store.get_total_usage()
         assert total["prompt_tokens"] == 50
         assert total["completion_tokens"] == 25
