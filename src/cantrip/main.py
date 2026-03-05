@@ -76,6 +76,12 @@ def main() -> int:
         print("  cantrip /path/to/my-charm")
         return 1
 
+    # Ensure the charm directory exists and switch to it so that all tool
+    # defaults (path=".") resolve relative to the charm project, not the
+    # directory cantrip was launched from.
+    charm_path.mkdir(parents=True, exist_ok=True)
+    os.chdir(charm_path)
+
     if args.provider == "gemini":
         if not os.environ.get("GEMINI_API_KEY"):
             print("Error: GEMINI_API_KEY environment variable not set")
