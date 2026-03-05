@@ -155,6 +155,7 @@ class BackgroundExecutor:
             self._tools,
             self._provider,
             light_provider=self._light_provider,
+            on_usage=self._record_usage,
         )
         try:
             result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)
@@ -221,6 +222,18 @@ class BackgroundExecutor:
             prior_results=prior_results,
             design_content=design_content,
         )
+
+    # -- Usage tracking ------------------------------------------------------
+
+    def _record_usage(self, response: llm.Response) -> None:
+        """Record token usage from a subagent LLM response."""
+        if self._store and response.usage:
+            self._store.record_usage(
+                provider=self._provider.name,
+                model=self._provider.model_name,
+                prompt_tokens=response.usage.get("prompt_tokens", 0),
+                completion_tokens=response.usage.get("completion_tokens", 0),
+            )
 
     # -- Persistence ---------------------------------------------------------
 

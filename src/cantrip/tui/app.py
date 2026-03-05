@@ -1,5 +1,6 @@
 """Main Cantrip TUI application."""
 
+import datetime
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -72,6 +73,7 @@ class CantripApp(App):
         self._bootstrap_group_idx: int | None = None
         self._bootstrap_started = False
         self._watcher_autostart = watcher
+        self._session_start = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
         self._pending_confirm_id: str | None = None
 
     def compose(self) -> ComposeResult:
@@ -104,6 +106,8 @@ class CantripApp(App):
         self._start_executor()
         self._update_header_subtitle()
         self._update_model_info()
+        # Refresh model info periodically to pick up subagent token usage.
+        self.set_interval(5.0, self._update_model_info)
         if self._watcher_autostart:
             self._start_watcher()
 
@@ -170,12 +174,19 @@ class CantripApp(App):
         # Context usage from current conversation.
         bar.context_used = self._agent.context_manager.estimate_tokens(self._agent.state.messages)
 
-        # Session token totals from the store.
+        # Token usage from the store.
         self._agent._ensure_store()
         if self._agent._store:
-            usage = self._agent._store.get_total_usage()
-            bar.session_prompt_tokens = usage.get("prompt_tokens", 0)
-            bar.session_completion_tokens = usage.get("completion_tokens", 0)
+            # Current session usage (since this TUI launched).
+            session = self._agent._store.get_usage_since(self._session_start)
+            bar.session_prompt_tokens = session.get("prompt_tokens", 0)
+            bar.session_completion_tokens = session.get("completion_tokens", 0)
+            bar.session_request_count = session.get("request_count", 0)
+
+            # All-time usage for this charm.
+            alltime = self._agent._store.get_total_usage()
+            bar.alltime_prompt_tokens = alltime.get("prompt_tokens", 0)
+            bar.alltime_completion_tokens = alltime.get("completion_tokens", 0)
 
             by_model = self._agent._store.get_usage_by_model()
             total_requests = 0
@@ -183,7 +194,7 @@ class CantripApp(App):
                 count = r.get("request_count", 0)
                 if isinstance(count, int):
                     total_requests += count
-            bar.request_count = total_requests
+            bar.alltime_request_count = total_requests
 
     def action_toggle_model_info(self) -> None:
         """Toggle model info bar visibility."""

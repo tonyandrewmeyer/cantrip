@@ -40,7 +40,11 @@ class ModelInfoBar(Widget):
 
     session_prompt_tokens: reactive[int] = reactive(0, init=False)
     session_completion_tokens: reactive[int] = reactive(0, init=False)
-    request_count: reactive[int] = reactive(0, init=False)
+    session_request_count: reactive[int] = reactive(0, init=False)
+
+    alltime_prompt_tokens: reactive[int] = reactive(0, init=False)
+    alltime_completion_tokens: reactive[int] = reactive(0, init=False)
+    alltime_request_count: reactive[int] = reactive(0, init=False)
 
     def compose(self) -> ComposeResult:
         """Compose the bar layout."""
@@ -73,13 +77,19 @@ class ModelInfoBar(Widget):
                 f"{_fmt_k(remaining)} remaining)"
             )
 
-        total = self.session_prompt_tokens + self.session_completion_tokens
-        if total > 0:
+        session_total = self.session_prompt_tokens + self.session_completion_tokens
+        if session_total > 0:
             ctx_parts.append(
-                f"session: {_fmt_k(total)} tokens "
+                f"session: {_fmt_k(session_total)} "
                 f"({_fmt_k(self.session_prompt_tokens)} in, "
                 f"{_fmt_k(self.session_completion_tokens)} out, "
-                f"{self.request_count} requests)"
+                f"{self.session_request_count} req)"
+            )
+
+        alltime_total = self.alltime_prompt_tokens + self.alltime_completion_tokens
+        if alltime_total > 0 and alltime_total != session_total:
+            ctx_parts.append(
+                f"all-time: {_fmt_k(alltime_total)} ({self.alltime_request_count} req)"
             )
 
         with contextlib.suppress(NoMatches):
@@ -114,7 +124,16 @@ class ModelInfoBar(Widget):
     def watch_session_completion_tokens(self) -> None:
         self._refresh_content()
 
-    def watch_request_count(self) -> None:
+    def watch_session_request_count(self) -> None:
+        self._refresh_content()
+
+    def watch_alltime_prompt_tokens(self) -> None:
+        self._refresh_content()
+
+    def watch_alltime_completion_tokens(self) -> None:
+        self._refresh_content()
+
+    def watch_alltime_request_count(self) -> None:
         self._refresh_content()
 
 

@@ -270,6 +270,27 @@ class SessionStore:
             for r in rows
         ]
 
+    def get_usage_since(self, since: str) -> dict[str, int]:
+        """Return aggregate token counts for requests since *since* (ISO timestamp).
+
+        Also includes a ``request_count`` key.
+        """
+        row = self._db.execute(
+            """\
+            SELECT COALESCE(SUM(prompt_tokens), 0)     AS prompt_tokens,
+                   COALESCE(SUM(completion_tokens), 0)  AS completion_tokens,
+                   COUNT(*)                              AS request_count
+            FROM token_usage
+            WHERE timestamp >= ?
+            """,
+            (since,),
+        ).fetchone()
+        return {
+            "prompt_tokens": row["prompt_tokens"],
+            "completion_tokens": row["completion_tokens"],
+            "request_count": row["request_count"],
+        }
+
     # ── Migration ────────────────────────────────────────────────────────
 
     @staticmethod

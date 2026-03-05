@@ -2,12 +2,16 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from cantrip.agent.queue import AgentTask, TaskCategory
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm import base as llm
+
+# Called after each LLM completion with the response, for token tracking.
+UsageCallback = Callable[[llm.Response], None] | None
 
 log = logging.getLogger(__name__)
 
@@ -401,6 +405,7 @@ class Subagent:
         tools: list[Tool],
         provider: llm.LLMProvider,
         light_provider: llm.LLMProvider | None = None,
+        on_usage: UsageCallback = None,
     ) -> None:
         self._context = context
         self._provider = _select_provider(
@@ -411,6 +416,7 @@ class Subagent:
         )
         self._tools = _filter_tools(tools, context.task.category)
         self._tool_map: dict[str, Tool] = {t.name: t for t in self._tools}
+        self._on_usage = on_usage
 
     async def run(self) -> str:
         """Execute the task and return a text summary of the outcome."""
@@ -467,11 +473,14 @@ class Subagent:
         last_error: llm.ProviderRateLimitError | llm.ProviderOverloadedError | None = None
         for attempt in range(1, _TRANSIENT_RETRIES + 1):
             try:
-                return await self._provider.complete(
+                response = await self._provider.complete(
                     messages=messages,
                     tools=tools,
                     temperature=_SUBAGENT_TEMPERATURE,
                 )
+                if self._on_usage:
+                    self._on_usage(response)
+                return response
             except (llm.ProviderRateLimitError, llm.ProviderOverloadedError) as exc:
                 last_error = exc
                 if attempt == _TRANSIENT_RETRIES:
