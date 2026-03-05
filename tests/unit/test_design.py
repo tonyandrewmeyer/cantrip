@@ -1,6 +1,6 @@
 """Tests for the design proposal module."""
 
-from cantrip.agent.design import DesignProposal, parse_design_from_result
+from cantrip.agent.design import DesignProposal, DesignQuestion, parse_design_from_result
 
 # ===================================================================
 # TestDesignProposal
@@ -25,7 +25,13 @@ class TestDesignProposal:
             actions=["backup", "restore"],
             scaling_strategy="Horizontal with sentinel",
             operational_patterns="Primary/replica with automatic failover",
-            questions_for_user=["Sentinel or cluster mode?"],
+            questions_for_user=[
+                DesignQuestion(
+                    key="Mode",
+                    text="Sentinel or cluster mode?",
+                    suggestions=["Sentinel", "Cluster"],
+                ),
+            ],
             sources=["https://redis.io/docs"],
             raw_design_md="# Full design content",
         )
@@ -129,8 +135,12 @@ Horizontal scaling with Redis Cluster or Sentinel
 Primary/replica with automatic failover. Supports RDB and AOF persistence.
 
 ## Questions
-- Should we target Redis Cluster or Sentinel mode?
-- What authentication method is preferred?
+- **Mode**: Should we target Redis Cluster or Sentinel mode?
+  - Redis Cluster (recommended for horizontal scaling)
+  - Sentinel (simpler, primary/replica only)
+- **Authentication**: What authentication method is preferred?
+  - Password (ACL-based)
+  - TLS client certificates
 
 ## Sources
 - https://redis.io/docs
@@ -176,7 +186,43 @@ class TestParseDesignFromResult:
     def test_parses_questions(self) -> None:
         proposal = parse_design_from_result(_SAMPLE_DESIGN)
         assert len(proposal.questions_for_user) == 2
-        assert any("Sentinel" in q for q in proposal.questions_for_user)
+        assert any("Sentinel" in q.text for q in proposal.questions_for_user)
+
+    def test_parses_question_keys(self) -> None:
+        """Bold key prefixes are extracted into DesignQuestion.key."""
+        proposal = parse_design_from_result(_SAMPLE_DESIGN)
+        keys = [q.key for q in proposal.questions_for_user]
+        assert "Mode" in keys
+        assert "Authentication" in keys
+
+    def test_parses_question_suggestions(self) -> None:
+        """Indented sub-bullets are extracted as suggestions."""
+        proposal = parse_design_from_result(_SAMPLE_DESIGN)
+        mode_q = next(q for q in proposal.questions_for_user if q.key == "Mode")
+        assert len(mode_q.suggestions) == 2
+        assert any("Cluster" in s for s in mode_q.suggestions)
+        assert any("Sentinel" in s for s in mode_q.suggestions)
+
+        auth_q = next(q for q in proposal.questions_for_user if q.key == "Authentication")
+        assert len(auth_q.suggestions) == 2
+        assert any("Password" in s for s in auth_q.suggestions)
+
+    def test_parses_questions_without_suggestions(self) -> None:
+        """Questions without sub-bullets still parse correctly."""
+        md = "# Test\n\n## Questions\n- **DB**: Which database?\n- **Port**: What port?\n"
+        proposal = parse_design_from_result(md)
+        assert len(proposal.questions_for_user) == 2
+        assert proposal.questions_for_user[0].suggestions == []
+        assert proposal.questions_for_user[1].suggestions == []
+
+    def test_parses_questions_without_bold_key(self) -> None:
+        """Questions without **key**: prefix get a slug key."""
+        md = "# Test\n\n## Questions\n- Should we use K8s?\n"
+        proposal = parse_design_from_result(md)
+        assert len(proposal.questions_for_user) == 1
+        q = proposal.questions_for_user[0]
+        assert q.text == "Should we use K8s?"
+        assert q.key  # Should have some auto-generated key.
 
     def test_parses_sources(self) -> None:
         proposal = parse_design_from_result(_SAMPLE_DESIGN)

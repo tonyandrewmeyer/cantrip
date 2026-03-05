@@ -5,6 +5,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Interactive design questions** — when the synthesis task produces design questions, the TUI now presents them one at a time in a modal screen with suggested answer buttons and a free-form input option; answers are collected and fed back as overrides for design confirmation, replacing the previous wall-of-markdown approach
 - **Charmhub publishing tools** — `charmcraft_upload` uploads a `.charm` file to Charmhub (parses revision number, requires user confirmation), `charmcraft_release` releases a revision to a channel with optional resource attachments (requires user confirmation), `generate_readme` reads `charmcraft.yaml`, `WORKLOAD.md`, and `DESIGN.md` to produce a structured README with usage, configuration, actions, and integrations sections
 - **Log viewer (F3)** — modal screen showing `juju debug-log` output with log-level filtering (cycle through WARNING/INFO/DEBUG/ERROR with `l` key) and manual refresh (`r` key); fetches the most recent 200 lines from the development model
 - **Trace viewer (F4)** — modal screen showing COS endpoint URLs, Grafana links, and port-forwarding instructions for accessing observability dashboards

@@ -10,27 +10,21 @@ from textual.worker import Worker, WorkerState
 
 from cantrip import __version__
 from cantrip.agent.core import CantripAgent
+from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
+from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.watcher import WatcherEvent
 from cantrip.llm import create_provider, resolve_light_model
 from cantrip.llm.base import ProviderOverloadedError, ProviderRateLimitError
 from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.screens.logs import LogScreen
+from cantrip.tui.screens.questions import DesignQuestionsScreen
 from cantrip.tui.screens.traces import TraceScreen
-from cantrip.tui.widgets.chat import ChatWidget, MessageStatus, MessageWidget
+from cantrip.tui.widgets.chat import ChatWidget
 from cantrip.tui.widgets.filetree import CharmTreeWidget
 from cantrip.tui.widgets.status import MultiModelStatusWidget
 from cantrip.tui.widgets.statusbar import StatusBar
 from cantrip.tui.widgets.tasks import TaskChecklistWidget
-
-# Map preflight statuses to chat progress statuses.
-_STATUS_MAP = {
-    CheckStatus.PENDING: MessageStatus.PENDING,
-    CheckStatus.RUNNING: MessageStatus.IN_PROGRESS,
-    CheckStatus.PASSED: MessageStatus.COMPLETE,
-    CheckStatus.FAILED: MessageStatus.ERROR,
-    CheckStatus.SKIPPED: MessageStatus.COMPLETE,
-}
 
 # Preflight check names shown during the eager prepare (full bootstrap).
 _PREPARE_CHECKS = ["concierge", "prepare", "juju", "controller", "cos"]
@@ -72,10 +66,11 @@ class CantripApp(App):
         self._light_model_override = light_model
         self._light_model_name: str | None = None
         self._agent: CantripAgent | None = None
-        self._prepare_widget: MessageWidget | None = None
-        self._bootstrap_widget: MessageWidget | None = None
+        self._prepare_group_idx: int | None = None
+        self._bootstrap_group_idx: int | None = None
         self._bootstrap_started = False
         self._watcher_autostart = watcher
+        self._pending_confirm_id: str | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
@@ -157,16 +152,10 @@ class CantripApp(App):
         """
         if not self._agent:
             return
-        chat = self.query_one("#chat", ChatWidget)
-        self._prepare_widget = chat.add_system_message(
-            "Preparing environment...",
-            progress_items=[
-                "Concierge",
-                "Environment",
-                "Juju CLI",
-                "Controller",
-                "COS",
-            ],
+        checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+        self._prepare_group_idx = checklist.add_preflight_group(
+            "Preparing environment",
+            ["Concierge", "Environment", "Juju CLI", "Controller", "COS"],
         )
         self.run_worker(
             self._agent.prepare(
@@ -178,12 +167,13 @@ class CantripApp(App):
         )
 
     def _on_prepare_event(self, event: PreflightEvent) -> None:
-        """Handle an eager-prepare preflight event — update progress items."""
-        if self._prepare_widget is None:
+        """Handle an eager-prepare preflight event — update the task pane."""
+        if self._prepare_group_idx is None:
             return
         if event.check_name in _PREPARE_CHECKS:
             idx = _PREPARE_CHECKS.index(event.check_name)
-            self._prepare_widget.update_progress(idx, _STATUS_MAP[event.status])
+            checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+            checklist.update_preflight(self._prepare_group_idx, idx, event.status)
         if event.check_name == "cos" and event.status == CheckStatus.PASSED:
             status_bar = self.query_one("#status-bar", StatusBar)
             status_bar.cos_health = "● COS healthy"
@@ -205,10 +195,10 @@ class CantripApp(App):
             self._bootstrap_started = True
             return
         self._bootstrap_started = True
-        chat = self.query_one("#chat", ChatWidget)
-        self._bootstrap_widget = chat.add_system_message(
-            f"Re-bootstrapping environment ({preset})...",
-            progress_items=["Controller", "Controller check", "COS"],
+        checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+        self._bootstrap_group_idx = checklist.add_preflight_group(
+            f"Re-bootstrapping ({preset})",
+            ["Controller", "Controller check", "COS"],
         )
         self.run_worker(
             self._agent.bootstrap_environment(
@@ -220,12 +210,13 @@ class CantripApp(App):
         )
 
     def _on_bootstrap_event(self, event: PreflightEvent) -> None:
-        """Handle a re-bootstrap preflight event — update progress items."""
-        if self._bootstrap_widget is None:
+        """Handle a re-bootstrap preflight event — update the task pane."""
+        if self._bootstrap_group_idx is None:
             return
         if event.check_name in _BOOTSTRAP_CHECKS:
             idx = _BOOTSTRAP_CHECKS.index(event.check_name)
-            self._bootstrap_widget.update_progress(idx, _STATUS_MAP[event.status])
+            checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+            checklist.update_preflight(self._bootstrap_group_idx, idx, event.status)
 
     # -- Executor integration -------------------------------------------------
 
@@ -235,8 +226,16 @@ class CantripApp(App):
             return
         checklist = self.query_one("#task-checklist", TaskChecklistWidget)
 
-        def _on_task_changed(_task) -> None:
+        def _on_task_changed(task: AgentTask) -> None:
             checklist.notify_changed(self._agent.work_queue.all_tasks())
+            # Detect when a confirm-design task becomes blocked.
+            if (
+                task.category == TaskCategory.CONFIRM
+                and task.status == TaskStatus.BLOCKED
+                and self._pending_confirm_id is None
+            ):
+                self._pending_confirm_id = task.id
+                self.call_from_thread(self._present_design_questions, task)
 
         self._agent.start_executor(on_task_changed=_on_task_changed)
 
@@ -248,6 +247,102 @@ class CantripApp(App):
     def on_task_checklist_widget_tasks_available(self) -> None:
         """Show the status panel when tasks first appear."""
         self.query_one("#right-panel").display = True
+
+    # -- Design questions flow ------------------------------------------------
+
+    def _present_design_questions(self, task: AgentTask) -> None:
+        """Extract the design proposal and show interactive questions.
+
+        Called from the executor callback (via ``call_from_thread``) when a
+        confirm-design task becomes blocked.  Walks the task's dependencies
+        to find the synthesis result, parses it for structured questions,
+        and either pushes the interactive questions screen or falls back to
+        showing everything in chat for the LLM to handle.
+        """
+        if not self._agent:
+            return
+
+        # Find the synthesis result from the confirm task's dependencies.
+        design_text = ""
+        for dep_id in task.dependencies:
+            dep = self._agent.work_queue.get_task(dep_id)
+            if dep is not None and dep.result:
+                design_text = dep.result
+                break
+
+        if not design_text:
+            # No design found — let the conversation LLM handle it.
+            self._pending_confirm_id = None
+            return
+
+        proposal = parse_design_from_result(design_text)
+        questions = proposal.questions_for_user
+
+        if not questions:
+            # No structured questions — let the conversation LLM handle it.
+            self._pending_confirm_id = None
+            return
+
+        # Show the design summary in chat (without questions).
+        chat = self.query_one("#chat", ChatWidget)
+        chat.add_system_message(proposal.format_for_chat())
+
+        # Push the interactive questions screen.
+        self.push_screen(
+            DesignQuestionsScreen(questions),
+            callback=self._on_questions_answered,
+        )
+
+    def _on_questions_answered(self, questions: list[DesignQuestion] | None) -> None:
+        """Handle completed design questions and trigger design confirmation."""
+        confirm_id = self._pending_confirm_id
+        self._pending_confirm_id = None
+
+        if not self._agent or not confirm_id:
+            return
+
+        # Build an overrides string from the answered questions.
+        answered = [q for q in (questions or []) if q.answer]
+        if answered:
+            lines = [f"- **{q.key}**: {q.answer}" for q in answered]
+            overrides = "User answers:\n" + "\n".join(lines)
+        else:
+            overrides = None
+
+        # Show answers in chat.
+        chat = self.query_one("#chat", ChatWidget)
+        if answered:
+            answer_text = "\n".join(f"**{q.key}**: {q.answer}" for q in answered)
+            chat.add_user_message(answer_text)
+        chat.add_system_message("Design approved. Generating build tasks...")
+
+        # Approve the confirm task and generate build tasks.
+        self.run_worker(
+            self._complete_design_confirmation(confirm_id, overrides),
+            name="design_confirmation",
+            exclusive=False,
+        )
+
+    async def _complete_design_confirmation(self, confirm_id: str, overrides: str | None) -> None:
+        """Approve the confirm task and generate build tasks from the design."""
+        if not self._agent:
+            return
+
+        # Approve (unblock → done).
+        self._agent.work_queue.set_done(confirm_id, "Approved by user")
+
+        # Generate build tasks.
+        build_tasks = await self._agent.handle_design_confirmation(
+            confirm_id,
+            overrides=overrides,
+        )
+
+        chat = self.query_one("#chat", ChatWidget)
+        if build_tasks:
+            titles = "\n".join(f"- {t.title}" for t in build_tasks)
+            chat.add_system_message(f"Build plan created:\n{titles}")
+        else:
+            chat.add_system_message("No build tasks generated — check the design output.")
 
     # -- Watcher integration --------------------------------------------------
 

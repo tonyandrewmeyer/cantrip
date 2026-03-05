@@ -1,6 +1,7 @@
 """Task checklist widget for the TUI."""
 
 import threading
+from dataclasses import dataclass, field
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -8,6 +9,7 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static
 
+from cantrip.agent.preflight import CheckStatus
 from cantrip.agent.queue import AgentTask, TaskStatus
 
 # Status indicator characters and CSS classes per task status.
@@ -19,7 +21,24 @@ _STATUS_DISPLAY: dict[TaskStatus, tuple[str, str]] = {
     TaskStatus.BLOCKED: ("\u25cc", "task-blocked"),  # ◌
 }
 
+# Reuse the same visual indicators for preflight checks.
+_CHECK_STATUS_DISPLAY: dict[CheckStatus, tuple[str, str]] = {
+    CheckStatus.PENDING: ("\u25cb", "task-pending"),  # ○
+    CheckStatus.RUNNING: ("\u27f3", "task-active"),  # ⟳
+    CheckStatus.PASSED: ("\u2713", "task-done"),  # ✓
+    CheckStatus.FAILED: ("\u2717", "task-failed"),  # ✗
+    CheckStatus.SKIPPED: ("\u2713", "task-done"),  # ✓
+}
+
 _TITLE_MAX_LEN = 40
+
+
+@dataclass
+class _PreflightGroup:
+    """A group of preflight environment checks."""
+
+    title: str
+    items: list[tuple[str, CheckStatus]] = field(default_factory=list)
 
 
 def _status_display(status: TaskStatus) -> tuple[str, str]:
@@ -127,6 +146,7 @@ class TaskChecklistWidget(Widget):
         """Initialise the checklist widget."""
         super().__init__(**kwargs)
         self._tasks: list[AgentTask] = []
+        self._preflight_groups: list[_PreflightGroup] = []
         self._dirty = False
         self._lock = threading.Lock()
         self._tasks_available_posted = False
@@ -140,6 +160,31 @@ class TaskChecklistWidget(Widget):
         """Start the refresh timer on mount."""
         self.set_interval(0.5, self._check_dirty)
         self._refresh_display()
+
+    def add_preflight_group(self, title: str, items: list[str]) -> int:
+        """Add a group of preflight checks and return its index.
+
+        Call from the main thread (e.g. during ``on_mount``).
+        """
+        with self._lock:
+            group = _PreflightGroup(
+                title=title,
+                items=[(label, CheckStatus.PENDING) for label in items],
+            )
+            self._preflight_groups.append(group)
+            self._dirty = True
+            return len(self._preflight_groups) - 1
+
+    def update_preflight(self, group_idx: int, item_idx: int, status: CheckStatus) -> None:
+        """Update the status of a preflight check item.
+
+        Thread-safe — called from preflight worker callbacks.
+        """
+        with self._lock:
+            group = self._preflight_groups[group_idx]
+            label, _old = group.items[item_idx]
+            group.items[item_idx] = (label, status)
+            self._dirty = True
 
     def notify_changed(self, tasks: list[AgentTask]) -> None:
         """Thread-safe notification that tasks have changed.
@@ -194,27 +239,39 @@ class TaskChecklistWidget(Widget):
         container = results.first(Vertical)
         container.remove_children()
 
-        if not self._tasks:
+        has_content = bool(self._preflight_groups) or bool(self._tasks)
+
+        if not has_content:
             container.mount(Static("No tasks yet.", classes="task-empty"))
             return
 
-        # Post TasksAvailable once.
-        if not self._tasks_available_posted:
-            self._tasks_available_posted = True
-            self.post_message(self.TasksAvailable())
+        # Render preflight groups first.
+        for group in self._preflight_groups:
+            container.mount(Static(group.title, classes="task-header"))
+            container.mount(Static("\u2500" * 20, classes="task-divider"))
+            for label, status in group.items:
+                char, css_class = _CHECK_STATUS_DISPLAY.get(status, ("\u25cb", "task-pending"))
+                container.mount(Static(f"{char} {label}", classes=f"task-row {css_class}"))
 
-        container.mount(Static("Tasks", classes="task-header"))
-        container.mount(Static("\u2500" * 20, classes="task-divider"))
+        # Render work queue tasks.
+        if self._tasks:
+            # Post TasksAvailable once.
+            if not self._tasks_available_posted:
+                self._tasks_available_posted = True
+                self.post_message(self.TasksAvailable())
 
-        for task in self._tasks:
-            char, css_class = _status_display(task.status)
-            title = task.title
-            if len(title) > _TITLE_MAX_LEN:
-                title = title[: _TITLE_MAX_LEN - 1] + "\u2026"
-            row = _TaskRow(task.id, f"{char} {title}", classes=f"task-row {css_class}")
-            container.mount(row)
+            container.mount(Static("Tasks", classes="task-header"))
+            container.mount(Static("\u2500" * 20, classes="task-divider"))
 
-            # Show detail panel if this task is expanded.
-            if self._expanded_id == task.id:
-                detail_text = _format_detail(task)
-                container.mount(Static(detail_text, classes="task-detail"))
+            for task in self._tasks:
+                char, css_class = _status_display(task.status)
+                title = task.title
+                if len(title) > _TITLE_MAX_LEN:
+                    title = title[: _TITLE_MAX_LEN - 1] + "\u2026"
+                row = _TaskRow(task.id, f"{char} {title}", classes=f"task-row {css_class}")
+                container.mount(row)
+
+                # Show detail panel if this task is expanded.
+                if self._expanded_id == task.id:
+                    detail_text = _format_detail(task)
+                    container.mount(Static(detail_text, classes="task-detail"))

@@ -5,6 +5,20 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class DesignQuestion:
+    """A single design question with suggested answers.
+
+    The synthesis subagent produces questions with 2-3 suggested answers
+    so the TUI can present them interactively one at a time.
+    """
+
+    key: str
+    text: str
+    suggestions: list[str] = field(default_factory=list)
+    answer: str | None = None
+
+
+@dataclass
 class DesignProposal:
     """Structured design proposal extracted from a synthesis task result.
 
@@ -25,7 +39,7 @@ class DesignProposal:
     actions: list[str] = field(default_factory=list)
     scaling_strategy: str = ""
     operational_patterns: str = ""
-    questions_for_user: list[str] = field(default_factory=list)
+    questions_for_user: list[DesignQuestion] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     raw_design_md: str = ""
 
@@ -73,8 +87,13 @@ class DesignProposal:
             sections.append(f"**Operational patterns:**\n{self.operational_patterns}")
 
         if self.questions_for_user:
-            items = "\n".join(f"- {q}" for q in self.questions_for_user)
-            sections.append(f"**Questions:**\n{items}")
+            items = []
+            for q in self.questions_for_user:
+                line = f"- **{q.key}**: {q.text}"
+                for s in q.suggestions:
+                    line += f"\n  - {s}"
+                items.append(line)
+            sections.append("**Questions:**\n" + "\n".join(items))
 
         if self.sources:
             items = "\n".join(f"- {s}" for s in self.sources)
@@ -114,7 +133,7 @@ def parse_design_from_result(text: str) -> DesignProposal:
     proposal.actions = _get_list(heading_map, "actions")
     proposal.scaling_strategy = _get_field(heading_map, "scaling")
     proposal.operational_patterns = _get_field(heading_map, "operational")
-    proposal.questions_for_user = _get_list(heading_map, "questions")
+    proposal.questions_for_user = _get_questions(heading_map, "questions")
     proposal.sources = _get_list(heading_map, "sources")
 
     return proposal
@@ -167,3 +186,54 @@ def _get_list(heading_map: dict[str, str], key: str) -> list[str]:
         if stripped.startswith("- ") or stripped.startswith("* "):
             items.append(stripped[2:].strip())
     return items
+
+
+def _get_questions(heading_map: dict[str, str], key: str) -> list[DesignQuestion]:
+    """Extract structured questions with suggestions from the section matching *key*.
+
+    Expects top-level bullets as questions (optionally with a **key**: prefix)
+    and indented sub-bullets as suggested answers.
+    """
+    body = _get_field(heading_map, key)
+    if not body:
+        return []
+
+    questions: list[DesignQuestion] = []
+    current_q: DesignQuestion | None = None
+
+    for line in body.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Indented sub-bullet — suggestion for the current question.
+        # Must check before top-level to avoid matching indented lines.
+        if (
+            current_q is not None
+            and line != line.lstrip()
+            and (stripped.startswith("- ") or stripped.startswith("* "))
+        ):
+            current_q.suggestions.append(stripped[2:].strip())
+        # Top-level bullet — new question (no leading whitespace).
+        elif line == line.lstrip() and (stripped.startswith("- ") or stripped.startswith("* ")):
+            raw = stripped[2:].strip()
+            q_key, q_text = _split_question_key(raw)
+            current_q = DesignQuestion(key=q_key, text=q_text)
+            questions.append(current_q)
+
+    return questions
+
+
+def _split_question_key(raw: str) -> tuple[str, str]:
+    """Split a ``**key**: text`` pattern into (key, text).
+
+    Falls back to generating a slug from the first few words if no bold
+    key prefix is found.
+    """
+    # Match **key**: text or **key** — text.
+    match = re.match(r"\*\*(.+?)\*\*\s*[:—–-]\s*(.*)", raw)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+    # No bold prefix — use first few words as key.
+    words = raw.split()
+    key = "-".join(words[:3]).lower().rstrip("?:,.")
+    return key, raw
