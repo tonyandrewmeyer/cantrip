@@ -450,6 +450,46 @@ builds, tests, and publishes charms with full observability and quality assuranc
 
 ---
 
+## Phase 8: Terraform Support
+
+**Goal:** Understand how Cantrip should support Terraform for Juju-deployed charms. Charms
+increasingly ship a Terraform module so that operators can deploy them declaratively via
+`terraform apply` rather than (or alongside) `juju deploy`. Cantrip should be able to
+generate, validate, and maintain these modules.
+
+### 8.1 Research
+
+Understand the Terraform ecosystem for Juju charms and determine what Cantrip needs to do.
+
+- [ ] **Study the standard specification** — read and internalise the
+  [Terraform standard specification for charms](https://discourse.canonical.com/t/terraform-standard-specification-for-charms/7037),
+  which defines how charm Terraform modules should be structured
+- [ ] **Survey existing modules** — examine published Terraform modules for existing charms
+  (e.g. in the `canonical/terraform-juju-*` repos) to understand patterns, conventions, and
+  common pitfalls
+- [ ] **Identify scope** — determine which of the following Cantrip should support:
+  - Generating a Terraform module for a newly built charm
+  - Generating a Terraform plan that deploys a charm with its integrations
+  - Validating a generated module against the standard specification
+  - Testing the module (plan + apply in a clean environment)
+  - Maintaining the module as the charm evolves (new config, new integrations)
+
+### 8.2 Design Decisions (TBD after research)
+
+- [ ] **When to generate** — should Cantrip always generate a Terraform module alongside the
+  charm, or only when the user requests it?
+- [ ] **Module structure** — follow the standard specification; determine how much of the
+  module can be inferred from the charm's `charmcraft.yaml` (config, integrations, resources)
+- [ ] **Integration with the build pipeline** — where in the autonomous task flow does
+  Terraform module generation sit? After charm pack? After first successful deploy?
+- [ ] **Validation tooling** — can Cantrip run `terraform validate` and `terraform plan`
+  as part of its quality checks?
+
+**Exit criteria:** Clear design document for Terraform support, grounded in the standard
+specification and real-world module patterns, with a concrete implementation plan.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -464,6 +504,7 @@ builds, tests, and publishes charms with full observability and quality assuranc
 | Merge planning (6.4) | Phase 6 speed analysis | Needs discussion and evaluation first |
 | Advanced testing (7.2) | Phase 4 autonomous core | Tests should run as autonomous tasks |
 | Charmhub publishing (7.4) | Phase 5 design pipeline | Only publish well-researched charms |
+| Terraform support (8.x) | Phase 5 design pipeline | Needs working charm build pipeline to generate modules from |
 
 ---
 
@@ -479,3 +520,4 @@ builds, tests, and publishes charms with full observability and quality assuranc
 | M5: Research-Driven | 5 | Agent proactively researches and proposes grounded designs |
 | M6: Fast | 6 | Common charm build completes in under two minutes |
 | M7: Showcase | 7 | Demo-ready with full ecosystem, testing, and publishing |
+| M8: Terraform | 8 | Cantrip generates and validates Terraform modules for charms |
