@@ -76,28 +76,28 @@ class TestTuiWidgets:
                 assert app.query_one("#juju-status") is not None
 
     @pytest.mark.asyncio
-    async def test_status_panel_starts_hidden(self):
-        """#right-panel display is False on mount."""
+    async def test_status_panel_starts_visible(self):
+        """#right-panel is visible on mount (charm file tree shown by default)."""
         p1, p2, _ = _patch_app()
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 right_panel = pilot.app.query_one("#right-panel")
-                assert right_panel.display is False
+                assert right_panel.display is True
 
     @pytest.mark.asyncio
     async def test_f2_toggles_status_panel(self):
-        """Press F2 twice: panel shows then hides."""
+        """Press F2 twice: panel hides then shows."""
         p1, p2, _ = _patch_app()
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 right_panel = pilot.app.query_one("#right-panel")
-                assert right_panel.display is False
-
-                await pilot.press("f2")
                 assert right_panel.display is True
 
                 await pilot.press("f2")
                 assert right_panel.display is False
+
+                await pilot.press("f2")
+                assert right_panel.display is True
 
     @pytest.mark.asyncio
     async def test_ctrl_l_clears_chat(self):
@@ -360,15 +360,15 @@ class TestTuiWidgets:
                 assert isinstance(checklist, TaskChecklistWidget)
 
     @pytest.mark.asyncio
-    async def test_right_panel_shown_on_tasks_available(self):
-        """Right panel becomes visible when TasksAvailable is posted."""
+    async def test_right_panel_visible_with_tasks(self):
+        """Right panel stays visible when TasksAvailable is posted."""
         from cantrip.agent.queue import AgentTask, TaskCategory
 
         p1, p2, _ = _patch_app()
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 right_panel = pilot.app.query_one("#right-panel")
-                assert right_panel.display is False
+                assert right_panel.display is True
 
                 checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
                 task = AgentTask(title="Do something", category=TaskCategory.BUILD)
