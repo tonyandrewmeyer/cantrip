@@ -7,7 +7,7 @@ import sys
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.llm import create_provider, resolve_light_model
-from cantrip.llm.base import ProviderError, ProviderRateLimitError
+from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -110,10 +110,10 @@ async def _repl(agent: CantripAgent) -> None:
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
             print("\n[interrupted]")
-        except ProviderRateLimitError:
+        except (ProviderRateLimitError, ProviderOverloadedError):
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
-            print("\nRate limited — please wait a moment and try again.\n")
+            print("\nProvider temporarily unavailable — please wait a moment and try again.\n")
         except ProviderError as e:
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)

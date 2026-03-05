@@ -14,8 +14,8 @@ log = logging.getLogger(__name__)
 # Focused tasks need fewer rounds than the open-ended conversation loop.
 MAX_SUBAGENT_ROUNDS = 12
 
-_RATE_LIMIT_RETRIES = 3
-_RATE_LIMIT_BASE_DELAY = 30  # seconds
+_TRANSIENT_RETRIES = 3
+_TRANSIENT_BASE_DELAY = 30  # seconds
 
 # Action-oriented — slightly more deterministic than conversation (0.7).
 _SUBAGENT_TEMPERATURE = 0.5
@@ -447,25 +447,26 @@ class Subagent:
         messages: list[llm.Message],
         tools: list[llm.Tool] | None,
     ) -> llm.Response:
-        """Call ``provider.complete()`` with linear-backoff rate-limit retry."""
-        last_error: llm.ProviderRateLimitError | None = None
-        for attempt in range(1, _RATE_LIMIT_RETRIES + 1):
+        """Call ``provider.complete()`` with linear-backoff retry for transient errors."""
+        last_error: llm.ProviderRateLimitError | llm.ProviderOverloadedError | None = None
+        for attempt in range(1, _TRANSIENT_RETRIES + 1):
             try:
                 return await self._provider.complete(
                     messages=messages,
                     tools=tools,
                     temperature=_SUBAGENT_TEMPERATURE,
                 )
-            except llm.ProviderRateLimitError as exc:
+            except (llm.ProviderRateLimitError, llm.ProviderOverloadedError) as exc:
                 last_error = exc
-                if attempt == _RATE_LIMIT_RETRIES:
+                if attempt == _TRANSIENT_RETRIES:
                     raise
-                delay = _RATE_LIMIT_BASE_DELAY * attempt
+                delay = _TRANSIENT_BASE_DELAY * attempt
                 log.warning(
-                    "Subagent rate limited — retrying in %ds (attempt %d/%d)",
+                    "Subagent provider unavailable — retrying in %ds (attempt %d/%d): %s",
                     delay,
                     attempt,
-                    _RATE_LIMIT_RETRIES,
+                    _TRANSIENT_RETRIES,
+                    exc,
                 )
                 await asyncio.sleep(delay)
         # Unreachable — the final attempt re-raises above.

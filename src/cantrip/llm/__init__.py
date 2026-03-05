@@ -1,11 +1,19 @@
 """LLM provider implementations."""
 
-from cantrip.llm.base import LLMProvider, Message, ProviderError, ProviderRateLimitError, Response
+from cantrip.llm.base import (
+    LLMProvider,
+    Message,
+    ProviderError,
+    ProviderOverloadedError,
+    ProviderRateLimitError,
+    Response,
+)
 
 __all__ = [
     "LLMProvider",
     "Message",
     "ProviderError",
+    "ProviderOverloadedError",
     "ProviderRateLimitError",
     "Response",
     "create_provider",

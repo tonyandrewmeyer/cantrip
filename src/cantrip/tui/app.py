@@ -13,7 +13,7 @@ from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.watcher import WatcherEvent
 from cantrip.llm import create_provider, resolve_light_model
-from cantrip.llm.base import ProviderRateLimitError
+from cantrip.llm.base import ProviderOverloadedError, ProviderRateLimitError
 from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.screens.logs import LogScreen
 from cantrip.tui.screens.traces import TraceScreen
@@ -70,7 +70,6 @@ class CantripApp(App):
         self._light_model_override = light_model
         self._light_model_name: str | None = None
         self._agent: CantripAgent | None = None
-        self._thinking_widget: MessageWidget | None = None
         self._prepare_widget: MessageWidget | None = None
         self._bootstrap_widget: MessageWidget | None = None
         self._bootstrap_started = False
@@ -330,7 +329,9 @@ class CantripApp(App):
         # Disable input and show thinking indicator while processing.
         input_widget = self.query_one("#chat-input", Input)
         input_widget.disabled = True
-        self._thinking_widget = chat.add_system_message("Thinking...")
+        input_widget.placeholder = "Waiting for response..."
+        chat.show_thinking()
+        self.query_one("#status-bar", StatusBar).task_label = "⟳ Thinking..."
 
         # Run agent processing in a background worker.
         self.run_worker(
@@ -351,19 +352,23 @@ class CantripApp(App):
 
     def _on_agent_response_done(self, event: Worker.StateChanged) -> None:
         """Handle agent response worker completion."""
+        # Only act on terminal states — not PENDING or RUNNING.
+        if event.state not in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
+            return
+
         chat = self.query_one("#chat", ChatWidget)
         input_widget = self.query_one("#chat-input", Input)
 
-        # Remove the thinking indicator.
-        if self._thinking_widget is not None:
-            chat.remove_message(self._thinking_widget)
-            self._thinking_widget = None
+        # Remove the thinking indicator and reset status bar.
+        chat.hide_thinking()
+        self.query_one("#status-bar", StatusBar).task_label = ""
 
         if event.state == WorkerState.SUCCESS:
             result = event.worker.result
             if result:
                 chat.add_assistant_message(str(result))
             input_widget.disabled = False
+            input_widget.placeholder = "Type your message..."
             input_widget.focus()
             # Check whether charm_type was set during this exchange.
             self._start_bootstrap()
@@ -372,11 +377,14 @@ class CantripApp(App):
 
         elif event.state == WorkerState.ERROR:
             error = event.worker.error
-            if isinstance(error, ProviderRateLimitError):
-                chat.add_system_message("Rate limited — please wait a moment and try again.")
+            if isinstance(error, (ProviderRateLimitError, ProviderOverloadedError)):
+                chat.add_system_message(
+                    "Provider temporarily unavailable — please wait a moment and try again."
+                )
             else:
                 chat.add_system_message(f"Error: {error}")
             input_widget.disabled = False
+            input_widget.placeholder = "Type your message..."
             input_widget.focus()
 
     def _update_test_summary(self) -> None:

@@ -263,20 +263,26 @@ class MultiModelStatusWidget(Widget):
     }
     """
 
-    dev_status: reactive[statustypes.Status | None] = reactive(None)
-    cos_status: reactive[statustypes.Status | None] = reactive(None)
-    cos_expanded: reactive[bool] = reactive(False)
+    dev_status: reactive[statustypes.Status | None] = reactive(None, init=False)
+    cos_status: reactive[statustypes.Status | None] = reactive(None, init=False)
+    cos_expanded: reactive[bool] = reactive(False, init=False)
 
     def compose(self) -> ComposeResult:
         """Compose the multi-model display."""
         yield Vertical(
-            Vertical(id="dev-section", classes="model-section"),
-            Vertical(id="cos-section", classes="model-section"),
+            Vertical(
+                Static("Dev Model", classes="section-title"),
+                Static("Not connected", classes="collapsed-summary"),
+                id="dev-section",
+                classes="model-section",
+            ),
+            Vertical(
+                Static("COS Model", classes="section-title"),
+                Static("Not deployed", classes="collapsed-summary"),
+                id="cos-section",
+                classes="model-section",
+            ),
         )
-
-    def on_mount(self) -> None:
-        """Handle mount."""
-        self._refresh_display()
 
     def watch_dev_status(self, _status: statustypes.Status | None) -> None:
         """React to dev status changes."""
@@ -291,16 +297,16 @@ class MultiModelStatusWidget(Widget):
         # Dev model section
         dev_section = self.query_one("#dev-section", Vertical)
         dev_section.remove_children()
+        dev_section.mount(Static("Dev Model", classes="section-title"))
 
         if self.dev_status:
             dev_section.mount(JujuStatusWidget(status=self.dev_status))
         else:
-            dev_section.mount(Static("Dev model not connected", classes="collapsed-summary"))
+            dev_section.mount(Static("Not connected", classes="collapsed-summary"))
 
         # COS model section (collapsed by default)
         cos_section = self.query_one("#cos-section", Vertical)
         cos_section.remove_children()
-
         cos_section.mount(Static("COS Model", classes="section-title"))
 
         if self.cos_status:

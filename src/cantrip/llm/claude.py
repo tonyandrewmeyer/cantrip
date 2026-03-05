@@ -11,6 +11,7 @@ from cantrip.llm.base import (
     LLMProvider,
     Message,
     ProviderError,
+    ProviderOverloadedError,
     ProviderRateLimitError,
     Response,
     Role,
@@ -147,6 +148,10 @@ class ClaudeProvider(LLMProvider):
             raise ProviderRateLimitError(
                 "Claude API rate limit exceeded. Please wait a moment and try again."
             ) from e
+        except anthropic.InternalServerError as e:
+            raise ProviderOverloadedError(
+                f"Claude API temporarily unavailable ({e.status_code}). Will retry shortly."
+            ) from e
         except anthropic.APIError as e:
             raise ProviderError(f"Claude API error: {e}") from e
 
@@ -205,6 +210,10 @@ class ClaudeProvider(LLMProvider):
         except anthropic.RateLimitError as e:
             raise ProviderRateLimitError(
                 "Claude API rate limit exceeded. Please wait a moment and try again."
+            ) from e
+        except anthropic.InternalServerError as e:
+            raise ProviderOverloadedError(
+                f"Claude API temporarily unavailable ({e.status_code}). Will retry shortly."
             ) from e
         except anthropic.APIError as e:
             raise ProviderError(f"Claude API error: {e}") from e

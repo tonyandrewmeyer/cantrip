@@ -79,6 +79,10 @@ class ProviderRateLimitError(Exception):
     """Raised when the LLM provider returns a rate-limit / quota error."""
 
 
+class ProviderOverloadedError(Exception):
+    """Raised when the provider is temporarily overloaded (503, 529, etc.)."""
+
+
 class ProviderError(Exception):
     """Raised for non-transient provider errors (auth, invalid request, etc.)."""
 

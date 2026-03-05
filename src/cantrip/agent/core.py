@@ -83,7 +83,14 @@ from cantrip.agent.tools import (
     WriteFileTool,
 )
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
-from cantrip.llm.base import LLMProvider, Message, ProviderRateLimitError, Response, Role
+from cantrip.llm.base import (
+    LLMProvider,
+    Message,
+    ProviderOverloadedError,
+    ProviderRateLimitError,
+    Response,
+    Role,
+)
 from cantrip.llm.base import Tool as LLMTool
 from cantrip.llm.base import ToolResult as LLMToolResult
 
@@ -95,9 +102,9 @@ __all__ = ["AgentState", "CantripAgent", "Decision"]
 # Maximum tool-call rounds before we force the model to respond with text.
 MAX_TOOL_ROUNDS = 20
 
-# Retry settings for rate-limited LLM calls during the tool loop.
-_RATE_LIMIT_RETRIES = 3
-_RATE_LIMIT_BASE_DELAY = 30  # seconds
+# Retry settings for transient LLM errors (rate limits, overload) during the tool loop.
+_TRANSIENT_RETRIES = 3
+_TRANSIENT_BASE_DELAY = 30  # seconds
 
 # Tools whose results may contain a test summary to surface in the TUI.
 _TEST_RESULT_TOOLS = frozenset({"run_charm_tests", "charm_validate"})
@@ -411,25 +418,26 @@ class CantripAgent:
         tools: list[LLMTool] | None,
         temperature: float = 0.7,
     ) -> Response:
-        """Call provider.complete() with rate-limit retry and exponential backoff."""
-        last_error: ProviderRateLimitError | None = None
-        for attempt in range(1, _RATE_LIMIT_RETRIES + 1):
+        """Call provider.complete() with retry and exponential backoff for transient errors."""
+        last_error: ProviderRateLimitError | ProviderOverloadedError | None = None
+        for attempt in range(1, _TRANSIENT_RETRIES + 1):
             try:
                 return await self.provider.complete(
                     messages=messages,
                     tools=tools,
                     temperature=temperature,
                 )
-            except ProviderRateLimitError as exc:
+            except (ProviderRateLimitError, ProviderOverloadedError) as exc:
                 last_error = exc
-                if attempt == _RATE_LIMIT_RETRIES:
+                if attempt == _TRANSIENT_RETRIES:
                     raise
-                delay = _RATE_LIMIT_BASE_DELAY * attempt
+                delay = _TRANSIENT_BASE_DELAY * attempt
                 log.warning(
-                    "Rate limited — retrying in %ds (attempt %d/%d)",
+                    "Provider unavailable — retrying in %ds (attempt %d/%d): %s",
                     delay,
                     attempt,
-                    _RATE_LIMIT_RETRIES,
+                    _TRANSIENT_RETRIES,
+                    exc,
                 )
                 await asyncio.sleep(delay)
         # All retries exhausted (should be unreachable due to the raise above).

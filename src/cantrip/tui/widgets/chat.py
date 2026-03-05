@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.containers import ScrollableContainer, Vertical
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Static
+from textual.widgets import LoadingIndicator, Static
 
 
 class MessageRole(StrEnum):
@@ -251,6 +251,18 @@ class ChatWidget(Widget):
         if widget.message in self._messages:
             self._messages.remove(widget.message)
         widget.remove()
+
+    def show_thinking(self) -> None:
+        """Show an animated thinking indicator in the chat area."""
+        self.hide_thinking()
+        scroll = self.query_one("#chat-scroll", ScrollableContainer)
+        scroll.mount(LoadingIndicator(id="thinking-indicator"))
+        scroll.scroll_end(animate=False)
+
+    def hide_thinking(self) -> None:
+        """Remove the thinking indicator if present."""
+        for widget in self.query("#thinking-indicator"):
+            widget.remove()
 
     def clear(self) -> None:
         """Clear chat history."""

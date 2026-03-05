@@ -14,6 +14,7 @@ from cantrip.llm.base import (
     LLMProvider,
     Message,
     ProviderError,
+    ProviderOverloadedError,
     ProviderRateLimitError,
     Response,
     Role,
@@ -224,6 +225,10 @@ class GeminiProvider(LLMProvider):
                     "Gemini API rate limit exceeded. Please wait a moment and try again."
                 ) from e
             raise ProviderError(f"Gemini API error: {e}") from e
+        except genai.errors.ServerError as e:
+            raise ProviderOverloadedError(
+                f"Gemini API temporarily unavailable ({e.code}). Will retry shortly."
+            ) from e
         except genai.errors.APIError as e:
             raise ProviderError(f"Gemini API error: {e}") from e
 
@@ -290,6 +295,10 @@ class GeminiProvider(LLMProvider):
                     "Gemini API rate limit exceeded. Please wait a moment and try again."
                 ) from e
             raise ProviderError(f"Gemini API error: {e}") from e
+        except genai.errors.ServerError as e:
+            raise ProviderOverloadedError(
+                f"Gemini API temporarily unavailable ({e.code}). Will retry shortly."
+            ) from e
         except genai.errors.APIError as e:
             raise ProviderError(f"Gemini API error: {e}") from e
 

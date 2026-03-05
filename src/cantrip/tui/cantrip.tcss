@@ -92,6 +92,12 @@ Screen {
     color: $error;
 }
 
+/* Thinking indicator in chat */
+#thinking-indicator {
+    height: 3;
+    margin: 1 0;
+}
+
 /* Log viewer screen */
 #log-output {
     border: solid $primary;
