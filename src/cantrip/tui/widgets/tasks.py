@@ -30,8 +30,6 @@ _CHECK_STATUS_DISPLAY: dict[CheckStatus, tuple[str, str]] = {
     CheckStatus.SKIPPED: ("\u2713", "task-done"),  # ✓
 }
 
-_TITLE_MAX_LEN = 40
-
 
 @dataclass
 class _PreflightGroup:
@@ -265,10 +263,7 @@ class TaskChecklistWidget(Widget):
 
             for task in self._tasks:
                 char, css_class = _status_display(task.status)
-                title = task.title
-                if len(title) > _TITLE_MAX_LEN:
-                    title = title[: _TITLE_MAX_LEN - 1] + "\u2026"
-                row = _TaskRow(task.id, f"{char} {title}", classes=f"task-row {css_class}")
+                row = _TaskRow(task.id, f"{char} {task.title}", classes=f"task-row {css_class}")
                 container.mount(row)
 
                 # Show detail panel if this task is expanded.
