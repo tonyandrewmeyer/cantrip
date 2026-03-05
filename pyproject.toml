@@ -106,6 +106,10 @@ invalid-argument-type = "ignore"  # Third-party lib calls
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    # AsyncMock GC emits unawaited coroutine warnings — CPython mock internals, not our code.
+    "ignore::RuntimeWarning:unittest.mock",
+]
 markers = [
     "integration: tests with real tool execution (no external services)",
     "e2e: end-to-end multi-turn conversation scenarios",

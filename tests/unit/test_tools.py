@@ -224,8 +224,8 @@ class TestEditFileTool:
 
 def _make_fake_process(returncode: int = 0, stdout: str = "", stderr: str = ""):
     """Build a mock async subprocess for Concierge tests."""
-    proc = mock.AsyncMock()
-    proc.communicate.return_value = (stdout.encode(), stderr.encode())
+    proc = mock.MagicMock()
+    proc.communicate = mock.AsyncMock(return_value=(stdout.encode(), stderr.encode()))
     proc.returncode = returncode
     return proc
 

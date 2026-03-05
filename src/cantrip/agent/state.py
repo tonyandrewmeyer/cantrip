@@ -31,6 +31,8 @@ class Decision:
 class TestResults:
     """Parsed results from the most recent test run."""
 
+    __test__ = False  # Not a pytest test class.
+
     test_type: str  # "unit" or "integration"
     passed: int = 0
     failed: int = 0
