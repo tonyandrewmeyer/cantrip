@@ -17,7 +17,7 @@ def _install_unraisable_hook() -> None:
     """
     _original = sys.unraisablehook
 
-    def _hook(unraisable: sys.UnraisableHookArgs) -> None:
+    def _hook(unraisable: object) -> None:
         if isinstance(unraisable.exc_value, RuntimeError) and "Event loop is closed" in str(
             unraisable.exc_value
         ):
