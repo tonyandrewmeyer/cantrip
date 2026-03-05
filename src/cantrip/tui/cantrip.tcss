@@ -29,6 +29,14 @@ Screen {
     margin-bottom: 1;
 }
 
+#charm-files {
+    height: 1fr;
+    max-height: 50%;
+    border-bottom: solid $primary;
+    padding-bottom: 1;
+    margin-bottom: 1;
+}
+
 #juju-status {
     height: 1fr;
 }

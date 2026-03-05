@@ -8,6 +8,7 @@ from cantrip.tui.widgets.chat import (
     MessageWidget,
     ProgressItem,
 )
+from cantrip.tui.widgets.filetree import CharmTreeWidget
 from cantrip.tui.widgets.status import (
     AppBox,
     JujuStatusWidget,
@@ -19,6 +20,7 @@ from cantrip.tui.widgets.tasks import TaskChecklistWidget
 
 __all__ = [
     "AppBox",
+    "CharmTreeWidget",
     "ChatMessage",
     "ChatWidget",
     "JujuStatusWidget",

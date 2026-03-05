@@ -18,6 +18,7 @@ from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.screens.logs import LogScreen
 from cantrip.tui.screens.traces import TraceScreen
 from cantrip.tui.widgets.chat import ChatWidget, MessageStatus, MessageWidget
+from cantrip.tui.widgets.filetree import CharmTreeWidget
 from cantrip.tui.widgets.status import MultiModelStatusWidget
 from cantrip.tui.widgets.statusbar import StatusBar
 from cantrip.tui.widgets.tasks import TaskChecklistWidget
@@ -50,6 +51,7 @@ class CantripApp(App):
         Binding("f3", "logs", "Logs"),
         Binding("f4", "debug", "Debug"),
         Binding("f5", "toggle_watcher", "Watcher"),
+        Binding("f6", "toggle_files", "Files"),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+l", "clear_chat", "Clear"),
     ]
@@ -86,6 +88,7 @@ class CantripApp(App):
             ),
             Vertical(
                 TaskChecklistWidget(id="task-checklist"),
+                CharmTreeWidget(self.charm_path, id="charm-files"),
                 MultiModelStatusWidget(id="juju-status"),
                 id="right-panel",
             ),
@@ -96,8 +99,8 @@ class CantripApp(App):
     def on_mount(self) -> None:
         """Handle app mount."""
         self.query_one("#chat-input", Input).focus()
-        # Hide the status panel until there is something to show.
-        self.query_one("#right-panel").display = False
+        # The right panel is visible by default (charm file tree is useful
+        # from the start).  Task checklist and Juju status appear as needed.
         self._init_agent()
         self._start_prepare()
         self._start_executor()
@@ -377,7 +380,7 @@ class CantripApp(App):
 
         elif event.state == WorkerState.ERROR:
             error = event.worker.error
-            if isinstance(error, (ProviderRateLimitError, ProviderOverloadedError)):
+            if isinstance(error, ProviderRateLimitError | ProviderOverloadedError):
                 chat.add_system_message(
                     "Provider temporarily unavailable — please wait a moment and try again."
                 )
@@ -411,6 +414,11 @@ class CantripApp(App):
         """Toggle status panel visibility."""
         right_panel = self.query_one("#right-panel")
         right_panel.display = not right_panel.display
+
+    def action_toggle_files(self) -> None:
+        """Toggle charm file tree visibility."""
+        tree = self.query_one("#charm-files", CharmTreeWidget)
+        tree.display = not tree.display
 
     def action_logs(self) -> None:
         """Show log viewer screen."""
