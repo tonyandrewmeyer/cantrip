@@ -1,0 +1,127 @@
+"""Model information bar widget for the TUI."""
+
+import contextlib
+
+from textual.app import ComposeResult
+from textual.css.query import NoMatches
+from textual.reactive import reactive
+from textual.widget import Widget
+from textual.widgets import Static
+
+
+class ModelInfoBar(Widget):
+    """Collapsible bar showing model, context, and token usage information.
+
+    Updated after each agent response via reactive properties.
+    """
+
+    DEFAULT_CSS = """
+    ModelInfoBar {
+        height: auto;
+        max-height: 3;
+        padding: 0 1;
+        background: $primary-background;
+        color: $text-muted;
+    }
+
+    ModelInfoBar .model-info-row {
+        height: 1;
+    }
+    """
+
+    model_name: reactive[str] = reactive("", init=False)
+    light_model_name: reactive[str] = reactive("", init=False)
+    provider_name: reactive[str] = reactive("", init=False)
+    thinking_mode: reactive[str] = reactive("", init=False)
+
+    context_used: reactive[int] = reactive(0, init=False)
+    context_window: reactive[int] = reactive(0, init=False)
+    compact_threshold: reactive[float] = reactive(0.80, init=False)
+
+    session_prompt_tokens: reactive[int] = reactive(0, init=False)
+    session_completion_tokens: reactive[int] = reactive(0, init=False)
+    request_count: reactive[int] = reactive(0, init=False)
+
+    def compose(self) -> ComposeResult:
+        """Compose the bar layout."""
+        yield Static("", id="model-info-line1", classes="model-info-row")
+        yield Static("", id="model-info-line2", classes="model-info-row")
+
+    def _refresh_content(self) -> None:
+        """Rebuild both lines from current reactive values."""
+        # Line 1: model, provider, thinking mode, light model.
+        parts: list[str] = []
+        if self.model_name:
+            label = self.model_name
+            if self.provider_name:
+                label = f"{self.provider_name}/{label}"
+            parts.append(label)
+        if self.thinking_mode:
+            parts.append(f"[{self.thinking_mode}]")
+        if self.light_model_name:
+            parts.append(f"light: {self.light_model_name}")
+
+        # Line 2: context usage, compaction distance, session tokens.
+        ctx_parts: list[str] = []
+        if self.context_window > 0:
+            pct = (self.context_used / self.context_window * 100) if self.context_window else 0
+            compact_at = int(self.compact_threshold * 100)
+            remaining = self.context_window - self.context_used
+            ctx_parts.append(
+                f"context: {_fmt_k(self.context_used)}/{_fmt_k(self.context_window)} "
+                f"({pct:.0f}%, compacts at {compact_at}%, "
+                f"{_fmt_k(remaining)} remaining)"
+            )
+
+        total = self.session_prompt_tokens + self.session_completion_tokens
+        if total > 0:
+            ctx_parts.append(
+                f"session: {_fmt_k(total)} tokens "
+                f"({_fmt_k(self.session_prompt_tokens)} in, "
+                f"{_fmt_k(self.session_completion_tokens)} out, "
+                f"{self.request_count} requests)"
+            )
+
+        with contextlib.suppress(NoMatches):
+            self.query_one("#model-info-line1", Static).update("  ".join(parts))
+            self.query_one("#model-info-line2", Static).update("  ".join(ctx_parts))
+
+    # Watchers — any change triggers a refresh.
+    def watch_model_name(self) -> None:
+        self._refresh_content()
+
+    def watch_light_model_name(self) -> None:
+        self._refresh_content()
+
+    def watch_provider_name(self) -> None:
+        self._refresh_content()
+
+    def watch_thinking_mode(self) -> None:
+        self._refresh_content()
+
+    def watch_context_used(self) -> None:
+        self._refresh_content()
+
+    def watch_context_window(self) -> None:
+        self._refresh_content()
+
+    def watch_compact_threshold(self) -> None:
+        self._refresh_content()
+
+    def watch_session_prompt_tokens(self) -> None:
+        self._refresh_content()
+
+    def watch_session_completion_tokens(self) -> None:
+        self._refresh_content()
+
+    def watch_request_count(self) -> None:
+        self._refresh_content()
+
+
+def _fmt_k(n: int) -> str:
+    """Format a token count as a compact string (e.g. 1.2M, 48.5k, 320)."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)

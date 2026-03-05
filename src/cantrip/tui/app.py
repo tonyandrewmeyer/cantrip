@@ -22,6 +22,7 @@ from cantrip.tui.screens.questions import DesignQuestionsScreen
 from cantrip.tui.screens.traces import TraceScreen
 from cantrip.tui.widgets.chat import ChatWidget
 from cantrip.tui.widgets.filetree import CharmTreeWidget
+from cantrip.tui.widgets.modelbar import ModelInfoBar
 from cantrip.tui.widgets.status import MultiModelStatusWidget
 from cantrip.tui.widgets.statusbar import StatusBar
 from cantrip.tui.widgets.tasks import TaskChecklistWidget
@@ -46,6 +47,7 @@ class CantripApp(App):
         Binding("f4", "debug", "Debug"),
         Binding("f5", "toggle_watcher", "Watcher"),
         Binding("f6", "toggle_files", "Files"),
+        Binding("f7", "toggle_model_info", "Model"),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+l", "clear_chat", "Clear"),
     ]
@@ -77,6 +79,7 @@ class CantripApp(App):
         yield Header()
         yield Horizontal(
             Vertical(
+                ModelInfoBar(id="model-info"),
                 ChatWidget(id="chat"),
                 Input(placeholder="Type your message...", id="chat-input"),
                 id="left-panel",
@@ -100,6 +103,7 @@ class CantripApp(App):
         self._start_prepare()
         self._start_executor()
         self._update_header_subtitle()
+        self._update_model_info()
         if self._watcher_autostart:
             self._start_watcher()
 
@@ -141,6 +145,50 @@ class CantripApp(App):
             parts.append(f"[light: {self._light_model_name}]")
         parts.append("[F1 Help]")
         self.sub_title = " ".join(parts)
+
+    def _update_model_info(self) -> None:
+        """Refresh the model info bar from current agent state."""
+        bar = self.query_one("#model-info", ModelInfoBar)
+        if not self._agent:
+            return
+
+        provider = self._agent.provider
+        bar.provider_name = provider.name
+        bar.model_name = provider.model_name
+        bar.context_window = provider.context_window_tokens
+        bar.compact_threshold = self._agent.context_manager._compaction_threshold
+
+        if self._light_model_name:
+            bar.light_model_name = self._light_model_name
+
+        # Thinking mode — Gemini 3 models use thinking by default.
+        if provider.model_name.startswith("gemini-3"):
+            bar.thinking_mode = "thinking"
+        else:
+            bar.thinking_mode = ""
+
+        # Context usage from current conversation.
+        bar.context_used = self._agent.context_manager.estimate_tokens(self._agent.state.messages)
+
+        # Session token totals from the store.
+        self._agent._ensure_store()
+        if self._agent._store:
+            usage = self._agent._store.get_total_usage()
+            bar.session_prompt_tokens = usage.get("prompt_tokens", 0)
+            bar.session_completion_tokens = usage.get("completion_tokens", 0)
+
+            by_model = self._agent._store.get_usage_by_model()
+            total_requests = 0
+            for r in by_model:
+                count = r.get("request_count", 0)
+                if isinstance(count, int):
+                    total_requests += count
+            bar.request_count = total_requests
+
+    def action_toggle_model_info(self) -> None:
+        """Toggle model info bar visibility."""
+        bar = self.query_one("#model-info", ModelInfoBar)
+        bar.display = not bar.display
 
     # -- Preflight integration ------------------------------------------------
 
@@ -471,6 +519,7 @@ class CantripApp(App):
             # Check whether charm_type was set during this exchange.
             self._start_bootstrap()
             self._update_header_subtitle()
+            self._update_model_info()
             self._update_test_summary()
 
         elif event.state == WorkerState.ERROR:

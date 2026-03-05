@@ -235,8 +235,8 @@ class TestTaskChecklistWidget:
             assert "\u25cc" in combined  # ◌ blocked
 
     @pytest.mark.asyncio
-    async def test_long_titles_truncated(self):
-        """Titles longer than 40 characters are truncated with an ellipsis."""
+    async def test_long_titles_shown_in_full(self):
+        """Long titles are shown without truncation."""
         app = _ChecklistApp.build()
         async with app.run_test() as pilot:
             checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
@@ -247,10 +247,7 @@ class TestTaskChecklistWidget:
             container = checklist.query_one("#task-container")
             statics = container.query("Static")
             combined = " ".join(str(s.render()) for s in statics)
-            # The full 60-char title should not appear.
-            assert long_title not in combined
-            # The truncated version (39 chars + ellipsis) should be present.
-            assert "\u2026" in combined
+            assert long_title in combined
 
     @pytest.mark.asyncio
     async def test_toggle_detail_shows_result(self):

@@ -34,6 +34,7 @@ def _mock_agent() -> MagicMock:
     agent.state = MagicMock()
     agent.state.charm_type = None
     agent.state.test_results = None
+    agent.state.messages = []
     agent.preflight_result = MagicMock()
     agent.preflight_result.fully_ready = True
     # Executor mocks.
@@ -42,6 +43,17 @@ def _mock_agent() -> MagicMock:
     agent.executor_running = False
     agent.work_queue = MagicMock()
     agent.work_queue.all_tasks = MagicMock(return_value=[])
+    # Provider mocks for model info bar.
+    agent.provider = MagicMock()
+    agent.provider.name = "gemini"
+    agent.provider.model_name = "gemini-3-flash-preview"
+    agent.provider.context_window_tokens = 1_048_576
+    # Context manager mocks.
+    agent.context_manager = MagicMock()
+    agent.context_manager._compaction_threshold = 0.80
+    agent.context_manager.estimate_tokens = MagicMock(return_value=0)
+    # Store mocks (None by default — no session store).
+    agent._store = None
     return agent
 
 

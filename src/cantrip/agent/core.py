@@ -162,6 +162,11 @@ class CantripAgent:
         return self._work_queue
 
     @property
+    def context_manager(self) -> ContextManager:
+        """The agent's context manager, for TUI status display."""
+        return self._context_manager
+
+    @property
     def _skills_index(self) -> SkillsIndex:
         """Skills index, discovered lazily on first access."""
         if self._skills_index_cache is None:
