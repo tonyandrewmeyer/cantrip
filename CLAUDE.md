@@ -28,7 +28,7 @@ uv run pytest tests/unit/test_tools.py::test_function_name -v
 - **UK English** throughout: colour, behaviour, organisation, analyse (not color, behavior, organization, analyze)
 - **Type checker is `ty`**, not mypy
 - Line length: 99 characters
-- Python 3.11+
+- Python 3.12+
 
 ### Code Style (Critical)
 

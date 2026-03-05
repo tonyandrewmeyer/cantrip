@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A small spell for building Juju charms - an AI-powered charm development agent"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [
     { name = "Tony Meyer" },
 ]
@@ -16,7 +16,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Code Generators",
 ]
@@ -91,7 +90,7 @@ ignore = [
 known-first-party = ["cantrip"]
 
 [tool.ty.environment]
-python-version = "3.11"
+python-version = "3.12"
 
 [tool.ty.rules]
 # Relax some rules for initial development - tighten later
