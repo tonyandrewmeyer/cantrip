@@ -8,6 +8,25 @@ from pathlib import Path
 from cantrip import __version__
 
 
+def _install_unraisable_hook() -> None:
+    """Suppress 'Event loop is closed' errors from asyncio transport cleanup.
+
+    When the TUI exits, asyncio subprocess transports may be garbage-collected
+    after the event loop is already closed, producing noisy but harmless
+    RuntimeError tracebacks on stderr.
+    """
+    _original = sys.unraisablehook
+
+    def _hook(unraisable: sys.UnraisableHookArgs) -> None:
+        if isinstance(unraisable.exc_value, RuntimeError) and "Event loop is closed" in str(
+            unraisable.exc_value
+        ):
+            return
+        _original(unraisable)
+
+    sys.unraisablehook = _hook
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -91,6 +110,8 @@ def main() -> int:
         print("Error: ANTHROPIC_API_KEY environment variable not set")
         print("Set it with: export ANTHROPIC_API_KEY='your-key-here'")
         return 1
+
+    _install_unraisable_hook()
 
     if args.no_tui:
         from cantrip.cli import run_cli
