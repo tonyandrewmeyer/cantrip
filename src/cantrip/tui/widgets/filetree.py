@@ -22,14 +22,38 @@ _HIDDEN_NAMES = frozenset(
 )
 
 
+# How many directory levels to expand automatically.
+_AUTO_EXPAND_DEPTH = 4
+
+
 class _FilteredTree(DirectoryTree):
-    """DirectoryTree subclass that hides noisy entries."""
+    """DirectoryTree subclass that hides noisy entries and auto-expands."""
 
     def filter_paths(
         self, paths: collections.abc.Iterable[Path]
     ) -> collections.abc.Iterable[Path]:
         """Hide hidden/noise directories from the tree."""
         return [p for p in paths if p.name not in _HIDDEN_NAMES]
+
+    @staticmethod
+    def _node_depth(node: object) -> int:
+        """Count the depth of a node relative to the root."""
+        depth = 0
+        current = getattr(node, "parent", None)
+        while current is not None:
+            depth += 1
+            current = getattr(current, "parent", None)
+        return depth
+
+    def on_tree_node_expanded(self, event: DirectoryTree.NodeExpanded) -> None:
+        """Auto-expand child directories up to the configured depth."""
+        for child in event.node.children:
+            if (
+                child.allow_expand
+                and not child.is_expanded
+                and self._node_depth(child) < _AUTO_EXPAND_DEPTH
+            ):
+                child.expand()
 
 
 class CharmTreeWidget(Widget):
