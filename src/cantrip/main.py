@@ -62,6 +62,11 @@ def parse_args() -> argparse.Namespace:
         help="Lighter inference snap for internal tasks (e.g. nemotron-3-nano)",
     )
     parser.add_argument(
+        "--light-provider",
+        choices=["gemini", "claude", "inference-snap"],
+        help="Use a different provider for light tasks (enables hybrid mode)",
+    )
+    parser.add_argument(
         "--no-tui",
         action="store_true",
         help="Run in CLI mode without TUI",
@@ -144,6 +149,7 @@ def main() -> int:
             max_concurrency=args.concurrency,
             snap_name=args.snap,
             light_snap_name=args.light_snap,
+            light_provider_name=args.light_provider,
         )
         app.run()
         return 0

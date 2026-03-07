@@ -66,6 +66,7 @@ class CantripApp(App):
         max_concurrency: int | None = None,
         snap_name: str = "gemma3",
         light_snap_name: str | None = None,
+        light_provider_name: str | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -75,6 +76,7 @@ class CantripApp(App):
         self._light_model_override = light_model
         self._snap_name = snap_name
         self._light_snap_name = light_snap_name
+        self._light_provider_name = light_provider_name
         self._light_model_name: str | None = None
         self._max_concurrency = max_concurrency
         self._agent: CantripAgent | None = None
@@ -153,18 +155,36 @@ class CantripApp(App):
     def _resolve_light_provider(self, main_provider: LLMProvider) -> LLMProvider | None:
         """Build a light provider for cheap internal tasks.
 
-        For inference snaps, ``--light-snap`` creates a provider backed by a
-        different (lighter) snap.  For cloud providers, the existing
-        model-name-based routing is used.
+        Supports three modes:
+
+        1. **Hybrid mode** (``--light-provider``): use a completely different
+           provider for light tasks (e.g. ``--provider claude --light-provider
+           inference-snap --light-snap gemma3``).
+        2. **Multi-snap routing** (``--light-snap``): use a lighter inference
+           snap for light tasks while the primary snap handles code writing.
+        3. **Same-provider routing** (default): use a cheaper model within
+           the same provider family (e.g. Claude Opus → Haiku).
         """
-        # Multi-snap routing: --light-snap creates a separate snap provider.
+        # 1. Hybrid mode: cross-provider routing.
+        if self._light_provider_name:
+            light_snap = self._light_snap_name or self._snap_name
+            light = create_provider(
+                self._light_provider_name,
+                self._light_model_override,
+                snap_name=light_snap,
+            )
+            self._light_model_name = f"{self._light_provider_name}:{light.model_name}"
+            return light
+
+        # 2. Multi-snap routing: --light-snap creates a separate snap provider.
         if self._light_snap_name and self.provider_name == "inference-snap":
             light = create_provider(
                 "inference-snap", snap_name=self._light_snap_name
             )
-            self._light_model_name = f"{self._light_snap_name}"
+            self._light_model_name = self._light_snap_name
             return light
 
+        # 3. Same-provider routing via model name mapping.
         main_model = main_provider.model_name
         light_model_name = self._light_model_override or resolve_light_model(
             self.provider_name, main_model
