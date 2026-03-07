@@ -40,9 +40,7 @@ def run_cli(args: argparse.Namespace) -> int:
     light_model_name = args.light_model or resolve_light_model(args.provider, main_model)
     light_provider = None
     if light_model_name != main_model:
-        light_provider = create_provider(
-            args.provider, light_model_name, snap_name=snap_name
-        )
+        light_provider = create_provider(args.provider, light_model_name, snap_name=snap_name)
 
     agent = CantripAgent(
         provider=provider,

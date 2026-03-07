@@ -74,9 +74,7 @@ class TestCreateProvider:
     @patch("cantrip.llm.inference_snap.discover_snap_endpoint", return_value="http://test/v1")
     def test_create_inference_snap_custom(self, _mock_discover, _mock_detect):
         """Test creating an inference snap provider with a custom snap and model."""
-        provider = create_provider(
-            "inference-snap", model="custom-model", snap_name="deepseek-r1"
-        )
+        provider = create_provider("inference-snap", model="custom-model", snap_name="deepseek-r1")
 
         assert provider.snap_name == "deepseek-r1"
         assert provider.model_name == "custom-model"

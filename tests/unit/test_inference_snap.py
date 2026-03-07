@@ -120,6 +120,31 @@ class TestInferenceSnapProviderInit:
         provider = self._make_provider(base_url="http://custom:9999/v1")
         assert provider.base_url == "http://custom:9999/v1"
 
+    def test_model_matching_snap_name_triggers_detection(self):
+        """When model equals snap_name, auto-detection is used instead."""
+        with patch.object(InferenceSnapProvider, "_detect_model", return_value="gemma-3-4b-it"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3",
+                model="gemma3",
+                base_url="http://test:8328/v1",
+            )
+        assert provider.model_name == "gemma-3-4b-it"
+
+    def test_model_none_triggers_detection(self):
+        """When model is None, auto-detection is used."""
+        with patch.object(InferenceSnapProvider, "_detect_model", return_value="gemma-3-4b-it"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3",
+                model=None,
+                base_url="http://test:8328/v1",
+            )
+        assert provider.model_name == "gemma-3-4b-it"
+
+    def test_explicit_model_skips_detection(self):
+        """An explicit model name different from snap_name is used directly."""
+        provider = self._make_provider(model="custom-model-7b")
+        assert provider.model_name == "custom-model-7b"
+
 
 class TestMessageConversion:
     """Tests for InferenceSnapProvider._convert_messages."""

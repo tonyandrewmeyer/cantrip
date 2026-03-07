@@ -116,7 +116,14 @@ class InferenceSnapProvider(LLMProvider):
         self.snap_name = snap_name
         self.base_url = (base_url or discover_snap_endpoint(snap_name)).rstrip("/")
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=300.0)
-        self.model_name = model or self._detect_model()
+        # Always auto-detect the model from the /models endpoint.  The snap
+        # name (e.g. "gemma3") is NOT a valid model ID — the actual served
+        # model has a different name.  Only skip detection if the caller
+        # provides a model that differs from the snap name.
+        if model and model != snap_name:
+            self.model_name = model
+        else:
+            self.model_name = self._detect_model()
 
     def _detect_model(self) -> str:
         """Query the snap's /models endpoint to find the served model."""
