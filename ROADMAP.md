@@ -151,7 +151,7 @@ and development experience. All items below are done.
 
 ---
 
-## Phase 4: Autonomous Agent Core
+## Phase 4: Autonomous Agent Core ✓
 
 **Goal:** The agent works independently. It plans its own work, executes tasks without
 user prompting, and shows progress in a visible checklist. The user steers; the agent drives.
@@ -226,8 +226,9 @@ A visible, real-time view of autonomous work in the TUI.
   (thread-safe `notify_changed` + 0.5 s timer)
 - [x] **Expandable detail** — clicking a task row toggles a detail panel showing
   result summary, category, status, description, and blocked reason
-- [ ] **Category grouping** — tasks grouped by phase (research, build, deploy, test)
-  or shown as a flat ordered list — TBD based on what reads better in practice
+- [x] **Category grouping** — tasks grouped by category (Research, Build, Deploy,
+  Test, Debug, Infrastructure, Confirm) with per-category headers; empty categories
+  are omitted; task order within each group matches the queue order
 
 ### 4.5 Auto-Deploy Loop
 
@@ -1653,7 +1654,7 @@ bespoke, the document articulates what we'd be giving up and why that's acceptab
 | M1: First Charm | 1 ✓ | Flask app → running charm in 2 min |
 | M2: Dev Loop | 2 ✓ | Fast iteration with trace debugging |
 | M3: All Paths | 3 ✓ | 12-factor, custom, infra all working |
-| M4: Autonomous | 4 | Agent works independently with visible task tracking |
+| M4: Autonomous | 4 ✓ | Agent works independently with visible task tracking |
 | M5: Research-Driven | 5 | Agent proactively researches and proposes grounded designs |
 | M6: Fast | 6 | Common charm build completes in under two minutes |
 | M7: Showcase | 7 | Demo-ready with full ecosystem, testing, and publishing |

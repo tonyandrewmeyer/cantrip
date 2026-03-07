@@ -10,7 +10,18 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from cantrip.agent.preflight import CheckStatus
-from cantrip.agent.queue import AgentTask, TaskStatus
+from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+
+# Display order and labels for category groups.
+_CATEGORY_ORDER: list[tuple[TaskCategory, str]] = [
+    (TaskCategory.RESEARCH, "Research"),
+    (TaskCategory.BUILD, "Build"),
+    (TaskCategory.DEPLOY, "Deploy"),
+    (TaskCategory.TEST, "Test"),
+    (TaskCategory.DEBUG, "Debug"),
+    (TaskCategory.INFRA, "Infrastructure"),
+    (TaskCategory.CONFIRM, "Confirm"),
+]
 
 # Status indicator characters and CSS classes per task status.
 _STATUS_DISPLAY: dict[TaskStatus, tuple[str, str]] = {
@@ -251,22 +262,32 @@ class TaskChecklistWidget(Widget):
                 char, css_class = _CHECK_STATUS_DISPLAY.get(status, ("\u25cb", "task-pending"))
                 container.mount(Static(f"{char} {label}", classes=f"task-row {css_class}"))
 
-        # Render work queue tasks.
+        # Render work queue tasks grouped by category.
         if self._tasks:
             # Post TasksAvailable once.
             if not self._tasks_available_posted:
                 self._tasks_available_posted = True
                 self.post_message(self.TasksAvailable())
 
-            container.mount(Static("Tasks", classes="task-header"))
-            container.mount(Static("\u2500" * 20, classes="task-divider"))
-
+            # Bucket tasks by category, preserving queue order within each bucket.
+            by_category: dict[TaskCategory, list[AgentTask]] = {}
             for task in self._tasks:
-                char, css_class = _status_display(task.status)
-                row = _TaskRow(task.id, f"{char} {task.title}", classes=f"task-row {css_class}")
-                container.mount(row)
+                by_category.setdefault(task.category, []).append(task)
 
-                # Show detail panel if this task is expanded.
-                if self._expanded_id == task.id:
-                    detail_text = _format_detail(task)
-                    container.mount(Static(detail_text, classes="task-detail"))
+            for category, label in _CATEGORY_ORDER:
+                group = by_category.get(category)
+                if not group:
+                    continue
+                container.mount(Static(label, classes="task-header"))
+                container.mount(Static("\u2500" * 20, classes="task-divider"))
+                for task in group:
+                    char, css_class = _status_display(task.status)
+                    row = _TaskRow(
+                        task.id, f"{char} {task.title}", classes=f"task-row {css_class}"
+                    )
+                    container.mount(row)
+
+                    # Show detail panel if this task is expanded.
+                    if self._expanded_id == task.id:
+                        detail_text = _format_detail(task)
+                        container.mount(Static(detail_text, classes="task-detail"))

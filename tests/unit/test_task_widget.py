@@ -5,7 +5,12 @@ from datetime import datetime
 import pytest
 
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
-from cantrip.tui.widgets.tasks import TaskChecklistWidget, _format_detail, _status_display
+from cantrip.tui.widgets.tasks import (
+    _CATEGORY_ORDER,
+    TaskChecklistWidget,
+    _format_detail,
+    _status_display,
+)
 
 pytestmark = pytest.mark.tui
 
@@ -298,3 +303,56 @@ class TestTaskChecklistWidget:
             statics = container.query("Static")
             combined = " ".join(str(s.render()) for s in statics)
             assert "Charm built ok" not in combined
+
+    @pytest.mark.asyncio
+    async def test_tasks_grouped_by_category(self):
+        """Tasks are grouped under category headers in display order."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            tasks = [
+                _make_task("Deploy app", category=TaskCategory.DEPLOY),
+                _make_task("Analyse workload", category=TaskCategory.RESEARCH),
+                _make_task("Scaffold charm", category=TaskCategory.BUILD),
+                _make_task("Run unit tests", category=TaskCategory.TEST),
+            ]
+            checklist.notify_changed(tasks)
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            statics = container.query("Static")
+            texts = [str(s.render()) for s in statics]
+            combined = " ".join(texts)
+
+            # Category headers appear.
+            assert "Research" in combined
+            assert "Build" in combined
+            assert "Deploy" in combined
+            assert "Test" in combined
+
+            # Research appears before Build, Build before Deploy, Deploy before Test.
+            research_idx = next(i for i, t in enumerate(texts) if t == "Research")
+            build_idx = next(i for i, t in enumerate(texts) if t == "Build")
+            deploy_idx = next(i for i, t in enumerate(texts) if t == "Deploy")
+            test_idx = next(i for i, t in enumerate(texts) if t == "Test")
+            assert research_idx < build_idx < deploy_idx < test_idx
+
+    @pytest.mark.asyncio
+    async def test_empty_categories_omitted(self):
+        """Categories with no tasks do not get a header."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            tasks = [_make_task("Build it", category=TaskCategory.BUILD)]
+            checklist.notify_changed(tasks)
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            statics = container.query("Static")
+            combined = " ".join(str(s.render()) for s in statics)
+
+            assert "Build" in combined
+            # No other category headers should appear.
+            for cat, label in _CATEGORY_ORDER:
+                if cat != TaskCategory.BUILD:
+                    assert label not in combined, f"Unexpected header: {label}"
