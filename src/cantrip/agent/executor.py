@@ -9,7 +9,7 @@ from cantrip.agent.autodeploy import followup_tasks
 from cantrip.agent.queue import AgentTask, TaskCategory, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
-from cantrip.agent.subagent import Subagent, SubagentContext
+from cantrip.agent.subagent import ProviderThrottle, Subagent, SubagentContext
 from cantrip.agent.tools.base import Tool
 from cantrip.llm import base as llm
 
@@ -67,6 +67,8 @@ class BackgroundExecutor:
         # Track in-flight async tasks so the loop knows how many slots are free.
         self._active_tasks: set[asyncio.Task[None]] = set()
         self._semaphore: asyncio.Semaphore | None = None
+        # Shared throttle so concurrent subagents coordinate on rate limits.
+        self._throttle = ProviderThrottle()
 
     # -- Lifecycle -----------------------------------------------------------
 
@@ -204,6 +206,7 @@ class BackgroundExecutor:
             self._provider,
             light_provider=self._light_provider,
             on_usage=self._record_usage,
+            throttle=self._throttle,
         )
         try:
             result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)

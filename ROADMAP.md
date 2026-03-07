@@ -344,8 +344,9 @@ research tasks) should run concurrently.
   in parallel via a semaphore-bounded executor
 - [x] **Concurrency limit** — configurable cap (default 3, `--concurrency` CLI flag) to
   avoid rate-limiting from LLM providers
-- [ ] **Per-provider rate awareness** — respect provider rate limits; back off individual
-  subagents rather than the whole executor
+- [x] **Per-provider rate awareness** — shared ``ProviderThrottle`` coordinates rate-limit
+  back-off across concurrent subagents; when one subagent hits a limit, others using the
+  same provider wait for the cooldown before retrying
 
 ### 6.2 Fast Path for Simple Charms
 

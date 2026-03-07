@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,6 +28,52 @@ _SUBAGENT_TEMPERATURE = 0.5
 
 # Categories routed to the light (cheaper) model.
 _LIGHT_CATEGORIES = frozenset({TaskCategory.RESEARCH, TaskCategory.INFRA})
+
+
+class ProviderThrottle:
+    """Shared rate-limit coordinator for concurrent subagents.
+
+    When one subagent hits a rate limit, it signals the throttle with a
+    cooldown duration.  Other subagents using the same provider call
+    ``wait_if_throttled()`` before each LLM request and sleep until the
+    cooldown expires, avoiding a thundering-herd of retries.
+
+    Thread-safe for use across concurrent ``asyncio.Task`` instances
+    (all on the same event loop).
+    """
+
+    def __init__(self) -> None:
+        # Maps provider name → monotonic time when the cooldown ends.
+        self._cooldowns: dict[str, float] = {}
+
+    def signal_rate_limit(self, provider_name: str, delay: float) -> None:
+        """Record that *provider_name* should be avoided for *delay* seconds.
+
+        If an existing cooldown extends beyond the new one, keep the longer.
+        """
+        deadline = time.monotonic() + delay
+        existing = self._cooldowns.get(provider_name, 0.0)
+        if deadline > existing:
+            self._cooldowns[provider_name] = deadline
+            log.info(
+                "Provider %s throttled for %.0fs (until %.1f)",
+                provider_name,
+                delay,
+                deadline,
+            )
+
+    async def wait_if_throttled(self, provider_name: str) -> None:
+        """Sleep until the cooldown for *provider_name* has elapsed."""
+        deadline = self._cooldowns.get(provider_name, 0.0)
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            log.debug(
+                "Waiting %.1fs for provider %s cooldown",
+                remaining,
+                provider_name,
+            )
+            await asyncio.sleep(remaining)
+
 
 # ---------------------------------------------------------------------------
 # Tool allowlists per category
@@ -441,6 +488,7 @@ class Subagent:
         provider: llm.LLMProvider,
         light_provider: llm.LLMProvider | None = None,
         on_usage: UsageCallback = None,
+        throttle: ProviderThrottle | None = None,
     ) -> None:
         self._context = context
         self._provider = _select_provider(
@@ -453,6 +501,7 @@ class Subagent:
         self._tools = _filter_tools(tools, context.task.category)
         self._tool_map: dict[str, Tool] = {t.name: t for t in self._tools}
         self._on_usage = on_usage
+        self._throttle = throttle
 
     async def run(self) -> str:
         """Execute the task and return a text summary of the outcome."""
@@ -505,10 +554,18 @@ class Subagent:
         messages: list[llm.Message],
         tools: list[llm.Tool] | None,
     ) -> llm.Response:
-        """Call ``provider.complete()`` with linear-backoff retry for transient errors."""
+        """Call ``provider.complete()`` with linear-backoff retry for transient errors.
+
+        When a shared ``ProviderThrottle`` is set, waits for any existing
+        cooldown before each attempt and signals the throttle on rate-limit
+        errors so other subagents back off too.
+        """
         last_error: llm.ProviderRateLimitError | llm.ProviderOverloadedError | None = None
         for attempt in range(1, _TRANSIENT_RETRIES + 1):
             try:
+                # Respect shared cooldown from other subagents.
+                if self._throttle is not None:
+                    await self._throttle.wait_if_throttled(self._provider.name)
                 response = await self._provider.complete(
                     messages=messages,
                     tools=tools,
@@ -522,6 +579,9 @@ class Subagent:
                 if attempt == _TRANSIENT_RETRIES:
                     raise
                 delay = _TRANSIENT_BASE_DELAY * attempt
+                # Signal the shared throttle so other subagents back off.
+                if self._throttle is not None:
+                    self._throttle.signal_rate_limit(self._provider.name, delay)
                 log.warning(
                     "Subagent provider unavailable — retrying in %ds (attempt %d/%d): %s",
                     delay,
