@@ -161,43 +161,46 @@ class TestParseTaskList:
 
 
 class TestTaskPlannerPlan:
-    """Tests for TaskPlanner.plan() with FakeProvider."""
+    """Tests for TaskPlanner.plan() — deterministic research-phase templates."""
 
     @pytest.mark.asyncio
-    async def test_plan_returns_tasks(self) -> None:
-        provider = FakeProvider(responses=[Response(content=VALID_TASKS_JSON)])
+    async def test_plan_returns_research_phase(self) -> None:
+        provider = FakeProvider()
         planner = TaskPlanner(provider)
-        context = PlanningContext(intent="Build a charm for Redis")
+        context = PlanningContext(intent="Build a charm for Redis", charm_name="redis-k8s")
 
         tasks = await planner.plan(context)
 
-        assert len(tasks) == 2
-        assert tasks[0].title == "Research the workload"
+        # 4 tasks: web-research, charmhub-survey, operational-discovery, confirm-design.
+        assert len(tasks) == 4
+        assert tasks[0].id == "web-research"
+        assert tasks[1].id == "charmhub-survey"
+        assert tasks[2].id == "operational-discovery"
+        assert tasks[3].id == "confirm-design"
 
     @pytest.mark.asyncio
-    async def test_plan_raises_on_bad_response(self) -> None:
-        provider = FakeProvider(responses=[Response(content="I cannot do that.")])
+    async def test_plan_includes_source_analysis_when_url_given(self) -> None:
+        provider = FakeProvider()
         planner = TaskPlanner(provider)
-        context = PlanningContext(intent="Build a charm for Redis")
+        context = PlanningContext(
+            intent="Build a charm for Redis",
+            source_url="https://github.com/redis/redis",
+        )
 
-        with pytest.raises(ValueError):
-            await planner.plan(context)
+        tasks = await planner.plan(context)
+
+        # 5 tasks: source-analysis, web-research, charmhub-survey, operational-discovery, confirm.
+        assert len(tasks) == 5
+        assert tasks[0].id == "source-analysis"
 
     @pytest.mark.asyncio
-    async def test_plan_uses_low_temperature(self) -> None:
-        """Verify the planner passes temperature=0.3 to the provider."""
-        recorded_temp: list[float] = []
-
-        class RecordingProvider(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7):  # noqa: ARG002
-                recorded_temp.append(temperature)
-                return Response(content="[]")
-
-        provider = RecordingProvider()
+    async def test_plan_no_llm_call(self) -> None:
+        """Deterministic planning should not call the LLM."""
+        provider = FakeProvider()
         planner = TaskPlanner(provider)
         await planner.plan(PlanningContext(intent="test"))
 
-        assert recorded_temp == [0.3]
+        assert provider._call_count == 0
 
 
 # ===================================================================
@@ -352,7 +355,7 @@ class TestPlanTasksTool:
 
     @pytest.mark.asyncio
     async def test_populates_work_queue(self) -> None:
-        provider = FakeProvider(responses=[Response(content=VALID_TASKS_JSON)])
+        provider = FakeProvider()
         state = AgentState()
         queue = WorkQueue()
         tool = PlanTasksTool(provider=provider, state=state, queue=queue)
@@ -360,12 +363,13 @@ class TestPlanTasksTool:
         result = await tool.execute(intent="Build a charm for Redis")
 
         assert result.success
-        assert queue.pending_count == 2
-        assert result.data["task_count"] == 2
+        # 4 deterministic tasks: web-research, charmhub-survey, operational-discovery, confirm.
+        assert queue.pending_count == 4
+        assert result.data["task_count"] == 4
 
     @pytest.mark.asyncio
     async def test_returns_formatted_summary(self) -> None:
-        provider = FakeProvider(responses=[Response(content=VALID_TASKS_JSON)])
+        provider = FakeProvider()
         state = AgentState()
         queue = WorkQueue()
         tool = PlanTasksTool(provider=provider, state=state, queue=queue)
@@ -373,8 +377,7 @@ class TestPlanTasksTool:
         result = await tool.execute(intent="Build a charm for Redis")
 
         assert "Task plan" in result.output
-        assert "Research the workload" in result.output
-        assert "Scaffold the charm" in result.output
+        assert "research" in result.output.lower()
         assert "Shall I proceed" in result.output
 
     @pytest.mark.asyncio
@@ -401,20 +404,21 @@ class TestPlanTasksTool:
         assert not result.success
 
     @pytest.mark.asyncio
-    async def test_handles_planning_failure(self) -> None:
-        provider = FakeProvider(responses=[Response(content="not json")])
+    async def test_fresh_plan_always_succeeds(self) -> None:
+        """Deterministic planning cannot fail (no LLM parsing involved)."""
+        provider = FakeProvider()
         state = AgentState()
         queue = WorkQueue()
         tool = PlanTasksTool(provider=provider, state=state, queue=queue)
 
         result = await tool.execute(intent="Build something")
 
-        assert not result.success
-        assert result.error is not None and "Failed" in result.error
+        assert result.success
+        assert queue.pending_count > 0
 
     @pytest.mark.asyncio
     async def test_uses_state_context(self) -> None:
-        provider = FakeProvider(responses=[Response(content="[]")])
+        provider = FakeProvider()
         state = AgentState(
             charm_name="my-charm",
             charm_type="k8s",
@@ -426,37 +430,33 @@ class TestPlanTasksTool:
         result = await tool.execute(intent="Build the charm")
 
         assert result.success
+        # Charm name from state should appear in task titles.
+        assert any("my-charm" in t.title for t in queue.all_tasks())
 
     @pytest.mark.asyncio
     async def test_replans_when_tasks_exist(self) -> None:
-        """When the queue already has tasks, the tool should replan."""
-        first_json = json.dumps(
-            [
-                {"id": "old", "title": "Old task", "category": "research"},
-            ]
-        )
-        second_json = json.dumps(
+        """When the queue already has tasks, the tool should replan via the LLM."""
+        replan_json = json.dumps(
             [
                 {"id": "new", "title": "New task", "category": "build"},
             ]
         )
         provider = FakeProvider(
-            responses=[
-                Response(content=first_json),
-                Response(content=second_json),
-            ]
+            responses=[Response(content=replan_json)],
         )
         state = AgentState()
         queue = WorkQueue()
         tool = PlanTasksTool(provider=provider, state=state, queue=queue)
 
-        # First plan.
+        # First plan (deterministic).
         await tool.execute(intent="Build a charm for Redis")
-        assert queue.pending_count == 1
+        first_count = queue.pending_count
+        assert first_count == 4
 
-        # Second plan (replanning) — old pending task dropped, new one added.
+        # Second plan (replanning via LLM) — should call the provider.
         result = await tool.execute(intent="Actually, target machine")
         assert result.success
+        assert provider._call_count == 1  # LLM called for replan
 
 
 # ===================================================================

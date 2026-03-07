@@ -1,4 +1,10 @@
-"""Task planner — LLM-powered decomposition of user intent into agent tasks."""
+"""Task planner — LLM-powered decomposition of user intent into agent tasks.
+
+For the common "build a charm for X" flow, the research phase (Phase 1 + 2)
+uses deterministic task templates — no LLM call needed.  LLM planning is
+reserved for replanning (scope changes) and the build phase (which depends
+on the approved design).
+"""
 
 import json
 import logging
@@ -33,29 +39,100 @@ class PlanningContext:
     source_url: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# Deterministic research-phase templates
+# ---------------------------------------------------------------------------
+
+
+def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
+    """Generate the standard research → synthesis → confirm task sequence.
+
+    These tasks are always the same structure for a "build a charm" request.
+    Skips source-analysis if no source URL is provided.  Returns 4 or 5
+    tasks depending on whether source analysis is needed.
+    """
+    workload = context.charm_name or "the workload"
+    tasks: list[AgentTask] = []
+    research_ids: list[str] = []
+
+    if context.source_url:
+        tasks.append(AgentTask(
+            id="source-analysis",
+            title=f"Analyse source repository for {workload}",
+            category=TaskCategory.RESEARCH,
+            description=(
+                f"Clone {context.source_url}, explore README, dependency files, "
+                "Dockerfiles, config files, and entry points. Run analyse_framework. "
+                "Write findings into WORKLOAD.md."
+            ),
+            dependencies=[],
+        ))
+        research_ids.append("source-analysis")
+
+    tasks.append(AgentTask(
+        id="web-research",
+        title=f"Research {workload} documentation and operations",
+        category=TaskCategory.RESEARCH,
+        description=(
+            f"Fetch official docs, project website, and deployment guides for {workload}. "
+            "Focus on operational patterns: deployment, configuration, monitoring, scaling."
+        ),
+        dependencies=[],
+    ))
+    research_ids.append("web-research")
+
+    tasks.append(AgentTask(
+        id="charmhub-survey",
+        title=f"Survey Charmhub for existing {workload} charms",
+        category=TaskCategory.RESEARCH,
+        description=(
+            f"Search Charmhub for existing charms covering {workload}. "
+            "Evaluate candidates: relations, config, storage, maintenance status."
+        ),
+        dependencies=[],
+    ))
+    research_ids.append("charmhub-survey")
+
+    tasks.append(AgentTask(
+        id="operational-discovery",
+        title=f"operational-discovery: synthesise design for {workload}",
+        category=TaskCategory.RESEARCH,
+        description=(
+            "Synthesise all research into a structured design proposal (DESIGN.md). "
+            "Cover: substrate, charm path, Charmhub recommendation, integrations, "
+            "config, actions, scaling, operational patterns, and open questions."
+        ),
+        dependencies=list(research_ids),
+    ))
+
+    tasks.append(AgentTask(
+        id="confirm-design",
+        title="Confirm design with user",
+        category=TaskCategory.CONFIRM,
+        description="Present the design proposal for user approval.",
+        dependencies=["operational-discovery"],
+    ))
+
+    return tasks
+
+
 class TaskPlanner:
     """Stateless planner that decomposes intent into ordered agent tasks.
 
-    Takes an ``LLMProvider``, builds a planning prompt, calls the LLM,
-    and parses the JSON response into ``AgentTask`` objects.
+    For fresh "build a charm" requests, uses deterministic templates for
+    the research phase (no LLM call).  Falls back to the LLM for
+    replanning and for generating build-phase tasks from an approved design.
     """
 
     def __init__(self, provider: llm.LLMProvider) -> None:
         self._provider = provider
 
     async def plan(self, context: PlanningContext) -> list[AgentTask]:
-        """Decompose *context.intent* into an ordered list of tasks."""
-        prompt = _build_planning_prompt(context)
-        messages = [
-            llm.Message(role=llm.Role.SYSTEM, content=prompt),
-            llm.Message(role=llm.Role.USER, content=context.intent),
-        ]
-        response = await self._provider.complete(
-            messages=messages,
-            tools=None,
-            temperature=_PLANNING_TEMPERATURE,
-        )
-        return _parse_task_list(response.content)
+        """Decompose *context.intent* into an ordered list of tasks.
+
+        Uses deterministic templates for the research phase — no LLM call.
+        """
+        return plan_research_phase(context)
 
     async def plan_from_design(
         self,
