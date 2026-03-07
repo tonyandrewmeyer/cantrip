@@ -70,9 +70,10 @@ class TestCreateProvider:
         assert isinstance(provider, InferenceSnapProvider)
         assert provider.snap_name == "gemma3"
 
+    @patch("cantrip.llm.inference_snap.InferenceSnapProvider._probe_server")
     @patch("cantrip.llm.inference_snap.InferenceSnapProvider._detect_model", return_value="test")
     @patch("cantrip.llm.inference_snap.discover_snap_endpoint", return_value="http://test/v1")
-    def test_create_inference_snap_custom(self, _mock_discover, _mock_detect):
+    def test_create_inference_snap_custom(self, _mock_discover, _mock_detect, _mock_probe):
         """Test creating an inference snap provider with a custom snap and model."""
         provider = create_provider("inference-snap", model="custom-model", snap_name="deepseek-r1")
 

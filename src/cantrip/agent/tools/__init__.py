@@ -37,6 +37,7 @@ from cantrip.agent.tools.github import (
     GhPrCreateTool,
     GhRepoCreateTool,
 )
+from cantrip.agent.tools.inference import ListInferenceSnapsTool
 from cantrip.agent.tools.juju import (
     CharmSyncTool,
     JujuAddModelTool,
@@ -157,4 +158,6 @@ __all__ = [
     "GenerateReadmeTool",
     # Web
     "WebFetchTool",
+    # Inference snaps
+    "ListInferenceSnapsTool",
 ]

@@ -68,6 +68,7 @@ from cantrip.agent.tools import (
     JujuStatusTool,
     JujuWaitTool,
     ListDirectoryTool,
+    ListInferenceSnapsTool,
     LoadSkillTool,
     LokiQueryTool,
     ManageTasksTool,
@@ -326,6 +327,8 @@ class CantripAgent:
             JujuDebugLogTool(),
             TempoQueryTool(),
             LokiQueryTool(),
+            # Inference snaps
+            ListInferenceSnapsTool(),
             # Testing
             RunCharmTestsTool(),
             # Planning

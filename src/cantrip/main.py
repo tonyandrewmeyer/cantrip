@@ -58,6 +58,10 @@ def parse_args() -> argparse.Namespace:
         help="Cheaper model for internal tasks like compaction (auto-detected if omitted)",
     )
     parser.add_argument(
+        "--light-snap",
+        help="Lighter inference snap for internal tasks (e.g. nemotron-3-nano)",
+    )
+    parser.add_argument(
         "--no-tui",
         action="store_true",
         help="Run in CLI mode without TUI",
@@ -139,6 +143,7 @@ def main() -> int:
             watcher=args.watcher,
             max_concurrency=args.concurrency,
             snap_name=args.snap,
+            light_snap_name=args.light_snap,
         )
         app.run()
         return 0

@@ -16,8 +16,8 @@ from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.watcher import WatcherEvent
-from cantrip.llm import create_provider, resolve_light_model
-from cantrip.llm.base import ProviderOverloadedError, ProviderRateLimitError
+from cantrip.llm import LLMProvider, create_provider, resolve_light_model
+from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.tui.screens.graph import GraphScreen
 from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.screens.logs import LogScreen
@@ -65,6 +65,7 @@ class CantripApp(App):
         watcher: bool = False,
         max_concurrency: int | None = None,
         snap_name: str = "gemma3",
+        light_snap_name: str | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -73,6 +74,7 @@ class CantripApp(App):
         self.charm_path = charm_path or Path.cwd()
         self._light_model_override = light_model
         self._snap_name = snap_name
+        self._light_snap_name = light_snap_name
         self._light_model_name: str | None = None
         self._max_concurrency = max_concurrency
         self._agent: CantripAgent | None = None
@@ -136,26 +138,44 @@ class CantripApp(App):
                 self.provider_name, self.model_name, snap_name=self._snap_name
             )
 
-            # Resolve light model for internal tasks (e.g. compaction).
-            main_model = llm_provider.model_name
-            light_model_name = self._light_model_override or resolve_light_model(
-                self.provider_name, main_model
-            )
-            light_provider = None
-            if light_model_name != main_model:
-                light_provider = create_provider(
-                    self.provider_name, light_model_name, snap_name=self._snap_name
-                )
-                self._light_model_name = light_model_name
+            # Resolve light provider for internal tasks (e.g. compaction).
+            light_provider = self._resolve_light_provider(llm_provider)
 
             self._agent = CantripAgent(
                 provider=llm_provider,
                 charm_path=self.charm_path,
                 light_provider=light_provider,
             )
-        except ValueError as e:
+        except (ValueError, ProviderError) as e:
             chat = self.query_one("#chat", ChatWidget)
             chat.add_system_message(f"Failed to initialise provider: {e}")
+
+    def _resolve_light_provider(self, main_provider: LLMProvider) -> LLMProvider | None:
+        """Build a light provider for cheap internal tasks.
+
+        For inference snaps, ``--light-snap`` creates a provider backed by a
+        different (lighter) snap.  For cloud providers, the existing
+        model-name-based routing is used.
+        """
+        # Multi-snap routing: --light-snap creates a separate snap provider.
+        if self._light_snap_name and self.provider_name == "inference-snap":
+            light = create_provider(
+                "inference-snap", snap_name=self._light_snap_name
+            )
+            self._light_model_name = f"{self._light_snap_name}"
+            return light
+
+        main_model = main_provider.model_name
+        light_model_name = self._light_model_override or resolve_light_model(
+            self.provider_name, main_model
+        )
+        if light_model_name != main_model:
+            light = create_provider(
+                self.provider_name, light_model_name, snap_name=self._snap_name
+            )
+            self._light_model_name = light_model_name
+            return light
+        return None
 
     def _update_header_subtitle(self) -> None:
         """Rebuild the header subtitle from agent state."""

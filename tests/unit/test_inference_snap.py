@@ -91,14 +91,15 @@ class TestInferenceSnapProviderInit:
     """Tests for InferenceSnapProvider initialisation."""
 
     def _make_provider(self, **kwargs):
-        """Create a provider with model detection bypassed."""
+        """Create a provider with model detection and probe bypassed."""
         defaults = {
             "snap_name": "gemma3",
             "model": "test-model",
             "base_url": "http://test:8328/v1",
         }
         defaults.update(kwargs)
-        return InferenceSnapProvider(**defaults)
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(**defaults)
 
     def test_name(self):
         """Provider name is 'inference-snap'."""
@@ -156,9 +157,10 @@ class TestMessageConversion:
     """Tests for InferenceSnapProvider._convert_messages."""
 
     def _make_provider(self):
-        return InferenceSnapProvider(
-            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
-        )
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
 
     def test_user_message(self):
         """User messages convert to OpenAI format."""
@@ -268,9 +270,10 @@ class TestToolConversion:
     """Tests for InferenceSnapProvider._convert_tools."""
 
     def _make_provider(self):
-        return InferenceSnapProvider(
-            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
-        )
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
 
     def test_convert_tools(self):
         """Tools convert to OpenAI function-calling format."""
@@ -299,9 +302,10 @@ class TestCountTokens:
     """Tests for InferenceSnapProvider.count_tokens."""
 
     def _make_provider(self):
-        return InferenceSnapProvider(
-            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
-        )
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
 
     def test_counts_content(self):
         """Content characters contribute to the count."""
@@ -387,9 +391,10 @@ class TestBuildRequestBody:
     """Tests for InferenceSnapProvider._build_request_body."""
 
     def _make_provider(self):
-        return InferenceSnapProvider(
-            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
-        )
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
 
     def test_basic_request(self):
         """Builds a basic request body."""
@@ -440,9 +445,10 @@ class TestComplete:
     """Tests for InferenceSnapProvider.complete."""
 
     def _make_provider(self):
-        return InferenceSnapProvider(
-            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
-        )
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
 
     @pytest.mark.asyncio
     async def test_complete_text_response(self):
@@ -513,3 +519,216 @@ class TestComplete:
         assert response.tool_calls[0].name == "get_weather"
         assert response.tool_calls[0].arguments == {"city": "London"}
         assert response.finish_reason == "tool_calls"
+
+
+class TestContextWindowTuning:
+    """Tests for dynamic context window detection from /models."""
+
+    def test_default_context_window(self):
+        """Default context window is used when /models has no metadata."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        assert provider.context_window_tokens == 8_192
+
+    def test_detects_n_ctx_train(self):
+        """Context window is read from n_ctx_train in /models response."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        provider._apply_model_metadata({"data": [{"id": "test", "n_ctx_train": 32_768}]})
+        assert provider.context_window_tokens == 32_768
+
+    def test_detects_context_length(self):
+        """Falls back to context_length when n_ctx_train is absent."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        provider._apply_model_metadata({"data": [{"id": "test", "context_length": 16_384}]})
+        assert provider.context_window_tokens == 16_384
+
+    def test_detects_max_model_len(self):
+        """Falls back to max_model_len as a last resort."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        provider._apply_model_metadata({"data": [{"id": "test", "max_model_len": 4_096}]})
+        assert provider.context_window_tokens == 4_096
+
+    def test_ignores_invalid_context_values(self):
+        """Zero or negative values are ignored."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        provider._apply_model_metadata({"data": [{"id": "test", "n_ctx_train": 0}]})
+        assert provider.context_window_tokens == 8_192
+
+
+class TestConnectionHealth:
+    """Tests for connection health checking."""
+
+    def test_connect_error_raises_provider_error(self):
+        """ProviderError is raised with helpful message when snap is unreachable."""
+        from cantrip.llm.base import ProviderError
+
+        with patch("cantrip.llm.inference_snap.httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.side_effect = httpx.ConnectError("Connection refused")
+            mock_client_cls.return_value = mock_client
+
+            with pytest.raises(ProviderError, match="Cannot connect"):
+                InferenceSnapProvider(
+                    snap_name="gemma3", model=None, base_url="http://localhost:8328/v1"
+                )
+
+    def test_probe_raises_on_connect_error(self):
+        """_probe_server raises ProviderError when server is unreachable."""
+        from cantrip.llm.base import ProviderError
+
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+
+        with patch("cantrip.llm.inference_snap.httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.side_effect = httpx.ConnectError("Connection refused")
+            mock_client_cls.return_value = mock_client
+
+            with pytest.raises(ProviderError, match="sudo snap start"):
+                provider._probe_server()
+
+
+class TestGracefulDegradation:
+    """Tests for graceful tool support degradation."""
+
+    def test_tools_omitted_when_unsupported(self):
+        """Tools are not sent in request body when model lacks tool support."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        provider._supports_tools = False
+
+        messages = [Message(role=Role.USER, content="Hello")]
+        tools = [
+            Tool(
+                name="test_tool",
+                description="A test",
+                parameters={"type": "object", "properties": {}},
+            ),
+        ]
+        body = provider._build_request_body(messages, tools, 0.7)
+        assert "tools" not in body
+
+    def test_tools_included_when_supported(self):
+        """Tools are included when model supports them (default)."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        assert provider._supports_tools is True
+
+        messages = [Message(role=Role.USER, content="Hello")]
+        tools = [
+            Tool(
+                name="test_tool",
+                description="A test",
+                parameters={"type": "object", "properties": {}},
+            ),
+        ]
+        body = provider._build_request_body(messages, tools, 0.7)
+        assert "tools" in body
+
+    def test_capability_detection_disables_tools(self):
+        """Models advertising capabilities without tool_use disable tools."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        provider._apply_model_metadata(
+            {"data": [{"id": "test", "capabilities": ["text_generation"]}]}
+        )
+        assert provider._supports_tools is False
+
+    def test_capability_detection_keeps_tools(self):
+        """Models advertising tool_use capability keep tools enabled."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        provider._apply_model_metadata(
+            {"data": [{"id": "test", "capabilities": ["text_generation", "tool_use"]}]}
+        )
+        assert provider._supports_tools is True
+
+    def test_no_capabilities_field_keeps_tools(self):
+        """Missing capabilities field defaults to tools enabled."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+        provider._apply_model_metadata({"data": [{"id": "test"}]})
+        assert provider._supports_tools is True
+
+
+class TestListInferenceSnapsTool:
+    """Tests for the ListInferenceSnapsTool agent tool."""
+
+    @pytest.mark.asyncio
+    async def test_no_snaps_installed(self):
+        """Returns helpful message when no snaps are found."""
+        from cantrip.agent.tools.inference import ListInferenceSnapsTool
+
+        tool = ListInferenceSnapsTool()
+        with patch(
+            "cantrip.llm.inference_snap.list_available_snaps", return_value=[]
+        ):
+            result = await tool.execute()
+        assert result.success is True
+        assert "No inference snaps found" in result.output
+        assert "sudo snap install" in result.output
+
+    @pytest.mark.asyncio
+    async def test_lists_installed_snaps(self):
+        """Returns status information for installed snaps."""
+        from cantrip.agent.tools.inference import ListInferenceSnapsTool
+
+        tool = ListInferenceSnapsTool()
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"data": [{"id": "gemma-3-4b-it"}]}
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.get.return_value = mock_resp
+
+        with (
+            patch(
+                "cantrip.llm.inference_snap.list_available_snaps",
+                return_value=["gemma3"],
+            ),
+            patch(
+                "cantrip.llm.inference_snap.discover_snap_endpoint",
+                return_value="http://localhost:8328/v1",
+            ),
+            patch("httpx.Client", return_value=mock_client),
+        ):
+            result = await tool.execute()
+
+        assert result.success is True
+        assert "gemma3" in result.output
+        assert "running" in result.output
+        assert "gemma-3-4b-it" in result.output
+        assert result.data["snaps"] == ["gemma3"]

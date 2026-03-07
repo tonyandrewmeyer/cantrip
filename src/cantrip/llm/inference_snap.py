@@ -8,6 +8,7 @@ completions, streaming, and tool calling — no API key required.
 
 import contextlib
 import json
+import logging
 import subprocess
 from collections.abc import AsyncIterator
 from typing import Any
@@ -26,6 +27,8 @@ from cantrip.llm.base import (
     Tool,
     ToolCall,
 )
+
+log = logging.getLogger(__name__)
 
 # Known inference snaps and their default ports.
 _SNAP_DEFAULTS: dict[str, int] = {
@@ -95,7 +98,7 @@ class InferenceSnapProvider(LLMProvider):
     @property
     def context_window_tokens(self) -> int:
         """Maximum context window size in tokens for the current model."""
-        return _DEFAULT_CONTEXT_WINDOW
+        return self._context_window
 
     @property
     def max_tools(self) -> int | None:
@@ -117,32 +120,101 @@ class InferenceSnapProvider(LLMProvider):
             base_url: Override the API base URL (e.g.
                 ``http://localhost:8328/v1``).  Discovered automatically
                 if not given.
+
+        Raises:
+            ProviderError: If the snap's server is not reachable.
         """
         self.snap_name = snap_name
         self.base_url = (base_url or discover_snap_endpoint(snap_name)).rstrip("/")
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=300.0)
+        self._context_window = _DEFAULT_CONTEXT_WINDOW
+        self._supports_tools = True
+
         # Always auto-detect the model from the /models endpoint.  The snap
         # name (e.g. "gemma3") is NOT a valid model ID — the actual served
         # model has a different name.  Only skip detection if the caller
         # provides a model that differs from the snap name.
         if model and model != snap_name:
             self.model_name = model
+            self._probe_server()
         else:
             self.model_name = self._detect_model()
 
-    def _detect_model(self) -> str:
-        """Query the snap's /models endpoint to find the served model."""
+    def _probe_server(self) -> None:
+        """Check that the snap server is reachable and probe capabilities.
+
+        Queries ``/models`` to detect the context window size and whether the
+        server supports tool calling.  Raises ``ProviderError`` with an
+        actionable message if the server is not running.
+        """
         try:
             with httpx.Client(base_url=self.base_url, timeout=10.0) as client:
                 resp = client.get("/models")
                 resp.raise_for_status()
                 data = resp.json()
+                self._apply_model_metadata(data)
+        except httpx.ConnectError as e:
+            raise ProviderError(
+                f"Cannot connect to inference snap '{self.snap_name}' at "
+                f"{self.base_url}. Is the snap running?\n"
+                f"  Try: sudo snap start {self.snap_name}\n"
+                f"  Check: {self.snap_name} status"
+            ) from e
+        except httpx.HTTPError:
+            log.debug("Failed to probe snap server at %s", self.base_url)
+
+    def _detect_model(self) -> str:
+        """Query the snap's /models endpoint to find the served model.
+
+        Also probes context window size and tool support as a side effect.
+        Raises ``ProviderError`` if the server is unreachable.
+        """
+        try:
+            with httpx.Client(base_url=self.base_url, timeout=10.0) as client:
+                resp = client.get("/models")
+                resp.raise_for_status()
+                data = resp.json()
+                self._apply_model_metadata(data)
                 models = data.get("data", [])
                 if models:
                     return models[0]["id"]
+        except httpx.ConnectError as e:
+            raise ProviderError(
+                f"Cannot connect to inference snap '{self.snap_name}' at "
+                f"{self.base_url}. Is the snap running?\n"
+                f"  Try: sudo snap start {self.snap_name}\n"
+                f"  Check: {self.snap_name} status"
+            ) from e
         except (httpx.HTTPError, KeyError, IndexError):
             pass
         return self.snap_name
+
+    def _apply_model_metadata(self, models_response: dict) -> None:
+        """Extract context window size and capabilities from /models data."""
+        models = models_response.get("data", [])
+        if not models:
+            return
+        meta = models[0]
+
+        # Context window: try n_ctx_train (llama.cpp), context_length
+        # (vLLM/OVMS), or max_model_len as fallbacks.
+        for key in ("n_ctx_train", "context_length", "max_model_len"):
+            ctx = meta.get(key)
+            if isinstance(ctx, int) and ctx > 0:
+                self._context_window = ctx
+                log.debug("Detected context window: %d tokens (%s)", ctx, key)
+                break
+
+        # Tool support: some backends (e.g. OVMS) don't support function
+        # calling.  Check for an explicit capability flag if present.
+        capabilities = meta.get("capabilities", [])
+        if capabilities and "tool_use" not in capabilities and "tools" not in capabilities:
+            self._supports_tools = False
+            log.info(
+                "Model %s does not advertise tool support; "
+                "tool calls will be omitted from requests.",
+                meta.get("id", self.snap_name),
+            )
 
     # -- Message conversion (to OpenAI chat format) -----------------------
 
@@ -254,9 +326,11 @@ class InferenceSnapProvider(LLMProvider):
             "stream": stream,
         }
 
-        api_tools = self._convert_tools(tools)
-        if api_tools:
-            body["tools"] = api_tools
+        # Only include tools if the backend supports function calling.
+        if self._supports_tools:
+            api_tools = self._convert_tools(tools)
+            if api_tools:
+                body["tools"] = api_tools
 
         return body
 
