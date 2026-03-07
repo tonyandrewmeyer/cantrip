@@ -110,6 +110,12 @@ class TestInferenceSnapProviderInit:
         provider = self._make_provider()
         assert provider.context_window_tokens == 8_192
 
+    def test_max_tools(self):
+        """Max tools returns a small limit for local models."""
+        provider = self._make_provider()
+        assert provider.max_tools is not None
+        assert provider.max_tools <= 15
+
     def test_model_name(self):
         """Model name is set from the constructor argument."""
         provider = self._make_provider(model="my-model")

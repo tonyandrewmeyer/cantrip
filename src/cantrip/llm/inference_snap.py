@@ -97,6 +97,11 @@ class InferenceSnapProvider(LLMProvider):
         """Maximum context window size in tokens for the current model."""
         return _DEFAULT_CONTEXT_WINDOW
 
+    @property
+    def max_tools(self) -> int | None:
+        """Local models have limited context; restrict tools to a core set."""
+        return 12
+
     def __init__(
         self,
         snap_name: str = "gemma3",

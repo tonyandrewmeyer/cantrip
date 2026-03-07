@@ -232,6 +232,42 @@ class TestGitPushConfirmation:
         assert "confirmed: true" in result
 
 
+class TestCompactPrompt:
+    """Tests for compact system prompt (used by local models)."""
+
+    def test_compact_is_shorter(self):
+        """Compact prompt should be significantly shorter than the full prompt."""
+        full = build_system_prompt()
+        compact = build_system_prompt(compact=True)
+        assert len(compact) < len(full) // 3
+
+    def test_compact_contains_core_identity(self):
+        """Compact prompt should identify Cantrip and its purpose."""
+        result = build_system_prompt(compact=True)
+        assert "Cantrip" in result
+        assert "Juju charms" in result
+
+    def test_compact_contains_charm_paths(self):
+        """Compact prompt should mention the three charm paths."""
+        result = build_system_prompt(compact=True)
+        assert "12-Factor" in result
+        assert "Custom" in result
+        assert "Infrastructure" in result
+
+    def test_compact_includes_context(self):
+        """Compact prompt should include charm context when provided."""
+        result = build_system_prompt(compact=True, charm_name="my-charm", dev_model="dev")
+        assert "my-charm" in result
+        assert "dev" in result
+
+    def test_compact_excludes_verbose_sections(self):
+        """Compact prompt should not contain verbose sections from the full prompt."""
+        result = build_system_prompt(compact=True)
+        assert "WORKLOAD.md" not in result
+        assert "DESIGN.md" not in result
+        assert "Example Interaction" not in result
+
+
 class TestWatcherPrompt:
     """Tests for watcher-related content in the system prompt."""
 

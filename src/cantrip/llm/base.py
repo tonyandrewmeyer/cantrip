@@ -118,6 +118,11 @@ class LLMProvider(ABC):
     ) -> AsyncIterator[Chunk]:
         """Stream a completion."""
 
+    @property
+    def max_tools(self) -> int | None:
+        """Maximum number of tools the provider can handle, or None for no limit."""
+        return None
+
     @abstractmethod
     def count_tokens(self, messages: list[Message]) -> int:
         """Count tokens in messages (approximate)."""

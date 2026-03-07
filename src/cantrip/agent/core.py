@@ -339,7 +339,12 @@ class CantripAgent:
         ]
 
     def _build_system_prompt(self) -> str:
-        """Build the current system prompt."""
+        """Build the current system prompt.
+
+        Uses a compact prompt for providers with limited context windows
+        to avoid exceeding the model's capacity.
+        """
+        compact = self.provider.max_tools is not None
         return build_system_prompt(
             charm_name=self.state.charm_name,
             charm_path=str(self.state.charm_path) if self.state.charm_path else None,
@@ -351,17 +356,43 @@ class CantripAgent:
             skills_index=self._skills_index.format_for_prompt(),
             environment_ready=self.state.environment_ready,
             watcher_enabled=self.state.watcher_enabled,
+            compact=compact,
         )
 
+    # Tools that are always included when the provider has a tool limit.
+    _CORE_TOOL_NAMES: set[str] = {
+        "read_file",
+        "write_file",
+        "list_directory",
+        "edit_file",
+        "charmcraft_init",
+        "charmcraft_pack",
+        "analyse_framework",
+        "juju_status",
+        "juju_deploy",
+        "run_charm_tests",
+        "web_fetch",
+        "plan_tasks",
+    }
+
     def _tools_for_llm(self) -> list[LLMTool]:
-        """Convert tools to LLM format."""
+        """Convert tools to LLM format.
+
+        When the provider declares a ``max_tools`` limit, only the core
+        tools are sent to avoid exceeding the model's context window.
+        """
+        tools = self._tools
+        limit = self.provider.max_tools
+        if limit is not None and len(tools) > limit:
+            tools = [t for t in tools if t.name in self._CORE_TOOL_NAMES][:limit]
+
         return [
             LLMTool(
                 name=tool.name,
                 description=tool.description,
                 parameters=tool.parameters,
             )
-            for tool in self._tools
+            for tool in tools
         ]
 
     async def _execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
