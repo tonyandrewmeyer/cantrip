@@ -365,12 +365,12 @@ compress the research phase.
 Each subagent can do up to 12 tool-call rounds. Research subagents in particular tend to
 fetch → read → fetch → read in a long chain.
 
-- [ ] **Batch tool guidance** — update subagent prompts to encourage calling multiple tools
-  in a single round (e.g. "fetch all URLs in one round, then analyse")
-- [ ] **Tighter task scoping** — give each subagent a more prescriptive instruction so it
-  needs fewer exploratory rounds to figure out what to do
-- [ ] **Early termination** — if a subagent has gathered enough information, encourage it
-  to summarise and finish rather than exhaustively exploring
+- [x] **Batch tool guidance** — subagent prompts now explicitly encourage calling multiple
+  tools in a single round (e.g. "fetch all URLs in one round, then analyse")
+- [x] **Tighter task scoping** — each category's guidance is more prescriptive with
+  concrete round-count targets and step sequences
+- [x] **Early termination** — subagents are told to stop when sufficient information is
+  gathered; max rounds reduced from 12 to 8
 
 ### 6.4 Merge Planning with Execution (discussion needed)
 

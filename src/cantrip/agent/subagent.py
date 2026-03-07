@@ -16,7 +16,8 @@ UsageCallback = Callable[[llm.Response], None] | None
 log = logging.getLogger(__name__)
 
 # Focused tasks need fewer rounds than the open-ended conversation loop.
-MAX_SUBAGENT_ROUNDS = 12
+# Kept tight to encourage batching tool calls rather than one-per-round chains.
+MAX_SUBAGENT_ROUNDS = 8
 
 _TRANSIENT_RETRIES = 3
 _TRANSIENT_BASE_DELAY = 30  # seconds
@@ -176,19 +177,23 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
         "- **Structured output**: use Markdown with clear headings so downstream tasks "
         "can parse your findings.\n"
         "- **Flag gaps**: mark anything you could not determine as `[UNKNOWN]` rather than "
-        "guessing.\n\n"
+        "guessing.\n"
+        "- **Batch fetches**: call `web_fetch` for multiple URLs in a single round. "
+        "Similarly, read multiple files at once rather than one per round.\n"
+        "- **Stop when sufficient**: 2-3 good sources per topic is enough. Do not "
+        "chase every link — gather the key facts and summarise.\n\n"
         "### Task-type guidance\n\n"
-        "**source-analysis**: Clone the repository, read README, dependency files "
-        "(requirements.txt, pyproject.toml, package.json, go.mod, pom.xml), "
-        "Dockerfile/docker-compose.yml, configuration files, and entry points. "
-        "Run `analyse_framework` to detect language and framework. "
-        "Write findings into WORKLOAD.md at the charm root.\n\n"
-        "**web-research**: Fetch external documentation, project website, PyPI/npm "
-        "pages, and deployment guides. Focus on operational patterns: how the workload "
-        "is deployed, configured, monitored, and scaled in production.\n\n"
-        "**charmhub-survey**: Search Charmhub for existing charms covering this workload. "
-        "Use `charmhub_search` and `charmhub_info` to evaluate candidates — check "
-        "relations, config, storage, containers, and maintenance status.\n\n"
+        "**source-analysis**: Clone the repository, then in one round read README, "
+        "dependency files (requirements.txt, pyproject.toml, package.json, go.mod, "
+        "pom.xml), Dockerfile, and entry points simultaneously. "
+        "Run `analyse_framework` in the same round if possible. "
+        "Write findings into WORKLOAD.md at the charm root and finish.\n\n"
+        "**web-research**: Fetch the project website, official docs, and one deployment "
+        "guide in a single round. Extract operational patterns: deployment, config, "
+        "monitoring, scaling. Summarise and finish — do not fetch more than 3-4 pages.\n\n"
+        "**charmhub-survey**: Call `charmhub_search` once. If results exist, call "
+        "`charmhub_info` for the top 1-2 candidates in one round. Summarise findings "
+        "and finish.\n\n"
         "**operational-discovery**: Synthesise all research into a structured design "
         "proposal. Answer the operational story questions:\n"
         "- **Storage**: What data does the workload persist? File paths, databases, volumes?\n"
@@ -220,27 +225,39 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
     TaskCategory.BUILD: (
         "Write clean, well-structured code following ops framework conventions. "
         "Use Scenario for unit tests, include COS integration, and follow the "
-        "charm type path (PaaS, custom, or infrastructure) as appropriate."
+        "charm type path (PaaS, custom, or infrastructure) as appropriate.\n\n"
+        "**Efficiency**: read the design and any existing files in one round before "
+        "writing. Write multiple files in a single round when they are independent "
+        "(e.g. charm.py and tests can be written together). Do not re-read files "
+        "you just wrote."
     ),
     TaskCategory.DEPLOY: (
         "Pack the charm and deploy it. Ensure all relations are established and "
-        "the application reaches active/idle status. Use juju_wait to confirm "
-        "readiness before reporting success."
+        "the application reaches active/idle status. Use `juju_wait` to confirm "
+        "readiness rather than polling `juju_status` repeatedly.\n\n"
+        "**Efficiency**: chain pack → deploy → wait in as few rounds as possible. "
+        "Establish all relations in a single round."
     ),
     TaskCategory.TEST: (
         "Run the test suite and report results clearly. If tests fail, include "
-        "the failure output so debug tasks can act on it. Validate the charm "
-        "structure before packing."
+        "the failure output so debug tasks can act on it.\n\n"
+        "**Efficiency**: run unit tests and integration tests in a single round "
+        "if both are present. Report pass/fail counts and stop — do not attempt "
+        "fixes (that is a debug task)."
     ),
     TaskCategory.DEBUG: (
-        "Investigate failures methodically. Check logs, traces, and unit status. "
-        "Apply targeted fixes and verify they resolve the issue. Report the root "
-        "cause and what you changed."
+        "Investigate failures methodically. Query logs, traces, and unit status "
+        "in a single round to gather diagnostics. Then apply a targeted fix and "
+        "verify it resolves the issue. Report the root cause and what you changed.\n\n"
+        "**Efficiency**: fetch `juju_debug_log`, `loki_query`, and `juju_status` "
+        "in one round. Apply the fix, then verify — aim for 2-3 rounds total."
     ),
     TaskCategory.INFRA: (
         "Set up infrastructure efficiently. Prepare the environment with Concierge, "
         "create models, and initialise repositories. Report the final state of each "
-        "resource."
+        "resource.\n\n"
+        "**Efficiency**: run independent setup steps in parallel (e.g. model creation "
+        "and git init)."
     ),
 }
 
@@ -312,7 +329,15 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
         "You are an autonomous subagent of Cantrip, an AI agent that builds "
         "Juju charms. You have been assigned a single focused task. Complete "
         "it using the tools available to you, then respond with a clear "
-        "summary of what you did and the outcome."
+        "summary of what you did and the outcome.\n\n"
+        "### Efficiency rules\n\n"
+        "- **Batch tool calls**: call multiple tools in a single round whenever "
+        "possible. For example, fetch several URLs at once, or read multiple "
+        "files in parallel, rather than one per round.\n"
+        "- **Finish early**: once you have enough information to produce a good "
+        "result, summarise and finish. Do not exhaustively explore every lead.\n"
+        "- **Be direct**: execute the task, report the outcome. Skip preamble "
+        "and unnecessary commentary."
     )
 
     # 2. Task block.
