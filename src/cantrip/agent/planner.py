@@ -40,8 +40,59 @@ class PlanningContext:
 
 
 # ---------------------------------------------------------------------------
-# Deterministic research-phase templates
+# Deterministic task templates
 # ---------------------------------------------------------------------------
+
+# Frameworks with well-understood 12-factor PaaS charm paths — skip research.
+_FAST_PATH_FRAMEWORKS = frozenset({
+    "flask", "django", "fastapi", "go", "express", "spring-boot",
+})
+
+
+def is_fast_path(context: PlanningContext) -> bool:
+    """Return whether the context qualifies for the fast (no-research) path.
+
+    Fast path applies when the framework is a known 12-factor type and
+    no source URL needs deep analysis.
+    """
+    return (
+        context.framework is not None
+        and context.framework.lower() in _FAST_PATH_FRAMEWORKS
+        and context.source_url is None
+    )
+
+
+def plan_fast_path(context: PlanningContext) -> list[AgentTask]:
+    """Generate a compressed task list for well-known 12-factor frameworks.
+
+    Skips the full research phase — produces a single synthesis task that
+    generates a template-based design, then goes straight to confirm.
+    """
+    workload = context.charm_name or context.framework or "the workload"
+    framework = context.framework or "unknown"
+
+    return [
+        AgentTask(
+            id="fast-design",
+            title=f"operational-discovery: design 12-factor charm for {workload}",
+            category=TaskCategory.RESEARCH,
+            description=(
+                f"Generate a design proposal for a {framework} 12-factor PaaS charm. "
+                f"This is a well-understood framework — use the paas-charm base with "
+                f"the {framework}-framework profile. Include standard integrations "
+                f"(ingress, database if applicable, COS). Search Charmhub briefly "
+                f"to check for existing charms."
+            ),
+            dependencies=[],
+        ),
+        AgentTask(
+            id="confirm-design",
+            title="Confirm design with user",
+            category=TaskCategory.CONFIRM,
+            description="Present the design proposal for user approval.",
+            dependencies=["fast-design"],
+        ),
+    ]
 
 
 def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
@@ -130,8 +181,11 @@ class TaskPlanner:
     async def plan(self, context: PlanningContext) -> list[AgentTask]:
         """Decompose *context.intent* into an ordered list of tasks.
 
-        Uses deterministic templates for the research phase — no LLM call.
+        Uses deterministic templates — no LLM call.  For well-known
+        12-factor frameworks, the fast path skips research entirely.
         """
+        if is_fast_path(context):
+            return plan_fast_path(context)
         return plan_research_phase(context)
 
     async def plan_from_design(

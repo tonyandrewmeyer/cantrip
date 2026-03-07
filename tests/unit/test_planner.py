@@ -13,6 +13,9 @@ from cantrip.agent.planner import (
     _extract_json,
     _merge_tasks,
     _parse_task_list,
+    is_fast_path,
+    plan_fast_path,
+    plan_research_phase,
 )
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
@@ -201,6 +204,107 @@ class TestTaskPlannerPlan:
         await planner.plan(PlanningContext(intent="test"))
 
         assert provider._call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_fast_path_for_known_framework(self) -> None:
+        """Known 12-factor frameworks skip research, producing only 2 tasks."""
+        provider = FakeProvider()
+        planner = TaskPlanner(provider)
+        context = PlanningContext(
+            intent="Build a charm for my Flask app",
+            charm_name="my-flask-app",
+            framework="flask",
+        )
+
+        tasks = await planner.plan(context)
+
+        assert len(tasks) == 2
+        assert tasks[0].id == "fast-design"
+        assert tasks[1].id == "confirm-design"
+        assert "flask" in tasks[0].description.lower()
+
+    @pytest.mark.asyncio
+    async def test_fast_path_not_used_with_source_url(self) -> None:
+        """Even for known frameworks, source URLs trigger full research."""
+        provider = FakeProvider()
+        planner = TaskPlanner(provider)
+        context = PlanningContext(
+            intent="Build a charm",
+            framework="flask",
+            source_url="https://github.com/user/app",
+        )
+
+        tasks = await planner.plan(context)
+
+        # Full research phase, not fast path.
+        assert len(tasks) == 5
+        assert tasks[0].id == "source-analysis"
+
+
+# ===================================================================
+# TestFastPath
+# ===================================================================
+
+
+class TestFastPath:
+    """Tests for the fast-path logic for known 12-factor frameworks."""
+
+    def test_is_fast_path_flask(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask")
+        assert is_fast_path(ctx)
+
+    def test_is_fast_path_django(self) -> None:
+        ctx = PlanningContext(intent="build", framework="django")
+        assert is_fast_path(ctx)
+
+    def test_is_fast_path_fastapi(self) -> None:
+        ctx = PlanningContext(intent="build", framework="fastapi")
+        assert is_fast_path(ctx)
+
+    def test_is_fast_path_go(self) -> None:
+        ctx = PlanningContext(intent="build", framework="go")
+        assert is_fast_path(ctx)
+
+    def test_is_fast_path_express(self) -> None:
+        ctx = PlanningContext(intent="build", framework="express")
+        assert is_fast_path(ctx)
+
+    def test_is_fast_path_spring_boot(self) -> None:
+        ctx = PlanningContext(intent="build", framework="spring-boot")
+        assert is_fast_path(ctx)
+
+    def test_not_fast_path_unknown_framework(self) -> None:
+        ctx = PlanningContext(intent="build", framework="redis")
+        assert not is_fast_path(ctx)
+
+    def test_not_fast_path_no_framework(self) -> None:
+        ctx = PlanningContext(intent="build")
+        assert not is_fast_path(ctx)
+
+    def test_not_fast_path_with_source_url(self) -> None:
+        ctx = PlanningContext(
+            intent="build",
+            framework="flask",
+            source_url="https://github.com/user/app",
+        )
+        assert not is_fast_path(ctx)
+
+    def test_fast_path_case_insensitive(self) -> None:
+        ctx = PlanningContext(intent="build", framework="Flask")
+        assert is_fast_path(ctx)
+
+    def test_plan_fast_path_produces_two_tasks(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        tasks = plan_fast_path(ctx)
+        assert len(tasks) == 2
+        assert tasks[0].category == TaskCategory.RESEARCH
+        assert tasks[1].category == TaskCategory.CONFIRM
+        assert tasks[1].dependencies == ["fast-design"]
+
+    def test_plan_research_phase_produces_four_tasks(self) -> None:
+        ctx = PlanningContext(intent="build", charm_name="redis")
+        tasks = plan_research_phase(ctx)
+        assert len(tasks) == 4
 
 
 # ===================================================================

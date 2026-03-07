@@ -353,10 +353,11 @@ The full research → synthesis → confirm → build pipeline is overkill for w
 workloads (Flask app, Django, FastAPI, Express, etc.). A streamlined path should skip or
 compress the research phase.
 
-- [ ] **Template-based design** — for known 12-factor frameworks, generate a design
-  proposal from a template rather than doing full web research
-- [ ] **Skip research when unnecessary** — if the workload is a standard framework with
-  no source URL to analyse, go straight to design/confirm with a pre-built proposal
+- [x] **Template-based design** — for known 12-factor frameworks (Flask, Django, FastAPI,
+  Go, Express, Spring Boot), `plan_fast_path()` generates just 2 tasks (design + confirm)
+  instead of the full 4-5 task research pipeline
+- [x] **Skip research when unnecessary** — `is_fast_path()` detects when the framework
+  is well-known and no source URL needs analysis, routing to the compressed path
 - [ ] **One-shot build mode** — for trivial cases, collapse scaffold + write code + pack
   into a single subagent invocation instead of separate tasks
 
