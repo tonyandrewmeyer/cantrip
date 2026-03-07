@@ -45,7 +45,12 @@ def discover_snap_endpoint(snap_name: str) -> str:
     Runs ``<snap_name> status`` and parses the ``openai:`` endpoint line.
     Falls back to constructing a URL from the default port if the snap
     command is unavailable.
+
+    The returned URL always ends with ``/v1`` — some snap versions report
+    a different API version (e.g. ``/v3``) that does not actually serve
+    chat completions.
     """
+    raw_url: str | None = None
     try:
         result = subprocess.run(
             [snap_name, "status"],
@@ -55,13 +60,32 @@ def discover_snap_endpoint(snap_name: str) -> str:
         )
         for line in result.stdout.splitlines():
             if "openai:" in line:
-                return line.split("openai:", 1)[1].strip()
+                raw_url = line.split("openai:", 1)[1].strip()
+                break
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
+
+    if raw_url:
+        return _normalise_base_url(raw_url)
 
     # Fallback: use the known default port.
     port = _SNAP_DEFAULTS.get(snap_name, 8328)
     return f"http://localhost:{port}/v1"
+
+
+def _normalise_base_url(url: str) -> str:
+    """Ensure the base URL ends with ``/v1``.
+
+    Some inference snaps report endpoints like ``http://host:port/v3``
+    but the OpenAI-compatible chat completions route lives under ``/v1``.
+    """
+    url = url.rstrip("/")
+    # Strip a trailing /vN path component and replace with /v1.
+    parts = url.rsplit("/", 1)
+    if len(parts) == 2 and parts[1].startswith("v") and parts[1][1:].isdigit():
+        return f"{parts[0]}/v1"
+    # No version path — append /v1.
+    return f"{url}/v1"
 
 
 def list_available_snaps() -> list[str]:
@@ -264,9 +288,7 @@ class InferenceSnapProvider(LLMProvider):
             resp.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
-                raise ProviderRateLimitError(
-                    "Inference snap rate limit reached."
-                ) from e
+                raise ProviderRateLimitError("Inference snap rate limit reached.") from e
             if e.response.status_code >= 500:
                 raise ProviderOverloadedError(
                     f"Inference snap server error ({e.response.status_code})."
@@ -309,14 +331,12 @@ class InferenceSnapProvider(LLMProvider):
         tool_calls_acc: dict[int, dict[str, str]] = {}
 
         try:
-            async with self.client.stream(
-                "POST", "/chat/completions", json=body
-            ) as resp:
+            async with self.client.stream("POST", "/chat/completions", json=body) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
                         continue
-                    payload = line[len("data: "):]
+                    payload = line[len("data: ") :]
                     if payload.strip() == "[DONE]":
                         break
 
@@ -350,9 +370,7 @@ class InferenceSnapProvider(LLMProvider):
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
-                raise ProviderRateLimitError(
-                    "Inference snap rate limit reached."
-                ) from e
+                raise ProviderRateLimitError("Inference snap rate limit reached.") from e
             if e.response.status_code >= 500:
                 raise ProviderOverloadedError(
                     f"Inference snap server error ({e.response.status_code})."
@@ -371,9 +389,7 @@ class InferenceSnapProvider(LLMProvider):
                 arguments = json.loads(acc["arguments"])
             except json.JSONDecodeError:
                 arguments = {}
-            final_tool_calls.append(
-                ToolCall(id=acc["id"], name=acc["name"], arguments=arguments)
-            )
+            final_tool_calls.append(ToolCall(id=acc["id"], name=acc["name"], arguments=arguments))
 
         yield Chunk(tool_calls=final_tool_calls, is_final=True)
 

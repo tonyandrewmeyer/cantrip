@@ -1,6 +1,7 @@
 """Main Cantrip TUI application."""
 
 import datetime
+import traceback
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -81,6 +82,17 @@ class CantripApp(App):
         self._watcher_autostart = watcher
         self._session_start = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
         self._pending_confirm_id: str | None = None
+
+    def _fatal_error(self) -> None:
+        """Print a plain traceback instead of Rich's decorated version.
+
+        The default Textual implementation uses ``rich.traceback.Traceback``
+        with ``show_locals=True``, which produces very long output that is
+        hard to copy-paste into bug reports.
+        """
+        self.bell()
+        self._exit_renderables.append(traceback.format_exc())
+        self._close_messages_no_wait()
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
