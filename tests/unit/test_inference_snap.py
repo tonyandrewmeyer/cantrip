@@ -10,7 +10,6 @@ from cantrip.llm.base import Message, Role, Tool, ToolCall
 from cantrip.llm.base import ToolResult as LLMToolResult
 from cantrip.llm.inference_snap import (
     InferenceSnapProvider,
-    _normalise_base_url,
     discover_snap_endpoint,
     list_available_snaps,
 )
@@ -51,35 +50,13 @@ class TestDiscoverSnapEndpoint:
             url = discover_snap_endpoint("unknown-snap")
         assert url == "http://localhost:8328/v1"
 
-    def test_normalises_v3_to_v1(self):
-        """Snap reporting /v3 endpoint gets normalised to /v1."""
+    def test_preserves_snap_reported_version(self):
+        """Snap reporting /v3 endpoint is used as-is."""
         mock_result = MagicMock()
         mock_result.stdout = "endpoints:\n    openai: http://localhost:8328/v3\n"
         with patch("cantrip.llm.inference_snap.subprocess.run", return_value=mock_result):
             url = discover_snap_endpoint("gemma3")
-        assert url == "http://localhost:8328/v1"
-
-
-class TestNormaliseBaseUrl:
-    """Tests for _normalise_base_url."""
-
-    def test_v1_unchanged(self):
-        assert _normalise_base_url("http://localhost:8328/v1") == "http://localhost:8328/v1"
-
-    def test_v3_to_v1(self):
-        assert _normalise_base_url("http://localhost:8328/v3") == "http://localhost:8328/v1"
-
-    def test_v2_to_v1(self):
-        assert _normalise_base_url("http://localhost:8328/v2") == "http://localhost:8328/v1"
-
-    def test_trailing_slash_stripped(self):
-        assert _normalise_base_url("http://localhost:8328/v3/") == "http://localhost:8328/v1"
-
-    def test_no_version_path_appends_v1(self):
-        assert _normalise_base_url("http://localhost:8328") == "http://localhost:8328/v1"
-
-    def test_bare_host(self):
-        assert _normalise_base_url("http://localhost") == "http://localhost/v1"
+        assert url == "http://localhost:8328/v3"
 
 
 class TestListAvailableSnaps:

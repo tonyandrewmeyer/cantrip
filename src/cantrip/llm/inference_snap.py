@@ -46,12 +46,7 @@ def discover_snap_endpoint(snap_name: str) -> str:
     Runs ``<snap_name> status`` and parses the ``openai:`` endpoint line.
     Falls back to constructing a URL from the default port if the snap
     command is unavailable.
-
-    The returned URL always ends with ``/v1`` — some snap versions report
-    a different API version (e.g. ``/v3``) that does not actually serve
-    chat completions.
     """
-    raw_url: str | None = None
     try:
         result = subprocess.run(
             [snap_name, "status"],
@@ -61,32 +56,13 @@ def discover_snap_endpoint(snap_name: str) -> str:
         )
         for line in result.stdout.splitlines():
             if "openai:" in line:
-                raw_url = line.split("openai:", 1)[1].strip()
-                break
+                return line.split("openai:", 1)[1].strip()
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
-
-    if raw_url:
-        return _normalise_base_url(raw_url)
 
     # Fallback: use the known default port.
     port = _SNAP_DEFAULTS.get(snap_name, 8328)
     return f"http://localhost:{port}/v1"
-
-
-def _normalise_base_url(url: str) -> str:
-    """Ensure the base URL ends with ``/v1``.
-
-    Some inference snaps report endpoints like ``http://host:port/v3``
-    but the OpenAI-compatible chat completions route lives under ``/v1``.
-    """
-    url = url.rstrip("/")
-    # Strip a trailing /vN path component and replace with /v1.
-    parts = url.rsplit("/", 1)
-    if len(parts) == 2 and parts[1].startswith("v") and parts[1][1:].isdigit():
-        return f"{parts[0]}/v1"
-    # No version path — append /v1.
-    return f"{url}/v1"
 
 
 def list_available_snaps() -> list[str]:
