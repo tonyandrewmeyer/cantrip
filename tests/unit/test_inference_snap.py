@@ -1,0 +1,433 @@
+"""Tests for the inference snap LLM provider."""
+
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
+
+from cantrip.llm.base import Message, Role, Tool, ToolCall
+from cantrip.llm.base import ToolResult as LLMToolResult
+from cantrip.llm.inference_snap import (
+    InferenceSnapProvider,
+    discover_snap_endpoint,
+    list_available_snaps,
+)
+
+
+class TestDiscoverSnapEndpoint:
+    """Tests for discover_snap_endpoint."""
+
+    def test_parses_status_output(self):
+        """Parses the openai endpoint from snap status output."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "engine: nvidia-gpu-amd64\n"
+            "services:\n"
+            "    server: active\n"
+            "endpoints:\n"
+            "    openai: http://localhost:8328/v1\n"
+        )
+        with patch("cantrip.llm.inference_snap.subprocess.run", return_value=mock_result):
+            url = discover_snap_endpoint("gemma3")
+        assert url == "http://localhost:8328/v1"
+
+    def test_falls_back_to_known_port(self):
+        """Falls back to the default port when the snap command fails."""
+        with patch(
+            "cantrip.llm.inference_snap.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            url = discover_snap_endpoint("deepseek-r1")
+        assert url == "http://localhost:8324/v1"
+
+    def test_falls_back_for_unknown_snap(self):
+        """Falls back to port 8328 for unrecognised snap names."""
+        with patch(
+            "cantrip.llm.inference_snap.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            url = discover_snap_endpoint("unknown-snap")
+        assert url == "http://localhost:8328/v1"
+
+
+class TestListAvailableSnaps:
+    """Tests for list_available_snaps."""
+
+    def test_finds_installed_snaps(self):
+        """Returns only recognised inference snaps from snap list output."""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "Name          Version\n"
+            "core22        20240101\n"
+            "gemma3        v3+b73d030\n"
+            "deepseek-r1   v1.0.0\n"
+            "firefox       130.0\n"
+        )
+        with patch("cantrip.llm.inference_snap.subprocess.run", return_value=mock_result):
+            snaps = list_available_snaps()
+        assert "gemma3" in snaps
+        assert "deepseek-r1" in snaps
+        assert "firefox" not in snaps
+
+    def test_handles_missing_snap_command(self):
+        """Returns empty list when snap is not available."""
+        with patch(
+            "cantrip.llm.inference_snap.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            assert list_available_snaps() == []
+
+
+class TestInferenceSnapProviderInit:
+    """Tests for InferenceSnapProvider initialisation."""
+
+    def _make_provider(self, **kwargs):
+        """Create a provider with model detection bypassed."""
+        defaults = {"snap_name": "gemma3", "model": "test-model", "base_url": "http://test:8328/v1"}
+        defaults.update(kwargs)
+        return InferenceSnapProvider(**defaults)
+
+    def test_name(self):
+        """Provider name is 'inference-snap'."""
+        provider = self._make_provider()
+        assert provider.name == "inference-snap"
+
+    def test_context_window(self):
+        """Context window returns the default for local models."""
+        provider = self._make_provider()
+        assert provider.context_window_tokens == 8_192
+
+    def test_model_name(self):
+        """Model name is set from the constructor argument."""
+        provider = self._make_provider(model="my-model")
+        assert provider.model_name == "my-model"
+
+    def test_base_url(self):
+        """Base URL is set from the constructor argument."""
+        provider = self._make_provider(base_url="http://custom:9999/v1")
+        assert provider.base_url == "http://custom:9999/v1"
+
+
+class TestMessageConversion:
+    """Tests for InferenceSnapProvider._convert_messages."""
+
+    def _make_provider(self):
+        return InferenceSnapProvider(
+            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+        )
+
+    def test_user_message(self):
+        """User messages convert to OpenAI format."""
+        provider = self._make_provider()
+        messages = [Message(role=Role.USER, content="Hello")]
+        system, result = provider._convert_messages(messages)
+        assert system is None
+        assert result == [{"role": "user", "content": "Hello"}]
+
+    def test_system_message_extracted(self):
+        """System messages are extracted separately."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.SYSTEM, content="Be helpful."),
+            Message(role=Role.USER, content="Hi"),
+        ]
+        system, result = provider._convert_messages(messages)
+        assert system == "Be helpful."
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
+
+    def test_assistant_with_tool_calls(self):
+        """Assistant messages with tool calls include function call format."""
+        provider = self._make_provider()
+        messages = [
+            Message(
+                role=Role.ASSISTANT,
+                content="Let me check.",
+                tool_calls=[
+                    ToolCall(id="tc_1", name="juju_status", arguments={"model": "dev"}),
+                ],
+            ),
+        ]
+        _, result = provider._convert_messages(messages)
+        assert len(result) == 1
+        msg = result[0]
+        assert msg["role"] == "assistant"
+        assert msg["content"] == "Let me check."
+        assert len(msg["tool_calls"]) == 1
+        tc = msg["tool_calls"][0]
+        assert tc["type"] == "function"
+        assert tc["function"]["name"] == "juju_status"
+        assert json.loads(tc["function"]["arguments"]) == {"model": "dev"}
+
+    def test_tool_result_message(self):
+        """Tool result messages convert to OpenAI tool role format."""
+        provider = self._make_provider()
+        messages = [
+            Message(
+                role=Role.TOOL,
+                content="",
+                tool_results=[
+                    LLMToolResult(
+                        tool_call_id="tc_1",
+                        content="active: Ready",
+                    ),
+                ],
+            ),
+        ]
+        _, result = provider._convert_messages(messages)
+        assert len(result) == 1
+        assert result[0]["role"] == "tool"
+        assert result[0]["tool_call_id"] == "tc_1"
+        assert result[0]["content"] == "active: Ready"
+
+
+class TestToolConversion:
+    """Tests for InferenceSnapProvider._convert_tools."""
+
+    def _make_provider(self):
+        return InferenceSnapProvider(
+            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+        )
+
+    def test_convert_tools(self):
+        """Tools convert to OpenAI function-calling format."""
+        provider = self._make_provider()
+        tools = [
+            Tool(
+                name="juju_status",
+                description="Get Juju status",
+                parameters={"type": "object", "properties": {}},
+            ),
+        ]
+        result = provider._convert_tools(tools)
+        assert len(result) == 1
+        assert result[0]["type"] == "function"
+        assert result[0]["function"]["name"] == "juju_status"
+        assert result[0]["function"]["description"] == "Get Juju status"
+
+    def test_convert_tools_none(self):
+        """None or empty tools returns None."""
+        provider = self._make_provider()
+        assert provider._convert_tools(None) is None
+        assert provider._convert_tools([]) is None
+
+
+class TestCountTokens:
+    """Tests for InferenceSnapProvider.count_tokens."""
+
+    def _make_provider(self):
+        return InferenceSnapProvider(
+            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+        )
+
+    def test_counts_content(self):
+        """Content characters contribute to the count."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.USER, content="A" * 100),
+            Message(role=Role.ASSISTANT, content="B" * 200),
+        ]
+        assert provider.count_tokens(messages) == 300 // 4
+
+    def test_counts_tool_calls(self):
+        """Tool call names and arguments contribute to the count."""
+        provider = self._make_provider()
+        messages = [
+            Message(
+                role=Role.ASSISTANT,
+                content="",
+                tool_calls=[ToolCall(id="tc1", name="read_file", arguments={"path": "x"})],
+            ),
+        ]
+        result = provider.count_tokens(messages)
+        expected = (len("read_file") + len(str({"path": "x"}))) // 4
+        assert result == expected
+
+    def test_counts_tool_results(self):
+        """Tool result content contributes to the count."""
+        provider = self._make_provider()
+        messages = [
+            Message(
+                role=Role.TOOL,
+                content="",
+                tool_results=[LLMToolResult(tool_call_id="tc1", content="A" * 400)],
+            ),
+        ]
+        assert provider.count_tokens(messages) == 400 // 4
+
+
+class TestParseToolCalls:
+    """Tests for InferenceSnapProvider._parse_tool_calls."""
+
+    def test_parses_tool_calls(self):
+        """Parses OpenAI-format tool calls into ToolCall objects."""
+        raw = [
+            {
+                "id": "tc_1",
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "arguments": '{"city": "London"}',
+                },
+            },
+        ]
+        result = InferenceSnapProvider._parse_tool_calls(raw)
+        assert len(result) == 1
+        assert result[0].id == "tc_1"
+        assert result[0].name == "get_weather"
+        assert result[0].arguments == {"city": "London"}
+
+    def test_handles_dict_arguments(self):
+        """Handles arguments already parsed as a dict."""
+        raw = [
+            {
+                "id": "tc_1",
+                "function": {"name": "test", "arguments": {"key": "value"}},
+            },
+        ]
+        result = InferenceSnapProvider._parse_tool_calls(raw)
+        assert result[0].arguments == {"key": "value"}
+
+    def test_handles_invalid_json_arguments(self):
+        """Returns empty dict for unparseable arguments."""
+        raw = [
+            {
+                "id": "tc_1",
+                "function": {"name": "test", "arguments": "not-json{"},
+            },
+        ]
+        result = InferenceSnapProvider._parse_tool_calls(raw)
+        assert result[0].arguments == {}
+
+
+class TestBuildRequestBody:
+    """Tests for InferenceSnapProvider._build_request_body."""
+
+    def _make_provider(self):
+        return InferenceSnapProvider(
+            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+        )
+
+    def test_basic_request(self):
+        """Builds a basic request body."""
+        provider = self._make_provider()
+        messages = [Message(role=Role.USER, content="Hello")]
+        body = provider._build_request_body(messages, None, 0.7)
+        assert body["model"] == "test-model"
+        assert body["temperature"] == 0.7
+        assert body["stream"] is False
+        assert len(body["messages"]) == 1
+        assert "tools" not in body
+
+    def test_includes_system_prompt(self):
+        """System message is prepended as a system message."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.SYSTEM, content="Be helpful."),
+            Message(role=Role.USER, content="Hi"),
+        ]
+        body = provider._build_request_body(messages, None, 0.7)
+        assert body["messages"][0] == {"role": "system", "content": "Be helpful."}
+        assert body["messages"][1] == {"role": "user", "content": "Hi"}
+
+    def test_includes_tools(self):
+        """Tools are included in the request body."""
+        provider = self._make_provider()
+        messages = [Message(role=Role.USER, content="Hi")]
+        tools = [
+            Tool(
+                name="test_tool",
+                description="A test tool",
+                parameters={"type": "object", "properties": {}},
+            ),
+        ]
+        body = provider._build_request_body(messages, tools, 0.7)
+        assert "tools" in body
+        assert body["tools"][0]["function"]["name"] == "test_tool"
+
+    def test_stream_flag(self):
+        """Stream flag is set correctly."""
+        provider = self._make_provider()
+        messages = [Message(role=Role.USER, content="Hi")]
+        body = provider._build_request_body(messages, None, 0.7, stream=True)
+        assert body["stream"] is True
+
+
+class TestComplete:
+    """Tests for InferenceSnapProvider.complete."""
+
+    def _make_provider(self):
+        return InferenceSnapProvider(
+            snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+        )
+
+    @pytest.mark.asyncio
+    async def test_complete_text_response(self):
+        """Parses a text-only completion response."""
+        provider = self._make_provider()
+        mock_response = httpx.Response(
+            200,
+            request=httpx.Request("POST", "http://test/v1/chat/completions"),
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "Hello!"},
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            },
+        )
+        provider.client = MagicMock()
+        provider.client.post = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="Hi")]
+        response = await provider.complete(messages)
+
+        assert response.content == "Hello!"
+        assert response.tool_calls == []
+        assert response.finish_reason == "stop"
+        assert response.usage["prompt_tokens"] == 10
+
+    @pytest.mark.asyncio
+    async def test_complete_with_tool_calls(self):
+        """Parses a response containing tool calls."""
+        provider = self._make_provider()
+        mock_response = httpx.Response(
+            200,
+            request=httpx.Request("POST", "http://test/v1/chat/completions"),
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "tc_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "get_weather",
+                                        "arguments": '{"city": "London"}',
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 15},
+            },
+        )
+        provider.client = MagicMock()
+        provider.client.post = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="Weather?")]
+        response = await provider.complete(messages)
+
+        assert response.content == ""
+        assert len(response.tool_calls) == 1
+        assert response.tool_calls[0].name == "get_weather"
+        assert response.tool_calls[0].arguments == {"city": "London"}
+        assert response.finish_reason == "tool_calls"

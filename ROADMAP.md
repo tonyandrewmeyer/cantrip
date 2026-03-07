@@ -451,7 +451,62 @@ builds, tests, and publishes charms with full observability and quality assuranc
 
 ---
 
-## Phase 8: Terraform Support
+## Phase 8: Local Inference Snaps
+
+**Goal:** Run Cantrip entirely on local models via Canonical's
+[inference snaps](https://documentation.ubuntu.com/inference-snaps/), demonstrating
+a fully Canonical stack with no external API dependencies.
+
+Inference snaps package optimised local models (Gemma 3, DeepSeek-R1, Qwen-VL,
+Nemotron) as Ubuntu snaps.  Each snap auto-detects hardware (CPU/GPU/NPU),
+serves an OpenAI-compatible API at `http://localhost:<port>/v1`, and supports
+chat completions, streaming, and tool calling — no API key required.
+
+### 8.1 Basic Provider
+
+- [x] **`InferenceSnapProvider`** — new `LLMProvider` implementation using the
+  OpenAI-compatible API exposed by inference snaps (via `httpx`, no new deps)
+- [x] **Auto-discovery** — `discover_snap_endpoint()` runs `<snap> status` to
+  find the correct base URL; falls back to known default ports
+- [x] **Model detection** — queries the snap's `/models` endpoint to get the
+  served model name automatically
+- [x] **Tool calling** — full support for function calling via the OpenAI tools
+  format (tested with llama.cpp backend)
+- [x] **Streaming** — SSE-based streaming matching the OpenAI streaming format
+- [x] **Factory integration** — `--provider inference-snap --snap gemma3` CLI
+  flags; `create_provider("inference-snap", snap_name="deepseek-r1")`
+- [x] **Unit tests** — message conversion, tool conversion, request building,
+  completion parsing, discovery, and factory integration
+
+### 8.2 Robustness and Quality (TODO)
+
+- [ ] **Context window tuning** — query the snap's `/models` endpoint for
+  `n_ctx_train` and use it as the context window size instead of a fixed default
+- [ ] **Graceful degradation** — handle models that don't support tool calling
+  (e.g. some OVMS-backed snaps) by falling back to prompt-based tool use
+- [ ] **Connection health** — detect when a snap's server is not running and
+  surface a clear error message; optionally offer to start the service
+- [ ] **Multi-snap routing** — use a capable snap (e.g. deepseek-r1) as the
+  primary model and a lighter snap (e.g. nemotron-3-nano) as the light model
+- [ ] **Snap listing tool** — expose `list_available_snaps()` so the agent can
+  discover and suggest available local models
+
+### 8.3 Performance Considerations (TODO)
+
+- [ ] **Prompt budget** — local models are slower and have smaller context
+  windows; investigate reducing system prompt size or compacting more aggressively
+- [ ] **Task routing** — evaluate which tasks are viable with local models
+  (research summaries: yes; complex code generation: probably not)
+- [ ] **Hybrid mode** — use local models for cheap tasks (research, compaction)
+  and a cloud provider for code writing, combining cost savings with quality
+
+**Exit criteria:** `cantrip --provider inference-snap --snap gemma3` launches and
+can hold a conversation, call tools, and attempt charm building using a fully
+local model — demonstrating the Canonical inference snap ecosystem.
+
+---
+
+## Phase 9: Terraform Support
 
 **Goal:** Understand how Cantrip should support Terraform for Juju-deployed charms. Charms
 increasingly ship a Terraform module so that operators can deploy them declaratively via
@@ -505,7 +560,8 @@ specification and real-world module patterns, with a concrete implementation pla
 | Merge planning (6.4) | Phase 6 speed analysis | Needs discussion and evaluation first |
 | Advanced testing (7.2) | Phase 4 autonomous core | Tests should run as autonomous tasks |
 | Charmhub publishing (7.4) | Phase 5 design pipeline | Only publish well-researched charms |
-| Terraform support (8.x) | Phase 5 design pipeline | Needs working charm build pipeline to generate modules from |
+| Inference snaps (8.2+) | Phase 8.1 basic provider | Need the basic provider working to evaluate quality |
+| Terraform support (9.x) | Phase 5 design pipeline | Needs working charm build pipeline to generate modules from |
 
 ---
 
@@ -521,4 +577,5 @@ specification and real-world module patterns, with a concrete implementation pla
 | M5: Research-Driven | 5 | Agent proactively researches and proposes grounded designs |
 | M6: Fast | 6 | Common charm build completes in under two minutes |
 | M7: Showcase | 7 | Demo-ready with full ecosystem, testing, and publishing |
-| M8: Terraform | 8 | Cantrip generates and validates Terraform modules for charms |
+| M8: Local Models | 8 | Cantrip runs on local inference snaps with no cloud API |
+| M9: Terraform | 9 | Cantrip generates and validates Terraform modules for charms |

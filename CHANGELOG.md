@@ -5,6 +5,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Local inference snap provider** — new `--provider inference-snap` option runs Cantrip on local models served by Canonical's [inference snaps](https://documentation.ubuntu.com/inference-snaps/); supports chat completions, streaming, and tool calling via the OpenAI-compatible API with no API key required; use `--snap gemma3` (default) to select which installed snap to use; auto-discovers the snap's endpoint URL and model name
 - **Parallel subagent execution** — the background executor now runs independent tasks concurrently (up to a configurable limit, default 3) using a semaphore-bounded async pattern; `WorkQueue.all_ready()` returns all tasks whose dependencies are met; `--concurrency` CLI flag controls the cap
 - **Subagent efficiency prompts** — all subagent categories now include batch-tool-call guidance, prescriptive step sequences, and early-termination encouragement; max subagent rounds reduced from 12 to 8 to discourage sprawling exploration
 - **Deterministic research planning** — the initial `plan_tasks` call for "build a charm for X" no longer requires an LLM round-trip; `plan_research_phase()` generates the standard research → synthesis → confirm task sequence from templates, skipping source-analysis when no source URL is given; LLM planning is reserved for replanning and build-phase task generation

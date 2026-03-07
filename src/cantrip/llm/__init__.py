@@ -45,12 +45,18 @@ def resolve_light_model(provider_name: str, main_model: str) -> str:
     return _LIGHT_MODEL_MAP.get(main_model, main_model)
 
 
-def create_provider(name: str, model: str | None = None) -> LLMProvider:
+def create_provider(
+    name: str,
+    model: str | None = None,
+    *,
+    snap_name: str = "gemma3",
+) -> LLMProvider:
     """Create an LLM provider by name.
 
     Args:
-        name: Provider name ("gemini" or "claude").
+        name: Provider name ("gemini", "claude", or "inference-snap").
         model: Optional model override. If not given, the provider's default is used.
+        snap_name: Inference snap to use (only for "inference-snap" provider).
     """
     if name == "gemini":
         from cantrip.llm.gemini import GeminiProvider
@@ -68,5 +74,15 @@ def create_provider(name: str, model: str | None = None) -> LLMProvider:
             kwargs["model"] = model
         return ClaudeProvider(**kwargs)
 
+    elif name == "inference-snap":
+        from cantrip.llm.inference_snap import InferenceSnapProvider
+
+        kwargs: dict = {"snap_name": snap_name}
+        if model:
+            kwargs["model"] = model
+        return InferenceSnapProvider(**kwargs)
+
     else:
-        raise ValueError(f"Unknown provider: {name!r}. Use 'gemini' or 'claude'.")
+        raise ValueError(
+            f"Unknown provider: {name!r}. Use 'gemini', 'claude', or 'inference-snap'."
+        )

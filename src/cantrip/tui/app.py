@@ -61,6 +61,7 @@ class CantripApp(App):
         light_model: str | None = None,
         watcher: bool = False,
         max_concurrency: int | None = None,
+        snap_name: str = "gemma3",
     ):
         """Initialise the app."""
         super().__init__()
@@ -68,6 +69,7 @@ class CantripApp(App):
         self.model_name = model
         self.charm_path = charm_path or Path.cwd()
         self._light_model_override = light_model
+        self._snap_name = snap_name
         self._light_model_name: str | None = None
         self._max_concurrency = max_concurrency
         self._agent: CantripAgent | None = None
@@ -116,7 +118,9 @@ class CantripApp(App):
     def _init_agent(self) -> None:
         """Initialise the LLM provider and agent."""
         try:
-            llm_provider = create_provider(self.provider_name, self.model_name)
+            llm_provider = create_provider(
+                self.provider_name, self.model_name, snap_name=self._snap_name
+            )
 
             # Resolve light model for internal tasks (e.g. compaction).
             main_model = llm_provider.model_name
@@ -125,7 +129,9 @@ class CantripApp(App):
             )
             light_provider = None
             if light_model_name != main_model:
-                light_provider = create_provider(self.provider_name, light_model_name)
+                light_provider = create_provider(
+                    self.provider_name, light_model_name, snap_name=self._snap_name
+                )
                 self._light_model_name = light_model_name
 
             self._agent = CantripAgent(

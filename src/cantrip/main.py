@@ -40,13 +40,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--provider",
-        choices=["gemini", "claude"],
+        choices=["gemini", "claude", "inference-snap"],
         default="gemini",
         help="LLM provider to use (default: gemini)",
     )
     parser.add_argument(
         "--model",
         help="Specific model to use (provider-dependent)",
+    )
+    parser.add_argument(
+        "--snap",
+        default="gemma3",
+        help="Inference snap name when using --provider inference-snap (default: gemma3)",
     )
     parser.add_argument(
         "--light-model",
@@ -107,15 +112,15 @@ def main() -> int:
     charm_path.mkdir(parents=True, exist_ok=True)
     os.chdir(charm_path)
 
-    if args.provider == "gemini":
-        if not os.environ.get("GEMINI_API_KEY"):
-            print("Error: GEMINI_API_KEY environment variable not set")
-            print("Set it with: export GEMINI_API_KEY='your-key-here'")
-            return 1
+    if args.provider == "gemini" and not os.environ.get("GEMINI_API_KEY"):
+        print("Error: GEMINI_API_KEY environment variable not set")
+        print("Set it with: export GEMINI_API_KEY='your-key-here'")
+        return 1
     elif args.provider == "claude" and not os.environ.get("ANTHROPIC_API_KEY"):
         print("Error: ANTHROPIC_API_KEY environment variable not set")
         print("Set it with: export ANTHROPIC_API_KEY='your-key-here'")
         return 1
+    # inference-snap needs no API key (local model).
 
     _install_unraisable_hook()
 
@@ -133,6 +138,7 @@ def main() -> int:
             light_model=args.light_model,
             watcher=args.watcher,
             max_concurrency=args.concurrency,
+            snap_name=args.snap,
         )
         app.run()
         return 0

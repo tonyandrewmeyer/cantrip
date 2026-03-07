@@ -13,7 +13,7 @@ class TestCreateProvider:
     def test_unknown_provider_raises(self):
         """Test that an unknown provider name raises ValueError."""
         with pytest.raises(ValueError, match="Unknown provider"):
-            create_provider("openai")
+            create_provider("unknown-provider")
 
     @patch("cantrip.llm.gemini.genai")
     def test_create_gemini_default(self, mock_genai):
@@ -58,3 +58,25 @@ class TestCreateProvider:
             provider = create_provider("claude", model="claude-haiku-4-5-20251001")
 
         assert provider.model_name == "claude-haiku-4-5-20251001"
+
+    @patch("cantrip.llm.inference_snap.InferenceSnapProvider._detect_model", return_value="test")
+    @patch("cantrip.llm.inference_snap.discover_snap_endpoint", return_value="http://test/v1")
+    def test_create_inference_snap_default(self, _mock_discover, _mock_detect):
+        """Test creating an inference snap provider with defaults."""
+        provider = create_provider("inference-snap")
+
+        from cantrip.llm.inference_snap import InferenceSnapProvider
+
+        assert isinstance(provider, InferenceSnapProvider)
+        assert provider.snap_name == "gemma3"
+
+    @patch("cantrip.llm.inference_snap.InferenceSnapProvider._detect_model", return_value="test")
+    @patch("cantrip.llm.inference_snap.discover_snap_endpoint", return_value="http://test/v1")
+    def test_create_inference_snap_custom(self, _mock_discover, _mock_detect):
+        """Test creating an inference snap provider with a custom snap and model."""
+        provider = create_provider(
+            "inference-snap", model="custom-model", snap_name="deepseek-r1"
+        )
+
+        assert provider.snap_name == "deepseek-r1"
+        assert provider.model_name == "custom-model"
