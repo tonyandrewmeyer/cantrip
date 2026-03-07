@@ -411,7 +411,9 @@ minutes wall-clock time (excluding user confirmation and Juju deploy wait).
 **Goal:** TUI enhancements, advanced testing, full ecosystem integration.
 
 ### 7.1 TUI Enhancements
-- [ ] Visual model/app/integration graph
+- [x] **Visual integration graph** (F8) — modal screen showing apps as bordered panels
+  with status indicators, unit breakdowns, and a deduplicated relation section;
+  highlights the user's charm with a star marker
 - [x] Multiple model views (dev + COS side by side)
 - [x] Log viewer (F3)
 - [x] Trace viewer or Grafana deep links (F4)

@@ -17,6 +17,7 @@ from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.watcher import WatcherEvent
 from cantrip.llm import create_provider, resolve_light_model
 from cantrip.llm.base import ProviderOverloadedError, ProviderRateLimitError
+from cantrip.tui.screens.graph import GraphScreen
 from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.screens.logs import LogScreen
 from cantrip.tui.screens.questions import DesignQuestionsScreen
@@ -49,6 +50,7 @@ class CantripApp(App):
         Binding("f5", "toggle_watcher", "Watcher"),
         Binding("f6", "toggle_files", "Files"),
         Binding("f7", "toggle_model_info", "Model"),
+        Binding("f8", "graph", "Graph"),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+l", "clear_chat", "Clear"),
     ]
@@ -590,6 +592,12 @@ class CantripApp(App):
         """Show log viewer screen."""
         dev_model = self._agent.state.dev_model if self._agent else None
         self.push_screen(LogScreen(model=dev_model))
+
+    def action_graph(self) -> None:
+        """Show integration graph screen."""
+        status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
+        current_app = self._agent.state.charm_name if self._agent else None
+        self.push_screen(GraphScreen(status=status_widget.dev_status, current_app=current_app))
 
     async def action_quit(self) -> None:
         """Stop background services and quit."""
