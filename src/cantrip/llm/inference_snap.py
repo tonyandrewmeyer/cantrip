@@ -6,6 +6,7 @@ a local model at ``http://localhost:<port>/v1`` and supports chat
 completions, streaming, and tool calling — no API key required.
 """
 
+import contextlib
 import json
 import subprocess
 from collections.abc import AsyncIterator
@@ -293,7 +294,13 @@ class InferenceSnapProvider(LLMProvider):
                 raise ProviderOverloadedError(
                     f"Inference snap server error ({e.response.status_code})."
                 ) from e
-            raise ProviderError(f"Inference snap error: {e}") from e
+            # Include the response body for debugging 4xx errors.
+            detail = ""
+            with contextlib.suppress(Exception):
+                detail = e.response.text[:500]
+            raise ProviderError(
+                f"Inference snap error ({e.response.status_code}): {detail or e}"
+            ) from e
         except httpx.HTTPError as e:
             raise ProviderError(
                 f"Failed to connect to inference snap at {self.base_url}: {e}"
