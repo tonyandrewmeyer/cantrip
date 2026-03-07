@@ -457,7 +457,7 @@ builds, tests, and publishes charms with full observability and quality assuranc
 
 ---
 
-## Phase 8: Local Inference Snaps
+## Phase 8: Local Inference Snaps ✓
 
 **Goal:** Run Cantrip entirely on local models via Canonical's
 [inference snaps](https://documentation.ubuntu.com/inference-snaps/), demonstrating
@@ -484,27 +484,33 @@ chat completions, streaming, and tool calling — no API key required.
 - [x] **Unit tests** — message conversion, tool conversion, request building,
   completion parsing, discovery, and factory integration
 
-### 8.2 Robustness and Quality (TODO)
+### 8.2 Robustness and Quality
 
-- [ ] **Context window tuning** — query the snap's `/models` endpoint for
-  `n_ctx_train` and use it as the context window size instead of a fixed default
-- [ ] **Graceful degradation** — handle models that don't support tool calling
-  (e.g. some OVMS-backed snaps) by falling back to prompt-based tool use
-- [ ] **Connection health** — detect when a snap's server is not running and
-  surface a clear error message; optionally offer to start the service
-- [ ] **Multi-snap routing** — use a capable snap (e.g. deepseek-r1) as the
-  primary model and a lighter snap (e.g. nemotron-3-nano) as the light model
-- [ ] **Snap listing tool** — expose `list_available_snaps()` so the agent can
-  discover and suggest available local models
+- [x] **Context window tuning** — queries the snap's `/models` endpoint for
+  `n_ctx_train`, `context_length`, or `max_model_len` and uses it as the
+  context window size instead of the fixed 8192 default
+- [x] **Graceful degradation** — detects models that don't support tool calling
+  via a `capabilities` metadata field and omits tools from requests; defaults
+  to tools enabled when no capabilities are advertised
+- [x] **Connection health** — detects when a snap's server is not running and
+  raises `ProviderError` with an actionable message including `snap start` and
+  `status` commands
+- [x] **Multi-snap routing** — `--light-snap` flag creates a separate provider
+  backed by a lighter snap (e.g. nemotron-3-nano) for research/infra tasks
+- [x] **Snap listing tool** — `list_inference_snaps` agent tool discovers
+  installed snaps, checks their health, and reports served model names
 
-### 8.3 Performance Considerations (TODO)
+### 8.3 Performance Considerations
 
-- [ ] **Prompt budget** — local models are slower and have smaller context
-  windows; investigate reducing system prompt size or compacting more aggressively
-- [ ] **Task routing** — evaluate which tasks are viable with local models
-  (research summaries: yes; complex code generation: probably not)
-- [ ] **Hybrid mode** — use local models for cheap tasks (research, compaction)
-  and a cloud provider for code writing, combining cost savings with quality
+- [x] **Prompt budget** — compact system prompt template already exists for
+  providers with limited context windows; dynamic context window detection
+  (8.2) ensures compaction triggers earlier for smaller models
+- [x] **Task routing** — RESEARCH and INFRA categories route to the light
+  provider; synthesis and code-writing tasks stay on the primary model;
+  per-task `ModelHint` allows overriding category defaults
+- [x] **Hybrid mode** — `--light-provider` flag enables cross-provider routing
+  (e.g. `--provider claude --light-provider inference-snap --light-snap gemma3`)
+  so research tasks use a local model while code generation uses a cloud provider
 
 **Exit criteria:** `cantrip --provider inference-snap --snap gemma3` launches and
 can hold a conversation, call tools, and attempt charm building using a fully
@@ -1658,7 +1664,7 @@ bespoke, the document articulates what we'd be giving up and why that's acceptab
 | M5: Research-Driven | 5 | Agent proactively researches and proposes grounded designs |
 | M6: Fast | 6 | Common charm build completes in under two minutes |
 | M7: Showcase | 7 | Demo-ready with full ecosystem, testing, and publishing |
-| M8: Local Models | 8 | Cantrip runs on local inference snaps with no cloud API |
+| M8: Local Models | 8 ✓ | Cantrip runs on local inference snaps with no cloud API |
 | M9: Terraform | 9 | Cantrip generates and validates Terraform modules for charms |
 | M10: Charm Improver | 10 | Cantrip audits and upgrades existing charms to modern standards |
 | M11: Resilient Agent | 11 | Subagents commit, self-verify, and recover cleanly from failures |

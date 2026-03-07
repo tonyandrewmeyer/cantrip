@@ -5,6 +5,10 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Inference snap robustness** — context window auto-detection from `/models` metadata (`n_ctx_train`, `context_length`, `max_model_len`); connection health checks with actionable error messages when a snap server is unreachable; graceful degradation for models that don't support tool calling (tools omitted from requests based on capabilities metadata); `list_inference_snaps` agent tool for discovering installed snaps and their status
+- **Multi-snap routing** — `--light-snap` flag routes research and infrastructure tasks to a lighter inference snap while the primary snap handles code writing
+- **Hybrid mode** — `--light-provider` flag enables cross-provider task routing (e.g. `--provider claude --light-provider inference-snap --light-snap gemma3`), combining cloud model quality for code generation with local model cost savings for research tasks
+- **Task checklist category grouping** — tasks in the TUI checklist are now grouped under category headers (Research, Build, Deploy, Test, Debug, Infrastructure, Confirm) instead of a flat list; empty categories are omitted
 - **Local inference snap provider** — new `--provider inference-snap` option runs Cantrip on local models served by Canonical's [inference snaps](https://documentation.ubuntu.com/inference-snaps/); supports chat completions, streaming, and tool calling via the OpenAI-compatible API with no API key required; use `--snap gemma3` (default) to select which installed snap to use; auto-discovers the snap's endpoint URL and model name
 - **Parallel subagent execution** — the background executor now runs independent tasks concurrently (up to a configurable limit, default 3) using a semaphore-bounded async pattern; `WorkQueue.all_ready()` returns all tasks whose dependencies are met; `--concurrency` CLI flag controls the cap
 - **Subagent efficiency prompts** — all subagent categories now include batch-tool-call guidance, prescriptive step sequences, and early-termination encouragement; max subagent rounds reduced from 12 to 8 to discourage sprawling exploration
