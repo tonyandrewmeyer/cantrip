@@ -203,6 +203,45 @@ class TestMessageConversion:
         assert tc["function"]["name"] == "juju_status"
         assert json.loads(tc["function"]["arguments"]) == {"model": "dev"}
 
+    def test_consecutive_user_messages_merged(self):
+        """Consecutive user messages are merged into one."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.USER, content="Hello"),
+            Message(role=Role.USER, content="How are you?"),
+        ]
+        _, result = provider._convert_messages(messages)
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
+        assert "Hello" in result[0]["content"]
+        assert "How are you?" in result[0]["content"]
+
+    def test_consecutive_assistant_messages_merged(self):
+        """Consecutive assistant messages without tool calls are merged."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.ASSISTANT, content="First part."),
+            Message(role=Role.ASSISTANT, content="Second part."),
+        ]
+        _, result = provider._convert_messages(messages)
+        assert len(result) == 1
+        assert "First part." in result[0]["content"]
+        assert "Second part." in result[0]["content"]
+
+    def test_assistant_with_tool_calls_not_merged(self):
+        """Assistant messages with tool calls are not merged with subsequent ones."""
+        provider = self._make_provider()
+        messages = [
+            Message(
+                role=Role.ASSISTANT,
+                content="Checking.",
+                tool_calls=[ToolCall(id="tc_1", name="test", arguments={})],
+            ),
+            Message(role=Role.ASSISTANT, content="Done."),
+        ]
+        _, result = provider._convert_messages(messages)
+        assert len(result) == 2
+
     def test_tool_result_message(self):
         """Tool result messages convert to OpenAI tool role format."""
         provider = self._make_provider()

@@ -153,6 +153,11 @@ class InferenceSnapProvider(LLMProvider):
         Returns a (system_prompt, messages) tuple.  The system prompt is
         extracted from the first SYSTEM message and passed as a separate
         system message at the start.
+
+        Consecutive user or assistant messages are merged into a single
+        message because some local model backends (e.g. Mediapipe in the
+        gemma3 snap) reject conversations with consecutive same-role
+        messages.
         """
         system_prompt: str | None = None
         result: list[dict[str, Any]] = []
@@ -163,7 +168,11 @@ class InferenceSnapProvider(LLMProvider):
                 continue
 
             if msg.role == Role.USER:
-                result.append({"role": "user", "content": msg.content})
+                # Merge with previous user message if consecutive.
+                if result and result[-1]["role"] == "user":
+                    result[-1]["content"] += "\n\n" + msg.content
+                else:
+                    result.append({"role": "user", "content": msg.content})
 
             elif msg.role == Role.ASSISTANT:
                 entry: dict[str, Any] = {"role": "assistant"}
@@ -181,6 +190,15 @@ class InferenceSnapProvider(LLMProvider):
                         for tc in msg.tool_calls
                     ]
                 else:
+                    # Merge with previous assistant message if consecutive
+                    # and neither has tool calls.
+                    if (
+                        result
+                        and result[-1]["role"] == "assistant"
+                        and "tool_calls" not in result[-1]
+                    ):
+                        result[-1]["content"] += "\n\n" + msg.content
+                        continue
                     entry["content"] = msg.content
                 result.append(entry)
 
