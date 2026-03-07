@@ -10,7 +10,12 @@ from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.executor import BackgroundExecutor
-from cantrip.agent.planner import PlanningContext, TaskPlanner
+from cantrip.agent.planner import (
+    PlanningContext,
+    TaskPlanner,
+    is_one_shot_build,
+    plan_one_shot_build,
+)
 from cantrip.agent.preflight import (
     DEFAULT_PRESET,
     PreflightCallback,
@@ -680,7 +685,6 @@ class CantripAgent:
             self.state.add_decision("charmhub", proposal.charmhub_recommendation)
 
         # Generate build tasks from the approved design.
-        planner = TaskPlanner(self.provider)
         context = PlanningContext(
             intent=f"Build a charm for {proposal.workload_name or 'the workload'}",
             charm_name=self.state.charm_name,
@@ -690,11 +694,17 @@ class CantripAgent:
             cos_model=self.state.cos_model,
             environment_ready=self.state.environment_ready,
         )
-        build_tasks = await planner.plan_from_design(
-            design_content=proposal.to_design_md(),
-            context=context,
-            overrides=overrides,
-        )
+
+        design_md = proposal.to_design_md()
+        if is_one_shot_build(context) and not overrides:
+            build_tasks = plan_one_shot_build(context, design_md)
+        else:
+            planner = TaskPlanner(self.provider)
+            build_tasks = await planner.plan_from_design(
+                design_content=design_md,
+                context=context,
+                overrides=overrides,
+            )
         self._work_queue.add_tasks(build_tasks)
         return build_tasks
 

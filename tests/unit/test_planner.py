@@ -14,10 +14,12 @@ from cantrip.agent.planner import (
     _merge_tasks,
     _parse_task_list,
     is_fast_path,
+    is_one_shot_build,
     plan_fast_path,
+    plan_one_shot_build,
     plan_research_phase,
 )
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.tools.planning import PlanTasksTool
 from cantrip.llm.base import Response
@@ -305,6 +307,69 @@ class TestFastPath:
         ctx = PlanningContext(intent="build", charm_name="redis")
         tasks = plan_research_phase(ctx)
         assert len(tasks) == 4
+
+
+# ===================================================================
+# TestOneShotBuild
+# ===================================================================
+
+
+class TestOneShotBuild:
+    """Tests for one-shot build mode — collapse scaffold+write+pack into one task."""
+
+    def test_is_one_shot_build_flask(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask")
+        assert is_one_shot_build(ctx)
+
+    def test_is_one_shot_build_django(self) -> None:
+        ctx = PlanningContext(intent="build", framework="django")
+        assert is_one_shot_build(ctx)
+
+    def test_not_one_shot_build_unknown_framework(self) -> None:
+        ctx = PlanningContext(intent="build", framework="redis")
+        assert not is_one_shot_build(ctx)
+
+    def test_not_one_shot_build_no_framework(self) -> None:
+        ctx = PlanningContext(intent="build")
+        assert not is_one_shot_build(ctx)
+
+    def test_one_shot_build_with_source_url(self) -> None:
+        """One-shot build is allowed even with a source URL (unlike fast path)."""
+        ctx = PlanningContext(
+            intent="build",
+            framework="flask",
+            source_url="https://github.com/user/app",
+        )
+        assert is_one_shot_build(ctx)
+
+    def test_one_shot_build_case_insensitive(self) -> None:
+        ctx = PlanningContext(intent="build", framework="FastAPI")
+        assert is_one_shot_build(ctx)
+
+    def test_plan_one_shot_build_produces_single_task(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        tasks = plan_one_shot_build(ctx, "## Design\nA flask charm.")
+        assert len(tasks) == 1
+        assert tasks[0].id == "one-shot-build"
+        assert tasks[0].category == TaskCategory.BUILD
+        assert tasks[0].dependencies == []
+
+    def test_plan_one_shot_build_uses_primary_model(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        tasks = plan_one_shot_build(ctx, "design")
+        assert tasks[0].model_hint == ModelHint.PRIMARY
+
+    def test_plan_one_shot_build_includes_design_in_description(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        design = "## Approved\nFlask PaaS charm with ingress and PostgreSQL."
+        tasks = plan_one_shot_build(ctx, design)
+        assert "Approved" in tasks[0].description
+        assert "PostgreSQL" in tasks[0].description
+
+    def test_plan_one_shot_build_includes_framework_in_title(self) -> None:
+        ctx = PlanningContext(intent="build", framework="django", charm_name="my-site")
+        tasks = plan_one_shot_build(ctx, "design")
+        assert "django" in tasks[0].title
 
 
 # ===================================================================

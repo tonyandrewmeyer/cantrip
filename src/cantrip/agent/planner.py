@@ -11,7 +11,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.llm import base as llm
 
 log = logging.getLogger(__name__)
@@ -98,6 +98,49 @@ def plan_fast_path(context: PlanningContext) -> list[AgentTask]:
             category=TaskCategory.CONFIRM,
             description="Present the design proposal for user approval.",
             dependencies=["fast-design"],
+        ),
+    ]
+
+
+def is_one_shot_build(context: PlanningContext) -> bool:
+    """Return whether the build phase can be collapsed into a single task.
+
+    One-shot build applies when the framework is a known 12-factor type —
+    the scaffold + write + pack sequence is predictable enough for one
+    subagent invocation.
+    """
+    return context.framework is not None and context.framework.lower() in _FAST_PATH_FRAMEWORKS
+
+
+def plan_one_shot_build(context: PlanningContext, design_content: str) -> list[AgentTask]:
+    """Generate a single BUILD task that scaffolds, writes, and packs.
+
+    For well-understood 12-factor frameworks the typical 3–5 build tasks
+    (scaffold, write charm, write tests, pack) can be handled in a single
+    subagent pass because the structure is predictable.
+    """
+    workload = context.charm_name or context.framework or "the workload"
+    framework = context.framework or "unknown"
+
+    return [
+        AgentTask(
+            id="one-shot-build",
+            title=f"Build {framework} charm for {workload}",
+            category=TaskCategory.BUILD,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Build a complete {framework} 12-factor PaaS charm for {workload} in a "
+                f"single pass. Steps:\n"
+                f"1. Run charmcraft init to scaffold the charm\n"
+                f"2. Write metadata (charmcraft.yaml) with correct name, bases, containers, "
+                f"and integrations from the approved design\n"
+                f"3. Write rockcraft.yaml if needed for the {framework} workload\n"
+                f"4. Write src/charm.py with Pebble layer, integrations, and config handling\n"
+                f"5. Write unit tests using Scenario (ops.testing)\n"
+                f"6. Pack the charm with charmcraft pack\n\n"
+                f"Approved design:\n{design_content}"
+            ),
+            dependencies=[],
         ),
     ]
 

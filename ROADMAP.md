@@ -358,8 +358,9 @@ compress the research phase.
   instead of the full 4-5 task research pipeline
 - [x] **Skip research when unnecessary** — `is_fast_path()` detects when the framework
   is well-known and no source URL needs analysis, routing to the compressed path
-- [ ] **One-shot build mode** — for trivial cases, collapse scaffold + write code + pack
-  into a single subagent invocation instead of separate tasks
+- [x] **One-shot build mode** — for trivial cases, collapse scaffold + write code + pack
+  into a single subagent invocation instead of separate tasks; `plan_one_shot_build()`
+  generates a single BUILD task for known 12-factor frameworks
 
 ### 6.3 Reduce LLM Round-Trips
 
