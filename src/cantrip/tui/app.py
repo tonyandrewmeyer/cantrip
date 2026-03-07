@@ -60,6 +60,7 @@ class CantripApp(App):
         charm_path: Path | None = None,
         light_model: str | None = None,
         watcher: bool = False,
+        max_concurrency: int | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -68,6 +69,7 @@ class CantripApp(App):
         self.charm_path = charm_path or Path.cwd()
         self._light_model_override = light_model
         self._light_model_name: str | None = None
+        self._max_concurrency = max_concurrency
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -296,7 +298,10 @@ class CantripApp(App):
                 self._pending_confirm_id = task.id
                 self.call_from_thread(self._present_design_questions, task)
 
-        self._agent.start_executor(on_task_changed=_on_task_changed)
+        self._agent.start_executor(
+            on_task_changed=_on_task_changed,
+            max_concurrency=self._max_concurrency,
+        )
 
         # Prime the display with any tasks restored from a previous session.
         existing = self._agent.work_queue.all_tasks()

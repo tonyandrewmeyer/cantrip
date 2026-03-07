@@ -340,10 +340,10 @@ round-trips than necessary.
 The executor currently picks one task at a time. Independent tasks (e.g. the three Phase 1
 research tasks) should run concurrently.
 
-- [ ] **Concurrent task runner** — when multiple tasks have all dependencies met, run them
-  in parallel via `asyncio.TaskGroup` (or a semaphore-bounded equivalent)
-- [ ] **Concurrency limit** — configurable cap (default 3) to avoid rate-limiting from LLM
-  providers
+- [x] **Concurrent task runner** — when multiple tasks have all dependencies met, run them
+  in parallel via a semaphore-bounded executor
+- [x] **Concurrency limit** — configurable cap (default 3, `--concurrency` CLI flag) to
+  avoid rate-limiting from LLM providers
 - [ ] **Per-provider rate awareness** — respect provider rate limits; back off individual
   subagents rather than the whole executor
 

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cantrip.agent.executor import BackgroundExecutor
+from cantrip.agent.executor import DEFAULT_MAX_CONCURRENCY, BackgroundExecutor
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.tools.base import Tool, ToolResult
@@ -755,3 +755,162 @@ class TestDesignContentHandoff:
         ctx = executor._build_context(task)
 
         assert ctx.design_content is None
+
+
+# ===================================================================
+# TestConcurrency
+# ===================================================================
+
+
+class TestConcurrency:
+    """Tests for concurrent task execution."""
+
+    def test_default_max_concurrency(self) -> None:
+        executor = _make_executor()
+        assert executor.max_concurrency == DEFAULT_MAX_CONCURRENCY
+
+    def test_custom_max_concurrency(self) -> None:
+        executor = BackgroundExecutor(
+            queue=WorkQueue(),
+            tools=[],
+            provider=FakeProvider(responses=[Response(content="ok")]),
+            state=AgentState(),
+            max_concurrency=5,
+        )
+        assert executor.max_concurrency == 5
+
+    def test_min_concurrency_is_one(self) -> None:
+        executor = BackgroundExecutor(
+            queue=WorkQueue(),
+            tools=[],
+            provider=FakeProvider(responses=[Response(content="ok")]),
+            state=AgentState(),
+            max_concurrency=0,
+        )
+        assert executor.max_concurrency == 1
+
+    @pytest.mark.asyncio
+    async def test_independent_tasks_run_concurrently(self) -> None:
+        """Two independent tasks should overlap in execution time."""
+        started: list[str] = []
+        finished: list[str] = []
+        both_started = asyncio.Event()
+        start_count = 0
+
+        queue = WorkQueue()
+        t1 = AgentTask(id="a", title="Research A", category=TaskCategory.RESEARCH)
+        t2 = AgentTask(id="b", title="Research B", category=TaskCategory.RESEARCH)
+        queue.add_task(t1)
+        queue.add_task(t2)
+
+        provider = FakeProvider(responses=[
+            Response(content="done-a"),
+            Response(content="done-b"),
+        ])
+        executor = _make_executor(queue=queue, provider=provider)
+
+        original_execute = executor._execute_task
+
+        async def _tracked_execute(task: AgentTask) -> None:
+            nonlocal start_count
+            started.append(task.id)
+            start_count += 1
+            if start_count >= 2:
+                both_started.set()
+            await original_execute(task)
+            finished.append(task.id)
+
+        executor._execute_task = _tracked_execute  # type: ignore[assignment]
+        executor.start()
+
+        # Wait for both tasks to be picked up concurrently.
+        try:
+            await asyncio.wait_for(both_started.wait(), timeout=3.0)
+        finally:
+            await executor.stop()
+
+        assert set(started) == {"a", "b"}
+
+    @pytest.mark.asyncio
+    async def test_concurrency_limit_respected(self) -> None:
+        """With max_concurrency=1, tasks run sequentially."""
+        execution_order: list[str] = []
+
+        queue = WorkQueue()
+        t1 = AgentTask(id="s1", title="First", category=TaskCategory.RESEARCH)
+        t2 = AgentTask(id="s2", title="Second", category=TaskCategory.RESEARCH)
+        queue.add_task(t1)
+        queue.add_task(t2)
+
+        provider = FakeProvider(responses=[
+            Response(content="done-1"),
+            Response(content="done-2"),
+        ])
+        executor = BackgroundExecutor(
+            queue=queue,
+            tools=[_make_tool("read_file")],
+            provider=provider,
+            state=AgentState(),
+            max_concurrency=1,
+        )
+
+        active_count = 0
+        max_active = 0
+
+        original_execute = executor._execute_task
+
+        async def _tracking_execute(task: AgentTask) -> None:
+            nonlocal active_count, max_active
+            active_count += 1
+            max_active = max(max_active, active_count)
+            await original_execute(task)
+            execution_order.append(task.id)
+            active_count -= 1
+
+        executor._execute_task = _tracking_execute  # type: ignore[assignment]
+        executor.start()
+
+        # Wait for both to complete.
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if queue.done_count >= 2:
+                break
+
+        await executor.stop()
+
+        assert queue.done_count == 2
+        # With max_concurrency=1, at most one task ran at a time.
+        assert max_active == 1
+
+    @pytest.mark.asyncio
+    async def test_dependent_tasks_run_sequentially(self) -> None:
+        """A task depending on another waits for it to complete."""
+        queue = WorkQueue()
+        t1 = AgentTask(id="dep", title="Dependency", category=TaskCategory.RESEARCH)
+        t2 = AgentTask(
+            id="child",
+            title="Dependent",
+            category=TaskCategory.BUILD,
+            dependencies=["dep"],
+        )
+        queue.add_task(t1)
+        queue.add_task(t2)
+
+        provider = FakeProvider(responses=[
+            Response(content="dep done"),
+            Response(content="child done"),
+        ])
+        executor = _make_executor(queue=queue, provider=provider)
+        executor.start()
+
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if queue.done_count >= 2:
+                break
+
+        await executor.stop()
+
+        assert t1.status == TaskStatus.DONE
+        assert t2.status == TaskStatus.DONE
+        assert t1.result == "dep done"
+        assert t2.result == "child done"

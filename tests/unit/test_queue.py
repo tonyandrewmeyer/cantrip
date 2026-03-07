@@ -146,6 +146,45 @@ class TestWorkQueue:
         q.set_done(t.id)
         assert q.next_ready() is None
 
+    def test_all_ready_returns_multiple(self) -> None:
+        """all_ready returns all pending tasks whose dependencies are met."""
+        q = WorkQueue()
+        t1 = _task(title="A", id="a")
+        t2 = _task(title="B", id="b")
+        t3 = _task(title="C", id="c", dependencies=["a"])
+        q.add_tasks([t1, t2, t3])
+
+        ready = q.all_ready()
+        assert ready == [t1, t2]
+
+    def test_all_ready_with_limit(self) -> None:
+        """all_ready respects the limit parameter."""
+        q = WorkQueue()
+        t1 = _task(title="A")
+        t2 = _task(title="B")
+        t3 = _task(title="C")
+        q.add_tasks([t1, t2, t3])
+
+        ready = q.all_ready(limit=2)
+        assert len(ready) == 2
+        assert ready == [t1, t2]
+
+    def test_all_ready_empty_queue(self) -> None:
+        """all_ready returns empty list when no tasks are ready."""
+        q = WorkQueue()
+        assert q.all_ready() == []
+
+    def test_all_ready_skips_active(self) -> None:
+        """all_ready skips tasks that are already active."""
+        q = WorkQueue()
+        t1 = _task(title="Active")
+        t2 = _task(title="Pending")
+        q.add_tasks([t1, t2])
+        q.set_active(t1.id)
+
+        ready = q.all_ready()
+        assert ready == [t2]
+
     def test_set_active(self) -> None:
         """set_active transitions a task to active status."""
         q = WorkQueue()

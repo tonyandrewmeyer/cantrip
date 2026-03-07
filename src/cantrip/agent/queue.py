@@ -94,13 +94,25 @@ class WorkQueue:
 
     def next_ready(self) -> AgentTask | None:
         """Return the first pending task whose dependencies are all done."""
+        ready = self.all_ready(limit=1)
+        return ready[0] if ready else None
+
+    def all_ready(self, limit: int = 0) -> list[AgentTask]:
+        """Return all pending tasks whose dependencies are all done.
+
+        When *limit* is positive, return at most that many tasks.
+        Tasks are returned in queue order.
+        """
         done_ids = {t.id for t in self._tasks if t.status == TaskStatus.DONE}
+        ready: list[AgentTask] = []
         for task in self._tasks:
             if task.status != TaskStatus.PENDING:
                 continue
             if all(dep in done_ids for dep in task.dependencies):
-                return task
-        return None
+                ready.append(task)
+                if limit and len(ready) >= limit:
+                    break
+        return ready
 
     # -- Status transitions -------------------------------------------------
 

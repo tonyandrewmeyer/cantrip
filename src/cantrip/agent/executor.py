@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 _POLL_INTERVAL = 1.0  # seconds between checking for ready tasks
 _TASK_TIMEOUT = 600  # seconds — max wall-clock time per task (10 min)
+DEFAULT_MAX_CONCURRENCY = 3
 
 # Called when a task completes or fails, for TUI/conversation-loop coordination.
 TaskEventCallback = Callable[[AgentTask], None] | None
@@ -28,6 +29,10 @@ class BackgroundExecutor:
     Runs as a background ``asyncio.Task`` concurrently with the conversation
     loop.  Each ready task is executed in an isolated ``Subagent`` context;
     results and failures are recorded back on the queue and persisted.
+
+    When multiple independent tasks are ready (all dependencies met), the
+    executor runs them concurrently up to *max_concurrency*.  A semaphore
+    enforces the limit so LLM providers are not overwhelmed.
 
     The executor can be *paused* (e.g. while the user is steering via chat)
     and *resumed* afterwards.  While paused the poll loop sleeps without
@@ -44,6 +49,7 @@ class BackgroundExecutor:
         light_provider: llm.LLMProvider | None = None,
         on_task_done: TaskEventCallback = None,
         on_task_failed: TaskEventCallback = None,
+        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     ) -> None:
         self._queue = queue
         self._tools = tools
@@ -53,10 +59,14 @@ class BackgroundExecutor:
         self._light_provider = light_provider
         self._on_task_done = on_task_done
         self._on_task_failed = on_task_failed
+        self._max_concurrency = max(1, max_concurrency)
 
         self._running = False
         self._paused = False
         self._task: asyncio.Task | None = None
+        # Track in-flight async tasks so the loop knows how many slots are free.
+        self._active_tasks: set[asyncio.Task[None]] = set()
+        self._semaphore: asyncio.Semaphore | None = None
 
     # -- Lifecycle -----------------------------------------------------------
 
@@ -70,17 +80,26 @@ class BackgroundExecutor:
         """Whether the executor is paused (not picking new tasks)."""
         return self._paused
 
+    @property
+    def max_concurrency(self) -> int:
+        """Maximum number of tasks that can run concurrently."""
+        return self._max_concurrency
+
     def start(self) -> None:
         """Start the background poll-and-execute loop."""
         if self._running:
             return
         self._running = True
         self._paused = False
+        self._semaphore = asyncio.Semaphore(self._max_concurrency)
         self._task = asyncio.create_task(self._run_loop())
-        log.info("Background executor started")
+        log.info("Background executor started (concurrency=%d)", self._max_concurrency)
 
     async def stop(self) -> None:
-        """Stop the background loop gracefully."""
+        """Stop the background loop gracefully.
+
+        Cancels the poll loop and waits for any in-flight tasks to finish.
+        """
         if not self._running:
             return
         self._running = False
@@ -90,6 +109,10 @@ class BackgroundExecutor:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        # Wait for any subagent tasks still running.
+        if self._active_tasks:
+            await asyncio.gather(*self._active_tasks, return_exceptions=True)
+            self._active_tasks.clear()
         log.info("Background executor stopped")
 
     def pause(self) -> None:
@@ -113,27 +136,49 @@ class BackgroundExecutor:
     # -- Core loop -----------------------------------------------------------
 
     async def _run_loop(self) -> None:
-        """Poll for ready tasks and execute them until stopped."""
+        """Poll for ready tasks and execute them concurrently until stopped."""
         while self._running:
             try:
                 if self._paused:
                     await asyncio.sleep(_POLL_INTERVAL)
                     continue
 
-                task = self._queue.next_ready()
-                if task is None:
+                # Determine how many slots are free.
+                in_flight = len(self._active_tasks)
+                free_slots = self._max_concurrency - in_flight
+
+                if free_slots <= 0:
                     await asyncio.sleep(_POLL_INTERVAL)
                     continue
 
-                if task.category == TaskCategory.CONFIRM:
-                    self._handle_confirm(task)
+                ready = self._queue.all_ready(limit=free_slots)
+                if not ready:
+                    await asyncio.sleep(_POLL_INTERVAL)
                     continue
 
-                await self._execute_task(task)
+                for task in ready:
+                    if task.category == TaskCategory.CONFIRM:
+                        self._handle_confirm(task)
+                        continue
+                    # Mark active immediately so the next poll doesn't re-pick it.
+                    self._queue.set_active(task.id)
+                    at = asyncio.create_task(self._run_task_with_semaphore(task))
+                    self._active_tasks.add(at)
+                    at.add_done_callback(self._active_tasks.discard)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("Unexpected error in executor loop")
+
+        # Wait for in-flight tasks to finish on shutdown.
+        if self._active_tasks:
+            await asyncio.gather(*self._active_tasks, return_exceptions=True)
+
+    async def _run_task_with_semaphore(self, task: AgentTask) -> None:
+        """Acquire the semaphore, execute the task, then release."""
+        assert self._semaphore is not None  # noqa: S101
+        async with self._semaphore:
+            await self._execute_task(task)
 
     # -- Confirm handling ----------------------------------------------------
 
@@ -147,8 +192,11 @@ class BackgroundExecutor:
     # -- Task execution ------------------------------------------------------
 
     async def _execute_task(self, task: AgentTask) -> None:
-        """Run a single task via a subagent, recording the outcome."""
-        self._queue.set_active(task.id)
+        """Run a single task via a subagent, recording the outcome.
+
+        The caller is responsible for setting the task to ACTIVE before
+        calling this method.
+        """
         context = self._build_context(task)
         subagent = Subagent(
             context,

@@ -63,6 +63,12 @@ def parse_args() -> argparse.Namespace:
         help="Start the event watcher on launch (monitors dev model for changes)",
     )
     parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="Maximum concurrent subagent tasks (default: 3)",
+    )
+    parser.add_argument(
         "path",
         nargs="?",
         type=Path,
@@ -126,6 +132,7 @@ def main() -> int:
             charm_path=args.path,
             light_model=args.light_model,
             watcher=args.watcher,
+            max_concurrency=args.concurrency,
         )
         app.run()
         return 0

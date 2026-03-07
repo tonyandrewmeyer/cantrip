@@ -778,25 +778,30 @@ class CantripAgent:
     def start_executor(
         self,
         on_task_changed: Callable[[AgentTask], None] | None = None,
+        max_concurrency: int | None = None,
     ) -> None:
         """Create and start the background executor.
 
         Mirrors the ``start_watcher`` / ``stop_watcher`` pattern.  The
         *on_task_changed* callback is installed on the work queue so every
-        task mutation can drive TUI updates.
+        task mutation can drive TUI updates.  *max_concurrency* controls
+        how many subagent tasks run in parallel (default 3).
         """
         if self._executor is not None and self._executor.running:
             return
         self._ensure_store()
         self._work_queue._on_task_changed = on_task_changed
-        self._executor = BackgroundExecutor(
-            queue=self._work_queue,
-            tools=self._tools,
-            provider=self.provider,
-            state=self.state,
-            store=self._store,
-            light_provider=self._light_provider,
-        )
+        kwargs: dict[str, object] = {
+            "queue": self._work_queue,
+            "tools": self._tools,
+            "provider": self.provider,
+            "state": self.state,
+            "store": self._store,
+            "light_provider": self._light_provider,
+        }
+        if max_concurrency is not None:
+            kwargs["max_concurrency"] = max_concurrency
+        self._executor = BackgroundExecutor(**kwargs)  # type: ignore[arg-type]
         self._executor.start()
 
     async def stop_executor(self) -> None:
