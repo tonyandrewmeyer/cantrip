@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.store import SessionStore
 
 # -- Fixtures ---------------------------------------------------------------
@@ -405,3 +405,20 @@ class TestWorkQueuePersistence:
 
         loaded = store.load_tasks()
         assert loaded[0].dependencies == ["task-a", "task-b"]
+
+    def test_model_hint_round_trip(self, store: SessionStore) -> None:
+        """Model hint survives a save/load round-trip."""
+        t = _task(title="Research")
+        t.model_hint = ModelHint.PRIMARY
+        store.save_tasks([t])
+
+        loaded = store.load_tasks()
+        assert loaded[0].model_hint == ModelHint.PRIMARY
+
+    def test_model_hint_none_round_trip(self, store: SessionStore) -> None:
+        """None model hint survives a save/load round-trip."""
+        t = _task(title="Build")
+        store.save_tasks([t])
+
+        loaded = store.load_tasks()
+        assert loaded[0].model_hint is None

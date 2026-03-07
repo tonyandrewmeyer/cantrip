@@ -44,9 +44,16 @@ class PlanningContext:
 # ---------------------------------------------------------------------------
 
 # Frameworks with well-understood 12-factor PaaS charm paths — skip research.
-_FAST_PATH_FRAMEWORKS = frozenset({
-    "flask", "django", "fastapi", "go", "express", "spring-boot",
-})
+_FAST_PATH_FRAMEWORKS = frozenset(
+    {
+        "flask",
+        "django",
+        "fastapi",
+        "go",
+        "express",
+        "spring-boot",
+    }
+)
 
 
 def is_fast_path(context: PlanningContext) -> bool:
@@ -107,62 +114,72 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
     research_ids: list[str] = []
 
     if context.source_url:
-        tasks.append(AgentTask(
-            id="source-analysis",
-            title=f"Analyse source repository for {workload}",
-            category=TaskCategory.RESEARCH,
-            description=(
-                f"Clone {context.source_url}, explore README, dependency files, "
-                "Dockerfiles, config files, and entry points. Run analyse_framework. "
-                "Write findings into WORKLOAD.md."
-            ),
-            dependencies=[],
-        ))
+        tasks.append(
+            AgentTask(
+                id="source-analysis",
+                title=f"Analyse source repository for {workload}",
+                category=TaskCategory.RESEARCH,
+                description=(
+                    f"Clone {context.source_url}, explore README, dependency files, "
+                    "Dockerfiles, config files, and entry points. Run analyse_framework. "
+                    "Write findings into WORKLOAD.md."
+                ),
+                dependencies=[],
+            )
+        )
         research_ids.append("source-analysis")
 
-    tasks.append(AgentTask(
-        id="web-research",
-        title=f"Research {workload} documentation and operations",
-        category=TaskCategory.RESEARCH,
-        description=(
-            f"Fetch official docs, project website, and deployment guides for {workload}. "
-            "Focus on operational patterns: deployment, configuration, monitoring, scaling."
-        ),
-        dependencies=[],
-    ))
+    tasks.append(
+        AgentTask(
+            id="web-research",
+            title=f"Research {workload} documentation and operations",
+            category=TaskCategory.RESEARCH,
+            description=(
+                f"Fetch official docs, project website, and deployment guides for {workload}. "
+                "Focus on operational patterns: deployment, configuration, monitoring, scaling."
+            ),
+            dependencies=[],
+        )
+    )
     research_ids.append("web-research")
 
-    tasks.append(AgentTask(
-        id="charmhub-survey",
-        title=f"Survey Charmhub for existing {workload} charms",
-        category=TaskCategory.RESEARCH,
-        description=(
-            f"Search Charmhub for existing charms covering {workload}. "
-            "Evaluate candidates: relations, config, storage, maintenance status."
-        ),
-        dependencies=[],
-    ))
+    tasks.append(
+        AgentTask(
+            id="charmhub-survey",
+            title=f"Survey Charmhub for existing {workload} charms",
+            category=TaskCategory.RESEARCH,
+            description=(
+                f"Search Charmhub for existing charms covering {workload}. "
+                "Evaluate candidates: relations, config, storage, maintenance status."
+            ),
+            dependencies=[],
+        )
+    )
     research_ids.append("charmhub-survey")
 
-    tasks.append(AgentTask(
-        id="operational-discovery",
-        title=f"operational-discovery: synthesise design for {workload}",
-        category=TaskCategory.RESEARCH,
-        description=(
-            "Synthesise all research into a structured design proposal (DESIGN.md). "
-            "Cover: substrate, charm path, Charmhub recommendation, integrations, "
-            "config, actions, scaling, operational patterns, and open questions."
-        ),
-        dependencies=list(research_ids),
-    ))
+    tasks.append(
+        AgentTask(
+            id="operational-discovery",
+            title=f"operational-discovery: synthesise design for {workload}",
+            category=TaskCategory.RESEARCH,
+            description=(
+                "Synthesise all research into a structured design proposal (DESIGN.md). "
+                "Cover: substrate, charm path, Charmhub recommendation, integrations, "
+                "config, actions, scaling, operational patterns, and open questions."
+            ),
+            dependencies=list(research_ids),
+        )
+    )
 
-    tasks.append(AgentTask(
-        id="confirm-design",
-        title="Confirm design with user",
-        category=TaskCategory.CONFIRM,
-        description="Present the design proposal for user approval.",
-        dependencies=["operational-discovery"],
-    ))
+    tasks.append(
+        AgentTask(
+            id="confirm-design",
+            title="Confirm design with user",
+            category=TaskCategory.CONFIRM,
+            description="Present the design proposal for user approval.",
+            dependencies=["operational-discovery"],
+        )
+    )
 
     return tasks
 

@@ -5,10 +5,10 @@ import json
 import sqlite3
 from pathlib import Path
 
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState, Decision
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     dependencies TEXT NOT NULL DEFAULT '[]',
     result TEXT,
     blocked_reason TEXT,
+    model_hint TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -74,13 +75,31 @@ class SessionStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA_SQL)
 
-        # Initialise schema version if empty.
+        # Initialise or migrate schema version.
         row = self._conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()
         if row[0] == 0:
             self._conn.execute(
                 "INSERT INTO schema_version (version) VALUES (?)",
                 (SCHEMA_VERSION,),
             )
+            self._conn.commit()
+        else:
+            self._apply_migrations()
+
+    def _apply_migrations(self) -> None:
+        """Apply incremental schema migrations based on stored version."""
+        assert self._conn is not None  # noqa: S101
+        row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
+        current = row[0] if row else 1
+
+        if current < 3:
+            # v3: add model_hint column to tasks.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(tasks)").fetchall()}
+            if "model_hint" not in cols:
+                self._conn.execute("ALTER TABLE tasks ADD COLUMN model_hint TEXT")
+
+        if current < SCHEMA_VERSION:
+            self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
             self._conn.commit()
 
     def close(self) -> None:
@@ -175,8 +194,9 @@ class SessionStore:
             db.execute(
                 """\
                 INSERT INTO tasks (id, title, status, category, description,
-                                   dependencies, result, blocked_reason, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   dependencies, result, blocked_reason,
+                                   model_hint, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     t.id,
@@ -187,6 +207,7 @@ class SessionStore:
                     json.dumps(t.dependencies),
                     t.result,
                     t.blocked_reason,
+                    t.model_hint.value if t.model_hint else None,
                     t.created_at.isoformat(),
                 ),
             )
@@ -197,6 +218,7 @@ class SessionStore:
         rows = self._db.execute("SELECT * FROM tasks ORDER BY created_at").fetchall()
         tasks: list[AgentTask] = []
         for r in rows:
+            raw_hint = r["model_hint"]
             tasks.append(
                 AgentTask(
                     id=r["id"],
@@ -207,6 +229,7 @@ class SessionStore:
                     dependencies=json.loads(r["dependencies"]),
                     result=r["result"],
                     blocked_reason=r["blocked_reason"],
+                    model_hint=ModelHint(raw_hint) if raw_hint else None,
                     created_at=datetime.datetime.fromisoformat(r["created_at"]),
                 )
             )

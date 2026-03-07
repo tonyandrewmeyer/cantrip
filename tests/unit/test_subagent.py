@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from cantrip.agent.queue import AgentTask, TaskCategory
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.subagent import (
     MAX_SUBAGENT_ROUNDS,
     Subagent,
@@ -269,6 +269,41 @@ class TestSelectProvider:
         primary = FakeProvider()
         light = FakeProvider()
         result = _select_provider(TaskCategory.DEBUG, primary, light)
+        assert result is primary
+
+    def test_model_hint_primary_overrides_category(self) -> None:
+        """Explicit PRIMARY hint forces primary even for a light category."""
+        primary = FakeProvider()
+        light = FakeProvider()
+        result = _select_provider(
+            TaskCategory.RESEARCH,
+            primary,
+            light,
+            model_hint=ModelHint.PRIMARY,
+        )
+        assert result is primary
+
+    def test_model_hint_light_overrides_category(self) -> None:
+        """Explicit LIGHT hint forces light even for a primary category."""
+        primary = FakeProvider()
+        light = FakeProvider()
+        result = _select_provider(
+            TaskCategory.BUILD,
+            primary,
+            light,
+            model_hint=ModelHint.LIGHT,
+        )
+        assert result is light
+
+    def test_model_hint_light_without_provider_falls_back(self) -> None:
+        """LIGHT hint without a light provider falls back to primary."""
+        primary = FakeProvider()
+        result = _select_provider(
+            TaskCategory.BUILD,
+            primary,
+            None,
+            model_hint=ModelHint.LIGHT,
+        )
         assert result is primary
 
 

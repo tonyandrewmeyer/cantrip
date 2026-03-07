@@ -29,6 +29,13 @@ class TaskCategory(enum.StrEnum):
     CONFIRM = "confirm"
 
 
+class ModelHint(enum.StrEnum):
+    """Hint for which model a task should use, overriding category defaults."""
+
+    PRIMARY = "primary"
+    LIGHT = "light"
+
+
 @dataclass
 class AgentTask:
     """A discrete unit of work for the autonomous agent."""
@@ -41,6 +48,7 @@ class AgentTask:
     dependencies: list[str] = field(default_factory=list)
     result: str | None = None
     blocked_reason: str | None = None
+    model_hint: ModelHint | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self) -> None:

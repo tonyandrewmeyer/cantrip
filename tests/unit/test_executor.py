@@ -803,10 +803,12 @@ class TestConcurrency:
         queue.add_task(t1)
         queue.add_task(t2)
 
-        provider = FakeProvider(responses=[
-            Response(content="done-a"),
-            Response(content="done-b"),
-        ])
+        provider = FakeProvider(
+            responses=[
+                Response(content="done-a"),
+                Response(content="done-b"),
+            ]
+        )
         executor = _make_executor(queue=queue, provider=provider)
 
         original_execute = executor._execute_task
@@ -842,10 +844,12 @@ class TestConcurrency:
         queue.add_task(t1)
         queue.add_task(t2)
 
-        provider = FakeProvider(responses=[
-            Response(content="done-1"),
-            Response(content="done-2"),
-        ])
+        provider = FakeProvider(
+            responses=[
+                Response(content="done-1"),
+                Response(content="done-2"),
+            ]
+        )
         executor = BackgroundExecutor(
             queue=queue,
             tools=[_make_tool("read_file")],
@@ -896,10 +900,12 @@ class TestConcurrency:
         queue.add_task(t1)
         queue.add_task(t2)
 
-        provider = FakeProvider(responses=[
-            Response(content="dep done"),
-            Response(content="child done"),
-        ])
+        provider = FakeProvider(
+            responses=[
+                Response(content="dep done"),
+                Response(content="child done"),
+            ]
+        )
         executor = _make_executor(queue=queue, provider=provider)
         executor.start()
 

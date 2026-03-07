@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from cantrip.agent.queue import AgentTask, TaskCategory
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm import base as llm
 
@@ -272,12 +272,22 @@ def _select_provider(
     provider: llm.LLMProvider,
     light_provider: llm.LLMProvider | None,
     task_title: str = "",
+    model_hint: ModelHint | None = None,
 ) -> llm.LLMProvider:
-    """Return the light provider for research/infra categories, primary otherwise.
+    """Choose the right model for a task.
 
-    Operational-discovery tasks are an exception: their output is
-    user-facing (the design proposal), so they use the primary model.
+    Priority order:
+    1. Explicit ``model_hint`` on the task (PRIMARY or LIGHT).
+    2. Category-based routing: RESEARCH and INFRA use light, others primary.
+    3. Operational-discovery/synthesis research tasks use primary for quality.
     """
+    # 1. Explicit per-task override.
+    if model_hint is not None:
+        if model_hint == ModelHint.LIGHT and light_provider is not None:
+            return light_provider
+        return provider
+
+    # 2. Category-based routing.
     if light_provider is not None and category in _LIGHT_CATEGORIES:
         # Route synthesis tasks to the primary model for quality.
         if "operational-discovery" in task_title or "synthesise" in task_title.lower():
@@ -438,6 +448,7 @@ class Subagent:
             provider,
             light_provider,
             task_title=context.task.title,
+            model_hint=context.task.model_hint,
         )
         self._tools = _filter_tools(tools, context.task.category)
         self._tool_map: dict[str, Tool] = {t.name: t for t in self._tools}
