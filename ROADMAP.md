@@ -441,7 +441,7 @@ minutes wall-clock time (excluding user confirmation and Juju deploy wait).
 
 ### 7.5 Advanced Workflows
 - [ ] Charm pairs (app + database deployed and related together)
-- [ ] Migration assistance (existing charm → improved charm)
+- [ ] Migration assistance (existing charm → improved charm) — see Phase 10
 - [ ] Upgrade testing (verify charm upgrades cleanly between revisions)
 
 **Exit criteria:** Showcase-ready demo of the full Canonical ecosystem. Agent autonomously
@@ -546,6 +546,120 @@ specification and real-world module patterns, with a concrete implementation pla
 
 ---
 
+## Phase 10: Existing Charm Improvement
+
+**Goal:** Use Cantrip not just to build new charms, but to bring existing charms up to
+modern standards. The user points Cantrip at an existing charm ("here's my charm, make it
+great") and Cantrip audits it, identifies gaps, and autonomously adds COS integration,
+tests, best-practice fixes, and everything needed for a public Charmhub listing.
+
+### 10.1 Charm Audit
+
+Analyse an existing charm and produce a comprehensive gap analysis.
+
+- [ ] **Ingest existing charm** — accept a local path or Git URL to an existing charm
+  project; parse `charmcraft.yaml`, `metadata.yaml` (legacy), `src/charm.py`, `config.yaml`,
+  `actions.yaml`, tests, and any existing documentation
+- [ ] **Best-practices checklist** — evaluate the charm against Canonical's
+  [best practices list](https://juju.is/docs/sdk/styleguide) and common conventions:
+  - Ops framework usage (modern patterns, no deprecated APIs)
+  - Event handling (correct observe patterns, idempotent handlers)
+  - Status management (meaningful status messages, not just `ActiveStatus`)
+  - Config validation and defensive handling
+  - Secret management (Juju secrets vs. config for sensitive data)
+  - Resource handling (OCI images, attached resources)
+  - Peer relation data patterns (leader-only writes, databag hygiene)
+  - Pebble layer management (for K8s charms)
+  - Logging practices (structured, appropriate levels)
+- [ ] **Public listing requirements** — check against Charmhub listing requirements:
+  - README with badges, description, usage, configuration, integrations, and contributing
+  - `charmcraft.yaml` with proper display-name, summary, description, docs URL, issues URL,
+    source URL, and tags
+  - Icon (SVG in the correct location)
+  - Documentation on Discourse or in-tree
+  - License file
+  - Clean `charmcraft pack` with no warnings
+- [ ] **Audit report** — produce a structured report (`AUDIT.md`) summarising findings,
+  grouped by severity (must-fix, should-fix, nice-to-have), with specific recommendations
+  and references to documentation
+
+### 10.2 Observability Gap Fill
+
+Add COS integration and ops-tracing if missing or incomplete.
+
+- [ ] **COS integration audit** — check for existing COS relations (grafana-dashboard,
+  loki-push-api, metrics-endpoint) and assess completeness
+- [ ] **Add ops-tracing** — integrate the ops-tracing library if absent; instrument charm
+  with tracing support
+- [ ] **Add metrics** — add Prometheus metrics endpoint if missing; generate a basic
+  Grafana dashboard JSON covering key operational metrics
+- [ ] **Add log forwarding** — add Loki push API relation and structured logging if missing
+- [ ] **Alert rules** — generate basic Prometheus alert rules for common failure conditions
+  (unit blocked, hook failures, resource exhaustion)
+
+### 10.3 Test Gap Fill
+
+Add or improve tests to match the standard Cantrip would apply to a new charm.
+
+- [ ] **Test coverage audit** — analyse existing test suite (if any); identify untested
+  events, config changes, actions, and relation lifecycle
+- [ ] **Scenario unit tests** — generate Scenario-based unit tests for all observed events,
+  covering happy paths and error cases; do NOT use the deprecated Harness
+- [ ] **Migrate from Harness** — if existing tests use the deprecated Harness, offer to
+  rewrite them using Scenario
+- [ ] **Jubilant integration tests** — generate integration tests using Jubilant, covering
+  deploy, relate, config changes, actions, and scale-up/down
+- [ ] **Test validation** — run the generated tests and fix any failures before presenting
+  the result
+
+### 10.4 Code Modernisation
+
+Bring the charm code up to current Ops framework standards.
+
+- [ ] **Deprecated API migration** — identify and replace deprecated Ops APIs
+  (e.g. `StoredState` patterns, old relation APIs, legacy hook tools)
+- [ ] **Type annotations** — add type hints where missing
+- [ ] **Modern patterns** — apply current idiomatic patterns:
+  - Holistic status handling
+  - Config-changed reconciliation pattern
+  - Relation-created / relation-changed best practices
+  - Proper Pebble readiness checks
+- [ ] **Dependency updates** — update charm library dependencies to latest versions;
+  flag any libraries fetched via `charmcraft fetch-libs` that have PyPI equivalents
+
+### 10.5 Listing Readiness
+
+Prepare the charm for a polished Charmhub listing.
+
+- [ ] **README generation** — generate or rewrite README.md with standard sections:
+  description, deployment, configuration reference, integrations, contributing guide
+- [ ] **Metadata completion** — fill in missing `charmcraft.yaml` fields (display-name,
+  summary, description, docs, issues, source URLs, tags)
+- [ ] **Documentation** — generate or update Discourse-format documentation covering
+  getting started, configuration, integrations, and troubleshooting
+- [ ] **Icon check** — verify an SVG icon exists; warn if missing (Cantrip doesn't
+  generate artwork, but flags the gap)
+- [ ] **Licence check** — verify a LICENSE file exists; suggest Apache-2.0 if missing
+
+### 10.6 Validation and Presentation
+
+Verify all improvements work together and present the result.
+
+- [ ] **Full build** — `charmcraft pack` succeeds cleanly with no warnings
+- [ ] **Test suite green** — all generated tests pass (Scenario unit + Jubilant integration)
+- [ ] **Deploy and verify** — deploy the improved charm to a dev model; verify it reaches
+  active/idle; verify COS relations work
+- [ ] **Diff review** — present the user with a summary of all changes made, grouped by
+  category (observability, tests, code quality, listing), with before/after comparisons
+- [ ] **Incremental commits** — each category of improvement is committed separately with
+  clear commit messages, so the user can review and revert individual changes
+
+**Exit criteria:** User points Cantrip at an existing charm. Cantrip audits it, adds COS
+integration, writes Scenario and Jubilant tests, modernises code, prepares listing metadata,
+and presents a clean diff — bringing the charm to the same standard as one built from scratch.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -562,6 +676,10 @@ specification and real-world module patterns, with a concrete implementation pla
 | Charmhub publishing (7.4) | Phase 5 design pipeline | Only publish well-researched charms |
 | Inference snaps (8.2+) | Phase 8.1 basic provider | Need the basic provider working to evaluate quality |
 | Terraform support (9.x) | Phase 5 design pipeline | Needs working charm build pipeline to generate modules from |
+| Charm audit (10.1) | Phase 4 autonomous core | Audit tasks run as autonomous work |
+| Test gap fill (10.3) | Phase 2 test generation | Builds on existing Scenario/Jubilant generation |
+| Observability gap fill (10.2) | Phase 2 COS integration | Builds on existing COS tooling |
+| Listing readiness (10.5) | Phase 7.4 publishing | Builds on existing Charmhub publishing support |
 
 ---
 
@@ -579,3 +697,4 @@ specification and real-world module patterns, with a concrete implementation pla
 | M7: Showcase | 7 | Demo-ready with full ecosystem, testing, and publishing |
 | M8: Local Models | 8 | Cantrip runs on local inference snaps with no cloud API |
 | M9: Terraform | 9 | Cantrip generates and validates Terraform modules for charms |
+| M10: Charm Improver | 10 | Cantrip audits and upgrades existing charms to modern standards |
