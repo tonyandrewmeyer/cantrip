@@ -594,7 +594,8 @@ Add COS integration and ops-tracing if missing or incomplete.
 - [ ] **COS integration audit** — check for existing COS relations (grafana-dashboard,
   loki-push-api, metrics-endpoint) and assess completeness
 - [ ] **Add ops-tracing** — integrate the ops-tracing library if absent; instrument charm
-  with tracing support
+  with tracing support following the guidance in Phase 16.2 (what to instrument manually
+  vs what ops-tracing covers automatically)
 - [ ] **Add metrics** — add Prometheus metrics endpoint if missing; generate a basic
   Grafana dashboard JSON covering key operational metrics
 - [ ] **Add log forwarding** — add Loki push API relation and structured logging if missing
@@ -1213,6 +1214,148 @@ needed.
 
 ---
 
+## Phase 16: Security Event Logging and Tracing Instrumentation Guidance
+
+**Goal:** Ensure charms built by Cantrip emit structured security event logs following the
+OWASP Logging Vocabulary, and provide clear guidance on what gets manually instrumented
+with tracing versus what ops-tracing handles automatically. The ops framework itself
+already implements SEC0045-compliant security logging (see `ops.log._log_security_event`);
+charms should extend this pattern for workload-specific security events where appropriate.
+
+### 16.1 Security Event Logging in Generated Charms
+
+The ops framework emits structured security events for framework-level operations:
+authorisation failures (`AUTHZ_FAIL`), system restarts (`SYS_RESTART`), uncaught
+exceptions (`SYS_CRASH`), and monitoring disablement (`SYS_MONITOR_DISABLED`). These use
+the [OWASP Logging Vocabulary](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Vocabulary_Cheat_Sheet.html)
+format: JSON with `datetime`, `level`, `type`, `appid`, `event`, and `description` fields,
+logged at Juju TRACE level.
+
+Charms should extend this where the workload has security-relevant events that the
+framework cannot know about. Not every charm needs this — a static site charm has no
+meaningful security surface — but charms wrapping authentication services, databases,
+or network infrastructure should log security events.
+
+- [ ] **Identify security-relevant charms** — during the design phase, the agent assesses
+  whether the workload has a security surface that warrants event logging. Indicators:
+  - Authentication or authorisation (login services, LDAP, OAuth providers)
+  - Secret or credential management (vaults, certificate authorities, key stores)
+  - Network access control (firewalls, proxies, ingress controllers)
+  - Data access (databases, object stores, file servers)
+  - System administration (backup tools, monitoring agents, config management)
+  If the workload has none of these characteristics, security event logging is skipped
+- [ ] **Security event helper** — for charms that need it, generate a small helper
+  function (in `src/log_security.py` or similar) that wraps `ops.log._log_security_event`
+  or reimplements the same structured JSON format. The helper should:
+  - Accept OWASP event type, level, event name, and description
+  - Include the charm's application ID automatically
+  - Use UTC ISO 8601 timestamps
+  - Log at Juju TRACE level (security events are structured data for consumption by
+    collectors, not operator-facing messages)
+- [ ] **Workload-specific event types** — extend the OWASP vocabulary with events
+  appropriate to the charm's workload. Common patterns:
+  - `authn_fail` / `authn_success` — for charms wrapping services with login
+  - `authz_fail` / `authz_grant` / `authz_revoke` — for access control changes
+  - `secret_rotate` / `secret_access` — for credential lifecycle beyond Juju secrets
+  - `config_change` — for security-relevant config changes (TLS mode, allowed networks)
+  - `data_export` / `data_delete` — for charms wrapping data stores with audit requirements
+  - `sys_monitor_disabled` / `sys_monitor_enabled` — if the charm manages health checks
+- [ ] **Where to emit events** — guide the agent to emit security events at the right
+  points in charm code:
+  - Secret lifecycle hooks (`secret-changed`, `secret-rotate`, `secret-expired`)
+  - Relation changes that affect access (new database clients, revoked access)
+  - Action handlers that perform privileged operations (backup, restore, password reset)
+  - Config changes that affect the security posture (TLS settings, network restrictions)
+  - Workload log parsing (if the workload logs auth failures, surface them as security events)
+- [ ] **Never log sensitive data** — the agent must ensure security event descriptions
+  never contain credentials, tokens, passwords, or secret content. Log *what happened*
+  (e.g. "Secret rotated for relation endpoint 'database'"), not *what the secret contains*
+
+### 16.2 Tracing Instrumentation Guidance
+
+ops-tracing (via `ops_tracing.setup(self)`) automatically instruments the ops framework.
+The agent needs clear rules about what is already covered and what warrants manual spans,
+to avoid both redundant instrumentation and missing visibility.
+
+**What ops-tracing instruments automatically (do NOT add manual spans for these):**
+
+- Hook execution lifecycle (every Juju event dispatch)
+- Pebble API calls (container operations, layer pushes, service management)
+- Relation data reads and writes
+- Status changes
+- Secret operations via the framework
+- Charm library calls
+
+**What warrants manual spans (add these where appropriate):**
+
+- [ ] **Long-running workload operations** — if the charm orchestrates a multi-step
+  workload process (database migration, backup to object storage, cluster join), wrap
+  the sequence in a span so traces show the duration and which step failed. Example:
+  a database charm's `_run_backup()` method that shells out to `pg_dump`, uploads to S3,
+  and verifies the upload
+- [ ] **External API calls** — if the charm calls external services beyond Pebble (cloud
+  APIs, web hooks, DNS providers), span these calls to capture latency and errors.
+  ops-tracing only covers the Juju/Pebble boundary, not arbitrary HTTP requests
+- [ ] **Decision logic with fallback** — if the charm has non-trivial decision logic
+  (e.g. "try primary endpoint, fall back to secondary, fall back to degraded mode"),
+  span the decision to make the chosen path visible in traces
+- [ ] **Async or deferred work** — if the charm defers an event and processes it later,
+  span the deferred handler separately so traces show the gap between deferral and
+  execution
+
+**What should NOT be manually instrumented:**
+
+- Simple event handlers that just call Pebble (already traced)
+- Config-changed handlers that update a Pebble layer (already traced)
+- Relation-changed handlers that read databag values (already traced)
+- Status setting (already traced)
+- Any operation that completes in under 100ms with no external calls
+
+- [ ] **Update system prompt** — add tracing instrumentation guidance to the system prompt
+  (`system.md.j2`) so the agent applies these rules when writing charm code. The guidance
+  should be concise — a short "instrument / don't instrument" checklist, not a tracing
+  tutorial
+- [ ] **Update observability skill** — extend the observability skill (`SKILL.md`) with
+  the manual instrumentation patterns, including a code example showing `get_tracer()` /
+  `start_as_current_span()` usage in a charm context
+- [ ] **Template support** — for charm templates that include a long-running operation
+  (e.g. the database backup pattern), include a manual span in the template code as
+  a concrete example
+
+### 16.3 Security Event Collection via COS
+
+Security events logged at Juju TRACE level need to be collected and made queryable.
+
+- [ ] **Loki collection** — security events are forwarded to Loki via the existing
+  `loki-push-api` relation. Add a LogQL query example to the generated Grafana dashboard
+  that filters for `type="security"` events
+- [ ] **Grafana dashboard panel** — for charms with security event logging, add a
+  "Security Events" panel to the generated Grafana dashboard showing a table of recent
+  security events with timestamp, level, event type, and description
+- [ ] **Alert rules for critical events** — generate Prometheus/Loki alert rules for
+  `CRITICAL`-level security events (e.g. repeated `authn_fail` suggesting brute force,
+  `authz_fail` suggesting misconfiguration)
+
+### 16.4 Integration with Charm Audit (Phase 10)
+
+When auditing existing charms (Phase 10), assess security logging completeness.
+
+- [ ] **Security logging audit** — as part of the 10.1 best-practices checklist, assess
+  whether the charm's workload has a security surface and whether appropriate events are
+  being logged
+- [ ] **Tracing audit** — check whether ops-tracing is integrated, and whether any
+  long-running or external-call operations lack manual spans
+- [ ] **Remediation tasks** — if the audit identifies missing security logging or tracing
+  gaps, generate specific tasks to add them (following the guidance in 16.1 and 16.2)
+
+**Exit criteria:** Charms wrapping security-relevant workloads emit structured OWASP-format
+security events for authentication, authorisation, secret lifecycle, and privileged
+operations. The agent knows precisely what ops-tracing covers automatically and only adds
+manual spans for long-running operations, external API calls, and non-trivial decision
+logic. Security events are queryable via Loki and surfaced in Grafana dashboards.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -1261,6 +1404,10 @@ needed.
 | Real-time updates (15.4) | Phase 15.2 + 15.3 | Needs both server and frontend in place |
 | Alternative views (15.5) | Phase 15.3 | Extends the base frontend layout |
 | Feature parity maintenance (15.6) | Phase 15.1 | Ongoing process once event bus exists |
+| Security event identification (16.1) | Phase 5 design pipeline | Assessed during design phase |
+| Tracing instrumentation guidance (16.2) | Phase 2 COS integration | Extends existing ops-tracing setup |
+| Security event collection (16.3) | Phase 16.1 + Phase 2 COS | Needs security events + Loki/Grafana |
+| Security/tracing audit (16.4) | Phase 10.1 + Phase 16.1 | Extends charm audit with security checks |
 
 ---
 
@@ -1284,3 +1431,4 @@ needed.
 | M13: Demo-Ready | 13 | Every charm ships with runnable demo, captured output, and tutorial |
 | M14: Full Transcript | 14 | Every session exportable as searchable HTML with full audit trail |
 | M15: Web UI | 15 | Browser-based interface mirroring the TUI via shared event bus |
+| M16: Security & Tracing | 16 | OWASP security events + clear manual tracing guidance |
