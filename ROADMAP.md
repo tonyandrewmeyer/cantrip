@@ -523,6 +523,10 @@ Understand the Terraform ecosystem for Juju charms and determine what Cantrip ne
 - [ ] **Survey existing modules** — examine published Terraform modules for existing charms
   (e.g. in the `canonical/terraform-juju-*` repos) to understand patterns, conventions, and
   common pitfalls
+- [ ] **Study the charmkeeper-terraform agent spec** — read and internalise the
+  [charmkeeper-terraform agent](https://github.com/seb4stien/charmkeeper/blob/main/.github/agents/charmkeeper-terraform.md),
+  which codifies practical standards for Terraform modules in charms (versions, linting,
+  test structure, CI workflows, renovate configuration)
 - [ ] **Identify scope** — determine which of the following Cantrip should support:
   - Generating a Terraform module for a newly built charm
   - Generating a Terraform plan that deploys a charm with its integrations
