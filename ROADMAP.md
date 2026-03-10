@@ -1094,6 +1094,125 @@ paginated, human-readable format. Nothing is lost.
 
 ---
 
+## Phase 15: Web UI
+
+**Goal:** Provide an alternative browser-based interface that mirrors the TUI exactly —
+same three-panel layout, same task checklist, same Juju status visualisation, same chat —
+so users can choose whichever interface suits their environment. Built with vanilla HTML,
+CSS, and JavaScript (no framework: no React, Angular, Vue, or similar). The backend is a
+lightweight localhost HTTP server embedded in Cantrip that exposes a WebSocket for
+real-time updates and a small REST API for initial state.
+
+The TUI (Textual) and Web UI must stay in sync: same features, same layout, same
+information density. Neither is primary — they are two renderings of the same underlying
+agent state. Changes to agent state (tasks, chat messages, Juju status, watcher events)
+flow through a shared event bus that both UIs consume.
+
+### 15.1 Shared UI Event Bus
+
+Decouple agent state changes from UI rendering so both interfaces receive identical updates.
+
+- [ ] **Event bus abstraction** — an async publish/subscribe bus in `src/cantrip/ui/events.py`
+  that emits typed events: `TaskUpdated`, `ChatMessage`, `JujuStatusChanged`,
+  `WatcherEvent`, `StatusBarChanged`. Both the TUI widgets and the WebSocket handler
+  subscribe to the same bus
+- [ ] **Migrate TUI to event bus** — refactor existing Textual widgets (`TaskListWidget`,
+  `ChatWidget`, `JujuStatusWidget`, `StatusBar`) to consume events from the bus instead of
+  polling or direct state access. Existing behaviour must be preserved — this is a pure
+  refactor with no visible changes
+- [ ] **Serialisable event payloads** — every event carries a JSON-serialisable payload so
+  the WebSocket handler can forward events to the browser without transformation
+
+### 15.2 Localhost HTTP Server
+
+Embed a lightweight HTTP server that serves the Web UI and provides a WebSocket endpoint.
+
+- [ ] **Server module** — `src/cantrip/ui/web/server.py` using `aiohttp` (already
+  async-compatible with the existing event loop). Serves static files and exposes a
+  WebSocket at `/ws`. Binds to `127.0.0.1` only — no network exposure
+- [ ] **CLI flag** — `cantrip --web` starts the web server alongside (or instead of) the
+  TUI; `cantrip --web --no-tui` runs headless with web only. Port defaults to `8471`,
+  configurable via `--web-port`
+- [ ] **Initial state endpoint** — `GET /api/state` returns the full current state (tasks,
+  chat history, Juju status, status bar) as JSON so the browser can render immediately on
+  connect rather than waiting for incremental updates
+- [ ] **WebSocket bridge** — subscribes to the shared event bus and forwards every event
+  to all connected WebSocket clients as JSON messages. Also receives user input (chat
+  messages, task interactions) from the browser and injects them into the conversation loop
+
+### 15.3 Static Frontend — Layout and Panels
+
+Build the three-panel layout using vanilla HTML, CSS, and JavaScript.
+
+- [ ] **Static assets** — `src/cantrip/ui/web/static/` containing `index.html`,
+  `style.css`, and `cantrip.js`. Bundled into the Python package and served by aiohttp.
+  No build step, no transpilation, no bundler
+- [ ] **Three-panel layout** — CSS Grid replicating the TUI layout: task checklist (left),
+  Juju status (centre), chat (right). Responsive breakpoints matching the TUI behaviour:
+  two-panel below 900px, stacked below 600px
+- [ ] **Task checklist panel** — renders task list with the same status indicators
+  (`✓` done/green, `⟳` active/blue, `○` pending/grey, `◌` blocked/yellow, `✗` failed/red).
+  Clicking a task expands its result summary. New tasks appear dynamically via WebSocket
+- [ ] **Juju status panel** — renders app boxes, unit counts, status indicators, and
+  relation lines using HTML/CSS (styled `<div>` elements and CSS connectors, not
+  `<canvas>`). Same colour scheme as the TUI
+- [ ] **Chat panel** — scrollable message history with user messages visually distinct from
+  agent messages. Input area at the bottom with Enter-to-send. Supports inline progress
+  indicators and Markdown rendering (minimal — bold, code, lists — via a small inline
+  parser, no library)
+
+### 15.4 Real-Time Updates
+
+Wire the frontend to the WebSocket for live state updates.
+
+- [ ] **WebSocket client** — `cantrip.js` opens a WebSocket connection on load, reconnects
+  automatically on disconnect with exponential backoff. Dispatches incoming events to the
+  appropriate panel update functions
+- [ ] **Incremental DOM updates** — each event type maps to a targeted DOM mutation (e.g.
+  `TaskUpdated` finds the task element by ID and updates its status class and text;
+  `ChatMessage` appends a new message element). No virtual DOM, no full re-renders
+- [ ] **User input** — chat messages sent as WebSocket frames; the server injects them into
+  the agent's conversation loop identically to TUI input
+- [ ] **Connection status** — a small indicator in the header showing connected/reconnecting
+  state. If disconnected, fetches full state from `/api/state` on reconnect to avoid
+  missing updates
+
+### 15.5 Alternative Views
+
+Mirror the TUI's alternative views in the browser.
+
+- [ ] **Logs view** — a full-width log viewer (replacing the three-panel layout when active)
+  showing unit logs with level and unit filters. Equivalent to the TUI's F3 view
+- [ ] **Model graph view** — expanded topology view showing all apps, relations, and
+  cross-model integrations. Uses CSS positioning for the graph layout (not canvas)
+- [ ] **Help overlay** — modal overlay showing keyboard shortcuts and quick-start guide,
+  equivalent to TUI's F1 screen
+- [ ] **Keyboard shortcuts** — `?` for help, `1`/`2`/`3` to focus panels, `L` for logs,
+  `Escape` to return to main view. Documented in the help overlay
+
+### 15.6 Feature Parity Maintenance
+
+Ensure the two UIs stay synchronised as features are added.
+
+- [ ] **Shared event contract** — `src/cantrip/ui/events.py` serves as the single source of
+  truth for what the UI can display. Adding a new UI feature means adding an event type
+  first, then implementing handlers in both the Textual widget and the JS frontend
+- [ ] **UI integration tests** — a test suite that verifies both UIs render the same
+  information given the same event sequence. Uses the event bus directly (no browser
+  automation) — asserts that TUI widget state and the JSON payloads sent over WebSocket
+  are equivalent
+- [ ] **Design documentation** — update `TUI.md` to `UI.md`, covering both interfaces with
+  shared layout diagrams and per-interface implementation notes
+
+**Exit criteria:** `cantrip --web` opens a browser tab showing the same three-panel layout
+as the TUI — task checklist, Juju status, chat — all updating in real time via WebSocket.
+A user can run an entire charm-building session from the browser with no loss of
+functionality compared to the terminal. Both UIs consume the same event bus, so adding a
+new feature to one naturally extends to the other with only a rendering implementation
+needed.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -1136,6 +1255,12 @@ paginated, human-readable format. Nothing is lost.
 | HTML export (14.4) | Phase 14.1 + 14.2 | Needs recorded data to export |
 | Additional export formats (14.5) | Phase 14.4 | Extends the export pipeline with JSONL/Markdown |
 | Live transcript in TUI (14.6) | Phase 14.1 + 14.2 | Needs recording in place to display |
+| Shared UI event bus (15.1) | Phase 4.4 TUI widgets | Refactors existing TUI widgets to event-driven |
+| Localhost HTTP server (15.2) | Phase 15.1 | Needs event bus to bridge to WebSocket |
+| Static frontend (15.3) | Phase 15.2 | Needs server to serve assets and provide API |
+| Real-time updates (15.4) | Phase 15.2 + 15.3 | Needs both server and frontend in place |
+| Alternative views (15.5) | Phase 15.3 | Extends the base frontend layout |
+| Feature parity maintenance (15.6) | Phase 15.1 | Ongoing process once event bus exists |
 
 ---
 
@@ -1158,3 +1283,4 @@ paginated, human-readable format. Nothing is lost.
 | M12: Red/Green | 12 | Red/green TDD — integration tests first, agent iterates until green |
 | M13: Demo-Ready | 13 | Every charm ships with runnable demo, captured output, and tutorial |
 | M14: Full Transcript | 14 | Every session exportable as searchable HTML with full audit trail |
+| M15: Web UI | 15 | Browser-based interface mirroring the TUI via shared event bus |
