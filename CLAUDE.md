@@ -80,7 +80,8 @@ src/cantrip/
 ├── llm/
 │   ├── base.py          # Abstract LLMProvider interface
 │   ├── gemini.py        # Google Gemini implementation
-│   └── claude.py        # Anthropic Claude implementation
+│   ├── claude.py        # Anthropic Claude implementation
+│   └── inference_snap.py # Canonical inference snap (local models)
 ├── charm/
 │   └── templates/       # Charm project templates
 ├── skills/              # Skill definitions (SKILL.md per skill)
@@ -131,6 +132,7 @@ The system prompt in `src/cantrip/agent/prompts/system.py` contains embedded cha
 ## Reference Documents
 
 - `PLAN.md` - Architecture decisions, philosophy, detailed design
+- `AGENT.md` - Agent architecture (two-loop design, subagents, work queue, tools)
 - `ROADMAP.md` - Implementation phases
 - `TUI.md` - UI/UX design with ASCII mockups
 - `CHANGELOG.md` - Notable changes (keep updated)

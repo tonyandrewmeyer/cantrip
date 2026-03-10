@@ -801,7 +801,7 @@ class CantripAgent:
         }
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency
-        self._executor = BackgroundExecutor(**kwargs)  # type: ignore[arg-type]
+        self._executor = BackgroundExecutor(**kwargs)
         self._executor.start()
 
     async def stop_executor(self) -> None:

@@ -103,6 +103,7 @@ The agent is the driver. The ecosystem is the engine. The user is the navigator.
 | Package Management | uv | |
 | CI | GitHub Actions | |
 | TUI Framework | Textual | |
+| Web UI | Vanilla HTML/CSS/JS | No framework; served from localhost via aiohttp + WebSocket (Phase 15) |
 | Juju Control | Jubilant | |
 | Environment Setup | Concierge | LXD for machine, "k8s" preset for K8s (Canonical K8s, not MicroK8s) |
 | LLM (primary) | Gemini | Canonical preference, available tokens |
