@@ -660,6 +660,436 @@ and presents a clean diff — bringing the charm to the same standard as one bui
 
 ---
 
+## Phase 11: Long-Running Agent Resilience
+
+**Goal:** Make the autonomous work loop more robust across long sessions and restarts.
+Inspired by [Anthropic's engineering guidance on effective harnesses for long-running
+agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents),
+these changes ensure subagents commit their work, verify their output, recover cleanly
+from failures, and resume gracefully after interruption.
+
+### 11.1 Commit-After-Build
+
+Build subagents should commit their changes before declaring success, so each task's
+output is independently recoverable via git.
+
+- [ ] **Build guidance update** — add explicit instruction to `_CATEGORY_GUIDANCE[BUILD]`
+  telling subagents to `git_add` + `git_commit` with a descriptive message before
+  finishing; similarly for DEBUG subagents that apply fixes
+- [ ] **Commit verification** — after a BUILD/DEBUG subagent completes, the executor
+  checks `git_status` for uncommitted changes and logs a warning if any remain
+
+### 11.2 Lightweight Self-Verification
+
+Build subagents should run a basic sanity check before declaring success, catching
+obvious errors before the dedicated TEST task.
+
+- [ ] **Build self-check** — add `charm_validate` and `run_charm_tests` (unit only) to
+  the BUILD tool allowlist; update BUILD guidance to run validation before finishing
+- [ ] **Fail-fast on validation** — if `charm_validate` fails inside a build subagent,
+  the subagent should attempt a fix (one retry) rather than reporting a false success
+
+### 11.3 Session Resume Protocol
+
+When Cantrip starts with an existing `.cantrip` file, it should reconstruct context
+from prior work before planning new tasks — not start from scratch.
+
+- [ ] **Progress summary** — on startup with an existing session, load completed tasks,
+  decisions, and the last few git commits; inject a structured summary into the
+  conversation as initial context
+- [ ] **Environment health check** — verify the charm path exists, the Juju model is
+  responsive, and the last-known charm status before accepting new instructions
+- [ ] **Stale task recovery** — tasks left in ACTIVE status from a prior session (due to
+  crash or interruption) should be reset to PENDING with a note that they need re-running
+
+### 11.4 Git-Revert-on-Failure
+
+When a BUILD or DEBUG subagent fails, partial file writes may leave the working tree in
+a broken state. Clean up automatically so retries start from a known-good baseline.
+
+- [ ] **Snapshot before execution** — the executor records the current git HEAD before
+  launching a BUILD/DEBUG subagent
+- [ ] **Revert on failure** — if the subagent fails, the executor runs `git checkout .`
+  to restore the working tree to the pre-task state (only for tracked files)
+- [ ] **Preserve diagnostics** — before reverting, capture a summary of the changes
+  (via `git diff`) and attach it to the task's failure result so the next attempt or
+  the user can see what went wrong
+
+### 11.5 Pre-Task Environment Health Checks
+
+Before launching deploy or test subagents, verify that the environment is in a usable
+state — catching stale models, broken controllers, or missing charms early.
+
+- [ ] **Deploy pre-check** — before DEPLOY tasks, verify the Juju model exists and the
+  controller is reachable; if not, queue an INFRA task to fix it rather than letting
+  the deploy subagent fail opaquely
+- [ ] **Test pre-check** — before TEST tasks, verify the charm is packed and the
+  application is deployed; skip if prerequisites are clearly not met and report why
+
+**Exit criteria:** Subagents commit their work, verify their output with a quick
+validation pass, and the executor cleans up failed attempts. Restarting Cantrip on an
+existing session resumes smoothly with full context.
+
+---
+
+## Phase 12: Red/Green Charm Building
+
+**Goal:** Give the agent a machine-verifiable definition of success using a red/green TDD
+loop. Integration tests are written *before* the charm code (red — tests exist but fail),
+and the agent iterates until they pass (green). This flips the current sequence
+(scaffold → code → tests → deploy) to a red/green cycle
+(scaffold → write integration tests → code → run tests → fix → repeat).
+
+Integration tests are ideal for this because they are naturally declarative ("deploy the
+charm, relate it to PostgreSQL, check active/idle") and test the external contract rather
+than internal implementation. Many charm integration tests are straightforward — verifying
+that the charm deploys, that specific integrations work, that actions execute, and that
+config changes take effect.
+
+### 12.1 Integration-Tests-First in the Build Pipeline
+
+Restructure the build task sequence so integration tests are written early and used as
+the success criterion throughout.
+
+- [ ] **Update `_DESIGN_TO_BUILD_PROMPT`** — change the "typical build sequence" to:
+  1. Scaffold the charm (`charmcraft init`, write metadata)
+  2. Write integration tests from the design (deploy, relations, actions, config)
+  3. Write charm code to make the tests pass
+  4. Pack, deploy, and run integration tests
+  5. Fix and iterate until tests pass
+  6. Write unit tests (Scenario) for edge cases and error paths
+  7. Commit and offer next steps
+- [ ] **New task category or tag** — distinguish "write integration tests" (a BUILD task
+  that produces test files) from "run integration tests" (a TEST task that executes them),
+  so the planner can sequence them correctly with dependencies
+
+### 12.2 Integration Test Generation from Design
+
+The approved design contains enough information to write integration tests before any
+charm code exists — the design specifies integrations, actions, config options, and
+expected behaviour.
+
+- [ ] **Design-to-test extraction** — parse the approved DESIGN.md to identify testable
+  contracts:
+  - Each relation endpoint → test that deploying + relating reaches active/idle
+  - Each action → test that running the action succeeds and returns expected keys
+  - Each config option → test that setting it does not break the charm
+  - COS integration → test that Grafana/Loki/Prometheus relations work
+- [ ] **Test template generation** — produce `tests/integration/test_charm.py` from the
+  design using the `jubilant-tests` skill patterns; tests should be runnable (and failing)
+  before any charm code is written
+- [ ] **Incremental test files** — for complex charms, split integration tests into
+  focused files (`test_deploy.py`, `test_relations.py`, `test_actions.py`) so subagents
+  can target specific failures
+
+### 12.3 Red/Green Build Subagent
+
+Update the BUILD subagent to use the red/green cycle as its feedback loop.
+
+- [ ] **Add `run_charm_tests` to BUILD tools** — build subagents can run integration
+  tests directly, without waiting for a separate TEST task; this lets them iterate
+  within a single subagent invocation
+- [ ] **BUILD guidance update** — update `_CATEGORY_GUIDANCE[BUILD]` to instruct the
+  subagent:
+  1. Read the existing integration tests (written by a prior task)
+  2. Write charm code targeting the test expectations
+  3. Pack the charm and run integration tests
+  4. If tests fail, read the output, fix the code, and re-run
+  5. Finish only when tests pass (or max rounds exhausted)
+- [ ] **Test-result-driven iteration** — when a build subagent reports "3/7 integration
+  tests passing", the executor can spawn a follow-up BUILD task focused on the remaining
+  failures rather than a generic DEBUG task
+
+### 12.4 Incremental Feature Addition
+
+When the user asks to add a feature to an existing charm ("add PostgreSQL integration"),
+the same red/green cycle applies: write the integration test first (red), then implement
+until it passes (green).
+
+- [ ] **Feature test first** — when replanning for a new feature, the planner generates
+  a "write integration test for X" task before the "implement X" task
+- [ ] **Regression safety** — the new test is added alongside existing tests; running
+  the full integration suite after implementation catches regressions
+- [ ] **Selective test execution** — allow `run_charm_tests` to accept a specific test
+  file or test name pattern (e.g. `test_postgresql_relation`) so the build subagent
+  can iterate quickly on one test without running the entire suite
+
+### 12.5 Unit Tests as a Second Pass
+
+Unit tests (Scenario) remain valuable for edge cases, error paths, and fast iteration,
+but they come after the integration tests establish the external contract.
+
+- [ ] **Unit test task after integration green** — the planner sequences "write unit
+  tests" after integration tests pass, so unit tests can cover internal details the
+  subagent discovered during implementation
+- [ ] **Unit tests for error paths** — guide the unit test subagent to focus on cases
+  that integration tests cannot easily cover: missing relations → BlockedStatus,
+  invalid config → error handling, Pebble not ready → WaitingStatus
+- [ ] **Combined validation gate** — `charm_validate` runs both unit and integration
+  tests as the final success check before declaring the charm complete
+
+**Exit criteria:** User says "build a charm for X". After design approval, the agent
+writes integration tests first (deploy, relate to PostgreSQL, run backup action, etc.),
+then writes charm code and iterates until all integration tests pass. The agent has a
+clear, automated signal for "this feature works" at every step.
+
+---
+
+## Phase 13: Charm Demo Generation
+
+**Goal:** Every charm Cantrip builds ships with a compelling, runnable demo. Not just a
+README with `juju deploy` instructions, but a complete showcase: a deployment script that
+sets everything up, captured output showing the charm in action, annotated walk-throughs
+of key features, and observability screenshots demonstrating the COS integration. A
+potential user or reviewer should be able to understand what the charm does and see proof
+that it works, without deploying it themselves.
+
+This is an always-required part of the build pipeline — not an optional polish step.
+
+Two external tools are a natural fit here:
+[**Showboat**](https://github.com/simonw/showboat) builds Markdown documents by
+running real commands and capturing their output inline — exactly what we need for demo
+documents with interleaved `juju` commands and results.
+[**Rodney**](https://github.com/simonw/rodney) provides CLI-driven headless browser
+automation (built on Chrome DevTools Protocol) — ideal for capturing Grafana dashboard
+screenshots and verifying web-facing charms visually. Both tools are designed for
+agent-driven workflows with comprehensive `--help` that acts as a skill definition.
+
+### 13.1 Showboat and Rodney Integration
+
+Wrap the external tools as Cantrip agent tools so subagents can use them.
+
+- [ ] **`showboat` agent tool** — thin wrapper around Showboat CLI commands (`init`,
+  `note`, `exec`, `image`, `pop`, `verify`); added to the BUILD tool allowlist so
+  demo subagents can construct Markdown documents by running real commands
+- [ ] **`rodney` agent tool** — thin wrapper around Rodney CLI commands (`start`,
+  `stop`, `open`, `js`, `click`, `screenshot`); added to the BUILD tool allowlist
+  for visual capture tasks
+- [ ] **Dependency check** — the demo task checks for Showboat and Rodney availability
+  at the start; if missing, falls back to manual file writing (graceful degradation)
+- [ ] **Rodney for integration tests** — expose Rodney to TEST subagents for verifying
+  web-facing charms visually (does the ingress actually serve the app?), complementing
+  Jubilant's API-level checks
+
+### 13.2 Demo Document Generation
+
+Use Showboat to build a demo document by running real commands against a live deployment
+and capturing the output inline.
+
+- [ ] **`DEMO.md` via Showboat** — after a successful deploy, the demo subagent uses
+  `showboat init` / `showboat exec` / `showboat note` to build a document that
+  interleaves annotated explanations with real command output:
+  - `showboat exec` for `juju status`, `juju run`, `juju config`, etc.
+  - `showboat note` for explanations drawn from WORKLOAD.md and DESIGN.md
+  - `showboat image` for screenshots captured via Rodney
+- [ ] **Relation wiring** — the demo document shows deploying all required relations
+  (database, ingress, COS) so the charm is shown in its full operational context
+- [ ] **Action showcase** — for each action the charm exposes, `showboat exec` runs it
+  with example parameters and the output is captured inline
+- [ ] **Config showcase** — demonstrates setting key config options with before/after
+  status captured via `showboat exec`
+- [ ] **Fallback path** — if Showboat is unavailable, the subagent writes the Markdown
+  directly using `write_file`, capturing command output via juju tools and formatting
+  it manually
+
+### 13.3 Captured Artefacts
+
+Save standalone artefacts alongside the demo document for reference and reuse.
+
+- [ ] **`juju status` snapshot** — save a clean `juju status --relations` to
+  `demo/juju-status.txt` showing all units active/idle with addresses and relations
+- [ ] **Action results** — save JSON results to `demo/actions/` (e.g.
+  `demo/actions/backup.json`, `demo/actions/get-password.json`)
+- [ ] **Log snippets** — capture a curated excerpt of `juju debug-log` showing the charm
+  handling a key event cleanly; save to `demo/logs/`
+- [ ] **Trace capture** — query Tempo for a representative trace and save trace data
+  plus a human-readable span summary to `demo/traces/`
+- [ ] **Config reference** — dump the effective config with descriptions to
+  `demo/config-reference.txt`
+- [ ] **`demo.sh` script** — generate a self-contained bash script that reproduces the
+  full deployment (deploy, relate, configure, verify) with an optional `--cleanup` flag;
+  validated by running it in a clean model
+
+### 13.4 Visual Assets
+
+Use Rodney to capture visual proof of observability integration and deployment health.
+
+- [ ] **Grafana dashboard export** — export the dashboard JSON to `demo/dashboards/`
+  so users can import it directly
+- [ ] **Dashboard screenshot** — use Rodney to open the Grafana dashboard URL, wait for
+  data to render, and capture a screenshot; save as `demo/screenshots/grafana-dashboard.png`
+  and embed in `DEMO.md` via `showboat image`
+- [ ] **Web UI screenshot** — for web-facing charms, use Rodney to capture the
+  application's own UI through the ingress; proves the workload is actually serving
+- [ ] **Architecture diagram** — generate a Mermaid diagram showing the charm's relations
+  and integrations; embed in README and save to `demo/architecture.md`
+
+### 13.5 Demo Tutorial
+
+Generate a guided walk-through that explains the charm's features in context.
+
+- [ ] **`TUTORIAL.md` generation** — a step-by-step guide covering:
+  1. Prerequisites (controller, model, cloud substrate)
+  2. Deploying the charm and its relations
+  3. Verifying the deployment (what to look for in `juju status`)
+  4. Exercising key features (config, actions, scaling)
+  5. Observability (where to find dashboards, what metrics to watch)
+  6. Troubleshooting common issues
+- [ ] **Copy-pasteable commands** — every step includes the exact command to run, with
+  expected output shown alongside (drawn from Showboat captures where possible)
+- [ ] **Annotations from research** — draw on WORKLOAD.md and DESIGN.md to explain
+  *why* certain config options matter, what the actions do operationally, and how the
+  integrations work — not just *how* to run commands
+- [ ] **Quick-start vs. full tutorial** — a short "just deploy it" section at the top
+  for experienced users, followed by the detailed walk-through
+
+### 13.6 Demo as a Pipeline Stage
+
+Make demo generation an automatic part of every charm build, not an afterthought.
+
+- [ ] **Planner integration** — `_DESIGN_TO_BUILD_PROMPT` includes a "generate demo"
+  task after successful deploy + test, with dependencies on both completing successfully
+- [ ] **Demo BUILD task** — a dedicated task (category: build) that generates all demo
+  artefacts: Showboat document, captured output, visual assets, tutorial, and script
+- [ ] **Demo validation** — run `demo.sh` in a clean model to verify it works end-to-end;
+  use `showboat verify` to check the demo document is well-formed
+- [ ] **README integration** — update the generated README to link to `DEMO.md`,
+  embed the architecture diagram, include the `juju status` snapshot, and point to
+  the tutorial
+- [ ] **Git commit** — demo artefacts are committed as a separate "Add demo and tutorial"
+  commit so they can be reviewed independently from the charm code
+
+**Exit criteria:** Every charm Cantrip builds includes a `demo/` directory with a
+Showboat-generated demo document (real commands + captured output), Rodney-captured
+screenshots of Grafana dashboards and web UIs, a runnable `demo.sh`, and a step-by-step
+tutorial. A reviewer can read `DEMO.md` and see exactly what the charm does — with
+real output and screenshots — without deploying it.
+
+---
+
+## Phase 14: Session Transcripts and Audit Log
+
+**Goal:** Record everything that happens during a Cantrip session — every user message,
+every LLM response, every tool call and result, every subagent conversation — and make
+it exportable as a human-readable HTML transcript. This serves three purposes: debugging
+agent behaviour, auditing what the agent did and why, and sharing sessions with
+colleagues for review.
+
+Currently, conversation messages live only in memory (lost on exit), subagent internal
+conversations are discarded (only the final result summary is stored), and there is no
+export functionality. This phase adds comprehensive recording to SQLite and a
+polished HTML export inspired by
+[claude-code-transcripts](https://github.com/simonw/claude-code-transcripts) — paginated,
+searchable, with tool calls rendered inline and images displayed rather than shown as
+base64.
+
+### 14.1 Conversation Recording
+
+Persist all conversation-loop messages to the `.cantrip` SQLite store.
+
+- [ ] **Messages table** — add a `messages` table to the SQLite schema: `id`, `role`
+  (system/user/assistant/tool), `content`, `tool_calls` (JSON), `tool_results` (JSON),
+  `metadata` (JSON), `timestamp`. Schema version bump
+- [ ] **Write-through recording** — in `CantripAgent.process_message()` and
+  `process_message_streaming()`, write each message to the store as it is appended to
+  the in-memory list; writes should be non-blocking (batched or async) so they don't
+  slow the conversation loop
+- [ ] **Tool call detail** — for each tool call, record the tool name, full arguments,
+  and the full result (output + error + success flag); truncate very large results
+  (e.g. file contents over 50 KB) with a note that the full content is available in
+  the virtual file store
+
+### 14.2 Subagent Conversation Recording
+
+Capture the full internal conversation of every subagent run, not just the final summary.
+
+- [ ] **Subagent messages table** — add a `subagent_messages` table: `task_id` (foreign
+  key to tasks), `message_index`, `role`, `content`, `tool_calls` (JSON),
+  `tool_results` (JSON), `timestamp`
+- [ ] **Recording in `Subagent.run()`** — after each LLM completion and tool execution
+  round, write the messages to the store; the executor passes a store reference to the
+  subagent for this purpose
+- [ ] **Link to task** — each subagent conversation is associated with its `AgentTask`,
+  so the transcript can show "Task: Research PostgreSQL documentation" followed by the
+  full LLM ↔ tool conversation that produced the result
+
+### 14.3 Event Log
+
+Record significant agent events beyond LLM conversations for a complete audit trail.
+
+- [ ] **Events table** — add an `events` table: `id`, `event_type`, `detail` (JSON),
+  `timestamp`. Event types include:
+  - `session_start`, `session_resume` — with provider, model, charm name
+  - `task_status_change` — task id, old status, new status
+  - `decision_made` — type, choice, reason (mirrors decisions table but timestamped
+    in the event stream)
+  - `design_confirmed`, `design_overridden` — with the override details
+  - `watcher_event` — status change, hook failure, Loki alert
+  - `error` — provider errors, tool failures, timeouts
+- [ ] **Watcher event recording** — the watcher already detects status changes and hook
+  failures; record these as events so the transcript shows what triggered diagnostic
+  tasks
+- [ ] **Token usage in context** — link token usage records to the specific message or
+  subagent round that consumed them, so the transcript can show cost per task
+
+### 14.4 HTML Export
+
+Generate a polished, human-readable HTML transcript from the recorded data.
+
+- [ ] **Export command** — `cantrip export-transcript` CLI command that reads the
+  `.cantrip` SQLite file and produces a self-contained HTML file (or directory of
+  paginated HTML files for long sessions)
+- [ ] **Jinja2 templates** — HTML output generated via Jinja2 templates (consistent
+  with the existing prompt templating pattern) with clean CSS styling; templates are
+  bundled in `src/cantrip/transcript/templates/`
+- [ ] **Conversation view** — user messages, assistant responses, and tool calls
+  rendered as a chat-style timeline with clear visual distinction between roles;
+  tool calls shown as collapsible blocks with name, arguments, and result
+- [ ] **Subagent threads** — each subagent conversation rendered as a nested,
+  collapsible thread under its parent task; the task title and status are shown as
+  a header so the reader can see what the subagent was trying to do
+- [ ] **Task timeline** — a sidebar or top-level view showing the task checklist with
+  status transitions and timestamps; clicking a task scrolls to its subagent thread
+- [ ] **Event stream** — significant events (decisions, status changes, errors)
+  interleaved in the timeline at the correct chronological position
+- [ ] **Search** — full-text search across all messages, tool outputs, and events
+- [ ] **Pagination** — long sessions split across multiple pages with navigation;
+  each page covers a logical chunk (e.g. research phase, build phase, deploy phase)
+- [ ] **Self-contained** — CSS and any JavaScript inlined in the HTML so the file
+  can be shared without external dependencies
+
+### 14.5 Additional Export Formats
+
+Support other output formats for different use cases.
+
+- [ ] **JSONL export** — `cantrip export-transcript --format jsonl` dumps every message,
+  event, and subagent conversation as newline-delimited JSON; useful for programmatic
+  analysis and piping into other tools
+- [ ] **Markdown export** — `cantrip export-transcript --format markdown` produces a
+  single Markdown file with the conversation, tool calls as code blocks, and task
+  summaries; lighter-weight than HTML for embedding in documentation
+- [ ] **Filtered export** — `--task <task-id>` exports only a specific task and its
+  subagent conversation; `--phase research|build|deploy|test` exports all tasks in
+  a phase; `--since <timestamp>` exports from a point in time
+
+### 14.6 Live Transcript in TUI
+
+Surface the transcript in the TUI for real-time inspection.
+
+- [ ] **Transcript screen** — new TUI screen (e.g. F5) showing the full conversation
+  and subagent activity in a scrollable, searchable view; more detailed than the chat
+  panel, which shows only the user-facing conversation
+- [ ] **Subagent drill-down** — from the task checklist widget, select a task and view
+  its full subagent conversation inline; useful for understanding why a task failed or
+  what the agent decided
+
+**Exit criteria:** After a Cantrip session, `cantrip export-transcript` produces a
+polished HTML file showing the full conversation, every subagent's internal reasoning
+and tool use, task status transitions, decisions, and events — all in a searchable,
+paginated, human-readable format. Nothing is lost.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -680,6 +1110,28 @@ and presents a clean diff — bringing the charm to the same standard as one bui
 | Test gap fill (10.3) | Phase 2 test generation | Builds on existing Scenario/Jubilant generation |
 | Observability gap fill (10.2) | Phase 2 COS integration | Builds on existing COS tooling |
 | Listing readiness (10.5) | Phase 7.4 publishing | Builds on existing Charmhub publishing support |
+| Commit-after-build (11.1) | Phase 4 executor (4.3) | Extends subagent guidance and executor checks |
+| Self-verification (11.2) | Phase 4 executor (4.3) | Extends BUILD tool allowlist and guidance |
+| Session resume (11.3) | Phase 2.5 persistence | Builds on existing SQLite session store |
+| Git-revert-on-failure (11.4) | Phase 1.5 git tools | Uses existing git tooling in the executor |
+| Environment health checks (11.5) | Phase 4 executor (4.3) | Pre-task checks before subagent launch |
+| Integration-tests-first (12.1) | Phase 4 planner (4.2) | Changes the build task sequence in the planner prompt |
+| Test generation from design (12.2) | Phase 5 design pipeline | Needs approved DESIGN.md to extract testable contracts |
+| Test-driven build subagent (12.3) | Phase 12.1 + 12.2 | Needs tests written before build subagent can target them |
+| Incremental feature TDD (12.4) | Phase 12.3 | Extends the red/green cycle to feature additions via replanning |
+| Unit tests second pass (12.5) | Phase 12.3 | Sequences unit tests after integration tests pass |
+| Showboat/Rodney integration (13.1) | Phase 4 executor (4.3) | Wraps external CLI tools as agent tools |
+| Demo document generation (13.2) | Phase 13.1 | Uses Showboat to capture live deployment output |
+| Captured artefacts (13.3) | Phase 13.2 | Saves standalone files alongside the demo document |
+| Visual assets (13.4) | Phase 13.1 + Phase 2.2 COS | Uses Rodney for Grafana/web UI screenshots |
+| Demo tutorial (13.5) | Phase 5 design pipeline | Draws on WORKLOAD.md and DESIGN.md |
+| Demo as pipeline stage (13.6) | Phase 13.2 + 13.5 | Integrates demo generation into the planner |
+| Conversation recording (14.1) | Phase 2.5 persistence | Extends the existing SQLite store schema |
+| Subagent recording (14.2) | Phase 14.1 + Phase 4.3 executor | Records full subagent conversations to SQLite |
+| Event log (14.3) | Phase 14.1 | Adds event stream alongside message recording |
+| HTML export (14.4) | Phase 14.1 + 14.2 | Needs recorded data to export |
+| Additional export formats (14.5) | Phase 14.4 | Extends the export pipeline with JSONL/Markdown |
+| Live transcript in TUI (14.6) | Phase 14.1 + 14.2 | Needs recording in place to display |
 
 ---
 
@@ -698,3 +1150,7 @@ and presents a clean diff — bringing the charm to the same standard as one bui
 | M8: Local Models | 8 | Cantrip runs on local inference snaps with no cloud API |
 | M9: Terraform | 9 | Cantrip generates and validates Terraform modules for charms |
 | M10: Charm Improver | 10 | Cantrip audits and upgrades existing charms to modern standards |
+| M11: Resilient Agent | 11 | Subagents commit, self-verify, and recover cleanly from failures |
+| M12: Red/Green | 12 | Red/green TDD — integration tests first, agent iterates until green |
+| M13: Demo-Ready | 13 | Every charm ships with runnable demo, captured output, and tutorial |
+| M14: Full Transcript | 14 | Every session exportable as searchable HTML with full audit trail |
