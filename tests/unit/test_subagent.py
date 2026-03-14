@@ -7,6 +7,8 @@ import pytest
 
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.subagent import (
+    _CATEGORY_GUIDANCE,
+    _CATEGORY_TOOLS,
     MAX_SUBAGENT_ROUNDS,
     ProviderThrottle,
     Subagent,
@@ -889,3 +891,52 @@ class TestProviderThrottle:
         assert result == "recovered"
         # The throttle should have recorded a cooldown for the provider.
         assert provider.name in throttle._cooldowns
+
+
+# ===================================================================
+# TestCommitAfterBuild
+# ===================================================================
+
+
+class TestCommitAfterBuild:
+    """Tests for commit-after-build guidance and tool allowlists."""
+
+    def test_build_guidance_mentions_git_commit(self) -> None:
+        """BUILD guidance instructs the subagent to commit its work."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
+        assert "git_commit" in guidance
+
+    def test_debug_guidance_mentions_git_commit(self) -> None:
+        """DEBUG guidance instructs the subagent to commit fixes."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.DEBUG]
+        assert "git_commit" in guidance
+
+    def test_git_add_in_debug_tools(self) -> None:
+        """git_add is in the DEBUG tool allowlist."""
+        assert "git_add" in _CATEGORY_TOOLS[TaskCategory.DEBUG]
+
+    def test_git_commit_in_debug_tools(self) -> None:
+        """git_commit is in the DEBUG tool allowlist."""
+        assert "git_commit" in _CATEGORY_TOOLS[TaskCategory.DEBUG]
+
+
+# ===================================================================
+# TestSelfVerification
+# ===================================================================
+
+
+class TestSelfVerification:
+    """Tests for lightweight self-verification in BUILD subagents."""
+
+    def test_charm_validate_in_build_tools(self) -> None:
+        """charm_validate is in the BUILD tool allowlist."""
+        assert "charm_validate" in _CATEGORY_TOOLS[TaskCategory.BUILD]
+
+    def test_run_charm_tests_in_build_tools(self) -> None:
+        """run_charm_tests is in the BUILD tool allowlist."""
+        assert "run_charm_tests" in _CATEGORY_TOOLS[TaskCategory.BUILD]
+
+    def test_build_guidance_mentions_charm_validate(self) -> None:
+        """BUILD guidance instructs the subagent to run charm_validate."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
+        assert "charm_validate" in guidance

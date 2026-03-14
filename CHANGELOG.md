@@ -5,6 +5,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Commit-after-build** — BUILD and DEBUG subagents are now instructed to `git_add` + `git_commit` their changes before finishing; `git_add` and `git_commit` added to the DEBUG tool allowlist; the executor logs a warning if uncommitted changes remain after a BUILD/DEBUG task completes
+- **Build self-verification** — `charm_validate` and `run_charm_tests` added to the BUILD tool allowlist; BUILD guidance instructs subagents to validate before finishing and attempt one fix if validation fails
+- **Session resume** — `build_resume_summary()` injects prior session context (charm info, decisions, task progress) into the conversation on restart; stale ACTIVE tasks from crashed sessions are automatically reset to PENDING
+- **Git-revert-on-failure** — the executor snapshots `git HEAD` before BUILD/DEBUG tasks; on failure, captures `git diff` as diagnostics and runs `git checkout .` to restore the working tree to a known-good state
+- **Pre-task environment checks** — DEPLOY tasks fail fast if no dev model or charm path is set (auto-queuing an INFRA fix task); TEST tasks fail fast if no packed `.charm` file exists
 - **Inference snap robustness** — context window auto-detection from `/models` metadata (`n_ctx_train`, `context_length`, `max_model_len`); connection health checks with actionable error messages when a snap server is unreachable; graceful degradation for models that don't support tool calling (tools omitted from requests based on capabilities metadata); `list_inference_snaps` agent tool for discovering installed snaps and their status
 - **Multi-snap routing** — `--light-snap` flag routes research and infrastructure tasks to a lighter inference snap while the primary snap handles code writing
 - **Hybrid mode** — `--light-provider` flag enables cross-provider task routing (e.g. `--provider claude --light-provider inference-snap --light-snap gemma3`), combining cloud model quality for code generation with local model cost savings for research tasks

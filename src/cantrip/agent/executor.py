@@ -3,6 +3,8 @@
 import asyncio
 import contextlib
 import logging
+import pathlib
+import subprocess
 from collections.abc import Callable
 
 from cantrip.agent.autodeploy import followup_tasks
@@ -191,14 +193,70 @@ class BackgroundExecutor:
             self._on_task_done(task)
         self._persist()
 
+    # -- Pre-task environment checks -----------------------------------------
+
+    def _pre_check_environment(self, task: AgentTask) -> str | None:
+        """Verify the environment is usable before launching a subagent.
+
+        Returns an error string if a pre-condition is not met, or ``None``
+        when everything looks fine.  Only DEPLOY and TEST categories have
+        pre-checks; all other categories pass unconditionally.
+        """
+        if task.category == TaskCategory.DEPLOY:
+            if not self._state.dev_model:
+                return "No development model set \u2014 cannot deploy"
+            if not self._state.charm_path:
+                return "No charm path set \u2014 cannot deploy"
+            if not pathlib.Path(self._state.charm_path).exists():
+                return f"Charm path {self._state.charm_path} does not exist"
+
+        if task.category == TaskCategory.TEST:
+            if not self._state.charm_path:
+                return "No charm path set \u2014 cannot test"
+            charm_dir = pathlib.Path(self._state.charm_path)
+            if not charm_dir.exists():
+                return f"Charm path {self._state.charm_path} does not exist"
+            if not list(charm_dir.glob("*.charm")):
+                return "No packed charm found \u2014 run charmcraft_pack first"
+
+        return None
+
     # -- Task execution ------------------------------------------------------
+
+    _SNAPSHOT_CATEGORIES = frozenset({TaskCategory.BUILD, TaskCategory.DEBUG})
 
     async def _execute_task(self, task: AgentTask) -> None:
         """Run a single task via a subagent, recording the outcome.
 
         The caller is responsible for setting the task to ACTIVE before
         calling this method.
+
+        For BUILD and DEBUG tasks, a git snapshot is taken before execution
+        so that the working tree can be reverted if the subagent fails,
+        avoiding broken partial writes.
         """
+        error = self._pre_check_environment(task)
+        if error is not None:
+            self._queue.set_failed(task.id, error)
+            if self._on_task_failed:
+                self._on_task_failed(task)
+            # For deploy failures due to missing model, queue an infra task.
+            if (
+                task.category == TaskCategory.DEPLOY
+                and not self._state.dev_model
+            ):
+                fix_task = AgentTask(
+                    title="Set up development model",
+                    category=TaskCategory.INFRA,
+                )
+                self._queue.add_task(fix_task)
+            self._persist()
+            return
+
+        snapshot: str | None = None
+        if task.category in self._SNAPSHOT_CATEGORIES:
+            snapshot = self._snapshot_head()
+
         context = self._build_context(task)
         subagent = Subagent(
             context,
@@ -211,19 +269,94 @@ class BackgroundExecutor:
         try:
             result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)
             self._queue.set_done(task.id, result)
+            if task.category in (TaskCategory.BUILD, TaskCategory.DEBUG):
+                self._check_uncommitted(task)
             if self._on_task_done:
                 self._on_task_done(task)
         except TimeoutError:
+            if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
+                self._revert_on_failure(snapshot, task)
             self._queue.set_failed(task.id, "Task timed out")
             if self._on_task_failed:
                 self._on_task_failed(task)
         except Exception as exc:
+            if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
+                self._revert_on_failure(snapshot, task)
             self._queue.set_failed(task.id, str(exc))
             if self._on_task_failed:
                 self._on_task_failed(task)
         finally:
             self._create_followups(task)
             self._persist()
+
+    # -- Git snapshot / revert -----------------------------------------------
+
+    def _snapshot_head(self) -> str | None:
+        """Return the current HEAD commit hash for the charm directory.
+
+        Returns ``None`` if no charm path is set or if the git command fails
+        (e.g. not a git repository).
+        """
+        if not self._state.charm_path:
+            return None
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(self._state.charm_path),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return None
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip() or None
+
+    def _revert_on_failure(self, snapshot: str, task: AgentTask) -> None:
+        """Revert tracked files to their committed state after a failed task.
+
+        Captures the current diff as diagnostic information and prepends it
+        to the task result, then restores tracked files with ``git checkout``.
+        Untracked files are intentionally left alone.
+        """
+        charm_dir = str(self._state.charm_path)
+
+        # Capture the diff so the failure can be diagnosed.
+        diff_text = ""
+        try:
+            diff_result = subprocess.run(
+                ["git", "diff"],
+                cwd=charm_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if diff_result.returncode == 0 and diff_result.stdout.strip():
+                diff_text = diff_result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
+
+        if diff_text:
+            existing = task.result or ""
+            task.result = f"[reverted diff]\n{diff_text}\n\n{existing}"
+
+        # Restore tracked files to their committed state.
+        with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            subprocess.run(
+                ["git", "checkout", "."],
+                cwd=charm_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+        log.warning(
+            "Reverted tracked files in %s after failed task '%s' (snapshot %s)",
+            charm_dir,
+            task.title,
+            snapshot[:12],
+        )
 
     # -- Follow-up creation --------------------------------------------------
 
@@ -242,6 +375,36 @@ class BackgroundExecutor:
                 "Created %d follow-up task(s) for '%s'",
                 len(new_tasks),
                 task.title,
+            )
+
+    # -- Uncommitted change detection -----------------------------------------
+
+    def _check_uncommitted(self, task: AgentTask) -> None:
+        """Log a warning if the charm directory has uncommitted changes.
+
+        Called after successful BUILD or DEBUG tasks to flag cases where
+        the subagent forgot to commit its work.
+        """
+        if not self._state.charm_path:
+            return
+        charm_dir = str(self._state.charm_path)
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=charm_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return
+        if result.returncode != 0:
+            return
+        if result.stdout.strip():
+            log.warning(
+                "Task '%s' completed but left uncommitted changes in %s",
+                task.title,
+                charm_dir,
             )
 
     # -- Context building ----------------------------------------------------

@@ -23,7 +23,7 @@ from cantrip.agent.preflight import (
     PreflightRunner,
 )
 from cantrip.agent.prompts import build_system_prompt, claude_md
-from cantrip.agent.queue import AgentTask, WorkQueue
+from cantrip.agent.queue import AgentTask, TaskStatus, WorkQueue
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
@@ -881,12 +881,91 @@ class CantripAgent:
         self.state.cos_model = loaded.cos_model
         self.state.decisions = loaded.decisions
 
-        # Restore persisted tasks into the work queue.
+        # Restore persisted tasks into the work queue, resetting any that
+        # were mid-flight when the previous session ended.
         tasks = self._store.load_tasks()
+        for task in tasks:
+            if task.status == TaskStatus.ACTIVE:
+                log.warning(
+                    "Resetting stale active task %s (%s) to pending",
+                    task.id,
+                    task.title,
+                )
+                task.status = TaskStatus.PENDING
         if tasks:
             self._work_queue.add_tasks(tasks)
 
         return True
+
+    def build_resume_summary(self) -> str | None:
+        """Build a structured summary of prior session work.
+
+        Returns a Markdown-formatted string suitable for injection as a
+        USER message, or ``None`` if the state contains nothing useful
+        to summarise.
+        """
+        state = self.state
+        has_content = (
+            state.charm_name
+            or state.decisions
+            or self._work_queue.all_tasks()
+        )
+        if not has_content:
+            return None
+
+        parts: list[str] = ["[Session resumed] Previous session context:\n"]
+
+        if state.charm_name:
+            charm_type = state.charm_type or "unknown"
+            charm_path = state.charm_path or "unknown"
+            parts.append(
+                f"**Charm:** {state.charm_name} ({charm_type})"
+                f" at {charm_path}"
+            )
+        if state.framework:
+            parts.append(f"**Framework:** {state.framework}")
+        if state.dev_model or state.cos_model:
+            parts.append(
+                f"**Models:** dev={state.dev_model or 'none'},"
+                f" cos={state.cos_model or 'none'}"
+            )
+
+        if state.decisions:
+            parts.append("\n**Decisions:**")
+            for d in state.decisions:
+                parts.append(f"- {d.type}: {d.choice}")
+
+        tasks = self._work_queue.all_tasks()
+        if tasks:
+            counts: dict[str, int] = {}
+            for t in tasks:
+                counts[t.status.value] = counts.get(t.status.value, 0) + 1
+            done = counts.get("done", 0)
+            failed = counts.get("failed", 0)
+            pending = (
+                counts.get("pending", 0)
+                + counts.get("active", 0)
+                + counts.get("blocked", 0)
+            )
+            parts.append(
+                f"\n**Task progress:** {done} done,"
+                f" {failed} failed, {pending} pending"
+            )
+            completed = [
+                t.title for t in tasks if t.status == TaskStatus.DONE
+            ]
+            if completed:
+                parts.append("**Recent completed tasks:**")
+                for title in completed[-5:]:
+                    parts.append(f"- {title}")
+
+        summary = "\n".join(parts)
+
+        # Inject into conversation history so the LLM sees prior context.
+        self.state.messages.append(
+            Message(role=Role.USER, content=summary)
+        )
+        return summary
 
     async def prepare(
         self,

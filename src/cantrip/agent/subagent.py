@@ -118,6 +118,8 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "registry_search",
             "registry_image_info",
             "generate_readme",
+            "charm_validate",
+            "run_charm_tests",
             "virtual_file_read",
             "virtual_file_search",
         }
@@ -177,6 +179,8 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "list_directory",
             "git_diff",
             "git_status",
+            "git_add",
+            "git_commit",
             "load_skill",
             "virtual_file_read",
             "virtual_file_search",
@@ -276,7 +280,13 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
         "**Efficiency**: read the design and any existing files in one round before "
         "writing. Write multiple files in a single round when they are independent "
         "(e.g. charm.py and tests can be written together). Do not re-read files "
-        "you just wrote."
+        "you just wrote.\n\n"
+        "**Version control**: before finishing, use `git_add` to stage your changes "
+        "and `git_commit` with a descriptive message summarising what was built. "
+        "Every build task should leave a clean commit.\n\n"
+        "**Self-check**: before finishing, run `charm_validate` to verify the charm "
+        "packs and unit tests pass. If validation fails, attempt one fix and "
+        "re-validate. Do not report success if validation fails."
     ),
     TaskCategory.DEPLOY: (
         "Pack the charm and deploy it. Ensure all relations are established and "
@@ -297,7 +307,10 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
         "in a single round to gather diagnostics. Then apply a targeted fix and "
         "verify it resolves the issue. Report the root cause and what you changed.\n\n"
         "**Efficiency**: fetch `juju_debug_log`, `loki_query`, and `juju_status` "
-        "in one round. Apply the fix, then verify — aim for 2-3 rounds total."
+        "in one round. Apply the fix, then verify — aim for 2-3 rounds total.\n\n"
+        "**Version control**: after applying a fix, use `git_add` to stage the "
+        "changed files and `git_commit` with a message describing the fix and "
+        "root cause. Every debug fix should be committed."
     ),
     TaskCategory.INFRA: (
         "Set up infrastructure efficiently. Prepare the environment with Concierge, "

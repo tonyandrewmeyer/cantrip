@@ -677,7 +677,7 @@ and presents a clean diff — bringing the charm to the same standard as one bui
 
 ---
 
-## Phase 11: Long-Running Agent Resilience
+## Phase 11: Long-Running Agent Resilience ✓
 
 **Goal:** Make the autonomous work loop more robust across long sessions and restarts.
 Inspired by [Anthropic's engineering guidance on effective harnesses for long-running
@@ -690,10 +690,10 @@ from failures, and resume gracefully after interruption.
 Build subagents should commit their changes before declaring success, so each task's
 output is independently recoverable via git.
 
-- [ ] **Build guidance update** — add explicit instruction to `_CATEGORY_GUIDANCE[BUILD]`
+- [x] **Build guidance update** — add explicit instruction to `_CATEGORY_GUIDANCE[BUILD]`
   telling subagents to `git_add` + `git_commit` with a descriptive message before
   finishing; similarly for DEBUG subagents that apply fixes
-- [ ] **Commit verification** — after a BUILD/DEBUG subagent completes, the executor
+- [x] **Commit verification** — after a BUILD/DEBUG subagent completes, the executor
   checks `git_status` for uncommitted changes and logs a warning if any remain
 
 ### 11.2 Lightweight Self-Verification
@@ -701,9 +701,9 @@ output is independently recoverable via git.
 Build subagents should run a basic sanity check before declaring success, catching
 obvious errors before the dedicated TEST task.
 
-- [ ] **Build self-check** — add `charm_validate` and `run_charm_tests` (unit only) to
+- [x] **Build self-check** — add `charm_validate` and `run_charm_tests` (unit only) to
   the BUILD tool allowlist; update BUILD guidance to run validation before finishing
-- [ ] **Fail-fast on validation** — if `charm_validate` fails inside a build subagent,
+- [x] **Fail-fast on validation** — if `charm_validate` fails inside a build subagent,
   the subagent should attempt a fix (one retry) rather than reporting a false success
 
 ### 11.3 Session Resume Protocol
@@ -711,12 +711,12 @@ obvious errors before the dedicated TEST task.
 When Cantrip starts with an existing `.cantrip` file, it should reconstruct context
 from prior work before planning new tasks — not start from scratch.
 
-- [ ] **Progress summary** — on startup with an existing session, load completed tasks,
+- [x] **Progress summary** — on startup with an existing session, load completed tasks,
   decisions, and the last few git commits; inject a structured summary into the
   conversation as initial context
-- [ ] **Environment health check** — verify the charm path exists, the Juju model is
+- [x] **Environment health check** — verify the charm path exists, the Juju model is
   responsive, and the last-known charm status before accepting new instructions
-- [ ] **Stale task recovery** — tasks left in ACTIVE status from a prior session (due to
+- [x] **Stale task recovery** — tasks left in ACTIVE status from a prior session (due to
   crash or interruption) should be reset to PENDING with a note that they need re-running
 
 ### 11.4 Git-Revert-on-Failure
@@ -724,11 +724,11 @@ from prior work before planning new tasks — not start from scratch.
 When a BUILD or DEBUG subagent fails, partial file writes may leave the working tree in
 a broken state. Clean up automatically so retries start from a known-good baseline.
 
-- [ ] **Snapshot before execution** — the executor records the current git HEAD before
+- [x] **Snapshot before execution** — the executor records the current git HEAD before
   launching a BUILD/DEBUG subagent
-- [ ] **Revert on failure** — if the subagent fails, the executor runs `git checkout .`
+- [x] **Revert on failure** — if the subagent fails, the executor runs `git checkout .`
   to restore the working tree to the pre-task state (only for tracked files)
-- [ ] **Preserve diagnostics** — before reverting, capture a summary of the changes
+- [x] **Preserve diagnostics** — before reverting, capture a summary of the changes
   (via `git diff`) and attach it to the task's failure result so the next attempt or
   the user can see what went wrong
 
@@ -737,10 +737,10 @@ a broken state. Clean up automatically so retries start from a known-good baseli
 Before launching deploy or test subagents, verify that the environment is in a usable
 state — catching stale models, broken controllers, or missing charms early.
 
-- [ ] **Deploy pre-check** — before DEPLOY tasks, verify the Juju model exists and the
+- [x] **Deploy pre-check** — before DEPLOY tasks, verify the Juju model exists and the
   controller is reachable; if not, queue an INFRA task to fix it rather than letting
   the deploy subagent fail opaquely
-- [ ] **Test pre-check** — before TEST tasks, verify the charm is packed and the
+- [x] **Test pre-check** — before TEST tasks, verify the charm is packed and the
   application is deployed; skip if prerequisites are clearly not met and report why
 
 **Exit criteria:** Subagents commit their work, verify their output with a quick
