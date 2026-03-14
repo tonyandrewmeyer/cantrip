@@ -1490,6 +1490,90 @@ charm and it works" confirmation, not just "the tests passed".
 
 ---
 
+## Phase 18: Agent Framework Evaluation — Build vs. Adopt
+
+**Goal:** Investigate whether Cantrip would benefit from adopting an established agent
+framework (e.g. LangGraph, CrewAI, Claude Agent SDK, AutoGen, or similar) rather than
+continuing to build its own agent infrastructure from scratch. The current architecture
+(two-loop design, work queue, subagents, tool dispatch) is hand-rolled; this phase evaluates
+whether an existing framework would give us better primitives, reduce maintenance burden, or
+unlock capabilities we'd struggle to build ourselves — or whether the control and simplicity
+of our bespoke approach remains the right trade-off.
+
+### 18.1 Landscape Survey
+
+Map the current agent framework ecosystem and identify viable candidates.
+
+- [ ] **Identify candidates** — survey the major agent frameworks available as of the
+  evaluation date: Claude Agent SDK, LangGraph, CrewAI, AutoGen, DSPy, Semantic Kernel,
+  Haystack Agents, and any others with meaningful traction. Focus on frameworks that
+  support multi-step tool-using agents with some form of task orchestration
+- [ ] **Feature matrix** — for each candidate, document: supported LLM providers, tool/
+  function-calling model, memory/state management, multi-agent orchestration, streaming
+  support, observability/tracing, error recovery, Python support, licence, community
+  activity, and maturity level
+- [ ] **Disqualify early** — eliminate candidates that are fundamentally incompatible with
+  Cantrip's requirements (e.g. locked to a single LLM provider we don't use, no async
+  support, abandoned/unmaintained, restrictive licence)
+
+### 18.2 Architecture Mapping
+
+Map Cantrip's current architecture onto each shortlisted framework to understand fit.
+
+- [ ] **Component mapping** — for each surviving candidate, map Cantrip's core components
+  to the framework's equivalents: conversation loop → ?, work queue → ?, subagents → ?,
+  tool dispatch → ?, state persistence → ?, context management → ?. Identify components
+  with clean mappings, awkward mappings, and no mapping at all
+- [ ] **Gap analysis** — identify what Cantrip currently does that the framework doesn't
+  support out of the box (e.g. Juju-specific tool patterns, charm template generation,
+  TUI integration, SQLite session store). Estimate the effort to bridge each gap
+- [ ] **Gain analysis** — identify what the framework provides that Cantrip doesn't
+  currently have and would benefit from (e.g. built-in RAG, better context management,
+  automatic retries, structured output parsing, agent-to-agent communication protocols)
+
+### 18.3 Proof of Concept
+
+Build a small spike with the most promising candidate(s).
+
+- [ ] **Select top 1–2 candidates** — based on the mapping exercise, pick the most
+  promising framework(s) for a hands-on evaluation
+- [ ] **Spike implementation** — reimplement a representative slice of Cantrip's
+  functionality using the candidate framework. The slice should cover: a multi-turn
+  conversation with tool calls, a background task that runs autonomously, and a subagent
+  that performs a focused piece of work (e.g. researching a workload). This need not be
+  production-quality — it's a feasibility test
+- [ ] **Evaluate ergonomics** — assess how natural the framework feels for Cantrip's
+  patterns. Is the tool definition model compatible? Does the orchestration model fit our
+  two-loop design? Can we still control prompts precisely? Is debugging straightforward?
+- [ ] **Measure overhead** — compare token usage, latency, and code complexity between the
+  spike and the equivalent Cantrip code. Frameworks add abstraction; quantify the cost
+
+### 18.4 Decision and Recommendation
+
+Synthesise findings into a clear recommendation.
+
+- [ ] **Write FRAMEWORK_EVALUATION.md** — a decision document covering: candidates
+  surveyed, architecture mapping results, spike findings, and a clear recommendation
+  (adopt framework X / stay bespoke / hybrid approach). Include trade-off analysis:
+  - *Control*: how much flexibility do we lose over prompts, tool dispatch, and state?
+  - *Maintenance*: how much agent infrastructure code do we stop maintaining?
+  - *Velocity*: does the framework accelerate future roadmap items?
+  - *Lock-in*: how coupled would we become to the framework's abstractions?
+  - *Migration cost*: what would it take to adopt, and can it be incremental?
+- [ ] **Identify hybrid options** — even if full adoption isn't recommended, are there
+  specific components worth borrowing? (e.g. adopt a framework's tool-calling protocol
+  but keep our own orchestration, or use a framework's memory system but keep our own
+  conversation loop)
+- [ ] **Present to user** — summarise the recommendation in the chat with a clear rationale
+  and proposed next steps
+
+**Exit criteria:** A written evaluation document with a clear, evidence-based recommendation
+on whether to adopt an agent framework, stay with the bespoke approach, or take a hybrid
+path. If adoption is recommended, the document includes a migration sketch. If staying
+bespoke, the document articulates what we'd be giving up and why that's acceptable.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -1549,6 +1633,10 @@ charm and it works" confirmation, not just "the tests passed".
 | Upgrade and lifecycle testing (17.5) | Phase 17.1 | Needs a live deployment to test scale/refresh |
 | Acceptance test report (17.6) | Phase 17.1–17.5 | Consolidates results from all acceptance test stages |
 | Planner integration (17.6) | Phase 4 planner (4.2) + Phase 7.2 | Acceptance tests become a standard pipeline stage after integration tests |
+| Landscape survey (18.1) | None | Can start any time — pure research |
+| Architecture mapping (18.2) | Phase 18.1 | Needs the candidate list to map against |
+| Proof of concept (18.3) | Phase 18.2 | Needs mapping results to select candidates for spike |
+| Decision and recommendation (18.4) | Phase 18.3 | Needs spike results to make an informed recommendation |
 
 ---
 
@@ -1574,3 +1662,4 @@ charm and it works" confirmation, not just "the tests passed".
 | M15: Web UI | 15 | Browser-based interface mirroring the TUI via shared event bus |
 | M16: Security & Tracing | 16 | OWASP security events + clear manual tracing guidance |
 | M17: Acceptance Tested | 17 | Cantrip deploys, exercises, and reports on every charm it builds |
+| M18: Framework Decision | 18 | Evidence-based recommendation on build-vs-adopt for agent infrastructure |
