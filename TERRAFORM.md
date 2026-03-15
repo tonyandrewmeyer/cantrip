@@ -1,7 +1,8 @@
 # Terraform Support Design Document
 
 Research and design for Phase 9 of Cantrip — generating, validating, and maintaining
-Terraform modules for Juju-deployed charms.
+Terraform modules for Juju-deployed charms.  Follows the **CC008 Terraform standard
+specification** for charms.
 
 ## Research Findings
 
@@ -16,47 +17,51 @@ Each module is a **single-charm wrapper** — it deploys one `juju_application` 
 its relation endpoints for composition. Integration wiring between charms happens at a
 higher-level composition module, not inside individual charm modules.
 
-### 2. Standard File Structure
+### 2. Standard File Structure (CC008)
 
 Every charm Terraform module lives in `terraform/` at the repo root and contains four files:
 
 ```
 terraform/
 ├── main.tf          # Single juju_application resource
-├── variables.tf     # Input variables
-├── outputs.tf       # app_name + endpoint maps
-└── versions.tf      # Provider version constraints
+├── variables.tf     # Input variables (alphabetical order)
+├── outputs.tf       # application object + endpoint maps (alphabetical order)
+└── terraform.tf     # Provider version constraints
 ```
 
 No `provider.tf` (provider config is left to the caller). No `backend.tf`.
 
-### 3. Standard Variables
+### 3. Standard Variables (CC008)
 
-Based on the specification and real-world modules, the standard variable set is:
+Variables are listed in **alphabetical order** per CC008.
 
 | Variable | Type | Default | Required | Notes |
 |----------|------|---------|----------|-------|
-| `model` | `string` | — | Yes | Juju model name |
 | `app_name` | `string` | charm name | No | Name in Juju model |
+| `base` | `string` | `null` | No | Base for the charm (e.g. ubuntu@22.04) |
 | `channel` | `string` | `"latest/edge"` | No | Charm channel |
-| `revision` | `number` | `null` | No | Pin to specific revision |
 | `config` | `map(string)` | `{}` | No | Charm config options |
-| `constraints` | `string` | `"arch=amd64"` | No | Juju constraints (amd64 default works around provider bug) |
+| `constraints` | `string` | `null` | No | Juju constraints |
+| `model_uuid` | `string` | — | Yes | UUID of the Juju model |
+| `resources` | `map(string)` | `{}` | No | OCI images or file resources (only if charm has resources) |
+| `revision` | `number` | `null` | No | Pin to specific revision |
+| `storage_directives` | `map(string)` | `{}` | No | Storage directives (only if charm has storage) |
 | `units` | `number` | `1` | No | Number of units |
-| `base` | `string` | `"ubuntu@22.04"` | No | Base for the charm |
-| `resources` | `map(string)` | `{}` | No | OCI images or file resources |
 
-The `constraints` default of `"arch=amd64"` is a workaround for a known Juju Terraform
-provider bug (GitHub issue #344) where empty constraints cause failures.
+Key CC008 requirements:
+- `model_uuid` (not `model`) — non-nullable, no default
+- `base` and `constraints` default to `null` (not hardcoded values)
+- Variables must be in alphabetical order
 
-### 4. Standard Outputs
+### 4. Standard Outputs (CC008)
 
-Modules expose `app_name` plus endpoint maps using Terraform-safe underscore keys
-mapped to actual Juju hyphenated endpoint names:
+Outputs are listed in **alphabetical order** per CC008.  The `application` output
+exposes the full `juju_application` resource object (not just the name):
 
 ```hcl
-output "app_name" {
-  value = juju_application.myapp.name
+output "application" {
+  description = "The deployed application object."
+  value       = juju_application.myapp
 }
 
 output "provides" {
@@ -75,7 +80,8 @@ output "requires" {
 }
 ```
 
-The `provides`/`requires` split is the most structured convention (preferred).
+The `provides`/`requires` outputs are mandatory if the charm has provides/requires
+endpoints defined in charmcraft.yaml.
 
 ### 5. Resource Pattern
 
@@ -84,7 +90,7 @@ Every module defines exactly one `juju_application` resource:
 ```hcl
 resource "juju_application" "myapp" {
   name  = var.app_name
-  model = var.model
+  model = var.model_uuid
 
   charm {
     name     = "my-charm-k8s"
@@ -112,31 +118,31 @@ Individual modules do NOT define relations. A higher-level module composes them:
 
 ```hcl
 module "mysql" {
-  source = "./terraform"
-  model  = juju_model.dev.name
+  source     = "./terraform"
+  model_uuid = juju_model.dev.id
 }
 
 module "grafana" {
-  source = "git::https://github.com/canonical/grafana-k8s-operator//terraform"
-  model  = juju_model.dev.name
+  source     = "git::https://github.com/canonical/grafana-k8s-operator//terraform"
+  model_uuid = juju_model.dev.id
 }
 
 resource "juju_integration" "grafana_to_mysql" {
   model = juju_model.dev.name
 
   application {
-    name     = module.mysql.app_name
+    name     = module.mysql.application.name
     endpoint = module.mysql.provides.grafana_dashboard
   }
 
   application {
-    name     = module.grafana.app_name
+    name     = module.grafana.application.name
     endpoint = module.grafana.requires.grafana_dashboard
   }
 }
 ```
 
-### 7. Version Constraints (versions.tf)
+### 7. Version Constraints (terraform.tf)
 
 ```hcl
 terraform {
@@ -149,8 +155,6 @@ terraform {
   }
 }
 ```
-
-The charmkeeper spec specifies Terraform `~> 1.12` and Juju provider `~> 1.0`.
 
 ### 8. Testing
 
@@ -199,7 +203,7 @@ confirmation so users are aware of it.
 
 ### D2: Module Structure
 
-**Decision:** Follow the standard four-file structure exactly.
+**Decision:** Follow the CC008 standard four-file structure exactly.
 
 The module is fully inferrable from `charmcraft.yaml`:
 - **charm name** → `charm.name` in main.tf and `app_name` default
@@ -207,7 +211,6 @@ The module is fully inferrable from `charmcraft.yaml`:
 - **config options** → description text in `config` variable
 - **resources** → `resources` variable (only if charm has resources)
 - **storage** → `storage_directives` variable (only if charm has storage)
-- **base** → `base` variable default
 
 ### D3: Integration with the Build Pipeline
 
@@ -255,7 +258,7 @@ No LLM needed — this is deterministic template expansion.
 **New file:** `src/cantrip/charm/terraform.py`
 - `generate_terraform_module(charmcraft_path: Path) -> dict[str, str]`
   - Parses `charmcraft.yaml` (name, assumes, config, provides, requires, resources, storage)
-  - Returns `{"main.tf": ..., "variables.tf": ..., "outputs.tf": ..., "versions.tf": ...}`
+  - Returns `{"main.tf": ..., "variables.tf": ..., "outputs.tf": ..., "terraform.tf": ...}`
 - Helper functions for each file's content
 
 ### Phase 9.2: Agent Tool

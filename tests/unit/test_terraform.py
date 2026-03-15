@@ -78,7 +78,7 @@ def test_generate_minimal_charm(tmp_path: pathlib.Path):
     path = _write_charmcraft(tmp_path, _MINIMAL_YAML)
     result = terraform.generate_terraform_module(path)
 
-    assert set(result.keys()) == {"main.tf", "variables.tf", "outputs.tf", "versions.tf"}
+    assert set(result.keys()) == {"main.tf", "variables.tf", "outputs.tf", "terraform.tf"}
     for content in result.values():
         assert isinstance(content, str)
         assert len(content) > 0
@@ -93,18 +93,41 @@ def test_main_tf_contains_charm_name(tmp_path: pathlib.Path):
     assert 'resource "juju_application" "test_charm"' in main
 
 
-def test_variables_tf_contains_model(tmp_path: pathlib.Path):
-    """The model variable is present and has no default (required)."""
+def test_main_tf_uses_model_uuid(tmp_path: pathlib.Path):
+    """main.tf must reference var.model_uuid, not var.model."""
+    path = _write_charmcraft(tmp_path, _MINIMAL_YAML)
+    result = terraform.generate_terraform_module(path)
+    main = result["main.tf"]
+
+    assert "var.model_uuid" in main
+    assert "var.model\n" not in main
+
+
+def test_variables_tf_contains_model_uuid(tmp_path: pathlib.Path):
+    """The model_uuid variable is present and has no default (required)."""
     path = _write_charmcraft(tmp_path, _MINIMAL_YAML)
     result = terraform.generate_terraform_module(path)
     variables = result["variables.tf"]
 
-    assert 'variable "model"' in variables
-    # The model block should NOT contain a default line.
-    model_block_start = variables.index('variable "model"')
-    model_block_end = variables.index("}", model_block_start)
-    model_block = variables[model_block_start:model_block_end]
+    assert 'variable "model_uuid"' in variables
+    assert 'variable "model"' not in variables
+    # The model_uuid block should NOT contain a default line.
+    block_start = variables.index('variable "model_uuid"')
+    block_end = variables.index("}", block_start)
+    model_block = variables[block_start:block_end]
     assert "default" not in model_block
+
+
+def test_outputs_application_object(tmp_path: pathlib.Path):
+    """CC008 mandates an 'application' output with the full resource object."""
+    path = _write_charmcraft(tmp_path, _FULL_YAML)
+    result = terraform.generate_terraform_module(path)
+    outputs = result["outputs.tf"]
+
+    assert 'output "application"' in outputs
+    assert "juju_application.test_charm" in outputs
+    # Old-style app_name output should not exist.
+    assert 'output "app_name"' not in outputs
 
 
 def test_outputs_provides_and_requires(tmp_path: pathlib.Path):
@@ -152,14 +175,17 @@ def test_storage_variable_omitted_when_no_storage(tmp_path: pathlib.Path):
     assert "storage_directives = var.storage_directives" not in result["main.tf"]
 
 
-def test_versions_tf_content(tmp_path: pathlib.Path):
+def test_terraform_tf_content(tmp_path: pathlib.Path):
+    """CC008 mandates terraform.tf (not versions.tf)."""
     path = _write_charmcraft(tmp_path, _MINIMAL_YAML)
     result = terraform.generate_terraform_module(path)
-    versions = result["versions.tf"]
 
-    assert 'required_version = ">= 1.6"' in versions
-    assert 'source  = "juju/juju"' in versions
-    assert 'version = "~> 1.0"' in versions
+    assert "terraform.tf" in result
+    assert "versions.tf" not in result
+    tf = result["terraform.tf"]
+    assert 'required_version = ">= 1.6"' in tf
+    assert 'source  = "juju/juju"' in tf
+    assert 'version = "~> 1.0"' in tf
 
 
 def test_endpoints_hyphen_to_underscore(tmp_path: pathlib.Path):
@@ -182,3 +208,53 @@ def test_provides_omitted_when_empty(tmp_path: pathlib.Path):
 
     assert 'output "provides"' not in result["outputs.tf"]
     assert 'output "requires"' not in result["outputs.tf"]
+
+
+def test_base_defaults_to_null(tmp_path: pathlib.Path):
+    """CC008 mandates base default = null, not a hardcoded value."""
+    path = _write_charmcraft(tmp_path, _MINIMAL_YAML)
+    result = terraform.generate_terraform_module(path)
+    variables = result["variables.tf"]
+
+    block_start = variables.index('variable "base"')
+    block_end = variables.index("}", block_start)
+    base_block = variables[block_start:block_end]
+    assert "default     = null" in base_block
+
+
+def test_constraints_defaults_to_null(tmp_path: pathlib.Path):
+    """CC008 mandates constraints default = null, not arch=amd64."""
+    path = _write_charmcraft(tmp_path, _MINIMAL_YAML)
+    result = terraform.generate_terraform_module(path)
+    variables = result["variables.tf"]
+
+    block_start = variables.index('variable "constraints"')
+    block_end = variables.index("}", block_start)
+    constraints_block = variables[block_start:block_end]
+    assert "default     = null" in constraints_block
+    assert "arch=amd64" not in constraints_block
+
+
+def test_variables_alphabetical_order(tmp_path: pathlib.Path):
+    """CC008 mandates variables in alphabetical order."""
+    path = _write_charmcraft(tmp_path, _MINIMAL_YAML)
+    result = terraform.generate_terraform_module(path)
+    variables = result["variables.tf"]
+
+    # Extract variable names in order of appearance.
+    import re
+
+    var_names = re.findall(r'variable "(\w+)"', variables)
+    assert var_names == sorted(var_names), f"Variables not alphabetical: {var_names}"
+
+
+def test_outputs_alphabetical_order(tmp_path: pathlib.Path):
+    """CC008 mandates outputs in alphabetical order."""
+    path = _write_charmcraft(tmp_path, _FULL_YAML)
+    result = terraform.generate_terraform_module(path)
+    outputs = result["outputs.tf"]
+
+    import re
+
+    output_names = re.findall(r'output "(\w+)"', outputs)
+    assert output_names == sorted(output_names), f"Outputs not alphabetical: {output_names}"

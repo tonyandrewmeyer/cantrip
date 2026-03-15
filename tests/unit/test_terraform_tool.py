@@ -44,13 +44,13 @@ class TestGenerateTerraformTool:
         assert result.success
         tf_dir = tmp_path / "terraform"
         assert tf_dir.is_dir()
-        for filename in ("main.tf", "variables.tf", "outputs.tf", "versions.tf"):
+        for filename in ("main.tf", "variables.tf", "outputs.tf", "terraform.tf"):
             assert (tf_dir / filename).exists(), f"{filename} was not created"
         assert result.data["files"] == [
             "main.tf",
             "outputs.tf",
+            "terraform.tf",
             "variables.tf",
-            "versions.tf",
         ]
 
     @pytest.mark.asyncio

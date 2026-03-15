@@ -1,8 +1,8 @@
 """Terraform module generator for Juju charms.
 
 Generates a complete Terraform module (main.tf, variables.tf, outputs.tf,
-versions.tf) from a charmcraft.yaml file.  Pure template expansion — no LLM
-required.
+terraform.tf) from a charmcraft.yaml file, following the CC008 Terraform
+standard specification.  Pure template expansion — no LLM required.
 """
 
 import pathlib
@@ -35,7 +35,7 @@ def _generate_main_tf(
         _COPYRIGHT,
         f'resource "juju_application" "{resource_name}" {{',
         "  name  = var.app_name",
-        "  model = var.model",
+        "  model = var.model_uuid",
         "",
         "  charm {",
         f'    name     = "{charm_name}"',
@@ -63,109 +63,130 @@ def _generate_variables_tf(
     has_resources: bool,
     has_storage: bool,
 ) -> str:
-    """Build the ``variables.tf`` content."""
-    blocks: list[str] = [_COPYRIGHT]
+    """Build the ``variables.tf`` content.
 
-    blocks.append(
+    Variables are emitted in alphabetical order per CC008.
+    """
+    # Collect all variable blocks, then sort alphabetically by variable name.
+    variables: list[tuple[str, str]] = []
+
+    variables.append((
+        "app_name",
         textwrap.dedent(f"""\
         variable "app_name" {{
           description = "Name of the application in the Juju model."
           type        = string
           default     = "{charm_name}"
         }}
-    """)
-    )
+    """),
+    ))
 
-    blocks.append(
+    variables.append((
+        "base",
+        textwrap.dedent("""\
+        variable "base" {
+          description = "Base for the charm (e.g. ubuntu@22.04)."
+          type        = string
+          default     = null
+        }
+    """),
+    ))
+
+    variables.append((
+        "channel",
         textwrap.dedent("""\
         variable "channel" {
           description = "Channel to deploy the charm from."
           type        = string
           default     = "latest/edge"
         }
-    """)
-    )
+    """),
+    ))
 
-    blocks.append(
+    variables.append((
+        "config",
         textwrap.dedent(f"""\
         variable "config" {{
           description = "Charm configuration options. See https://charmhub.io/{charm_name}/configure for details."
           type        = map(string)
           default     = {{}}
         }}
-    """)
-    )
+    """),
+    ))
 
-    blocks.append(
+    variables.append((
+        "constraints",
         textwrap.dedent("""\
         variable "constraints" {
           description = "Juju constraints for the application."
           type        = string
-          default     = "arch=amd64"
-        }
-    """)
-    )
-
-    blocks.append(
-        textwrap.dedent("""\
-        variable "model" {
-          description = "Name of the Juju model to deploy to."
-          type        = string
-        }
-    """)
-    )
-
-    blocks.append(
-        textwrap.dedent("""\
-        variable "revision" {
-          description = "Charm revision to deploy. Uses latest from channel if null."
-          type        = number
           default     = null
         }
-    """)
-    )
+    """),
+    ))
 
-    blocks.append(
+    variables.append((
+        "model_uuid",
         textwrap.dedent("""\
-        variable "units" {
-          description = "Number of units to deploy."
-          type        = number
-          default     = 1
-        }
-    """)
-    )
-
-    blocks.append(
-        textwrap.dedent("""\
-        variable "base" {
-          description = "Base for the charm (e.g. ubuntu@22.04)."
+        variable "model_uuid" {
+          description = "UUID of the Juju model to deploy to."
           type        = string
-          default     = "ubuntu@22.04"
         }
-    """)
-    )
+    """),
+    ))
 
     if has_resources:
-        blocks.append(
+        variables.append((
+            "resources",
             textwrap.dedent("""\
             variable "resources" {
               description = "Map of resource names to OCI image revisions."
               type        = map(string)
               default     = {}
             }
-        """)
-        )
+        """),
+        ))
+
+    variables.append((
+        "revision",
+        textwrap.dedent("""\
+        variable "revision" {
+          description = "Charm revision to deploy. Uses latest from channel if null."
+          type        = number
+          default     = null
+        }
+    """),
+    ))
 
     if has_storage:
-        blocks.append(
+        variables.append((
+            "storage_directives",
             textwrap.dedent("""\
             variable "storage_directives" {
               description = "Map of storage names to directives (e.g. pool,size,count)."
               type        = map(string)
               default     = {}
             }
-        """)
-        )
+        """),
+        ))
+
+    variables.append((
+        "units",
+        textwrap.dedent("""\
+        variable "units" {
+          description = "Number of units to deploy."
+          type        = number
+          default     = 1
+        }
+    """),
+    ))
+
+    # Sort alphabetically by variable name.
+    variables.sort(key=lambda pair: pair[0])
+
+    blocks: list[str] = [_COPYRIGHT]
+    for _name, block in variables:
+        blocks.append(block)
 
     return "\n".join(blocks)
 
@@ -175,45 +196,58 @@ def _generate_outputs_tf(
     provides: dict[str, dict[str, str]],
     requires: dict[str, dict[str, str]],
 ) -> str:
-    """Build the ``outputs.tf`` content."""
-    lines = [_COPYRIGHT]
+    """Build the ``outputs.tf`` content.
 
-    lines.append(
+    Outputs are emitted in alphabetical order per CC008.
+    """
+    output_blocks: list[tuple[str, str]] = []
+
+    output_blocks.append((
+        "application",
         textwrap.dedent(f"""\
-        output "app_name" {{
-          description = "Name of the deployed application."
-          value       = juju_application.{resource_name}.name
+        output "application" {{
+          description = "The deployed application object."
+          value       = juju_application.{resource_name}
         }}
-    """)
-    )
+    """),
+    ))
 
     if provides:
-        lines.append('output "provides" {')
-        lines.append('  description = "Map of provided relation endpoints."')
-        lines.append("  value = {")
+        provide_lines = ['output "provides" {']
+        provide_lines.append('  description = "Map of provided relation endpoints."')
+        provide_lines.append("  value = {")
         for ep_name in sorted(provides):
             tf_key = ep_name.replace("-", "_")
-            lines.append(f'    {tf_key} = "{ep_name}"')
-        lines.append("  }")
-        lines.append("}")
-        lines.append("")
+            provide_lines.append(f'    {tf_key} = "{ep_name}"')
+        provide_lines.append("  }")
+        provide_lines.append("}")
+        provide_lines.append("")
+        output_blocks.append(("provides", "\n".join(provide_lines)))
 
     if requires:
-        lines.append('output "requires" {')
-        lines.append('  description = "Map of required relation endpoints."')
-        lines.append("  value = {")
+        require_lines = ['output "requires" {']
+        require_lines.append('  description = "Map of required relation endpoints."')
+        require_lines.append("  value = {")
         for ep_name in sorted(requires):
             tf_key = ep_name.replace("-", "_")
-            lines.append(f'    {tf_key} = "{ep_name}"')
-        lines.append("  }")
-        lines.append("}")
-        lines.append("")
+            require_lines.append(f'    {tf_key} = "{ep_name}"')
+        require_lines.append("  }")
+        require_lines.append("}")
+        require_lines.append("")
+        output_blocks.append(("requires", "\n".join(require_lines)))
+
+    # Sort alphabetically by output name.
+    output_blocks.sort(key=lambda pair: pair[0])
+
+    lines = [_COPYRIGHT]
+    for _name, block in output_blocks:
+        lines.append(block)
 
     return "\n".join(lines)
 
 
-def _generate_versions_tf() -> str:
-    """Build the ``versions.tf`` content."""
+def _generate_terraform_tf() -> str:
+    """Build the ``terraform.tf`` content."""
     return (
         _COPYRIGHT
         + "\n"
@@ -236,7 +270,7 @@ def generate_terraform_module(charmcraft_path: pathlib.Path) -> dict[str, str]:
 
     Reads the charmcraft.yaml at *charmcraft_path*, extracts charm metadata,
     and returns a dict mapping filenames to their content:
-    ``{"main.tf": ..., "variables.tf": ..., "outputs.tf": ..., "versions.tf": ...}``
+    ``{"main.tf": ..., "variables.tf": ..., "outputs.tf": ..., "terraform.tf": ...}``
     """
     raw = yaml.safe_load(charmcraft_path.read_text())
 
@@ -255,5 +289,5 @@ def generate_terraform_module(charmcraft_path: pathlib.Path) -> dict[str, str]:
         "main.tf": _generate_main_tf(charm_name, res_name, has_resources, has_storage),
         "variables.tf": _generate_variables_tf(charm_name, has_resources, has_storage),
         "outputs.tf": _generate_outputs_tf(res_name, provides, requires),
-        "versions.tf": _generate_versions_tf(),
+        "terraform.tf": _generate_terraform_tf(),
     }

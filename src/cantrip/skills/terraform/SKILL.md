@@ -35,7 +35,7 @@ terraform/
   main.tf          # The juju_application resource and any required integrations
   variables.tf     # Input variables (model name, channel, config overrides, etc.)
   outputs.tf       # Outputs (application name, endpoint bindings, etc.)
-  versions.tf      # Required providers block (juju provider version constraint)
+  terraform.tf     # Required providers block (juju provider version constraint)
 ```
 
 ### `main.tf`
@@ -46,7 +46,7 @@ might want to override (model, channel, units, config values).
 ```hcl
 resource "juju_application" "my_charm" {
   name  = var.app_name
-  model = var.model_name
+  model = var.model_uuid
   charm {
     name    = "my-charm"
     channel = var.channel
@@ -71,8 +71,8 @@ variable "app_name" {
   default     = "my-charm"
 }
 
-variable "model_name" {
-  description = "Name of the Juju model to deploy into"
+variable "model_uuid" {
+  description = "UUID of the Juju model to deploy to"
   type        = string
 }
 
@@ -106,7 +106,7 @@ output "app_name" {
 }
 ```
 
-### `versions.tf`
+### `terraform.tf`
 
 Pin the Juju Terraform provider:
 
@@ -135,12 +135,12 @@ multiple modules and adds `juju_integration` resources to wire them together:
 ```hcl
 module "webapp" {
   source     = "./modules/webapp"
-  model_name = juju_model.dev.name
+  model_uuid = juju_model.dev.id
 }
 
 module "postgresql" {
   source     = "./modules/postgresql"
-  model_name = juju_model.dev.name
+  model_uuid = juju_model.dev.id
 }
 
 resource "juju_integration" "webapp_db" {
@@ -170,7 +170,7 @@ generate_terraform(charm_path="/path/to/my-charm")
 
 The tool reads `charmcraft.yaml` to determine the charm name, config options, required
 integrations, and resources — then produces `terraform/main.tf`, `variables.tf`,
-`outputs.tf`, and `versions.tf`.
+`outputs.tf`, and `terraform.tf`.
 
 ### `validate_terraform`
 
@@ -214,7 +214,7 @@ Before committing the Terraform module:
 
 1. `validate_terraform` passes (format, init, validate)
 2. All variables have descriptions and sensible defaults where appropriate
-3. `model_name` has no default (the caller must provide it)
+3. `model_uuid` has no default (the caller must provide it)
 4. The composition pattern is respected — no cross-charm integrations in the module
-5. `versions.tf` pins the Juju provider version
+5. `terraform.tf` pins the Juju provider version
 6. The module is documented in the charm's README

@@ -791,7 +791,7 @@ class GenerateTerraformTool(Tool):
     def description(self) -> str:
         return (
             "Generate a Terraform module (main.tf, variables.tf, outputs.tf, "
-            "versions.tf) from a charm's charmcraft.yaml. Creates a terraform/ "
+            "terraform.tf) from a charm's charmcraft.yaml. Creates a terraform/ "
             "directory in the charm path."
         )
 
