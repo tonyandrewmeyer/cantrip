@@ -42,6 +42,7 @@ from cantrip.agent.tools import (
     ConciergeStatusTool,
     EditFileTool,
     GenerateReadmeTool,
+    GenerateTerraformTool,
     GhIssueListTool,
     GhPrCreateTool,
     GhRepoCreateTool,
@@ -83,6 +84,7 @@ from cantrip.agent.tools import (
     TempoQueryTool,
     Tool,
     ToolResult,
+    ValidateTerraformTool,
     VirtualFileReadTool,
     VirtualFileSearchTool,
     WebFetchTool,
@@ -271,6 +273,9 @@ class CantripAgent:
             CharmValidateTool(),
             CharmcraftFetchLibsTool(),
             AnalyseFrameworkTool(),
+            # Terraform
+            GenerateTerraformTool(),
+            ValidateTerraformTool(),
             # Publishing
             CharmcraftUploadTool(),
             CharmcraftReleaseTool(),
@@ -905,11 +910,7 @@ class CantripAgent:
         to summarise.
         """
         state = self.state
-        has_content = (
-            state.charm_name
-            or state.decisions
-            or self._work_queue.all_tasks()
-        )
+        has_content = state.charm_name or state.decisions or self._work_queue.all_tasks()
         if not has_content:
             return None
 
@@ -918,16 +919,12 @@ class CantripAgent:
         if state.charm_name:
             charm_type = state.charm_type or "unknown"
             charm_path = state.charm_path or "unknown"
-            parts.append(
-                f"**Charm:** {state.charm_name} ({charm_type})"
-                f" at {charm_path}"
-            )
+            parts.append(f"**Charm:** {state.charm_name} ({charm_type}) at {charm_path}")
         if state.framework:
             parts.append(f"**Framework:** {state.framework}")
         if state.dev_model or state.cos_model:
             parts.append(
-                f"**Models:** dev={state.dev_model or 'none'},"
-                f" cos={state.cos_model or 'none'}"
+                f"**Models:** dev={state.dev_model or 'none'}, cos={state.cos_model or 'none'}"
             )
 
         if state.decisions:
@@ -942,18 +939,9 @@ class CantripAgent:
                 counts[t.status.value] = counts.get(t.status.value, 0) + 1
             done = counts.get("done", 0)
             failed = counts.get("failed", 0)
-            pending = (
-                counts.get("pending", 0)
-                + counts.get("active", 0)
-                + counts.get("blocked", 0)
-            )
-            parts.append(
-                f"\n**Task progress:** {done} done,"
-                f" {failed} failed, {pending} pending"
-            )
-            completed = [
-                t.title for t in tasks if t.status == TaskStatus.DONE
-            ]
+            pending = counts.get("pending", 0) + counts.get("active", 0) + counts.get("blocked", 0)
+            parts.append(f"\n**Task progress:** {done} done, {failed} failed, {pending} pending")
+            completed = [t.title for t in tasks if t.status == TaskStatus.DONE]
             if completed:
                 parts.append("**Recent completed tasks:**")
                 for title in completed[-5:]:
@@ -962,9 +950,7 @@ class CantripAgent:
         summary = "\n".join(parts)
 
         # Inject into conversation history so the LLM sees prior context.
-        self.state.messages.append(
-            Message(role=Role.USER, content=summary)
-        )
+        self.state.messages.append(Message(role=Role.USER, content=summary))
         return summary
 
     async def prepare(

@@ -241,10 +241,7 @@ class BackgroundExecutor:
             if self._on_task_failed:
                 self._on_task_failed(task)
             # For deploy failures due to missing model, queue an infra task.
-            if (
-                task.category == TaskCategory.DEPLOY
-                and not self._state.dev_model
-            ):
+            if task.category == TaskCategory.DEPLOY and not self._state.dev_model:
                 fix_task = AgentTask(
                     title="Set up development model",
                     category=TaskCategory.INFRA,

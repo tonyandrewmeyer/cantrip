@@ -5,8 +5,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.tools.testing import RunCharmTestsTool
+from cantrip.charm import terraform
 
 _PAAS_PROFILES = frozenset(
     {
@@ -775,3 +778,170 @@ class AnalyseFrameworkTool(Tool):
                 output="",
                 error=str(e),
             )
+
+
+class GenerateTerraformTool(Tool):
+    """Generate a Terraform module for a Juju charm."""
+
+    @property
+    def name(self) -> str:
+        return "generate_terraform"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Generate a Terraform module (main.tf, variables.tf, outputs.tf, "
+            "versions.tf) from a charm's charmcraft.yaml. Creates a terraform/ "
+            "directory in the charm path."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "charm_path": {
+                    "type": "string",
+                    "description": ("Path to the charm directory containing charmcraft.yaml"),
+                },
+            },
+            "required": ["charm_path"],
+        }
+
+    async def execute(self, charm_path: str) -> ToolResult:
+        """Generate Terraform module files from a charm's charmcraft.yaml."""
+        charm_dir = Path(charm_path).resolve()
+        charmcraft_yaml = charm_dir / "charmcraft.yaml"
+
+        if not charmcraft_yaml.exists():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"charmcraft.yaml not found at {charm_dir}",
+            )
+
+        try:
+            files = terraform.generate_terraform_module(charmcraft_yaml)
+        except (KeyError, yaml.YAMLError) as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Failed to parse charmcraft.yaml: {exc}",
+            )
+
+        tf_dir = charm_dir / "terraform"
+        tf_dir.mkdir(parents=True, exist_ok=True)
+
+        written: list[str] = []
+        for filename, content in files.items():
+            (tf_dir / filename).write_text(content)
+            written.append(filename)
+
+        summary = (
+            f"Generated Terraform module in {tf_dir}\nFiles written: {', '.join(sorted(written))}"
+        )
+        return ToolResult(
+            success=True,
+            output=summary,
+            data={"terraform_path": str(tf_dir), "files": sorted(written)},
+        )
+
+
+class ValidateTerraformTool(Tool):
+    """Validate a Terraform module."""
+
+    @property
+    def name(self) -> str:
+        return "validate_terraform"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Run terraform fmt --check and terraform validate on a Terraform "
+            "module directory. Requires terraform CLI to be installed."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "terraform_path": {
+                    "type": "string",
+                    "description": "Path to the terraform directory",
+                },
+            },
+            "required": ["terraform_path"],
+        }
+
+    async def execute(self, terraform_path: str) -> ToolResult:
+        """Run terraform fmt --check and terraform validate."""
+        if not shutil.which("terraform"):
+            return ToolResult(
+                success=True,
+                output="terraform CLI not installed — skipping validation.",
+                data={"skipped": True},
+            )
+
+        tf_dir = Path(terraform_path).resolve()
+        if not tf_dir.is_dir():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Directory not found: {terraform_path}",
+            )
+
+        # Step 1: terraform fmt --check.
+        fmt_result = subprocess.run(
+            ["terraform", "fmt", "--check"],
+            cwd=tf_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        # Step 2: terraform init -backend=false.
+        init_result = subprocess.run(
+            ["terraform", "init", "-backend=false"],
+            cwd=tf_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if init_result.returncode != 0:
+            return ToolResult(
+                success=False,
+                output=init_result.stdout,
+                error=f"terraform init failed: {init_result.stderr}",
+            )
+
+        # Step 3: terraform validate.
+        validate_result = subprocess.run(
+            ["terraform", "validate"],
+            cwd=tf_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        fmt_ok = fmt_result.returncode == 0
+        validate_ok = validate_result.returncode == 0
+        overall = fmt_ok and validate_ok
+
+        output_parts: list[str] = []
+        if fmt_ok:
+            output_parts.append("fmt: PASSED")
+        else:
+            output_parts.append(f"fmt: FAILED\n{fmt_result.stdout}")
+        if validate_ok:
+            output_parts.append("validate: PASSED")
+        else:
+            output_parts.append(
+                f"validate: FAILED\n{validate_result.stderr or validate_result.stdout}"
+            )
+
+        return ToolResult(
+            success=overall,
+            output="\n".join(output_parts),
+            data={"fmt_ok": fmt_ok, "validate_ok": validate_ok},
+        )

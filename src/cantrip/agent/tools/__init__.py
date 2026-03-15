@@ -7,6 +7,8 @@ from cantrip.agent.tools.charm import (
     CharmcraftInitTool,
     CharmcraftPackTool,
     CharmValidateTool,
+    GenerateTerraformTool,
+    ValidateTerraformTool,
 )
 from cantrip.agent.tools.charmhub import (
     CharmhubInfoTool,
@@ -96,6 +98,8 @@ __all__ = [
     "CharmValidateTool",
     "CharmcraftFetchLibsTool",
     "AnalyseFrameworkTool",
+    "GenerateTerraformTool",
+    "ValidateTerraformTool",
     # Charmhub
     "CharmhubSearchTool",
     "CharmhubInfoTool",

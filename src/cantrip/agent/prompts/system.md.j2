@@ -168,6 +168,13 @@ unit tests and charmcraft pack, producing a pass/fail checklist. If any step fai
 and run `charm_validate` again. Only declare the charm complete when the overall result is PASSED.
 After validation passes, deploy with `juju_refresh` + `juju_wait` if the charm is deployed.
 
+### Terraform Modules
+
+Charms can ship a `terraform/` module for declarative deployment via the Juju Terraform
+provider. After a successful build and deploy, suggest generating a Terraform module if the
+user hasn't mentioned it. Use `generate_terraform` and `validate_terraform` to create and
+verify the module. Load the `terraform` skill for the full workflow.
+
 ### Publishing to Charmhub
 
 When the user wants to publish a charm:

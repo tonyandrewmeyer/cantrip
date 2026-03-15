@@ -178,9 +178,7 @@ class CantripApp(App):
 
         # 2. Multi-snap routing: --light-snap creates a separate snap provider.
         if self._light_snap_name and self.provider_name == "inference-snap":
-            light = create_provider(
-                "inference-snap", snap_name=self._light_snap_name
-            )
+            light = create_provider("inference-snap", snap_name=self._light_snap_name)
             self._light_model_name = self._light_snap_name
             return light
 

@@ -1111,9 +1111,7 @@ class TestPreCheckEnvironment:
         failed_cb.assert_called_once_with(task)
 
         # Should also queue an INFRA task to fix the missing model.
-        infra_tasks = [
-            t for t in queue.all_tasks() if t.category == TaskCategory.INFRA
-        ]
+        infra_tasks = [t for t in queue.all_tasks() if t.category == TaskCategory.INFRA]
         assert len(infra_tasks) == 1
         assert "development model" in infra_tasks[0].title.lower()
 
@@ -1253,9 +1251,7 @@ class TestGitRevertOnTaskFailure:
 
         with (
             patch("cantrip.agent.executor.Subagent") as mock_cls,
-            patch.object(
-                executor, "_snapshot_head", return_value="abc123"
-            ) as mock_snap,
+            patch.object(executor, "_snapshot_head", return_value="abc123") as mock_snap,
             patch.object(executor, "_revert_on_failure") as mock_revert,
         ):
             instance = mock_cls.return_value
@@ -1290,9 +1286,7 @@ class TestGitRevertOnTaskFailure:
     async def test_no_revert_on_research_failure(self) -> None:
         """_revert_on_failure is NOT called when a RESEARCH task fails."""
         queue = WorkQueue()
-        task = AgentTask(
-            id="r1", title="Research Redis", category=TaskCategory.RESEARCH
-        )
+        task = AgentTask(id="r1", title="Research Redis", category=TaskCategory.RESEARCH)
         queue.add_task(task)
 
         executor = _make_executor(queue=queue)

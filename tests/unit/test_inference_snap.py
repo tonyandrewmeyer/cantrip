@@ -690,9 +690,7 @@ class TestListInferenceSnapsTool:
         from cantrip.agent.tools.inference import ListInferenceSnapsTool
 
         tool = ListInferenceSnapsTool()
-        with patch(
-            "cantrip.llm.inference_snap.list_available_snaps", return_value=[]
-        ):
+        with patch("cantrip.llm.inference_snap.list_available_snaps", return_value=[]):
             result = await tool.execute()
         assert result.success is True
         assert "No inference snaps found" in result.output

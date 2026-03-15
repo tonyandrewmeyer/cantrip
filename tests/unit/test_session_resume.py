@@ -80,18 +80,17 @@ class TestBuildResumeSummary:
         agent = CantripAgent(provider=provider)
         agent.state.charm_name = "test"
 
-        agent.work_queue.add_tasks([
-            AgentTask(title="Research", category=TaskCategory.RESEARCH,
-                      status=TaskStatus.DONE),
-            AgentTask(title="Build", category=TaskCategory.BUILD,
-                      status=TaskStatus.DONE),
-            AgentTask(title="Deploy", category=TaskCategory.DEPLOY,
-                      status=TaskStatus.FAILED),
-            AgentTask(title="Test", category=TaskCategory.TEST,
-                      status=TaskStatus.PENDING),
-            AgentTask(title="Debug", category=TaskCategory.DEBUG,
-                      status=TaskStatus.BLOCKED),
-        ])
+        agent.work_queue.add_tasks(
+            [
+                AgentTask(
+                    title="Research", category=TaskCategory.RESEARCH, status=TaskStatus.DONE
+                ),
+                AgentTask(title="Build", category=TaskCategory.BUILD, status=TaskStatus.DONE),
+                AgentTask(title="Deploy", category=TaskCategory.DEPLOY, status=TaskStatus.FAILED),
+                AgentTask(title="Test", category=TaskCategory.TEST, status=TaskStatus.PENDING),
+                AgentTask(title="Debug", category=TaskCategory.DEBUG, status=TaskStatus.BLOCKED),
+            ]
+        )
 
         result = agent.build_resume_summary()
 
@@ -107,8 +106,7 @@ class TestBuildResumeSummary:
         agent = CantripAgent(provider=provider)
 
         tasks = [
-            AgentTask(title=f"Task {i}", category=TaskCategory.BUILD,
-                      status=TaskStatus.DONE)
+            AgentTask(title=f"Task {i}", category=TaskCategory.BUILD, status=TaskStatus.DONE)
             for i in range(7)
         ]
         agent.work_queue.add_tasks(tasks)
@@ -156,14 +154,25 @@ class TestStaleTaskRecovery:
         agent1.save_state()
         agent1._ensure_store()
         assert agent1._store is not None
-        agent1._store.save_tasks([
-            AgentTask(id="t1", title="Active task",
-                      category=TaskCategory.BUILD, status=TaskStatus.ACTIVE),
-            AgentTask(id="t2", title="Done task",
-                      category=TaskCategory.BUILD, status=TaskStatus.DONE),
-            AgentTask(id="t3", title="Pending task",
-                      category=TaskCategory.BUILD, status=TaskStatus.PENDING),
-        ])
+        agent1._store.save_tasks(
+            [
+                AgentTask(
+                    id="t1",
+                    title="Active task",
+                    category=TaskCategory.BUILD,
+                    status=TaskStatus.ACTIVE,
+                ),
+                AgentTask(
+                    id="t2", title="Done task", category=TaskCategory.BUILD, status=TaskStatus.DONE
+                ),
+                AgentTask(
+                    id="t3",
+                    title="Pending task",
+                    category=TaskCategory.BUILD,
+                    status=TaskStatus.PENDING,
+                ),
+            ]
+        )
 
         # Load into a fresh agent.
         agent2 = CantripAgent(provider=provider, charm_path=tmp_path)

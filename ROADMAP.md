@@ -518,47 +518,54 @@ local model — demonstrating the Canonical inference snap ecosystem.
 
 ---
 
-## Phase 9: Terraform Support
+## Phase 9: Terraform Support ✓
 
 **Goal:** Understand how Cantrip should support Terraform for Juju-deployed charms. Charms
 increasingly ship a Terraform module so that operators can deploy them declaratively via
 `terraform apply` rather than (or alongside) `juju deploy`. Cantrip should be able to
 generate, validate, and maintain these modules.
 
-### 8.1 Research
+### 9.1 Research
 
 Understand the Terraform ecosystem for Juju charms and determine what Cantrip needs to do.
 
-- [ ] **Study the standard specification** — read and internalise the
-  [Terraform standard specification for charms](https://discourse.canonical.com/t/terraform-standard-specification-for-charms/7037),
-  which defines how charm Terraform modules should be structured
-- [ ] **Survey existing modules** — examine published Terraform modules for existing charms
-  (e.g. in the `canonical/terraform-juju-*` repos) to understand patterns, conventions, and
+- [x] **Study the standard specification** — read and internalise the
+  Terraform standard specification for charms, which defines how charm Terraform
+  modules should be structured
+- [x] **Survey existing modules** — examined published Terraform modules for existing charms
+  (sdcore-gnbsim-k8s, grafana-k8s, mysql-k8s) to understand patterns, conventions, and
   common pitfalls
-- [ ] **Study the charmkeeper-terraform agent spec** — read and internalise the
+- [x] **Study the charmkeeper-terraform agent spec** — read and internalised the
   [charmkeeper-terraform agent](https://github.com/seb4stien/charmkeeper/blob/main/.github/agents/charmkeeper-terraform.md),
-  which codifies practical standards for Terraform modules in charms (versions, linting,
-  test structure, CI workflows, renovate configuration)
-- [ ] **Identify scope** — determine which of the following Cantrip should support:
-  - Generating a Terraform module for a newly built charm
-  - Generating a Terraform plan that deploys a charm with its integrations
-  - Validating a generated module against the standard specification
-  - Testing the module (plan + apply in a clean environment)
-  - Maintaining the module as the charm evolves (new config, new integrations)
+  which codifies practical standards for Terraform modules in charms
+- [x] **Identify scope** — Cantrip supports generating a Terraform module from
+  `charmcraft.yaml`, validating it with `terraform validate` and `terraform fmt`, and
+  maintaining it as the charm evolves (regeneration on metadata changes); see TERRAFORM.md
 
-### 8.2 Design Decisions (TBD after research)
+### 9.2 Design Decisions
 
-- [ ] **When to generate** — should Cantrip always generate a Terraform module alongside the
-  charm, or only when the user requests it?
-- [ ] **Module structure** — follow the standard specification; determine how much of the
-  module can be inferred from the charm's `charmcraft.yaml` (config, integrations, resources)
-- [ ] **Integration with the build pipeline** — where in the autonomous task flow does
-  Terraform module generation sit? After charm pack? After first successful deploy?
-- [ ] **Validation tooling** — can Cantrip run `terraform validate` and `terraform plan`
-  as part of its quality checks?
+- [x] **When to generate** — on request, not by default; the system prompt suggests it
+  after a successful build+deploy; the `terraform` skill provides full guidance
+- [x] **Module structure** — standard four-file structure (`main.tf`, `variables.tf`,
+  `outputs.tf`, `versions.tf`) fully inferred from `charmcraft.yaml`
+- [x] **Integration with the build pipeline** — `generate_terraform` is a BUILD tool;
+  `validate_terraform` is in BUILD and TEST allowlists
+- [x] **Validation tooling** — `validate_terraform` runs `terraform fmt --check` and
+  `terraform validate`; gracefully skips if the `terraform` CLI is not installed
+
+### 9.3 Implementation
+
+- [x] **Terraform module generator** — `src/cantrip/charm/terraform.py` deterministically
+  generates all four files from `charmcraft.yaml` metadata (name, provides, requires,
+  resources, storage)
+- [x] **Agent tools** — `generate_terraform` and `validate_terraform` tools; added to
+  BUILD and TEST allowlists
+- [x] **Terraform skill** — `skills/terraform/SKILL.md` with full workflow guidance
+- [x] **System prompt** — Terraform module section added to the prompt template
 
 **Exit criteria:** Clear design document for Terraform support, grounded in the standard
 specification and real-world module patterns, with a concrete implementation plan.
+Implementation complete with generator, tools, skill, and prompt integration.
 
 ---
 

@@ -120,6 +120,8 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "generate_readme",
             "charm_validate",
             "run_charm_tests",
+            "generate_terraform",
+            "validate_terraform",
             "virtual_file_read",
             "virtual_file_search",
         }
@@ -154,6 +156,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "run_charm_tests",
             "charm_validate",
             "charmcraft_pack",
+            "validate_terraform",
             "juju_status",
             "juju_run_action",
             "juju_relate",
