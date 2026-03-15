@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cantrip Transcript{% if charm_name %} &mdash; {{ charm_name }}{% endif %}</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a2e;
+  --bg-secondary: #f8f9fa;
+  --user-bg: #e8f0fe;
+  --user-border: #a8c7fa;
+  --assistant-bg: #e6f4ea;
+  --assistant-border: #a8dab5;
+  --tool-bg: #f1f3f4;
+  --tool-border: #dadce0;
+  --border: #dadce0;
+  --border-light: #e8eaed;
+  --accent: #1a73e8;
+  --accent-light: #d2e3fc;
+  --code-bg: #f1f3f4;
+  --done: #34a853;
+  --done-bg: #e6f4ea;
+  --failed: #ea4335;
+  --failed-bg: #fce8e6;
+  --active: #4285f4;
+  --active-bg: #e8f0fe;
+  --pending: #9aa0a6;
+  --pending-bg: #f1f3f4;
+  --blocked: #f9ab00;
+  --blocked-bg: #fef7e0;
+  --shadow: rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1a2e;
+    --fg: #e0e0e0;
+    --bg-secondary: #222236;
+    --user-bg: #1e3a5f;
+    --user-border: #3d6fa5;
+    --assistant-bg: #1e3a2e;
+    --assistant-border: #3d7a5a;
+    --tool-bg: #2a2a3e;
+    --tool-border: #3a3a4e;
+    --border: #3a3a4e;
+    --border-light: #2e2e42;
+    --accent: #8ab4f8;
+    --accent-light: #1e3a5f;
+    --code-bg: #2a2a3e;
+    --done: #81c995;
+    --done-bg: #1e3a2e;
+    --failed: #f28b82;
+    --failed-bg: #3c2020;
+    --active: #8ab4f8;
+    --active-bg: #1e3a5f;
+    --pending: #9aa0a6;
+    --pending-bg: #2a2a3e;
+    --blocked: #fdd663;
+    --blocked-bg: #3c3520;
+    --shadow: rgba(0, 0, 0, 0.3);
+  }
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+}
+
+header {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 1.5rem 2rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 4px var(--shadow);
+}
+
+header h1 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+header .meta {
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+  opacity: 0.75;
+}
+
+#search {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  width: 100%;
+  max-width: 400px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+#search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 3rem;
+}
+
+h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 2rem 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border-light);
+}
+
+/* ── Task list ───────────────────────────────────────────────────── */
+
+.tasks {
+  margin-bottom: 2rem;
+}
+
+.task {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  background: var(--bg-secondary);
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.badge-done    { background: var(--done-bg);    color: var(--done);    border: 1px solid var(--done); }
+.badge-failed  { background: var(--failed-bg);  color: var(--failed);  border: 1px solid var(--failed); }
+.badge-active  { background: var(--active-bg);  color: var(--active);  border: 1px solid var(--active); }
+.badge-pending { background: var(--pending-bg); color: var(--pending); border: 1px solid var(--pending); }
+.badge-blocked { background: var(--blocked-bg); color: var(--blocked); border: 1px solid var(--blocked); }
+
+.task-title {
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+}
+
+.task-category {
+  font-size: 0.8rem;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.subagent-thread {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.subagent-thread summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 500;
+  padding: 0.25rem 0;
+}
+
+.subagent-thread summary:hover {
+  text-decoration: underline;
+}
+
+/* ── Messages ────────────────────────────────────────────────────── */
+
+.message {
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  padding: 1rem;
+  position: relative;
+}
+
+.message-user {
+  background: var(--user-bg);
+  border-left: 3px solid var(--user-border);
+}
+
+.message-assistant {
+  background: var(--assistant-bg);
+  border-left: 3px solid var(--assistant-border);
+}
+
+.message-tool {
+  background: var(--tool-bg);
+  border-left: 3px solid var(--tool-border);
+}
+
+.message-system {
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--pending);
+}
+
+.role-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+  opacity: 0.7;
+}
+
+.timestamp {
+  font-size: 0.75rem;
+  opacity: 0.5;
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+}
+
+.content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+}
+
+/* ── Tool calls and results ──────────────────────────────────────── */
+
+.tool-calls,
+.tool-results {
+  margin-top: 0.75rem;
+}
+
+.tool-call,
+.tool-result {
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  background: var(--bg);
+}
+
+.tool-call summary,
+.tool-result summary {
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  user-select: none;
+}
+
+.tool-call summary:hover,
+.tool-result summary:hover {
+  background: var(--bg-secondary);
+}
+
+.tool-result.error summary {
+  color: var(--failed);
+}
+
+.tool-call pre,
+.tool-result pre {
+  margin: 0;
+  padding: 0.75rem;
+  background: var(--code-bg);
+  border-top: 1px solid var(--border-light);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Events ──────────────────────────────────────────────────────── */
+
+.events {
+  margin-top: 2rem;
+}
+
+.event {
+  padding: 0.625rem 1rem;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  background: var(--bg-secondary);
+  font-size: 0.875rem;
+}
+
+.event-type {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.event .timestamp {
+  position: static;
+  margin-left: 0.5rem;
+  opacity: 0.5;
+}
+
+.event pre {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem;
+  background: var(--code-bg);
+  border-radius: 4px;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Hidden state for search filtering ───────────────────────────── */
+
+.hidden-by-search {
+  display: none !important;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────── */
+
+footer {
+  text-align: center;
+  padding: 2rem;
+  font-size: 0.8rem;
+  opacity: 0.5;
+  border-top: 1px solid var(--border-light);
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Cantrip Transcript{% if charm_name %} &mdash; {{ charm_name }}{% endif %}</h1>
+  {% if charm_path %}<p class="meta">Path: {{ charm_path }}</p>{% endif %}
+  {% if token_usage %}
+  <p class="meta">Tokens: {{ token_usage.get("prompt_tokens", 0) }} prompt + {{ token_usage.get("completion_tokens", 0) }} completion</p>
+  {% endif %}
+  <input type="text" id="search" placeholder="Search transcript..." autocomplete="off">
+</header>
+
+<main>
+  {% if tasks %}
+  <section class="tasks">
+    <h2>Tasks</h2>
+    {% for task in tasks %}
+    <div class="task searchable">
+      <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+      <span class="task-title">{{ task.title }}</span>
+      <span class="task-category">{{ task.category }}</span>
+      {% if task.id in subagent_messages %}
+      <details class="subagent-thread">
+        <summary>Subagent conversation ({{ subagent_messages[task.id]|length }} messages)</summary>
+        {% for msg in subagent_messages[task.id] %}
+        <div class="message message-{{ msg.role }}">
+          <div class="role-label">{{ msg.role }}</div>
+          <div class="content">{{ msg.content | e }}</div>
+          {% if msg.tool_calls %}
+          <div class="tool-calls">
+            {% for tc in msg.tool_calls %}
+            <details class="tool-call">
+              <summary>Tool: {{ tc.name }}(...)</summary>
+              <pre>{{ tc.arguments | tojson(indent=2) }}</pre>
+            </details>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if msg.tool_results %}
+          <div class="tool-results">
+            {% for tr in msg.tool_results %}
+            <details class="tool-result {% if tr.is_error %}error{% endif %}">
+              <summary>{% if tr.is_error %}Error{% else %}Result{% endif %}</summary>
+              <pre>{{ tr.content | e }}</pre>
+            </details>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <section class="conversation">
+    <h2>Conversation</h2>
+    {% for msg in messages %}
+    <div class="message message-{{ msg.role }} searchable">
+      <div class="role-label">{{ msg.role }}</div>
+      {% if msg.timestamp %}<div class="timestamp">{{ msg.timestamp }}</div>{% endif %}
+      {% if msg.content %}
+      <div class="content">{{ msg.content | e }}</div>
+      {% endif %}
+      {% if msg.tool_calls %}
+      <div class="tool-calls">
+        {% for tc in msg.tool_calls %}
+        <details class="tool-call">
+          <summary>Tool: {{ tc.name }}(...)</summary>
+          <pre>{{ tc.arguments | tojson(indent=2) }}</pre>
+        </details>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if msg.tool_results %}
+      <div class="tool-results">
+        {% for tr in msg.tool_results %}
+        <details class="tool-result {% if tr.is_error %}error{% endif %}">
+          <summary>{% if tr.is_error %}Error{% else %}Result{% endif %}</summary>
+          <pre>{{ tr.content | e }}</pre>
+        </details>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+
+  {% if events %}
+  <section class="events">
+    <h2>Events</h2>
+    {% for event in events %}
+    <div class="event searchable">
+      <span class="event-type">{{ event.event_type }}</span>
+      <span class="timestamp">{{ event.timestamp }}</span>
+      <pre>{{ event.detail | tojson(indent=2) }}</pre>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+</main>
+
+<footer>
+  Generated by Cantrip
+</footer>
+
+<script>
+document.getElementById("search").addEventListener("input", function(e) {
+  var query = e.target.value.toLowerCase();
+  var items = document.querySelectorAll(".searchable");
+  for (var i = 0; i < items.length; i++) {
+    var el = items[i];
+    if (!query || el.textContent.toLowerCase().indexOf(query) !== -1) {
+      el.classList.remove("hidden-by-search");
+    } else {
+      el.classList.add("hidden-by-search");
+    }
+  }
+});
+</script>
+</body>
+</html>

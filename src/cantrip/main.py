@@ -38,58 +38,105 @@ def parse_args() -> argparse.Namespace:
         action="version",
         version=f"cantrip {__version__}",
     )
-    parser.add_argument(
+
+    subparsers = parser.add_subparsers(dest="command")
+
+    # ── run (default) ────────────────────────────────────────────────
+    run_parser = subparsers.add_parser("run", help="Run cantrip agent")
+    run_parser.add_argument(
         "--provider",
         choices=["gemini", "claude", "inference-snap"],
         default="gemini",
         help="LLM provider to use (default: gemini)",
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "--model",
         help="Specific model to use (provider-dependent)",
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "--snap",
         default="gemma3",
-        help="Inference snap name when using --provider inference-snap (default: gemma3)",
+        help=(
+            "Inference snap name when using --provider inference-snap"
+            " (default: gemma3)"
+        ),
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "--light-model",
-        help="Cheaper model for internal tasks like compaction (auto-detected if omitted)",
+        help=(
+            "Cheaper model for internal tasks like compaction"
+            " (auto-detected if omitted)"
+        ),
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "--light-snap",
         help="Lighter inference snap for internal tasks (e.g. nemotron-3-nano)",
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "--light-provider",
         choices=["gemini", "claude", "inference-snap"],
         help="Use a different provider for light tasks (enables hybrid mode)",
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "--no-tui",
         action="store_true",
         help="Run in CLI mode without TUI",
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "--watcher",
         action="store_true",
-        help="Start the event watcher on launch (monitors dev model for changes)",
+        help=(
+            "Start the event watcher on launch"
+            " (monitors dev model for changes)"
+        ),
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "--concurrency",
         type=int,
         default=None,
         help="Maximum concurrent subagent tasks (default: 3)",
     )
-    parser.add_argument(
+    run_parser.add_argument(
         "path",
         nargs="?",
         type=Path,
         default=Path.cwd(),
         help="Path to charm project (default: current directory)",
     )
-    return parser.parse_args()
+
+    # ── export-transcript ────────────────────────────────────────────
+    export_parser = subparsers.add_parser(
+        "export-transcript",
+        help="Export a session transcript",
+    )
+    export_parser.add_argument(
+        "path",
+        type=Path,
+        help="Charm directory containing a .cantrip file",
+    )
+    export_parser.add_argument(
+        "--format",
+        choices=["html", "jsonl", "markdown"],
+        default="html",
+        dest="fmt",
+        help="Output format (default: html)",
+    )
+    export_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Output file path (default: transcript.<ext> in charm directory)",
+    )
+
+    args = parser.parse_args()
+
+    # When invoked without a subcommand, treat as "run" with the remaining
+    # argv parsed by the run sub-parser so that existing usage still works.
+    if args.command is None:
+        args = run_parser.parse_args()
+        args.command = "run"
+
+    return args
 
 
 def _is_cantrip_source_tree(path: Path) -> bool:
@@ -104,13 +151,52 @@ def _is_cantrip_source_tree(path: Path) -> bool:
         return False
 
 
-def main() -> int:
-    """Main entry point."""
-    args = parse_args()
+def _export_transcript(args: argparse.Namespace) -> int:
+    """Export a session transcript."""
+    charm_path = args.path.resolve()
+    db_path = charm_path / ".cantrip"
+    if not db_path.exists():
+        print(f"Error: no .cantrip file found in {charm_path}")
+        return 1
 
+    from cantrip.transcript.export import load_transcript
+
+    data = load_transcript(db_path)
+
+    fmt = args.fmt
+    if fmt == "html":
+        from cantrip.transcript.html import render_html
+
+        content = render_html(data)
+        suffix = ".html"
+    elif fmt == "jsonl":
+        from cantrip.transcript.jsonl import render_jsonl
+
+        content = render_jsonl(data)
+        suffix = ".jsonl"
+    elif fmt == "markdown":
+        from cantrip.transcript.markdown import render_markdown
+
+        content = render_markdown(data)
+        suffix = ".md"
+    else:
+        print(f"Error: unknown format {fmt}")
+        return 1
+
+    output = args.output or (charm_path / f"transcript{suffix}")
+    Path(output).write_text(content)
+    print(f"Transcript exported to {output}")
+    return 0
+
+
+def _run(args: argparse.Namespace) -> int:
+    """Run the main cantrip agent."""
     charm_path = args.path.resolve()
     if _is_cantrip_source_tree(charm_path):
-        print("Error: refusing to use the cantrip source tree as a charm project.")
+        print(
+            "Error: refusing to use the cantrip source tree"
+            " as a charm project."
+        )
         print("Run from your charm's directory, or pass a path:")
         print("  cantrip /path/to/my-charm")
         return 1
@@ -153,6 +239,15 @@ def main() -> int:
         )
         app.run()
         return 0
+
+
+def main() -> int:
+    """Main entry point."""
+    args = parse_args()
+
+    if args.command == "export-transcript":
+        return _export_transcript(args)
+    return _run(args)
 
 
 if __name__ == "__main__":

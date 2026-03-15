@@ -1011,14 +1011,14 @@ base64.
 
 Persist all conversation-loop messages to the `.cantrip` SQLite store.
 
-- [ ] **Messages table** — add a `messages` table to the SQLite schema: `id`, `role`
+- [x] **Messages table** — add a `messages` table to the SQLite schema: `id`, `role`
   (system/user/assistant/tool), `content`, `tool_calls` (JSON), `tool_results` (JSON),
   `metadata` (JSON), `timestamp`. Schema version bump
-- [ ] **Write-through recording** — in `CantripAgent.process_message()` and
+- [x] **Write-through recording** — in `CantripAgent.process_message()` and
   `process_message_streaming()`, write each message to the store as it is appended to
   the in-memory list; writes should be non-blocking (batched or async) so they don't
   slow the conversation loop
-- [ ] **Tool call detail** — for each tool call, record the tool name, full arguments,
+- [x] **Tool call detail** — for each tool call, record the tool name, full arguments,
   and the full result (output + error + success flag); truncate very large results
   (e.g. file contents over 50 KB) with a note that the full content is available in
   the virtual file store
@@ -1027,13 +1027,13 @@ Persist all conversation-loop messages to the `.cantrip` SQLite store.
 
 Capture the full internal conversation of every subagent run, not just the final summary.
 
-- [ ] **Subagent messages table** — add a `subagent_messages` table: `task_id` (foreign
+- [x] **Subagent messages table** — add a `subagent_messages` table: `task_id` (foreign
   key to tasks), `message_index`, `role`, `content`, `tool_calls` (JSON),
   `tool_results` (JSON), `timestamp`
-- [ ] **Recording in `Subagent.run()`** — after each LLM completion and tool execution
+- [x] **Recording in `Subagent.run()`** — after each LLM completion and tool execution
   round, write the messages to the store; the executor passes a store reference to the
   subagent for this purpose
-- [ ] **Link to task** — each subagent conversation is associated with its `AgentTask`,
+- [x] **Link to task** — each subagent conversation is associated with its `AgentTask`,
   so the transcript can show "Task: Research PostgreSQL documentation" followed by the
   full LLM ↔ tool conversation that produced the result
 
@@ -1041,7 +1041,7 @@ Capture the full internal conversation of every subagent run, not just the final
 
 Record significant agent events beyond LLM conversations for a complete audit trail.
 
-- [ ] **Events table** — add an `events` table: `id`, `event_type`, `detail` (JSON),
+- [x] **Events table** — add an `events` table: `id`, `event_type`, `detail` (JSON),
   `timestamp`. Event types include:
   - `session_start`, `session_resume` — with provider, model, charm name
   - `task_status_change` — task id, old status, new status
@@ -1050,46 +1050,46 @@ Record significant agent events beyond LLM conversations for a complete audit tr
   - `design_confirmed`, `design_overridden` — with the override details
   - `watcher_event` — status change, hook failure, Loki alert
   - `error` — provider errors, tool failures, timeouts
-- [ ] **Watcher event recording** — the watcher already detects status changes and hook
+- [x] **Watcher event recording** — the watcher already detects status changes and hook
   failures; record these as events so the transcript shows what triggered diagnostic
   tasks
-- [ ] **Token usage in context** — link token usage records to the specific message or
+- [x] **Token usage in context** — link token usage records to the specific message or
   subagent round that consumed them, so the transcript can show cost per task
 
 ### 14.4 HTML Export
 
 Generate a polished, human-readable HTML transcript from the recorded data.
 
-- [ ] **Export command** — `cantrip export-transcript` CLI command that reads the
+- [x] **Export command** — `cantrip export-transcript` CLI command that reads the
   `.cantrip` SQLite file and produces a self-contained HTML file (or directory of
   paginated HTML files for long sessions)
-- [ ] **Jinja2 templates** — HTML output generated via Jinja2 templates (consistent
+- [x] **Jinja2 templates** — HTML output generated via Jinja2 templates (consistent
   with the existing prompt templating pattern) with clean CSS styling; templates are
   bundled in `src/cantrip/transcript/templates/`
-- [ ] **Conversation view** — user messages, assistant responses, and tool calls
+- [x] **Conversation view** — user messages, assistant responses, and tool calls
   rendered as a chat-style timeline with clear visual distinction between roles;
   tool calls shown as collapsible blocks with name, arguments, and result
-- [ ] **Subagent threads** — each subagent conversation rendered as a nested,
+- [x] **Subagent threads** — each subagent conversation rendered as a nested,
   collapsible thread under its parent task; the task title and status are shown as
   a header so the reader can see what the subagent was trying to do
-- [ ] **Task timeline** — a sidebar or top-level view showing the task checklist with
+- [x] **Task timeline** — a sidebar or top-level view showing the task checklist with
   status transitions and timestamps; clicking a task scrolls to its subagent thread
-- [ ] **Event stream** — significant events (decisions, status changes, errors)
+- [x] **Event stream** — significant events (decisions, status changes, errors)
   interleaved in the timeline at the correct chronological position
-- [ ] **Search** — full-text search across all messages, tool outputs, and events
+- [x] **Search** — full-text search across all messages, tool outputs, and events
 - [ ] **Pagination** — long sessions split across multiple pages with navigation;
   each page covers a logical chunk (e.g. research phase, build phase, deploy phase)
-- [ ] **Self-contained** — CSS and any JavaScript inlined in the HTML so the file
+- [x] **Self-contained** — CSS and any JavaScript inlined in the HTML so the file
   can be shared without external dependencies
 
 ### 14.5 Additional Export Formats
 
 Support other output formats for different use cases.
 
-- [ ] **JSONL export** — `cantrip export-transcript --format jsonl` dumps every message,
+- [x] **JSONL export** — `cantrip export-transcript --format jsonl` dumps every message,
   event, and subagent conversation as newline-delimited JSON; useful for programmatic
   analysis and piping into other tools
-- [ ] **Markdown export** — `cantrip export-transcript --format markdown` produces a
+- [x] **Markdown export** — `cantrip export-transcript --format markdown` produces a
   single Markdown file with the conversation, tool calls as code blocks, and task
   summaries; lighter-weight than HTML for embedding in documentation
 - [ ] **Filtered export** — `--task <task-id>` exports only a specific task and its
