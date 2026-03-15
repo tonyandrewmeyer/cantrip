@@ -208,7 +208,8 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
             description=(
                 "Synthesise all research into a structured design proposal (DESIGN.md). "
                 "Cover: substrate, charm path, Charmhub recommendation, integrations, "
-                "config, actions, scaling, operational patterns, and open questions."
+                "config, actions, scaling, operational patterns, security surface "
+                "assessment, and open questions."
             ),
             dependencies=list(research_ids),
         )

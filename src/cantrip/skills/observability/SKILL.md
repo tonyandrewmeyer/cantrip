@@ -209,6 +209,158 @@ Once COS is deployed and related, use the observability tools to investigate cha
 
 5. **Fetch libraries from PyPI first.** `ops-tracing` is on PyPI. For Grafana, Loki, and Prometheus libraries, check PyPI; fall back to `charmcraft fetch-libs`.
 
+## Manual Tracing Instrumentation
+
+ops-tracing automatically instruments hook execution, Pebble calls, relation data access,
+status changes, secret operations, and charm library calls. Only add manual spans where
+ops-tracing has no visibility.
+
+### When to Add Manual Spans
+
+- **Long-running workload operations** — database migrations, backups to object storage,
+  cluster joins. Wrap the sequence in a span so traces show duration and failure point.
+- **External API calls** — cloud APIs, webhooks, DNS providers. ops-tracing only covers
+  the Juju/Pebble boundary, not arbitrary HTTP requests.
+- **Decision logic with fallback** — try primary endpoint, fall back to secondary, fall
+  back to degraded mode. Span the decision to make the chosen path visible.
+- **Deferred event processing** — span deferred handlers separately so traces show the
+  gap between deferral and execution.
+
+### When NOT to Add Manual Spans
+
+- Simple event handlers that just call Pebble (already traced)
+- Config-changed handlers that update a Pebble layer (already traced)
+- Relation-changed handlers that read databag values (already traced)
+- Status setting (already traced)
+- Any operation completing in under 100ms with no external calls
+
+### Code Example
+
+```python
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
+
+class MyCharm(ops.CharmBase):
+    def _run_backup(self, event):
+        """Run a database backup — manual span for visibility."""
+        with tracer.start_as_current_span("run-backup") as span:
+            span.set_attribute("backup.target", self._backup_path)
+            self._dump_database()
+            span.set_attribute("backup.size_bytes", self._get_backup_size())
+            self._upload_to_s3()
+            span.add_event("backup-complete")
+```
+
+The span appears as a child of the action hook span in Tempo, showing exactly how long
+the backup took and which step failed if something goes wrong.
+
+## Security Event Logging (SEC0045)
+
+Charms wrapping security-relevant workloads should emit structured security event logs
+following the OWASP Logging Vocabulary and Canonical's SEC0045 standard.
+
+### When to Add Security Event Logging
+
+Add security events when the workload involves:
+- Authentication or authorisation (login services, LDAP, OAuth providers)
+- Secret or credential management (vaults, certificate authorities, key stores)
+- Network access control (firewalls, proxies, ingress controllers)
+- Data access with audit requirements (databases, object stores, file servers)
+- System administration (backup tools, monitoring agents, config management)
+
+Skip security event logging for workloads with no meaningful security surface.
+
+### Event Format
+
+Events follow the OWASP schema — JSON with these required fields:
+
+```json
+{
+    "datetime": "2025-01-15T12:30:00+00:00",
+    "appid": "my-charm.juju",
+    "type": "security",
+    "event": "authn_login_fail:admin",
+    "level": "WARN",
+    "description": "Failed login attempt for user admin"
+}
+```
+
+### Helper Module Pattern
+
+Generate a `src/log_security.py` helper:
+
+```python
+"""Structured security event logging following SEC0045/OWASP."""
+
+import datetime
+import json
+import logging
+
+logger = logging.getLogger("security")
+
+
+def log_security_event(
+    appid: str,
+    event: str,
+    level: str,
+    description: str,
+) -> None:
+    """Emit a structured security event at Juju TRACE level."""
+    record = {
+        "datetime": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "appid": appid,
+        "type": "security",
+        "event": event,
+        "level": level,
+        "description": description,
+    }
+    # Security events are structured data for collectors, not operator messages.
+    logger.debug(json.dumps(record))
+```
+
+### Common Event Types
+
+| Category | Event | Level | When |
+|----------|-------|-------|------|
+| AUTHN | `authn_login_success:user` | INFO | Successful authentication |
+| AUTHN | `authn_login_fail:user` | WARN | Failed authentication attempt |
+| AUTHN | `authn_login_lock:user` | WARN | Account locked after failures |
+| AUTHN | `authn_password_change:user` | INFO | Password changed |
+| AUTHN | `authn_token_created:service` | INFO | Token created |
+| AUTHN | `authn_token_revoked:service,id` | INFO | Token revoked |
+| AUTHN | `authn_token_reuse:service,id` | CRITICAL | Revoked token reuse attempt |
+| AUTHZ | `authz_fail:user,resource` | CRITICAL | Unauthorised access attempt |
+| AUTHZ | `authz_admin:user,action` | WARN | Administrative action |
+| SYS | `sys_startup:user` | WARN | System started |
+| SYS | `sys_shutdown:user` | WARN | System stopped |
+| SYS | `sys_restart:user` | WARN | System restarted |
+| SYS | `sys_crash:reason` | WARN | System crashed |
+| SYS | `sys_monitor_disabled:user,tool` | WARN | Monitoring disabled |
+| USER | `user_created:admin,user,privs` | WARN | User account created |
+| USER | `user_updated:admin,user,privs` | WARN | User account modified |
+
+### Querying Security Events in Loki
+
+Filter for security events using LogQL:
+
+```
+loki_query(query='{juju_application="my-charm"} | json | type="security"', cos_model="cos")
+```
+
+Filter by event category:
+
+```
+loki_query(query='{juju_application="my-charm"} | json | type="security" | event=~"authn_.*"', cos_model="cos")
+```
+
+### Critical Rule
+
+**Never log sensitive data** — no credentials, tokens, passwords, or secret content in
+event descriptions. Log *what happened* (e.g. "Secret rotated for relation endpoint
+'database'"), not *what the secret contains*.
+
 ## Common Pitfalls
 
 - **Forgetting `--trust`** when deploying COS components that need cluster-wide access.

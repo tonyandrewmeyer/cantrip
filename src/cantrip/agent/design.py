@@ -40,6 +40,8 @@ class DesignProposal:
     scaling_strategy: str = ""
     operational_patterns: str = ""
     questions_for_user: list[DesignQuestion] = field(default_factory=list)
+    security_surface: list[str] = field(default_factory=list)
+    security_event_types: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     raw_design_md: str = ""
 
@@ -85,6 +87,10 @@ class DesignProposal:
 
         if self.operational_patterns:
             sections.append(f"**Operational patterns:**\n{self.operational_patterns}")
+
+        if self.security_surface:
+            items = "\n".join(f"- {s}" for s in self.security_surface)
+            sections.append(f"**Security surface:**\n{items}")
 
         if self.questions_for_user:
             items = []
@@ -133,6 +139,8 @@ def parse_design_from_result(text: str) -> DesignProposal:
     proposal.actions = _get_list(heading_map, "actions")
     proposal.scaling_strategy = _get_field(heading_map, "scaling")
     proposal.operational_patterns = _get_field(heading_map, "operational")
+    proposal.security_surface = _get_list(heading_map, "security surface")
+    proposal.security_event_types = _get_list(heading_map, "security event")
     proposal.questions_for_user = _get_questions(heading_map, "questions")
     proposal.sources = _get_list(heading_map, "sources")
 

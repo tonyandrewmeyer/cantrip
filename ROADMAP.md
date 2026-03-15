@@ -1233,7 +1233,7 @@ needed.
 
 ---
 
-## Phase 16: Security Event Logging and Tracing Instrumentation Guidance
+## Phase 16: Security Event Logging and Tracing Instrumentation Guidance ✓
 
 **Goal:** Ensure charms built by Cantrip emit structured security event logs following the
 OWASP Logging Vocabulary, and provide clear guidance on what gets manually instrumented
@@ -1255,7 +1255,7 @@ framework cannot know about. Not every charm needs this — a static site charm 
 meaningful security surface — but charms wrapping authentication services, databases,
 or network infrastructure should log security events.
 
-- [ ] **Identify security-relevant charms** — during the design phase, the agent assesses
+- [x] **Identify security-relevant charms** — during the design phase, the agent assesses
   whether the workload has a security surface that warrants event logging. Indicators:
   - Authentication or authorisation (login services, LDAP, OAuth providers)
   - Secret or credential management (vaults, certificate authorities, key stores)
@@ -1263,7 +1263,7 @@ or network infrastructure should log security events.
   - Data access (databases, object stores, file servers)
   - System administration (backup tools, monitoring agents, config management)
   If the workload has none of these characteristics, security event logging is skipped
-- [ ] **Security event helper** — for charms that need it, generate a small helper
+- [x] **Security event helper** — for charms that need it, generate a small helper
   function (in `src/log_security.py` or similar) that wraps `ops.log._log_security_event`
   or reimplements the same structured JSON format. The helper should:
   - Accept OWASP event type, level, event name, and description
@@ -1271,7 +1271,7 @@ or network infrastructure should log security events.
   - Use UTC ISO 8601 timestamps
   - Log at Juju TRACE level (security events are structured data for consumption by
     collectors, not operator-facing messages)
-- [ ] **Workload-specific event types** — extend the OWASP vocabulary with events
+- [x] **Workload-specific event types** — extend the OWASP vocabulary with events
   appropriate to the charm's workload. Common patterns:
   - `authn_fail` / `authn_success` — for charms wrapping services with login
   - `authz_fail` / `authz_grant` / `authz_revoke` — for access control changes
@@ -1279,14 +1279,14 @@ or network infrastructure should log security events.
   - `config_change` — for security-relevant config changes (TLS mode, allowed networks)
   - `data_export` / `data_delete` — for charms wrapping data stores with audit requirements
   - `sys_monitor_disabled` / `sys_monitor_enabled` — if the charm manages health checks
-- [ ] **Where to emit events** — guide the agent to emit security events at the right
+- [x] **Where to emit events** — guide the agent to emit security events at the right
   points in charm code:
   - Secret lifecycle hooks (`secret-changed`, `secret-rotate`, `secret-expired`)
   - Relation changes that affect access (new database clients, revoked access)
   - Action handlers that perform privileged operations (backup, restore, password reset)
   - Config changes that affect the security posture (TLS settings, network restrictions)
   - Workload log parsing (if the workload logs auth failures, surface them as security events)
-- [ ] **Never log sensitive data** — the agent must ensure security event descriptions
+- [x] **Never log sensitive data** — the agent must ensure security event descriptions
   never contain credentials, tokens, passwords, or secret content. Log *what happened*
   (e.g. "Secret rotated for relation endpoint 'database'"), not *what the secret contains*
 
@@ -1307,18 +1307,18 @@ to avoid both redundant instrumentation and missing visibility.
 
 **What warrants manual spans (add these where appropriate):**
 
-- [ ] **Long-running workload operations** — if the charm orchestrates a multi-step
+- [x] **Long-running workload operations** — if the charm orchestrates a multi-step
   workload process (database migration, backup to object storage, cluster join), wrap
   the sequence in a span so traces show the duration and which step failed. Example:
   a database charm's `_run_backup()` method that shells out to `pg_dump`, uploads to S3,
   and verifies the upload
-- [ ] **External API calls** — if the charm calls external services beyond Pebble (cloud
+- [x] **External API calls** — if the charm calls external services beyond Pebble (cloud
   APIs, web hooks, DNS providers), span these calls to capture latency and errors.
   ops-tracing only covers the Juju/Pebble boundary, not arbitrary HTTP requests
-- [ ] **Decision logic with fallback** — if the charm has non-trivial decision logic
+- [x] **Decision logic with fallback** — if the charm has non-trivial decision logic
   (e.g. "try primary endpoint, fall back to secondary, fall back to degraded mode"),
   span the decision to make the chosen path visible in traces
-- [ ] **Async or deferred work** — if the charm defers an event and processes it later,
+- [x] **Async or deferred work** — if the charm defers an event and processes it later,
   span the deferred handler separately so traces show the gap between deferral and
   execution
 
@@ -1330,14 +1330,14 @@ to avoid both redundant instrumentation and missing visibility.
 - Status setting (already traced)
 - Any operation that completes in under 100ms with no external calls
 
-- [ ] **Update system prompt** — add tracing instrumentation guidance to the system prompt
+- [x] **Update system prompt** — add tracing instrumentation guidance to the system prompt
   (`system.md.j2`) so the agent applies these rules when writing charm code. The guidance
   should be concise — a short "instrument / don't instrument" checklist, not a tracing
   tutorial
-- [ ] **Update observability skill** — extend the observability skill (`SKILL.md`) with
+- [x] **Update observability skill** — extend the observability skill (`SKILL.md`) with
   the manual instrumentation patterns, including a code example showing `get_tracer()` /
   `start_as_current_span()` usage in a charm context
-- [ ] **Template support** — for charm templates that include a long-running operation
+- [x] **Template support** — for charm templates that include a long-running operation
   (e.g. the database backup pattern), include a manual span in the template code as
   a concrete example
 
@@ -1345,13 +1345,13 @@ to avoid both redundant instrumentation and missing visibility.
 
 Security events logged at Juju TRACE level need to be collected and made queryable.
 
-- [ ] **Loki collection** — security events are forwarded to Loki via the existing
+- [x] **Loki collection** — security events are forwarded to Loki via the existing
   `loki-push-api` relation. Add a LogQL query example to the generated Grafana dashboard
   that filters for `type="security"` events
-- [ ] **Grafana dashboard panel** — for charms with security event logging, add a
+- [x] **Grafana dashboard panel** — for charms with security event logging, add a
   "Security Events" panel to the generated Grafana dashboard showing a table of recent
   security events with timestamp, level, event type, and description
-- [ ] **Alert rules for critical events** — generate Prometheus/Loki alert rules for
+- [x] **Alert rules for critical events** — generate Prometheus/Loki alert rules for
   `CRITICAL`-level security events (e.g. repeated `authn_fail` suggesting brute force,
   `authz_fail` suggesting misconfiguration)
 
@@ -1359,12 +1359,12 @@ Security events logged at Juju TRACE level need to be collected and made queryab
 
 When auditing existing charms (Phase 10), assess security logging completeness.
 
-- [ ] **Security logging audit** — as part of the 10.1 best-practices checklist, assess
+- [x] **Security logging audit** — as part of the 10.1 best-practices checklist, assess
   whether the charm's workload has a security surface and whether appropriate events are
   being logged
-- [ ] **Tracing audit** — check whether ops-tracing is integrated, and whether any
+- [x] **Tracing audit** — check whether ops-tracing is integrated, and whether any
   long-running or external-call operations lack manual spans
-- [ ] **Remediation tasks** — if the audit identifies missing security logging or tracing
+- [x] **Remediation tasks** — if the audit identifies missing security logging or tracing
   gaps, generate specific tasks to add them (following the guidance in 16.1 and 16.2)
 
 **Exit criteria:** Charms wrapping security-relevant workloads emit structured OWASP-format

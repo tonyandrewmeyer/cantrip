@@ -251,6 +251,59 @@ class TestParseDesignFromResult:
         assert proposal.substrate == ""
         assert proposal.raw_design_md == ""
 
+    def test_security_surface_parsed_from_design(self) -> None:
+        """A '## Security Surface' section with bullets populates security_surface."""
+        md = (
+            "# Design: Keycloak\n\n"
+            "## Security Surface\n"
+            "- authentication\n"
+            "- credential management\n"
+            "- network access control\n"
+        )
+        proposal = parse_design_from_result(md)
+        assert proposal.security_surface == [
+            "authentication",
+            "credential management",
+            "network access control",
+        ]
+
+    def test_security_event_types_parsed(self) -> None:
+        """A '## Security Event Types' section populates security_event_types."""
+        md = (
+            "# Design: Vault\n\n"
+            "## Security Event Types\n"
+            "- authn_login_success\n"
+            "- authz_fail\n"
+            "- secret_access\n"
+        )
+        proposal = parse_design_from_result(md)
+        assert proposal.security_event_types == [
+            "authn_login_success",
+            "authz_fail",
+            "secret_access",
+        ]
+
+    def test_security_surface_in_format_for_chat(self) -> None:
+        """format_for_chat includes a security surface section when populated."""
+        proposal = DesignProposal(
+            workload_name="Keycloak",
+            security_surface=["authentication", "credential management"],
+        )
+        chat = proposal.format_for_chat()
+        assert "**Security surface:**" in chat
+        assert "- authentication" in chat
+        assert "- credential management" in chat
+
+    def test_security_surface_empty_when_absent(self) -> None:
+        """security_surface defaults to an empty list when no section is present."""
+        md = "# Design: Minimal\n\n## Substrate\nK8s\n"
+        proposal = parse_design_from_result(md)
+        assert proposal.security_surface == []
+        assert proposal.security_event_types == []
+        # Empty lists should not appear in formatted output.
+        chat = proposal.format_for_chat()
+        assert "Security surface" not in chat
+
     def test_preserves_raw_even_if_parsing_fails(self) -> None:
         """Non-Markdown text should still preserve the raw content."""
         text = "This is just plain text with no headings."

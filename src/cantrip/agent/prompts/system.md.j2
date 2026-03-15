@@ -175,6 +175,84 @@ provider. After a successful build and deploy, suggest generating a Terraform mo
 user hasn't mentioned it. Use `generate_terraform` and `validate_terraform` to create and
 verify the module. Load the `terraform` skill for the full workflow.
 
+### Security Event Logging (SEC0045)
+
+Charms wrapping security-relevant workloads should emit structured security event logs
+following the OWASP Logging Vocabulary and Canonical's SEC0045 standard. The ops framework
+already logs framework-level security events (`SYS_RESTART`, `SYS_CRASH`,
+`SYS_MONITOR_DISABLED`, `AUTHZ_FAIL`); charms extend this for workload-specific events.
+
+**When to add security event logging:**
+- Authentication or authorisation services (login, LDAP, OAuth)
+- Secret or credential management (vaults, CAs, key stores)
+- Network access control (firewalls, proxies, ingress)
+- Data stores with access audit requirements (databases, object stores)
+- System administration tools (backup, monitoring, config management)
+
+Skip security event logging for workloads with no meaningful security surface (static sites,
+simple web apps with no auth, display-only dashboards).
+
+**Event format** — JSON with these fields:
+- `datetime` — UTC ISO 8601
+- `appid` — charm application identifier
+- `type` — always `"security"`
+- `event` — OWASP event type (e.g. `authn_login_success:username`)
+- `level` — `INFO`, `WARN`, or `CRITICAL`
+- `description` — human-readable summary
+
+**Common event types:**
+- `authn_login_success` / `authn_login_fail` / `authn_login_lock` — authentication
+- `authn_password_change` / `authn_token_created` / `authn_token_revoked` — credential lifecycle
+- `authz_fail` / `authz_admin` — authorisation
+- `sys_startup` / `sys_shutdown` / `sys_restart` / `sys_crash` — system lifecycle
+- `sys_monitor_disabled` — monitoring changes
+- `user_created` / `user_updated` — user management
+
+**Where to emit events in charm code:**
+- Secret lifecycle hooks (`secret-changed`, `secret-rotate`, `secret-expired`)
+- Relation changes affecting access (new clients, revoked access)
+- Action handlers for privileged operations (backup, restore, password reset)
+- Config changes affecting security posture (TLS settings, network restrictions)
+- Workload log parsing (surface auth failures from workload logs as security events)
+
+**Never log sensitive data** — no credentials, tokens, passwords, or secret content in event
+descriptions. Log *what happened*, not *what the secret contains*.
+
+### Tracing Instrumentation
+
+ops-tracing (`ops_tracing.setup(self)`) automatically instruments the ops framework.
+Only add manual spans where ops-tracing has no visibility.
+
+**Already instrumented by ops-tracing (do NOT add manual spans):**
+- Hook execution lifecycle (every Juju event dispatch)
+- Pebble API calls (container operations, layer pushes, service management)
+- Relation data reads and writes
+- Status changes and secret operations
+- Charm library calls
+
+**Add manual spans for:**
+- Long-running workload operations (database migrations, backups, cluster joins)
+- External API calls beyond Pebble (cloud APIs, webhooks, DNS providers)
+- Decision logic with fallback paths (try primary, fall back to secondary)
+- Deferred event processing (span the deferred handler separately)
+
+**Do NOT instrument:**
+- Simple event handlers that just call Pebble
+- Config-changed handlers that update a Pebble layer
+- Relation-changed handlers that read databag values
+- Any operation completing in under 100ms with no external calls
+
+**Manual span pattern:**
+```python
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("run-backup") as span:
+    span.set_attribute("backup.target", target_path)
+    # ... long-running operation
+```
+
 ### Publishing to Charmhub
 
 When the user wants to publish a charm:
@@ -274,6 +352,7 @@ When researching a workload, answer these questions to inform the design:
 - **Observability**: What metrics, logs, and traces does it emit?
 - **Scaling**: How does it scale — horizontally, vertically, or both?
 - **Backup**: What backup/restore procedures does it support?
+- **Security surface**: Does the workload handle authentication, credentials, access control, or sensitive data?
 
 ### WORKLOAD.md Format
 
@@ -337,6 +416,11 @@ How the charm handles scaling.
 
 ## Operational Patterns
 Key operational patterns (clustering, failover, backup, etc.).
+
+## Security Surface
+Only if the workload has authentication, credential management, access control, or data
+audit requirements. List indicators and recommended OWASP event types. Omit for workloads
+with no security surface.
 
 ## Questions
 - **Key**: Open question for the user
