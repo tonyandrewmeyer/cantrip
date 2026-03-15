@@ -8,7 +8,9 @@ from pathlib import Path
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState, Decision
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+
+_MAX_CONTENT_BYTES = 50_000
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -55,7 +57,47 @@ CREATE TABLE IF NOT EXISTS tasks (
     model_hint TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    tool_calls TEXT,
+    tool_results TEXT,
+    metadata TEXT,
+    token_usage_id INTEGER,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS subagent_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    message_index INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    tool_calls TEXT,
+    tool_results TEXT,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '{}',
+    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
+
+
+def _truncate(text: str, max_bytes: int = _MAX_CONTENT_BYTES) -> str:
+    """Truncate text exceeding *max_bytes* with a marker."""
+    if len(text.encode("utf-8", errors="replace")) <= max_bytes:
+        return text
+    # Truncate at character boundary.
+    truncated = text.encode("utf-8", errors="replace")[:max_bytes].decode(
+        "utf-8", errors="ignore"
+    )
+    return truncated + f"\n\n[truncated — {len(text)} characters total]"
 
 
 class SessionStore:
@@ -97,6 +139,37 @@ class SessionStore:
             cols = {r[1] for r in self._conn.execute("PRAGMA table_info(tasks)").fetchall()}
             if "model_hint" not in cols:
                 self._conn.execute("ALTER TABLE tasks ADD COLUMN model_hint TEXT")
+
+        if current < 4:
+            # v4: add messages, subagent_messages, and events tables.
+            self._conn.executescript("""\
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    tool_calls TEXT,
+                    tool_results TEXT,
+                    metadata TEXT,
+                    token_usage_id INTEGER,
+                    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                CREATE TABLE IF NOT EXISTS subagent_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    message_index INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    tool_calls TEXT,
+                    tool_results TEXT,
+                    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                CREATE TABLE IF NOT EXISTS events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    detail TEXT NOT NULL DEFAULT '{}',
+                    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+            """)
 
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
@@ -235,6 +308,166 @@ class SessionStore:
             )
         return tasks
 
+    # ── Messages ─────────────────────────────────────────────────────────
+
+    def record_message(
+        self,
+        role: str,
+        content: str | None,
+        tool_calls: list[dict[str, object]] | None = None,
+        tool_results: list[dict[str, object]] | None = None,
+        metadata: dict[str, object] | None = None,
+        token_usage_id: int | None = None,
+    ) -> int:
+        """Persist a single conversation message. Returns the row ID."""
+        cursor = self._db.execute(
+            """\
+            INSERT INTO messages
+                (role, content, tool_calls, tool_results, metadata, token_usage_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                role,
+                _truncate(content or ""),
+                json.dumps(tool_calls) if tool_calls else None,
+                json.dumps(tool_results) if tool_results else None,
+                json.dumps(metadata) if metadata else None,
+                token_usage_id,
+            ),
+        )
+        self._db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def load_messages(self) -> list[dict[str, object]]:
+        """Load all conversation messages ordered by ID."""
+        rows = self._db.execute(
+            "SELECT * FROM messages ORDER BY id"
+        ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "role": r["role"],
+                "content": r["content"],
+                "tool_calls": (
+                    json.loads(r["tool_calls"]) if r["tool_calls"] else None
+                ),
+                "tool_results": (
+                    json.loads(r["tool_results"])
+                    if r["tool_results"]
+                    else None
+                ),
+                "metadata": (
+                    json.loads(r["metadata"]) if r["metadata"] else None
+                ),
+                "token_usage_id": r["token_usage_id"],
+                "timestamp": r["timestamp"],
+            }
+            for r in rows
+        ]
+
+    # ── Subagent message recording ───────────────────────────────────────
+
+    def record_subagent_message(
+        self,
+        task_id: str,
+        message_index: int,
+        role: str,
+        content: str,
+        tool_calls: list[dict[str, object]] | None = None,
+        tool_results: list[dict[str, object]] | None = None,
+    ) -> None:
+        """Record a single message from a subagent conversation."""
+        self._db.execute(
+            """\
+            INSERT INTO subagent_messages (task_id, message_index, role,
+                                            content, tool_calls, tool_results)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                message_index,
+                role,
+                _truncate(content),
+                json.dumps(tool_calls) if tool_calls else None,
+                json.dumps(tool_results) if tool_results else None,
+            ),
+        )
+        self._db.commit()
+
+    def load_subagent_messages(
+        self, task_id: str,
+    ) -> list[dict[str, object]]:
+        """Load all subagent messages for a specific task."""
+        rows = self._db.execute(
+            "SELECT * FROM subagent_messages "
+            "WHERE task_id = ? ORDER BY message_index",
+            (task_id,),
+        ).fetchall()
+        return [
+            {
+                "task_id": r["task_id"],
+                "message_index": r["message_index"],
+                "role": r["role"],
+                "content": r["content"],
+                "tool_calls": (
+                    json.loads(r["tool_calls"])
+                    if r["tool_calls"]
+                    else None
+                ),
+                "tool_results": (
+                    json.loads(r["tool_results"])
+                    if r["tool_results"]
+                    else None
+                ),
+                "timestamp": r["timestamp"],
+            }
+            for r in rows
+        ]
+
+    # ── Event log ────────────────────────────────────────────────────────
+
+    def record_event(
+        self,
+        event_type: str,
+        detail: dict[str, object] | None = None,
+    ) -> int:
+        """Record a structured event and return its row ID."""
+        cursor = self._db.execute(
+            "INSERT INTO events (event_type, detail) VALUES (?, ?)",
+            (event_type, json.dumps(detail or {})),
+        )
+        self._db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def load_events(
+        self,
+        event_type: str | None = None,
+        since: str | None = None,
+    ) -> list[dict[str, object]]:
+        """Load events with optional type and time filters."""
+        query = "SELECT * FROM events"
+        conditions: list[str] = []
+        params: list[str] = []
+        if event_type:
+            conditions.append("event_type = ?")
+            params.append(event_type)
+        if since:
+            conditions.append("timestamp >= ?")
+            params.append(since)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY id"
+        rows = self._db.execute(query, params).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "event_type": r["event_type"],
+                "detail": json.loads(r["detail"]),
+                "timestamp": r["timestamp"],
+            }
+            for r in rows
+        ]
+
     # ── Token usage ──────────────────────────────────────────────────────
 
     def record_usage(
@@ -243,9 +476,9 @@ class SessionStore:
         model: str,
         prompt_tokens: int,
         completion_tokens: int,
-    ) -> None:
-        """Record token usage for a single LLM request."""
-        self._db.execute(
+    ) -> int:
+        """Record token usage for a single LLM request. Returns the row ID."""
+        cursor = self._db.execute(
             """\
             INSERT INTO token_usage (provider, model, prompt_tokens, completion_tokens)
             VALUES (?, ?, ?, ?)
@@ -253,6 +486,7 @@ class SessionStore:
             (provider, model, prompt_tokens, completion_tokens),
         )
         self._db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
 
     def get_total_usage(self) -> dict[str, int]:
         """Return aggregate token counts across all requests."""

@@ -236,16 +236,46 @@ class CantripAgent:
         target.write_text(content)
         log.info("Wrote CLAUDE.md to %s", charm_path)
 
-    def _record_usage(self, response: Response) -> None:
+    def _record_usage(self, response: Response) -> int | None:
         """Record token usage from a provider response if a store is active."""
         self._ensure_store()
         if self._store and response.usage:
-            self._store.record_usage(
+            return self._store.record_usage(
                 provider=self.provider.name,
                 model=self.provider.model_name,
                 prompt_tokens=response.usage.get("prompt_tokens", 0),
                 completion_tokens=response.usage.get("completion_tokens", 0),
             )
+        return None
+
+    def _record_message(self, msg: Message) -> None:
+        """Persist a conversation message to the session store."""
+        self._ensure_store()
+        if not self._store:
+            return
+        tool_calls = None
+        if msg.tool_calls:
+            tool_calls = [
+                {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+                for tc in msg.tool_calls
+            ]
+        tool_results = None
+        if msg.tool_results:
+            tool_results = [
+                {
+                    "tool_call_id": tr.tool_call_id,
+                    "content": tr.content,
+                    "is_error": tr.is_error,
+                }
+                for tr in msg.tool_results
+            ]
+        self._store.record_message(
+            role=msg.role.value,
+            content=msg.content,
+            tool_calls=tool_calls,
+            tool_results=tool_results,
+            metadata=msg.metadata or None,
+        )
 
     def _get_provider(self, purpose: str) -> LLMProvider:
         """Select the appropriate provider for a given purpose.
@@ -520,9 +550,20 @@ class CantripAgent:
 
     async def _process_message_inner(self, user_message: str) -> str:
         """Inner implementation of process_message (executor already paused)."""
+        # Record session start event on first message.
+        if not self.state.messages:
+            self._ensure_store()
+            if self._store:
+                self._store.record_event("session_start", {
+                    "provider": self.provider.name,
+                    "model": self.provider.model_name,
+                    "charm_name": self.state.charm_name,
+                })
+
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self.state.messages.append(user_msg)
+        self._record_message(user_msg)
 
         messages = self._build_llm_messages(include_budget=True)
         llm_tools = self._tools_for_llm() if self._tools else None
@@ -542,6 +583,7 @@ class CantripAgent:
                 metadata=response.metadata,
             )
             self.state.messages.append(assistant_msg)
+            self._record_message(assistant_msg)
 
             # Execute each tool and build TOOL result messages.
             tool_results = []
@@ -565,6 +607,7 @@ class CantripAgent:
             # Virtualise large tool results before storing.
             tool_msg = self._context_manager.virtualise_message(tool_msg)
             self.state.messages.append(tool_msg)
+            self._record_message(tool_msg)
 
             # Compact if the context window is getting full.
             if self._context_manager.should_compact(self.state.messages):
@@ -581,9 +624,11 @@ class CantripAgent:
             self._record_usage(response)
 
         # Store the final assistant response.
-        self.state.messages.append(
-            Message(role=Role.ASSISTANT, content=response.content, metadata=response.metadata)
+        final_msg = Message(
+            role=Role.ASSISTANT, content=response.content, metadata=response.metadata,
         )
+        self.state.messages.append(final_msg)
+        self._record_message(final_msg)
         return response.content
 
     async def process_message_streaming(self, user_message: str) -> AsyncIterator[str]:
@@ -605,9 +650,20 @@ class CantripAgent:
 
     async def _process_message_streaming_inner(self, user_message: str) -> AsyncIterator[str]:
         """Inner implementation of streaming (executor already paused)."""
+        # Record session start event on first message.
+        if not self.state.messages:
+            self._ensure_store()
+            if self._store:
+                self._store.record_event("session_start", {
+                    "provider": self.provider.name,
+                    "model": self.provider.model_name,
+                    "charm_name": self.state.charm_name,
+                })
+
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self.state.messages.append(user_msg)
+        self._record_message(user_msg)
 
         llm_tools = self._tools_for_llm() if self._tools else None
 
@@ -627,6 +683,7 @@ class CantripAgent:
                 metadata=response.metadata,
             )
             self.state.messages.append(assistant_msg)
+            self._record_message(assistant_msg)
 
             tool_results = []
             for tc in response.tool_calls:
@@ -649,6 +706,7 @@ class CantripAgent:
             # Virtualise large tool results before storing.
             tool_msg = self._context_manager.virtualise_message(tool_msg)
             self.state.messages.append(tool_msg)
+            self._record_message(tool_msg)
 
             # Compact if the context window is getting full.
             if self._context_manager.should_compact(self.state.messages):
@@ -665,15 +723,14 @@ class CantripAgent:
 
         # Now stream the final text response.
         # Since we already have the content from complete(), just yield it.
-        full_response = response.content
-        self.state.messages.append(
-            Message(
-                role=Role.ASSISTANT,
-                content=full_response,
-                metadata=response.metadata,
-            )
+        final_msg = Message(
+            role=Role.ASSISTANT,
+            content=response.content,
+            metadata=response.metadata,
         )
-        yield full_response
+        self.state.messages.append(final_msg)
+        self._record_message(final_msg)
+        yield response.content
 
     # -- Design confirmation ---------------------------------------------------
 
@@ -745,6 +802,16 @@ class CantripAgent:
                 overrides=overrides,
             )
         self._work_queue.add_tasks(build_tasks)
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event("design_confirmed", {
+                "workload": proposal.workload_name,
+                "substrate": proposal.substrate,
+                "charm_path": proposal.charm_path,
+                "build_task_count": len(build_tasks),
+            })
+
         return build_tasks
 
     # -- Watcher integration ---------------------------------------------------
@@ -797,6 +864,13 @@ class CantripAgent:
         Returns the created task, or ``None`` if the event did not map to a
         task (e.g. no dev_model or unrecognised category).
         """
+        self._ensure_store()
+        if self._store:
+            self._store.record_event("watcher_event", {
+                "category": event.category,
+                "summary": event.summary,
+            })
+
         task = task_for_watcher_event(event, self.state)
         if task is not None:
             self._work_queue.add_task(task)
@@ -899,6 +973,12 @@ class CantripAgent:
                 task.status = TaskStatus.PENDING
         if tasks:
             self._work_queue.add_tasks(tasks)
+
+        if self._store:
+            self._store.record_event("session_resume", {
+                "charm_name": self.state.charm_name,
+                "task_count": len(tasks),
+            })
 
         return True
 

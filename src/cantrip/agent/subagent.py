@@ -1,15 +1,20 @@
 """Subagent runner — isolated LLM context for autonomous task execution."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm import base as llm
+
+if TYPE_CHECKING:
+    from cantrip.agent.store import SessionStore
 
 # Called after each LLM completion with the response, for token tracking.
 UsageCallback = Callable[[llm.Response], None] | None
@@ -521,6 +526,7 @@ class Subagent:
         light_provider: llm.LLMProvider | None = None,
         on_usage: UsageCallback = None,
         throttle: ProviderThrottle | None = None,
+        store: SessionStore | None = None,
     ) -> None:
         self._context = context
         self._provider = _select_provider(
@@ -534,6 +540,7 @@ class Subagent:
         self._tool_map: dict[str, Tool] = {t.name: t for t in self._tools}
         self._on_usage = on_usage
         self._throttle = throttle
+        self._store = store
 
     async def run(self) -> str:
         """Execute the task and return a text summary of the outcome."""
@@ -544,6 +551,19 @@ class Subagent:
             llm.Message(role=llm.Role.SYSTEM, content=system_prompt),
             llm.Message(role=llm.Role.USER, content=user_instruction),
         ]
+
+        # Track message indices for persistent recording.
+        msg_idx = 0
+        if self._store:
+            task_id = self._context.task.id
+            self._store.record_subagent_message(
+                task_id, msg_idx, "system", system_prompt,
+            )
+            msg_idx += 1
+            self._store.record_subagent_message(
+                task_id, msg_idx, "user", user_instruction,
+            )
+            msg_idx += 1
 
         llm_tools = _tools_for_llm(self._tools)
         response = await self._complete_with_retry(messages, llm_tools)
@@ -562,11 +582,25 @@ class Subagent:
                 )
             )
 
+            if self._store:
+                tc_data = [
+                    {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+                    for tc in response.tool_calls
+                ]
+                self._store.record_subagent_message(
+                    task_id, msg_idx, "assistant", response.content,
+                    tool_calls=tc_data,
+                )
+                msg_idx += 1
+
             # Execute each tool call and collect results.
             tool_results: list[llm.ToolResult] = []
             for tc in response.tool_calls:
                 result = await self._execute_tool(tc.name, tc.arguments)
-                content = result.output if result.success else (result.error or "Unknown error")
+                content = (
+                    result.output if result.success
+                    else (result.error or "Unknown error")
+                )
                 tool_results.append(
                     llm.ToolResult(
                         tool_call_id=tc.id,
@@ -575,9 +609,35 @@ class Subagent:
                     )
                 )
 
-            messages.append(llm.Message(role=llm.Role.TOOL, content="", tool_results=tool_results))
+            messages.append(
+                llm.Message(
+                    role=llm.Role.TOOL, content="",
+                    tool_results=tool_results,
+                )
+            )
+
+            if self._store:
+                tr_data = [
+                    {
+                        "tool_call_id": tr.tool_call_id,
+                        "content": tr.content,
+                        "is_error": tr.is_error,
+                    }
+                    for tr in tool_results
+                ]
+                self._store.record_subagent_message(
+                    task_id, msg_idx, "tool", "",
+                    tool_results=tr_data,
+                )
+                msg_idx += 1
 
             response = await self._complete_with_retry(messages, llm_tools)
+
+        # Record the final assistant response.
+        if self._store:
+            self._store.record_subagent_message(
+                task_id, msg_idx, "assistant", response.content,
+            )
 
         return response.content
 
