@@ -569,7 +569,7 @@ Implementation complete with generator, tools, skill, and prompt integration.
 
 ---
 
-## Phase 10: Existing Charm Improvement
+## Phase 10: Existing Charm Improvement (in progress)
 
 **Goal:** Use Cantrip not just to build new charms, but to bring existing charms up to
 modern standards. The user points Cantrip at an existing charm ("here's my charm, make it
@@ -580,41 +580,30 @@ tests, best-practice fixes, and everything needed for a public Charmhub listing.
 
 Analyse an existing charm and produce a comprehensive gap analysis.
 
-- [ ] **Ingest existing charm** — accept a local path or Git URL to an existing charm
-  project; parse `charmcraft.yaml`, `metadata.yaml` (legacy), `src/charm.py`, `config.yaml`,
-  `actions.yaml`, tests, and any existing documentation
-- [ ] **Best-practices checklist** — evaluate the charm against Canonical's
-  [best practices list](https://juju.is/docs/sdk/styleguide) and common conventions:
-  - Ops framework usage (modern patterns, no deprecated APIs)
-  - Event handling (correct observe patterns, idempotent handlers)
-  - Status management (meaningful status messages, not just `ActiveStatus`)
-  - Config validation and defensive handling
-  - Secret management (Juju secrets vs. config for sensitive data)
-  - Resource handling (OCI images, attached resources)
-  - Peer relation data patterns (leader-only writes, databag hygiene)
-  - Pebble layer management (for K8s charms)
-  - Logging practices (structured, appropriate levels)
-- [ ] **Public listing requirements** — check against Charmhub listing requirements:
-  - README with badges, description, usage, configuration, integrations, and contributing
-  - `charmcraft.yaml` with proper display-name, summary, description, docs URL, issues URL,
-    source URL, and tags
-  - Icon (SVG in the correct location)
-  - Documentation on Discourse or in-tree
-  - License file
-  - Clean `charmcraft pack` with no warnings
-- [ ] **Audit report** — produce a structured report (`AUDIT.md`) summarising findings,
-  grouped by severity (must-fix, should-fix, nice-to-have), with specific recommendations
-  and references to documentation
+- [x] **Ingest existing charm** — `CharmAuditTool` (`charm_audit`) accepts a local path,
+  parses `charmcraft.yaml` (with `metadata.yaml` fallback), `src/charm.py`, tests, README,
+  LICENSE, and requirements; added to RESEARCH and BUILD tool allowlists
+- [x] **Best-practices checklist** — deterministic checks for deprecated APIs (StoredState,
+  Harness, `charmcraft fetch-libs` imports), COS relation presence (tracing,
+  metrics-endpoint, logging, grafana-dashboard), ops-tracing setup, and test directory
+  structure; qualitative checks (event handling, status management, Pebble patterns)
+  are left to the subagent LLM
+- [x] **Public listing requirements** — checks for `charmcraft.yaml` metadata fields
+  (display-name, summary, description, docs, issues, source, tags), README.md, LICENSE/
+  LICENCE, and icon.svg
+- [x] **Audit report** — produces a structured AUDIT.md grouped by severity (must-fix,
+  should-fix, nice-to-have) plus a machine-readable `data` dict with gaps and findings
 
 ### 10.2 Observability Gap Fill
 
 Add COS integration and ops-tracing if missing or incomplete.
 
-- [ ] **COS integration audit** — check for existing COS relations (grafana-dashboard,
-  loki-push-api, metrics-endpoint) and assess completeness
-- [ ] **Add ops-tracing** — integrate the ops-tracing library if absent; instrument charm
-  with tracing support following the guidance in Phase 16.2 (what to instrument manually
-  vs what ops-tracing covers automatically)
+- [x] **COS integration audit** — `charm_audit` checks for tracing, metrics-endpoint,
+  logging, and grafana-dashboard relations; gaps reported in `data["gaps"]`
+- [x] **Observability fill task** — `plan_improvement_fixes` generates a BUILD task
+  (`fill-observability`) that loads the `observability` skill and adds missing COS
+  relations, ops-tracing, metrics, and log forwarding; guided by the `charm-improvement`
+  skill
 - [ ] **Add metrics** — add Prometheus metrics endpoint if missing; generate a basic
   Grafana dashboard JSON covering key operational metrics
 - [ ] **Add log forwarding** — add Loki push API relation and structured logging if missing
@@ -625,12 +614,14 @@ Add COS integration and ops-tracing if missing or incomplete.
 
 Add or improve tests to match the standard Cantrip would apply to a new charm.
 
-- [ ] **Test coverage audit** — analyse existing test suite (if any); identify untested
-  events, config changes, actions, and relation lifecycle
-- [ ] **Scenario unit tests** — generate Scenario-based unit tests for all observed events,
-  covering happy paths and error cases; do NOT use the deprecated Harness
-- [ ] **Migrate from Harness** — if existing tests use the deprecated Harness, offer to
-  rewrite them using Scenario
+- [x] **Test coverage audit** — `charm_audit` checks for `tests/unit/test_*.py` and
+  `tests/integration/test_*.py`; gaps reported in `data["gaps"]`
+- [x] **Test fill task** — `plan_improvement_fixes` generates a BUILD task (`fill-tests`)
+  instructing the subagent to write Scenario unit tests and Jubilant integration tests;
+  guided by the `charm-improvement` skill with patterns and examples
+- [x] **Migrate from Harness** — `charm_audit` detects Harness imports as deprecated APIs
+  and flags them; the `charm-improvement` skill includes a Harness → Scenario migration
+  table; the `modernise-code` fix task handles the rewrite
 - [ ] **Jubilant integration tests** — generate integration tests using Jubilant, covering
   deploy, relate, config changes, actions, and scale-up/down
 - [ ] **Test validation** — run the generated tests and fix any failures before presenting
@@ -640,8 +631,9 @@ Add or improve tests to match the standard Cantrip would apply to a new charm.
 
 Bring the charm code up to current Ops framework standards.
 
-- [ ] **Deprecated API migration** — identify and replace deprecated Ops APIs
-  (e.g. `StoredState` patterns, old relation APIs, legacy hook tools)
+- [x] **Deprecated API migration** — `charm_audit` scans for StoredState, Harness,
+  `charmcraft fetch-libs` imports, and `framework.breakpoint`; `plan_improvement_fixes`
+  generates a `modernise-code` BUILD task with specific migration instructions
 - [ ] **Type annotations** — add type hints where missing
 - [ ] **Modern patterns** — apply current idiomatic patterns:
   - Holistic status handling
@@ -655,28 +647,29 @@ Bring the charm code up to current Ops framework standards.
 
 Prepare the charm for a polished Charmhub listing.
 
-- [ ] **README generation** — generate or rewrite README.md with standard sections:
-  description, deployment, configuration reference, integrations, contributing guide
-- [ ] **Metadata completion** — fill in missing `charmcraft.yaml` fields (display-name,
-  summary, description, docs, issues, source URLs, tags)
+- [x] **README generation** — `listing-readiness` task uses the existing
+  `generate_readme` tool; guided by the `charm-improvement` skill README section
+- [x] **Metadata completion** — `charm_audit` checks all listing fields; the
+  `listing-readiness` task fills missing `charmcraft.yaml` fields
 - [ ] **Documentation** — generate or update Discourse-format documentation covering
   getting started, configuration, integrations, and troubleshooting
-- [ ] **Icon check** — verify an SVG icon exists; warn if missing (Cantrip doesn't
-  generate artwork, but flags the gap)
-- [ ] **Licence check** — verify a LICENSE file exists; suggest Apache-2.0 if missing
+- [x] **Icon check** — `charm_audit` checks for `icon.svg` and flags if missing
+- [x] **Licence check** — `charm_audit` checks for LICENSE/LICENCE and flags if missing
 
 ### 10.6 Validation and Presentation
 
 Verify all improvements work together and present the result.
 
-- [ ] **Full build** — `charmcraft pack` succeeds cleanly with no warnings
-- [ ] **Test suite green** — all generated tests pass (Scenario unit + Jubilant integration)
+- [x] **Full build** — `validate-improvements` task runs `charm_validate` (which
+  includes `charmcraft pack`)
+- [x] **Test suite green** — `validate-improvements` task runs both unit and integration
+  tests as a combined gate
 - [ ] **Deploy and verify** — deploy the improved charm to a dev model; verify it reaches
   active/idle; verify COS relations work
 - [ ] **Diff review** — present the user with a summary of all changes made, grouped by
   category (observability, tests, code quality, listing), with before/after comparisons
-- [ ] **Incremental commits** — each category of improvement is committed separately with
-  clear commit messages, so the user can review and revert individual changes
+- [x] **Incremental commits** — each fix BUILD task includes commit guidance; tasks are
+  independent so each category is committed separately
 
 **Exit criteria:** User points Cantrip at an existing charm. Cantrip audits it, adds COS
 integration, writes Scenario and Jubilant tests, modernises code, prepares listing metadata,
@@ -756,7 +749,7 @@ existing session resumes smoothly with full context.
 
 ---
 
-## Phase 12: Red/Green Charm Building
+## Phase 12: Red/Green Charm Building ✓
 
 **Goal:** Give the agent a machine-verifiable definition of success using a red/green TDD
 loop. Integration tests are written *before* the charm code (red — tests exist but fail),
@@ -775,7 +768,7 @@ config changes take effect.
 Restructure the build task sequence so integration tests are written early and used as
 the success criterion throughout.
 
-- [ ] **Update `_DESIGN_TO_BUILD_PROMPT`** — change the "typical build sequence" to:
+- [x] **Update `_DESIGN_TO_BUILD_PROMPT`** — change the "typical build sequence" to:
   1. Scaffold the charm (`charmcraft init`, write metadata)
   2. Write integration tests from the design (deploy, relations, actions, config)
   3. Write charm code to make the tests pass
@@ -783,9 +776,13 @@ the success criterion throughout.
   5. Fix and iterate until tests pass
   6. Write unit tests (Scenario) for edge cases and error paths
   7. Commit and offer next steps
-- [ ] **New task category or tag** — distinguish "write integration tests" (a BUILD task
-  that produces test files) from "run integration tests" (a TEST task that executes them),
-  so the planner can sequence them correctly with dependencies
+- [x] **One-shot build update** — `plan_one_shot_build()` description reordered to
+  write integration tests (step 4) before charm code (step 5), with red/green framing
+- [x] **BUILD guidance drives sequencing** — rather than a new task category, the BUILD
+  subagent guidance itself instructs the red/green order: write integration tests first
+  if they don't exist, then write charm code to make them pass. The planner's prompt
+  naturally produces "write integration tests" and "write charm code" as separate BUILD
+  tasks with the correct dependency ordering
 
 ### 12.2 Integration Test Generation from Design
 
@@ -793,12 +790,10 @@ The approved design contains enough information to write integration tests befor
 charm code exists — the design specifies integrations, actions, config options, and
 expected behaviour.
 
-- [ ] **Design-to-test extraction** — parse the approved DESIGN.md to identify testable
-  contracts:
-  - Each relation endpoint → test that deploying + relating reaches active/idle
-  - Each action → test that running the action succeeds and returns expected keys
-  - Each config option → test that setting it does not break the charm
-  - COS integration → test that Grafana/Loki/Prometheus relations work
+- [x] **Design-to-test extraction** — the BUILD guidance instructs subagents to derive
+  test cases from the approved design: each relation endpoint gets a deploy+relate test,
+  each action gets an execute test, each config option gets a set+verify test, and COS
+  integration gets a relation test; uses Jubilant patterns
 - [ ] **Test template generation** — produce `tests/integration/test_charm.py` from the
   design using the `jubilant-tests` skill patterns; tests should be runnable (and failing)
   before any charm code is written
@@ -810,19 +805,22 @@ expected behaviour.
 
 Update the BUILD subagent to use the red/green cycle as its feedback loop.
 
-- [ ] **Add `run_charm_tests` to BUILD tools** — build subagents can run integration
+- [x] **`run_charm_tests` already in BUILD tools** — build subagents can run integration
   tests directly, without waiting for a separate TEST task; this lets them iterate
-  within a single subagent invocation
-- [ ] **BUILD guidance update** — update `_CATEGORY_GUIDANCE[BUILD]` to instruct the
-  subagent:
-  1. Read the existing integration tests (written by a prior task)
-  2. Write charm code targeting the test expectations
-  3. Pack the charm and run integration tests
-  4. If tests fail, read the output, fix the code, and re-run
-  5. Finish only when tests pass (or max rounds exhausted)
-- [ ] **Test-result-driven iteration** — when a build subagent reports "3/7 integration
-  tests passing", the executor can spawn a follow-up BUILD task focused on the remaining
-  failures rather than a generic DEBUG task
+  within a single subagent invocation (was added in Phase 11)
+- [x] **BUILD guidance update** — `_CATEGORY_GUIDANCE[BUILD]` instructs the subagent:
+  1. Read the design and existing integration tests
+  2. If integration tests don't exist, write them first (red)
+  3. Write charm code targeting the test expectations (green)
+  4. Run `run_charm_tests` with `test_type='integration'` and optional `pattern`
+  5. If tests fail, fix and re-run; iterate until green or rounds exhausted
+  6. Write unit tests (Scenario) for edge cases as a second pass
+- [x] **Test-result-driven iteration** — when a BUILD task fails with partial test
+  progress (e.g. "3 passed, 4 failed"), `tasks_after_build_failure()` spawns a targeted
+  follow-up BUILD task focused on the remaining failures rather than a generic DEBUG
+  task; the retry task receives the previous failure output, uses the primary model,
+  and instructs the subagent not to modify integration tests (they define the contract);
+  retry chains are bounded — a retry task that also fails does not spawn another retry
 
 ### 12.4 Incremental Feature Addition
 
@@ -830,27 +828,32 @@ When the user asks to add a feature to an existing charm ("add PostgreSQL integr
 the same red/green cycle applies: write the integration test first (red), then implement
 until it passes (green).
 
-- [ ] **Feature test first** — when replanning for a new feature, the planner generates
-  a "write integration test for X" task before the "implement X" task
-- [ ] **Regression safety** — the new test is added alongside existing tests; running
-  the full integration suite after implementation catches regressions
-- [ ] **Selective test execution** — allow `run_charm_tests` to accept a specific test
-  file or test name pattern (e.g. `test_postgresql_relation`) so the build subagent
-  can iterate quickly on one test without running the entire suite
+- [x] **Feature test first** — the BUILD guidance instructs subagents to write integration
+  tests before implementation code; replanning naturally follows the same pattern since
+  the design-to-build prompt encodes the red/green sequence
+- [x] **Regression safety** — the BUILD guidance runs the full integration suite, not just
+  new tests, catching regressions
+- [x] **Selective test execution** — `run_charm_tests` accepts an optional `pattern`
+  parameter for targeting specific test files or functions (e.g.
+  `pattern='test_postgresql_relation'`); supports file names, `file::function` form,
+  and `-k` expressions; BUILD guidance instructs subagents to use this for faster
+  iteration on specific failures
 
 ### 12.5 Unit Tests as a Second Pass
 
 Unit tests (Scenario) remain valuable for edge cases, error paths, and fast iteration,
 but they come after the integration tests establish the external contract.
 
-- [ ] **Unit test task after integration green** — the planner sequences "write unit
-  tests" after integration tests pass, so unit tests can cover internal details the
-  subagent discovered during implementation
-- [ ] **Unit tests for error paths** — guide the unit test subagent to focus on cases
-  that integration tests cannot easily cover: missing relations → BlockedStatus,
-  invalid config → error handling, Pebble not ready → WaitingStatus
-- [ ] **Combined validation gate** — `charm_validate` runs both unit and integration
-  tests as the final success check before declaring the charm complete
+- [x] **Unit test task after integration green** — the build sequence (both in
+  `_DESIGN_TO_BUILD_PROMPT` and `plan_one_shot_build`) positions unit tests after
+  integration tests pass; BUILD guidance instructs writing Scenario tests for edge
+  cases as step 6 after the integration green phase
+- [x] **Unit tests for error paths** — BUILD guidance explicitly lists the cases unit
+  tests should cover: missing relations → BlockedStatus, invalid config → error
+  handling, Pebble not ready → WaitingStatus
+- [x] **Combined validation gate** — TEST guidance updated to run both unit and
+  integration tests as a combined gate; unit tests run first (faster feedback),
+  then integration tests
 
 **Exit criteria:** User says "build a charm for X". After design approval, the agent
 writes integration tests first (deploy, relate to PostgreSQL, run backup action, etc.),

@@ -6,7 +6,9 @@ closing the deploy → verify → diagnose feedback loop.  All functions are pur
 test without mocking.
 """
 
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+import re
+
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
 
@@ -125,15 +127,104 @@ def tasks_after_build(task: AgentTask) -> list[AgentTask]:
     ]
 
 
+def tasks_after_build_failure(task: AgentTask) -> list[AgentTask]:
+    """Return a targeted BUILD retry when integration tests partially pass.
+
+    When a BUILD task fails and its result contains a pytest summary showing
+    some tests passing and some failing, we spawn a follow-up BUILD task
+    focused on the remaining failures rather than a generic DEBUG task.
+    This keeps the red/green iteration loop going.
+
+    Only fires when:
+    - The task is a failed BUILD task.
+    - The result mentions test failures with a recognisable pytest summary.
+    - At least one test passed (partial progress — worth iterating).
+    - The task title does not already indicate a retry (prevent infinite loops).
+    """
+    if task.category != TaskCategory.BUILD:
+        return []
+    if task.status != TaskStatus.FAILED:
+        return []
+    if not task.result:
+        return []
+    # Prevent infinite retry chains.
+    if task.title.startswith(_RETRY_PREFIX):
+        return []
+
+    counts = _extract_test_counts(task.result)
+    if not counts:
+        return []
+
+    passed = counts.get("passed", 0)
+    failed = counts.get("failed", 0) + counts.get("error", 0)
+    if passed == 0 or failed == 0:
+        # No partial progress, or all passing (shouldn't be here) — skip.
+        return []
+
+    return [
+        AgentTask(
+            title=f"{_RETRY_PREFIX} fix {failed} failing integration test(s)",
+            category=TaskCategory.BUILD,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"The previous build task had {passed} integration tests passing "
+                f"and {failed} failing. Fix the charm code to make the remaining "
+                f"tests pass.\n\n"
+                f"**Previous result (excerpt):**\n"
+                f"{_tail(task.result, 2000)}\n\n"
+                "Steps:\n"
+                "1. Read the failing test output to understand what went wrong.\n"
+                "2. Read the relevant charm code and integration test files.\n"
+                "3. Fix the charm code — do NOT modify the integration tests "
+                "(they define the contract).\n"
+                "4. Run `run_charm_tests` with `test_type='integration'` to verify.\n"
+                "5. Iterate until green, then commit."
+            ),
+            dependencies=[task.id],
+        ),
+    ]
+
+
+# Prefix for retry tasks — used to prevent infinite retry chains.
+_RETRY_PREFIX = "[Red/Green retry]"
+
+# Regex matching pytest summary counts in subagent result text.
+_PYTEST_COUNTS_RE = re.compile(r"(\d+) (passed|failed|error|skipped)")
+
+
+def _extract_test_counts(text: str) -> dict[str, int]:
+    """Extract pytest-style pass/fail counts from free-form text.
+
+    Looks for patterns like "3 passed", "2 failed", "1 error" anywhere
+    in the text — not necessarily on a single line.
+    """
+    counts: dict[str, int] = {}
+    for match in _PYTEST_COUNTS_RE.finditer(text):
+        key = match.group(2)
+        counts[key] = counts.get(key, 0) + int(match.group(1))
+    return counts
+
+
+def _tail(text: str, max_chars: int) -> str:
+    """Return the last *max_chars* characters of *text*."""
+    if len(text) <= max_chars:
+        return text
+    return "..." + text[-max_chars:]
+
+
 def followup_tasks(task: AgentTask) -> list[AgentTask]:
     """Return any follow-up tasks for a completed or failed task.
 
     Single entry point that dispatches to the specific handlers.  The chain
     is bounded: BUILD → DEPLOY → Verify → (fail) → DEBUG → done.  DEBUG
     tasks produce no further follow-ups.
+
+    For failed BUILD tasks with partial test progress, a targeted retry
+    BUILD task is created instead of falling through to DEBUG.
     """
     results: list[AgentTask] = []
     results.extend(tasks_after_build(task))
+    results.extend(tasks_after_build_failure(task))
     results.extend(tasks_after_deploy(task))
     results.extend(tasks_after_verify(task))
     return results

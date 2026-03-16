@@ -940,3 +940,66 @@ class TestSelfVerification:
         """BUILD guidance instructs the subagent to run charm_validate."""
         guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
         assert "charm_validate" in guidance
+
+
+# ===================================================================
+# TestRedGreenBuildGuidance
+# ===================================================================
+
+
+class TestRedGreenBuildGuidance:
+    """Tests for red/green (integration-tests-first) build guidance."""
+
+    def test_build_guidance_mentions_red_green(self) -> None:
+        """BUILD guidance includes the red/green cycle instruction."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
+        assert "Red/green cycle" in guidance
+
+    def test_build_guidance_mentions_integration_tests_first(self) -> None:
+        """BUILD guidance instructs writing integration tests before charm code."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
+        assert "integration tests do not exist yet, write them first" in guidance
+
+    def test_build_guidance_mentions_jubilant(self) -> None:
+        """BUILD guidance references Jubilant for integration test patterns."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
+        assert "Jubilant" in guidance
+
+    def test_build_guidance_mentions_pattern_parameter(self) -> None:
+        """BUILD guidance mentions the pattern parameter for targeted test runs."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
+        assert "pattern" in guidance
+
+    def test_build_guidance_mentions_scenario_for_unit_tests(self) -> None:
+        """BUILD guidance still includes Scenario for unit tests as a second pass."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
+        assert "Scenario" in guidance
+
+    def test_build_guidance_unit_tests_for_edge_cases(self) -> None:
+        """BUILD guidance positions unit tests for edge cases and error paths."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
+        assert "BlockedStatus" in guidance
+        assert "WaitingStatus" in guidance
+
+    def test_test_guidance_mentions_combined_validation(self) -> None:
+        """TEST guidance includes combined unit + integration validation gate."""
+        guidance = _CATEGORY_GUIDANCE[TaskCategory.TEST]
+        assert "unit tests and integration tests" in guidance
+        assert "combined" in guidance.lower()
+
+
+# ===================================================================
+# TestCharmAuditToolAllowlists
+# ===================================================================
+
+
+class TestCharmAuditToolAllowlists:
+    """Tests for charm_audit tool registration in category allowlists."""
+
+    def test_charm_audit_in_research_tools(self) -> None:
+        """charm_audit is available to RESEARCH subagents for auditing."""
+        assert "charm_audit" in _CATEGORY_TOOLS[TaskCategory.RESEARCH]
+
+    def test_charm_audit_in_build_tools(self) -> None:
+        """charm_audit is available to BUILD subagents for re-checking after fixes."""
+        assert "charm_audit" in _CATEGORY_TOOLS[TaskCategory.BUILD]

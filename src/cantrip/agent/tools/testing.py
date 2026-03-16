@@ -57,6 +57,42 @@ def _truncate_output(output: str) -> str:
     return f"[...truncated — showing last {_TAIL_LINES} lines...]\n" + "\n".join(tail)
 
 
+def _build_pytest_target(test_dir: Path, pattern: str | None) -> list[str]:
+    """Build the pytest positional arguments from an optional pattern.
+
+    Supports three forms:
+    - ``None`` → run the whole test directory
+    - ``"test_deploy"`` → run a specific file (``tests/<type>/test_deploy.py``)
+    - ``"test_deploy::test_foo"`` → run a specific test function
+    - anything containing spaces or boolean operators → passed to ``-k``
+    """
+    if pattern is None:
+        return [str(test_dir) + "/"]
+
+    # A -k expression: contains spaces or boolean keywords.
+    if " " in pattern or " or " in pattern or " and " in pattern:
+        return [str(test_dir) + "/", "-k", pattern]
+
+    # File::function form.
+    if "::" in pattern:
+        file_part, rest = pattern.split("::", 1)
+        file_part = file_part.removesuffix(".py")
+        candidate = test_dir / f"{file_part}.py"
+        if candidate.exists():
+            return [f"{candidate}::{rest}"]
+        # Fall back to -k if the file doesn't exist.
+        return [str(test_dir) + "/", "-k", rest]
+
+    # Plain name — try as a file first, then fall back to -k.
+    candidate = test_dir / f"{pattern}.py"
+    if candidate.exists():
+        return [str(candidate)]
+    candidate = test_dir / pattern
+    if candidate.exists():
+        return [str(candidate)]
+    return [str(test_dir) + "/", "-k", pattern]
+
+
 class RunCharmTestsTool(Tool):
     """Tool to run unit or integration tests for a charm."""
 
@@ -69,7 +105,9 @@ class RunCharmTestsTool(Tool):
         return (
             "Run unit or integration tests for a charm. "
             "Prefers tox if available, otherwise falls back to pytest. "
-            "Returns test output and a parsed summary of pass/fail counts."
+            "Returns test output and a parsed summary of pass/fail counts. "
+            "Use the optional pattern parameter to run a specific test file "
+            "or test function (e.g. 'test_deploy' or 'test_relations::test_db')."
         )
 
     @property
@@ -88,10 +126,25 @@ class RunCharmTestsTool(Tool):
                     "enum": ["unit", "integration"],
                     "default": "unit",
                 },
+                "pattern": {
+                    "type": "string",
+                    "description": (
+                        "Optional filter to run specific tests. Can be a file name "
+                        "(e.g. 'test_deploy'), a file::function pattern "
+                        "(e.g. 'test_relations::test_db_connect'), or a pytest -k "
+                        "expression (e.g. 'deploy or relation'). Only used with the "
+                        "pytest runner — ignored when tox is used."
+                    ),
+                },
             },
         }
 
-    async def execute(self, path: str = ".", test_type: str = "unit") -> ToolResult:
+    async def execute(
+        self,
+        path: str = ".",
+        test_type: str = "unit",
+        pattern: str | None = None,
+    ) -> ToolResult:
         """Run charm tests using tox or pytest."""
         charm_path = Path(path).resolve()
         if not charm_path.is_dir():
@@ -103,8 +156,13 @@ class RunCharmTestsTool(Tool):
 
         timeout = _TIMEOUTS.get(test_type, _TIMEOUTS["unit"])
 
-        # Prefer tox if tox.ini exists and tox is on PATH.
-        use_tox = (charm_path / "tox.ini").exists() and shutil.which("tox") is not None
+        # Prefer tox if tox.ini exists and tox is on PATH — but fall back to
+        # pytest when a pattern is given so we can target specific tests.
+        use_tox = (
+            (charm_path / "tox.ini").exists()
+            and shutil.which("tox") is not None
+            and pattern is None
+        )
 
         if use_tox:
             cmd = ["tox", "-e", test_type]
@@ -124,7 +182,8 @@ class RunCharmTestsTool(Tool):
                     output="",
                     error=f"Test directory not found: tests/{test_type}/",
                 )
-            cmd = ["python", "-m", "pytest", f"tests/{test_type}/", "-v", "--tb=short"]
+            cmd = ["python", "-m", "pytest", "-v", "--tb=short"]
+            cmd.extend(_build_pytest_target(test_dir, pattern))
             runner = "pytest"
 
         try:

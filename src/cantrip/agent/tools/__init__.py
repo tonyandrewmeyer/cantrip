@@ -1,5 +1,6 @@
 """Agent tools."""
 
+from cantrip.agent.tools.audit import CharmAuditTool
 from cantrip.agent.tools.base import Tool, ToolResult, tool_to_schema
 from cantrip.agent.tools.charm import (
     AnalyseFrameworkTool,
@@ -87,6 +88,8 @@ __all__ = [
     "Tool",
     "ToolResult",
     "tool_to_schema",
+    # Audit
+    "CharmAuditTool",
     # Files
     "ReadFileTool",
     "WriteFileTool",

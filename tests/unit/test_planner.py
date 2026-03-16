@@ -14,8 +14,11 @@ from cantrip.agent.planner import (
     _merge_tasks,
     _parse_task_list,
     is_fast_path,
+    is_improvement,
     is_one_shot_build,
     plan_fast_path,
+    plan_improvement_fixes,
+    plan_improvement_phase,
     plan_one_shot_build,
     plan_research_phase,
 )
@@ -827,3 +830,209 @@ class TestPlanningContextNewFields:
             source_url="https://github.com/example/repo",
         )
         assert ctx.source_url == "https://github.com/example/repo"
+
+
+# ===================================================================
+# TestRedGreenBuildSequence
+# ===================================================================
+
+
+class TestRedGreenBuildSequence:
+    """Tests for the red/green (integration-tests-first) build pipeline."""
+
+    def test_design_to_build_prompt_mentions_red_green(self) -> None:
+        """The design-to-build prompt includes the red/green approach."""
+        context = PlanningContext(intent="test")
+        prompt = _build_design_to_build_prompt(context)
+        assert "red" in prompt.lower()
+        assert "green" in prompt.lower()
+
+    def test_design_to_build_prompt_integration_tests_before_charm_code(self) -> None:
+        """Integration tests appear before charm code in the build sequence."""
+        context = PlanningContext(intent="test")
+        prompt = _build_design_to_build_prompt(context)
+        integration_pos = prompt.find("integration tests")
+        charm_code_pos = prompt.find("charm code")
+        assert integration_pos < charm_code_pos
+
+    def test_design_to_build_prompt_unit_tests_after_integration(self) -> None:
+        """Unit tests are positioned after integration tests in the sequence."""
+        context = PlanningContext(intent="test")
+        prompt = _build_design_to_build_prompt(context)
+        # In the numbered sequence, unit tests (step 6) come after integration (step 2).
+        integration_pos = prompt.find("Write integration tests")
+        unit_pos = prompt.find("Write unit tests")
+        assert integration_pos < unit_pos
+
+    def test_design_to_build_prompt_mentions_external_contract(self) -> None:
+        """The prompt explains integration tests encode the external contract."""
+        context = PlanningContext(intent="test")
+        prompt = _build_design_to_build_prompt(context)
+        assert "external contract" in prompt
+
+    def test_one_shot_build_mentions_red_green(self) -> None:
+        """One-shot build description includes the red/green approach."""
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        tasks = plan_one_shot_build(ctx, "## Design\nA flask charm.")
+        assert "red" in tasks[0].description.lower()
+
+    def test_one_shot_build_integration_tests_before_charm_code(self) -> None:
+        """One-shot build writes integration tests before src/charm.py."""
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        tasks = plan_one_shot_build(ctx, "design")
+        desc = tasks[0].description
+        integration_pos = desc.find("integration tests")
+        charm_pos = desc.find("src/charm.py")
+        assert integration_pos < charm_pos
+
+    def test_one_shot_build_unit_tests_for_edge_cases(self) -> None:
+        """One-shot build positions unit tests for edge cases."""
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        tasks = plan_one_shot_build(ctx, "design")
+        assert "edge cases" in tasks[0].description
+
+
+# ===================================================================
+# TestImprovementPath
+# ===================================================================
+
+
+class TestImprovementPath:
+    """Tests for the improvement (existing charm audit) planning path."""
+
+    def test_is_improvement_with_path(self) -> None:
+        ctx = PlanningContext(intent="improve", existing_charm_path="/tmp/charm")
+        assert is_improvement(ctx)
+
+    def test_is_not_improvement_without_path(self) -> None:
+        ctx = PlanningContext(intent="build")
+        assert not is_improvement(ctx)
+
+    def test_plan_improvement_phase_produces_two_tasks(self) -> None:
+        ctx = PlanningContext(
+            intent="improve",
+            charm_name="my-charm",
+            existing_charm_path="/tmp/charm",
+        )
+        tasks = plan_improvement_phase(ctx)
+
+        assert len(tasks) == 2
+        assert tasks[0].id == "audit-charm"
+        assert tasks[0].category == TaskCategory.RESEARCH
+        assert tasks[1].id == "confirm-improvements"
+        assert tasks[1].category == TaskCategory.CONFIRM
+
+    def test_plan_improvement_phase_has_correct_dependencies(self) -> None:
+        ctx = PlanningContext(
+            intent="improve",
+            existing_charm_path="/tmp/charm",
+        )
+        tasks = plan_improvement_phase(ctx)
+
+        assert tasks[0].dependencies == []
+        assert tasks[1].dependencies == ["audit-charm"]
+
+    def test_plan_improvement_phase_includes_charm_path(self) -> None:
+        ctx = PlanningContext(
+            intent="improve",
+            existing_charm_path="/home/user/my-charm",
+        )
+        tasks = plan_improvement_phase(ctx)
+
+        assert "/home/user/my-charm" in tasks[0].description
+
+    @pytest.mark.asyncio
+    async def test_planner_routes_to_improvement(self) -> None:
+        """TaskPlanner.plan() routes to improvement when existing_charm_path is set."""
+        provider = FakeProvider()
+        planner = TaskPlanner(provider)
+        ctx = PlanningContext(
+            intent="improve this charm",
+            existing_charm_path="/tmp/charm",
+            charm_name="test",
+        )
+
+        tasks = await planner.plan(ctx)
+
+        assert tasks[0].id == "audit-charm"
+        # No LLM call for deterministic templates.
+        assert provider._call_count == 0
+
+
+# ===================================================================
+# TestPlanImprovementFixes
+# ===================================================================
+
+
+class TestPlanImprovementFixes:
+    """Tests for plan_improvement_fixes — conditional fix task generation."""
+
+    def _ctx(self) -> PlanningContext:
+        return PlanningContext(
+            intent="improve",
+            existing_charm_path="/tmp/charm",
+            charm_name="my-charm",
+        )
+
+    def test_no_gaps_produces_no_tasks(self) -> None:
+        gaps: dict[str, bool] = {}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+        assert tasks == []
+
+    def test_cos_gaps_produce_observability_task(self) -> None:
+        gaps = {"cos_tracing": True, "cos_metrics": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        obs_tasks = [t for t in tasks if t.id == "fill-observability"]
+        assert len(obs_tasks) == 1
+        assert obs_tasks[0].category == TaskCategory.BUILD
+
+    def test_test_gaps_produce_test_task(self) -> None:
+        gaps = {"unit_tests": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        test_tasks = [t for t in tasks if t.id == "fill-tests"]
+        assert len(test_tasks) == 1
+
+    def test_deprecated_apis_produce_modernise_task(self) -> None:
+        gaps = {"deprecated_apis": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        mod_tasks = [t for t in tasks if t.id == "modernise-code"]
+        assert len(mod_tasks) == 1
+
+    def test_listing_gaps_produce_listing_task(self) -> None:
+        gaps = {"readme": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        listing_tasks = [t for t in tasks if t.id == "listing-readiness"]
+        assert len(listing_tasks) == 1
+
+    def test_validation_task_depends_on_all_fixes(self) -> None:
+        gaps = {"cos_tracing": True, "unit_tests": True, "deprecated_apis": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        validate = [t for t in tasks if t.id == "validate-improvements"]
+        assert len(validate) == 1
+        assert "fill-observability" in validate[0].dependencies
+        assert "fill-tests" in validate[0].dependencies
+        assert "modernise-code" in validate[0].dependencies
+
+    def test_fix_tasks_depend_on_confirm(self) -> None:
+        gaps = {"cos_tracing": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        obs = [t for t in tasks if t.id == "fill-observability"][0]
+        assert "confirm-improvements" in obs.dependencies
+
+    def test_all_fix_tasks_use_primary_model(self) -> None:
+        gaps = {
+            "cos_tracing": True,
+            "unit_tests": True,
+            "deprecated_apis": True,
+            "readme": True,
+        }
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        build_tasks = [t for t in tasks if t.category == TaskCategory.BUILD]
+        assert all(t.model_hint == ModelHint.PRIMARY for t in build_tasks)

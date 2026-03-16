@@ -97,6 +97,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "write_file",
             "list_directory",
             "analyse_framework",
+            "charm_audit",
             "load_skill",
             "gh_issue_list",
             "virtual_file_read",
@@ -113,6 +114,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "charmcraft_fetch_libs",
             "rockcraft_init",
             "analyse_framework",
+            "charm_audit",
             "load_skill",
             "git_init",
             "git_status",
@@ -290,17 +292,34 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
     ),
     TaskCategory.BUILD: (
         "Write clean, well-structured code following ops framework conventions. "
-        "Use Scenario for unit tests, include COS integration, and follow the "
-        "charm type path (PaaS, custom, or infrastructure) as appropriate.\n\n"
-        "**Efficiency**: read the design and any existing files in one round before "
-        "writing. Write multiple files in a single round when they are independent "
-        "(e.g. charm.py and tests can be written together). Do not re-read files "
-        "you just wrote.\n\n"
+        "Include COS integration, and follow the charm type path (PaaS, custom, "
+        "or infrastructure) as appropriate.\n\n"
+        "**Red/green cycle**: follow an integration-tests-first approach.\n"
+        "1. Read the design and any existing files (including integration tests if "
+        "they already exist) in one round.\n"
+        "2. If integration tests do not exist yet, write them first — derive test "
+        "cases from the approved design: each relation endpoint gets a deploy+relate "
+        "test, each action gets an execute test, each config option gets a set+verify "
+        "test, and COS integration gets a relation test. Use Jubilant patterns. These "
+        "tests define the external contract and are expected to fail initially (red).\n"
+        "3. Write charm code (src/charm.py, Pebble layers, integrations, config) "
+        "targeting the integration tests (green).\n"
+        "4. Run `run_charm_tests` with `test_type='integration'` to check progress. "
+        "Use the `pattern` parameter to target specific failing tests for faster "
+        "iteration (e.g. `pattern='test_deploy'`).\n"
+        "5. If tests fail, read the output, fix the code, and re-run. Iterate until "
+        "integration tests pass or you exhaust your rounds.\n"
+        "6. Write unit tests using Scenario (ops.testing) for edge cases and error "
+        "paths that integration tests cannot easily cover: missing relations → "
+        "BlockedStatus, invalid config → error handling, Pebble not ready → "
+        "WaitingStatus.\n\n"
+        "**Efficiency**: write multiple files in a single round when they are "
+        "independent. Do not re-read files you just wrote.\n\n"
         "**Version control**: before finishing, use `git_add` to stage your changes "
         "and `git_commit` with a descriptive message summarising what was built. "
         "Every build task should leave a clean commit.\n\n"
         "**Self-check**: before finishing, run `charm_validate` to verify the charm "
-        "packs and unit tests pass. If validation fails, attempt one fix and "
+        "packs and tests pass. If validation fails, attempt one fix and "
         "re-validate. Do not report success if validation fails.\n\n"
         "**Security event logging**: if the design identifies a security surface, "
         "generate a `src/log_security.py` helper that emits structured OWASP-format "
@@ -322,9 +341,12 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
     TaskCategory.TEST: (
         "Run the test suite and report results clearly. If tests fail, include "
         "the failure output so debug tasks can act on it.\n\n"
-        "**Efficiency**: run unit tests and integration tests in a single round "
-        "if both are present. Report pass/fail counts and stop — do not attempt "
-        "fixes (that is a debug task)."
+        "**Combined validation**: run both unit tests and integration tests as a "
+        "combined gate. Run unit tests first (faster feedback), then integration "
+        "tests. Report pass/fail counts for each.\n\n"
+        "**Efficiency**: run `run_charm_tests` for unit and integration in "
+        "successive rounds (unit first, then integration). Report pass/fail counts "
+        "and stop — do not attempt fixes (that is a debug task)."
     ),
     TaskCategory.DEBUG: (
         "Investigate failures methodically. Query logs, traces, and unit status "

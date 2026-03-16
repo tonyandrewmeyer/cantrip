@@ -18,6 +18,7 @@ from cantrip.agent.tools.files import (
     ReadFileTool,
     WriteFileTool,
 )
+from cantrip.agent.tools.testing import _build_pytest_target
 
 
 class TestReadFileTool:
@@ -910,3 +911,60 @@ class TestCharmcraftInitPreCommit:
 
         assert (temp_dir / ".pre-commit-config.yaml").exists()
         assert any("pre-commit not found" in a for a in actions)
+
+
+# ===================================================================
+# TestBuildPytestTarget
+# ===================================================================
+
+
+class TestBuildPytestTarget:
+    """Tests for _build_pytest_target — selective test execution."""
+
+    @pytest.fixture
+    def test_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td) / "tests" / "integration"
+            d.mkdir(parents=True)
+            (d / "test_deploy.py").write_text("def test_deploy(): pass\n")
+            (d / "test_relations.py").write_text("def test_db(): pass\n")
+            yield d
+
+    def test_no_pattern_returns_whole_directory(self, test_dir):
+        result = _build_pytest_target(test_dir, None)
+        assert result == [str(test_dir) + "/"]
+
+    def test_file_name_match(self, test_dir):
+        """Plain name matching an existing file resolves to that file."""
+        result = _build_pytest_target(test_dir, "test_deploy")
+        assert result == [str(test_dir / "test_deploy.py")]
+
+    def test_file_function_form(self, test_dir):
+        """file::function form resolves to pytest node ID."""
+        result = _build_pytest_target(test_dir, "test_deploy::test_smoke")
+        assert result == [f"{test_dir / 'test_deploy.py'}::test_smoke"]
+
+    def test_file_function_nonexistent_file_falls_back_to_k(self, test_dir):
+        """file::function with a missing file falls back to -k."""
+        result = _build_pytest_target(test_dir, "missing::test_foo")
+        assert result == [str(test_dir) + "/", "-k", "test_foo"]
+
+    def test_k_expression_with_or(self, test_dir):
+        """Boolean expressions with 'or' are passed to -k."""
+        result = _build_pytest_target(test_dir, "deploy or relation")
+        assert result == [str(test_dir) + "/", "-k", "deploy or relation"]
+
+    def test_k_expression_with_spaces(self, test_dir):
+        """Expressions with spaces are passed to -k."""
+        result = _build_pytest_target(test_dir, "test deploy")
+        assert result == [str(test_dir) + "/", "-k", "test deploy"]
+
+    def test_unknown_name_falls_back_to_k(self, test_dir):
+        """A name that doesn't match any file falls back to -k."""
+        result = _build_pytest_target(test_dir, "test_nonexistent")
+        assert result == [str(test_dir) + "/", "-k", "test_nonexistent"]
+
+    def test_file_name_with_py_suffix(self, test_dir):
+        """Handles .py suffix in file::function form gracefully."""
+        result = _build_pytest_target(test_dir, "test_deploy.py::test_smoke")
+        assert result == [f"{test_dir / 'test_deploy.py'}::test_smoke"]

@@ -37,6 +37,7 @@ class PlanningContext:
     existing_tasks: list[AgentTask] = field(default_factory=list)
     new_context: str | None = None
     source_url: str | None = None
+    existing_charm_path: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -130,19 +131,204 @@ def plan_one_shot_build(context: PlanningContext, design_content: str) -> list[A
             model_hint=ModelHint.PRIMARY,
             description=(
                 f"Build a complete {framework} 12-factor PaaS charm for {workload} in a "
-                f"single pass. Steps:\n"
+                f"single pass using a red/green cycle. Steps:\n"
                 f"1. Run charmcraft init to scaffold the charm\n"
                 f"2. Write metadata (charmcraft.yaml) with correct name, bases, containers, "
                 f"and integrations from the approved design\n"
                 f"3. Write rockcraft.yaml if needed for the {framework} workload\n"
-                f"4. Write src/charm.py with Pebble layer, integrations, and config handling\n"
-                f"5. Write unit tests using Scenario (ops.testing)\n"
-                f"6. Pack the charm with charmcraft pack\n\n"
+                f"4. Write integration tests from the design — deploy, relate, config, "
+                f"actions (these are the 'red' tests that define the external contract)\n"
+                f"5. Write src/charm.py with Pebble layer, integrations, and config "
+                f"handling to make the integration tests pass ('green')\n"
+                f"6. Write unit tests using Scenario (ops.testing) for edge cases and "
+                f"error paths\n"
+                f"7. Pack the charm with charmcraft pack\n\n"
                 f"Approved design:\n{design_content}"
             ),
             dependencies=[],
         ),
     ]
+
+
+def is_improvement(context: PlanningContext) -> bool:
+    """Return whether the context describes an improvement request.
+
+    An improvement request targets an existing charm directory rather than
+    building a new charm from scratch.
+    """
+    return context.existing_charm_path is not None
+
+
+def plan_improvement_phase(context: PlanningContext) -> list[AgentTask]:
+    """Generate the audit → confirm → fix task sequence for improving an existing charm.
+
+    Deterministic template — no LLM call needed.  The audit task runs the
+    ``charm_audit`` tool and produces a structured report.  After the user
+    confirms which areas to address, conditional fix tasks are generated
+    by ``plan_improvement_fixes``.
+    """
+    charm_path = context.existing_charm_path or "."
+    charm_name = context.charm_name or "the charm"
+
+    return [
+        AgentTask(
+            id="audit-charm",
+            title=f"Audit existing charm: {charm_name}",
+            category=TaskCategory.RESEARCH,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Audit the existing charm at {charm_path} against best practices.\n\n"
+                "1. Run `charm_audit` to get a structured report of issues.\n"
+                "2. Read key files (`charmcraft.yaml`, `src/charm.py`, `README.md`, "
+                "tests) to understand the current state.\n"
+                "3. Produce a comprehensive AUDIT.md covering: COS integration gaps, "
+                "test coverage, deprecated APIs, metadata completeness, and listing "
+                "readiness.\n"
+                "4. Categorise findings as must-fix, should-fix, and nice-to-have."
+            ),
+            dependencies=[],
+        ),
+        AgentTask(
+            id="confirm-improvements",
+            title="Confirm improvement plan with user",
+            category=TaskCategory.CONFIRM,
+            description=(
+                "Present the audit findings to the user and confirm which "
+                "improvement areas to address (observability, tests, code "
+                "modernisation, listing readiness)."
+            ),
+            dependencies=["audit-charm"],
+        ),
+    ]
+
+
+def plan_improvement_fixes(
+    context: PlanningContext,
+    gaps: dict[str, bool],
+) -> list[AgentTask]:
+    """Generate fix tasks based on audit findings.
+
+    Called after the user confirms which improvements to make.  Each gap
+    area becomes a BUILD task; all depend on the confirmation task.
+    A final validation task depends on all fix tasks.
+    """
+    charm_path = context.existing_charm_path or "."
+    tasks: list[AgentTask] = []
+    fix_ids: list[str] = []
+
+    # Observability gaps.
+    cos_gaps = [
+        k for k in ("cos_tracing", "cos_metrics", "cos_logging", "cos_dashboards", "ops_tracing")
+        if gaps.get(k)
+    ]
+    if cos_gaps:
+        tasks.append(AgentTask(
+            id="fill-observability",
+            title="Fill observability gaps",
+            category=TaskCategory.BUILD,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Add missing COS integration to the charm at {charm_path}.\n\n"
+                f"Missing: {', '.join(cos_gaps)}\n\n"
+                "1. Load the `observability` skill for guidance.\n"
+                "2. Add missing COS relations to charmcraft.yaml.\n"
+                "3. Add ops-tracing if missing (dependency + setup call).\n"
+                "4. Add metrics endpoint, log forwarding, and/or Grafana "
+                "dashboard relation as needed.\n"
+                "5. Commit changes with a descriptive message."
+            ),
+            dependencies=["confirm-improvements"],
+        ))
+        fix_ids.append("fill-observability")
+
+    # Test gaps.
+    test_gaps = [
+        k for k in ("unit_tests", "integration_tests")
+        if gaps.get(k)
+    ]
+    if test_gaps:
+        tasks.append(AgentTask(
+            id="fill-tests",
+            title="Fill test gaps",
+            category=TaskCategory.BUILD,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Add missing tests to the charm at {charm_path}.\n\n"
+                f"Missing: {', '.join(test_gaps)}\n\n"
+                "1. Read the existing charm code to understand events, relations, "
+                "config, and actions.\n"
+                "2. If unit tests are missing, write Scenario-based unit tests "
+                "covering all observed events, happy paths, and error cases. "
+                "Do NOT use the deprecated Harness.\n"
+                "3. If integration tests are missing, write Jubilant integration "
+                "tests covering deploy, relate, config, and actions.\n"
+                "4. Run the tests and fix any failures.\n"
+                "5. Commit changes with a descriptive message."
+            ),
+            dependencies=["confirm-improvements"],
+        ))
+        fix_ids.append("fill-tests")
+
+    # Deprecated API migration (if detected by audit).
+    if gaps.get("deprecated_apis"):
+        tasks.append(AgentTask(
+            id="modernise-code",
+            title="Modernise charm code",
+            category=TaskCategory.BUILD,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Migrate deprecated APIs in the charm at {charm_path}.\n\n"
+                "1. Replace StoredState with instance attributes or Juju secrets.\n"
+                "2. Replace Harness test imports with Scenario.\n"
+                "3. Replace charmcraft fetch-libs imports with PyPI equivalents "
+                "where available.\n"
+                "4. Run tests after each change to verify nothing breaks.\n"
+                "5. Commit changes with a descriptive message."
+            ),
+            dependencies=["confirm-improvements"],
+        ))
+        fix_ids.append("modernise-code")
+
+    # Listing readiness (README, metadata, licence).
+    listing_gaps = [
+        k for k in ("readme", "licence")
+        if gaps.get(k)
+    ]
+    if listing_gaps or gaps.get("listing_metadata"):
+        tasks.append(AgentTask(
+            id="listing-readiness",
+            title="Prepare for Charmhub listing",
+            category=TaskCategory.BUILD,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Prepare the charm at {charm_path} for Charmhub listing.\n\n"
+                "1. Generate or update README.md with standard sections "
+                "(description, deployment, configuration, integrations).\n"
+                "2. Fill in missing charmcraft.yaml metadata fields "
+                "(display-name, summary, description, docs, issues, source).\n"
+                "3. Check for LICENSE file — suggest Apache-2.0 if missing.\n"
+                "4. Commit changes with a descriptive message."
+            ),
+            dependencies=["confirm-improvements"],
+        ))
+        fix_ids.append("listing-readiness")
+
+    # Validation task depends on all fixes.
+    if fix_ids:
+        tasks.append(AgentTask(
+            id="validate-improvements",
+            title="Validate all improvements",
+            category=TaskCategory.TEST,
+            description=(
+                f"Validate the improved charm at {charm_path}.\n\n"
+                "1. Run `charm_validate` to verify the charm packs cleanly.\n"
+                "2. Run unit tests and integration tests.\n"
+                "3. Report the final state."
+            ),
+            dependencies=fix_ids,
+        ))
+
+    return tasks
 
 
 def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
@@ -244,7 +430,10 @@ class TaskPlanner:
 
         Uses deterministic templates — no LLM call.  For well-known
         12-factor frameworks, the fast path skips research entirely.
+        For improvement requests, generates the audit → confirm flow.
         """
+        if is_improvement(context):
+            return plan_improvement_phase(context)
         if is_fast_path(context):
             return plan_fast_path(context)
         return plan_research_phase(context)
@@ -398,20 +587,30 @@ The user has approved a design proposal. Generate the **build, deploy, and test*
 needed to implement it. Return **only** a JSON array — no surrounding text.
 
 Each task object must have:
-- "id": short unique slug (e.g. "scaffold-charm", "write-tests")
+- "id": short unique slug (e.g. "scaffold-charm", "write-integration-tests")
 - "title": concise imperative title
 - "category": one of {categories}
 - "description": one or two sentences explaining what the task does
 - "dependencies": list of task IDs that must complete before this one starts
 
-### Typical build sequence
+### Typical build sequence (red/green)
+
+Follow an **integration-tests-first** approach. Write integration tests from the \
+design *before* the charm code, then iterate until they pass.
 
 1. Scaffold the charm (charmcraft init, write metadata)
-2. Write charm code (src/charm.py, Pebble layers, integrations)
-3. Write unit tests (Scenario-based)
+2. Write integration tests from the design — deploy, relate, actions, config \
+(these will fail initially — that is expected; this is the "red" phase)
+3. Write charm code to make the tests pass (src/charm.py, Pebble layers, \
+integrations) — this is the "green" phase
 4. Pack and deploy
-5. Run tests and validate
-6. Commit and offer next steps
+5. Run integration tests and iterate until green
+6. Write unit tests (Scenario-based) for edge cases and error paths
+7. Run full validation (unit + integration) and commit
+
+The integration tests encode the **external contract** from the approved design: \
+each relation endpoint, action, config option, and COS integration becomes a test. \
+The charm code is written to satisfy these tests, not the other way around.
 
 Adapt for the design — add rock-building steps for 12-factor charms, add integration \
 wiring for complex workloads, skip steps that do not apply. Honour any user overrides.

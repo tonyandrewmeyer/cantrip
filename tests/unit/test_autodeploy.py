@@ -1,15 +1,18 @@
 """Tests for the auto-deploy loop follow-up logic."""
 
 from cantrip.agent.autodeploy import (
+    _RETRY_PREFIX,
     _VERIFY_PREFIX,
     _WATCHER_PREFIX,
+    _extract_test_counts,
     followup_tasks,
     task_for_watcher_event,
     tasks_after_build,
+    tasks_after_build_failure,
     tasks_after_deploy,
     tasks_after_verify,
 )
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
 
@@ -182,6 +185,153 @@ class TestTasksAfterVerify:
 
 
 # ===================================================================
+# TestExtractTestCounts
+# ===================================================================
+
+
+class TestExtractTestCounts:
+    """Tests for _extract_test_counts — pytest summary extraction."""
+
+    def test_basic_pass_fail(self) -> None:
+        text = "=== 3 passed, 2 failed in 1.5s ==="
+        assert _extract_test_counts(text) == {"passed": 3, "failed": 2}
+
+    def test_with_error_and_skipped(self) -> None:
+        text = "stuff\n=== 1 passed, 2 failed, 1 error, 3 skipped ==="
+        assert _extract_test_counts(text) == {
+            "passed": 1,
+            "failed": 2,
+            "error": 1,
+            "skipped": 3,
+        }
+
+    def test_no_matches(self) -> None:
+        assert _extract_test_counts("no test output here") == {}
+
+    def test_scattered_in_text(self) -> None:
+        text = "Some output\n5 passed\nmore stuff\n2 failed\n"
+        counts = _extract_test_counts(text)
+        assert counts["passed"] == 5
+        assert counts["failed"] == 2
+
+
+# ===================================================================
+# TestTasksAfterBuildFailure
+# ===================================================================
+
+
+class TestTasksAfterBuildFailure:
+    """Tests for tasks_after_build_failure — red/green retry on partial progress."""
+
+    def test_creates_retry_for_partial_test_progress(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = "=== 3 passed, 4 failed in 5.2s ==="
+
+        result = tasks_after_build_failure(task)
+
+        assert len(result) == 1
+        assert result[0].category == TaskCategory.BUILD
+        assert result[0].title.startswith(_RETRY_PREFIX)
+        assert "4 failing" in result[0].title
+
+    def test_retry_uses_primary_model(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = "=== 3 passed, 2 failed ==="
+
+        result = tasks_after_build_failure(task)
+
+        assert result[0].model_hint == ModelHint.PRIMARY
+
+    def test_retry_depends_on_failed_task(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = "=== 1 passed, 1 failed ==="
+
+        result = tasks_after_build_failure(task)
+
+        assert result[0].dependencies == ["b1"]
+
+    def test_no_retry_when_all_tests_fail(self) -> None:
+        """No partial progress — not worth a targeted retry."""
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = "=== 5 failed ==="
+
+        assert tasks_after_build_failure(task) == []
+
+    def test_no_retry_for_successful_build(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.DONE
+        task.result = "=== 7 passed ==="
+
+        assert tasks_after_build_failure(task) == []
+
+    def test_no_retry_for_non_build(self) -> None:
+        task = AgentTask(id="t1", title="Test charm", category=TaskCategory.TEST)
+        task.status = TaskStatus.FAILED
+        task.result = "=== 3 passed, 2 failed ==="
+
+        assert tasks_after_build_failure(task) == []
+
+    def test_no_retry_without_test_output(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = "charmcraft pack failed with exit code 1"
+
+        assert tasks_after_build_failure(task) == []
+
+    def test_no_retry_for_existing_retry(self) -> None:
+        """Prevents infinite retry chains."""
+        task = AgentTask(
+            id="b2",
+            title=f"{_RETRY_PREFIX} fix 3 failing integration test(s)",
+            category=TaskCategory.BUILD,
+        )
+        task.status = TaskStatus.FAILED
+        task.result = "=== 5 passed, 1 failed ==="
+
+        assert tasks_after_build_failure(task) == []
+
+    def test_no_retry_with_no_result(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = None
+
+        assert tasks_after_build_failure(task) == []
+
+    def test_retry_description_includes_previous_result(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = "FAILED test_deploy.py::test_ingress\n=== 2 passed, 1 failed ==="
+
+        result = tasks_after_build_failure(task)
+
+        assert "test_deploy" in result[0].description
+
+    def test_retry_description_says_do_not_modify_tests(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = "=== 1 passed, 1 failed ==="
+
+        result = tasks_after_build_failure(task)
+
+        assert "do NOT modify the integration tests" in result[0].description
+
+    def test_error_counts_toward_failures(self) -> None:
+        """Errors (not just 'failed') are counted as failures."""
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = "=== 2 passed, 1 error ==="
+
+        result = tasks_after_build_failure(task)
+
+        assert len(result) == 1
+        assert "1 failing" in result[0].title
+
+
+# ===================================================================
 # TestFollowupTasks
 # ===================================================================
 
@@ -232,6 +382,18 @@ class TestFollowupTasks:
         task.status = TaskStatus.DONE
 
         assert followup_tasks(task) == []
+
+    def test_dispatches_to_build_failure_handler(self) -> None:
+        """Failed BUILD with partial test progress gets a retry, not DEBUG."""
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.FAILED
+        task.result = "=== 3 passed, 2 failed ==="
+
+        result = followup_tasks(task)
+
+        assert len(result) == 1
+        assert result[0].category == TaskCategory.BUILD
+        assert result[0].title.startswith(_RETRY_PREFIX)
 
 
 # ===================================================================

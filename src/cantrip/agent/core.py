@@ -29,6 +29,7 @@ from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import (
     AnalyseFrameworkTool,
+    CharmAuditTool,
     CharmcraftFetchLibsTool,
     CharmcraftInitTool,
     CharmcraftPackTool,
@@ -297,6 +298,8 @@ class CantripAgent:
             WriteFileTool(base_path=base_path),
             ListDirectoryTool(base_path=base_path),
             EditFileTool(base_path=base_path),
+            # Audit
+            CharmAuditTool(),
             # Charm operations
             CharmcraftInitTool(),
             CharmcraftPackTool(),

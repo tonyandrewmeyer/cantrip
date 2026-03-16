@@ -68,6 +68,9 @@ class AgentState:
     dev_model: str | None = None
     cos_model: str | None = None
 
+    # "build" for new charms, "improve" when auditing/improving an existing charm.
+    mode: str = "build"
+
     # Transient — not persisted to SQLite, re-determined each startup.
     environment_ready: bool = False
     watcher_enabled: bool = False
@@ -75,6 +78,9 @@ class AgentState:
 
     # Transient design proposal — not persisted, populated after synthesis.
     design_proposal: object | None = None
+
+    # Transient audit report — populated after charm_audit completes.
+    audit_report: str | None = None
 
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)

@@ -27,6 +27,7 @@ The planner follows a **research → synthesis → confirm → build** pattern:
 
 **When to use `plan_tasks`:**
 - User asks to build a new charm ("build a charm for Redis", "charm my Flask app")
+- User asks to improve an existing charm ("audit my charm", "make this charm production-ready", "here's my charm, improve it")
 - User requests a significant scope change ("actually, target machine instead of K8s")
 - User wants to start a large multi-step workflow from scratch
 
@@ -34,6 +35,17 @@ The planner follows a **research → synthesis → confirm → build** pattern:
 - Small, incremental changes ("add a config option", "fix this test")
 - Questions or clarifications ("what integrations does this charm have?")
 - Active iteration on existing code ("update the Pebble layer")
+
+### Improving Existing Charms
+
+When the user points you at an **existing charm** ("here's my charm, make it great", "audit this charm", "add COS to my charm"), use `plan_tasks` with the charm path set. This triggers the **improvement flow**:
+
+1. **Audit** — run `charm_audit` to get a structured report of issues (COS gaps, test gaps, deprecated APIs, metadata, listing readiness)
+2. **Confirm** — present the audit findings and ask the user which areas to address
+3. **Fix** — address each area in a separate BUILD task (observability, tests, code modernisation, listing)
+4. **Validate** — run the full test suite and `charm_validate`
+
+Each fix category is committed separately so the user can review and revert individually. Load the `charm-improvement` skill for detailed guidance on each area.
 
 After `plan_tasks` returns a plan, **always present it to the user and ask for confirmation** before autonomous execution begins. The user should see what tasks are planned and have a chance to adjust.
 
