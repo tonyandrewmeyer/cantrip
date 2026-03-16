@@ -127,6 +127,25 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Output file path (default: transcript.<ext> in charm directory)",
     )
+    export_parser.add_argument(
+        "--task",
+        default=None,
+        dest="filter_task",
+        help="Export only a specific task and its subagent conversation",
+    )
+    export_parser.add_argument(
+        "--phase",
+        choices=["research", "build", "deploy", "test"],
+        default=None,
+        dest="filter_phase",
+        help="Export only tasks in a phase (research, build, deploy, test)",
+    )
+    export_parser.add_argument(
+        "--since",
+        default=None,
+        dest="filter_since",
+        help="Export only messages and events at or after an ISO timestamp",
+    )
 
     args = parser.parse_args()
 
@@ -161,7 +180,12 @@ def _export_transcript(args: argparse.Namespace) -> int:
 
     from cantrip.transcript.export import load_transcript
 
-    data = load_transcript(db_path)
+    data = load_transcript(
+        db_path,
+        task_id=getattr(args, "filter_task", None),
+        phase=getattr(args, "filter_phase", None),
+        since=getattr(args, "filter_since", None),
+    )
 
     fmt = args.fmt
     if fmt == "html":

@@ -253,3 +253,113 @@ class TestMarkdownRenderer:
         data = TranscriptData()
         md = render_markdown(data)
         assert "# Cantrip Transcript" in md
+
+
+# ===================================================================
+# TestFilteredExport
+# ===================================================================
+
+
+class TestFilteredExport:
+    """Tests for filtered transcript export (--task, --phase, --since)."""
+
+    @pytest.fixture()
+    def db_path(self, tmp_path: Path) -> Path:
+        """Build a .cantrip DB with varied tasks and messages."""
+        path = tmp_path / ".cantrip"
+        store = SessionStore(path)
+        store.open()
+        state = AgentState(charm_name="filter-test", charm_path=tmp_path)
+        store.save_session(state)
+
+        store.record_message(role="user", content="Hello")
+        store.record_message(role="assistant", content="Hi there")
+        store.record_event("session_start", {"charm_name": "filter-test"})
+
+        from cantrip.agent.queue import AgentTask, TaskCategory
+
+        tasks = [
+            AgentTask(
+                id="research-1",
+                title="Research workload",
+                category=TaskCategory.RESEARCH,
+            ),
+            AgentTask(
+                id="build-1",
+                title="Build charm",
+                category=TaskCategory.BUILD,
+            ),
+            AgentTask(
+                id="test-1",
+                title="Run tests",
+                category=TaskCategory.TEST,
+            ),
+        ]
+        store.save_tasks(tasks)
+        store.record_subagent_message("build-1", 0, "system", "You are a builder")
+        store.record_subagent_message("build-1", 1, "assistant", "Building...")
+
+        store.close()
+        return path
+
+    def test_unfiltered_loads_everything(self, db_path):
+        data = load_transcript(db_path)
+        assert len(data.tasks) == 3
+        assert len(data.messages) == 2
+
+    def test_filter_by_task_id(self, db_path):
+        data = load_transcript(db_path, task_id="build-1")
+        assert len(data.tasks) == 1
+        assert data.tasks[0]["id"] == "build-1"
+        # Subagent messages for the selected task should be included.
+        assert "build-1" in data.subagent_messages
+        assert len(data.subagent_messages["build-1"]) == 2
+
+    def test_filter_by_task_id_excludes_others(self, db_path):
+        data = load_transcript(db_path, task_id="research-1")
+        assert len(data.tasks) == 1
+        assert data.tasks[0]["id"] == "research-1"
+        # No subagent messages for research task.
+        assert "build-1" not in data.subagent_messages
+
+    def test_filter_by_phase_research(self, db_path):
+        data = load_transcript(db_path, phase="research")
+        categories = {t["category"] for t in data.tasks}
+        assert "research" in categories
+        assert "build" not in categories
+        assert "test" not in categories
+
+    def test_filter_by_phase_build(self, db_path):
+        data = load_transcript(db_path, phase="build")
+        assert len(data.tasks) == 1
+        assert data.tasks[0]["category"] == "build"
+
+    def test_filter_by_phase_test(self, db_path):
+        """Test phase includes both test and debug categories."""
+        data = load_transcript(db_path, phase="test")
+        assert len(data.tasks) == 1
+        assert data.tasks[0]["category"] == "test"
+
+    def test_filter_by_since(self, db_path):
+        """Messages and events before the since timestamp are excluded."""
+        # Use a far-future timestamp — should exclude everything.
+        data = load_transcript(db_path, since="2099-01-01T00:00:00")
+        assert len(data.messages) == 0
+        assert len(data.events) == 0
+        # Tasks are not filtered by timestamp.
+        assert len(data.tasks) == 3
+
+    def test_filter_by_since_includes_recent(self, db_path):
+        """A past timestamp includes all messages."""
+        data = load_transcript(db_path, since="2020-01-01T00:00:00")
+        assert len(data.messages) == 2
+        assert len(data.events) >= 1
+
+    def test_nonexistent_task_id_gives_empty(self, db_path):
+        data = load_transcript(db_path, task_id="nonexistent")
+        assert len(data.tasks) == 0
+        assert data.subagent_messages == {}
+
+    def test_unknown_phase_gives_empty(self, db_path):
+        data = load_transcript(db_path, phase="unknown")
+        assert len(data.tasks) == 0

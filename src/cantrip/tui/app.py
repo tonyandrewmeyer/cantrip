@@ -23,6 +23,7 @@ from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.screens.logs import LogScreen
 from cantrip.tui.screens.questions import DesignQuestionsScreen
 from cantrip.tui.screens.traces import TraceScreen
+from cantrip.tui.screens.transcript import TranscriptScreen
 from cantrip.tui.widgets.chat import ChatWidget
 from cantrip.tui.widgets.filetree import CharmTreeWidget
 from cantrip.tui.widgets.modelbar import ModelInfoBar
@@ -52,6 +53,7 @@ class CantripApp(App):
         Binding("f6", "toggle_files", "Files"),
         Binding("f7", "toggle_model_info", "Model"),
         Binding("f8", "graph", "Graph"),
+        Binding("f9", "transcript", "Transcript"),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+l", "clear_chat", "Clear"),
     ]
@@ -648,6 +650,17 @@ class CantripApp(App):
         status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
         current_app = self._agent.state.charm_name if self._agent else None
         self.push_screen(GraphScreen(status=status_widget.dev_status, current_app=current_app))
+
+    def action_transcript(self) -> None:
+        """Show session transcript screen."""
+        import pathlib
+
+        db_path: pathlib.Path | None = None
+        if self._agent and self._agent.state.charm_path:
+            candidate = self._agent.state.charm_path / ".cantrip"
+            if candidate.exists():
+                db_path = candidate
+        self.push_screen(TranscriptScreen(db_path=db_path))
 
     async def action_quit(self) -> None:
         """Stop background services and quit."""

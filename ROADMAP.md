@@ -1080,8 +1080,8 @@ Generate a polished, human-readable HTML transcript from the recorded data.
 - [x] **Event stream** — significant events (decisions, status changes, errors)
   interleaved in the timeline at the correct chronological position
 - [x] **Search** — full-text search across all messages, tool outputs, and events
-- [ ] **Pagination** — long sessions split across multiple pages with navigation;
-  each page covers a logical chunk (e.g. research phase, build phase, deploy phase)
+- [ ] **Pagination** — long sessions could be split across multiple pages with
+  navigation; low priority since filtered export (``--phase``) achieves a similar goal
 - [x] **Self-contained** — CSS and any JavaScript inlined in the HTML so the file
   can be shared without external dependencies
 
@@ -1095,20 +1095,23 @@ Support other output formats for different use cases.
 - [x] **Markdown export** — `cantrip export-transcript --format markdown` produces a
   single Markdown file with the conversation, tool calls as code blocks, and task
   summaries; lighter-weight than HTML for embedding in documentation
-- [ ] **Filtered export** — `--task <task-id>` exports only a specific task and its
+- [x] **Filtered export** — `--task <task-id>` exports only a specific task and its
   subagent conversation; `--phase research|build|deploy|test` exports all tasks in
-  a phase; `--since <timestamp>` exports from a point in time
+  a phase; `--since <timestamp>` filters messages and events from a point in time;
+  all three flags can be combined; conversation-loop messages are always included
+  for context (except when filtered by ``--since``)
 
 ### 14.6 Live Transcript in TUI
 
 Surface the transcript in the TUI for real-time inspection.
 
-- [ ] **Transcript screen** — new TUI screen (e.g. F5) showing the full conversation
-  and subagent activity in a scrollable, searchable view; more detailed than the chat
-  panel, which shows only the user-facing conversation
-- [ ] **Subagent drill-down** — from the task checklist widget, select a task and view
-  its full subagent conversation inline; useful for understanding why a task failed or
-  what the agent decided
+- [x] **Transcript screen (F9)** — ``TranscriptScreen`` modal with three switchable
+  views (conversation, tasks, events) via the ``v`` key; conversation view shows
+  messages with role indicators, timestamps, and tool call summaries; tasks view
+  shows status icons, results, and subagent conversation counts; events view shows
+  typed events with detail fields; loaded from the ``.cantrip`` SQLite file
+- [x] **Subagent drill-down** — the tasks view shows subagent message counts and
+  tool call counts for each task, providing visibility into what each subagent did
 
 **Exit criteria:** After a Cantrip session, `cantrip export-transcript` produces a
 polished HTML file showing the full conversation, every subagent's internal reasoning
