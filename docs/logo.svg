@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- Outer hexagon (charm shape) -->
+  <path d="M60 8L104 32V76L60 100L16 76V32L60 8Z" stroke="url(#grad1)" stroke-width="2.5" fill="none"/>
+  <!-- Inner spark/bolt -->
+  <path d="M52 35L65 55H50L63 85" stroke="url(#grad2)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Sparkle dots -->
+  <circle cx="75" cy="38" r="2" fill="url(#grad2)" opacity="0.9"/>
+  <circle cx="82" cy="50" r="1.5" fill="url(#grad2)" opacity="0.6"/>
+  <circle cx="38" cy="72" r="1.5" fill="url(#grad2)" opacity="0.6"/>
+  <circle cx="42" cy="42" r="1.2" fill="url(#grad2)" opacity="0.4"/>
+  <defs>
+    <linearGradient id="grad1" x1="16" y1="8" x2="104" y2="100">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="grad2" x1="50" y1="35" x2="65" y2="85">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="50%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#e879f9"/>
+    </linearGradient>
+  </defs>
+</svg>

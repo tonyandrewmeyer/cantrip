@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cantrip — AI-Powered Juju Charm Builder</title>
+<meta name="description" content="Cantrip is an autonomous AI agent that builds production-quality Juju charms. Describe your workload, and Cantrip researches, designs, builds, deploys, and tests it.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── Navigation ──────────────────────────────────────────────── -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <img src="logo.svg" alt="Cantrip" width="28" height="28">
+      <span>Cantrip</span>
+    </a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#quickstart">Get Started</a>
+      <a href="https://github.com/canonical/cantrip" class="btn btn-sm">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Hero ────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="container">
+    <img src="logo.svg" alt="Cantrip logo" class="hero-logo" width="96" height="96">
+    <h1>Build Juju charms<br><span class="gradient-text">with AI</span></h1>
+    <p class="hero-subtitle">
+      Describe your workload. Cantrip researches it, designs the charm,
+      writes the code, deploys it, and runs the tests &mdash; autonomously.
+    </p>
+    <div class="hero-actions">
+      <a href="#quickstart" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/canonical/cantrip" class="btn btn-outline">View on GitHub</a>
+    </div>
+    <div class="hero-badge">Free &amp; open source &middot; Apache 2.0</div>
+  </div>
+</section>
+
+<!-- ── Features ────────────────────────────────────────────────── -->
+<section id="features" class="features">
+  <div class="container">
+    <h2>Everything you need to build production charms</h2>
+    <p class="section-subtitle">
+      Cantrip handles the full lifecycle &mdash; from research to Charmhub publishing.
+    </p>
+    <div class="feature-grid">
+
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F50D;</div>
+        <h3>Research-Driven Design</h3>
+        <p>
+          Cantrip analyses your workload &mdash; documentation, source code,
+          existing charms &mdash; and proposes a design grounded in real
+          operational best practices.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">&#x2699;</div>
+        <h3>Autonomous Building</h3>
+        <p>
+          A background work loop plans, scaffolds, writes charm code,
+          and packs &mdash; without waiting for instructions. You confirm
+          the design; the agent drives.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F9EA;</div>
+        <h3>Red/Green Testing</h3>
+        <p>
+          Integration tests are written <em>before</em> charm code.
+          The agent iterates until they pass, giving you a machine-verifiable
+          definition of &ldquo;done&rdquo;.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F4CA;</div>
+        <h3>Full Observability</h3>
+        <p>
+          Every charm ships with COS integration &mdash; traces, metrics,
+          logs, and dashboards wired up automatically via ops-tracing,
+          Prometheus, Loki, and Grafana.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F504;</div>
+        <h3>Event-Driven Debugging</h3>
+        <p>
+          A watcher monitors your deployment in real time. When something
+          breaks, the agent diagnoses the failure using Tempo traces and
+          Loki logs, then fixes it.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">&#x2B06;</div>
+        <h3>Improve Existing Charms</h3>
+        <p>
+          Point Cantrip at an existing charm and it audits, adds tests,
+          fills COS gaps, modernises deprecated APIs, and prepares it
+          for Charmhub listing.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── How It Works ────────────────────────────────────────────── -->
+<section id="how-it-works" class="how-it-works">
+  <div class="container">
+    <h2>How it works</h2>
+    <p class="section-subtitle">Two concurrent loops. You steer; the agent drives.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <h3>Describe your workload</h3>
+          <p>&ldquo;Build a charm for Redis&rdquo; &mdash; or point it at your source repo.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h3>Review the design</h3>
+          <p>Cantrip researches the workload and proposes integrations, config, actions, and operational patterns.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <h3>Watch it build</h3>
+          <p>The agent writes integration tests, charm code, deploys, and iterates until green &mdash; all visible in a live task checklist.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <h3>Ship it</h3>
+          <p>Pack, upload to Charmhub, generate a demo, and publish &mdash; with full COS observability baked in.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Ecosystem ───────────────────────────────────────────────── -->
+<section class="ecosystem">
+  <div class="container">
+    <h2>Built on the Canonical ecosystem</h2>
+    <p class="section-subtitle">
+      Cantrip showcases the tools that power production infrastructure.
+    </p>
+    <div class="ecosystem-grid">
+      <div class="eco-item"><strong>Juju</strong><span>Orchestration</span></div>
+      <div class="eco-item"><strong>Charmcraft</strong><span>Packaging</span></div>
+      <div class="eco-item"><strong>Ops</strong><span>Framework</span></div>
+      <div class="eco-item"><strong>Rockcraft</strong><span>OCI images</span></div>
+      <div class="eco-item"><strong>Jubilant</strong><span>Testing</span></div>
+      <div class="eco-item"><strong>Concierge</strong><span>Setup</span></div>
+      <div class="eco-item"><strong>COS</strong><span>Observability</span></div>
+      <div class="eco-item"><strong>Scenario</strong><span>Unit tests</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Quick Start ─────────────────────────────────────────────── -->
+<section id="quickstart" class="quickstart">
+  <div class="container">
+    <h2>Get started in seconds</h2>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-dot red"></span>
+        <span class="code-dot yellow"></span>
+        <span class="code-dot green"></span>
+        <span class="code-title">Terminal</span>
+      </div>
+      <pre><code><span class="prompt">$</span> pip install cantrip
+<span class="prompt">$</span> export GEMINI_API_KEY=<span class="dim">"your-key"</span>
+<span class="prompt">$</span> mkdir my-charm && cd my-charm
+<span class="prompt">$</span> cantrip
+
+<span class="comment"># Or use the Web UI:</span>
+<span class="prompt">$</span> cantrip --web
+
+<span class="comment"># Or run entirely on local models:</span>
+<span class="prompt">$</span> cantrip --provider inference-snap --snap gemma3</code></pre>
+    </div>
+    <p class="quickstart-note">
+      Supports <strong>Gemini</strong>, <strong>Claude</strong>, and
+      <strong>local inference snaps</strong> (no API key needed).
+    </p>
+  </div>
+</section>
+
+<!-- ── Interfaces ──────────────────────────────────────────────── -->
+<section class="interfaces">
+  <div class="container">
+    <h2>Three ways to use it</h2>
+    <div class="interface-grid">
+      <div class="interface-card">
+        <h3>TUI</h3>
+        <p>Rich terminal interface with task checklist, Juju status, and chat &mdash; built with Textual.</p>
+        <code>cantrip</code>
+      </div>
+      <div class="interface-card">
+        <h3>Web UI</h3>
+        <p>Browser-based interface with live WebSocket updates, Markdown chat, and Juju status panel.</p>
+        <code>cantrip --web</code>
+      </div>
+      <div class="interface-card">
+        <h3>CLI</h3>
+        <p>Minimal REPL for scripting and headless environments.</p>
+        <code>cantrip --no-tui</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ──────────────────────────────────────────────────── -->
+<footer>
+  <div class="container footer-inner">
+    <div class="footer-left">
+      <img src="logo.svg" alt="Cantrip" width="24" height="24">
+      <span>Cantrip</span>
+      <span class="footer-sep">&middot;</span>
+      <span>Free &amp; open source</span>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/canonical/cantrip">GitHub</a>
+      <a href="https://github.com/canonical/cantrip/issues">Issues</a>
+      <a href="https://juju.is">Juju</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// Smooth scroll for anchor links.
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener("click", e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute("href"));
+    if (target) target.scrollIntoView({ behavior: "smooth" });
+  });
+});
+
+// Fade-in on scroll.
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add("visible");
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll(".feature-card, .step, .interface-card, .eco-item").forEach(el => {
+  el.classList.add("fade-in");
+  observer.observe(el);
+});
+</script>
+
+</body>
+</html>
