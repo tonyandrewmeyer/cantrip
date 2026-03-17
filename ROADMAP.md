@@ -434,11 +434,17 @@ minutes wall-clock time (excluding user confirmation and Juju deploy wait).
   test cases with boundary values, type mismatches, injection strings, and edge cases;
   supports reproducible output via a `seed` parameter; produces a Markdown fuzz test
   plan; added to TEST and BUILD tool allowlists
-- [ ] **Chaos testing** — kill units, remove relations, revoke storage; verify recovery
-- [ ] **Scaling tests** — add/remove units under load; verify peer-relation handling,
-  leader election, data replication
-- [ ] **Test report** — aggregated results for the agent to reason over and present
-  in the TUI
+- [x] **Chaos testing** — `ChaosTestTool` (`chaos_test`) performs destructive operations
+  (kill-unit, remove-relation, scale-down, config-reset) on a deployed charm and waits
+  for recovery to active/idle; produces a structured Markdown report with pre/post
+  status; added to TEST tool allowlist
+- [x] **Scaling tests** — `ScalingTestTool` (`scaling_test`) scales an application up
+  to a target unit count, waits for settlement, optionally scales back to 1; verifies
+  peer relations and leader election survive scaling; produces a report with status
+  at each stage; added to TEST tool allowlist
+- [x] **Test report** — `TestReportTool` (`test_report`) runs both unit and integration
+  tests, aggregates results into a structured Markdown report with pass/fail counts,
+  failure output excerpts, and an overall PASS/FAIL verdict; added to TEST tool allowlist
 
 ### 7.3 Integration Expansion
 - [ ] Full COS integration (all components)

@@ -29,6 +29,7 @@ from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import (
     AnalyseFrameworkTool,
+    ChaosTestTool,
     CharmAuditTool,
     CharmcraftFetchLibsTool,
     CharmcraftInitTool,
@@ -83,8 +84,10 @@ from cantrip.agent.tools import (
     RockcraftInitTool,
     RockcraftPackTool,
     RunCharmTestsTool,
+    ScalingTestTool,
     SkopeoRegistryPushTool,
     TempoQueryTool,
+    TestReportTool,
     Tool,
     ToolResult,
     ValidateTerraformTool,
@@ -374,6 +377,11 @@ class CantripAgent:
             ListInferenceSnapsTool(),
             # Testing
             RunCharmTestsTool(),
+            HookBenchmarkTool(),
+            FuzzTestTool(),
+            TestReportTool(),
+            ChaosTestTool(),
+            ScalingTestTool(),
             # Planning
             PlanTasksTool(
                 provider=self.provider,

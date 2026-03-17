@@ -3,6 +3,7 @@
 from cantrip.agent.tools.audit import CharmAuditTool
 from cantrip.agent.tools.base import Tool, ToolResult, tool_to_schema
 from cantrip.agent.tools.benchmark import HookBenchmarkTool
+from cantrip.agent.tools.chaos import ChaosTestTool
 from cantrip.agent.tools.charm import (
     AnalyseFrameworkTool,
     CharmcraftFetchLibsTool,
@@ -74,11 +75,13 @@ from cantrip.agent.tools.registry import (
     RegistryImageInfoTool,
     RegistrySearchTool,
 )
+from cantrip.agent.tools.report import TestReportTool
 from cantrip.agent.tools.rockcraft import (
     RockcraftInitTool,
     RockcraftPackTool,
     SkopeoRegistryPushTool,
 )
+from cantrip.agent.tools.scaling import ScalingTestTool
 from cantrip.agent.tools.skills import LoadSkillTool
 from cantrip.agent.tools.task_management import ManageTasksTool
 from cantrip.agent.tools.testing import RunCharmTestsTool
@@ -155,6 +158,11 @@ __all__ = [
     "LokiQueryTool",
     # Testing
     "RunCharmTestsTool",
+    "HookBenchmarkTool",
+    "FuzzTestTool",
+    "TestReportTool",
+    "ChaosTestTool",
+    "ScalingTestTool",
     # Planning
     "PlanTasksTool",
     # Task management
