@@ -1198,9 +1198,10 @@ Build the three-panel layout using vanilla HTML, CSS, and JavaScript.
 - [x] **Task checklist panel** — renders task list with status indicators
   (`✓` done/green, `⟳` active/blue, `○` pending/grey, `◌` blocked/yellow,
   `✗` failed/red) and category badges; new tasks appear dynamically via WebSocket
-- [ ] **Juju status panel** — renders app boxes, unit counts, status indicators, and
-  relation lines using HTML/CSS (styled `<div>` elements and CSS connectors, not
-  `<canvas>`). Same colour scheme as the TUI
+- [x] **Juju status panel** — `/api/juju-status` endpoint returns app status, unit
+  counts, and relations as JSON; `cantrip.js` polls every 15 seconds and renders
+  app boxes with status indicators (●/○/◌/✗), coloured borders, unit counts, and
+  status messages; panel stacked below task list in the right column
 - [x] **Chat panel** — scrollable message history with user/assistant/system messages
   visually distinct (coloured left borders); input area with Enter-to-send; thinking
   indicator with animated dots; plain text with `pre-wrap` (Markdown rendering deferred)
@@ -1224,14 +1225,14 @@ Wire the frontend to the WebSocket for live state updates.
 
 Mirror the TUI's alternative views in the browser.
 
-- [ ] **Logs view** — a full-width log viewer (replacing the three-panel layout when active)
-  showing unit logs with level and unit filters. Equivalent to the TUI's F3 view
+- [x] **Logs view** — modal overlay (`L` key) showing `juju debug-log` output fetched
+  via `/api/logs` endpoint; 200 lines at INFO level; `<pre>` block with monospace font
 - [ ] **Model graph view** — expanded topology view showing all apps, relations, and
   cross-model integrations. Uses CSS positioning for the graph layout (not canvas)
-- [ ] **Help overlay** — modal overlay showing keyboard shortcuts and quick-start guide,
-  equivalent to TUI's F1 screen
-- [ ] **Keyboard shortcuts** — `?` for help, `1`/`2`/`3` to focus panels, `L` for logs,
-  `Escape` to return to main view. Documented in the help overlay
+- [x] **Help overlay** — modal overlay (`?` key) showing keyboard shortcuts table;
+  Escape to dismiss
+- [x] **Keyboard shortcuts** — `?` for help, `L` for logs, `Escape` to close
+  overlays; documented in the help overlay and footer hint bar
 
 ### 15.6 Feature Parity Maintenance
 

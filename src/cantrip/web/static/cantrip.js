@@ -1,4 +1,4 @@
-/* Cantrip Web UI — WebSocket client and DOM updates. */
+/* Cantrip Web UI — WebSocket client, Markdown rendering, and DOM updates. */
 
 const cantrip = (() => {
   "use strict";
@@ -6,6 +6,7 @@ const cantrip = (() => {
   let ws = null;
   let reconnectDelay = 1000;
   let port = 8471;
+  let statusPollTimer = null;
 
   // ── DOM references ──────────────────────────────────────────────
   const chatMessages = () => document.getElementById("chat-messages");
@@ -14,6 +15,10 @@ const cantrip = (() => {
   const taskList = () => document.getElementById("task-list");
   const thinkingEl = () => document.getElementById("thinking-indicator");
   const statusDot = () => document.getElementById("connection-status");
+  const jujuApps = () => document.getElementById("juju-apps");
+  const helpOverlay = () => document.getElementById("help-overlay");
+  const logsOverlay = () => document.getElementById("logs-overlay");
+  const logsOutput = () => document.getElementById("logs-output");
 
   // ── WebSocket connection ────────────────────────────────────────
 
@@ -31,6 +36,13 @@ const cantrip = (() => {
       appendMessage("user", text);
       _send("chat_input", { content: text });
     });
+
+    // Keyboard shortcuts.
+    document.addEventListener("keydown", _handleKeyDown);
+
+    // Poll Juju status every 15 seconds.
+    _fetchJujuStatus();
+    statusPollTimer = setInterval(_fetchJujuStatus, 15000);
   }
 
   function _openSocket() {
@@ -40,7 +52,6 @@ const cantrip = (() => {
     ws.onopen = () => {
       reconnectDelay = 1000;
       _setStatus("connected");
-      // Sync full state on reconnect.
       _fetchState();
     };
 
@@ -50,9 +61,7 @@ const cantrip = (() => {
       reconnectDelay = Math.min(reconnectDelay * 2, 30000);
     };
 
-    ws.onerror = () => {
-      _setStatus("disconnected");
-    };
+    ws.onerror = () => { _setStatus("disconnected"); };
 
     ws.onmessage = (event) => {
       let msg;
@@ -93,6 +102,49 @@ const cantrip = (() => {
     }
   }
 
+  // ── Markdown rendering ──────────────────────────────────────────
+
+  function _renderMarkdown(text) {
+    if (!text) return "";
+    let html = _esc(text);
+
+    // Code blocks (``` ... ```).
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      return `<pre><code>${code}</code></pre>`;
+    });
+
+    // Inline code.
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+    // Bold.
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+    // Italic.
+    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
+    // Headings (### before ## before #).
+    html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+    html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+    html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+
+    // Unordered lists.
+    html = html.replace(/^- (.+)$/gm, "<li>$1</li>");
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
+
+    // Ordered lists.
+    html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
+
+    // Paragraphs: wrap remaining text blocks.
+    html = html.replace(/\n\n/g, "</p><p>");
+    if (!html.startsWith("<")) html = "<p>" + html;
+    if (!html.endsWith(">")) html += "</p>";
+
+    // Clean up empty paragraphs.
+    html = html.replace(/<p>\s*<\/p>/g, "");
+
+    return html;
+  }
+
   // ── Chat rendering ──────────────────────────────────────────────
 
   function appendMessage(role, content) {
@@ -108,7 +160,11 @@ const cantrip = (() => {
     div.appendChild(roleLabel);
 
     const body = document.createElement("div");
-    body.textContent = content;
+    if (role === "assistant") {
+      body.innerHTML = _renderMarkdown(content);
+    } else {
+      body.textContent = content;
+    }
     div.appendChild(body);
 
     container.appendChild(div);
@@ -127,18 +183,15 @@ const cantrip = (() => {
     const list = taskList();
     if (!list) return;
 
-    // Remove the "no tasks" placeholder.
     const empty = list.querySelector(".task-empty");
     if (empty) empty.remove();
 
     let el = document.getElementById(`task-${data.id}`);
     if (el) {
-      // Update existing task.
       el.className = `task task-${data.status}`;
       el.querySelector(".task-title").textContent = data.title;
       el.querySelector(".task-badge").textContent = data.category;
     } else {
-      // Create new task element.
       el = document.createElement("div");
       el.id = `task-${data.id}`;
       el.className = `task task-${data.status}`;
@@ -162,15 +215,104 @@ const cantrip = (() => {
     tasks.forEach(updateTask);
   }
 
+  // ── Juju status rendering ──────────────────────────────────────
+
+  async function _fetchJujuStatus() {
+    try {
+      const resp = await fetch("/api/juju-status");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      _renderJujuStatus(data);
+    } catch { /* ignore */ }
+  }
+
+  function _renderJujuStatus(data) {
+    const container = jujuApps();
+    if (!container) return;
+
+    const apps = data.apps || {};
+    const appNames = Object.keys(apps);
+
+    if (appNames.length === 0) {
+      container.innerHTML = '<div class="juju-empty">No model connected.</div>';
+      return;
+    }
+
+    container.innerHTML = "";
+    for (const name of appNames.sort()) {
+      const app = apps[name];
+      const div = document.createElement("div");
+      div.className = `juju-app status-${app.status}`;
+
+      const unitCount = Object.keys(app.units || {}).length;
+      const statusIcon = { active: "●", waiting: "○", blocked: "◌", error: "✗" }[app.status] || "○";
+
+      div.innerHTML =
+        `<div class="juju-app-name">${_esc(name)}</div>` +
+        `<div class="juju-app-status">${statusIcon} ${_esc(app.status)}` +
+        (app.message ? `: ${_esc(app.message.substring(0, 40))}` : "") + `</div>` +
+        `<div class="juju-app-units">${unitCount} unit${unitCount !== 1 ? "s" : ""}</div>`;
+
+      container.appendChild(div);
+    }
+  }
+
+  // ── Overlays ────────────────────────────────────────────────────
+
+  function toggleHelp() {
+    const el = helpOverlay();
+    if (el) el.classList.toggle("hidden");
+  }
+
+  function toggleLogs() {
+    const el = logsOverlay();
+    if (!el) return;
+    const wasHidden = el.classList.contains("hidden");
+    el.classList.toggle("hidden");
+    if (wasHidden) _fetchLogs();
+  }
+
+  async function _fetchLogs() {
+    const output = logsOutput();
+    if (!output) return;
+    output.textContent = "Loading...";
+    try {
+      const resp = await fetch("/api/logs?lines=200&level=INFO");
+      if (!resp.ok) { output.textContent = "Failed to fetch logs."; return; }
+      const data = await resp.json();
+      output.textContent = (data.lines || []).join("\n") || "No log entries.";
+    } catch { output.textContent = "Error fetching logs."; }
+  }
+
+  // ── Keyboard shortcuts ──────────────────────────────────────────
+
+  function _handleKeyDown(e) {
+    // Don't intercept when typing in the input.
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+
+    if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+      e.preventDefault();
+      toggleHelp();
+    } else if (e.key === "l" || e.key === "L") {
+      e.preventDefault();
+      toggleLogs();
+    } else if (e.key === "Escape") {
+      const help = helpOverlay();
+      const logs = logsOverlay();
+      if (help && !help.classList.contains("hidden")) help.classList.add("hidden");
+      else if (logs && !logs.classList.contains("hidden")) logs.classList.add("hidden");
+    }
+  }
+
   // ── State sync ──────────────────────────────────────────────────
 
   async function _fetchState() {
     try {
-      const resp = await fetch(`/api/state`);
+      const resp = await fetch("/api/state");
       if (!resp.ok) return;
       const state = await resp.json();
       if (state.tasks) replaceAllTasks(state.tasks);
-    } catch { /* ignore fetch errors during reconnect */ }
+    } catch { /* ignore */ }
   }
 
   // ── Utilities ───────────────────────────────────────────────────
@@ -183,5 +325,8 @@ const cantrip = (() => {
 
   // ── Public API ──────────────────────────────────────────────────
 
-  return { connect, appendMessage, updateTask, replaceAllTasks, setThinking };
+  return {
+    connect, appendMessage, updateTask, replaceAllTasks, setThinking,
+    toggleHelp, toggleLogs,
+  };
 })();

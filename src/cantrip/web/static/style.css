@@ -48,9 +48,23 @@ header h1 {
   color: var(--accent);
 }
 
+.header-left { display: flex; align-items: center; gap: 0.5rem; }
+.header-right { display: flex; align-items: center; gap: 0.5rem; }
+
+.header-btn {
+  padding: 2px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.header-btn:hover { color: var(--text); border-color: var(--accent); }
+
 .charm-name {
   color: var(--text-muted);
-  margin-left: 0.5rem;
 }
 
 .status-dot {
@@ -74,7 +88,15 @@ main {
 
 @media (max-width: 700px) {
   main { grid-template-columns: 1fr; }
-  #task-panel { max-height: 30vh; }
+  #right-panels { max-height: 40vh; }
+}
+
+/* Right panels — tasks + juju status stacked */
+#right-panels {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  overflow: hidden;
 }
 
 /* Chat panel */
@@ -96,15 +118,15 @@ main {
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   line-height: 1.5;
-  white-space: pre-wrap;
   word-break: break-word;
-  font-family: var(--font-mono);
   font-size: 13px;
 }
 
 .msg-user {
   background: var(--bg-input);
   border-left: 3px solid var(--blue);
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
 }
 
 .msg-assistant {
@@ -117,6 +139,7 @@ main {
   border-left: 3px solid var(--yellow);
   color: var(--text-muted);
   font-size: 12px;
+  white-space: pre-wrap;
 }
 
 .msg-role {
@@ -126,6 +149,34 @@ main {
   color: var(--text-muted);
   margin-bottom: 0.25rem;
 }
+
+/* Markdown rendering in assistant messages */
+.msg-assistant h1,
+.msg-assistant h2,
+.msg-assistant h3 { margin: 0.5em 0 0.25em; font-size: 1em; color: var(--accent); }
+.msg-assistant h1 { font-size: 1.1em; }
+.msg-assistant code {
+  background: var(--bg-input);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.msg-assistant pre {
+  background: var(--bg-input);
+  padding: 0.5rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.msg-assistant pre code { background: none; padding: 0; }
+.msg-assistant ul, .msg-assistant ol { padding-left: 1.5em; margin: 0.25em 0; }
+.msg-assistant li { margin: 0.1em 0; }
+.msg-assistant p { margin: 0.25em 0; }
+.msg-assistant strong { color: var(--text); }
 
 /* Thinking indicator */
 #thinking-indicator {
@@ -185,12 +236,13 @@ main {
 
 /* Task panel */
 #task-panel {
-  background: var(--bg-surface);
+  flex: 1;
   overflow-y: auto;
   padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
 }
 
-#task-panel h2 {
+#task-panel h2, #juju-panel h2 {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -234,10 +286,116 @@ main {
   text-transform: uppercase;
 }
 
-.task-empty {
+.task-empty, .juju-empty {
   color: var(--text-muted);
   font-size: 13px;
-  padding: 1rem 0.5rem;
+  padding: 0.5rem;
+}
+
+/* Juju status panel */
+#juju-panel {
+  flex: 0 0 auto;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 0.75rem;
+}
+
+.juju-app {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.4rem;
+  font-size: 12px;
+}
+
+.juju-app.status-active  { border-left: 3px solid var(--green); }
+.juju-app.status-waiting  { border-left: 3px solid var(--yellow); }
+.juju-app.status-blocked  { border-left: 3px solid var(--red); }
+.juju-app.status-error    { border-left: 3px solid var(--red); }
+
+.juju-app-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.juju-app-status {
+  color: var(--text-muted);
+}
+
+.juju-app-units {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Overlays */
+.overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.overlay.hidden { display: none; }
+
+.overlay-content {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.overlay-wide { max-width: 800px; }
+
+.overlay-content h2 {
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  color: var(--accent);
+}
+
+.overlay-hint {
+  margin-top: 1rem;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.shortcuts-table td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcuts-table kbd {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.logs-pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre;
 }
 
 /* Footer */

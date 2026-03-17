@@ -94,6 +94,80 @@ async def _api_state(request: web.Request) -> web.Response:
     })
 
 
+async def _api_juju_status(request: web.Request) -> web.Response:
+    """Return Juju model status as JSON for the status panel."""
+    agent: CantripAgent = request.app["agent"]
+    dev_model = agent.state.dev_model
+    if not dev_model:
+        return web.json_response({"apps": {}, "relations": []})
+
+    try:
+        import jubilant
+
+        juju = jubilant.Juju(model=dev_model)
+        status = juju.status()
+    except Exception:
+        log.debug("Failed to fetch juju status", exc_info=True)
+        return web.json_response({"apps": {}, "relations": []})
+
+    apps: dict[str, dict] = {}
+    for app_name, app_status in status.apps.items():
+        units: dict[str, dict] = {}
+        for unit_name, unit_status in app_status.units.items():
+            units[unit_name] = {
+                "status": unit_status.workload_status.current,
+                "message": unit_status.workload_status.message or "",
+                "address": unit_status.address or "",
+            }
+        apps[app_name] = {
+            "status": app_status.app_status.current,
+            "message": app_status.app_status.message or "",
+            "charm": app_status.charm or "",
+            "units": units,
+        }
+
+    relations: list[dict] = []
+    seen: set[str] = set()
+    if hasattr(status, "relations"):
+        for rel in status.relations:
+            key = f"{rel.provider}:{rel.interface}:{rel.requirer}"
+            if key not in seen:
+                seen.add(key)
+                relations.append({
+                    "provider": str(getattr(rel, "provider", "")),
+                    "requirer": str(getattr(rel, "requirer", "")),
+                    "interface": str(getattr(rel, "interface", "")),
+                })
+
+    return web.json_response({"apps": apps, "relations": relations})
+
+
+async def _api_logs(request: web.Request) -> web.Response:
+    """Return recent juju debug-log output."""
+    import shutil
+    import subprocess
+
+    agent: CantripAgent = request.app["agent"]
+    dev_model = agent.state.dev_model
+    lines = int(request.query.get("lines", "100"))
+    level = request.query.get("level", "WARNING")
+
+    if not dev_model or not shutil.which("juju"):
+        return web.json_response({"lines": [], "error": "No model or juju CLI"})
+
+    try:
+        result = subprocess.run(
+            ["juju", "debug-log", "--model", dev_model, "-n", str(lines),
+             "--level", level, "--no-tail"],
+            capture_output=True, text=True, timeout=15,
+        )
+        log_lines = result.stdout.strip().split("\n") if result.stdout.strip() else []
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        log_lines = []
+
+    return web.json_response({"lines": log_lines})
+
+
 async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
     """Handle a WebSocket connection for real-time chat and updates."""
     ws = web.WebSocketResponse()
@@ -190,6 +264,8 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     # Routes.
     app.router.add_get("/", _index)
     app.router.add_get("/api/state", _api_state)
+    app.router.add_get("/api/juju-status", _api_juju_status)
+    app.router.add_get("/api/logs", _api_logs)
     app.router.add_get("/ws", _websocket_handler)
     app.router.add_static("/static", _STATIC_DIR, name="static")
 

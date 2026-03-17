@@ -126,3 +126,87 @@ class TestCSS:
         assert ".task-failed" in css
         assert ".task-pending" in css
         assert ".task-blocked" in css
+
+    def test_css_has_juju_status_styles(self) -> None:
+        css = (_STATIC_DIR / "style.css").read_text()
+        assert ".juju-app" in css
+        assert ".juju-app-name" in css
+        assert ".status-active" in css
+
+    def test_css_has_overlay_styles(self) -> None:
+        css = (_STATIC_DIR / "style.css").read_text()
+        assert ".overlay" in css
+        assert ".overlay-content" in css
+
+    def test_css_has_markdown_styles(self) -> None:
+        css = (_STATIC_DIR / "style.css").read_text()
+        assert ".msg-assistant pre" in css
+        assert ".msg-assistant code" in css
+
+
+class TestJavaScriptFeatures:
+    """Tests for the enhanced JavaScript features."""
+
+    def test_js_has_markdown_renderer(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "_renderMarkdown" in js
+
+    def test_js_has_juju_status_fetch(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "_fetchJujuStatus" in js
+        assert "juju-status" in js
+
+    def test_js_has_keyboard_shortcuts(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "_handleKeyDown" in js
+        assert "Escape" in js
+
+    def test_js_has_overlays(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "toggleHelp" in js
+        assert "toggleLogs" in js
+
+    def test_js_has_logs_fetch(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "_fetchLogs" in js
+        assert "/api/logs" in js
+
+
+class TestTemplateFeatures:
+    """Tests for the enhanced template features."""
+
+    def test_template_has_juju_panel(self) -> None:
+        import jinja2
+
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
+            autoescape=True,
+        )
+        template = env.get_template("index.html.j2")
+        html = template.render(charm_name="", tasks=[], port=8471)
+        assert "juju-panel" in html
+        assert "Juju Status" in html
+
+    def test_template_has_help_overlay(self) -> None:
+        import jinja2
+
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
+            autoescape=True,
+        )
+        template = env.get_template("index.html.j2")
+        html = template.render(charm_name="", tasks=[], port=8471)
+        assert "help-overlay" in html
+        assert "Keyboard Shortcuts" in html
+
+    def test_template_has_logs_overlay(self) -> None:
+        import jinja2
+
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
+            autoescape=True,
+        )
+        template = env.get_template("index.html.j2")
+        html = template.render(charm_name="", tasks=[], port=8471)
+        assert "logs-overlay" in html
+        assert "Juju Logs" in html

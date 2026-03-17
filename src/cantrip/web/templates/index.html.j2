@@ -13,6 +13,8 @@
       {% if charm_name %}<span class="charm-name">{{ charm_name }}</span>{% endif %}
     </div>
     <div class="header-right">
+      <button id="btn-help" class="header-btn" title="Help (?)" onclick="cantrip.toggleHelp()">?</button>
+      <button id="btn-logs" class="header-btn" title="Logs (L)" onclick="cantrip.toggleLogs()">Logs</button>
       <span id="connection-status" class="status-dot disconnected" title="Disconnected"></span>
     </div>
   </header>
@@ -29,27 +31,59 @@
       </form>
     </section>
 
-    <section id="task-panel">
-      <h2>Tasks</h2>
-      <div id="task-list">
-        {% for task in tasks %}
-        <div class="task task-{{ task.status }}" id="task-{{ task.id }}" data-category="{{ task.category }}">
-          <span class="task-icon"></span>
-          <span class="task-title">{{ task.title }}</span>
-          <span class="task-badge">{{ task.category }}</span>
+    <section id="right-panels">
+      <div id="task-panel">
+        <h2>Tasks</h2>
+        <div id="task-list">
+          {% for task in tasks %}
+          <div class="task task-{{ task.status }}" id="task-{{ task.id }}" data-category="{{ task.category }}">
+            <span class="task-icon"></span>
+            <span class="task-title">{{ task.title }}</span>
+            <span class="task-badge">{{ task.category }}</span>
+          </div>
+          {% endfor %}
+          {% if not tasks %}
+          <div class="task-empty">No tasks yet.</div>
+          {% endif %}
         </div>
-        {% endfor %}
-        {% if not tasks %}
-        <div class="task-empty">No tasks yet.</div>
-        {% endif %}
+      </div>
+
+      <div id="juju-panel">
+        <h2>Juju Status</h2>
+        <div id="juju-apps">
+          <div class="juju-empty">No model connected.</div>
+        </div>
       </div>
     </section>
   </main>
 
+  <!-- Help overlay -->
+  <div id="help-overlay" class="overlay hidden">
+    <div class="overlay-content">
+      <h2>Keyboard Shortcuts</h2>
+      <table class="shortcuts-table">
+        <tr><td><kbd>?</kbd></td><td>Toggle this help</td></tr>
+        <tr><td><kbd>L</kbd></td><td>Toggle log viewer</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Close overlay</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Send message</td></tr>
+      </table>
+      <p class="overlay-hint">Press Escape to close</p>
+    </div>
+  </div>
+
+  <!-- Logs overlay -->
+  <div id="logs-overlay" class="overlay hidden">
+    <div class="overlay-content overlay-wide">
+      <h2>Juju Logs</h2>
+      <pre id="logs-output" class="logs-pre">Loading...</pre>
+      <p class="overlay-hint">Press Escape or L to close</p>
+    </div>
+  </div>
+
   <footer>
     <span id="status-label"></span>
     <span id="status-spacer"></span>
-    <span class="footer-hint">Cantrip Web UI</span>
+    <span class="footer-hint">? Help &middot; L Logs</span>
   </footer>
 
   <script src="/static/cantrip.js"></script>
