@@ -1057,3 +1057,21 @@ class TestDemoGeneration:
         )
         prompt = _build_subagent_prompt(context)
         assert "Demo guidance" not in prompt
+
+
+# ===================================================================
+# TestBenchmarkAndFuzzToolAllowlists
+# ===================================================================
+
+
+class TestBenchmarkAndFuzzToolAllowlists:
+    """Tests for benchmark and fuzz tool registration in category allowlists."""
+
+    def test_hook_benchmark_in_test_tools(self) -> None:
+        assert "hook_benchmark" in _CATEGORY_TOOLS[TaskCategory.TEST]
+
+    def test_fuzz_charm_in_test_tools(self) -> None:
+        assert "fuzz_charm" in _CATEGORY_TOOLS[TaskCategory.TEST]
+
+    def test_fuzz_charm_in_build_tools(self) -> None:
+        assert "fuzz_charm" in _CATEGORY_TOOLS[TaskCategory.BUILD]

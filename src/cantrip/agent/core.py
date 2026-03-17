@@ -42,6 +42,7 @@ from cantrip.agent.tools import (
     ConciergePrepareTool,
     ConciergeStatusTool,
     EditFileTool,
+    FuzzTestTool,
     GenerateReadmeTool,
     GenerateTerraformTool,
     GhIssueListTool,
@@ -55,6 +56,7 @@ from cantrip.agent.tools import (
     GitLogTool,
     GitPushTool,
     GitStatusTool,
+    HookBenchmarkTool,
     JujuAddModelTool,
     JujuConfigTool,
     JujuConsumeTool,
@@ -300,6 +302,9 @@ class CantripAgent:
             EditFileTool(base_path=base_path),
             # Audit
             CharmAuditTool(),
+            # Benchmark and fuzz
+            HookBenchmarkTool(),
+            FuzzTestTool(),
             # Charm operations
             CharmcraftInitTool(),
             CharmcraftPackTool(),

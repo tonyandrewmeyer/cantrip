@@ -424,10 +424,16 @@ minutes wall-clock time (excluding user confirmation and Juju deploy wait).
   in hooks, expensive status polling, unindexed relation data, oversized config)
 - [ ] **Load testing** — generate k6 or Locust workloads; deploy multiple units and
   measure throughput/latency under load
-- [ ] **Benchmark harness** — timed hook execution via debug-log + Tempo traces; flag
-  hooks exceeding a threshold
-- [ ] **Fuzz testing** — randomised relation data, config values, and action parameters
-  via Scenario and Jubilant
+- [x] **Benchmark harness** — `HookBenchmarkTool` (`hook_benchmark`) analyses `juju
+  debug-log` output to extract hook execution times; computes per-hook statistics
+  (min/max/avg/count); flags hooks exceeding a configurable threshold (default 5 s);
+  produces a structured Markdown report with a summary table and slow-hook details;
+  added to TEST tool allowlist
+- [x] **Fuzz testing** — `FuzzTestTool` (`fuzz_charm`) reads `charmcraft.yaml` (or
+  `config.yaml` + `actions.yaml`) to discover parameters, then generates randomised
+  test cases with boundary values, type mismatches, injection strings, and edge cases;
+  supports reproducible output via a `seed` parameter; produces a Markdown fuzz test
+  plan; added to TEST and BUILD tool allowlists
 - [ ] **Chaos testing** — kill units, remove relations, revoke storage; verify recovery
 - [ ] **Scaling tests** — add/remove units under load; verify peer-relation handling,
   leader election, data replication

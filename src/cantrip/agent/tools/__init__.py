@@ -2,6 +2,7 @@
 
 from cantrip.agent.tools.audit import CharmAuditTool
 from cantrip.agent.tools.base import Tool, ToolResult, tool_to_schema
+from cantrip.agent.tools.benchmark import HookBenchmarkTool
 from cantrip.agent.tools.charm import (
     AnalyseFrameworkTool,
     CharmcraftFetchLibsTool,
@@ -25,6 +26,7 @@ from cantrip.agent.tools.files import (
     ReadFileTool,
     WriteFileTool,
 )
+from cantrip.agent.tools.fuzz import FuzzTestTool
 from cantrip.agent.tools.git import (
     GitAddTool,
     GitCloneTool,
@@ -90,6 +92,9 @@ __all__ = [
     "tool_to_schema",
     # Audit
     "CharmAuditTool",
+    # Benchmark and Fuzz
+    "HookBenchmarkTool",
+    "FuzzTestTool",
     # Files
     "ReadFileTool",
     "WriteFileTool",
