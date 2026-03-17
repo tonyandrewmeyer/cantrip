@@ -604,11 +604,15 @@ Add COS integration and ops-tracing if missing or incomplete.
   (`fill-observability`) that loads the `observability` skill and adds missing COS
   relations, ops-tracing, metrics, and log forwarding; guided by the `charm-improvement`
   skill
-- [ ] **Add metrics** — add Prometheus metrics endpoint if missing; generate a basic
-  Grafana dashboard JSON covering key operational metrics
-- [ ] **Add log forwarding** — add Loki push API relation and structured logging if missing
-- [ ] **Alert rules** — generate basic Prometheus alert rules for common failure conditions
-  (unit blocked, hook failures, resource exhaustion)
+- [x] **Add metrics** — the `fill-observability` task guidance now instructs adding a
+  Prometheus metrics endpoint via the `metrics-endpoint` relation
+- [x] **Add log forwarding** — the `fill-observability` task guidance now instructs
+  adding Loki log forwarding via the `logging` relation with structured logging
+- [x] **Alert rules** — the `fill-observability` task guidance now instructs generating
+  basic Prometheus alert rules in `src/prometheus_alert_rules/` for common failure
+  conditions (unit blocked, hook failures, resource exhaustion)
+- [x] **Grafana dashboard** — the `fill-observability` task guidance now instructs
+  generating a basic Grafana dashboard JSON in `src/grafana_dashboards/`
 
 ### 10.3 Test Gap Fill
 
@@ -622,10 +626,11 @@ Add or improve tests to match the standard Cantrip would apply to a new charm.
 - [x] **Migrate from Harness** — `charm_audit` detects Harness imports as deprecated APIs
   and flags them; the `charm-improvement` skill includes a Harness → Scenario migration
   table; the `modernise-code` fix task handles the rewrite
-- [ ] **Jubilant integration tests** — generate integration tests using Jubilant, covering
-  deploy, relate, config changes, actions, and scale-up/down
-- [ ] **Test validation** — run the generated tests and fix any failures before presenting
-  the result
+- [x] **Jubilant integration tests** — the `fill-tests` task guidance now includes
+  detailed Jubilant patterns: deploy+active/idle, each relation endpoint, each action,
+  and config changes; loads the `charm-improvement` skill for examples
+- [x] **Test validation** — the `fill-tests` task instructs running `run_charm_tests`
+  for each test type and iterating until green before committing
 
 ### 10.4 Code Modernisation
 
@@ -664,10 +669,12 @@ Verify all improvements work together and present the result.
   includes `charmcraft pack`)
 - [x] **Test suite green** — `validate-improvements` task runs both unit and integration
   tests as a combined gate
-- [ ] **Deploy and verify** — deploy the improved charm to a dev model; verify it reaches
-  active/idle; verify COS relations work
-- [ ] **Diff review** — present the user with a summary of all changes made, grouped by
-  category (observability, tests, code quality, listing), with before/after comparisons
+- [x] **Deploy and verify** — `deploy-verify-improvements` DEPLOY task packs, deploys
+  or refreshes, establishes relations, and runs `juju_wait` to confirm active/idle;
+  depends on `validate-improvements`
+- [x] **Diff review** — `diff-review` RESEARCH task runs `git_log` and `git_diff` to
+  summarise all changes grouped by category (observability, tests, code modernisation,
+  listing); notes any issues flagged but not addressed; depends on deploy-verify
 - [x] **Incremental commits** — each fix BUILD task includes commit guidance; tasks are
   independent so each category is committed separately
 

@@ -1036,3 +1036,64 @@ class TestPlanImprovementFixes:
 
         build_tasks = [t for t in tasks if t.category == TaskCategory.BUILD]
         assert all(t.model_hint == ModelHint.PRIMARY for t in build_tasks)
+
+    def test_deploy_verify_task_after_validation(self) -> None:
+        gaps = {"cos_tracing": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        deploy = [t for t in tasks if t.id == "deploy-verify-improvements"]
+        assert len(deploy) == 1
+        assert deploy[0].category == TaskCategory.DEPLOY
+        assert "validate-improvements" in deploy[0].dependencies
+
+    def test_diff_review_task_at_end(self) -> None:
+        gaps = {"cos_tracing": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        review = [t for t in tasks if t.id == "diff-review"]
+        assert len(review) == 1
+        assert review[0].category == TaskCategory.RESEARCH
+        assert "deploy-verify-improvements" in review[0].dependencies
+
+    def test_no_deploy_or_review_without_fixes(self) -> None:
+        gaps: dict[str, bool] = {}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        assert not any(t.id == "deploy-verify-improvements" for t in tasks)
+        assert not any(t.id == "diff-review" for t in tasks)
+
+    def test_observability_description_mentions_dashboards(self) -> None:
+        gaps = {"cos_tracing": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        obs = [t for t in tasks if t.id == "fill-observability"][0]
+        assert "Grafana dashboard" in obs.description
+        assert "alert rules" in obs.description
+
+    def test_test_fill_description_mentions_jubilant(self) -> None:
+        gaps = {"integration_tests": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        test_task = [t for t in tasks if t.id == "fill-tests"][0]
+        assert "Jubilant" in test_task.description
+        assert "run_charm_tests" in test_task.description
+
+    def test_full_pipeline_task_count(self) -> None:
+        """With all gaps, the pipeline has: 4 fixes + validate + deploy + review = 7."""
+        gaps = {
+            "cos_tracing": True,
+            "unit_tests": True,
+            "deprecated_apis": True,
+            "readme": True,
+        }
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        assert len(tasks) == 7
+        ids = [t.id for t in tasks]
+        assert "fill-observability" in ids
+        assert "fill-tests" in ids
+        assert "modernise-code" in ids
+        assert "listing-readiness" in ids
+        assert "validate-improvements" in ids
+        assert "deploy-verify-improvements" in ids
+        assert "diff-review" in ids
