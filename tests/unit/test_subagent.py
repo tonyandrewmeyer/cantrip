@@ -1003,3 +1003,57 @@ class TestCharmAuditToolAllowlists:
     def test_charm_audit_in_build_tools(self) -> None:
         """charm_audit is available to BUILD subagents for re-checking after fixes."""
         assert "charm_audit" in _CATEGORY_TOOLS[TaskCategory.BUILD]
+
+
+# ===================================================================
+# TestDemoGeneration
+# ===================================================================
+
+
+class TestDemoGeneration:
+    """Tests for demo generation support in BUILD subagents."""
+
+    def test_juju_status_in_build_tools(self) -> None:
+        """juju_status is available for demo subagents to capture deployment state."""
+        assert "juju_status" in _CATEGORY_TOOLS[TaskCategory.BUILD]
+
+    def test_juju_run_action_in_build_tools(self) -> None:
+        """juju_run_action is available for demo subagents to exercise actions."""
+        assert "juju_run_action" in _CATEGORY_TOOLS[TaskCategory.BUILD]
+
+    def test_juju_config_in_build_tools(self) -> None:
+        """juju_config is available for demo subagents to capture config."""
+        assert "juju_config" in _CATEGORY_TOOLS[TaskCategory.BUILD]
+
+    def test_juju_debug_log_in_build_tools(self) -> None:
+        """juju_debug_log is available for demo subagents to capture logs."""
+        assert "juju_debug_log" in _CATEGORY_TOOLS[TaskCategory.BUILD]
+
+    def test_demo_guidance_injected_for_demo_task(self) -> None:
+        """Demo-specific guidance is injected when task title contains 'demo'."""
+        from cantrip.agent.queue import AgentTask
+
+        context = _make_context(
+            task=AgentTask(
+                title="Generate demo artefacts",
+                category=TaskCategory.BUILD,
+            ),
+        )
+        prompt = _build_subagent_prompt(context)
+        assert "Demo guidance" in prompt
+        assert "DEMO.md" in prompt
+        assert "demo.sh" in prompt
+        assert "TUTORIAL.md" in prompt
+
+    def test_demo_guidance_not_injected_for_regular_build(self) -> None:
+        """Regular BUILD tasks do not get demo guidance."""
+        from cantrip.agent.queue import AgentTask
+
+        context = _make_context(
+            task=AgentTask(
+                title="Build charm for Redis",
+                category=TaskCategory.BUILD,
+            ),
+        )
+        prompt = _build_subagent_prompt(context)
+        assert "Demo guidance" not in prompt

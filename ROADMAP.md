@@ -862,7 +862,7 @@ clear, automated signal for "this feature works" at every step.
 
 ---
 
-## Phase 13: Charm Demo Generation
+## Phase 13: Charm Demo Generation (in progress)
 
 **Goal:** Every charm Cantrip builds ships with a compelling, runnable demo. Not just a
 README with `juju deploy` instructions, but a complete showcase: a deployment script that
@@ -915,27 +915,27 @@ and capturing the output inline.
   with example parameters and the output is captured inline
 - [ ] **Config showcase** — demonstrates setting key config options with before/after
   status captured via `showboat exec`
-- [ ] **Fallback path** — if Showboat is unavailable, the subagent writes the Markdown
-  directly using `write_file`, capturing command output via juju tools and formatting
-  it manually
+- [x] **Fallback path** — the MVP uses the fallback path: the demo subagent writes
+  DEMO.md directly using `write_file`, capturing command output via juju tools
+  (`juju_status`, `juju_run_action`, `juju_config`, `juju_debug_log`) and formatting
+  it as Markdown; Showboat/Rodney wrappers can be added later as an enhancement
 
 ### 13.3 Captured Artefacts
 
 Save standalone artefacts alongside the demo document for reference and reuse.
 
-- [ ] **`juju status` snapshot** — save a clean `juju status --relations` to
-  `demo/juju-status.txt` showing all units active/idle with addresses and relations
-- [ ] **Action results** — save JSON results to `demo/actions/` (e.g.
-  `demo/actions/backup.json`, `demo/actions/get-password.json`)
-- [ ] **Log snippets** — capture a curated excerpt of `juju debug-log` showing the charm
-  handling a key event cleanly; save to `demo/logs/`
+- [x] **`juju status` snapshot** — demo guidance instructs saving `juju_status` output
+  to `demo/juju-status.txt`; `juju_status` added to BUILD tool allowlist
+- [x] **Action results** — demo guidance instructs running each action and saving JSON
+  results to `demo/actions/`; `juju_run_action` added to BUILD tool allowlist
+- [x] **Log snippets** — demo guidance instructs capturing `juju_debug_log` excerpt
+  to `demo/logs/event-log.txt`; `juju_debug_log` added to BUILD tool allowlist
 - [ ] **Trace capture** — query Tempo for a representative trace and save trace data
   plus a human-readable span summary to `demo/traces/`
-- [ ] **Config reference** — dump the effective config with descriptions to
-  `demo/config-reference.txt`
-- [ ] **`demo.sh` script** — generate a self-contained bash script that reproduces the
-  full deployment (deploy, relate, configure, verify) with an optional `--cleanup` flag;
-  validated by running it in a clean model
+- [x] **Config reference** — demo guidance instructs dumping `juju_config` output to
+  `demo/config-reference.txt`; `juju_config` added to BUILD tool allowlist
+- [x] **`demo.sh` script** — demo guidance instructs generating a self-contained bash
+  script (deploy, relate, configure, verify) with an optional `--cleanup` flag
 
 ### 13.4 Visual Assets
 
@@ -955,18 +955,17 @@ Use Rodney to capture visual proof of observability integration and deployment h
 
 Generate a guided walk-through that explains the charm's features in context.
 
-- [ ] **`TUTORIAL.md` generation** — a step-by-step guide covering:
+- [x] **`TUTORIAL.md` generation** — demo guidance instructs creating a step-by-step guide covering:
   1. Prerequisites (controller, model, cloud substrate)
   2. Deploying the charm and its relations
   3. Verifying the deployment (what to look for in `juju status`)
   4. Exercising key features (config, actions, scaling)
   5. Observability (where to find dashboards, what metrics to watch)
   6. Troubleshooting common issues
-- [ ] **Copy-pasteable commands** — every step includes the exact command to run, with
-  expected output shown alongside (drawn from Showboat captures where possible)
-- [ ] **Annotations from research** — draw on WORKLOAD.md and DESIGN.md to explain
-  *why* certain config options matter, what the actions do operationally, and how the
-  integrations work — not just *how* to run commands
+- [x] **Copy-pasteable commands** — demo guidance instructs including exact commands
+  with captured output from the live deployment
+- [x] **Annotations from research** — demo guidance instructs drawing on WORKLOAD.md
+  and DESIGN.md to explain *why* config options matter and what actions do
 - [ ] **Quick-start vs. full tutorial** — a short "just deploy it" section at the top
   for experienced users, followed by the detailed walk-through
 
@@ -974,17 +973,18 @@ Generate a guided walk-through that explains the charm's features in context.
 
 Make demo generation an automatic part of every charm build, not an afterthought.
 
-- [ ] **Planner integration** — `_DESIGN_TO_BUILD_PROMPT` includes a "generate demo"
-  task after successful deploy + test, with dependencies on both completing successfully
-- [ ] **Demo BUILD task** — a dedicated task (category: build) that generates all demo
-  artefacts: Showboat document, captured output, visual assets, tutorial, and script
-- [ ] **Demo validation** — run `demo.sh` in a clean model to verify it works end-to-end;
-  use `showboat verify` to check the demo document is well-formed
+- [x] **Planner integration** — `_DESIGN_TO_BUILD_PROMPT` instructs the LLM planner
+  to include a "Generate demo artefacts" task after all tests pass
+- [x] **Demo BUILD task** — `tasks_after_test()` in `autodeploy.py` automatically
+  creates a BUILD task with `ModelHint.PRIMARY` after successful TEST tasks;
+  `_DEMO_GUIDANCE` in `subagent.py` provides detailed 10-step instructions;
+  `_DEMO_PREFIX` guard prevents infinite task loops
+- [ ] **Demo validation** — run `demo.sh` in a clean model to verify it works end-to-end
 - [ ] **README integration** — update the generated README to link to `DEMO.md`,
   embed the architecture diagram, include the `juju status` snapshot, and point to
   the tutorial
-- [ ] **Git commit** — demo artefacts are committed as a separate "Add demo and tutorial"
-  commit so they can be reviewed independently from the charm code
+- [x] **Git commit** — demo guidance instructs committing all demo artefacts in a
+  single commit
 
 **Exit criteria:** Every charm Cantrip builds includes a `demo/` directory with a
 Showboat-generated demo document (real commands + captured output), Rodney-captured

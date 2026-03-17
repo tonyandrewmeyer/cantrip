@@ -127,6 +127,53 @@ def tasks_after_build(task: AgentTask) -> list[AgentTask]:
     ]
 
 
+def tasks_after_test(task: AgentTask) -> list[AgentTask]:
+    """Return a demo generation task after a successful TEST task.
+
+    After the charm passes validation, the demo task captures live
+    deployment output and writes DEMO.md, demo.sh, and TUTORIAL.md.
+    Only fires once — the demo BUILD task's own completion triggers
+    ``tasks_after_build`` (→ deploy), not another demo.
+    """
+    if task.category != TaskCategory.TEST:
+        return []
+    if task.status != TaskStatus.DONE:
+        return []
+    # Don't generate a demo for a demo-validation task.
+    if _DEMO_PREFIX in task.title:
+        return []
+
+    return [
+        AgentTask(
+            title=f"{_DEMO_PREFIX} charm artefacts",
+            category=TaskCategory.BUILD,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                "The charm has been deployed and tested successfully. "
+                "Generate demo artefacts from the live deployment.\n\n"
+                "Create a `demo/` directory and produce:\n"
+                "1. `demo/juju-status.txt` — `juju_status` output with relations\n"
+                "2. `demo/config-reference.txt` — `juju_config` dump\n"
+                "3. `demo/actions/` — JSON results from each charm action\n"
+                "4. `demo/logs/event-log.txt` — recent `juju_debug_log` snippet\n"
+                "5. `DEMO.md` — annotated walk-through with real command output "
+                "interleaved with explanations from WORKLOAD.md and DESIGN.md\n"
+                "6. `demo.sh` — self-contained deployment script (deploy, relate, "
+                "configure, verify) with an optional `--cleanup` flag\n"
+                "7. `TUTORIAL.md` — step-by-step guide covering prerequisites, "
+                "deployment, verification, features, observability, and "
+                "troubleshooting\n\n"
+                "Commit all demo artefacts in a single commit."
+            ),
+            dependencies=[task.id],
+        ),
+    ]
+
+
+# Title prefix for demo generation tasks — used to prevent loops.
+_DEMO_PREFIX = "Generate demo"
+
+
 def tasks_after_build_failure(task: AgentTask) -> list[AgentTask]:
     """Return a targeted BUILD retry when integration tests partially pass.
 
@@ -227,6 +274,7 @@ def followup_tasks(task: AgentTask) -> list[AgentTask]:
     results.extend(tasks_after_build_failure(task))
     results.extend(tasks_after_deploy(task))
     results.extend(tasks_after_verify(task))
+    results.extend(tasks_after_test(task))
     return results
 
 

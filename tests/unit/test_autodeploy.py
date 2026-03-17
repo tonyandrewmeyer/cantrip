@@ -1,6 +1,7 @@
 """Tests for the auto-deploy loop follow-up logic."""
 
 from cantrip.agent.autodeploy import (
+    _DEMO_PREFIX,
     _RETRY_PREFIX,
     _VERIFY_PREFIX,
     _WATCHER_PREFIX,
@@ -10,6 +11,7 @@ from cantrip.agent.autodeploy import (
     tasks_after_build,
     tasks_after_build_failure,
     tasks_after_deploy,
+    tasks_after_test,
     tasks_after_verify,
 )
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
@@ -332,6 +334,74 @@ class TestTasksAfterBuildFailure:
 
 
 # ===================================================================
+# TestTasksAfterTest
+# ===================================================================
+
+
+class TestTasksAfterTest:
+    """Tests for tasks_after_test — demo generation after successful tests."""
+
+    def test_creates_demo_for_successful_test(self) -> None:
+        task = AgentTask(id="t1", title="Validate charm", category=TaskCategory.TEST)
+        task.status = TaskStatus.DONE
+
+        result = tasks_after_test(task)
+
+        assert len(result) == 1
+        assert result[0].category == TaskCategory.BUILD
+        assert result[0].title.startswith(_DEMO_PREFIX)
+
+    def test_demo_uses_primary_model(self) -> None:
+        task = AgentTask(id="t1", title="Validate", category=TaskCategory.TEST)
+        task.status = TaskStatus.DONE
+
+        result = tasks_after_test(task)
+
+        assert result[0].model_hint == ModelHint.PRIMARY
+
+    def test_demo_depends_on_test(self) -> None:
+        task = AgentTask(id="t1", title="Validate", category=TaskCategory.TEST)
+        task.status = TaskStatus.DONE
+
+        result = tasks_after_test(task)
+
+        assert result[0].dependencies == ["t1"]
+
+    def test_no_demo_for_failed_test(self) -> None:
+        task = AgentTask(id="t1", title="Validate", category=TaskCategory.TEST)
+        task.status = TaskStatus.FAILED
+
+        assert tasks_after_test(task) == []
+
+    def test_no_demo_for_non_test(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.DONE
+
+        assert tasks_after_test(task) == []
+
+    def test_no_demo_for_demo_validation(self) -> None:
+        """Prevent loops: a test task for demo artefacts should not spawn another demo."""
+        task = AgentTask(
+            id="t2",
+            title=f"Validate {_DEMO_PREFIX} artefacts",
+            category=TaskCategory.TEST,
+        )
+        task.status = TaskStatus.DONE
+
+        assert tasks_after_test(task) == []
+
+    def test_demo_description_mentions_demo_md(self) -> None:
+        task = AgentTask(id="t1", title="Validate", category=TaskCategory.TEST)
+        task.status = TaskStatus.DONE
+
+        result = tasks_after_test(task)
+
+        assert "DEMO.md" in result[0].description
+        assert "demo.sh" in result[0].description
+        assert "TUTORIAL.md" in result[0].description
+
+
+# ===================================================================
 # TestFollowupTasks
 # ===================================================================
 
@@ -394,6 +464,15 @@ class TestFollowupTasks:
         assert len(result) == 1
         assert result[0].category == TaskCategory.BUILD
         assert result[0].title.startswith(_RETRY_PREFIX)
+
+    def test_dispatches_to_test_handler(self) -> None:
+        """Successful TEST gets a demo generation follow-up."""
+        task = AgentTask(id="t1", title="Validate charm", category=TaskCategory.TEST)
+        task.status = TaskStatus.DONE
+
+        result = followup_tasks(task)
+
+        assert any(t.title.startswith(_DEMO_PREFIX) for t in result)
 
 
 # ===================================================================

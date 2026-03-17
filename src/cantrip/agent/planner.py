@@ -615,6 +615,10 @@ The charm code is written to satisfy these tests, not the other way around.
 Adapt for the design — add rock-building steps for 12-factor charms, add integration \
 wiring for complex workloads, skip steps that do not apply. Honour any user overrides.
 
+After all tests pass, include a **"Generate demo artefacts"** task (category: build) \
+that creates DEMO.md, demo.sh, TUTORIAL.md, and a demo/ directory with captured output \
+from the live deployment. This task depends on the final test/validation task.
+
 ### Context
 {context_block}
 """

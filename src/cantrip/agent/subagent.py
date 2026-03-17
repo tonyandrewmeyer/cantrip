@@ -129,6 +129,10 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "run_charm_tests",
             "generate_terraform",
             "validate_terraform",
+            "juju_status",
+            "juju_run_action",
+            "juju_config",
+            "juju_debug_log",
             "virtual_file_read",
             "virtual_file_search",
         }
@@ -367,6 +371,38 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
     ),
 }
 
+# Task-specific guidance overlay for demo generation tasks.
+_DEMO_GUIDANCE = (
+    "### Demo generation\n\n"
+    "You are generating demo artefacts for a deployed, tested charm. "
+    "Capture real output from the live deployment.\n\n"
+    "**Steps:**\n"
+    "1. Read `charmcraft.yaml` to discover the charm's actions, config "
+    "options, and relation endpoints.\n"
+    "2. Read `WORKLOAD.md` and `DESIGN.md` (if they exist) for context.\n"
+    "3. Run `juju_status` and save the output to `demo/juju-status.txt`.\n"
+    "4. Run `juju_config` and save to `demo/config-reference.txt`.\n"
+    "5. For each action in the charm, run `juju_run_action` with sensible "
+    "defaults and save JSON results to `demo/actions/<name>.json`.\n"
+    "6. Capture a `juju_debug_log` snippet (last 50 lines) to "
+    "`demo/logs/event-log.txt`.\n"
+    "7. Write `DEMO.md` — an annotated walk-through interleaving real "
+    "command output with explanations. Structure: overview, deployment, "
+    "relations, configuration, actions, observability.\n"
+    "8. Write `demo.sh` — a self-contained bash script that reproduces "
+    "the full deployment: deploy, relate, configure, verify. Include an "
+    "optional `--cleanup` flag that destroys the model. Mark it executable.\n"
+    "9. Write `TUTORIAL.md` — a step-by-step guide covering: "
+    "prerequisites, deploying the charm, verifying the deployment, "
+    "exercising features (config, actions, scaling), observability, "
+    "and troubleshooting. Include copy-pasteable commands.\n"
+    "10. Stage all files with `git_add` and commit with a descriptive "
+    "message.\n\n"
+    "**Important:** draw on WORKLOAD.md and DESIGN.md to explain *why* "
+    "certain config options matter and what the actions do operationally "
+    "— not just how to run commands."
+)
+
 
 # ---------------------------------------------------------------------------
 # Pure helper functions
@@ -485,6 +521,10 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
     guidance = _CATEGORY_GUIDANCE.get(task.category)
     if guidance:
         sections.append(f"## Guidance\n\n{guidance}")
+
+    # 4b. Task-specific guidance overlay for demo generation.
+    if "demo" in task.title.lower() and task.category == TaskCategory.BUILD:
+        sections.append(f"## Demo guidance\n\n{_DEMO_GUIDANCE}")
 
     # 5. Prior task results (dependency handoff).
     if context.prior_results:
