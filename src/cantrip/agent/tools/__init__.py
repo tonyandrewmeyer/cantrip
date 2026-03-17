@@ -85,6 +85,7 @@ from cantrip.agent.tools.scaling import ScalingTestTool
 from cantrip.agent.tools.skills import LoadSkillTool
 from cantrip.agent.tools.task_management import ManageTasksTool
 from cantrip.agent.tools.testing import RunCharmTestsTool
+from cantrip.agent.tools.upgrade import UpgradeTestTool
 from cantrip.agent.tools.virtual_files import VirtualFileReadTool, VirtualFileSearchTool
 from cantrip.agent.tools.web import WebFetchTool
 
@@ -163,6 +164,7 @@ __all__ = [
     "TestReportTool",
     "ChaosTestTool",
     "ScalingTestTool",
+    "UpgradeTestTool",
     # Planning
     "PlanTasksTool",
     # Task management

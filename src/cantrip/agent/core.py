@@ -90,6 +90,7 @@ from cantrip.agent.tools import (
     TestReportTool,
     Tool,
     ToolResult,
+    UpgradeTestTool,
     ValidateTerraformTool,
     VirtualFileReadTool,
     VirtualFileSearchTool,
@@ -382,6 +383,7 @@ class CantripAgent:
             TestReportTool(),
             ChaosTestTool(),
             ScalingTestTool(),
+            UpgradeTestTool(),
             # Planning
             PlanTasksTool(
                 provider=self.provider,

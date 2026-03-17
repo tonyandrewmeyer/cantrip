@@ -174,6 +174,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "test_report",
             "chaos_test",
             "scaling_test",
+            "upgrade_test",
             "juju_status",
             "juju_run_action",
             "juju_relate",

@@ -1084,3 +1084,6 @@ class TestAdvancedTestingToolAllowlists:
 
     def test_scaling_test_in_test_tools(self) -> None:
         assert "scaling_test" in _CATEGORY_TOOLS[TaskCategory.TEST]
+
+    def test_upgrade_test_in_test_tools(self) -> None:
+        assert "upgrade_test" in _CATEGORY_TOOLS[TaskCategory.TEST]

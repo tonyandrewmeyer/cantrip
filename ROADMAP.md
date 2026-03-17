@@ -460,7 +460,11 @@ minutes wall-clock time (excluding user confirmation and Juju deploy wait).
 ### 7.5 Advanced Workflows
 - [ ] Charm pairs (app + database deployed and related together)
 - [ ] Migration assistance (existing charm → improved charm) — see Phase 10
-- [ ] Upgrade testing (verify charm upgrades cleanly between revisions)
+- [x] **Upgrade testing** — `UpgradeTestTool` (`upgrade_test`) refreshes a deployed
+  application with a new `.charm` file, waits for recovery, captures pre/post status,
+  checks debug-log for hook failures, detects status regressions, and reports an
+  overall PASS/FAIL verdict with detailed comparison; supports resource attachments;
+  added to TEST tool allowlist
 
 **Exit criteria:** Showcase-ready demo of the full Canonical ecosystem. Agent autonomously
 builds, tests, and publishes charms with full observability and quality assurance.
