@@ -11,6 +11,7 @@ from cantrip.agent.tools.environment import (
     ConciergePrepareTool,
     ConciergeStatusTool,
     _concierge_available,
+    _is_already_provisioned,
 )
 from cantrip.agent.tools.files import (
     EditFileTool,
@@ -245,6 +246,59 @@ class TestConciergeAvailable:
         """Returns False when concierge is not on PATH."""
         with mock.patch("cantrip.agent.tools.environment.shutil.which", return_value=None):
             assert _concierge_available() is False
+
+
+class TestIsAlreadyProvisioned:
+    """Tests for _is_already_provisioned helper."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_succeeded(self):
+        """Returns True when concierge status reports success."""
+        status_proc = _make_fake_process(stdout="Status: succeeded\n")
+        with (
+            mock.patch(
+                "cantrip.agent.tools.environment.shutil.which",
+                return_value="/usr/bin/concierge",
+            ),
+            mock.patch("asyncio.create_subprocess_exec", return_value=status_proc),
+        ):
+            assert await _is_already_provisioned() is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_not_provisioned(self):
+        """Returns False when concierge status does not contain 'succeeded'."""
+        status_proc = _make_fake_process(stdout="Status: not provisioned\n")
+        with (
+            mock.patch(
+                "cantrip.agent.tools.environment.shutil.which",
+                return_value="/usr/bin/concierge",
+            ),
+            mock.patch("asyncio.create_subprocess_exec", return_value=status_proc),
+        ):
+            assert await _is_already_provisioned() is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_concierge_not_available(self):
+        """Returns False when concierge is not installed."""
+        with mock.patch(
+            "cantrip.agent.tools.environment.shutil.which", return_value=None,
+        ):
+            assert await _is_already_provisioned() is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_timeout(self):
+        """Returns False when concierge status times out."""
+        with (
+            mock.patch(
+                "cantrip.agent.tools.environment.shutil.which",
+                return_value="/usr/bin/concierge",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.environment._run_concierge",
+                side_effect=TimeoutError,
+            ),
+        ):
+            assert await _is_already_provisioned() is False
 
 
 class TestConciergePrepareTool:

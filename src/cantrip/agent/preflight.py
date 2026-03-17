@@ -23,7 +23,11 @@ from typing import Any
 import jubilant
 
 from cantrip.agent.state import AgentState
-from cantrip.agent.tools.environment import _concierge_available, _run_concierge
+from cantrip.agent.tools.environment import (
+    _concierge_available,
+    _is_already_provisioned,
+    _run_concierge,
+)
 
 log = logging.getLogger(__name__)
 
@@ -184,6 +188,32 @@ class PreflightRunner:
         self.result.concierge_available = True
         self._emit("concierge", CheckStatus.PASSED, "Concierge found")
 
+        # Skip if already provisioned — concierge prepare is not fully
+        # idempotent and can break the k8s cluster if run twice.
+        if await _is_already_provisioned():
+            self._emit("prepare", CheckStatus.PASSED, "Environment already provisioned (skipped)")
+            self._check_juju()
+
+            # Still verify the controller and COS are healthy.
+            self._emit("controller", CheckStatus.RUNNING, "Checking controller")
+            try:
+                juju = jubilant.Juju()
+                juju.status()
+                self.result.controller_ready = True
+                self._emit("controller", CheckStatus.PASSED, "Controller ready")
+            except jubilant.CLIError as exc:
+                self.result.controller_ready = False
+                self._emit(
+                    "controller", CheckStatus.FAILED, "Controller not ready", detail=str(exc),
+                )
+                self.result.errors.append(f"Controller check failed: {exc}")
+                return self.result
+
+            cos_model_name = self._state.cos_model or "cos"
+            self._emit("cos", CheckStatus.RUNNING, f"Checking COS model ({cos_model_name})")
+            await self._ensure_cos(cos_model_name)
+            return self.result
+
         # Run the full concierge prepare with the preset.
         self._emit(
             "prepare",
@@ -250,6 +280,32 @@ class PreflightRunner:
         cached from phase 1 so this mostly just bootstraps), then checks
         the controller and COS model.
         """
+        # Skip if already provisioned — concierge prepare is not fully
+        # idempotent and can break the k8s cluster if run twice.
+        if await _is_already_provisioned():
+            self._emit(
+                "bootstrap", CheckStatus.PASSED, "Environment already provisioned (skipped)",
+            )
+
+            self._emit("controller", CheckStatus.RUNNING, "Checking controller")
+            try:
+                juju = jubilant.Juju()
+                juju.status()
+                self.result.controller_ready = True
+                self._emit("controller", CheckStatus.PASSED, "Controller ready")
+            except jubilant.CLIError as exc:
+                self.result.controller_ready = False
+                self._emit(
+                    "controller", CheckStatus.FAILED, "Controller not ready", detail=str(exc),
+                )
+                self.result.errors.append(f"Controller check failed: {exc}")
+                return self.result
+
+            cos_model_name = self._state.cos_model or "cos"
+            self._emit("cos", CheckStatus.RUNNING, f"Checking COS model ({cos_model_name})")
+            await self._ensure_cos(cos_model_name)
+            return self.result
+
         # Run concierge prepare with the full preset.
         self._emit("bootstrap", CheckStatus.RUNNING, f"Bootstrapping controller ({preset})")
         try:

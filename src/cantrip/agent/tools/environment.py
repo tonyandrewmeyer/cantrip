@@ -28,6 +28,21 @@ async def _run_concierge(*args: str, timeout: int = 600) -> tuple[int, str, str]
     return proc.returncode or 0, stdout.decode(), stderr.decode()
 
 
+async def _is_already_provisioned() -> bool:
+    """Check whether concierge has already provisioned the environment.
+
+    Runs ``concierge status`` and looks for a success indicator.  Returns
+    False on any error or timeout — callers should proceed with prepare.
+    """
+    if not _concierge_available():
+        return False
+    try:
+        rc, stdout, _stderr = await _run_concierge("status", timeout=30)
+        return rc == 0 and "succeeded" in stdout.lower()
+    except (TimeoutError, OSError):
+        return False
+
+
 class ConciergePrepareTool(Tool):
     """Tool to provision a development environment via Concierge."""
 
@@ -69,17 +84,15 @@ class ConciergePrepareTool(Tool):
                 ),
             )
 
-        # Check whether the environment is already provisioned.
-        try:
-            rc, stdout, stderr = await _run_concierge("status", timeout=30)
-            if rc == 0 and "succeeded" in stdout.lower():
-                return ToolResult(
-                    success=True,
-                    output="Environment already provisioned.\n" + stdout.strip(),
-                    data={"already_provisioned": True},
-                )
-        except TimeoutError:
-            pass
+        # Skip if already provisioned — concierge prepare is not fully
+        # idempotent and can break the k8s cluster if run twice.
+        if await _is_already_provisioned():
+            rc, stdout, _stderr = await _run_concierge("status", timeout=30)
+            return ToolResult(
+                success=True,
+                output="Environment already provisioned.\n" + stdout.strip(),
+                data={"already_provisioned": True},
+            )
 
         # Run the prepare command.
         try:
