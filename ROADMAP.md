@@ -1139,7 +1139,7 @@ paginated, human-readable format. Nothing is lost.
 
 ---
 
-## Phase 15: Web UI
+## Phase 15: Web UI (in progress)
 
 **Goal:** Provide an alternative browser-based interface that mirrors the TUI exactly —
 same three-panel layout, same task checklist, same Juju status visualisation, same chat —
@@ -1172,55 +1172,53 @@ Decouple agent state changes from UI rendering so both interfaces receive identi
 
 Embed a lightweight HTTP server that serves the Web UI and provides a WebSocket endpoint.
 
-- [ ] **Server module** — `src/cantrip/ui/web/server.py` using `aiohttp` (already
-  async-compatible with the existing event loop). Serves static files and exposes a
-  WebSocket at `/ws`. Binds to `127.0.0.1` only — no network exposure
-- [ ] **CLI flag** — `cantrip --web` starts the web server alongside (or instead of) the
-  TUI; `cantrip --web --no-tui` runs headless with web only. Port defaults to `8471`,
-  configurable via `--web-port`
-- [ ] **Initial state endpoint** — `GET /api/state` returns the full current state (tasks,
-  chat history, Juju status, status bar) as JSON so the browser can render immediately on
-  connect rather than waiting for incremental updates
-- [ ] **WebSocket bridge** — subscribes to the shared event bus and forwards every event
-  to all connected WebSocket clients as JSON messages. Also receives user input (chat
-  messages, task interactions) from the browser and injects them into the conversation loop
+- [x] **Server module** — `src/cantrip/web/server.py` using aiohttp; serves
+  server-rendered Jinja2 template, static files, WebSocket at `/ws`, and
+  `/api/state` JSON endpoint; binds to `127.0.0.1` only
+- [x] **CLI flag** — `cantrip --web` starts the web server (with `--web-port`,
+  default 8471); dispatched before TUI/CLI in `main.py`
+- [x] **Initial state endpoint** — `GET /api/state` returns current tasks as JSON
+  for reconnect synchronisation
+- [x] **WebSocket bridge** — broadcasts task changes, chat messages, and thinking
+  state to all connected clients; receives `chat_input` from the browser and
+  calls `agent.process_message()` directly (no shared event bus yet — the TUI
+  refactor is deferred)
 
 ### 15.3 Static Frontend — Layout and Panels
 
 Build the three-panel layout using vanilla HTML, CSS, and JavaScript.
 
-- [ ] **Static assets** — `src/cantrip/ui/web/static/` containing `index.html`,
-  `style.css`, and `cantrip.js`. Bundled into the Python package and served by aiohttp.
-  No build step, no transpilation, no bundler
-- [ ] **Three-panel layout** — CSS Grid replicating the TUI layout: task checklist (left),
-  Juju status (centre), chat (right). Responsive breakpoints matching the TUI behaviour:
-  two-panel below 900px, stacked below 600px
-- [ ] **Task checklist panel** — renders task list with the same status indicators
-  (`✓` done/green, `⟳` active/blue, `○` pending/grey, `◌` blocked/yellow, `✗` failed/red).
-  Clicking a task expands its result summary. New tasks appear dynamically via WebSocket
+- [x] **Static assets** — `src/cantrip/web/static/` containing `style.css` and
+  `cantrip.js`; server-rendered `index.html.j2` Jinja2 template; no build step,
+  no transpilation, no bundler, no framework (inspired by Datastar/htmx philosophy
+  of server-first rendering with minimal client-side JS)
+- [x] **Two-column layout** — CSS Grid with chat (left, 60%) and task checklist
+  (right, 340px); responsive breakpoint at 700px stacks vertically; dark theme
+  matching the TUI colour scheme; Juju status panel deferred to a follow-up
+- [x] **Task checklist panel** — renders task list with status indicators
+  (`✓` done/green, `⟳` active/blue, `○` pending/grey, `◌` blocked/yellow,
+  `✗` failed/red) and category badges; new tasks appear dynamically via WebSocket
 - [ ] **Juju status panel** — renders app boxes, unit counts, status indicators, and
   relation lines using HTML/CSS (styled `<div>` elements and CSS connectors, not
   `<canvas>`). Same colour scheme as the TUI
-- [ ] **Chat panel** — scrollable message history with user messages visually distinct from
-  agent messages. Input area at the bottom with Enter-to-send. Supports inline progress
-  indicators and Markdown rendering (minimal — bold, code, lists — via a small inline
-  parser, no library)
+- [x] **Chat panel** — scrollable message history with user/assistant/system messages
+  visually distinct (coloured left borders); input area with Enter-to-send; thinking
+  indicator with animated dots; plain text with `pre-wrap` (Markdown rendering deferred)
 
 ### 15.4 Real-Time Updates
 
 Wire the frontend to the WebSocket for live state updates.
 
-- [ ] **WebSocket client** — `cantrip.js` opens a WebSocket connection on load, reconnects
-  automatically on disconnect with exponential backoff. Dispatches incoming events to the
-  appropriate panel update functions
-- [ ] **Incremental DOM updates** — each event type maps to a targeted DOM mutation (e.g.
-  `TaskUpdated` finds the task element by ID and updates its status class and text;
-  `ChatMessage` appends a new message element). No virtual DOM, no full re-renders
-- [ ] **User input** — chat messages sent as WebSocket frames; the server injects them into
-  the agent's conversation loop identically to TUI input
-- [ ] **Connection status** — a small indicator in the header showing connected/reconnecting
-  state. If disconnected, fetches full state from `/api/state` on reconnect to avoid
-  missing updates
+- [x] **WebSocket client** — `cantrip.js` opens a WebSocket connection on load, reconnects
+  with exponential backoff (1s → 30s max); dispatches incoming events to DOM update
+  functions via a `switch(msg.type)` dispatcher
+- [x] **Incremental DOM updates** — `task_updated` finds element by ID and updates
+  class/text; `chat_message` appends a new element; `tasks_full` rebuilds the panel;
+  `thinking` toggles the indicator; no virtual DOM
+- [x] **User input** — chat messages sent as `chat_input` WebSocket frames; server calls
+  `agent.process_message()` directly; optimistic UI appends the user message immediately
+- [x] **Connection status** — header dot indicator (green/red/yellow) showing
+  connected/disconnected/reconnecting; fetches `/api/state` on reconnect to resync
 
 ### 15.5 Alternative Views
 

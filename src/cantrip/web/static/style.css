@@ -1,0 +1,254 @@
+/* Cantrip Web UI — vanilla CSS */
+
+:root {
+  --bg: #0d1117;
+  --bg-surface: #161b22;
+  --bg-input: #21262d;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+  --blue: #58a6ff;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "Fira Code", monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* Layout */
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+header h1 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.charm-name {
+  color: var(--text-muted);
+  margin-left: 0.5rem;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.connected { background: var(--green); }
+.status-dot.disconnected { background: var(--red); }
+.status-dot.reconnecting { background: var(--yellow); }
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+@media (max-width: 700px) {
+  main { grid-template-columns: 1fr; }
+  #task-panel { max-height: 30vh; }
+}
+
+/* Chat panel */
+#chat-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+#chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.msg {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.msg-user {
+  background: var(--bg-input);
+  border-left: 3px solid var(--blue);
+}
+
+.msg-assistant {
+  background: var(--bg-surface);
+  border-left: 3px solid var(--green);
+}
+
+.msg-system {
+  background: var(--bg-surface);
+  border-left: 3px solid var(--yellow);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.msg-role {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+/* Thinking indicator */
+#thinking-indicator {
+  padding: 0.5rem 1rem;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+#thinking-indicator.hidden { display: none; }
+
+.dots::after {
+  content: "";
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0%   { content: ""; }
+  25%  { content: "."; }
+  50%  { content: ".."; }
+  75%  { content: "..."; }
+}
+
+/* Chat input */
+#chat-form {
+  display: flex;
+  padding: 0.5rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+#chat-input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  outline: none;
+}
+
+#chat-input:focus { border-color: var(--accent); }
+
+#chat-form button {
+  margin-left: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#chat-form button:hover { opacity: 0.9; }
+
+/* Task panel */
+#task-panel {
+  background: var(--bg-surface);
+  overflow-y: auto;
+  padding: 0.75rem;
+}
+
+#task-panel h2 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.task {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.task:hover { background: var(--bg-input); }
+
+.task-icon::before { font-size: 14px; }
+.task-pending .task-icon::before { content: "○"; color: var(--text-muted); }
+.task-active .task-icon::before  { content: "⟳"; color: var(--blue); }
+.task-done .task-icon::before    { content: "✓"; color: var(--green); }
+.task-failed .task-icon::before  { content: "✗"; color: var(--red); }
+.task-blocked .task-icon::before { content: "◌"; color: var(--yellow); }
+
+.task-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.task-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 1rem 0.5rem;
+}
+
+/* Footer */
+footer {
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+#status-spacer { flex: 1; }

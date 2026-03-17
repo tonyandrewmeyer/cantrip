@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cantrip{% if charm_name %} — {{ charm_name }}{% endif %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>Cantrip</h1>
+      {% if charm_name %}<span class="charm-name">{{ charm_name }}</span>{% endif %}
+    </div>
+    <div class="header-right">
+      <span id="connection-status" class="status-dot disconnected" title="Disconnected"></span>
+    </div>
+  </header>
+
+  <main>
+    <section id="chat-panel">
+      <div id="chat-messages"></div>
+      <div id="thinking-indicator" class="hidden">
+        <span class="dots"></span> Thinking&hellip;
+      </div>
+      <form id="chat-form" autocomplete="off">
+        <input type="text" id="chat-input" placeholder="Describe what you want to build&hellip;" autofocus>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
+    <section id="task-panel">
+      <h2>Tasks</h2>
+      <div id="task-list">
+        {% for task in tasks %}
+        <div class="task task-{{ task.status }}" id="task-{{ task.id }}" data-category="{{ task.category }}">
+          <span class="task-icon"></span>
+          <span class="task-title">{{ task.title }}</span>
+          <span class="task-badge">{{ task.category }}</span>
+        </div>
+        {% endfor %}
+        {% if not tasks %}
+        <div class="task-empty">No tasks yet.</div>
+        {% endif %}
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="status-label"></span>
+    <span id="status-spacer"></span>
+    <span class="footer-hint">Cantrip Web UI</span>
+  </footer>
+
+  <script src="/static/cantrip.js"></script>
+  <script>
+    cantrip.connect({{ port }});
+  </script>
+</body>
+</html>

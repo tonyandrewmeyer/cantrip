@@ -83,6 +83,17 @@ def parse_args() -> argparse.Namespace:
         help="Run in CLI mode without TUI",
     )
     run_parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Run with a browser-based Web UI instead of the TUI",
+    )
+    run_parser.add_argument(
+        "--web-port",
+        type=int,
+        default=8471,
+        help="Port for the Web UI (default: 8471)",
+    )
+    run_parser.add_argument(
         "--watcher",
         action="store_true",
         help=(
@@ -242,6 +253,11 @@ def _run(args: argparse.Namespace) -> int:
     # inference-snap needs no API key (local model).
 
     _install_unraisable_hook()
+
+    if getattr(args, "web", False):
+        from cantrip.web.server import run_web
+
+        return run_web(args)
 
     if args.no_tui:
         from cantrip.cli import run_cli
