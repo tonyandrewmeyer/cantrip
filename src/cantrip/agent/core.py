@@ -972,13 +972,19 @@ class CantripAgent:
     def load_state(self) -> bool:
         """Load agent state from the session store.
 
-        Returns True if state was loaded, False if no state exists.
+        Returns True if state was loaded, False if no state exists
+        or the database is corrupt.
         """
         self._ensure_store()
         if not self._store:
             return False
 
-        loaded = self._store.load_session()
+        try:
+            loaded = self._store.load_session()
+        except Exception:
+            log.warning("Failed to load session — .cantrip file may be corrupt")
+            self._store = None
+            return False
         if loaded is None:
             return False
 
