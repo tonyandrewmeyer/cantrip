@@ -42,11 +42,13 @@ def _parse_hook_timings(log_output: str) -> list[dict[str, object]]:
         match = _HOOK_RAN_RE.search(line)
         if match:
             seen_lines.add(line)
-            timings.append({
-                "unit": match.group("unit"),
-                "hook": match.group("hook"),
-                "duration_ms": float(match.group("duration_ms")),
-            })
+            timings.append(
+                {
+                    "unit": match.group("unit"),
+                    "hook": match.group("hook"),
+                    "duration_ms": float(match.group("duration_ms")),
+                }
+            )
             continue
 
         match = _HOOK_DURATION_RE.search(line)
@@ -55,11 +57,13 @@ def _parse_hook_timings(log_output: str) -> list[dict[str, object]]:
             duration = float(match.group("duration"))
             if match.group("unit_label") == "s":
                 duration *= 1000
-            timings.append({
-                "unit": match.group("unit"),
-                "hook": match.group("hook"),
-                "duration_ms": duration,
-            })
+            timings.append(
+                {
+                    "unit": match.group("unit"),
+                    "hook": match.group("hook"),
+                    "duration_ms": duration,
+                }
+            )
 
     return timings
 
@@ -107,14 +111,11 @@ def _format_benchmark_report(
         for hook in slow_hooks:
             durations = hook_stats[hook]
             lines.append(
-                f"- **{hook}**: max {max(durations):.0f} ms "
-                f"(threshold {threshold_ms:.0f} ms)"
+                f"- **{hook}**: max {max(durations):.0f} ms (threshold {threshold_ms:.0f} ms)"
             )
         lines.append("")
     else:
-        lines.append(
-            f"All hooks executed within the {threshold_ms:.0f} ms threshold."
-        )
+        lines.append(f"All hooks executed within the {threshold_ms:.0f} ms threshold.")
         lines.append("")
 
     return "\n".join(lines)
@@ -210,10 +211,7 @@ class HookBenchmarkTool(Tool):
         timings = _parse_hook_timings(result.stdout)
         report = _format_benchmark_report(timings, threshold_ms)
 
-        slow_hooks = [
-            t for t in timings
-            if float(t["duration_ms"]) > threshold_ms
-        ]
+        slow_hooks = [t for t in timings if float(t["duration_ms"]) > threshold_ms]
 
         return ToolResult(
             success=True,

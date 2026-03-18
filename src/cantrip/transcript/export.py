@@ -60,17 +60,12 @@ def load_transcript(
         session = session_store.load_session()
         if session:
             data.charm_name = session.charm_name or ""
-            data.charm_path = (
-                str(session.charm_path) if session.charm_path else ""
-            )
+            data.charm_path = str(session.charm_path) if session.charm_path else ""
 
         # Load conversation messages, with optional time filter.
         all_messages = session_store.load_messages()
         if since:
-            data.messages = [
-                m for m in all_messages
-                if str(m.get("timestamp", "")) >= since
-            ]
+            data.messages = [m for m in all_messages if str(m.get("timestamp", "")) >= since]
         else:
             data.messages = all_messages
 
@@ -86,14 +81,16 @@ def load_transcript(
                 continue
             if allowed_categories is not None and t.category.value not in allowed_categories:
                 continue
-            task_dicts.append({
-                "id": t.id,
-                "title": t.title,
-                "status": t.status.value,
-                "category": t.category.value,
-                "description": t.description,
-                "result": t.result,
-            })
+            task_dicts.append(
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "status": t.status.value,
+                    "category": t.category.value,
+                    "description": t.description,
+                    "result": t.result,
+                }
+            )
         data.tasks = task_dicts
 
         # Load subagent messages only for included tasks.

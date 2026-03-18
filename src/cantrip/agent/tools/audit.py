@@ -77,11 +77,13 @@ def _scan_deprecated_apis(python_files: list[Path]) -> list[dict[str, str]]:
                 continue
             if re.search(pattern, content):
                 seen.add(name)
-                findings.append({
-                    "api": name,
-                    "file": str(path),
-                    "advice": advice,
-                })
+                findings.append(
+                    {
+                        "api": name,
+                        "file": str(path),
+                        "advice": advice,
+                    }
+                )
     return findings
 
 
@@ -103,10 +105,7 @@ def _check_cos_relations(metadata: dict[str, Any]) -> dict[str, bool]:
 
 def _check_listing_fields(metadata: dict[str, Any]) -> dict[str, bool]:
     """Check which Charmhub listing metadata fields are populated."""
-    return {
-        field: bool(metadata.get(field))
-        for field in _LISTING_FIELDS
-    }
+    return {field: bool(metadata.get(field)) for field in _LISTING_FIELDS}
 
 
 def _check_tests(charm_dir: Path) -> dict[str, bool]:
@@ -116,8 +115,7 @@ def _check_tests(charm_dir: Path) -> dict[str, bool]:
     return {
         "unit_tests": unit_dir.is_dir() and bool(list(unit_dir.glob("test_*.py"))),
         "integration_tests": (
-            integration_dir.is_dir()
-            and bool(list(integration_dir.glob("test_*.py")))
+            integration_dir.is_dir() and bool(list(integration_dir.glob("test_*.py")))
         ),
     }
 
@@ -180,8 +178,7 @@ def _format_audit_report(
     # Deprecated APIs.
     for finding in deprecated_apis:
         must_fix.append(
-            f"Deprecated API: {finding['api']} in {finding['file']} — "
-            f"{finding['advice']}"
+            f"Deprecated API: {finding['api']} in {finding['file']} — {finding['advice']}"
         )
 
     # Listing completeness.
@@ -283,10 +280,7 @@ class CharmAuditTool(Tool):
             return ToolResult(
                 success=False,
                 output="",
-                error=(
-                    "No charmcraft.yaml or metadata.yaml found — "
-                    "is this a charm directory?"
-                ),
+                error=("No charmcraft.yaml or metadata.yaml found — is this a charm directory?"),
             )
 
         charm_name = metadata.get("name", charm_dir.name)
@@ -301,10 +295,7 @@ class CharmAuditTool(Tool):
         has_ops_tracing = _check_ops_tracing(charm_dir, python_files)
         deprecated_apis = _scan_deprecated_apis(python_files)
         has_readme = (charm_dir / "README.md").exists()
-        has_licence = (
-            (charm_dir / "LICENSE").exists()
-            or (charm_dir / "LICENCE").exists()
-        )
+        has_licence = (charm_dir / "LICENSE").exists() or (charm_dir / "LICENCE").exists()
         has_icon = (charm_dir / "icon.svg").exists()
 
         report, findings = _format_audit_report(

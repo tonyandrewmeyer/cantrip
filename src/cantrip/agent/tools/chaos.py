@@ -13,12 +13,14 @@ _SUBPROCESS_TIMEOUT = 60
 _RECOVERY_TIMEOUT = 300
 
 # Supported disruption types.
-_DISRUPTIONS = frozenset({
-    "kill-unit",
-    "remove-relation",
-    "scale-down",
-    "config-reset",
-})
+_DISRUPTIONS = frozenset(
+    {
+        "kill-unit",
+        "remove-relation",
+        "scale-down",
+        "config-reset",
+    }
+)
 
 
 def _run_juju(args: list[str], model: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -82,9 +84,7 @@ class ChaosTestTool(Tool):
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": (
-                        "Seconds to wait for recovery (default 300)"
-                    ),
+                    "description": ("Seconds to wait for recovery (default 300)"),
                     "default": _RECOVERY_TIMEOUT,
                 },
             },
@@ -109,7 +109,9 @@ class ChaosTestTool(Tool):
 
         if not app:
             return ToolResult(
-                success=False, output="", error="app parameter is required.",
+                success=False,
+                output="",
+                error="app parameter is required.",
             )
 
         if disruption not in _DISRUPTIONS:
@@ -117,7 +119,7 @@ class ChaosTestTool(Tool):
                 success=False,
                 output="",
                 error=f"Unknown disruption type: {disruption}. "
-                       f"Choose from: {', '.join(sorted(_DISRUPTIONS))}",
+                f"Choose from: {', '.join(sorted(_DISRUPTIONS))}",
             )
 
         # Step 1: capture pre-disruption status.

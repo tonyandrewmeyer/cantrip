@@ -18,7 +18,8 @@ def render_jsonl(data: export_mod.TranscriptData) -> str:
         for msg in msgs:
             lines.append(
                 json.dumps(
-                    {"type": "subagent_message", **msg}, default=str,
+                    {"type": "subagent_message", **msg},
+                    default=str,
                 )
             )
     if not lines:

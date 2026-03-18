@@ -204,7 +204,10 @@ class PreflightRunner:
             except jubilant.CLIError as exc:
                 self.result.controller_ready = False
                 self._emit(
-                    "controller", CheckStatus.FAILED, "Controller not ready", detail=str(exc),
+                    "controller",
+                    CheckStatus.FAILED,
+                    "Controller not ready",
+                    detail=str(exc),
                 )
                 self.result.errors.append(f"Controller check failed: {exc}")
                 return self.result
@@ -284,7 +287,9 @@ class PreflightRunner:
         # idempotent and can break the k8s cluster if run twice.
         if await _is_already_provisioned():
             self._emit(
-                "bootstrap", CheckStatus.PASSED, "Environment already provisioned (skipped)",
+                "bootstrap",
+                CheckStatus.PASSED,
+                "Environment already provisioned (skipped)",
             )
 
             self._emit("controller", CheckStatus.RUNNING, "Checking controller")
@@ -296,7 +301,10 @@ class PreflightRunner:
             except jubilant.CLIError as exc:
                 self.result.controller_ready = False
                 self._emit(
-                    "controller", CheckStatus.FAILED, "Controller not ready", detail=str(exc),
+                    "controller",
+                    CheckStatus.FAILED,
+                    "Controller not ready",
+                    detail=str(exc),
                 )
                 self.result.errors.append(f"Controller check failed: {exc}")
                 return self.result

@@ -626,11 +626,17 @@ class Subagent:
         if self._store:
             task_id = self._context.task.id
             self._store.record_subagent_message(
-                task_id, msg_idx, "system", system_prompt,
+                task_id,
+                msg_idx,
+                "system",
+                system_prompt,
             )
             msg_idx += 1
             self._store.record_subagent_message(
-                task_id, msg_idx, "user", user_instruction,
+                task_id,
+                msg_idx,
+                "user",
+                user_instruction,
             )
             msg_idx += 1
 
@@ -657,7 +663,10 @@ class Subagent:
                     for tc in response.tool_calls
                 ]
                 self._store.record_subagent_message(
-                    task_id, msg_idx, "assistant", response.content,
+                    task_id,
+                    msg_idx,
+                    "assistant",
+                    response.content,
                     tool_calls=tc_data,
                 )
                 msg_idx += 1
@@ -666,10 +675,7 @@ class Subagent:
             tool_results: list[llm.ToolResult] = []
             for tc in response.tool_calls:
                 result = await self._execute_tool(tc.name, tc.arguments)
-                content = (
-                    result.output if result.success
-                    else (result.error or "Unknown error")
-                )
+                content = result.output if result.success else (result.error or "Unknown error")
                 tool_results.append(
                     llm.ToolResult(
                         tool_call_id=tc.id,
@@ -680,7 +686,8 @@ class Subagent:
 
             messages.append(
                 llm.Message(
-                    role=llm.Role.TOOL, content="",
+                    role=llm.Role.TOOL,
+                    content="",
                     tool_results=tool_results,
                 )
             )
@@ -695,7 +702,10 @@ class Subagent:
                     for tr in tool_results
                 ]
                 self._store.record_subagent_message(
-                    task_id, msg_idx, "tool", "",
+                    task_id,
+                    msg_idx,
+                    "tool",
+                    "",
                     tool_results=tr_data,
                 )
                 msg_idx += 1
@@ -705,7 +715,10 @@ class Subagent:
         # Record the final assistant response.
         if self._store:
             self._store.record_subagent_message(
-                task_id, msg_idx, "assistant", response.content,
+                task_id,
+                msg_idx,
+                "assistant",
+                response.content,
             )
 
         return response.content

@@ -26,9 +26,7 @@ def render_markdown(data: export_mod.TranscriptData) -> str:
         sections.append("\n## Tasks\n")
         for task in data.tasks:
             status = task["status"].upper()
-            sections.append(
-                f"- [{status}] **{task['title']}** ({task['category']})"
-            )
+            sections.append(f"- [{status}] **{task['title']}** ({task['category']})")
 
     # Conversation.
     sections.append("\n## Conversation\n")
@@ -41,7 +39,8 @@ def render_markdown(data: export_mod.TranscriptData) -> str:
         if msg.get("tool_calls"):
             for tc in msg["tool_calls"]:
                 args_json = json.dumps(
-                    tc.get("arguments", {}), indent=2,
+                    tc.get("arguments", {}),
+                    indent=2,
                 )
                 sections.append(
                     f"\n<details><summary>Tool: {tc['name']}"
@@ -64,9 +63,6 @@ def render_markdown(data: export_mod.TranscriptData) -> str:
         for event in data.events:
             ts = event.get("timestamp", "")
             detail_json = json.dumps(event.get("detail", {}))
-            sections.append(
-                f"- **{event['event_type']}** ({ts}): "
-                f"`{detail_json}`"
-            )
+            sections.append(f"- **{event['event_type']}** ({ts}): `{detail_json}`")
 
     return "\n".join(sections) + "\n"

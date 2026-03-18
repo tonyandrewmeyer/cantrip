@@ -186,10 +186,9 @@ class TestReportTool(Tool):
 
         report = _format_test_report(unit_results, integration_results, charm_name)
 
-        total_passed = (
-            unit_results["summary"].get("passed", 0)
-            + integration_results["summary"].get("passed", 0)
-        )
+        total_passed = unit_results["summary"].get("passed", 0) + integration_results[
+            "summary"
+        ].get("passed", 0)
         total_failed = (
             unit_results["summary"].get("failed", 0)
             + integration_results["summary"].get("failed", 0)
@@ -197,9 +196,8 @@ class TestReportTool(Tool):
             + integration_results["summary"].get("error", 0)
         )
 
-        all_passed = (
-            (unit_results["success"] is None or unit_results["success"])
-            and (integration_results["success"] is None or integration_results["success"])
+        all_passed = (unit_results["success"] is None or unit_results["success"]) and (
+            integration_results["success"] is None or integration_results["success"]
         )
 
         return ToolResult(

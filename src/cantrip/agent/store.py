@@ -94,9 +94,7 @@ def _truncate(text: str, max_bytes: int = _MAX_CONTENT_BYTES) -> str:
     if len(text.encode("utf-8", errors="replace")) <= max_bytes:
         return text
     # Truncate at character boundary.
-    truncated = text.encode("utf-8", errors="replace")[:max_bytes].decode(
-        "utf-8", errors="ignore"
-    )
+    truncated = text.encode("utf-8", errors="replace")[:max_bytes].decode("utf-8", errors="ignore")
     return truncated + f"\n\n[truncated — {len(text)} characters total]"
 
 
@@ -340,25 +338,15 @@ class SessionStore:
 
     def load_messages(self) -> list[dict[str, object]]:
         """Load all conversation messages ordered by ID."""
-        rows = self._db.execute(
-            "SELECT * FROM messages ORDER BY id"
-        ).fetchall()
+        rows = self._db.execute("SELECT * FROM messages ORDER BY id").fetchall()
         return [
             {
                 "id": r["id"],
                 "role": r["role"],
                 "content": r["content"],
-                "tool_calls": (
-                    json.loads(r["tool_calls"]) if r["tool_calls"] else None
-                ),
-                "tool_results": (
-                    json.loads(r["tool_results"])
-                    if r["tool_results"]
-                    else None
-                ),
-                "metadata": (
-                    json.loads(r["metadata"]) if r["metadata"] else None
-                ),
+                "tool_calls": (json.loads(r["tool_calls"]) if r["tool_calls"] else None),
+                "tool_results": (json.loads(r["tool_results"]) if r["tool_results"] else None),
+                "metadata": (json.loads(r["metadata"]) if r["metadata"] else None),
                 "token_usage_id": r["token_usage_id"],
                 "timestamp": r["timestamp"],
             }
@@ -395,12 +383,12 @@ class SessionStore:
         self._db.commit()
 
     def load_subagent_messages(
-        self, task_id: str,
+        self,
+        task_id: str,
     ) -> list[dict[str, object]]:
         """Load all subagent messages for a specific task."""
         rows = self._db.execute(
-            "SELECT * FROM subagent_messages "
-            "WHERE task_id = ? ORDER BY message_index",
+            "SELECT * FROM subagent_messages WHERE task_id = ? ORDER BY message_index",
             (task_id,),
         ).fetchall()
         return [
@@ -409,16 +397,8 @@ class SessionStore:
                 "message_index": r["message_index"],
                 "role": r["role"],
                 "content": r["content"],
-                "tool_calls": (
-                    json.loads(r["tool_calls"])
-                    if r["tool_calls"]
-                    else None
-                ),
-                "tool_results": (
-                    json.loads(r["tool_results"])
-                    if r["tool_results"]
-                    else None
-                ),
+                "tool_calls": (json.loads(r["tool_calls"]) if r["tool_calls"] else None),
+                "tool_results": (json.loads(r["tool_results"]) if r["tool_results"] else None),
                 "timestamp": r["timestamp"],
             }
             for r in rows

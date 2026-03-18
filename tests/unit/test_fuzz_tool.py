@@ -110,8 +110,7 @@ class TestFuzzTestTool:
     @pytest.mark.asyncio
     async def test_seed_produces_reproducible_output(self, tool, temp_dir) -> None:
         (temp_dir / "charmcraft.yaml").write_text(
-            "name: test\ntype: charm\n"
-            "config:\n  options:\n    name:\n      type: string\n"
+            "name: test\ntype: charm\nconfig:\n  options:\n    name:\n      type: string\n"
         )
         r1 = await tool.execute(path=str(temp_dir), seed=123)
         r2 = await tool.execute(path=str(temp_dir), seed=123)

@@ -110,22 +110,13 @@ class TranscriptScreen(ModalScreen):
         data = load_transcript(self._db_path)
 
         if self.view == "conversation":
-            title.update(
-                f"Conversation ({len(data.messages)} messages)"
-                "              [Esc Close]"
-            )
+            title.update(f"Conversation ({len(data.messages)} messages)              [Esc Close]")
             self._render_conversation(log_widget, data)
         elif self.view == "tasks":
-            title.update(
-                f"Tasks ({len(data.tasks)} tasks)"
-                "                          [Esc Close]"
-            )
+            title.update(f"Tasks ({len(data.tasks)} tasks)                          [Esc Close]")
             self._render_tasks(log_widget, data)
         elif self.view == "events":
-            title.update(
-                f"Events ({len(data.events)} events)"
-                "                        [Esc Close]"
-            )
+            title.update(f"Events ({len(data.events)} events)                        [Esc Close]")
             self._render_events(log_widget, data)
 
     @staticmethod
@@ -204,13 +195,9 @@ class TranscriptScreen(ModalScreen):
             task_id = task.get("id", "")
             sub_msgs = subagent_messages.get(task_id, [])
             if sub_msgs:
-                tool_count = sum(
-                    1 for m in sub_msgs
-                    if m.get("tool_calls")
-                )
+                tool_count = sum(1 for m in sub_msgs if m.get("tool_calls"))
                 log_widget.write(
-                    f"  [dim]↳ {len(sub_msgs)} subagent messages, "
-                    f"{tool_count} tool calls[/dim]"
+                    f"  [dim]↳ {len(sub_msgs)} subagent messages, {tool_count} tool calls[/dim]"
                 )
 
             log_widget.write("")

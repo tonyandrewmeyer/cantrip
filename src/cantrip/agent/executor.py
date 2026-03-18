@@ -167,12 +167,15 @@ class BackgroundExecutor:
                     # Mark active immediately so the next poll doesn't re-pick it.
                     self._queue.set_active(task.id)
                     if self._store:
-                        self._store.record_event("task_status_change", {
-                            "task_id": task.id,
-                            "task_title": task.title,
-                            "old_status": "pending",
-                            "new_status": "active",
-                        })
+                        self._store.record_event(
+                            "task_status_change",
+                            {
+                                "task_id": task.id,
+                                "task_title": task.title,
+                                "old_status": "pending",
+                                "new_status": "active",
+                            },
+                        )
                     at = asyncio.create_task(self._run_task_with_semaphore(task))
                     self._active_tasks.add(at)
                     at.add_done_callback(self._active_tasks.discard)
@@ -246,13 +249,16 @@ class BackgroundExecutor:
         if error is not None:
             self._queue.set_failed(task.id, error)
             if self._store:
-                self._store.record_event("task_status_change", {
-                    "task_id": task.id,
-                    "task_title": task.title,
-                    "old_status": "active",
-                    "new_status": "failed",
-                    "error": str(error)[:500],
-                })
+                self._store.record_event(
+                    "task_status_change",
+                    {
+                        "task_id": task.id,
+                        "task_title": task.title,
+                        "old_status": "active",
+                        "new_status": "failed",
+                        "error": str(error)[:500],
+                    },
+                )
             if self._on_task_failed:
                 self._on_task_failed(task)
             # For deploy failures due to missing model, queue an infra task.
@@ -283,12 +289,15 @@ class BackgroundExecutor:
             result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)
             self._queue.set_done(task.id, result)
             if self._store:
-                self._store.record_event("task_status_change", {
-                    "task_id": task.id,
-                    "task_title": task.title,
-                    "old_status": "active",
-                    "new_status": "done",
-                })
+                self._store.record_event(
+                    "task_status_change",
+                    {
+                        "task_id": task.id,
+                        "task_title": task.title,
+                        "old_status": "active",
+                        "new_status": "done",
+                    },
+                )
             if task.category in (TaskCategory.BUILD, TaskCategory.DEBUG):
                 self._check_uncommitted(task)
             if self._on_task_done:
@@ -298,18 +307,24 @@ class BackgroundExecutor:
                 self._revert_on_failure(snapshot, task)
             self._queue.set_failed(task.id, "Task timed out")
             if self._store:
-                self._store.record_event("task_status_change", {
-                    "task_id": task.id,
-                    "task_title": task.title,
-                    "old_status": "active",
-                    "new_status": "failed",
-                    "error": "Task timed out",
-                })
-                self._store.record_event("error", {
-                    "task_id": task.id,
-                    "error_type": "TimeoutError",
-                    "error": "Task timed out",
-                })
+                self._store.record_event(
+                    "task_status_change",
+                    {
+                        "task_id": task.id,
+                        "task_title": task.title,
+                        "old_status": "active",
+                        "new_status": "failed",
+                        "error": "Task timed out",
+                    },
+                )
+                self._store.record_event(
+                    "error",
+                    {
+                        "task_id": task.id,
+                        "error_type": "TimeoutError",
+                        "error": "Task timed out",
+                    },
+                )
             if self._on_task_failed:
                 self._on_task_failed(task)
         except Exception as exc:
@@ -317,18 +332,24 @@ class BackgroundExecutor:
                 self._revert_on_failure(snapshot, task)
             self._queue.set_failed(task.id, str(exc))
             if self._store:
-                self._store.record_event("task_status_change", {
-                    "task_id": task.id,
-                    "task_title": task.title,
-                    "old_status": "active",
-                    "new_status": "failed",
-                    "error": str(exc)[:500],
-                })
-                self._store.record_event("error", {
-                    "task_id": task.id,
-                    "error_type": type(exc).__name__,
-                    "error": str(exc)[:500],
-                })
+                self._store.record_event(
+                    "task_status_change",
+                    {
+                        "task_id": task.id,
+                        "task_title": task.title,
+                        "old_status": "active",
+                        "new_status": "failed",
+                        "error": str(exc)[:500],
+                    },
+                )
+                self._store.record_event(
+                    "error",
+                    {
+                        "task_id": task.id,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc)[:500],
+                    },
+                )
             if self._on_task_failed:
                 self._on_task_failed(task)
         finally:

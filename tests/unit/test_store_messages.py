@@ -16,9 +16,7 @@ class TestMessageRecording:
         s.close()
 
     def test_record_and_load_message(self, store):
-        msg_id = store.record_message(
-            role="user", content="Hello world"
-        )
+        msg_id = store.record_message(role="user", content="Hello world")
         assert isinstance(msg_id, int)
         messages = store.load_messages()
         assert len(messages) == 1

@@ -10,7 +10,9 @@ class TestParseHookTimings:
     """Tests for _parse_hook_timings."""
 
     def test_parses_ran_hook_format(self) -> None:
-        log = 'unit-myapp-0: 12:00:00 DEBUG juju.worker.uniter.operation ran "install" hook (150ms)'
+        log = (
+            'unit-myapp-0: 12:00:00 DEBUG juju.worker.uniter.operation ran "install" hook (150ms)'
+        )
         timings = _parse_hook_timings(log)
         assert len(timings) == 1
         assert timings[0]["hook"] == "install"

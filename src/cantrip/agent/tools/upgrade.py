@@ -16,7 +16,8 @@ _SETTLE_TIMEOUT = 300
 
 
 def _run_juju(
-    args: list[str], model: str | None = None,
+    args: list[str],
+    model: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a juju command and return the result."""
     cmd = ["juju"] + args
@@ -37,7 +38,10 @@ def _wait_for_app(app: str, model: str | None, timeout: int) -> bool:
         cmd.extend(["--model", model])
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout + 30,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout + 30,
         )
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -45,7 +49,8 @@ def _wait_for_app(app: str, model: str | None, timeout: int) -> bool:
 
 
 def _get_app_status(
-    app: str, model: str | None,
+    app: str,
+    model: str | None,
 ) -> dict[str, Any]:
     """Get structured status for an application."""
     result = _run_juju(["status", "--format", "json", app], model)
@@ -62,7 +67,8 @@ def _check_hook_failures(app: str, model: str | None, lines: int = 100) -> list[
     """Check debug-log for hook failures during upgrade."""
     try:
         result = _run_juju(
-            ["debug-log", "-n", str(lines), "--no-tail", "--include", app], model,
+            ["debug-log", "-n", str(lines), "--no-tail", "--include", app],
+            model,
         )
     except (FileNotFoundError, OSError):
         return []
@@ -120,9 +126,7 @@ class UpgradeTestTool(Tool):
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": (
-                        "Seconds to wait for recovery after upgrade (default 300)"
-                    ),
+                    "description": ("Seconds to wait for recovery after upgrade (default 300)"),
                     "default": _SETTLE_TIMEOUT,
                 },
             },
@@ -140,12 +144,16 @@ class UpgradeTestTool(Tool):
         """Test a charm upgrade."""
         if not shutil.which("juju"):
             return ToolResult(
-                success=False, output="", error="juju CLI not found on PATH.",
+                success=False,
+                output="",
+                error="juju CLI not found on PATH.",
             )
 
         if not app:
             return ToolResult(
-                success=False, output="", error="app parameter is required.",
+                success=False,
+                output="",
+                error="app parameter is required.",
             )
 
         charm_file = Path(charm_path)
@@ -182,9 +190,7 @@ class UpgradeTestTool(Tool):
         report_lines.append(f"- Units: {len(pre_units)}")
         for unit_name, unit_data in pre_units.items():
             ws = unit_data.get("workload-status", {})
-            report_lines.append(
-                f"  - {unit_name}: {ws.get('current', '?')}"
-            )
+            report_lines.append(f"  - {unit_name}: {ws.get('current', '?')}")
         report_lines.append("")
 
         # Step 2: perform upgrade (juju refresh).
@@ -221,9 +227,7 @@ class UpgradeTestTool(Tool):
         report_lines.append("")
 
         recovered = _wait_for_app(app, model, timeout)
-        report_lines.append(
-            f"Recovery: **{'SUCCESS' if recovered else 'FAILED'}**"
-        )
+        report_lines.append(f"Recovery: **{'SUCCESS' if recovered else 'FAILED'}**")
         report_lines.append("")
 
         # Step 4: capture post-upgrade status.
@@ -237,9 +241,7 @@ class UpgradeTestTool(Tool):
         report_lines.append(f"- Units: {len(post_units)}")
         for unit_name, unit_data in post_units.items():
             ws = unit_data.get("workload-status", {})
-            report_lines.append(
-                f"  - {unit_name}: {ws.get('current', '?')}"
-            )
+            report_lines.append(f"  - {unit_name}: {ws.get('current', '?')}")
         report_lines.append("")
 
         # Step 5: check for hook failures during upgrade.
@@ -257,9 +259,7 @@ class UpgradeTestTool(Tool):
 
         pre_current = pre_app_status.get("current", "unknown")
         post_current = post_app_status.get("current", "unknown")
-        status_regressed = (
-            pre_current == "active" and post_current != "active"
-        )
+        status_regressed = pre_current == "active" and post_current != "active"
         units_changed = len(pre_units) != len(post_units)
 
         if status_regressed:
@@ -272,9 +272,7 @@ class UpgradeTestTool(Tool):
             report_lines.append("No regressions detected.")
 
         if units_changed:
-            report_lines.append(
-                f"Unit count changed: {len(pre_units)} → {len(post_units)}"
-            )
+            report_lines.append(f"Unit count changed: {len(pre_units)} → {len(post_units)}")
         report_lines.append("")
 
         # Verdict.

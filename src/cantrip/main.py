@@ -56,17 +56,11 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument(
         "--snap",
         default="gemma3",
-        help=(
-            "Inference snap name when using --provider inference-snap"
-            " (default: gemma3)"
-        ),
+        help=("Inference snap name when using --provider inference-snap (default: gemma3)"),
     )
     run_parser.add_argument(
         "--light-model",
-        help=(
-            "Cheaper model for internal tasks like compaction"
-            " (auto-detected if omitted)"
-        ),
+        help=("Cheaper model for internal tasks like compaction (auto-detected if omitted)"),
     )
     run_parser.add_argument(
         "--light-snap",
@@ -96,10 +90,7 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument(
         "--watcher",
         action="store_true",
-        help=(
-            "Start the event watcher on launch"
-            " (monitors dev model for changes)"
-        ),
+        help=("Start the event watcher on launch (monitors dev model for changes)"),
     )
     run_parser.add_argument(
         "--concurrency",
@@ -228,10 +219,7 @@ def _run(args: argparse.Namespace) -> int:
     """Run the main cantrip agent."""
     charm_path = args.path.resolve()
     if _is_cantrip_source_tree(charm_path):
-        print(
-            "Error: refusing to use the cantrip source tree"
-            " as a charm project."
-        )
+        print("Error: refusing to use the cantrip source tree as a charm project.")
         print("Run from your charm's directory, or pass a path:")
         print("  cantrip /path/to/my-charm")
         return 1

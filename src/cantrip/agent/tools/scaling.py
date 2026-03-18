@@ -91,8 +91,7 @@ class ScalingTestTool(Tool):
                 "scale_back": {
                     "type": "boolean",
                     "description": (
-                        "Whether to scale back to 1 unit after testing "
-                        "(default true)"
+                        "Whether to scale back to 1 unit after testing (default true)"
                     ),
                     "default": True,
                 },
@@ -127,7 +126,9 @@ class ScalingTestTool(Tool):
 
         if not app:
             return ToolResult(
-                success=False, output="", error="app parameter is required.",
+                success=False,
+                output="",
+                error="app parameter is required.",
             )
 
         if target_units < 1:
@@ -162,7 +163,8 @@ class ScalingTestTool(Tool):
         report_lines.append("")
 
         scale_result = _run_juju(
-            ["scale-application", app, str(target_units)], model,
+            ["scale-application", app, str(target_units)],
+            model,
         )
         if scale_result.returncode != 0:
             # Fall back to add-unit for machine models.
@@ -170,7 +172,8 @@ class ScalingTestTool(Tool):
             units_to_add = target_units - current
             if units_to_add > 0:
                 add_result = _run_juju(
-                    ["add-unit", app, "-n", str(units_to_add)], model,
+                    ["add-unit", app, "-n", str(units_to_add)],
+                    model,
                 )
                 if add_result.returncode != 0:
                     return ToolResult(
@@ -181,9 +184,7 @@ class ScalingTestTool(Tool):
 
         # Wait for all units to settle.
         scale_up_ok = _wait_for_app(app, model, timeout)
-        report_lines.append(
-            f"Scale-up recovery: **{'SUCCESS' if scale_up_ok else 'FAILED'}**"
-        )
+        report_lines.append(f"Scale-up recovery: **{'SUCCESS' if scale_up_ok else 'FAILED'}**")
         report_lines.append("")
 
         # Capture scaled-up status.

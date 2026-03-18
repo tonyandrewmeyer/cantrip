@@ -96,10 +96,12 @@ def _fuzz_action_params(
                 values = _FUZZ_VALUES.get(param_type, _FUZZ_VALUES["string"])
                 fuzzed_params[param_name] = random.choice(values)
 
-            cases.append({
-                "action": action_name,
-                "params": fuzzed_params,
-            })
+            cases.append(
+                {
+                    "action": action_name,
+                    "params": fuzzed_params,
+                }
+            )
 
     return cases
 
@@ -112,8 +114,10 @@ def _format_fuzz_report(
     """Format a fuzz test plan as Markdown."""
     lines = ["# Fuzz Test Plan", ""]
 
-    lines.append(f"Generated {len(config_cases)} config fuzz cases and "
-                 f"{len(action_cases)} action fuzz cases.")
+    lines.append(
+        f"Generated {len(config_cases)} config fuzz cases and "
+        f"{len(action_cases)} action fuzz cases."
+    )
     lines.append("")
 
     if config_cases:
@@ -178,8 +182,7 @@ class FuzzTestTool(Tool):
                 "seed": {
                     "type": "integer",
                     "description": (
-                        "Random seed for reproducible fuzz generation "
-                        "(default: random)"
+                        "Random seed for reproducible fuzz generation (default: random)"
                     ),
                 },
             },

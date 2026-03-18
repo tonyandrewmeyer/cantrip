@@ -218,169 +218,178 @@ def plan_improvement_fixes(
 
     # Observability gaps.
     cos_gaps = [
-        k for k in ("cos_tracing", "cos_metrics", "cos_logging", "cos_dashboards", "ops_tracing")
+        k
+        for k in ("cos_tracing", "cos_metrics", "cos_logging", "cos_dashboards", "ops_tracing")
         if gaps.get(k)
     ]
     if cos_gaps:
-        tasks.append(AgentTask(
-            id="fill-observability",
-            title="Fill observability gaps",
-            category=TaskCategory.BUILD,
-            model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Add missing COS integration to the charm at {charm_path}.\n\n"
-                f"Missing: {', '.join(cos_gaps)}\n\n"
-                "1. Load the `observability` and `charm-improvement` skills.\n"
-                "2. Add missing COS relations to charmcraft.yaml (tracing, "
-                "metrics-endpoint, logging, grafana-dashboard).\n"
-                "3. Add ops-tracing if missing — install dependency and add "
-                "`ops_tracing.setup(self)` in `__init__`.\n"
-                "4. Add a Prometheus metrics endpoint if missing — expose "
-                "workload metrics via the `metrics-endpoint` relation.\n"
-                "5. Add Loki log forwarding if missing — add the `logging` "
-                "relation and ensure structured logging is used.\n"
-                "6. Generate a basic Grafana dashboard JSON in "
-                "`src/grafana_dashboards/` covering key operational metrics "
-                "(unit status, hook durations, relation counts).\n"
-                "7. Generate basic Prometheus alert rules in "
-                "`src/prometheus_alert_rules/` for common failure conditions "
-                "(unit blocked, hook failures, resource exhaustion).\n"
-                "8. Commit changes with a descriptive message."
-            ),
-            dependencies=["confirm-improvements"],
-        ))
+        tasks.append(
+            AgentTask(
+                id="fill-observability",
+                title="Fill observability gaps",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Add missing COS integration to the charm at {charm_path}.\n\n"
+                    f"Missing: {', '.join(cos_gaps)}\n\n"
+                    "1. Load the `observability` and `charm-improvement` skills.\n"
+                    "2. Add missing COS relations to charmcraft.yaml (tracing, "
+                    "metrics-endpoint, logging, grafana-dashboard).\n"
+                    "3. Add ops-tracing if missing — install dependency and add "
+                    "`ops_tracing.setup(self)` in `__init__`.\n"
+                    "4. Add a Prometheus metrics endpoint if missing — expose "
+                    "workload metrics via the `metrics-endpoint` relation.\n"
+                    "5. Add Loki log forwarding if missing — add the `logging` "
+                    "relation and ensure structured logging is used.\n"
+                    "6. Generate a basic Grafana dashboard JSON in "
+                    "`src/grafana_dashboards/` covering key operational metrics "
+                    "(unit status, hook durations, relation counts).\n"
+                    "7. Generate basic Prometheus alert rules in "
+                    "`src/prometheus_alert_rules/` for common failure conditions "
+                    "(unit blocked, hook failures, resource exhaustion).\n"
+                    "8. Commit changes with a descriptive message."
+                ),
+                dependencies=["confirm-improvements"],
+            )
+        )
         fix_ids.append("fill-observability")
 
     # Test gaps.
-    test_gaps = [
-        k for k in ("unit_tests", "integration_tests")
-        if gaps.get(k)
-    ]
+    test_gaps = [k for k in ("unit_tests", "integration_tests") if gaps.get(k)]
     if test_gaps:
-        tasks.append(AgentTask(
-            id="fill-tests",
-            title="Fill test gaps",
-            category=TaskCategory.BUILD,
-            model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Add missing tests to the charm at {charm_path}.\n\n"
-                f"Missing: {', '.join(test_gaps)}\n\n"
-                "1. Load the `charm-improvement` skill for test patterns.\n"
-                "2. Read the existing charm code to understand events, relations, "
-                "config, and actions.\n"
-                "3. If unit tests are missing, write Scenario-based unit tests "
-                "in `tests/unit/test_charm.py` covering all observed events, "
-                "happy paths, and error cases. Do NOT use the deprecated "
-                "Harness. Cover: missing relations → BlockedStatus, invalid "
-                "config → error handling, Pebble not ready → WaitingStatus.\n"
-                "4. If integration tests are missing, write Jubilant integration "
-                "tests in `tests/integration/test_charm.py` covering:\n"
-                "   - Deploy and reach active/idle\n"
-                "   - Each relation endpoint (deploy + relate + verify)\n"
-                "   - Each action (run + check result)\n"
-                "   - Config changes (set + verify)\n"
-                "5. Run `run_charm_tests` for each test type and fix any "
-                "failures. Iterate until green.\n"
-                "6. Commit changes with a descriptive message."
-            ),
-            dependencies=["confirm-improvements"],
-        ))
+        tasks.append(
+            AgentTask(
+                id="fill-tests",
+                title="Fill test gaps",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Add missing tests to the charm at {charm_path}.\n\n"
+                    f"Missing: {', '.join(test_gaps)}\n\n"
+                    "1. Load the `charm-improvement` skill for test patterns.\n"
+                    "2. Read the existing charm code to understand events, relations, "
+                    "config, and actions.\n"
+                    "3. If unit tests are missing, write Scenario-based unit tests "
+                    "in `tests/unit/test_charm.py` covering all observed events, "
+                    "happy paths, and error cases. Do NOT use the deprecated "
+                    "Harness. Cover: missing relations → BlockedStatus, invalid "
+                    "config → error handling, Pebble not ready → WaitingStatus.\n"
+                    "4. If integration tests are missing, write Jubilant integration "
+                    "tests in `tests/integration/test_charm.py` covering:\n"
+                    "   - Deploy and reach active/idle\n"
+                    "   - Each relation endpoint (deploy + relate + verify)\n"
+                    "   - Each action (run + check result)\n"
+                    "   - Config changes (set + verify)\n"
+                    "5. Run `run_charm_tests` for each test type and fix any "
+                    "failures. Iterate until green.\n"
+                    "6. Commit changes with a descriptive message."
+                ),
+                dependencies=["confirm-improvements"],
+            )
+        )
         fix_ids.append("fill-tests")
 
     # Deprecated API migration (if detected by audit).
     if gaps.get("deprecated_apis"):
-        tasks.append(AgentTask(
-            id="modernise-code",
-            title="Modernise charm code",
-            category=TaskCategory.BUILD,
-            model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Migrate deprecated APIs in the charm at {charm_path}.\n\n"
-                "1. Replace StoredState with instance attributes or Juju secrets.\n"
-                "2. Replace Harness test imports with Scenario.\n"
-                "3. Replace charmcraft fetch-libs imports with PyPI equivalents "
-                "where available.\n"
-                "4. Run tests after each change to verify nothing breaks.\n"
-                "5. Commit changes with a descriptive message."
-            ),
-            dependencies=["confirm-improvements"],
-        ))
+        tasks.append(
+            AgentTask(
+                id="modernise-code",
+                title="Modernise charm code",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Migrate deprecated APIs in the charm at {charm_path}.\n\n"
+                    "1. Replace StoredState with instance attributes or Juju secrets.\n"
+                    "2. Replace Harness test imports with Scenario.\n"
+                    "3. Replace charmcraft fetch-libs imports with PyPI equivalents "
+                    "where available.\n"
+                    "4. Run tests after each change to verify nothing breaks.\n"
+                    "5. Commit changes with a descriptive message."
+                ),
+                dependencies=["confirm-improvements"],
+            )
+        )
         fix_ids.append("modernise-code")
 
     # Listing readiness (README, metadata, licence).
-    listing_gaps = [
-        k for k in ("readme", "licence")
-        if gaps.get(k)
-    ]
+    listing_gaps = [k for k in ("readme", "licence") if gaps.get(k)]
     if listing_gaps or gaps.get("listing_metadata"):
-        tasks.append(AgentTask(
-            id="listing-readiness",
-            title="Prepare for Charmhub listing",
-            category=TaskCategory.BUILD,
-            model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Prepare the charm at {charm_path} for Charmhub listing.\n\n"
-                "1. Generate or update README.md with standard sections "
-                "(description, deployment, configuration, integrations).\n"
-                "2. Fill in missing charmcraft.yaml metadata fields "
-                "(display-name, summary, description, docs, issues, source).\n"
-                "3. Check for LICENSE file — suggest Apache-2.0 if missing.\n"
-                "4. Commit changes with a descriptive message."
-            ),
-            dependencies=["confirm-improvements"],
-        ))
+        tasks.append(
+            AgentTask(
+                id="listing-readiness",
+                title="Prepare for Charmhub listing",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Prepare the charm at {charm_path} for Charmhub listing.\n\n"
+                    "1. Generate or update README.md with standard sections "
+                    "(description, deployment, configuration, integrations).\n"
+                    "2. Fill in missing charmcraft.yaml metadata fields "
+                    "(display-name, summary, description, docs, issues, source).\n"
+                    "3. Check for LICENSE file — suggest Apache-2.0 if missing.\n"
+                    "4. Commit changes with a descriptive message."
+                ),
+                dependencies=["confirm-improvements"],
+            )
+        )
         fix_ids.append("listing-readiness")
 
     # Validation task depends on all fixes.
     if fix_ids:
-        tasks.append(AgentTask(
-            id="validate-improvements",
-            title="Validate all improvements",
-            category=TaskCategory.TEST,
-            description=(
-                f"Validate the improved charm at {charm_path}.\n\n"
-                "1. Run `charm_validate` to verify the charm packs cleanly.\n"
-                "2. Run unit tests with `run_charm_tests`.\n"
-                "3. Run integration tests with `run_charm_tests` if present.\n"
-                "4. Report pass/fail counts for each."
-            ),
-            dependencies=fix_ids,
-        ))
+        tasks.append(
+            AgentTask(
+                id="validate-improvements",
+                title="Validate all improvements",
+                category=TaskCategory.TEST,
+                description=(
+                    f"Validate the improved charm at {charm_path}.\n\n"
+                    "1. Run `charm_validate` to verify the charm packs cleanly.\n"
+                    "2. Run unit tests with `run_charm_tests`.\n"
+                    "3. Run integration tests with `run_charm_tests` if present.\n"
+                    "4. Report pass/fail counts for each."
+                ),
+                dependencies=fix_ids,
+            )
+        )
 
         # Deploy and verify the improved charm reaches active/idle.
-        tasks.append(AgentTask(
-            id="deploy-verify-improvements",
-            title="Deploy and verify improved charm",
-            category=TaskCategory.DEPLOY,
-            description=(
-                f"Deploy the improved charm at {charm_path} and verify it works.\n\n"
-                "1. Pack the charm with `charmcraft_pack`.\n"
-                "2. Deploy or refresh with `juju_deploy` / `juju_refresh`.\n"
-                "3. Establish all relations.\n"
-                "4. Run `juju_wait` to confirm active/idle.\n"
-                "5. If COS relations were added, verify they are established."
-            ),
-            dependencies=["validate-improvements"],
-        ))
+        tasks.append(
+            AgentTask(
+                id="deploy-verify-improvements",
+                title="Deploy and verify improved charm",
+                category=TaskCategory.DEPLOY,
+                description=(
+                    f"Deploy the improved charm at {charm_path} and verify it works.\n\n"
+                    "1. Pack the charm with `charmcraft_pack`.\n"
+                    "2. Deploy or refresh with `juju_deploy` / `juju_refresh`.\n"
+                    "3. Establish all relations.\n"
+                    "4. Run `juju_wait` to confirm active/idle.\n"
+                    "5. If COS relations were added, verify they are established."
+                ),
+                dependencies=["validate-improvements"],
+            )
+        )
 
         # Diff review — summarise all changes for the user.
-        tasks.append(AgentTask(
-            id="diff-review",
-            title="Review improvement changes",
-            category=TaskCategory.RESEARCH,
-            model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Summarise all changes made to the charm at {charm_path}.\n\n"
-                "1. Run `git_log` to see all commits made during improvement.\n"
-                "2. Run `git_diff` against the initial state to see the full diff.\n"
-                "3. Group changes by category (observability, tests, code "
-                "modernisation, listing readiness).\n"
-                "4. Present a clear summary with: what was changed, why, and "
-                "how many files were affected in each category.\n"
-                "5. Note any issues that were flagged but not addressed."
-            ),
-            dependencies=["deploy-verify-improvements"],
-        ))
+        tasks.append(
+            AgentTask(
+                id="diff-review",
+                title="Review improvement changes",
+                category=TaskCategory.RESEARCH,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Summarise all changes made to the charm at {charm_path}.\n\n"
+                    "1. Run `git_log` to see all commits made during improvement.\n"
+                    "2. Run `git_diff` against the initial state to see the full diff.\n"
+                    "3. Group changes by category (observability, tests, code "
+                    "modernisation, listing readiness).\n"
+                    "4. Present a clear summary with: what was changed, why, and "
+                    "how many files were affected in each category.\n"
+                    "5. Note any issues that were flagged but not addressed."
+                ),
+                dependencies=["deploy-verify-improvements"],
+            )
+        )
 
     return tasks
 

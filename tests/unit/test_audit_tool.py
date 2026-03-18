@@ -29,9 +29,7 @@ def tool():
 
 def _write_charmcraft_yaml(charm_dir: Path, extra: str = "") -> None:
     """Write a minimal charmcraft.yaml."""
-    (charm_dir / "charmcraft.yaml").write_text(
-        f"name: test-charm\ntype: charm\n{extra}"
-    )
+    (charm_dir / "charmcraft.yaml").write_text(f"name: test-charm\ntype: charm\n{extra}")
 
 
 # ===================================================================
@@ -87,10 +85,12 @@ class TestCheckListingFields:
         assert not any(result.values())
 
     def test_partial_fields(self) -> None:
-        result = _check_listing_fields({
-            "display-name": "My Charm",
-            "summary": "A test charm",
-        })
+        result = _check_listing_fields(
+            {
+                "display-name": "My Charm",
+                "summary": "A test charm",
+            }
+        )
         assert result["display-name"] is True
         assert result["summary"] is True
         assert result["description"] is False
@@ -330,8 +330,7 @@ class TestCharmAuditTool:
         src = temp_dir / "src"
         src.mkdir()
         (src / "charm.py").write_text(
-            "from ops.framework import StoredState\n"
-            "class MyCharm:\n    _stored = StoredState()\n"
+            "from ops.framework import StoredState\nclass MyCharm:\n    _stored = StoredState()\n"
         )
 
         result = await tool.execute(path=str(temp_dir))

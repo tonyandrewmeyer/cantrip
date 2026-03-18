@@ -197,8 +197,7 @@ class TestJsonlRenderer:
         output = render_jsonl(data)
         lines = output.strip().split("\n")
         sub_lines = [
-            json.loads(line) for line in lines
-            if json.loads(line)["type"] == "subagent_message"
+            json.loads(line) for line in lines if json.loads(line)["type"] == "subagent_message"
         ]
         assert len(sub_lines) == 2
 
