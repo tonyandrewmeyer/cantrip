@@ -71,7 +71,7 @@ class ReadFileTool(Tool):
                 output=content,
                 data={"path": str(resolved), "size": len(content)},
             )
-        except Exception as e:
+        except (OSError, UnicodeDecodeError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -141,7 +141,7 @@ class WriteFileTool(Tool):
                 output=f"Wrote {len(content)} bytes to {path}",
                 data={"path": str(resolved), "size": len(content)},
             )
-        except Exception as e:
+        except (OSError, UnicodeEncodeError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -219,7 +219,7 @@ class ListDirectoryTool(Tool):
                 output=output,
                 data={"path": str(resolved), "count": len(entries)},
             )
-        except Exception as e:
+        except (OSError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -313,7 +313,7 @@ class EditFileTool(Tool):
                 output=f"Replaced string in {path}",
                 data={"path": str(resolved)},
             )
-        except Exception as e:
+        except (OSError, UnicodeDecodeError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",

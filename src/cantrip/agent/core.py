@@ -238,6 +238,8 @@ class CantripAgent:
         target = charm_path / "CLAUDE.md"
         if target.exists():
             return
+        if not charm_path.is_dir():
+            return
         charm_name = self.state.charm_name or charm_path.name
         content = claude_md.render_claude_md(charm_name, charm_type=self.state.charm_type)
         target.write_text(content)
@@ -263,8 +265,7 @@ class CantripAgent:
         tool_calls = None
         if msg.tool_calls:
             tool_calls = [
-                {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
-                for tc in msg.tool_calls
+                {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in msg.tool_calls
             ]
         tool_results = None
         if msg.tool_results:
@@ -306,9 +307,6 @@ class CantripAgent:
             EditFileTool(base_path=base_path),
             # Audit
             CharmAuditTool(),
-            # Benchmark and fuzz
-            HookBenchmarkTool(),
-            FuzzTestTool(),
             # Charm operations
             CharmcraftInitTool(),
             CharmcraftPackTool(),
@@ -572,11 +570,14 @@ class CantripAgent:
         if not self.state.messages:
             self._ensure_store()
             if self._store:
-                self._store.record_event("session_start", {
-                    "provider": self.provider.name,
-                    "model": self.provider.model_name,
-                    "charm_name": self.state.charm_name,
-                })
+                self._store.record_event(
+                    "session_start",
+                    {
+                        "provider": self.provider.name,
+                        "model": self.provider.model_name,
+                        "charm_name": self.state.charm_name,
+                    },
+                )
 
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
@@ -643,7 +644,9 @@ class CantripAgent:
 
         # Store the final assistant response.
         final_msg = Message(
-            role=Role.ASSISTANT, content=response.content, metadata=response.metadata,
+            role=Role.ASSISTANT,
+            content=response.content,
+            metadata=response.metadata,
         )
         self.state.messages.append(final_msg)
         self._record_message(final_msg)
@@ -672,11 +675,14 @@ class CantripAgent:
         if not self.state.messages:
             self._ensure_store()
             if self._store:
-                self._store.record_event("session_start", {
-                    "provider": self.provider.name,
-                    "model": self.provider.model_name,
-                    "charm_name": self.state.charm_name,
-                })
+                self._store.record_event(
+                    "session_start",
+                    {
+                        "provider": self.provider.name,
+                        "model": self.provider.model_name,
+                        "charm_name": self.state.charm_name,
+                    },
+                )
 
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
@@ -823,12 +829,15 @@ class CantripAgent:
 
         self._ensure_store()
         if self._store:
-            self._store.record_event("design_confirmed", {
-                "workload": proposal.workload_name,
-                "substrate": proposal.substrate,
-                "charm_path": proposal.charm_path,
-                "build_task_count": len(build_tasks),
-            })
+            self._store.record_event(
+                "design_confirmed",
+                {
+                    "workload": proposal.workload_name,
+                    "substrate": proposal.substrate,
+                    "charm_path": proposal.charm_path,
+                    "build_task_count": len(build_tasks),
+                },
+            )
 
         return build_tasks
 
@@ -884,10 +893,13 @@ class CantripAgent:
         """
         self._ensure_store()
         if self._store:
-            self._store.record_event("watcher_event", {
-                "category": event.category,
-                "summary": event.summary,
-            })
+            self._store.record_event(
+                "watcher_event",
+                {
+                    "category": event.category,
+                    "summary": event.summary,
+                },
+            )
 
         task = task_for_watcher_event(event, self.state)
         if task is not None:
@@ -993,10 +1005,13 @@ class CantripAgent:
             self._work_queue.add_tasks(tasks)
 
         if self._store:
-            self._store.record_event("session_resume", {
-                "charm_name": self.state.charm_name,
-                "task_count": len(tasks),
-            })
+            self._store.record_event(
+                "session_resume",
+                {
+                    "charm_name": self.state.charm_name,
+                    "task_count": len(tasks),
+                },
+            )
 
         return True
 

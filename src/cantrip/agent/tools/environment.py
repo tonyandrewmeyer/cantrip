@@ -24,7 +24,12 @@ async def _run_concierge(*args: str, timeout: int = 600) -> tuple[int, str, str]
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise
     return proc.returncode or 0, stdout.decode(), stderr.decode()
 
 

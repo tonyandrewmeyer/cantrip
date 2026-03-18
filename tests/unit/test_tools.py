@@ -228,6 +228,7 @@ def _make_fake_process(returncode: int = 0, stdout: str = "", stderr: str = ""):
     """Build a mock async subprocess for Concierge tests."""
     proc = mock.MagicMock()
     proc.communicate = mock.AsyncMock(return_value=(stdout.encode(), stderr.encode()))
+    proc.wait = mock.AsyncMock(return_value=returncode)
     proc.returncode = returncode
     return proc
 
@@ -281,7 +282,8 @@ class TestIsAlreadyProvisioned:
     async def test_returns_false_when_concierge_not_available(self):
         """Returns False when concierge is not installed."""
         with mock.patch(
-            "cantrip.agent.tools.environment.shutil.which", return_value=None,
+            "cantrip.agent.tools.environment.shutil.which",
+            return_value=None,
         ):
             assert await _is_already_provisioned() is False
 

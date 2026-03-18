@@ -122,6 +122,8 @@ class JujuDebugLogTool(Tool):
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         except TimeoutError:
+            proc.kill()
+            await proc.wait()
             return ToolResult(
                 success=False,
                 output="",

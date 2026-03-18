@@ -26,6 +26,7 @@ _STATIC_DIR = pathlib.Path(__file__).parent / "static"
 # WebSocket broadcast
 # ---------------------------------------------------------------------------
 
+
 def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
     """Send a JSON message to all connected WebSocket clients."""
     payload = json.dumps({"type": event_type, "data": data})
@@ -43,6 +44,7 @@ def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
 # ---------------------------------------------------------------------------
 # Route handlers
 # ---------------------------------------------------------------------------
+
 
 async def _index(request: web.Request) -> web.Response:
     """Serve the main page with initial state baked in."""
@@ -88,10 +90,12 @@ async def _api_state(request: web.Request) -> web.Response:
             for t in agent._work_queue.all_tasks()
         ]
 
-    return web.json_response({
-        "charm_name": agent.state.charm_name or "",
-        "tasks": tasks,
-    })
+    return web.json_response(
+        {
+            "charm_name": agent.state.charm_name or "",
+            "tasks": tasks,
+        }
+    )
 
 
 async def _api_juju_status(request: web.Request) -> web.Response:
@@ -133,11 +137,13 @@ async def _api_juju_status(request: web.Request) -> web.Response:
             key = f"{rel.provider}:{rel.interface}:{rel.requirer}"
             if key not in seen:
                 seen.add(key)
-                relations.append({
-                    "provider": str(getattr(rel, "provider", "")),
-                    "requirer": str(getattr(rel, "requirer", "")),
-                    "interface": str(getattr(rel, "interface", "")),
-                })
+                relations.append(
+                    {
+                        "provider": str(getattr(rel, "provider", "")),
+                        "requirer": str(getattr(rel, "requirer", "")),
+                        "interface": str(getattr(rel, "interface", "")),
+                    }
+                )
 
     return web.json_response({"apps": apps, "relations": relations})
 
@@ -157,9 +163,20 @@ async def _api_logs(request: web.Request) -> web.Response:
 
     try:
         result = subprocess.run(
-            ["juju", "debug-log", "--model", dev_model, "-n", str(lines),
-             "--level", level, "--no-tail"],
-            capture_output=True, text=True, timeout=15,
+            [
+                "juju",
+                "debug-log",
+                "--model",
+                dev_model,
+                "-n",
+                str(lines),
+                "--level",
+                level,
+                "--no-tail",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         log_lines = result.stdout.strip().split("\n") if result.stdout.strip() else []
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -196,22 +213,34 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     try:
                         response = await agent.process_message(content)
                         _broadcast(request.app, "thinking", {"active": False})
-                        _broadcast(request.app, "chat_message", {
-                            "role": "assistant",
-                            "content": response,
-                        })
+                        _broadcast(
+                            request.app,
+                            "chat_message",
+                            {
+                                "role": "assistant",
+                                "content": response,
+                            },
+                        )
                     except ProviderError as e:
                         _broadcast(request.app, "thinking", {"active": False})
-                        _broadcast(request.app, "chat_message", {
-                            "role": "system",
-                            "content": f"Provider error: {e}",
-                        })
+                        _broadcast(
+                            request.app,
+                            "chat_message",
+                            {
+                                "role": "system",
+                                "content": f"Provider error: {e}",
+                            },
+                        )
                     except Exception as e:
                         _broadcast(request.app, "thinking", {"active": False})
-                        _broadcast(request.app, "chat_message", {
-                            "role": "system",
-                            "content": f"Error: {e}",
-                        })
+                        _broadcast(
+                            request.app,
+                            "chat_message",
+                            {
+                                "role": "system",
+                                "content": f"Error: {e}",
+                            },
+                        )
                         log.exception("Error processing message")
 
             elif msg.type in (
@@ -230,23 +259,31 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
 # Task change callback
 # ---------------------------------------------------------------------------
 
+
 def _make_task_callback(app: web.Application):
     """Create a callback that broadcasts task changes to WebSocket clients."""
+
     def _on_task_changed(task: AgentTask) -> None:
-        _broadcast(app, "task_updated", {
-            "id": task.id,
-            "title": task.title,
-            "status": task.status.value,
-            "category": task.category.value,
-            "description": task.description,
-            "result": task.result,
-        })
+        _broadcast(
+            app,
+            "task_updated",
+            {
+                "id": task.id,
+                "title": task.title,
+                "status": task.status.value,
+                "category": task.category.value,
+                "description": task.description,
+                "result": task.result,
+            },
+        )
+
     return _on_task_changed
 
 
 # ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
+
 
 def _create_app(agent: CantripAgent, port: int) -> web.Application:
     """Build the aiohttp application."""
@@ -269,16 +306,13 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     app.router.add_get("/ws", _websocket_handler)
     app.router.add_static("/static", _STATIC_DIR, name="static")
 
-    # Wire task callbacks.
-    callback = _make_task_callback(app)
-    agent._work_queue.set_callback(callback)
-
     return app
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 async def _run_web_async(agent: CantripAgent, port: int) -> None:
     """Start the web server and agent executor."""
@@ -322,7 +356,9 @@ def run_web(args: argparse.Namespace) -> int:
     if light_provider_name:
         light_snap = light_snap_name or snap_name
         light_provider = create_provider(
-            light_provider_name, args.light_model, snap_name=light_snap,
+            light_provider_name,
+            args.light_model,
+            snap_name=light_snap,
         )
     elif light_snap_name and args.provider == "inference-snap":
         light_provider = create_provider("inference-snap", snap_name=light_snap_name)

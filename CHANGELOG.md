@@ -4,6 +4,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **Duplicate tool declarations** — `HookBenchmarkTool` and `FuzzTestTool` were registered twice in the tool list, causing Gemini API errors (`Duplicate function declaration found: hook_benchmark`)
+- **Web UI crash on startup** — `_create_app` called `WorkQueue.set_callback()` which does not exist; removed the redundant call since `start_executor` already wires the callback
+- **Subprocess leak on timeout** — `_run_concierge` and `JujuDebugLogTool` did not kill the subprocess when `asyncio.wait_for` timed out, leaking orphan processes
+- **`_ensure_claude_md` crash** — writing `CLAUDE.md` would raise `FileNotFoundError` if the charm directory did not yet exist
+- **Bare `Exception` catches in file tools** — `ReadFileTool`, `WriteFileTool`, `ListDirectoryTool`, and `EditFileTool` now catch specific exceptions (`OSError`, `UnicodeDecodeError`, `ValueError`) instead of bare `Exception`
+
 ### Added
 - **Operational readiness assessment (Phase 19)** — new roadmap phase for evaluating charms against Canonical's Operational Readiness Metrics standard; includes an assessment tool (`operational_readiness`) that scores charms across five pillars (Best Practices, Documentation, Reliability, Maintainability, Security), an `operational-readiness` skill with implementation patterns for health checks, pause/resume, backup/restore, diagnostics, and upgrade pre-flight, and planner integration that autonomously closes gaps after build+test
 - **Web UI** — `cantrip --web` launches a browser-based interface at `http://127.0.0.1:8471` (configurable via `--web-port`); server-rendered Jinja2 template with vanilla CSS and minimal JavaScript (no React/Vue/Angular — inspired by server-first Datastar/htmx philosophy); two-column layout with: scrollable chat panel with inline Markdown rendering (headings, bold, code, code blocks, lists) for assistant messages, coloured role indicators, and thinking animation; live task checklist with status icons, category badges, and dynamic WebSocket updates; Juju status panel showing app boxes with status indicators, unit counts, and messages (polled every 15s via `/api/juju-status`); modal log viewer (`L` key) fetching `juju debug-log` via `/api/logs`; help overlay (`?` key) with keyboard shortcuts; `cantrip.js` WebSocket client with auto-reconnect (exponential backoff), incremental DOM updates, optimistic chat input, and `/api/state` resync; aiohttp backend with four API endpoints (`/`, `/ws`, `/api/state`, `/api/juju-status`, `/api/logs`)
