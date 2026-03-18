@@ -110,13 +110,19 @@ class WorkQueue:
 
         When *limit* is positive, return at most that many tasks.
         Tasks are returned in queue order.
+
+        A dependency is considered satisfied if the task is done *or* if
+        it has been cancelled (removed from the queue).  This prevents
+        downstream tasks from being stuck forever when the conversation
+        LLM short-circuits earlier tasks.
         """
         done_ids = {t.id for t in self._tasks if t.status == TaskStatus.DONE}
+        all_ids = {t.id for t in self._tasks}
         ready: list[AgentTask] = []
         for task in self._tasks:
             if task.status != TaskStatus.PENDING:
                 continue
-            if all(dep in done_ids for dep in task.dependencies):
+            if all(dep in done_ids or dep not in all_ids for dep in task.dependencies):
                 ready.append(task)
                 if limit and len(ready) >= limit:
                     break

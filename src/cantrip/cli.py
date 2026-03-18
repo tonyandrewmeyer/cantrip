@@ -93,6 +93,12 @@ async def _spinner(label: str = "Thinking") -> None:
 
 async def _repl(agent: CantripAgent) -> None:
     """Run the interactive read-eval-print loop."""
+    # Load prior session state if it exists.
+    if agent.load_state():
+        summary = agent.build_resume_summary()
+        if summary:
+            print(f"[resume] {summary}\n")
+
     # Eagerly prepare the full environment in the background.
     prepare_task = asyncio.create_task(_prepare_cli(agent))
     bootstrap_started = False
@@ -116,6 +122,9 @@ async def _repl(agent: CantripAgent) -> None:
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
             print(f"\n{response}\n")
+
+            # Persist session state after each turn.
+            agent.save_state()
 
             # Re-bootstrap if the user picked a different preset.
             if agent.state.charm_type and not bootstrap_started:

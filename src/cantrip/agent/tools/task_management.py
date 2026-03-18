@@ -134,19 +134,24 @@ class ManageTasksTool(Tool):
         return ToolResult(success=True, output=f"Moved to front: {task.title}")
 
     def _approve_task(self, task_id: str | None) -> ToolResult:
-        """Approve a blocked CONFIRM task, marking it as done."""
+        """Approve a CONFIRM task, marking it as done.
+
+        Accepts both blocked and pending CONFIRM tasks.  The task may
+        still be pending if the conversation LLM short-circuited the
+        research phase and the executor hasn't picked it up yet.
+        """
         if not task_id:
             return ToolResult(success=False, output="", error="task_id is required for approve.")
         task = self._queue.get_task(task_id)
         if task is None:
             return ToolResult(success=False, output="", error=f"Task {task_id} not found.")
-        if task.status != TaskStatus.BLOCKED:
+        if task.status not in (TaskStatus.BLOCKED, TaskStatus.PENDING):
             return ToolResult(
                 success=False,
                 output="",
                 error=(
                     f"Cannot approve task {task_id} — status is {task.status.value}. "
-                    "Only blocked tasks can be approved."
+                    "Only pending or blocked tasks can be approved."
                 ),
             )
         self._queue.set_done(task_id, "Approved by user")

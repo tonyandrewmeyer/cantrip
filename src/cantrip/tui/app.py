@@ -126,6 +126,7 @@ class CantripApp(App):
         # The right panel is visible by default (charm file tree is useful
         # from the start).  Task checklist and Juju status appear as needed.
         self._init_agent()
+        self._resume_session()
         self._start_prepare()
         self._start_executor()
         self._update_header_subtitle()
@@ -153,6 +154,16 @@ class CantripApp(App):
         except (ValueError, ProviderError) as e:
             chat = self.query_one("#chat", ChatWidget)
             chat.add_system_message(f"Failed to initialise provider: {e}")
+
+    def _resume_session(self) -> None:
+        """Load prior session state and show a resume summary if available."""
+        if not self._agent:
+            return
+        if self._agent.load_state():
+            summary = self._agent.build_resume_summary()
+            if summary:
+                chat = self.query_one("#chat", ChatWidget)
+                chat.add_system_message(summary)
 
     def _resolve_light_provider(self, main_provider: LLMProvider) -> LLMProvider | None:
         """Build a light provider for cheap internal tasks.
@@ -592,7 +603,8 @@ class CantripApp(App):
             input_widget.disabled = False
             input_widget.placeholder = "Type your message..."
             input_widget.focus()
-            # Check whether charm_type was set during this exchange.
+            # Persist session state and check for new charm type.
+            self._agent.save_state()
             self._start_bootstrap()
             self._update_header_subtitle()
             self._update_model_info()

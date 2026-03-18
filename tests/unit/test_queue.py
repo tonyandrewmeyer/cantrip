@@ -241,6 +241,23 @@ class TestWorkQueue:
         q.cancel(t.id)
         assert q.all_tasks() == []
 
+    def test_cancelled_dependency_unblocks_downstream(self) -> None:
+        """A cancelled dependency should not block downstream tasks."""
+        q = WorkQueue()
+        dep = _task(title="Research", id="dep-1")
+        downstream = _task(title="Confirm", id="confirm-1", dependencies=["dep-1"])
+        q.add_task(dep)
+        q.add_task(downstream)
+
+        # Initially downstream is not ready (dependency pending).
+        assert q.all_ready() == [dep]
+
+        # Cancel the dependency — downstream should now be ready.
+        q.cancel("dep-1")
+        ready = q.all_ready()
+        assert len(ready) == 1
+        assert ready[0].id == "confirm-1"
+
     def test_get_task(self) -> None:
         """get_task returns the task by ID."""
         q = WorkQueue()
