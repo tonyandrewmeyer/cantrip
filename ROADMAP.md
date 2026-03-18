@@ -1621,6 +1621,150 @@ bespoke, the document articulates what we'd be giving up and why that's acceptab
 
 ---
 
+## Phase 19: Operational Readiness Assessment
+
+**Goal:** Evaluate charms against Canonical's
+[Operational Readiness Metrics](https://docs.google.com/document/d/1lStJjBGW7lyojgBhxGLUNnliUocYWjAZ1VEbbVduX54/edit?usp=sharing)
+standard and autonomously close gaps. The spec defines what makes a solution
+production-ready from the perspective of Managed Solutions — covering status
+reporting, operational actions, observability, diagnostics, documentation,
+backup/restore, upgrade procedures, and security posture. Cantrip should be
+able to assess a charm against this standard, report the score, and implement
+the improvements it can.
+
+This phase is distinct from Phase 10 (code quality and listing readiness) and
+Phase 17 (acceptance testing). Phase 10 asks "is the code good?", Phase 17
+asks "does the charm work?", and this phase asks "is the charm ready for
+production operations?"
+
+### 19.1 Operational Readiness Assessment Tool
+
+A deterministic assessment tool modelled on the existing `charm_audit` pattern.
+
+- [ ] **`OperationalReadinessTool`** (`operational_readiness`) — evaluates a charm
+  against the Canonical operational readiness metrics; produces a structured report
+  scored by pillar (Best Practices, Documentation, Reliability, Maintainability,
+  Security); added to RESEARCH and BUILD tool allowlists
+- [ ] **Best Practices checks** — deterministic checks for:
+  - **Automation status reporting** — charm sets status for missing required configs,
+    conflicting configs, inaccessible upstream services, paused state, stopped/crashed
+    services, missing relations, incomplete relations, upgrade in progress, failed upgrade
+  - **Common operational actions** — charm exposes `pause`, `resume`, and
+    `get-health` (or equivalent) actions; actions are idempotent; secret management
+    is delegated to Juju secrets or an appropriate service
+  - **Solution-specific actions** — all actions have accurate names, clear descriptions,
+    and documented parameters; actions complete within 30 minutes
+  - **Configuration quality** — all config options have defined types, appropriate
+    defaults, accurate descriptions, and precise naming; invalid values produce
+    warnings rather than breaking the charm
+- [ ] **Documentation checks** — verify presence and completeness of:
+  - Installation/setup guide, configuration reference, usage instructions
+  - Troubleshooting guide, management procedures, upgrade guide
+  - Backup and restore documentation
+- [ ] **Reliability checks** — verify:
+  - Health validation mechanism exists (action or endpoint)
+  - Backup and restore actions exist (for stateful charms)
+  - Charm handles graceful and ungraceful shutdown without data loss
+- [ ] **Maintainability checks** — verify:
+  - Upgrade pre-flight checks exist (via upgrade action or hook)
+  - Full COS observability (health, cluster status, certificates, API metrics)
+  - Diagnostics/SOS action that collects sanitised configuration and status data
+  - Best-practice validation (missing required relations, config deviations)
+- [ ] **Security checks** — verify:
+  - Data encryption in transit (TLS relations or workload TLS)
+  - Secrets stored via Juju secrets, not plain-text config
+  - No custom PPAs; dependencies from Canonical-approved sources
+  - Certificate management automation (view and regenerate)
+- [ ] **Scoring** — each metric maps to a boolean (pass/fail); overall score is
+  percentage of passing checks per pillar; report groups findings as must-fix
+  (blocks production), should-fix (reduces risk), and advisory (organisational
+  items Cantrip flags but cannot implement directly)
+- [ ] **Advisory items** — the tool flags metrics that require organisational action
+  rather than code changes: platform compatibility matrix, reference architectures,
+  escalation methods, long-term stability testing, SSDLC compliance. These appear
+  in the report as recommendations with guidance on what the team needs to provide
+
+### 19.2 Operational Readiness Skill
+
+Domain knowledge for subagents implementing operability features.
+
+- [ ] **`operational-readiness` skill** (`skills/operational-readiness/SKILL.md`) —
+  comprehensive guidance covering:
+  - **Status reporting patterns** — how to set status for each required condition
+    (missing config, missing relation, paused, upgrade in progress, etc.) using
+    `ops.StatusBase` subclasses with actionable messages
+  - **Health-check action pattern** — implementing a `get-health` action that
+    validates core processes, API responsiveness, cluster state, certificate
+    validity, and upstream connectivity; returning structured JSON results
+  - **Pause/resume pattern** — implementing `pause` and `resume` actions that
+    gracefully stop and restart workload services via Pebble, with status
+    reporting and data-loss prevention
+  - **Backup/restore pattern** — implementing `create-backup`, `list-backups`,
+    and `restore-backup` actions with encryption support; delegating to workload-
+    native tools (pg_dump, redis-cli, etc.)
+  - **Diagnostics bundle pattern** — implementing a `collect-diagnostics` action
+    that gathers sanitised config, status, logs, and observability data into a
+    tarball; scrubbing secrets, IP addresses, and certificates
+  - **Upgrade pre-flight pattern** — implementing pre-upgrade checks in the
+    `pre-upgrade-check` action or upgrade hook: version compatibility, resource
+    availability, cluster health, backup freshness
+  - **Certificate management** — viewing and regenerating certificates via
+    actions, integrating with TLS-certificates-operator or self-signed certs
+  - **Secret rotation** — using Juju secrets for credentials with rotation
+    support; never storing secrets in plain-text config
+
+### 19.3 Operability Phase in the Planner
+
+Integrate operational readiness assessment into the autonomous build pipeline.
+
+- [ ] **Assessment task** — after the charm passes acceptance testing (Phase 17) or
+  integration tests (Phase 12), the planner generates an `assess-operational-readiness`
+  RESEARCH task that runs the `operational_readiness` tool
+- [ ] **Gap confirmation** — a CONFIRM task presents the readiness report to the user,
+  grouped by pillar, with must-fix items highlighted; user confirms which gaps to
+  address and which to defer (some may be out of scope for the current charm)
+- [ ] **Operability fix tasks** — for each confirmed gap category, the planner
+  generates BUILD tasks that load the `operational-readiness` skill:
+  - `implement-status-reporting` — add comprehensive status messages
+  - `implement-operational-actions` — add pause/resume, health check, diagnostics
+  - `implement-backup-restore` — add backup and restore actions (stateful charms)
+  - `implement-upgrade-procedures` — add pre-flight checks and upgrade support
+  - `improve-observability-completeness` — fill remaining COS gaps beyond basic
+    integration (alert rules, dashboard panels, all required metrics)
+  - `improve-security-posture` — migrate plain-text secrets, add TLS, etc.
+- [ ] **Validation** — after fixes, re-run the `operational_readiness` tool to
+  verify the score improved; present the before/after comparison to the user
+- [ ] **Improvement mode integration** — when Cantrip is used in "improve" mode
+  (Phase 10), the operability assessment runs after the existing audit and code
+  modernisation, extending the improvement pipeline with production-readiness checks
+
+### 19.4 Operational Readiness Report
+
+Produce a persistent artefact summarising the charm's production readiness.
+
+- [ ] **OPERATIONAL_READINESS.md** — generate a Markdown report in the charm directory
+  covering: overall score per pillar, individual check results with pass/fail status,
+  must-fix items with specific guidance, should-fix items with recommendations,
+  advisory items requiring team action, and a comparison with the previous assessment
+  (if one exists)
+- [ ] **Machine-readable output** — the tool returns a structured `data` dict (matching
+  the `charm_audit` pattern) with per-pillar scores, individual check results, and
+  categorised findings; stored in the agent state for downstream tasks
+- [ ] **Chat presentation** — present a concise summary in the chat: "Your charm scores
+  85% on operational readiness — 12/14 Best Practices pass, 5/7 Documentation items
+  present, 3/4 Reliability checks pass. Two must-fix items: no health-check action
+  and no backup/restore. Shall I implement these?"
+
+**Exit criteria:** Cantrip assesses a charm against Canonical's Operational Readiness
+Metrics, produces a scored report by pillar, and autonomously implements the
+improvements it can — status reporting, health checks, pause/resume, backup/restore,
+diagnostics, upgrade pre-flight, and observability completeness. Organisational items
+(escalation methods, reference architectures, long-term stability testing) are flagged
+as recommendations. The user gets a clear picture of how production-ready their charm
+is and what remains to be done by the team.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -1684,6 +1828,11 @@ bespoke, the document articulates what we'd be giving up and why that's acceptab
 | Architecture mapping (18.2) | Phase 18.1 | Needs the candidate list to map against |
 | Proof of concept (18.3) | Phase 18.2 | Needs mapping results to select candidates for spike |
 | Decision and recommendation (18.4) | Phase 18.3 | Needs spike results to make an informed recommendation |
+| Readiness assessment tool (19.1) | Phase 10.1 charm audit | Extends the audit pattern with operability checks |
+| Readiness skill (19.2) | Phase 0.4 skills infrastructure | New skill following existing SKILL.md pattern |
+| Operability planner phase (19.3) | Phase 4 planner (4.2) + Phase 19.1 | Needs assessment tool results to generate fix tasks |
+| Readiness report (19.4) | Phase 19.1 | Needs assessment results to generate the report |
+| Improvement mode integration (19.3) | Phase 10 charm improvement | Extends the existing improvement pipeline |
 
 ---
 
@@ -1710,3 +1859,4 @@ bespoke, the document articulates what we'd be giving up and why that's acceptab
 | M16: Security & Tracing | 16 | OWASP security events + clear manual tracing guidance |
 | M17: Acceptance Tested | 17 | Cantrip deploys, exercises, and reports on every charm it builds |
 | M18: Framework Decision | 18 | Evidence-based recommendation on build-vs-adopt for agent infrastructure |
+| M19: Operationally Ready | 19 | Cantrip assesses and improves charms against Canonical's Operational Readiness Metrics |
