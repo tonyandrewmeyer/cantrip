@@ -675,6 +675,20 @@ Prepare the charm for a polished Charmhub listing.
 - [ ] **Documentation** — generate or update Discourse-format documentation covering
   getting started, configuration, integrations, and troubleshooting
 - [x] **Icon check** — `charm_audit` checks for `icon.svg` and flags if missing
+- [ ] **Placeholder icon** — when no `icon.svg` exists, generate a simple placeholder SVG
+  (coloured circle with the charm's initial) so the charm is publishable to Charmhub
+  immediately; the user can replace it with real artwork later. Requires adding an
+  `other-files` part to `charmcraft.yaml` to stage the icon into the packed charm:
+  ```yaml
+  parts:
+    charm:
+      ...
+    other-files:
+      plugin: dump
+      source: .
+      stage:
+        - icon.svg
+  ```
 - [x] **Licence check** — `charm_audit` checks for LICENSE/LICENCE and flags if missing
 
 ### 10.6 Validation and Presentation
