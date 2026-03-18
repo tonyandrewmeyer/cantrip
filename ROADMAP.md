@@ -1765,6 +1765,228 @@ is and what remains to be done by the team.
 
 ---
 
+## Phase 20: Deep Juju Introspection
+
+**Goal:** Give the agent deeper visibility into Juju runtime state — relation
+databags, application config, secrets, cross-model offers — so it can autonomously
+diagnose integration failures, config issues, and topology problems instead of
+guessing from status output alone.
+
+Inspired by [JujuMate](https://github.com/Abuelodelanada/jujumate), a K9s-style
+read-only TUI for Juju built on Textual + python-libjuju. JujuMate demonstrates
+that rich introspection (relation data, secrets, app config with source tracking,
+cross-model offers, WebSocket log streaming) is practical and valuable for
+diagnosing charm issues. Cantrip currently has surface-level Juju visibility
+(status + debug-log); this phase adds the deeper introspection the agent needs
+to debug the most common failure modes autonomously.
+
+### 20.1 Relation Databag Inspection
+
+Relation data mismatches are the most common charm integration failure. The agent
+needs to read raw databag contents to diagnose why integrations aren't working.
+
+- [ ] **`read_relation_data` tool** — reads app-level and unit-level relation
+  databags for a given application and relation; returns structured data showing
+  both sides of the relation (provider and requirer databags); uses Jubilant or
+  falls back to `juju show-unit` parsing; added to RESEARCH, BUILD, DEBUG, and
+  TEST tool allowlists
+- [ ] **Databag diffing** — when called with a relation endpoint, the tool
+  highlights asymmetries (e.g. provider published data but requirer hasn't
+  consumed it, or expected keys are missing)
+- [ ] **Watcher integration** — the status-diffing watcher can optionally
+  snapshot relation data and detect when databag contents change, feeding
+  richer events into the work queue
+
+### 20.2 Application Config Inspection
+
+The agent needs to distinguish default config values from user-set values to
+debug "why isn't my config taking effect?" issues.
+
+- [ ] **`get_app_config` tool** — reads all configuration values for an
+  application with source tracking (default vs user-set vs model-default);
+  returns structured data; uses `juju config <app> --format yaml`; added to
+  RESEARCH, BUILD, DEBUG, and TEST tool allowlists
+- [ ] **Config validation** — cross-references deployed config against
+  `charmcraft.yaml` declared options to detect undeclared or deprecated config
+  keys
+
+### 20.3 WebSocket Log Streaming
+
+Replace or supplement the current SSH-to-Loki polling with direct WebSocket
+streaming from the Juju controller, removing the dependency on COS being deployed
+for basic log access.
+
+- [ ] **Direct log streaming** — connect to the Juju controller's WebSocket
+  debug-log endpoint (`wss://.../model/{uuid}/log`) for real-time log access;
+  extract connection parameters from Juju's `controllers.yaml`; handle SSL
+  certificates from the controller's CA cert
+- [ ] **Agent log tool** — new `juju_stream_logs` tool (or enhancement to
+  existing `juju_debug_log`) that uses WebSocket streaming with filtering by
+  log level, unit, and time window; more efficient than repeated CLI invocations
+- [ ] **TUI log viewer upgrade** — the F3 log viewer can use WebSocket streaming
+  for true real-time updates instead of polling
+
+### 20.4 Cross-Model Offer Awareness
+
+For complex multi-model deployments, the agent needs to understand the broader
+topology beyond the current model.
+
+- [ ] **`list_offers` tool** — lists cross-model offers across all known
+  controllers, with endpoint details and consumer tracking; added to RESEARCH
+  and DEBUG tool allowlists
+- [ ] **Offer topology in watcher** — the watcher tracks offer/consumer
+  relationships and detects when offers are created, consumed, or removed
+- [ ] **Multi-controller awareness** — when diagnosing CMR issues, the agent
+  can inspect both sides of a cross-model relation
+
+### 20.5 Secrets Inspection
+
+For charms that use Juju secrets, the agent needs to verify secrets are
+correctly created and granted.
+
+- [ ] **`list_secrets` tool** — lists Juju secrets in the current model with
+  owner, granted applications, and rotation policy; added to RESEARCH and
+  DEBUG tool allowlists
+- [ ] **Secret content inspection** — optionally decode and display secret
+  values (with user confirmation, since secrets may contain sensitive data)
+
+### 20.6 TUI Status Enhancements
+
+Improve the TUI status display with lessons from JujuMate's presentation.
+
+- [ ] **Subordinate unit tree** — display subordinate units as tree children of
+  their principal units using `├─`/`└─` prefixes in the status widget
+- [ ] **Relation detail panel** — selecting a relation in the TUI shows the
+  raw databag contents for both sides
+- [ ] **Inline filtering** — `/` key for case-insensitive search across
+  status tables (apps, units, machines)
+- [ ] **Theming support** — YAML-based theme system inspired by JujuMate;
+  ship a default Ubuntu theme plus a few alternatives (dark, monokai,
+  solarized-dark); users can add custom themes in `~/.config/cantrip/themes/`;
+  centralised palette module provides semantic colour constants (SUCCESS,
+  ERROR, WARNING, MUTED, LINK) populated at startup from the active theme;
+  theme picker screen accessible via a keybinding; TUI only — the web UI
+  keeps its own CSS styling
+
+**Exit criteria:** The agent can autonomously diagnose integration failures by
+reading relation databags, detect config issues by comparing deployed vs default
+values, stream logs without COS, and inspect cross-model offers and secrets.
+The most common charm debugging scenarios — "why isn't my integration working?",
+"why isn't my config taking effect?", "what's in the logs?" — are answerable
+without the user needing to run manual Juju commands.
+
+---
+
+## Phase 21: Orchestrator Hardening — Lessons from orc
+
+**Goal:** Harden the autonomous work loop with patterns proven in
+[orc](https://github.com/PietroPasotti/orc), Pietro Pasotti's multi-agent
+orchestrator. Full analysis in [`.source/orc-analysis.md`](.source/orc-analysis.md).
+
+This phase addresses three categories: **reliability** (preventing infinite
+loops, handling crashes), **testability** (making the executor testable without
+LLM calls), and **isolation** (scoping what subagents can access).
+
+### 21.1 Pure State Machine for Work Queue Routing
+
+Extract the "what happens next" decision from the executor into a pure function
+over a data snapshot, following orc's `route(WorldState) → action` pattern.
+
+- [ ] **`WorkQueueState` dataclass** — frozen snapshot capturing everything that
+  influences the next-task decision: pending task count by category, active
+  subagent count, blocked tasks, completed tasks awaiting confirmation, charm
+  build state (designed / building / deployed / testing)
+- [ ] **`route()` pure function** — maps a `WorkQueueState` to the next action
+  (spawn research subagent, spawn build subagent, wait for user confirmation,
+  run tests, deploy, idle). No I/O, no side effects. All routing logic in one
+  place
+- [ ] **Cross-check tests** — parametrised tests that run both `route()` and the
+  real executor's decision path, asserting they agree. Modelled on orc's
+  `TestRouteMatchesImplementation`
+- [ ] **Deadlock-freedom verification** — BFS over all reachable
+  `WorkQueueState` values to prove every non-terminal state has a path to
+  completion. Run as a unit test, not a manual proof
+
+### 21.2 Protocol-Based Service Injection for Executor
+
+Replace direct dependencies in the executor and subagent runner with Protocol-
+typed service interfaces, making the autonomous loop testable without real LLM
+calls, Juju, or git.
+
+- [ ] **Service protocols** — define `Protocol` interfaces for each domain the
+  executor touches: `LLMService` (subagent invocation), `CharmBuildService`
+  (charmcraft/rockcraft), `DeployService` (Juju operations), `StateService`
+  (session store reads/writes), `ToolRegistry` (tool allowlist per task category)
+- [ ] **Fake implementations** — `FakeLLM`, `FakeCharmBuild`, `FakeDeploy`,
+  `FakeState` in conftest.py; each mirrors its Protocol with minimal in-memory
+  state. Follow orc's pattern of `make_services()` + `make_executor()` helpers
+- [ ] **Executor refactor** — the background executor accepts services via
+  constructor injection rather than importing and calling modules directly
+
+### 21.3 Noop Detection
+
+Detect subagents that exit successfully but accomplish nothing, preventing the
+autonomous loop from spinning indefinitely.
+
+- [ ] **State snapshot before/after** — before spawning a subagent, capture a
+  lightweight fingerprint of relevant state (files in charm directory, task
+  statuses, decisions recorded, deployed revision). After the subagent exits
+  with success, capture another snapshot
+- [ ] **Noop detection** — if before == after, the subagent produced no
+  observable effect. Log it, mark the task as needing attention, and do not
+  re-dispatch the same task immediately
+- [ ] **Noop escalation** — after N consecutive noops on the same task (default
+  2), escalate to the user via the conversation loop: "I've attempted this task
+  twice without making progress — here's what I tried. Can you help?"
+
+### 21.4 Two-Stage Graceful Shutdown
+
+Handle SIGINT/SIGTERM cleanly in the autonomous work loop.
+
+- [ ] **Drain mode** — first signal stops scheduling new subagents; in-flight
+  subagents are allowed to finish. The conversation loop remains responsive so
+  the user knows what is happening
+- [ ] **Force shutdown** — second signal kills all running subagents and saves
+  current state to SQLite so the next session can resume cleanly
+- [ ] **Task state cleanup** — any task marked `active` at shutdown is reset to
+  `pending` so it will be picked up on the next run (mirrors orc's
+  `clear_all_assignments()` on startup)
+
+### 21.5 Structured Subagent Exit Contracts
+
+Define explicit exit states for subagents so the executor can reliably
+determine what happened.
+
+- [ ] **Exit state enum** — `SubagentResult` with values: `completed` (work
+  done, state changed), `blocked` (needs user input or missing dependency),
+  `failed` (error, needs retry or escalation), `noop` (nothing to do)
+- [ ] **Mandatory signalling** — subagent prompts include instruction that every
+  run must produce an observable state change or explicitly signal why it could
+  not. Follows orc's "never emit a bare text response while work is pending"
+  rule
+- [ ] **Result recording** — executor records the exit state and a one-line
+  summary in the session store for each subagent run, providing an audit trail
+
+### 21.6 Scoped Tool Access per Task Category
+
+Limit what tools each subagent category can use, reducing the blast radius of
+mistakes.
+
+- [ ] **Task-category tool allowlists** — formalise the existing RESEARCH /
+  BUILD / TEST / DEBUG categories into a configuration structure (similar to
+  orc's squad permissions) rather than hardcoding in the planner prompt
+- [ ] **Category-based scoping** — when spawning a subagent, only inject the
+  tools from its category's allowlist into the LLM context. A RESEARCH subagent
+  should not have access to `charmcraft_pack` or `juju_deploy`; a BUILD
+  subagent should not have access to web search
+
+**Exit criteria:** The autonomous work loop has a formally verified state
+machine, is testable without LLM or infrastructure dependencies, detects and
+escalates subagent noops, shuts down gracefully, and scopes subagent tool access
+by task category. The executor is no harder to test than a pure function.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -1833,6 +2055,18 @@ is and what remains to be done by the team.
 | Operability planner phase (19.3) | Phase 4 planner (4.2) + Phase 19.1 | Needs assessment tool results to generate fix tasks |
 | Readiness report (19.4) | Phase 19.1 | Needs assessment results to generate the report |
 | Improvement mode integration (19.3) | Phase 10 charm improvement | Extends the existing improvement pipeline |
+| Pure state machine (21.1) | Phase 4 autonomous core | Formalises the existing executor routing logic |
+| Service injection (21.2) | Phase 4 executor (4.3) | Refactors the executor to accept Protocol services |
+| Noop detection (21.3) | Phase 21.2 | Needs service injection to capture state snapshots cleanly |
+| Graceful shutdown (21.4) | Phase 4 executor (4.3) | Extends executor lifecycle management |
+| Exit contracts (21.5) | Phase 4 subagent (4.6) | Formalises subagent result reporting |
+| Scoped tool access (21.6) | Phase 4 planner (4.2) | Formalises existing category-based tool allowlists |
+| Relation databag tool (20.1) | Phase 0.3 Juju integration | Reads relation data via Jubilant or juju show-unit |
+| App config tool (20.2) | Phase 0.3 Juju integration | Reads config via juju config CLI |
+| WebSocket log streaming (20.3) | Phase 3.1 watcher | Replaces/supplements SSH-to-Loki polling |
+| Cross-model offers (20.4) | Phase 0.3 Juju integration | Multi-controller inspection |
+| Secrets inspection (20.5) | Phase 0.3 Juju integration | Lists and inspects Juju secrets |
+| TUI status enhancements (20.6) | Phase 1.3 TUI + Phase 20.1 | Needs relation data tool for detail panel |
 
 ---
 
@@ -1860,3 +2094,5 @@ is and what remains to be done by the team.
 | M17: Acceptance Tested | 17 | Cantrip deploys, exercises, and reports on every charm it builds |
 | M18: Framework Decision | 18 | Evidence-based recommendation on build-vs-adopt for agent infrastructure |
 | M19: Operationally Ready | 19 | Cantrip assesses and improves charms against Canonical's Operational Readiness Metrics |
+| M20: Deep Introspection | 20 | Agent reads relation databags, config sources, secrets, and offers to diagnose issues autonomously |
+| M21: Hardened Orchestrator | 21 | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
