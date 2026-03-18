@@ -308,7 +308,11 @@ class CharmcraftPackTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Pack the charm into a .charm file for deployment."
+        return (
+            "Pack the charm into a .charm file for deployment. "
+            "Use destructive_mode=true for faster builds (builds locally "
+            "instead of in an LXD container)."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -320,21 +324,60 @@ class CharmcraftPackTool(Tool):
                     "description": "Path to the charm directory",
                     "default": ".",
                 },
+                "destructive_mode": {
+                    "type": "boolean",
+                    "description": (
+                        "Build locally instead of in an LXD container. "
+                        "Much faster but requires build dependencies on the host."
+                    ),
+                    "default": False,
+                },
             },
         }
 
-    async def execute(self, path: str = ".") -> ToolResult:
+    async def execute(self, path: str = ".", destructive_mode: bool = False) -> ToolResult:
         """Run charmcraft pack."""
         try:
             charm_path = Path(path).resolve()
 
+            cmd = ["charmcraft", "pack"]
+            if destructive_mode:
+                cmd.append("--destructive-mode")
+
             result = subprocess.run(
-                ["charmcraft", "pack"],
+                cmd,
                 cwd=charm_path,
                 capture_output=True,
                 text=True,
                 timeout=600,  # 12-factor charms need LXD builds
             )
+
+            # Destructive mode may fail due to package install permissions.
+            # Retry with sudo if the error mentions build-packages or permissions.
+            if (
+                destructive_mode
+                and result.returncode != 0
+                and (
+                    "build packages" in (result.stderr or "").lower()
+                    or "build-packages" in (result.stderr or "").lower()
+                    or "permission" in (result.stderr or "").lower()
+                )
+            ):
+                result = subprocess.run(
+                    ["sudo"] + cmd,
+                    cwd=charm_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                )
+                # Fix ownership of output files created by sudo.
+                if result.returncode == 0:
+                    import os
+
+                    uid = os.getuid()
+                    gid = os.getgid()
+                    for charm_file in charm_path.glob("*.charm"):
+                        os.chown(charm_file, uid, gid)
 
             if result.returncode != 0:
                 return ToolResult(

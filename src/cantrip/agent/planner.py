@@ -8,6 +8,7 @@ on the approved design).
 
 import json
 import logging
+import platform
 import re
 from dataclasses import dataclass, field
 
@@ -68,6 +69,146 @@ def is_fast_path(context: PlanningContext) -> bool:
         and context.framework.lower() in _FAST_PATH_FRAMEWORKS
         and context.source_url is None
     )
+
+
+def is_sprint(context: PlanningContext) -> bool:
+    """Return whether the context qualifies for the sprint (instant deploy) path.
+
+    Sprint applies for well-known frameworks (12-factor PaaS) or when a
+    charm type is explicitly set with no source URL.  Skips research,
+    confirmation, and tests — goes straight to scaffold + pack + deploy.
+    """
+    if context.source_url is not None:
+        return False
+    # 12-factor PaaS frameworks.
+    if context.framework and context.framework.lower() in _FAST_PATH_FRAMEWORKS:
+        return True
+    # Explicit charm type with a name — user knows what they want.
+    return bool(context.charm_type and context.charm_name)
+
+
+# Title prefixes used to identify sprint tasks in follow-up logic.
+SPRINT_BUILD_PREFIX = "Sprint build:"
+SPRINT_DEPLOY_PREFIX = "Sprint deploy:"
+
+
+def _host_ubuntu_version() -> str:
+    """Return the host Ubuntu version (e.g. '24.04') for destructive-mode packing."""
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                if line.startswith("VERSION_ID="):
+                    return line.split("=")[1].strip().strip('"')
+    except OSError:
+        pass
+    # Fallback to platform.
+    return platform.freedesktop_os_release().get("VERSION_ID", "24.04")
+
+
+def _sprint_design_paas(workload: str, framework: str) -> str:
+    """Generate a deterministic design for a 12-factor PaaS charm."""
+    profile = f"{framework}-framework"
+    return (
+        f"# Design: {workload}\n\n"
+        f"## Summary\n"
+        f"Minimal 12-factor PaaS charm for {workload} using the `{profile}` profile.\n\n"
+        f"## Substrate\nKubernetes\n\n"
+        f"## Charm path\n12-factor PaaS (paas-charm base)\n\n"
+        f"## Profile\n`{profile}`\n\n"
+        f"## Integrations\nNone for initial deploy — add after verifying the base works.\n\n"
+        f"## Notes\n"
+        f"Sprint deploy — minimal viable charm. Tests, COS, and integrations "
+        f"will be added in follow-up tasks after the charm is deployed and active."
+    )
+
+
+def _sprint_design_custom(workload: str, charm_type: str) -> str:
+    """Generate a deterministic design for a simple custom charm."""
+    profile = "kubernetes" if charm_type == "k8s" else "machine"
+    return (
+        f"# Design: {workload}\n\n"
+        f"## Summary\n"
+        f"Minimal {profile} charm for {workload}.\n\n"
+        f"## Substrate\n{profile.title()}\n\n"
+        f"## Charm path\nCustom ({profile})\n\n"
+        f"## Profile\n`{profile}`\n\n"
+        f"## Integrations\nNone for initial deploy.\n\n"
+        f"## Notes\n"
+        f"Sprint deploy — the scaffolded charm from `charmcraft init` is "
+        f"almost sufficient. Make only minimal adjustments to get deployed."
+    )
+
+
+def plan_sprint_deploy(context: PlanningContext) -> list[AgentTask]:
+    """Generate a minimal BUILD + DEPLOY sequence for instant deployment.
+
+    Skips research, design confirmation, tests, and validation entirely.
+    Gets a working charm packed and deployed as fast as possible.  The
+    design is generated deterministically — no LLM call needed.
+
+    After sprint deployment succeeds, the user can iterate with the full
+    research/build/test flow to add integrations, COS, and tests.
+    """
+    workload = context.charm_name or context.framework or "the workload"
+    framework = context.framework
+    ubuntu_version = _host_ubuntu_version()
+
+    if framework and framework.lower() in _FAST_PATH_FRAMEWORKS:
+        profile = f"{framework}-framework"
+        design = _sprint_design_paas(workload, framework.lower())
+    else:
+        charm_type = context.charm_type or "k8s"
+        profile = "kubernetes" if charm_type == "k8s" else "machine"
+        design = _sprint_design_custom(workload, charm_type)
+
+    return [
+        AgentTask(
+            id="sprint-build",
+            title=f"{SPRINT_BUILD_PREFIX} {workload}",
+            category=TaskCategory.BUILD,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Build a minimal charm and pack it as fast as possible.\n\n"
+                f"**Goal:** Produce a deployable .charm file with the bare minimum.\n"
+                f"Do NOT write tests. Do NOT run charm_validate. Do NOT add "
+                f"COS/observability integrations.\n\n"
+                f"Steps:\n"
+                f"1. Run charmcraft_init with name='{workload}' and "
+                f"profile='{profile}'\n"
+                f"2. Edit charmcraft.yaml with these changes for fast packing:\n"
+                f"   - Change `base: ubuntu@22.04` to `base: ubuntu@{ubuntu_version}`\n"
+                f"   - Change the parts plugin from `uv` to `charm`\n"
+                f"   - Remove the `build-snaps` section (the `astral-uv` line)\n"
+                f"3. Overwrite `requirements.txt` with ONLY `ops>=3,<4` on one "
+                f"line — remove any other dependencies like ops-tracing "
+                f"(they slow down packing enormously)\n"
+                f"4. Edit src/charm.py: remove any `import ops_tracing` line "
+                f"and any `ops_tracing.setup(self)` call (since ops-tracing "
+                f"is not in requirements.txt). Leave everything else as-is.\n"
+                f"5. **CRITICAL**: Run charmcraft_pack with destructive_mode=true — "
+                f"this MUST happen, the task is not done without a .charm file\n"
+                f"6. Use git_init, git_add, and git_commit to save the work\n\n"
+                f"**Important:** Keep changes minimal. The scaffolded charm from "
+                f"charmcraft init is designed to work out of the box. "
+                f"You MUST call charmcraft_pack before finishing.\n\n"
+                f"Design:\n{design}"
+            ),
+            dependencies=[],
+        ),
+        AgentTask(
+            id="sprint-deploy",
+            title=f"{SPRINT_DEPLOY_PREFIX} {workload}",
+            category=TaskCategory.DEPLOY,
+            description=(
+                "Deploy the freshly packed charm and verify it reaches active/idle.\n\n"
+                "1. Find the .charm file in the charm directory\n"
+                "2. Deploy with juju_deploy\n"
+                "3. Run juju_wait to confirm the application reaches active/idle\n"
+                "4. Report the final status"
+            ),
+            dependencies=["sprint-build"],
+        ),
+    ]
 
 
 def plan_fast_path(context: PlanningContext) -> list[AgentTask]:
@@ -492,11 +633,14 @@ class TaskPlanner:
         """Decompose *context.intent* into an ordered list of tasks.
 
         Uses deterministic templates — no LLM call.  For well-known
-        12-factor frameworks, the fast path skips research entirely.
-        For improvement requests, generates the audit → confirm flow.
+        12-factor frameworks or explicit charm types, the sprint path
+        goes straight to build + deploy.  For improvement requests,
+        generates the audit → confirm flow.
         """
         if is_improvement(context):
             return plan_improvement_phase(context)
+        if is_sprint(context):
+            return plan_sprint_deploy(context)
         if is_fast_path(context):
             return plan_fast_path(context)
         return plan_research_phase(context)

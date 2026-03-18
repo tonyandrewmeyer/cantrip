@@ -5,6 +5,7 @@ import contextlib
 import logging
 import pathlib
 import subprocess
+import time
 from collections.abc import Callable
 
 from cantrip.agent.autodeploy import followup_tasks
@@ -285,8 +286,15 @@ class BackgroundExecutor:
             throttle=self._throttle,
             store=self._store,
         )
+        t0 = time.monotonic()
         try:
             result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)
+            elapsed = time.monotonic() - t0
+            log.info(
+                "Task '%s' completed in %.1fs",
+                task.title,
+                elapsed,
+            )
             self._queue.set_done(task.id, result)
             if self._store:
                 self._store.record_event(
@@ -303,6 +311,8 @@ class BackgroundExecutor:
             if self._on_task_done:
                 self._on_task_done(task)
         except TimeoutError:
+            elapsed = time.monotonic() - t0
+            log.warning("Task '%s' timed out after %.1fs", task.title, elapsed)
             if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
                 self._revert_on_failure(snapshot, task)
             self._queue.set_failed(task.id, "Task timed out")
@@ -328,6 +338,8 @@ class BackgroundExecutor:
             if self._on_task_failed:
                 self._on_task_failed(task)
         except Exception as exc:
+            elapsed = time.monotonic() - t0
+            log.warning("Task '%s' failed after %.1fs: %s", task.title, elapsed, exc)
             if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
                 self._revert_on_failure(snapshot, task)
             self._queue.set_failed(task.id, str(exc))

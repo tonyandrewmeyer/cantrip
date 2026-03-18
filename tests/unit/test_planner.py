@@ -5,6 +5,8 @@ import json
 import pytest
 
 from cantrip.agent.planner import (
+    SPRINT_BUILD_PREFIX,
+    SPRINT_DEPLOY_PREFIX,
     PlanningContext,
     TaskPlanner,
     _build_design_to_build_prompt,
@@ -16,11 +18,13 @@ from cantrip.agent.planner import (
     is_fast_path,
     is_improvement,
     is_one_shot_build,
+    is_sprint,
     plan_fast_path,
     plan_improvement_fixes,
     plan_improvement_phase,
     plan_one_shot_build,
     plan_research_phase,
+    plan_sprint_deploy,
 )
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
@@ -211,8 +215,8 @@ class TestTaskPlannerPlan:
         assert provider._call_count == 0
 
     @pytest.mark.asyncio
-    async def test_fast_path_for_known_framework(self) -> None:
-        """Known 12-factor frameworks skip research, producing only 2 tasks."""
+    async def test_sprint_path_for_known_framework(self) -> None:
+        """Known 12-factor frameworks use sprint path: build + deploy, no research."""
         provider = FakeProvider()
         planner = TaskPlanner(provider)
         context = PlanningContext(
@@ -224,9 +228,11 @@ class TestTaskPlannerPlan:
         tasks = await planner.plan(context)
 
         assert len(tasks) == 2
-        assert tasks[0].id == "fast-design"
-        assert tasks[1].id == "confirm-design"
+        assert tasks[0].id == "sprint-build"
+        assert tasks[1].id == "sprint-deploy"
         assert "flask" in tasks[0].description.lower()
+        # No LLM call needed — sprint is deterministic.
+        assert provider._call_count == 0
 
     @pytest.mark.asyncio
     async def test_fast_path_not_used_with_source_url(self) -> None:
@@ -310,6 +316,69 @@ class TestFastPath:
         ctx = PlanningContext(intent="build", charm_name="redis")
         tasks = plan_research_phase(ctx)
         assert len(tasks) == 4
+
+
+# ===================================================================
+# TestSprint
+# ===================================================================
+
+
+class TestSprint:
+    """Tests for the sprint (instant deploy) path."""
+
+    def test_is_sprint_flask(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask")
+        assert is_sprint(ctx)
+
+    def test_is_sprint_with_explicit_charm_type(self) -> None:
+        ctx = PlanningContext(intent="build", charm_name="hello", charm_type="machine")
+        assert is_sprint(ctx)
+
+    def test_not_sprint_without_name_and_type(self) -> None:
+        ctx = PlanningContext(intent="build", charm_type="k8s")
+        assert not is_sprint(ctx)
+
+    def test_not_sprint_with_source_url(self) -> None:
+        ctx = PlanningContext(
+            intent="build",
+            framework="flask",
+            source_url="https://github.com/user/app",
+        )
+        assert not is_sprint(ctx)
+
+    def test_plan_sprint_deploy_paas(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        tasks = plan_sprint_deploy(ctx)
+        assert len(tasks) == 2
+        assert tasks[0].id == "sprint-build"
+        assert tasks[0].title.startswith(SPRINT_BUILD_PREFIX)
+        assert tasks[0].category == TaskCategory.BUILD
+        assert tasks[1].id == "sprint-deploy"
+        assert tasks[1].title.startswith(SPRINT_DEPLOY_PREFIX)
+        assert tasks[1].category == TaskCategory.DEPLOY
+        assert tasks[1].dependencies == ["sprint-build"]
+        assert "flask-framework" in tasks[0].description
+
+    def test_plan_sprint_deploy_machine(self) -> None:
+        ctx = PlanningContext(
+            intent="build", charm_name="hello", charm_type="machine"
+        )
+        tasks = plan_sprint_deploy(ctx)
+        assert len(tasks) == 2
+        assert "machine" in tasks[0].description
+        assert tasks[0].title.startswith(SPRINT_BUILD_PREFIX)
+
+    def test_plan_sprint_deploy_k8s(self) -> None:
+        ctx = PlanningContext(intent="build", charm_name="myapp", charm_type="k8s")
+        tasks = plan_sprint_deploy(ctx)
+        assert "kubernetes" in tasks[0].description
+
+    def test_sprint_build_says_no_tests(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        tasks = plan_sprint_deploy(ctx)
+        desc = tasks[0].description.lower()
+        assert "do not write tests" in desc
+        assert "do not run charm_validate" in desc
 
 
 # ===================================================================

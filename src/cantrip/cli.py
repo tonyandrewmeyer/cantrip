@@ -99,14 +99,21 @@ async def _repl(agent: CantripAgent) -> None:
         if summary:
             print(f"[resume] {summary}\n")
 
+    # Start the background executor so tasks are actually executed.
+    agent.start_executor(on_task_changed=_print_task_event)
+
     # Eagerly prepare the full environment in the background.
     prepare_task = asyncio.create_task(_prepare_cli(agent))
     bootstrap_started = False
 
     while True:
         try:
-            user_input = input("> ")
+            # Run input() in a thread so the asyncio event loop stays free
+            # for the background executor and other concurrent tasks.
+            user_input = await asyncio.to_thread(input, "> ")
         except EOFError:
+            # Wait for any in-flight or pending tasks before exiting.
+            await _drain_executor(agent)
             break
 
         user_input = user_input.strip()
@@ -126,10 +133,17 @@ async def _repl(agent: CantripAgent) -> None:
             # Persist session state after each turn.
             agent.save_state()
 
-            # Re-bootstrap if the user picked a different preset.
+            # Re-bootstrap if the user picked a different preset — but
+            # skip if the Juju controller is already healthy (avoids a
+            # slow COS deploy when everything is already working).
             if agent.state.charm_type and not bootstrap_started:
                 bootstrap_started = True
-                if agent.state.charm_type != DEFAULT_PRESET:
+                from cantrip.agent.tools.environment import _juju_controller_healthy
+
+                if (
+                    agent.state.charm_type != DEFAULT_PRESET
+                    and not _juju_controller_healthy()
+                ):
                     asyncio.create_task(_bootstrap_cli(agent))
 
         except KeyboardInterrupt:
@@ -151,6 +165,33 @@ async def _repl(agent: CantripAgent) -> None:
 
     prepare_task.cancel()
     await asyncio.gather(prepare_task, return_exceptions=True)
+    await agent.stop_executor()
+
+
+def _print_task_event(task: object) -> None:
+    """Print a brief status line when a task changes state."""
+    title = getattr(task, "title", "?")
+    status = getattr(task, "status", None)
+    if status is not None:
+        status = status.value if hasattr(status, "value") else str(status)
+    print(f"\r  [task] {title} — {status}")
+
+
+async def _drain_executor(agent: CantripAgent) -> None:
+    """Wait for the background executor to finish all pending and active tasks."""
+    queue = agent.work_queue
+    if not queue.all_tasks():
+        return
+    print("[executor] Waiting for tasks to complete...")
+    while True:
+        tasks = queue.all_tasks()
+        pending_or_active = [
+            t for t in tasks if t.status.value in ("pending", "active", "blocked")
+        ]
+        if not pending_or_active:
+            break
+        await asyncio.sleep(1)
+    print("[executor] All tasks finished.")
 
 
 async def _prepare_cli(agent: CantripAgent) -> None:

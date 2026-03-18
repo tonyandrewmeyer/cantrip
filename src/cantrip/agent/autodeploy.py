@@ -8,6 +8,7 @@ test without mocking.
 
 import re
 
+from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
@@ -105,10 +106,16 @@ def tasks_after_build(task: AgentTask) -> list[AgentTask]:
     Closes the build → deploy gap so that code changes are automatically
     deployed without waiting for the user to request it.  Only fires for
     BUILD tasks that completed successfully.
+
+    Sprint build tasks already have an explicit DEPLOY task in the plan,
+    so no follow-up is needed.
     """
     if task.category != TaskCategory.BUILD:
         return []
     if task.status != TaskStatus.DONE:
+        return []
+    # Sprint builds already have an explicit deploy task — skip follow-up.
+    if task.title.startswith(SPRINT_BUILD_PREFIX):
         return []
 
     return [

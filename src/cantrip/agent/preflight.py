@@ -26,6 +26,7 @@ from cantrip.agent.state import AgentState
 from cantrip.agent.tools.environment import (
     _concierge_available,
     _is_already_provisioned,
+    _juju_controller_healthy,
     _run_concierge,
 )
 
@@ -194,22 +195,15 @@ class PreflightRunner:
             self._emit("prepare", CheckStatus.PASSED, "Environment already provisioned (skipped)")
             self._check_juju()
 
-            # Still verify the controller and COS are healthy.
+            # Still verify the controller is healthy.
             self._emit("controller", CheckStatus.RUNNING, "Checking controller")
-            try:
-                juju = jubilant.Juju()
-                juju.status()
+            if _juju_controller_healthy():
                 self.result.controller_ready = True
                 self._emit("controller", CheckStatus.PASSED, "Controller ready")
-            except jubilant.CLIError as exc:
+            else:
                 self.result.controller_ready = False
-                self._emit(
-                    "controller",
-                    CheckStatus.FAILED,
-                    "Controller not ready",
-                    detail=str(exc),
-                )
-                self.result.errors.append(f"Controller check failed: {exc}")
+                self._emit("controller", CheckStatus.FAILED, "Controller not ready")
+                self.result.errors.append("Controller check failed")
                 return self.result
 
             cos_model_name = self._state.cos_model or "cos"
@@ -248,15 +242,13 @@ class PreflightRunner:
 
         # Check controller.
         self._emit("controller", CheckStatus.RUNNING, "Checking controller")
-        try:
-            juju = jubilant.Juju()
-            juju.status()
+        if _juju_controller_healthy():
             self.result.controller_ready = True
             self._emit("controller", CheckStatus.PASSED, "Controller ready")
-        except jubilant.CLIError as exc:
+        else:
             self.result.controller_ready = False
-            self._emit("controller", CheckStatus.FAILED, "Controller not ready", detail=str(exc))
-            self.result.errors.append(f"Controller check failed: {exc}")
+            self._emit("controller", CheckStatus.FAILED, "Controller not ready")
+            self.result.errors.append("Controller check failed after prepare")
             return self.result
 
         # Check / deploy COS.
@@ -293,20 +285,13 @@ class PreflightRunner:
             )
 
             self._emit("controller", CheckStatus.RUNNING, "Checking controller")
-            try:
-                juju = jubilant.Juju()
-                juju.status()
+            if _juju_controller_healthy():
                 self.result.controller_ready = True
                 self._emit("controller", CheckStatus.PASSED, "Controller ready")
-            except jubilant.CLIError as exc:
+            else:
                 self.result.controller_ready = False
-                self._emit(
-                    "controller",
-                    CheckStatus.FAILED,
-                    "Controller not ready",
-                    detail=str(exc),
-                )
-                self.result.errors.append(f"Controller check failed: {exc}")
+                self._emit("controller", CheckStatus.FAILED, "Controller not ready")
+                self.result.errors.append("Controller check failed")
                 return self.result
 
             cos_model_name = self._state.cos_model or "cos"
@@ -332,15 +317,13 @@ class PreflightRunner:
 
         # Check controller.
         self._emit("controller", CheckStatus.RUNNING, "Checking controller")
-        try:
-            juju = jubilant.Juju()
-            juju.status()
+        if _juju_controller_healthy():
             self.result.controller_ready = True
             self._emit("controller", CheckStatus.PASSED, "Controller ready")
-        except jubilant.CLIError as exc:
+        else:
             self.result.controller_ready = False
-            self._emit("controller", CheckStatus.FAILED, "Controller not ready", detail=str(exc))
-            self.result.errors.append(f"Controller check failed: {exc}")
+            self._emit("controller", CheckStatus.FAILED, "Controller not ready")
+            self.result.errors.append("Controller check failed after bootstrap")
             return self.result
 
         # Check / deploy COS.

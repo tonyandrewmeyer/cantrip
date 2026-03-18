@@ -371,6 +371,9 @@ class TestConciergePrepareTool:
 
         with (
             mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch(
+                "cantrip.agent.tools.environment._juju_controller_healthy", return_value=False
+            ),
             mock.patch("asyncio.create_subprocess_exec", side_effect=fake_exec),
         ):
             result = await tool.execute(preset="k8s")
@@ -395,6 +398,9 @@ class TestConciergePrepareTool:
 
         with (
             mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch(
+                "cantrip.agent.tools.environment._juju_controller_healthy", return_value=False
+            ),
             mock.patch("asyncio.create_subprocess_exec", side_effect=fake_exec),
         ):
             result = await tool.execute(preset="machine")
@@ -422,6 +428,9 @@ class TestConciergePrepareTool:
 
         with (
             mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch(
+                "cantrip.agent.tools.environment._juju_controller_healthy", return_value=False
+            ),
             mock.patch("asyncio.create_subprocess_exec", side_effect=fake_exec),
             mock.patch("asyncio.wait_for", side_effect=TimeoutError),
         ):

@@ -33,12 +33,48 @@ async def _run_concierge(*args: str, timeout: int = 600) -> tuple[int, str, str]
     return proc.returncode or 0, stdout.decode(), stderr.decode()
 
 
-async def _is_already_provisioned() -> bool:
-    """Check whether concierge has already provisioned the environment.
+def _juju_controller_healthy() -> bool:
+    """Check whether a Juju controller is already accessible.
 
-    Runs ``concierge status`` and looks for a success indicator.  Returns
-    False on any error or timeout — callers should proceed with prepare.
+    Runs ``juju controllers`` (cheap, no model required) and returns True
+    if it exits cleanly and lists at least one controller.  This is a
+    faster, more reliable signal than ``concierge status`` because it
+    works regardless of how Juju was set up.
     """
+    import subprocess
+
+    juju = shutil.which("juju")
+    if not juju:
+        return False
+    try:
+        result = subprocess.run(
+            [juju, "controllers", "--format=json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return False
+        import json
+
+        data = json.loads(result.stdout)
+        controllers = data.get("controllers", {})
+        return len(controllers) > 0
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return False
+
+
+async def _is_already_provisioned() -> bool:
+    """Check whether the environment is already usable.
+
+    First checks if a Juju controller is healthy (works regardless of
+    how it was set up).  Falls back to ``concierge status`` if Juju
+    is not found.  Returns False on any error — callers should proceed
+    with prepare.
+    """
+    # Fast path: if Juju is working, don't touch concierge.
+    if _juju_controller_healthy():
+        return True
     if not _concierge_available():
         return False
     try:

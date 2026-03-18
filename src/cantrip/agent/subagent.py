@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm import base as llm
@@ -111,6 +112,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "edit_file",
             "list_directory",
             "charmcraft_init",
+            "charmcraft_pack",
             "charmcraft_fetch_libs",
             "rockcraft_init",
             "analyse_framework",
@@ -525,9 +527,29 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
         sections.append("## Charm context\n\n" + "\n".join(context_lines))
 
     # 4. Category-specific guidance.
-    guidance = _CATEGORY_GUIDANCE.get(task.category)
-    if guidance:
-        sections.append(f"## Guidance\n\n{guidance}")
+    # Sprint builds get stripped-down guidance — speed over completeness.
+    if task.title.startswith(SPRINT_BUILD_PREFIX) and task.category == TaskCategory.BUILD:
+        sections.append(
+            "## Guidance\n\n"
+            "**Sprint mode — speed is everything.**\n\n"
+            "Do NOT write tests. Do NOT run charm_validate. Do NOT add "
+            "COS/observability. Do NOT rewrite the scaffolded charm code "
+            "unless it will not pack.\n\n"
+            "Steps:\n"
+            "1. Run charmcraft_init — this scaffolds a working charm.\n"
+            "2. Fix charmcraft.yaml: change base to ubuntu@24.04, "
+            "change plugin from uv to charm, remove build-snaps.\n"
+            "3. Overwrite requirements.txt with ONLY `ops>=3,<4` — remove "
+            "ops-tracing or any other deps (they cause slow source builds).\n"
+            "4. Run charmcraft_pack with destructive_mode=true for speed.\n"
+            "5. git_init, git_add all files, git_commit.\n"
+            "6. Done. Do not iterate or improve — just ship it.\n\n"
+            "**Efficiency**: aim for 3-4 tool rounds total."
+        )
+    else:
+        guidance = _CATEGORY_GUIDANCE.get(task.category)
+        if guidance:
+            sections.append(f"## Guidance\n\n{guidance}")
 
     # 4b. Task-specific guidance overlay for demo generation.
     if "demo" in task.title.lower() and task.category == TaskCategory.BUILD:

@@ -14,6 +14,7 @@ from cantrip.agent.autodeploy import (
     tasks_after_test,
     tasks_after_verify,
 )
+from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
@@ -44,6 +45,17 @@ class TestTasksAfterBuild:
 
     def test_no_deploy_for_non_build(self) -> None:
         task = AgentTask(id="r1", title="Research Redis", category=TaskCategory.RESEARCH)
+        task.status = TaskStatus.DONE
+
+        assert tasks_after_build(task) == []
+
+    def test_no_deploy_for_sprint_build(self) -> None:
+        """Sprint builds already have an explicit deploy task — no follow-up needed."""
+        task = AgentTask(
+            id="sb1",
+            title=f"{SPRINT_BUILD_PREFIX} my-app",
+            category=TaskCategory.BUILD,
+        )
         task.status = TaskStatus.DONE
 
         assert tasks_after_build(task) == []

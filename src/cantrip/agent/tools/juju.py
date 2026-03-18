@@ -957,7 +957,7 @@ class JujuWaitTool(Tool):
                             and s.apps[app_name].app_status.current == "active"
                             and all(
                                 u.workload_status.current == "active"
-                                and u.agent_status.current == "idle"
+                                and u.juju_status.current == "idle"
                                 for u in s.apps[app_name].units.values()
                             )
                         ),

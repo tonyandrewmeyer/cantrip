@@ -149,13 +149,20 @@ def parse_args() -> argparse.Namespace:
         help="Export only messages and events at or after an ISO timestamp",
     )
 
-    args = parser.parse_args()
+    # When the first positional argument is not a known subcommand, treat
+    # the entire argv as arguments to the "run" sub-parser.  This lets
+    # ``cantrip /path/to/charm`` and ``cantrip --no-tui`` work without
+    # requiring an explicit ``run`` subcommand.
+    _subcommands = {"run", "export-transcript"}
+    argv = sys.argv[1:]
+    if (
+        not argv
+        or (argv[0] not in _subcommands and not argv[0].startswith("-"))
+        or (argv[0].startswith("-") and argv[0] not in ("--version", "-h", "--help"))
+    ):
+        argv = ["run", *argv]
 
-    # When invoked without a subcommand, treat as "run" with the remaining
-    # argv parsed by the run sub-parser so that existing usage still works.
-    if args.command is None:
-        args = run_parser.parse_args()
-        args.command = "run"
+    args = parser.parse_args(argv)
 
     return args
 
