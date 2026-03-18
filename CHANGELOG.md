@@ -15,6 +15,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Subagent tool crash propagation** — unexpected exceptions from tool execution in subagents would abort the entire task instead of returning an error result to the LLM; now matches the core agent's defensive error handling
 - **TUI click crash** — clicking on empty areas in the task checklist could raise `NoWidget` from Textual's `get_widget_at()`; now caught gracefully
 - **TUI preflight index overflow** — `update_preflight()` did not bounds-check group and item indices, risking `IndexError` if preflight events arrived out of order
+- **Juju tools block event loop indefinitely** — all Jubilant calls (status, deploy, refresh, ssh, etc.) were synchronous, blocking the entire asyncio event loop when the Juju controller was slow or unresponsive; now wrapped in `asyncio.to_thread` with timeouts (120s default, 300s for deploy, 900s for wait)
 
 ### Added
 - **Operational readiness assessment (Phase 19)** — new roadmap phase for evaluating charms against Canonical's Operational Readiness Metrics standard; includes an assessment tool (`operational_readiness`) that scores charms across five pillars (Best Practices, Documentation, Reliability, Maintainability, Security), an `operational-readiness` skill with implementation patterns for health checks, pause/resume, backup/restore, diagnostics, and upgrade pre-flight, and planner integration that autonomously closes gaps after build+test

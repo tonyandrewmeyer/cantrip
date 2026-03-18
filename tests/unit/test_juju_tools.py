@@ -596,23 +596,25 @@ class TestAgentCharmDir:
 class TestIsK8sModel:
     """Tests for the _is_k8s_model helper."""
 
-    def test_caas_model(self):
+    @pytest.mark.asyncio
+    async def test_caas_model(self):
         """Returns True for a Kubernetes (CAAS) model."""
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         mock_info = mock.MagicMock()
         mock_info.model_type = "caas"
-        mock_juju.show_model.return_value = mock_info
 
-        assert _is_k8s_model(mock_juju) is True
+        with mock.patch("cantrip.agent.tools.juju._run_juju", return_value=mock_info):
+            assert await _is_k8s_model(mock_juju) is True
 
-    def test_iaas_model(self):
+    @pytest.mark.asyncio
+    async def test_iaas_model(self):
         """Returns False for a machine (IAAS) model."""
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         mock_info = mock.MagicMock()
         mock_info.model_type = "iaas"
-        mock_juju.show_model.return_value = mock_info
 
-        assert _is_k8s_model(mock_juju) is False
+        with mock.patch("cantrip.agent.tools.juju._run_juju", return_value=mock_info):
+            assert await _is_k8s_model(mock_juju) is False
 
 
 class TestCharmSyncTool:

@@ -1,8 +1,11 @@
 """Juju operation tools via Jubilant."""
 
+import asyncio
+import functools
 import json
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -10,10 +13,24 @@ import jubilant
 
 from cantrip.agent.tools.base import Tool, ToolResult
 
+# Default timeout for Jubilant operations (seconds).
+_JUJU_TIMEOUT = 120
+
 
 def _juju_available() -> bool:
     """Check whether the juju CLI is installed."""
     return shutil.which("juju") is not None
+
+
+async def _run_juju(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Run a blocking Jubilant call in a thread with a timeout.
+
+    Prevents a hung Juju CLI from blocking the entire event loop.
+    """
+    return await asyncio.wait_for(
+        asyncio.to_thread(functools.partial(func, *args, **kwargs)),
+        timeout=_JUJU_TIMEOUT,
+    )
 
 
 def _agent_charm_dir(unit: str) -> str:
@@ -22,9 +39,9 @@ def _agent_charm_dir(unit: str) -> str:
     return f"/var/lib/juju/agents/unit-{app}-{number}/charm"
 
 
-def _is_k8s_model(juju: jubilant.Juju) -> bool:
+async def _is_k8s_model(juju: jubilant.Juju) -> bool:
     """Return True if the current model is a Kubernetes (CAAS) model."""
-    info = juju.show_model()
+    info = await _run_juju(juju.show_model)
     return info.model_type == "caas"
 
 
@@ -62,7 +79,7 @@ class JujuStatusTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            status = juju.status()
+            status = await _run_juju(juju.status)
 
             # Format output
             output_lines = [f"Model: {status.model.name}"]
@@ -79,6 +96,12 @@ class JujuStatusTool(Tool):
                 success=True,
                 output="\n".join(output_lines),
                 data={"model": status.model.name, "apps": list(status.apps.keys())},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju status timed out — the controller may be unavailable.",
             )
         except Exception as e:
             return ToolResult(
@@ -183,12 +206,21 @@ class JujuDeployTool(Tool):
             if trust:
                 deploy_args["trust"] = True
 
-            juju.deploy(**deploy_args)
+            await asyncio.wait_for(
+                asyncio.to_thread(functools.partial(juju.deploy, **deploy_args)),
+                timeout=300,
+            )
 
             return ToolResult(
                 success=True,
                 output=f"Deployed {charm}" + (f" as {app_name}" if app_name else ""),
                 data={"charm": charm, "app_name": app_name or charm},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju deploy timed out — the operation is taking too long.",
             )
         except Exception as e:
             return ToolResult(
@@ -260,12 +292,18 @@ class JujuRefreshTool(Tool):
             if resources:
                 refresh_args["resources"] = resources
 
-            juju.refresh(**refresh_args)
+            await _run_juju(juju.refresh, **refresh_args)
 
             return ToolResult(
                 success=True,
                 output=f"Refreshed {app_name}" + (f" from {path}" if path else ""),
                 data={"app_name": app_name, "path": path},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju refresh timed out — the controller may be unavailable.",
             )
         except jubilant.CLIError as e:
             return ToolResult(
@@ -323,12 +361,18 @@ class JujuRelateTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            juju.integrate(app1, app2)
+            await _run_juju(juju.integrate, app1, app2)
 
             return ToolResult(
                 success=True,
                 output=f"Created relation: {app1} <-> {app2}",
                 data={"app1": app1, "app2": app2},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju integrate timed out — the controller may be unavailable.",
             )
         except Exception as e:
             return ToolResult(
@@ -389,12 +433,18 @@ class JujuSSHTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            result = juju.ssh(unit, command)
+            result = await _run_juju(juju.ssh, unit, command)
 
             return ToolResult(
                 success=True,
                 output=result,
                 data={"unit": unit, "command": command},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju ssh timed out — the unit may be unreachable.",
             )
         except Exception as e:
             return ToolResult(
@@ -457,12 +507,18 @@ class JujuRunActionTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            result = juju.run(unit, action, **(params or {}))
+            result = await _run_juju(juju.run, unit, action, **(params or {}))
 
             return ToolResult(
                 success=True,
                 output=json.dumps(result, indent=2) if isinstance(result, dict) else str(result),
                 data={"unit": unit, "action": action, "result": result},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju run timed out — the action is taking too long.",
             )
         except Exception as e:
             return ToolResult(
@@ -519,13 +575,19 @@ class JujuAddModelTool(Tool):
 
         try:
             juju = jubilant.Juju()
-            juju.add_model(model, cloud=cloud)
+            await _run_juju(juju.add_model, model, cloud=cloud)
 
             suffix = f" on cloud '{cloud}'" if cloud else ""
             return ToolResult(
                 success=True,
                 output=f"Model '{model}' created{suffix}.",
                 data={"model": model, "cloud": cloud},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju add-model timed out — the controller may be unavailable.",
             )
         except jubilant.CLIError as e:
             return ToolResult(
@@ -575,12 +637,24 @@ class JujuDestroyModelTool(Tool):
 
         try:
             juju = jubilant.Juju()
-            juju.destroy_model(model, force=force, destroy_storage=True, no_wait=force)
+            await _run_juju(
+                juju.destroy_model,
+                model,
+                force=force,
+                destroy_storage=True,
+                no_wait=force,
+            )
 
             return ToolResult(
                 success=True,
                 output=f"Model '{model}' destruction initiated.",
                 data={"model": model, "force": force},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju destroy-model timed out — the controller may be unavailable.",
             )
         except jubilant.CLIError as e:
             return ToolResult(
@@ -641,12 +715,18 @@ class JujuOfferTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            juju.offer(app, endpoint=endpoint)
+            await _run_juju(juju.offer, app, endpoint=endpoint)
 
             return ToolResult(
                 success=True,
                 output=f"Offer created: {app}:{endpoint}",
                 data={"app": app, "endpoint": endpoint, "model": model},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju offer timed out — the controller may be unavailable.",
             )
         except jubilant.CLIError as e:
             return ToolResult(
@@ -707,7 +787,7 @@ class JujuConsumeTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            juju.consume(model_and_app, alias)
+            await _run_juju(juju.consume, model_and_app, alias)
 
             label = alias or model_and_app.split(".")[-1]
             return ToolResult(
@@ -718,6 +798,12 @@ class JujuConsumeTool(Tool):
                     "alias": alias,
                     "model": model,
                 },
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju consume timed out — the controller may be unavailable.",
             )
         except jubilant.CLIError as e:
             return ToolResult(
@@ -781,7 +867,7 @@ class JujuConfigTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            result = juju.config(app_name, values=values)
+            result = await _run_juju(juju.config, app_name, values=values)
 
             if values:
                 return ToolResult(
@@ -795,6 +881,12 @@ class JujuConfigTool(Tool):
                 success=True,
                 output=json.dumps(result, indent=2, default=str),
                 data={"app_name": app_name, "config": result},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju config timed out — the controller may be unavailable.",
             )
         except jubilant.CLIError as e:
             return ToolResult(
@@ -856,16 +948,23 @@ class JujuWaitTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            status = juju.wait(
-                lambda s: (
-                    app_name in s.apps
-                    and s.apps[app_name].app_status.current == "active"
-                    and all(
-                        u.workload_status.current == "active" and u.agent_status.current == "idle"
-                        for u in s.apps[app_name].units.values()
+            status = await asyncio.wait_for(
+                asyncio.to_thread(
+                    functools.partial(
+                        juju.wait,
+                        lambda s: (
+                            app_name in s.apps
+                            and s.apps[app_name].app_status.current == "active"
+                            and all(
+                                u.workload_status.current == "active"
+                                and u.agent_status.current == "idle"
+                                for u in s.apps[app_name].units.values()
+                            )
+                        ),
+                        timeout=timeout,
                     )
                 ),
-                timeout=timeout,
+                timeout=900,
             )
 
             app = status.apps[app_name]
@@ -961,7 +1060,7 @@ class CharmSyncTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            k8s = _is_k8s_model(juju)
+            k8s = await _is_k8s_model(juju)
 
             # Collect all .py files from the requested directories.
             files: list[tuple[Path, str]] = []
@@ -990,20 +1089,28 @@ class CharmSyncTool(Tool):
                 remote_parent = str(Path(remote_path).parent)
 
                 if k8s:
-                    juju.ssh(
+                    await _run_juju(
+                        juju.ssh,
                         unit,
                         f"mkdir -p {remote_parent}",
                         container="charm",
                     )
-                    juju.scp(
+                    await _run_juju(
+                        juju.scp,
                         str(local_path),
                         f"{unit}:{remote_path}",
                         container="charm",
                     )
                 else:
-                    juju.ssh(unit, f"sudo mkdir -p {remote_parent}")
+                    await _run_juju(juju.ssh, unit, f"sudo mkdir -p {remote_parent}")
                     content = local_path.read_text()
-                    juju.cli("ssh", unit, f"sudo tee {remote_path}", stdin=content)
+                    await _run_juju(
+                        juju.cli,
+                        "ssh",
+                        unit,
+                        f"sudo tee {remote_path}",
+                        stdin=content,
+                    )
 
             synced_names = [str(f[0].relative_to(local_root)) for f in files]
             return ToolResult(
@@ -1013,6 +1120,12 @@ class CharmSyncTool(Tool):
                     + "\n".join(f"  {n}" for n in synced_names)
                 ),
                 data={"files_synced": len(files), "files": synced_names},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="charm sync timed out — the unit may be unreachable.",
             )
         except jubilant.CLIError as e:
             return ToolResult(
@@ -1083,17 +1196,23 @@ class JujuDispatchTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            k8s = _is_k8s_model(juju)
+            k8s = await _is_k8s_model(juju)
 
             if k8s:
-                output = juju.ssh(unit, dispatch_cmd, container="charm")
+                output = await _run_juju(juju.ssh, unit, dispatch_cmd, container="charm")
             else:
-                output = juju.ssh(unit, f"sudo {dispatch_cmd}")
+                output = await _run_juju(juju.ssh, unit, f"sudo {dispatch_cmd}")
 
             return ToolResult(
                 success=True,
                 output=output or f"Event '{event}' dispatched on {unit} (no output).",
                 data={"unit": unit, "event": event},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju dispatch timed out — the unit may be unreachable.",
             )
         except jubilant.CLIError as e:
             return ToolResult(
