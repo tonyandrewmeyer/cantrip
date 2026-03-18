@@ -190,7 +190,11 @@ class TaskChecklistWidget(Widget):
         Thread-safe — called from preflight worker callbacks.
         """
         with self._lock:
+            if group_idx >= len(self._preflight_groups):
+                return
             group = self._preflight_groups[group_idx]
+            if item_idx >= len(group.items):
+                return
             label, _old = group.items[item_idx]
             group.items[item_idx] = (label, status)
             self._dirty = True
@@ -212,7 +216,12 @@ class TaskChecklistWidget(Widget):
 
         if not isinstance(event, Click):
             return
-        widget = self.screen.get_widget_at(event.screen_x, event.screen_y)[0]
+        from textual.screen import NoWidget
+
+        try:
+            widget = self.screen.get_widget_at(event.screen_x, event.screen_y)[0]
+        except NoWidget:
+            return
         # Walk up to find a _TaskRow ancestor (or the widget itself).
         node = widget
         while node is not None:
