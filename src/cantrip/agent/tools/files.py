@@ -43,7 +43,7 @@ class ReadFileTool(Tool):
 
         if self.base_path:
             base_resolved = self.base_path.resolve()
-            if not str(resolved).startswith(str(base_resolved)):
+            if not resolved.is_relative_to(base_resolved):
                 raise ValueError(f"Path {path} is outside allowed directory")
 
         return resolved
@@ -122,7 +122,7 @@ class WriteFileTool(Tool):
 
         if self.base_path:
             base_resolved = self.base_path.resolve()
-            if not str(resolved).startswith(str(base_resolved)):
+            if not resolved.is_relative_to(base_resolved):
                 raise ValueError(f"Path {path} is outside allowed directory")
 
         return resolved
@@ -186,7 +186,7 @@ class ListDirectoryTool(Tool):
 
         if self.base_path:
             base_resolved = self.base_path.resolve()
-            if not str(resolved).startswith(str(base_resolved)):
+            if not resolved.is_relative_to(base_resolved):
                 raise ValueError(f"Path {path} is outside allowed directory")
 
         return resolved
@@ -272,7 +272,7 @@ class EditFileTool(Tool):
 
         if self.base_path:
             base_resolved = self.base_path.resolve()
-            if not str(resolved).startswith(str(base_resolved)):
+            if not resolved.is_relative_to(base_resolved):
                 raise ValueError(f"Path {path} is outside allowed directory")
 
         return resolved

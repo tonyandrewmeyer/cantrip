@@ -207,41 +207,43 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     if not content:
                         continue
 
-                    # Broadcast thinking state.
-                    _broadcast(request.app, "thinking", {"active": True})
+                    # Serialise chat messages to prevent concurrent state mutation.
+                    chat_lock: asyncio.Lock = request.app["chat_lock"]
+                    async with chat_lock:
+                        _broadcast(request.app, "thinking", {"active": True})
 
-                    try:
-                        response = await agent.process_message(content)
-                        _broadcast(request.app, "thinking", {"active": False})
-                        _broadcast(
-                            request.app,
-                            "chat_message",
-                            {
-                                "role": "assistant",
-                                "content": response,
-                            },
-                        )
-                    except ProviderError as e:
-                        _broadcast(request.app, "thinking", {"active": False})
-                        _broadcast(
-                            request.app,
-                            "chat_message",
-                            {
-                                "role": "system",
-                                "content": f"Provider error: {e}",
-                            },
-                        )
-                    except Exception as e:
-                        _broadcast(request.app, "thinking", {"active": False})
-                        _broadcast(
-                            request.app,
-                            "chat_message",
-                            {
-                                "role": "system",
-                                "content": f"Error: {e}",
-                            },
-                        )
-                        log.exception("Error processing message")
+                        try:
+                            response = await agent.process_message(content)
+                            _broadcast(request.app, "thinking", {"active": False})
+                            _broadcast(
+                                request.app,
+                                "chat_message",
+                                {
+                                    "role": "assistant",
+                                    "content": response,
+                                },
+                            )
+                        except ProviderError as e:
+                            _broadcast(request.app, "thinking", {"active": False})
+                            _broadcast(
+                                request.app,
+                                "chat_message",
+                                {
+                                    "role": "system",
+                                    "content": f"Provider error: {e}",
+                                },
+                            )
+                        except Exception as e:
+                            _broadcast(request.app, "thinking", {"active": False})
+                            _broadcast(
+                                request.app,
+                                "chat_message",
+                                {
+                                    "role": "system",
+                                    "content": f"Error: {e}",
+                                },
+                            )
+                            log.exception("Error processing message")
 
             elif msg.type in (
                 web.WSMsgType.ERROR,
@@ -291,6 +293,7 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     app["agent"] = agent
     app["port"] = port
     app["ws_clients"] = weakref.WeakSet()
+    app["chat_lock"] = asyncio.Lock()
 
     # Jinja2 environment for server-side rendering.
     app["jinja_env"] = jinja2.Environment(
