@@ -10,6 +10,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Subprocess leak on timeout** — `_run_concierge` and `JujuDebugLogTool` did not kill the subprocess when `asyncio.wait_for` timed out, leaking orphan processes
 - **`_ensure_claude_md` crash** — writing `CLAUDE.md` would raise `FileNotFoundError` if the charm directory did not yet exist
 - **Bare `Exception` catches in file tools** — `ReadFileTool`, `WriteFileTool`, `ListDirectoryTool`, and `EditFileTool` now catch specific exceptions (`OSError`, `UnicodeDecodeError`, `ValueError`) instead of bare `Exception`
+- **Path traversal via directory prefix** — file tools used `str.startswith()` for path restriction, which allowed access to sibling directories with matching name prefixes (e.g. `/tmp/charm-evil/` when base_path is `/tmp/charm`); now uses `Path.is_relative_to()`
+- **Web UI concurrent message corruption** — multiple browser tabs could send chat messages simultaneously, corrupting conversation state; messages are now serialised through an `asyncio.Lock`
+- **Subagent tool crash propagation** — unexpected exceptions from tool execution in subagents would abort the entire task instead of returning an error result to the LLM; now matches the core agent's defensive error handling
+- **TUI click crash** — clicking on empty areas in the task checklist could raise `NoWidget` from Textual's `get_widget_at()`; now caught gracefully
+- **TUI preflight index overflow** — `update_preflight()` did not bounds-check group and item indices, risking `IndexError` if preflight events arrived out of order
 
 ### Added
 - **Operational readiness assessment (Phase 19)** — new roadmap phase for evaluating charms against Canonical's Operational Readiness Metrics standard; includes an assessment tool (`operational_readiness`) that scores charms across five pillars (Best Practices, Documentation, Reliability, Maintainability, Security), an `operational-readiness` skill with implementation patterns for health checks, pause/resume, backup/restore, diagnostics, and upgrade pre-flight, and planner integration that autonomously closes gaps after build+test

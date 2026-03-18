@@ -784,3 +784,10 @@ class Subagent:
                 output="",
                 error=f"Invalid arguments for {name}: {exc}",
             )
+        except Exception as exc:
+            log.warning("Tool %s raised %s: %s", name, type(exc).__name__, exc)
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Tool execution failed: {exc}",
+            )

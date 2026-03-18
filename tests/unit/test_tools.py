@@ -77,6 +77,24 @@ class TestReadFileTool:
         assert not result.success
         assert "outside" in result.error.lower()
 
+    @pytest.mark.asyncio
+    async def test_path_prefix_attack_blocked(self, temp_dir):
+        """Test that sibling directories with matching prefixes are blocked."""
+        tool = ReadFileTool(base_path=temp_dir)
+        # Create a sibling directory whose name starts with temp_dir's name.
+        evil_dir = temp_dir.parent / (temp_dir.name + "-evil")
+        evil_dir.mkdir(exist_ok=True)
+        evil_file = evil_dir / "secret.txt"
+        evil_file.write_text("stolen")
+        try:
+            result = await tool.execute(path=str(evil_file))
+
+            assert not result.success
+            assert "outside" in result.error.lower()
+        finally:
+            evil_file.unlink(missing_ok=True)
+            evil_dir.rmdir()
+
 
 class TestWriteFileTool:
     """Tests for WriteFileTool."""
