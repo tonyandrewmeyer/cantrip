@@ -142,5 +142,5 @@ A good README includes:
 ### Other Checks
 
 - **LICENSE** — Apache-2.0 is standard for charms
-- **icon.svg** — required for Charmhub listing (Cantrip flags the gap but does not generate artwork)
+- **icon.svg** — required for Charmhub listing; run `generate_icon` to create a placeholder (coloured circle with the charm's initial) if missing
 - **Clean pack** — `charmcraft pack` should succeed with no warnings

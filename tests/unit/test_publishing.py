@@ -10,7 +10,9 @@ import pytest
 from cantrip.agent.tools.publishing import (
     CharmcraftReleaseTool,
     CharmcraftUploadTool,
+    GenerateIconTool,
     GenerateReadmeTool,
+    generate_placeholder_svg,
 )
 
 
@@ -325,3 +327,115 @@ class TestGenerateReadmeTool:
 
         assert not result.success
         assert "parse" in result.error.lower()
+
+
+# ===================================================================
+# TestGeneratePlaceholderSvg
+# ===================================================================
+
+
+class TestGeneratePlaceholderSvg:
+    """Tests for the generate_placeholder_svg function."""
+
+    def test_produces_valid_svg(self) -> None:
+        svg = generate_placeholder_svg("redis")
+        assert svg.startswith("<?xml")
+        assert "<svg" in svg
+        assert "</svg>" in svg
+
+    def test_contains_initial(self) -> None:
+        svg = generate_placeholder_svg("redis")
+        assert ">R</text>" in svg
+
+    def test_uses_uppercase_initial(self) -> None:
+        svg = generate_placeholder_svg("my-charm")
+        assert ">M</text>" in svg
+
+    def test_empty_name_uses_question_mark(self) -> None:
+        svg = generate_placeholder_svg("")
+        assert ">?</text>" in svg
+
+    def test_deterministic_colour(self) -> None:
+        """Same charm name always produces the same colour."""
+        svg1 = generate_placeholder_svg("redis")
+        svg2 = generate_placeholder_svg("redis")
+        assert svg1 == svg2
+
+    def test_different_names_can_differ(self) -> None:
+        """Different charm names may produce different colours."""
+        svg_redis = generate_placeholder_svg("redis")
+        svg_postgres = generate_placeholder_svg("postgres")
+        # They could theoretically collide, but with 10 colours it's unlikely.
+        assert svg_redis != svg_postgres
+
+    def test_contains_circle(self) -> None:
+        svg = generate_placeholder_svg("test")
+        assert "<circle" in svg
+        assert 'fill="' in svg
+
+
+# ===================================================================
+# TestGenerateIconTool
+# ===================================================================
+
+
+class TestGenerateIconTool:
+    """Tests for GenerateIconTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return GenerateIconTool()
+
+    @pytest.fixture
+    def temp_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+
+    @pytest.mark.asyncio
+    async def test_generates_icon(self, tool, temp_dir) -> None:
+        """Generates icon.svg in the charm directory."""
+        result = await tool.execute(path=str(temp_dir), charm_name="my-charm")
+
+        assert result.success
+        assert (temp_dir / "icon.svg").exists()
+        svg = (temp_dir / "icon.svg").read_text()
+        assert ">M</text>" in svg
+
+    @pytest.mark.asyncio
+    async def test_reads_name_from_charmcraft_yaml(self, tool, temp_dir) -> None:
+        """Falls back to charmcraft.yaml for the charm name."""
+        (temp_dir / "charmcraft.yaml").write_text("name: redis-k8s\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        svg = (temp_dir / "icon.svg").read_text()
+        assert ">R</text>" in svg
+        assert result.data["charm_name"] == "redis-k8s"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_directory_name(self, tool, temp_dir) -> None:
+        """Falls back to directory name when no charmcraft.yaml exists."""
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        assert result.data["charm_name"] == temp_dir.name
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_directory(self, tool) -> None:
+        """Returns error for a nonexistent directory."""
+        result = await tool.execute(path="/nonexistent/path")
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_explicit_name_overrides_yaml(self, tool, temp_dir) -> None:
+        """Explicit charm_name parameter takes precedence."""
+        (temp_dir / "charmcraft.yaml").write_text("name: redis-k8s\n")
+
+        result = await tool.execute(path=str(temp_dir), charm_name="custom")
+
+        assert result.success
+        svg = (temp_dir / "icon.svg").read_text()
+        assert ">C</text>" in svg
