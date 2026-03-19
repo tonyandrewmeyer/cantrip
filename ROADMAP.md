@@ -672,8 +672,11 @@ Prepare the charm for a polished Charmhub listing.
   `generate_readme` tool; guided by the `charm-improvement` skill README section
 - [x] **Metadata completion** — `charm_audit` checks all listing fields; the
   `listing-readiness` task fills missing `charmcraft.yaml` fields
-- [ ] **Documentation** — generate or update Discourse-format documentation covering
-  getting started, configuration, integrations, and troubleshooting
+- [x] **Documentation** — `GenerateDocsTool` (`generate_docs`) creates a `docs/` directory
+  with Diátaxis-structured documentation (tutorial, how-to, reference, explanation) using
+  the Canonical starter pack (Makefile, conf.py, requirements.txt, .readthedocs.yaml);
+  content files are MyST Markdown populated from `charmcraft.yaml` metadata; build locally
+  with `cd docs && make html`
 - [x] **Icon check** — `charm_audit` checks for `icon.svg` and flags if missing
 - [x] **Placeholder icon** — when no `icon.svg` exists, generate a simple placeholder SVG
   (coloured circle with the charm's initial) so the charm is publishable to Charmhub
