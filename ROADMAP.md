@@ -991,8 +991,10 @@ Use Rodney to capture visual proof of observability integration and deployment h
   and embed in `DEMO.md` via `showboat image`
 - [ ] **Web UI screenshot** — for web-facing charms, use Rodney to capture the
   application's own UI through the ingress; proves the workload is actually serving
-- [ ] **Architecture diagram** — generate a Mermaid diagram showing the charm's relations
-  and integrations; embed in README and save to `demo/architecture.md`
+- [x] **Architecture diagram** — `GenerateDiagramTool` (`generate_diagram`) generates a
+  Mermaid diagram from `charmcraft.yaml` showing requires/provides/peers relations,
+  containers, and display name; written to `architecture.md` and embedded in the generated
+  docs explanation section
 
 ### 13.5 Demo Tutorial
 

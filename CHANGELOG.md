@@ -11,6 +11,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Documentation generation** — `GenerateDocsTool` (`generate_docs`) creates a `docs/` directory with Diátaxis-structured documentation (tutorial, how-to, reference, explanation) using the Canonical starter pack; content populated from `charmcraft.yaml` metadata; includes Makefile, conf.py, .readthedocs.yaml for building with Sphinx
 - **Dependency updates audit** — charm audit now detects `charmcraft fetch-libs` imports (`from charms.<lib>.v<N>`) and maps them against a table of known PyPI equivalents (data-platform-libs, grafana-k8s-lib, etc.); known replacements appear as should-fix, unknown libs as nice-to-have
 - **Integration test template generation** — `GenerateTestsTool` (`generate_tests`) produces Jubilant-based integration test templates from `charmcraft.yaml`: conftest fixtures, deploy test, plus per-relation, per-action, and per-config tests in separate files; BUILD subagent guidance updated to use `generate_tests` as the first step of the red/green cycle
+- **Architecture diagram** — `GenerateDiagramTool` (`generate_diagram`) generates a Mermaid diagram from `charmcraft.yaml` showing requires/provides/peers relations and containers; also embedded in the generated docs explanation section
 
 ### Fixed
 - **Task persistence lost on save** — `save_state()` persisted charm metadata and messages but not the work queue; tasks were only saved by the background executor's internal `_persist()` loop, so CLI-mode sessions lost all tasks on restart
