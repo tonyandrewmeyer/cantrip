@@ -422,8 +422,10 @@ minutes wall-clock time (excluding user confirmation and Juju deploy wait).
 ### 7.2 Advanced Testing and Performance
 - [x] **Performance skill** — identifies common charm performance pitfalls (blocking I/O
   in hooks, expensive status polling, unindexed relation data, oversized config)
-- [ ] **Load testing** — generate k6 or Locust workloads; deploy multiple units and
-  measure throughput/latency under load
+- [x] **Load testing** — `GenerateLoadTestTool` (`generate_load_test`) produces
+  Jubilant-based load tests measuring action throughput, config change settling time,
+  and scaling behaviour; for web-facing charms with an HTTP port, also generates a k6
+  script with ramp-up/sustained/ramp-down stages and latency/error-rate thresholds
 - [x] **Benchmark harness** — `HookBenchmarkTool` (`hook_benchmark`) analyses `juju
   debug-log` output to extract hook execution times; computes per-hook statistics
   (min/max/avg/count); flags hooks exceeding a configurable threshold (default 5 s);
