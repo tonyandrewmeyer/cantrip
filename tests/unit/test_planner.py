@@ -360,9 +360,7 @@ class TestSprint:
         assert "flask-framework" in tasks[0].description
 
     def test_plan_sprint_deploy_machine(self) -> None:
-        ctx = PlanningContext(
-            intent="build", charm_name="hello", charm_type="machine"
-        )
+        ctx = PlanningContext(intent="build", charm_name="hello", charm_type="machine")
         tasks = plan_sprint_deploy(ctx)
         assert len(tasks) == 2
         assert "machine" in tasks[0].description

@@ -1,7 +1,7 @@
 """Tests for the auto-deploy loop follow-up logic."""
 
 from cantrip.agent.autodeploy import (
-    _DEMO_PREFIX,
+    _DEMO_TITLE_PREFIX,
     _RETRY_PREFIX,
     _VERIFY_PREFIX,
     _WATCHER_PREFIX,
@@ -361,7 +361,7 @@ class TestTasksAfterTest:
 
         assert len(result) == 1
         assert result[0].category == TaskCategory.BUILD
-        assert result[0].title.startswith(_DEMO_PREFIX)
+        assert result[0].title.startswith(_DEMO_TITLE_PREFIX)
 
     def test_demo_uses_primary_model(self) -> None:
         task = AgentTask(id="t1", title="Validate", category=TaskCategory.TEST)
@@ -395,7 +395,7 @@ class TestTasksAfterTest:
         """Prevent loops: a test task for demo artefacts should not spawn another demo."""
         task = AgentTask(
             id="t2",
-            title=f"Validate {_DEMO_PREFIX} artefacts",
+            title=f"Validate {_DEMO_TITLE_PREFIX} artefacts",
             category=TaskCategory.TEST,
         )
         task.status = TaskStatus.DONE
@@ -484,7 +484,7 @@ class TestFollowupTasks:
 
         result = followup_tasks(task)
 
-        assert any(t.title.startswith(_DEMO_PREFIX) for t in result)
+        assert any(t.title.startswith(_DEMO_TITLE_PREFIX) for t in result)
 
 
 # ===================================================================

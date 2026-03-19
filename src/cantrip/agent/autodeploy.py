@@ -13,6 +13,12 @@ from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
 
+# Title prefix for demo generation tasks — used to prevent loops.
+_DEMO_TITLE_PREFIX = "Generate demo"
+
+# Prefix for retry tasks — used to prevent infinite retry chains.
+_RETRY_PREFIX = "[Red/Green retry]"
+
 # Verification task title prefix, used to identify verify tasks in follow-up logic.
 _VERIFY_PREFIX = "Verify deployment:"
 
@@ -147,12 +153,12 @@ def tasks_after_test(task: AgentTask) -> list[AgentTask]:
     if task.status != TaskStatus.DONE:
         return []
     # Don't generate a demo for a demo-validation task.
-    if _DEMO_PREFIX in task.title:
+    if _DEMO_TITLE_PREFIX in task.title:
         return []
 
     return [
         AgentTask(
-            title=f"{_DEMO_PREFIX} charm artefacts",
+            title=f"{_DEMO_TITLE_PREFIX} charm artefacts",
             category=TaskCategory.BUILD,
             model_hint=ModelHint.PRIMARY,
             description=(
@@ -175,10 +181,6 @@ def tasks_after_test(task: AgentTask) -> list[AgentTask]:
             dependencies=[task.id],
         ),
     ]
-
-
-# Title prefix for demo generation tasks — used to prevent loops.
-_DEMO_PREFIX = "Generate demo"
 
 
 def tasks_after_build_failure(task: AgentTask) -> list[AgentTask]:
@@ -238,9 +240,6 @@ def tasks_after_build_failure(task: AgentTask) -> list[AgentTask]:
         ),
     ]
 
-
-# Prefix for retry tasks — used to prevent infinite retry chains.
-_RETRY_PREFIX = "[Red/Green retry]"
 
 # Regex matching pytest summary counts in subagent result text.
 _PYTEST_COUNTS_RE = re.compile(r"(\d+) (passed|failed|error|skipped)")

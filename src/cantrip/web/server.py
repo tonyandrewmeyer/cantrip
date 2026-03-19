@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import pathlib
@@ -27,6 +28,12 @@ _STATIC_DIR = pathlib.Path(__file__).parent / "static"
 # ---------------------------------------------------------------------------
 
 
+async def _safe_ws_send(ws: web.WebSocketResponse, payload: str) -> None:
+    """Send a message to a WebSocket, silently handling connection errors."""
+    with contextlib.suppress(ConnectionResetError, ConnectionError, OSError):
+        await ws.send_str(payload)
+
+
 def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
     """Send a JSON message to all connected WebSocket clients."""
     payload = json.dumps({"type": event_type, "data": data})
@@ -36,7 +43,7 @@ def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
         if ws.closed:
             stale.append(ws)
             continue
-        asyncio.ensure_future(ws.send_str(payload))
+        asyncio.ensure_future(_safe_ws_send(ws, payload))
     for ws in stale:
         clients.discard(ws)
 

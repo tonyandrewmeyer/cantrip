@@ -147,6 +147,8 @@ class CantripAgent:
         """
         self.provider = provider
         self._light_provider = light_provider
+        if charm_path is not None and not isinstance(charm_path, Path):
+            charm_path = Path(charm_path)
         self.state = AgentState(charm_path=charm_path)
         self._work_queue = WorkQueue()
         self._preflight = PreflightRunner(self.state)
@@ -968,6 +970,7 @@ class CantripAgent:
         self._ensure_store()
         if self._store:
             self._store.save_session(self.state)
+            self._store.save_tasks(self._work_queue.all_tasks())
 
     def load_state(self) -> bool:
         """Load agent state from the session store.

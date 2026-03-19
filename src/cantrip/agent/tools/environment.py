@@ -1,7 +1,9 @@
 """Environment provisioning tools via Concierge."""
 
 import asyncio
+import json
 import shutil
+import subprocess
 from typing import Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
@@ -41,8 +43,6 @@ def _juju_controller_healthy() -> bool:
     faster, more reliable signal than ``concierge status`` because it
     works regardless of how Juju was set up.
     """
-    import subprocess
-
     juju = shutil.which("juju")
     if not juju:
         return False
@@ -55,7 +55,6 @@ def _juju_controller_healthy() -> bool:
         )
         if result.returncode != 0:
             return False
-        import json
 
         data = json.loads(result.stdout)
         controllers = data.get("controllers", {})

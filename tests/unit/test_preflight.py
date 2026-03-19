@@ -415,6 +415,7 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight.asyncio.to_thread", new_callable=AsyncMock
             ) as mock_to_thread,
+            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
         ):
             await runner.bootstrap("machine")
 
@@ -455,6 +456,7 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight.asyncio.to_thread", new_callable=AsyncMock
             ) as mock_to_thread,
+            patch("cantrip.agent.preflight._model_is_k8s", return_value=True),
         ):
             result = await runner.bootstrap("machine")
 
@@ -497,11 +499,82 @@ class TestBootstrap:
                 new_callable=AsyncMock,
                 side_effect=cli_error("deploy failed"),
             ),
+            patch("cantrip.agent.preflight._model_is_k8s", return_value=True),
         ):
             result = await runner.bootstrap("machine")
 
         assert result.cos_ready is False
         assert any("COS deployment failed" in e for e in result.errors)
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_cos_skipped_on_non_k8s_controller(self):
+        """bootstrap skips COS when the current controller is not Kubernetes."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        cli_error = type("CLIError", (Exception,), {})
+
+        # COS model does not exist (status raises CLIError).
+        cos_juju = MagicMock()
+        cos_juju.status.side_effect = cli_error("model not found")
+
+        default_juju = MagicMock()
+        default_juju.status.return_value = MagicMock()
+
+        def juju_factory(model: str | None = None) -> MagicMock:
+            if model is None:
+                return default_juju
+            return cos_juju
+
+        with (
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
+            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=False),
+        ):
+            result = await runner.bootstrap("machine")
+
+        assert result.cos_ready is False
+        # Should have been skipped, not failed.
+        assert not result.errors
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_cos_empty_model_skipped_on_non_k8s(self):
+        """bootstrap skips COS deploy when an empty model is on a non-K8s cloud."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        default_juju = MagicMock()
+        default_juju.status.return_value = MagicMock()
+
+        cos_juju = MagicMock()
+        cos_status = MagicMock()
+        cos_status.apps = {}
+        cos_juju.status.return_value = cos_status
+
+        def juju_factory(model: str | None = None) -> MagicMock:
+            if model is None:
+                return default_juju
+            return cos_juju
+
+        with (
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.preflight._model_is_k8s", return_value=False),
+        ):
+            result = await runner.bootstrap("machine")
+
+        assert result.cos_ready is False
+        assert not result.errors
 
     @pytest.mark.asyncio
     async def test_bootstrap_uses_state_cos_model_name(self):

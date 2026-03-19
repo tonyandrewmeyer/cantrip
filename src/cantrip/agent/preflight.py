@@ -12,8 +12,10 @@ and ensures a COS model is deployed.
 
 import asyncio
 import collections.abc
+import json
 import logging
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -334,7 +336,14 @@ class PreflightRunner:
         return self.result
 
     async def _ensure_cos(self, cos_model_name: str) -> None:
-        """Ensure a COS model exists and has cos-lite deployed."""
+        """Ensure a COS model exists and has cos-lite deployed.
+
+        cos-lite contains only Kubernetes charms, so it can only be deployed
+        on a K8s controller.  When the active controller is IAAS (e.g. LXD),
+        a separate K8s controller and cross-model relations are needed — see
+        ROADMAP.md Phase 22 for the full plan.  For now we detect the
+        mismatch and skip gracefully.
+        """
         try:
             juju = jubilant.Juju(model=cos_model_name)
             status = juju.status()
@@ -345,10 +354,25 @@ class PreflightRunner:
                 self._state.cos_model = cos_model_name
                 self._emit("cos", CheckStatus.PASSED, "COS model ready")
                 return
-            # Model exists but is empty — deploy cos-lite.
+            # Model exists but is empty — check its type before deploying.
+            if not _model_is_k8s(cos_model_name):
+                self._emit(
+                    "cos",
+                    CheckStatus.SKIPPED,
+                    "COS model is on a non-Kubernetes cloud (see ROADMAP Phase 22)",
+                )
+                return
             self._emit("cos", CheckStatus.RUNNING, "Deploying cos-lite")
         except jubilant.CLIError:
-            # Model does not exist — create it first.
+            # Model does not exist — check if the current controller supports
+            # K8s before trying to create it.
+            if not _current_controller_is_k8s():
+                self._emit(
+                    "cos",
+                    CheckStatus.SKIPPED,
+                    "Current controller is not Kubernetes — COS skipped (see ROADMAP Phase 22)",
+                )
+                return
             self._emit("cos", CheckStatus.RUNNING, f"Creating model {cos_model_name}")
             try:
                 juju_default = jubilant.Juju()
@@ -371,3 +395,49 @@ class PreflightRunner:
         except jubilant.CLIError as exc:
             self._emit("cos", CheckStatus.FAILED, "COS deployment failed", detail=str(exc))
             self.result.errors.append(f"COS deployment failed: {exc}")
+
+
+def _model_is_k8s(model_name: str) -> bool:
+    """Check whether an existing model is on a Kubernetes cloud."""
+    juju_bin = shutil.which("juju")
+    if not juju_bin:
+        return False
+    try:
+        result = subprocess.run(
+            [juju_bin, "show-model", model_name, "--format=json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return False
+        data = json.loads(result.stdout)
+        model_info = data.get(model_name, {})
+        return model_info.get("model-type", "") == "caas"
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return False
+
+
+def _current_controller_is_k8s() -> bool:
+    """Check whether the current controller is on a Kubernetes cloud."""
+    juju_bin = shutil.which("juju")
+    if not juju_bin:
+        return False
+    try:
+        result = subprocess.run(
+            [juju_bin, "show-controller", "--format=json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return False
+        data = json.loads(result.stdout)
+        for _name, info in data.items():
+            details = info.get("details", {})
+            cloud = details.get("cloud", "")
+            if cloud in ("k8s", "microk8s", "kubernetes"):
+                return True
+        return False
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return False

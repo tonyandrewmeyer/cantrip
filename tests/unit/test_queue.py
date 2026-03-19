@@ -174,6 +174,23 @@ class TestWorkQueue:
         q = WorkQueue()
         assert q.all_ready() == []
 
+    def test_all_ready_unblocks_after_failed_dependency(self) -> None:
+        """all_ready considers a failed dependency as resolved."""
+        q = WorkQueue()
+        t1 = _task(title="Build", id="build-1")
+        t2 = _task(title="Deploy", id="deploy-1", dependencies=["build-1"])
+        q.add_tasks([t1, t2])
+
+        # t2 is blocked by t1.
+        assert q.all_ready() == [t1]
+
+        # t1 fails.
+        q.set_active(t1.id)
+        q.set_failed(t1.id, "build error")
+
+        # t2 should now be ready (not stuck forever).
+        assert q.all_ready() == [t2]
+
     def test_all_ready_skips_active(self) -> None:
         """all_ready skips tasks that are already active."""
         q = WorkQueue()

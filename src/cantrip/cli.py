@@ -140,10 +140,7 @@ async def _repl(agent: CantripAgent) -> None:
                 bootstrap_started = True
                 from cantrip.agent.tools.environment import _juju_controller_healthy
 
-                if (
-                    agent.state.charm_type != DEFAULT_PRESET
-                    and not _juju_controller_healthy()
-                ):
+                if agent.state.charm_type != DEFAULT_PRESET and not _juju_controller_healthy():
                     asyncio.create_task(_bootstrap_cli(agent))
 
         except KeyboardInterrupt:
