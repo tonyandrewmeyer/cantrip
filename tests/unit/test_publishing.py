@@ -11,9 +11,11 @@ import pytest
 from cantrip.agent.tools.publishing import (
     CharmcraftReleaseTool,
     CharmcraftUploadTool,
+    GenerateDiagramTool,
     GenerateDocsTool,
     GenerateIconTool,
     GenerateReadmeTool,
+    generate_architecture_diagram,
     generate_docs_scaffold,
     generate_placeholder_svg,
 )
@@ -594,6 +596,13 @@ class TestGenerateDocsScaffold:
         assert "docs/.gitignore" in files
         assert "_build/" in files["docs/.gitignore"]
 
+    def test_architecture_includes_mermaid_diagram(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        arch = files["docs/explanation/architecture.md"]
+        assert "```mermaid" in arch
+        assert "graph LR" in arch
+        assert "pgsql" in arch
+
 
 # ===================================================================
 # TestGenerateDocsTool
@@ -662,3 +671,121 @@ class TestGenerateDocsTool:
 
         assert (temp_dir / ".readthedocs.yaml").exists()
         assert not (temp_dir / "docs" / ".readthedocs.yaml").exists()
+
+
+# ===================================================================
+# TestGenerateArchitectureDiagram
+# ===================================================================
+
+
+class TestGenerateArchitectureDiagram:
+    """Tests for generate_architecture_diagram — pure Mermaid generation."""
+
+    def test_minimal_charm(self) -> None:
+        diagram = generate_architecture_diagram("my-app", {"name": "my-app"})
+        assert "graph LR" in diagram
+        assert "my_app" in diagram  # Mermaid-safe ID
+
+    def test_requires_relations(self) -> None:
+        meta: dict[str, Any] = {
+            "requires": {"db": {"interface": "pgsql"}},
+        }
+        diagram = generate_architecture_diagram("my-app", meta)
+        assert "pgsql" in diagram
+        assert "db" in diagram
+        assert "-->" in diagram
+
+    def test_provides_relations(self) -> None:
+        meta: dict[str, Any] = {
+            "provides": {"metrics-endpoint": {"interface": "prometheus_scrape"}},
+        }
+        diagram = generate_architecture_diagram("my-app", meta)
+        assert "prometheus_scrape" in diagram
+        assert "metrics" in diagram
+
+    def test_peers_relations(self) -> None:
+        meta: dict[str, Any] = {
+            "peers": {"cluster": {"interface": "my_cluster"}},
+        }
+        diagram = generate_architecture_diagram("my-app", meta)
+        assert "my_cluster" in diagram
+        assert "peer" in diagram
+
+    def test_containers(self) -> None:
+        meta: dict[str, Any] = {
+            "containers": {"workload": {"resource": "oci-image"}},
+        }
+        diagram = generate_architecture_diagram("my-app", meta)
+        assert "workload" in diagram
+        assert "Containers" in diagram
+
+    def test_display_name_used(self) -> None:
+        meta: dict[str, Any] = {"display-name": "My Application"}
+        diagram = generate_architecture_diagram("my-app", meta)
+        assert "My Application" in diagram
+
+    def test_empty_metadata(self) -> None:
+        diagram = generate_architecture_diagram("bare", {})
+        assert "graph LR" in diagram
+        assert "bare" in diagram
+
+    def test_full_metadata(self) -> None:
+        diagram = generate_architecture_diagram("my-app", _SAMPLE_METADATA)
+        assert "pgsql" in diagram
+        assert "prometheus_scrape" in diagram
+        assert "backup" in diagram or "db" in diagram
+
+
+# ===================================================================
+# TestGenerateDiagramTool
+# ===================================================================
+
+
+class TestGenerateDiagramTool:
+    """Tests for GenerateDiagramTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return GenerateDiagramTool()
+
+    @pytest.fixture
+    def temp_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+
+    @pytest.mark.asyncio
+    async def test_generates_architecture_md(self, tool, temp_dir) -> None:
+        (temp_dir / "charmcraft.yaml").write_text(
+            "name: my-charm\n"
+            "requires:\n  db:\n    interface: pgsql\n"
+        )
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        assert (temp_dir / "architecture.md").exists()
+        content = (temp_dir / "architecture.md").read_text()
+        assert "```mermaid" in content
+        assert "pgsql" in content
+
+    @pytest.mark.asyncio
+    async def test_reads_name_from_yaml(self, tool, temp_dir) -> None:
+        (temp_dir / "charmcraft.yaml").write_text("name: redis-k8s\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.data["charm_name"] == "redis-k8s"
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_directory(self, tool) -> None:
+        result = await tool.execute(path="/nonexistent/path")
+
+        assert not result.success
+
+    @pytest.mark.asyncio
+    async def test_explicit_name_overrides(self, tool, temp_dir) -> None:
+        (temp_dir / "charmcraft.yaml").write_text("name: redis-k8s\n")
+
+        result = await tool.execute(path=str(temp_dir), charm_name="custom")
+
+        assert result.data["charm_name"] == "custom"

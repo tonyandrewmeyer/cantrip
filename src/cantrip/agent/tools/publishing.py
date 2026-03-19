@@ -510,6 +510,143 @@ class GenerateIconTool(Tool):
 
 
 # ---------------------------------------------------------------------------
+# Architecture diagram generation (Mermaid)
+# ---------------------------------------------------------------------------
+
+
+def generate_architecture_diagram(
+    charm_name: str,
+    metadata: dict[str, Any],
+) -> str:
+    """Generate a Mermaid architecture diagram from charm metadata.
+
+    Shows the charm as a central node with its requires, provides, and
+    peer relations as connected entities.  Containers (for K8s charms)
+    appear as internal components.
+    """
+    lines: list[str] = ["graph LR"]
+
+    # Central charm node.
+    charm_id = _mermaid_id(charm_name)
+    display = metadata.get("display-name", charm_name)
+    lines.append(f"    {charm_id}[{display}]")
+
+    # Containers (K8s charms).
+    containers = metadata.get("containers", {})
+    if containers:
+        lines.append(f"    subgraph {charm_id}_containers[Containers]")
+        for ctr_name in containers:
+            ctr_id = _mermaid_id(f"ctr_{ctr_name}")
+            lines.append(f"        {ctr_id}[/{ctr_name}/]")
+        lines.append("    end")
+        lines.append(f"    {charm_id} --- {charm_id}_containers")
+
+    # Requires relations.
+    requires = metadata.get("requires", {})
+    for rel_name, rel_data in requires.items():
+        iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+        provider_id = _mermaid_id(f"req_{rel_name}")
+        label = f"{rel_name}\\n({iface})" if iface else rel_name
+        lines.append(f"    {provider_id}({rel_name} provider) -- {label} --> {charm_id}")
+
+    # Provides relations.
+    provides = metadata.get("provides", {})
+    for rel_name, rel_data in provides.items():
+        iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+        requirer_id = _mermaid_id(f"prov_{rel_name}")
+        label = f"{rel_name}\\n({iface})" if iface else rel_name
+        lines.append(f"    {charm_id} -- {label} --> {requirer_id}({rel_name} requirer)")
+
+    # Peers relations.
+    peers = metadata.get("peers", {})
+    for rel_name, rel_data in peers.items():
+        iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+        peer_id = _mermaid_id(f"peer_{rel_name}")
+        label = f"{rel_name}\\n({iface})" if iface else rel_name
+        lines.append(f"    {charm_id} <-- {label} --> {peer_id}({rel_name} peer)")
+
+    return "\n".join(lines) + "\n"
+
+
+def _mermaid_id(name: str) -> str:
+    """Convert a name to a valid Mermaid node ID."""
+    return re.sub(r"[^a-zA-Z0-9_]", "_", name)
+
+
+class GenerateDiagramTool(Tool):
+    """Generate a Mermaid architecture diagram for a charm."""
+
+    @property
+    def name(self) -> str:
+        return "generate_diagram"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Generate a Mermaid architecture diagram from charmcraft.yaml "
+            "showing the charm's relations, containers, and integrations. "
+            "Writes architecture.md to the charm directory."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the charm directory",
+                    "default": ".",
+                },
+                "charm_name": {
+                    "type": "string",
+                    "description": (
+                        "Charm name. If omitted, read from charmcraft.yaml."
+                    ),
+                },
+            },
+        }
+
+    async def execute(
+        self, path: str = ".", charm_name: str | None = None
+    ) -> ToolResult:
+        """Generate architecture.md with a Mermaid diagram."""
+        charm_dir = Path(path).resolve()
+        if not charm_dir.is_dir():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Directory not found: {path}",
+            )
+
+        metadata = _read_charm_metadata(charm_dir)
+        if not charm_name:
+            charm_name = metadata.get("name", charm_dir.name)
+
+        diagram = generate_architecture_diagram(charm_name, metadata)
+
+        content = (
+            f"# {charm_name} — Architecture\n"
+            "\n"
+            "```mermaid\n"
+            f"{diagram}"
+            "```\n"
+        )
+
+        out_path = charm_dir / "architecture.md"
+        out_path.write_text(content)
+
+        return ToolResult(
+            success=True,
+            output=(
+                f"Generated architecture diagram for '{charm_name}' "
+                f"at {out_path}"
+            ),
+            data={"path": str(out_path), "charm_name": charm_name},
+        )
+
+
+# ---------------------------------------------------------------------------
 # Documentation generation (Diátaxis + canonical starter pack)
 # ---------------------------------------------------------------------------
 
@@ -837,11 +974,18 @@ def generate_docs_scaffold(
         f"```\n"
     )
 
+    diagram = generate_architecture_diagram(charm_name, metadata)
     files["docs/explanation/architecture.md"] = (
         "# Architecture\n"
         "\n"
         + (f"{description}\n\n" if description else "")
-        + "## Charm design\n"
+        + "## Relation topology\n"
+        "\n"
+        "```mermaid\n"
+        f"{diagram}"
+        "```\n"
+        "\n"
+        "## Charm design\n"
         "\n"
         "<!-- TODO: Describe the charm's architecture, Pebble layers, "
         "relation data flow, and operational patterns. -->\n"
