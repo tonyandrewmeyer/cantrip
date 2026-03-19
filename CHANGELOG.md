@@ -5,6 +5,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Fixed
+- **Task persistence lost on save** — `save_state()` persisted charm metadata and messages but not the work queue; tasks were only saved by the background executor's internal `_persist()` loop, so CLI-mode sessions lost all tasks on restart
+- **COS deployment crashes on LXD controller** — preflight tried to deploy `cos-lite` (K8s-only charms) into a model on an IAAS/LXD cloud, always failing; now detects the cloud type and skips COS gracefully (full multi-controller COS support planned in ROADMAP Phase 22)
+- **Forward-referenced constants in autodeploy** — `_DEMO_PREFIX` and `_RETRY_PREFIX` were defined after their first use, causing `NameError` at runtime when `tasks_after_test()` or `tasks_after_build_failure()` was called
+- **WebSocket broadcast fire-and-forget** — `_broadcast()` used `asyncio.ensure_future` without error handling; disconnected clients would raise unhandled exceptions; now uses `contextlib.suppress` for connection errors
+- **Gemini empty candidates crash** — `complete()` accessed `response.candidates[0]` without checking the list was non-empty; now raises a clear `ProviderError` instead of `IndexError`
+- **Command injection in `juju_dispatch`** — event name was interpolated unsanitised into a shell command; now validated against `[a-z0-9_-]+` before use
+- **Command injection in `charm_sync`** — remote file paths were interpolated unsanitised into `mkdir -p` and `tee` commands; now escaped with `shlex.quote()`
+- **Decision timestamps lost on reload** — `load_session()` did not SELECT the `timestamp` column from the decisions table, so every reload silently replaced original timestamps with the current time
+- **Corrupt JSON crashes session load** — `load_tasks()` and `load_messages()` called `json.loads()` without error handling; a single malformed row would crash the entire load; now skips corrupt rows with a warning
+- **Unsafe URL schemes in web fetch** — `WebFetchTool` accepted any URL scheme (`file://`, `data://`, etc.); now restricted to `http://` and `https://`
+- **Failed dependency deadlock** — when a task failed, all downstream tasks that depended on it would remain stuck in `pending` status forever; `all_ready()` now treats both `done` and `failed` dependencies as resolved
+- **Terraform tool crash on empty YAML** — `GenerateTerraformTool` raised `TypeError` when `charmcraft.yaml` was empty or contained only comments; now caught alongside `KeyError` and `YAMLError`
+- **Empty YAML frontmatter crash in skills** — `yaml.safe_load()` returning `None` for empty frontmatter was not handled; now guarded with explicit `None` check
+- **Corrupt base64 thought signatures crash Gemini provider** — malformed base64 in session metadata caused `binascii.Error` when restoring Gemini thought signatures; now suppressed gracefully
+- **Shell injection in Tempo/Loki query tools** — user-provided parameters were interpolated into a Python script executed via SSH without escaping; trace IDs are now validated as hex, and all URLs have single quotes escaped to prevent breakout
+- **Inference snap crash on non-JSON response** — `resp.json()` in the `complete()` method had no error handling; now raises `ProviderError` with response preview
+- **Inference snap crash on empty snap list lines** — `line.split()[0]` raised `IndexError` on empty lines from `snap list` output; now skips empty lines
+- **Lazy imports in helpers** — moved lazy `import json` / `import subprocess` to module level in `preflight.py` and `environment.py` to comply with project conventions
+- **Charmhub tools crash on non-JSON response** — `response.json()` in both `CharmhubSearchTool` and `CharmhubInfoTool` was called outside error handling; now catches `JSONDecodeError` and returns a graceful error
+- **Terraform module generation crash on empty YAML** — `generate_terraform_module()` crashed with `TypeError` when `charmcraft.yaml` was empty; now validates the parsed YAML is a non-empty mapping before accessing fields
 - **Duplicate tool declarations** — `HookBenchmarkTool` and `FuzzTestTool` were registered twice in the tool list, causing Gemini API errors (`Duplicate function declaration found: hook_benchmark`)
 - **Web UI crash on startup** — `_create_app` called `WorkQueue.set_callback()` which does not exist; removed the redundant call since `start_executor` already wires the callback
 - **Subprocess leak on timeout** — `_run_concierge` and `JujuDebugLogTool` did not kill the subprocess when `asyncio.wait_for` timed out, leaking orphan processes

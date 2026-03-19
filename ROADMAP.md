@@ -2001,6 +2001,53 @@ by task category. The executor is no harder to test than a pure function.
 
 ---
 
+## Phase 22: COS on Multi-Controller Environments
+
+**Status:** Planned
+**Goal:** COS-lite deploys and integrates correctly regardless of whether the
+development controller is LXD or K8s, using cross-model relations when the COS
+model lives on a different controller.
+
+Currently, `cos-lite` contains only Kubernetes charms (`alertmanager-k8s`,
+`grafana-k8s`, `prometheus-k8s`, `loki-k8s`, `traefik-k8s`). When the
+development controller is LXD (as with `concierge -p dev`), there is typically a
+separate K8s controller (`concierge-k8s`) already bootstrapped. Preflight
+currently skips COS deployment when the active controller is not K8s.
+
+### 22.1 — Detect K8s controller for COS
+
+When the current controller is IAAS, discover the K8s controller (e.g.
+`concierge-k8s`) and target COS model creation there. This requires either
+Jubilant controller-targeting support or direct `juju add-model -c <controller>`
+subprocess calls.
+
+### 22.2 — Cross-model COS integration
+
+When COS is on a different controller than the charm, set up cross-model
+relations using `juju offer` and `juju consume`. The charm still integrates with
+`grafana-agent` locally, but the agent forwards to COS across the model
+boundary. Investigate whether the integration pattern differs for LXD vs K8s
+charms (e.g. `grafana-agent` snap on machines vs `grafana-agent-k8s` sidecar).
+
+### 22.3 — Preflight multi-controller awareness
+
+Extend `PreflightRunner` to understand multi-controller environments: enumerate
+available controllers, pick the right one for COS, and report status for each.
+The TUI/CLI should show which controller hosts COS and whether cross-model
+relations are healthy.
+
+### 22.4 — System prompt and skill updates
+
+Update the system prompt's COS integration guidance and the relevant skills to
+handle the cross-model case. The agent needs to know when to use `juju offer` /
+`juju consume` and how to configure `grafana-agent` for cross-model forwarding.
+
+**Outcome:** COS observability works out of the box on both `concierge -p k8s`
+(single controller) and `concierge -p dev` (LXD + K8s dual controller)
+environments, with the agent handling the cross-model wiring automatically.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -2079,6 +2126,10 @@ by task category. The executor is no harder to test than a pure function.
 | App config tool (20.2) | Phase 0.3 Juju integration | Reads config via juju config CLI |
 | WebSocket log streaming (20.3) | Phase 3.1 watcher | Replaces/supplements SSH-to-Loki polling |
 | Cross-model offers (20.4) | Phase 0.3 Juju integration | Multi-controller inspection |
+| Detect K8s controller for COS (22.1) | Phase 0.3 Juju integration | Needs controller enumeration via Jubilant or subprocess |
+| Cross-model COS integration (22.2) | Phase 22.1 | Needs K8s controller targeting + juju offer/consume |
+| Preflight multi-controller awareness (22.3) | Phase 22.1 | Extends preflight to enumerate controllers |
+| COS system prompt updates (22.4) | Phase 22.2 | Updates prompts and skills for cross-model COS |
 | Secrets inspection (20.5) | Phase 0.3 Juju integration | Lists and inspects Juju secrets |
 | TUI status enhancements (20.6) | Phase 1.3 TUI + Phase 20.1 | Needs relation data tool for detail panel |
 
@@ -2110,3 +2161,4 @@ by task category. The executor is no harder to test than a pure function.
 | M19: Operationally Ready | 19 | Cantrip assesses and improves charms against Canonical's Operational Readiness Metrics |
 | M20: Deep Introspection | 20 | Agent reads relation databags, config sources, secrets, and offers to diagnose issues autonomously |
 | M21: Hardened Orchestrator | 21 | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
+| M22: Multi-Controller COS | 22 | COS observability works on both single-controller (K8s) and dual-controller (LXD + K8s) environments |
