@@ -49,6 +49,7 @@ from cantrip.agent.tools import (
     GenerateIconTool,
     GenerateReadmeTool,
     GenerateTerraformTool,
+    GenerateTestsTool,
     GhIssueListTool,
     GhPrCreateTool,
     GhRepoCreateTool,
@@ -383,6 +384,7 @@ class CantripAgent:
             ListInferenceSnapsTool(),
             # Testing
             RunCharmTestsTool(),
+            GenerateTestsTool(),
             HookBenchmarkTool(),
             FuzzTestTool(),
             TestReportTool(),

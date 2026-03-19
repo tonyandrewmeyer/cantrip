@@ -1,10 +1,19 @@
-"""Tests for the charm test runner tool."""
+"""Tests for the charm test runner and test template generation tools."""
 
+import tempfile
+from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from cantrip.agent.tools.testing import RunCharmTestsTool, _parse_pytest_summary, _truncate_output
+from cantrip.agent.tools.testing import (
+    GenerateTestsTool,
+    RunCharmTestsTool,
+    _parse_pytest_summary,
+    _truncate_output,
+    generate_integration_tests,
+)
 
 
 class TestParsePytestSummary:
@@ -262,3 +271,174 @@ class TestRunCharmTestsTool:
 
         # Check the timeout kwarg.
         assert mock_run.call_args[1]["timeout"] == 900
+
+
+# ===================================================================
+# TestGenerateIntegrationTests
+# ===================================================================
+
+_SAMPLE_METADATA: dict[str, Any] = {
+    "name": "my-app",
+    "config": {
+        "options": {
+            "port": {"type": "int", "default": 8080, "description": "Listen port"},
+            "debug": {"type": "boolean", "default": False},
+        },
+    },
+    "actions": {
+        "backup": {"description": "Create a backup"},
+        "restore": {"description": "Restore from backup"},
+    },
+    "requires": {
+        "db": {"interface": "pgsql"},
+    },
+    "provides": {
+        "metrics-endpoint": {"interface": "prometheus_scrape"},
+    },
+}
+
+
+class TestGenerateIntegrationTests:
+    """Tests for generate_integration_tests — pure function."""
+
+    def test_produces_conftest(self) -> None:
+        files = generate_integration_tests("my-app", _SAMPLE_METADATA)
+        assert "tests/integration/conftest.py" in files
+        conftest = files["tests/integration/conftest.py"]
+        assert "jubilant" in conftest
+        assert "my-app-test" in conftest
+
+    def test_produces_deploy_test(self) -> None:
+        files = generate_integration_tests("my-app", _SAMPLE_METADATA)
+        assert "tests/integration/test_deploy.py" in files
+        deploy = files["tests/integration/test_deploy.py"]
+        assert "def test_deploy" in deploy
+        assert "my-app" in deploy
+
+    def test_produces_relation_tests(self) -> None:
+        files = generate_integration_tests("my-app", _SAMPLE_METADATA)
+        assert "tests/integration/test_relations.py" in files
+        rels = files["tests/integration/test_relations.py"]
+        assert "test_relate_db" in rels
+        assert "test_provide_metrics_endpoint" in rels
+
+    def test_no_relations_file_when_empty(self) -> None:
+        files = generate_integration_tests("simple", {"name": "simple"})
+        assert "tests/integration/test_relations.py" not in files
+
+    def test_produces_action_tests(self) -> None:
+        files = generate_integration_tests("my-app", _SAMPLE_METADATA)
+        assert "tests/integration/test_actions.py" in files
+        actions = files["tests/integration/test_actions.py"]
+        assert "test_action_backup" in actions
+        assert "test_action_restore" in actions
+
+    def test_no_actions_file_when_empty(self) -> None:
+        files = generate_integration_tests("simple", {"name": "simple"})
+        assert "tests/integration/test_actions.py" not in files
+
+    def test_produces_config_tests(self) -> None:
+        files = generate_integration_tests("my-app", _SAMPLE_METADATA)
+        assert "tests/integration/test_config.py" in files
+        cfg = files["tests/integration/test_config.py"]
+        assert "test_config_port" in cfg
+        assert "test_config_debug" in cfg
+
+    def test_no_config_file_when_empty(self) -> None:
+        files = generate_integration_tests("simple", {"name": "simple"})
+        assert "tests/integration/test_config.py" not in files
+
+    def test_config_test_uses_boolean_value(self) -> None:
+        """Boolean config options get 'true' as a test value."""
+        meta: dict[str, Any] = {
+            "config": {"options": {"debug": {"type": "boolean"}}},
+        }
+        files = generate_integration_tests("x", meta)
+        assert '"true"' in files["tests/integration/test_config.py"]
+
+    def test_config_test_uses_int_value(self) -> None:
+        """Integer config options get '42' as a test value."""
+        meta: dict[str, Any] = {
+            "config": {"options": {"port": {"type": "int"}}},
+        }
+        files = generate_integration_tests("x", meta)
+        assert '"42"' in files["tests/integration/test_config.py"]
+
+    def test_minimal_metadata_produces_two_files(self) -> None:
+        """With no relations/actions/config, only conftest + deploy test."""
+        files = generate_integration_tests("bare", {})
+        assert len(files) == 2
+        assert "tests/integration/conftest.py" in files
+        assert "tests/integration/test_deploy.py" in files
+
+    def test_action_test_uses_run_action(self) -> None:
+        files = generate_integration_tests("my-app", _SAMPLE_METADATA)
+        assert "run_action" in files["tests/integration/test_actions.py"]
+
+    def test_deploy_test_uses_wait(self) -> None:
+        files = generate_integration_tests("my-app", _SAMPLE_METADATA)
+        assert "juju.wait" in files["tests/integration/test_deploy.py"]
+
+
+# ===================================================================
+# TestGenerateTestsTool
+# ===================================================================
+
+
+class TestGenerateTestsTool:
+    """Tests for GenerateTestsTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return GenerateTestsTool()
+
+    @pytest.fixture
+    def temp_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+
+    @pytest.mark.asyncio
+    async def test_generates_test_files(self, tool, temp_dir) -> None:
+        (temp_dir / "charmcraft.yaml").write_text(
+            "name: my-charm\n"
+            "actions:\n  backup:\n    description: backup data\n"
+        )
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        assert (temp_dir / "tests" / "integration" / "conftest.py").exists()
+        assert (temp_dir / "tests" / "integration" / "test_deploy.py").exists()
+        assert (temp_dir / "tests" / "integration" / "test_actions.py").exists()
+        assert result.data["test_count"] >= 2
+
+    @pytest.mark.asyncio
+    async def test_reads_name_from_yaml(self, tool, temp_dir) -> None:
+        (temp_dir / "charmcraft.yaml").write_text("name: redis-k8s\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        assert result.data["charm_name"] == "redis-k8s"
+
+    @pytest.mark.asyncio
+    async def test_explicit_name_overrides(self, tool, temp_dir) -> None:
+        (temp_dir / "charmcraft.yaml").write_text("name: redis-k8s\n")
+
+        result = await tool.execute(path=str(temp_dir), charm_name="custom")
+
+        assert result.data["charm_name"] == "custom"
+
+    @pytest.mark.asyncio
+    async def test_missing_charmcraft_yaml(self, tool, temp_dir) -> None:
+        result = await tool.execute(path=str(temp_dir))
+
+        assert not result.success
+        assert "charmcraft.yaml" in result.error
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_directory(self, tool) -> None:
+        result = await tool.execute(path="/nonexistent/path")
+
+        assert not result.success
+        assert "not found" in result.error.lower()

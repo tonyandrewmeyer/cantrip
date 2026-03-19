@@ -958,7 +958,7 @@ class TestRedGreenBuildGuidance:
     def test_build_guidance_mentions_integration_tests_first(self) -> None:
         """BUILD guidance instructs writing integration tests before charm code."""
         guidance = _CATEGORY_GUIDANCE[TaskCategory.BUILD]
-        assert "integration tests do not exist yet, write them first" in guidance
+        assert "integration tests do not exist yet" in guidance
 
     def test_build_guidance_mentions_jubilant(self) -> None:
         """BUILD guidance references Jubilant for integration test patterns."""

@@ -129,6 +129,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "generate_readme",
             "generate_icon",
             "generate_docs",
+            "generate_tests",
             "charm_validate",
             "run_charm_tests",
             "generate_terraform",
@@ -316,7 +317,10 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
         "**Red/green cycle**: follow an integration-tests-first approach.\n"
         "1. Read the design and any existing files (including integration tests if "
         "they already exist) in one round.\n"
-        "2. If integration tests do not exist yet, write them first — derive test "
+        "2. If integration tests do not exist yet, run `generate_tests` to "
+        "scaffold Jubilant-based integration tests from charmcraft.yaml, then "
+        "customise them to match the design. Alternatively, write them from "
+        "scratch — derive test "
         "cases from the approved design: each relation endpoint gets a deploy+relate "
         "test, each action gets an execute test, each config option gets a set+verify "
         "test, and COS integration gets a relation test. Use Jubilant patterns. These "

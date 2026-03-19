@@ -1,10 +1,12 @@
-"""Charm test runner tool."""
+"""Charm test runner and test template generation tools."""
 
 import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from cantrip.agent.tools.base import Tool, ToolResult
 
@@ -214,4 +216,274 @@ class RunCharmTestsTool(Tool):
             output=output,
             error=None if success else f"Tests failed (exit code {result.returncode})",
             data={"summary": summary, "runner": runner},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Integration test template generation
+# ---------------------------------------------------------------------------
+
+
+def generate_integration_tests(
+    charm_name: str,
+    metadata: dict[str, Any],
+) -> dict[str, str]:
+    """Generate integration test files from charm metadata.
+
+    Returns a ``{relative_path: content}`` map with:
+    - ``tests/integration/conftest.py`` — Jubilant fixtures
+    - ``tests/integration/test_deploy.py`` — basic deploy test
+    - ``tests/integration/test_relations.py`` — one test per relation (if any)
+    - ``tests/integration/test_actions.py`` — one test per action (if any)
+    - ``tests/integration/test_config.py`` — one test per config option (if any)
+
+    Tests follow Jubilant patterns and are designed to be runnable (and
+    failing) before any charm code is written — the "red" phase of the
+    red/green build cycle.
+    """
+    requires = metadata.get("requires", {})
+    provides = metadata.get("provides", {})
+    actions = metadata.get("actions", {})
+    config = metadata.get("config", {}).get("options", {})
+
+    files: dict[str, str] = {}
+
+    # -- conftest.py --------------------------------------------------------
+
+    files["tests/integration/conftest.py"] = (
+        '"""Shared fixtures for integration tests."""\n'
+        "\n"
+        "import pathlib\n"
+        "\n"
+        "import jubilant\n"
+        "import pytest\n"
+        "\n"
+        "\n"
+        '@pytest.fixture(scope="module")\n'
+        "def juju():\n"
+        '    """Provide a Jubilant Juju instance with a temporary model."""\n'
+        "    j = jubilant.Juju()\n"
+        f'    j.add_model("{charm_name}-test")\n'
+        "    yield j\n"
+        f'    j.destroy_model("{charm_name}-test", force=True)\n'
+        "\n"
+        "\n"
+        '@pytest.fixture(scope="module")\n'
+        "def charm_path():\n"
+        '    """Return the path to the charm project root."""\n'
+        "    return pathlib.Path(__file__).parent.parent.parent\n"
+    )
+
+    # -- test_deploy.py -----------------------------------------------------
+
+    files["tests/integration/test_deploy.py"] = (
+        '"""Deploy tests — verify the charm reaches active/idle."""\n'
+        "\n"
+        "\n"
+        "def test_deploy(juju, charm_path):\n"
+        '    """Deploy the charm and wait for active status."""\n'
+        "    juju.deploy(charm_path)\n"
+        f'    juju.wait(apps=["{charm_name}"], status="active", timeout=300)\n'
+        "    status = juju.status()\n"
+        f'    app = status.apps["{charm_name}"]\n'
+        '    assert app.status.current == "active"\n'
+    )
+
+    # -- test_relations.py (only if relations exist) ------------------------
+
+    all_relations = {}
+    all_relations.update(requires)
+    all_relations.update(provides)
+
+    if all_relations:
+        rel_tests: list[str] = [
+            '"""Relation tests — verify each integration endpoint."""\n',
+            "",
+        ]
+        for rel_name, rel_data in requires.items():
+            iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+            fn_name = re.sub(r"[^a-z0-9]", "_", rel_name.lower())
+            rel_tests.append(
+                f"def test_relate_{fn_name}(juju, charm_path):\n"
+                f'    """Relate {charm_name} to a provider for {rel_name} ({iface})."""\n'
+                f"    juju.deploy(charm_path)\n"
+                f"    # TODO: deploy a provider charm for interface '{iface}'\n"
+                f"    # juju.deploy('<provider-charm>')\n"
+                f'    # juju.integrate("{charm_name}:{rel_name}", "<provider-charm>")\n'
+                f'    # juju.wait(apps=["{charm_name}"], status="active", timeout=600)\n'
+                f"    # status = juju.status()\n"
+                f'    # assert status.apps["{charm_name}"].status.current == "active"\n'
+                f"\n"
+                f"\n"
+            )
+        for rel_name, rel_data in provides.items():
+            iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+            fn_name = re.sub(r"[^a-z0-9]", "_", rel_name.lower())
+            rel_tests.append(
+                f"def test_provide_{fn_name}(juju, charm_path):\n"
+                f'    """Verify {charm_name} provides {rel_name} ({iface})."""\n'
+                f"    juju.deploy(charm_path)\n"
+                f"    # TODO: deploy a requirer charm for interface '{iface}'\n"
+                f"    # juju.deploy('<requirer-charm>')\n"
+                f'    # juju.integrate("<requirer-charm>", "{charm_name}:{rel_name}")\n'
+                f'    # juju.wait(apps=["{charm_name}"], status="active", timeout=600)\n'
+                f"    # status = juju.status()\n"
+                f'    # assert status.apps["{charm_name}"].status.current == "active"\n'
+                f"\n"
+                f"\n"
+            )
+        files["tests/integration/test_relations.py"] = "".join(rel_tests).rstrip() + "\n"
+
+    # -- test_actions.py (only if actions exist) ----------------------------
+
+    if actions:
+        action_tests: list[str] = [
+            '"""Action tests — verify each action executes successfully."""\n',
+            "",
+        ]
+        for action_name, _action_data in actions.items():
+            fn_name = re.sub(r"[^a-z0-9]", "_", action_name.lower())
+            action_tests.append(
+                f"def test_action_{fn_name}(juju):\n"
+                f'    """Run the {action_name} action and verify it completes."""\n'
+                f'    result = juju.run_action("{charm_name}/leader", "{action_name}")\n'
+                f'    assert result.status == "completed"\n'
+                f"\n"
+                f"\n"
+            )
+        files["tests/integration/test_actions.py"] = "".join(action_tests).rstrip() + "\n"
+
+    # -- test_config.py (only if config options exist) ----------------------
+
+    if config:
+        config_tests: list[str] = [
+            '"""Config tests — verify each config option can be set."""\n',
+            "",
+        ]
+        for opt_name, opt_data in config.items():
+            fn_name = re.sub(r"[^a-z0-9]", "_", opt_name.lower())
+            opt_type = opt_data.get("type", "string")
+            # Generate a plausible non-default test value.
+            if opt_type == "boolean":
+                test_val = "true"
+            elif opt_type == "int":
+                test_val = "42"
+            elif opt_type == "float":
+                test_val = "3.14"
+            else:
+                test_val = "test-value"
+            config_tests.append(
+                f"def test_config_{fn_name}(juju):\n"
+                f'    """Set {opt_name} and verify the charm remains active."""\n'
+                f'    juju.config("{charm_name}", {{"{opt_name}": "{test_val}"}})\n'
+                f'    juju.wait(apps=["{charm_name}"], status="active", timeout=120)\n'
+                f"    status = juju.status()\n"
+                f'    assert status.apps["{charm_name}"].status.current == "active"\n'
+                f"\n"
+                f"\n"
+            )
+        files["tests/integration/test_config.py"] = "".join(config_tests).rstrip() + "\n"
+
+    return files
+
+
+class GenerateTestsTool(Tool):
+    """Generate integration test templates from charm metadata."""
+
+    @property
+    def name(self) -> str:
+        return "generate_tests"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Generate Jubilant-based integration test templates from "
+            "charmcraft.yaml. Produces tests/integration/ files with one "
+            "test per relation, action, and config option. Tests are "
+            "designed to fail initially (red phase) and pass once the "
+            "charm code is written (green phase)."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the charm directory",
+                    "default": ".",
+                },
+                "charm_name": {
+                    "type": "string",
+                    "description": (
+                        "Charm name. If omitted, read from charmcraft.yaml."
+                    ),
+                },
+            },
+        }
+
+    async def execute(
+        self, path: str = ".", charm_name: str | None = None
+    ) -> ToolResult:
+        """Generate integration test files in the charm directory."""
+        charm_dir = Path(path).resolve()
+        if not charm_dir.is_dir():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Directory not found: {path}",
+            )
+
+        charmcraft_yaml = charm_dir / "charmcraft.yaml"
+        if not charmcraft_yaml.exists():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"charmcraft.yaml not found in {path}",
+            )
+
+        try:
+            metadata = yaml.safe_load(charmcraft_yaml.read_text())
+            if not isinstance(metadata, dict):
+                metadata = {}
+        except yaml.YAMLError as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Failed to parse charmcraft.yaml: {exc}",
+            )
+
+        if not charm_name:
+            charm_name = metadata.get("name", charm_dir.name)
+
+        files = generate_integration_tests(charm_name, metadata)
+
+        written: list[str] = []
+        for rel_path, content in files.items():
+            full_path = charm_dir / rel_path
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_text(content)
+            written.append(rel_path)
+
+        test_count = sum(
+            content.count("\ndef test_") for content in files.values()
+        )
+
+        summary = (
+            f"Generated integration test templates for '{charm_name}' "
+            f"({len(written)} files, {test_count} tests):\n"
+            + "\n".join(f"  {f}" for f in sorted(written))
+            + "\n\nRun with: uv run pytest tests/integration/ -v"
+        )
+
+        return ToolResult(
+            success=True,
+            output=summary,
+            data={
+                "charm_name": charm_name,
+                "file_count": len(written),
+                "test_count": test_count,
+                "files": sorted(written),
+            },
         )
