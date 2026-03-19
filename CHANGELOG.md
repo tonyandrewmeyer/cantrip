@@ -4,6 +4,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Charm pairs** — design proposals now identify companion charms (databases, caches, ingress) needed at deploy time; companions are parsed into structured `CompanionCharm` data, shown to the user for confirmation, and flow into planner and deploy subagent guidance so they are automatically deployed and related alongside the primary charm
+- **Migration assistance** — `cantrip run --improve /path/to/charm` launches improvement mode: audits the existing charm, presents findings, and generates fix tasks for observability, tests, deprecated APIs, and listing readiness; wires the full audit → confirm → fix → validate → deploy → review pipeline end-to-end
+- **Placeholder icon generation** — `GenerateIconTool` (`generate_icon`) creates a simple SVG icon (coloured circle with the charm's initial letter) for charms missing `icon.svg`, unblocking Charmhub publishing; colour is deterministically derived from the charm name; the listing-readiness improvement task now includes icon generation
+
 ### Fixed
 - **Task persistence lost on save** — `save_state()` persisted charm metadata and messages but not the work queue; tasks were only saved by the background executor's internal `_persist()` loop, so CLI-mode sessions lost all tasks on restart
 - **COS deployment crashes on LXD controller** — preflight tried to deploy `cos-lite` (K8s-only charms) into a model on an IAAS/LXD cloud, always failing; now detects the cloud type and skips COS gracefully (full multi-controller COS support planned in ROADMAP Phase 22)

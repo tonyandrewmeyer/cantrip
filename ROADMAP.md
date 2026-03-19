@@ -458,8 +458,8 @@ minutes wall-clock time (excluding user confirmation and Juju deploy wait).
 - [x] README generation
 
 ### 7.5 Advanced Workflows
-- [ ] Charm pairs (app + database deployed and related together)
-- [ ] Migration assistance (existing charm → improved charm) — see Phase 10
+- [x] Charm pairs (app + database deployed and related together)
+- [x] Migration assistance (existing charm → improved charm) — see Phase 10
 - [x] **Upgrade testing** — `UpgradeTestTool` (`upgrade_test`) refreshes a deployed
   application with a new `.charm` file, waits for recovery, captures pre/post status,
   checks debug-log for hook failures, detects status regressions, and reports an
@@ -675,7 +675,7 @@ Prepare the charm for a polished Charmhub listing.
 - [ ] **Documentation** — generate or update Discourse-format documentation covering
   getting started, configuration, integrations, and troubleshooting
 - [x] **Icon check** — `charm_audit` checks for `icon.svg` and flags if missing
-- [ ] **Placeholder icon** — when no `icon.svg` exists, generate a simple placeholder SVG
+- [x] **Placeholder icon** — when no `icon.svg` exists, generate a simple placeholder SVG
   (coloured circle with the charm's initial) so the charm is publishable to Charmhub
   immediately; the user can replace it with real artwork later. Requires adding an
   `other-files` part to `charmcraft.yaml` to stage the icon into the packed charm:
