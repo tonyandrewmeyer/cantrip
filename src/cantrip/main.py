@@ -99,6 +99,13 @@ def parse_args() -> argparse.Namespace:
         help="Maximum concurrent subagent tasks (default: 3)",
     )
     run_parser.add_argument(
+        "--improve",
+        type=Path,
+        default=None,
+        metavar="CHARM_PATH",
+        help="Improve an existing charm at the given path (audit, fix, redeploy)",
+    )
+    run_parser.add_argument(
         "path",
         nargs="?",
         type=Path,
@@ -224,7 +231,17 @@ def _export_transcript(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     """Run the main cantrip agent."""
-    charm_path = args.path.resolve()
+    # --improve overrides the positional path argument.
+    improve_path: Path | None = getattr(args, "improve", None)
+    if improve_path is not None:
+        improve_path = improve_path.resolve()
+        if not improve_path.is_dir():
+            print(f"Error: {improve_path} is not a directory")
+            return 1
+        charm_path = improve_path
+    else:
+        charm_path = args.path.resolve()
+
     if _is_cantrip_source_tree(charm_path):
         print("Error: refusing to use the cantrip source tree as a charm project.")
         print("Run from your charm's directory, or pass a path:")
@@ -264,13 +281,14 @@ def _run(args: argparse.Namespace) -> int:
         app = CantripApp(
             provider=args.provider,
             model=args.model,
-            charm_path=args.path,
+            charm_path=charm_path,
             light_model=args.light_model,
             watcher=args.watcher,
             max_concurrency=args.concurrency,
             snap_name=args.snap,
             light_snap_name=args.light_snap,
             light_provider_name=args.light_provider,
+            improve_path=improve_path,
         )
         app.run()
         return 0

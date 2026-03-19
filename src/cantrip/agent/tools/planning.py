@@ -83,6 +83,11 @@ class PlanTasksTool(Tool):
                 error="Intent must not be empty.",
             )
 
+        # Determine existing charm path for improvement mode.
+        existing_charm_path: str | None = None
+        if self._state.mode == "improve" and self._state.charm_path:
+            existing_charm_path = str(self._state.charm_path)
+
         context = PlanningContext(
             intent=intent,
             charm_name=charm_name or self._state.charm_name,
@@ -92,6 +97,7 @@ class PlanTasksTool(Tool):
             cos_model=self._state.cos_model,
             environment_ready=self._state.environment_ready,
             existing_tasks=self._queue.all_tasks(),
+            existing_charm_path=existing_charm_path,
         )
 
         # Replan if there are already tasks in the queue.

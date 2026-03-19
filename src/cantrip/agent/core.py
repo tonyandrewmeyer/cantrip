@@ -14,6 +14,7 @@ from cantrip.agent.planner import (
     PlanningContext,
     TaskPlanner,
     is_one_shot_build,
+    plan_improvement_fixes,
     plan_one_shot_build,
 )
 from cantrip.agent.preflight import (
@@ -44,6 +45,7 @@ from cantrip.agent.tools import (
     ConciergeStatusTool,
     EditFileTool,
     FuzzTestTool,
+    GenerateIconTool,
     GenerateReadmeTool,
     GenerateTerraformTool,
     GhIssueListTool,
@@ -322,6 +324,7 @@ class CantripAgent:
             CharmcraftUploadTool(),
             CharmcraftReleaseTool(),
             GenerateReadmeTool(),
+            GenerateIconTool(),
             # Web
             WebFetchTool(),
             # Charmhub
@@ -843,6 +846,71 @@ class CantripAgent:
 
         return build_tasks
 
+    # -- Improvement confirmation ----------------------------------------------
+
+    async def handle_improvement_confirmation(
+        self,
+        confirm_task_id: str,
+    ) -> list[AgentTask]:
+        """Process an approved improvement-confirm task and generate fix tasks.
+
+        1. Finds the audit task result from the dependency chain.
+        2. Infers gaps from the audit report text (the structured ``data``
+           dict is only available on the tool result, not persisted in the
+           task result string — so we re-derive gaps heuristically).
+        3. Generates fix tasks via ``plan_improvement_fixes``.
+        4. Adds them to the work queue.
+        """
+        confirm_task = self._work_queue.get_task(confirm_task_id)
+        if confirm_task is None:
+            log.warning("Improvement confirm task %s not found", confirm_task_id)
+            return []
+
+        # Walk dependencies to find the audit result.
+        audit_text = ""
+        for dep_id in confirm_task.dependencies:
+            dep = self._work_queue.get_task(dep_id)
+            if dep is not None and dep.result:
+                audit_text = dep.result
+                break
+
+        if not audit_text:
+            log.warning("No audit result found for improvement confirmation")
+            return []
+
+        self.state.audit_report = audit_text
+
+        # Derive gaps from the audit text.  The subagent's result is
+        # free-form Markdown, so we look for keywords to infer gaps.
+        gaps = _infer_gaps_from_audit(audit_text)
+
+        context = PlanningContext(
+            intent="Improve the existing charm",
+            charm_name=self.state.charm_name,
+            charm_type=self.state.charm_type,
+            framework=self.state.framework,
+            dev_model=self.state.dev_model,
+            cos_model=self.state.cos_model,
+            environment_ready=self.state.environment_ready,
+            existing_charm_path=str(self.state.charm_path) if self.state.charm_path else ".",
+        )
+
+        fix_tasks = plan_improvement_fixes(context, gaps)
+        self._work_queue.add_tasks(fix_tasks)
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "improvement_confirmed",
+                {
+                    "charm_name": self.state.charm_name,
+                    "gap_count": sum(1 for v in gaps.values() if v),
+                    "fix_task_count": len(fix_tasks),
+                },
+            )
+
+        return fix_tasks
+
     # -- Watcher integration ---------------------------------------------------
 
     @property
@@ -1118,3 +1186,36 @@ class CantripAgent:
     def preflight_result(self) -> PreflightResult:
         """Current preflight result."""
         return self._preflight.result
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+
+def _infer_gaps_from_audit(text: str) -> dict[str, bool]:
+    """Derive a gaps dictionary from free-form audit Markdown.
+
+    The ``CharmAuditTool`` emits structured ``data["gaps"]`` on its tool
+    result, but subagent task results are plain text summaries.  This
+    function heuristically scans the text for keywords to reconstruct
+    the boolean gaps map that ``plan_improvement_fixes`` expects.
+    """
+    t = text.lower()
+    return {
+        "cos_tracing": "tracing" in t and ("missing" in t or "no tracing" in t),
+        "cos_metrics": "metrics" in t and ("missing" in t or "no metrics" in t),
+        "cos_logging": "logging" in t and ("missing" in t or "no logging" in t),
+        "cos_dashboards": "dashboard" in t and ("missing" in t or "no dashboard" in t),
+        "ops_tracing": "ops-tracing" in t and ("missing" in t or "not installed" in t),
+        "unit_tests": "unit test" in t and ("missing" in t or "no unit" in t),
+        "integration_tests": (
+            "integration test" in t and ("missing" in t or "no integration" in t)
+        ),
+        "deprecated_apis": "deprecated" in t or "storedstate" in t or "harness" in t,
+        "readme": "readme" in t and ("missing" in t or "no readme" in t),
+        "licence": (
+            ("licence" in t or "license" in t) and ("missing" in t or "no licen" in t)
+        ),
+        "listing_metadata": "listing" in t and ("missing" in t or "incomplete" in t),
+    }

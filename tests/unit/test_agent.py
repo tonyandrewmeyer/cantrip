@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from cantrip.agent.core import CantripAgent
+from cantrip.agent.core import CantripAgent, _infer_gaps_from_audit
 from cantrip.agent.tools.base import ToolResult
 from cantrip.agent.watcher import WatcherEvent
 from cantrip.llm.base import Message, Response, Role, ToolCall
@@ -636,3 +636,159 @@ class TestWatcherIntegration:
         prompt = agent._build_system_prompt()
 
         assert "Event Watcher" not in prompt
+
+
+# ===================================================================
+# TestInferGapsFromAudit
+# ===================================================================
+
+
+class TestInferGapsFromAudit:
+    """Tests for _infer_gaps_from_audit — heuristic gap detection from audit text."""
+
+    def test_detects_missing_tracing(self) -> None:
+        text = "## Must-fix\n- Missing tracing relation (cos-tracing)"
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["cos_tracing"] is True
+
+    def test_detects_missing_unit_tests(self) -> None:
+        text = "No unit tests found in tests/unit/"
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["unit_tests"] is True
+
+    def test_detects_deprecated_apis(self) -> None:
+        text = "Uses deprecated StoredState in src/charm.py"
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["deprecated_apis"] is True
+
+    def test_detects_harness_as_deprecated(self) -> None:
+        text = "Tests use Harness instead of Scenario"
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["deprecated_apis"] is True
+
+    def test_no_false_positives_on_clean_audit(self) -> None:
+        text = "All checks passed. The charm is well-structured."
+        gaps = _infer_gaps_from_audit(text)
+        # Clean audit should not flag anything.
+        assert not any(gaps.values())
+
+    def test_detects_missing_readme(self) -> None:
+        text = "Missing README.md file"
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["readme"] is True
+
+    def test_detects_missing_licence(self) -> None:
+        text = "No licence file found"
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["licence"] is True
+
+
+# ===================================================================
+# TestHandleImprovementConfirmation
+# ===================================================================
+
+
+class TestHandleImprovementConfirmation:
+    """Tests for CantripAgent.handle_improvement_confirmation."""
+
+    @pytest.mark.asyncio
+    async def test_generates_fix_tasks_from_audit(self, tmp_path: Path) -> None:
+        """Fix tasks are generated from an audit result with gaps."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        agent.state.mode = "improve"
+        agent.state.charm_name = "test-charm"
+
+        # Simulate the audit → confirm flow.
+        from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+
+        audit_task = AgentTask(
+            id="audit-charm",
+            title="Audit existing charm",
+            category=TaskCategory.RESEARCH,
+            status=TaskStatus.DONE,
+        )
+        audit_task.result = (
+            "## Must-fix\n"
+            "- Missing tracing relation\n"
+            "- No unit tests found\n"
+            "- Missing README.md\n"
+        )
+        confirm_task = AgentTask(
+            id="confirm-improvements",
+            title="Confirm improvement plan",
+            category=TaskCategory.CONFIRM,
+            status=TaskStatus.DONE,
+            dependencies=["audit-charm"],
+        )
+
+        agent.work_queue.add_tasks([audit_task, confirm_task])
+        agent.work_queue.set_done("audit-charm", audit_task.result)
+
+        fix_tasks = await agent.handle_improvement_confirmation("confirm-improvements")
+
+        assert len(fix_tasks) > 0
+        task_ids = [t.id for t in fix_tasks]
+        assert "fill-observability" in task_ids
+        assert "fill-tests" in task_ids
+
+    @pytest.mark.asyncio
+    async def test_no_tasks_when_confirm_not_found(self) -> None:
+        """Returns empty list when the confirm task does not exist."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+
+        fix_tasks = await agent.handle_improvement_confirmation("nonexistent")
+
+        assert fix_tasks == []
+
+    @pytest.mark.asyncio
+    async def test_no_tasks_when_no_audit_result(self) -> None:
+        """Returns empty list when no audit result is found."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+
+        from cantrip.agent.queue import AgentTask, TaskCategory
+
+        confirm_task = AgentTask(
+            id="confirm-improvements",
+            title="Confirm",
+            category=TaskCategory.CONFIRM,
+            dependencies=["audit-charm"],
+        )
+        agent.work_queue.add_tasks([confirm_task])
+
+        fix_tasks = await agent.handle_improvement_confirmation("confirm-improvements")
+
+        assert fix_tasks == []
+
+    @pytest.mark.asyncio
+    async def test_stores_audit_report_on_state(self, tmp_path: Path) -> None:
+        """The audit report is saved to agent state."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        agent.state.mode = "improve"
+
+        from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+
+        audit_task = AgentTask(
+            id="audit-charm",
+            title="Audit",
+            category=TaskCategory.RESEARCH,
+            status=TaskStatus.DONE,
+        )
+        audit_text = "## Audit\nMissing tracing. Uses deprecated StoredState."
+        audit_task.result = audit_text
+
+        confirm_task = AgentTask(
+            id="confirm-improvements",
+            title="Confirm",
+            category=TaskCategory.CONFIRM,
+            dependencies=["audit-charm"],
+        )
+        agent.work_queue.add_tasks([audit_task, confirm_task])
+        agent.work_queue.set_done("audit-charm", audit_text)
+
+        await agent.handle_improvement_confirmation("confirm-improvements")
+
+        assert agent.state.audit_report == audit_text

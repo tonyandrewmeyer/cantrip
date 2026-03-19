@@ -58,11 +58,21 @@ def run_cli(args: argparse.Namespace) -> int:
             light_provider = create_provider(args.provider, resolved, snap_name=snap_name)
             light_model_name = resolved
 
+    improve_path = getattr(args, "improve", None)
+
     agent = CantripAgent(
         provider=provider,
         charm_path=args.path,
         light_provider=light_provider,
     )
+
+    # Set improvement mode if --improve was passed.
+    if improve_path is not None:
+        from pathlib import Path
+
+        agent.state.mode = "improve"
+        agent.state.charm_path = Path(improve_path).resolve()
+
     banner = f"Cantrip CLI — provider: {args.provider}, path: {args.path}"
     if light_provider:
         banner += f", light model: {light_model_name}"

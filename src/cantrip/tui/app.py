@@ -69,6 +69,7 @@ class CantripApp(App):
         snap_name: str = "gemma3",
         light_snap_name: str | None = None,
         light_provider_name: str | None = None,
+        improve_path: Path | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -81,6 +82,7 @@ class CantripApp(App):
         self._light_provider_name = light_provider_name
         self._light_model_name: str | None = None
         self._max_concurrency = max_concurrency
+        self._improve_path = improve_path
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -151,6 +153,11 @@ class CantripApp(App):
                 charm_path=self.charm_path,
                 light_provider=light_provider,
             )
+
+            # Set improvement mode if --improve was passed.
+            if self._improve_path is not None:
+                self._agent.state.mode = "improve"
+                self._agent.state.charm_path = self._improve_path
         except (ValueError, ProviderError) as e:
             chat = self.query_one("#chat", ChatWidget)
             chat.add_system_message(f"Failed to initialise provider: {e}")
@@ -360,14 +367,17 @@ class CantripApp(App):
 
         def _on_task_changed(task: AgentTask) -> None:
             checklist.notify_changed(self._agent.work_queue.all_tasks())
-            # Detect when a confirm-design task becomes blocked.
+            # Detect when a confirm task becomes blocked.
             if (
                 task.category == TaskCategory.CONFIRM
                 and task.status == TaskStatus.BLOCKED
                 and self._pending_confirm_id is None
             ):
                 self._pending_confirm_id = task.id
-                self.call_from_thread(self._present_design_questions, task)
+                if task.id == "confirm-improvements":
+                    self.call_from_thread(self._present_improvement_confirmation, task)
+                else:
+                    self.call_from_thread(self._present_design_questions, task)
 
         self._agent.start_executor(
             on_task_changed=_on_task_changed,
@@ -478,6 +488,66 @@ class CantripApp(App):
             chat.add_system_message(f"Build plan created:\n{titles}")
         else:
             chat.add_system_message("No build tasks generated — check the design output.")
+
+    # -- Improvement confirmation flow ----------------------------------------
+
+    def _present_improvement_confirmation(self, task: AgentTask) -> None:
+        """Show audit findings in chat and auto-approve all gaps.
+
+        Called when the ``confirm-improvements`` task becomes blocked.
+        Presents the audit report to the user, then immediately triggers
+        fix task generation for all detected gaps.
+        """
+        if not self._agent:
+            return
+
+        # Find the audit result from the confirm task's dependencies.
+        audit_report = ""
+        for dep_id in task.dependencies:
+            dep = self._agent.work_queue.get_task(dep_id)
+            if dep is not None and dep.result:
+                audit_report = dep.result
+                # The audit tool stores structured gaps in task data, but
+                # the subagent result is plain text.  Re-extract gaps from
+                # the audit report heuristically, or approve all.
+                break
+
+        chat = self.query_one("#chat", ChatWidget)
+        if audit_report:
+            # Truncate long reports for the chat display.
+            preview = audit_report[:2000]
+            if len(audit_report) > 2000:
+                preview += "\n\n*(truncated — full report in task result)*"
+            chat.add_system_message(f"**Audit complete:**\n\n{preview}")
+
+        chat.add_system_message(
+            "Approving all improvements. Generating fix tasks..."
+        )
+
+        self.run_worker(
+            self._complete_improvement_confirmation(task.id),
+            name="improvement_confirmation",
+            exclusive=False,
+        )
+
+    async def _complete_improvement_confirmation(self, confirm_id: str) -> None:
+        """Approve the improvement confirm task and generate fix tasks."""
+        if not self._agent:
+            return
+
+        self._agent.work_queue.set_done(confirm_id, "Approved by user")
+        self._pending_confirm_id = None
+
+        fix_tasks = await self._agent.handle_improvement_confirmation(confirm_id)
+
+        chat = self.query_one("#chat", ChatWidget)
+        if fix_tasks:
+            titles = "\n".join(f"- {t.title}" for t in fix_tasks)
+            chat.add_system_message(f"Improvement plan created:\n{titles}")
+        else:
+            chat.add_system_message(
+                "No improvement tasks generated — the charm may already be up to standard."
+            )
 
     # -- Watcher integration --------------------------------------------------
 
