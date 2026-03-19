@@ -45,6 +45,7 @@ from cantrip.agent.tools import (
     ConciergeStatusTool,
     EditFileTool,
     FuzzTestTool,
+    GenerateDocsTool,
     GenerateIconTool,
     GenerateReadmeTool,
     GenerateTerraformTool,
@@ -325,6 +326,7 @@ class CantripAgent:
             CharmcraftReleaseTool(),
             GenerateReadmeTool(),
             GenerateIconTool(),
+            GenerateDocsTool(),
             # Web
             WebFetchTool(),
             # Charmhub

@@ -143,4 +143,5 @@ A good README includes:
 
 - **LICENSE** — Apache-2.0 is standard for charms
 - **icon.svg** — required for Charmhub listing; run `generate_icon` to create a placeholder (coloured circle with the charm's initial) if missing
+- **Documentation** — run `generate_docs` to create a `docs/` directory with Diátaxis-structured documentation (tutorial, how-to, reference, explanation) using the Canonical starter pack; build locally with `cd docs && make html`
 - **Clean pack** — `charmcraft pack` should succeed with no warnings

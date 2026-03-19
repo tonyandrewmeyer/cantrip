@@ -69,6 +69,7 @@ from cantrip.agent.tools.planning import PlanTasksTool
 from cantrip.agent.tools.publishing import (
     CharmcraftReleaseTool,
     CharmcraftUploadTool,
+    GenerateDocsTool,
     GenerateIconTool,
     GenerateReadmeTool,
 )
@@ -180,6 +181,7 @@ __all__ = [
     "CharmcraftReleaseTool",
     "GenerateReadmeTool",
     "GenerateIconTool",
+    "GenerateDocsTool",
     # Web
     "WebFetchTool",
     # Inference snaps

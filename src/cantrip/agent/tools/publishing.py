@@ -1,5 +1,6 @@
-"""Charmhub publishing, README generation, and icon tools."""
+"""Charmhub publishing, README generation, icon, and documentation tools."""
 
+import datetime
 import hashlib
 import re
 import shutil
@@ -505,4 +506,553 @@ class GenerateIconTool(Tool):
             success=True,
             output=f"Generated placeholder icon.svg for '{charm_name}' at {icon_path}",
             data={"path": str(icon_path), "charm_name": charm_name},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Documentation generation (Diátaxis + canonical starter pack)
+# ---------------------------------------------------------------------------
+
+
+def _read_charm_metadata(charm_dir: Path) -> dict[str, Any]:
+    """Read and return charmcraft.yaml metadata, or empty dict on failure."""
+    charmcraft_yaml = charm_dir / "charmcraft.yaml"
+    if not charmcraft_yaml.exists():
+        return {}
+    try:
+        data = yaml.safe_load(charmcraft_yaml.read_text())
+        return data if isinstance(data, dict) else {}
+    except yaml.YAMLError:
+        return {}
+
+
+def generate_docs_scaffold(
+    charm_name: str,
+    metadata: dict[str, Any],
+) -> dict[str, str]:
+    """Generate a complete docs scaffold as a ``{relative_path: content}`` map.
+
+    Follows the Diátaxis structure (tutorial, how-to, reference, explanation)
+    and uses the Canonical starter pack conventions (Makefile, conf.py,
+    requirements.txt, .readthedocs.yaml).  Content files are MyST Markdown.
+    """
+    year = datetime.date.today().year
+    display_name = metadata.get("display-name") or metadata.get("name", charm_name)
+    description = metadata.get("description", "")
+    summary = metadata.get("summary", description.split("\n")[0] if description else "")
+    source_url = metadata.get("source", "")
+
+    config = metadata.get("config", {}).get("options", {})
+    actions = metadata.get("actions", {})
+    requires = metadata.get("requires", {})
+    provides = metadata.get("provides", {})
+
+    files: dict[str, str] = {}
+
+    # -- Root index (reStructuredText for Sphinx toctree compatibility) -----
+
+    # Build the relations list for the tutorial.
+    relation_lines: list[str] = []
+    for rel_name, rel_data in requires.items():
+        iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+        relation_lines.append(f"juju integrate {charm_name} {rel_name}:{iface}")
+
+    files["docs/index.rst"] = (
+        f"{display_name} documentation\n"
+        f"{'=' * (len(display_name) + 14)}\n"
+        f"\n"
+        f"{summary}\n"
+        f"\n"
+        f"---------\n"
+        f"\n"
+        f"In this documentation\n"
+        f"---------------------\n"
+        f"\n"
+        f".. grid:: 2\n"
+        f"\n"
+        f"   .. grid-item-card:: `Tutorial </tutorial/getting-started>`_\n"
+        f"\n"
+        f"      **Get started** - a hands-on introduction to {display_name}\n"
+        f"\n"
+        f"   .. grid-item-card:: `How-to guides </how-to/index>`_\n"
+        f"\n"
+        f"      **Step-by-step guides** - key operations and common tasks\n"
+        f"\n"
+        f"   .. grid-item-card:: `Reference </reference/index>`_\n"
+        f"\n"
+        f"      **Technical information** - configuration, actions, integrations\n"
+        f"\n"
+        f"   .. grid-item-card:: `Explanation </explanation/index>`_\n"
+        f"\n"
+        f"      **Discussion and clarification** - architecture and design decisions\n"
+        f"\n"
+        f".. toctree::\n"
+        f"   :hidden:\n"
+        f"   :maxdepth: 2\n"
+        f"\n"
+        f"   tutorial/getting-started\n"
+        f"   how-to/index\n"
+        f"   reference/index\n"
+        f"   explanation/index\n"
+    )
+
+    # -- Tutorial -----------------------------------------------------------
+
+    deploy_cmd = f"juju deploy {charm_name}"
+    files["docs/tutorial/getting-started.md"] = (
+        f"# Get started with {display_name}\n"
+        f"\n"
+        f"This tutorial walks you through deploying {display_name} and verifying\n"
+        f"that it is running correctly.\n"
+        f"\n"
+        f"## Prerequisites\n"
+        f"\n"
+        f"- A Juju controller bootstrapped and ready\n"
+        f"- A Juju model created (`juju add-model {charm_name}`)\n"
+        f"\n"
+        f"## Deploy the charm\n"
+        f"\n"
+        f"```bash\n"
+        f"{deploy_cmd}\n"
+        f"```\n"
+        f"\n"
+        f"Wait for the deployment to settle:\n"
+        f"\n"
+        f"```bash\n"
+        f"juju wait-for application {charm_name} --query='status.current==\"active\"'\n"
+        f"```\n"
+        f"\n"
+        f"## Verify the deployment\n"
+        f"\n"
+        f"Check that the application is active and idle:\n"
+        f"\n"
+        f"```bash\n"
+        f"juju status\n"
+        f"```\n"
+        + (
+            "\n## Establish integrations\n\n"
+            + "".join(
+                f"```bash\n{line}\n```\n\n"
+                for line in relation_lines
+            )
+            if relation_lines
+            else ""
+        )
+        + "\n## Next steps\n"
+        "\n"
+        "- Read the [how-to guides](../how-to/index) for common operations\n"
+        "- See the [configuration reference](../reference/configuration) "
+        "for available options\n"
+    )
+
+    # -- How-to guides ------------------------------------------------------
+
+    files["docs/how-to/index.md"] = (
+        f"# How-to guides\n"
+        f"\n"
+        f"Step-by-step guides for key operations with {display_name}.\n"
+        f"\n"
+        f"```{{toctree}}\n"
+        f":maxdepth: 1\n"
+        f"\n"
+        f"deploy\n"
+        f"configure\n"
+        f"integrate\n"
+        + ("actions\n" if actions else "")
+        + "```\n"
+    )
+
+    files["docs/how-to/deploy.md"] = (
+        f"# Deploy {display_name}\n"
+        f"\n"
+        f"## From Charmhub\n"
+        f"\n"
+        f"```bash\n"
+        f"juju deploy {charm_name}\n"
+        f"```\n"
+        f"\n"
+        f"## From a local `.charm` file\n"
+        f"\n"
+        f"```bash\n"
+        f"juju deploy ./{charm_name}_amd64.charm\n"
+        f"```\n"
+    )
+
+    # Configuration how-to.
+    config_lines: list[str] = []
+    for opt_name in list(config.keys())[:3]:
+        config_lines.append(
+            f"```bash\njuju config {charm_name} {opt_name}=<value>\n```\n"
+        )
+    files["docs/how-to/configure.md"] = (
+        f"# Configure {display_name}\n"
+        f"\n"
+        f"Set configuration options using `juju config`:\n"
+        f"\n"
+        + ("\n".join(config_lines) if config_lines else
+           f"```bash\njuju config {charm_name} <option>=<value>\n```\n")
+        + "\nSee the [configuration reference](../reference/configuration) "
+        "for the full list of options.\n"
+    )
+
+    # Integrations how-to.
+    integrate_lines: list[str] = []
+    for rel_name, rel_data in requires.items():
+        iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+        integrate_lines.append(
+            f"### `{rel_name}` (`{iface}`)\n\n"
+            f"```bash\njuju integrate {charm_name}:{rel_name} <provider>\n```\n"
+        )
+    for rel_name, rel_data in provides.items():
+        iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+        integrate_lines.append(
+            f"### `{rel_name}` (`{iface}`)\n\n"
+            f"```bash\njuju integrate {charm_name}:{rel_name} <requirer>\n```\n"
+        )
+    files["docs/how-to/integrate.md"] = (
+        f"# Integrate {display_name}\n"
+        f"\n"
+        + ("\n".join(integrate_lines) if integrate_lines else
+           "This charm has no integrations defined yet.\n")
+        + "\nSee the [integrations reference](../reference/integrations) "
+        "for details.\n"
+    )
+
+    # Actions how-to (only if there are actions).
+    if actions:
+        action_lines: list[str] = []
+        for action_name, action_data in actions.items():
+            desc = ""
+            if isinstance(action_data, dict):
+                desc = action_data.get("description", "")
+            action_lines.append(
+                f"## `{action_name}`\n\n"
+                + (f"{desc}\n\n" if desc else "")
+                + f"```bash\njuju run {charm_name}/leader {action_name}\n```\n"
+            )
+        files["docs/how-to/actions.md"] = (
+            "# Run actions\n"
+            "\n"
+            + "\n".join(action_lines)
+        )
+
+    # -- Reference ----------------------------------------------------------
+
+    ref_toctree_entries = [
+        "configuration",
+        "integrations",
+    ]
+    if actions:
+        ref_toctree_entries.append("actions")
+    files["docs/reference/index.md"] = (
+        f"# Reference\n"
+        f"\n"
+        f"Technical reference for {display_name}.\n"
+        f"\n"
+        f"```{{toctree}}\n"
+        f":maxdepth: 1\n"
+        f"\n"
+        + "\n".join(ref_toctree_entries) + "\n"
+        "```\n"
+    )
+
+    # Configuration reference.
+    config_ref_lines: list[str] = []
+    for opt_name, opt_data in config.items():
+        opt_type = opt_data.get("type", "string")
+        opt_desc = opt_data.get("description", "")
+        opt_default = opt_data.get("default", "")
+        entry = f"## `{opt_name}`\n\n"
+        entry += f"- **Type:** `{opt_type}`\n"
+        if opt_default not in ("", None):
+            entry += f"- **Default:** `{opt_default}`\n"
+        if opt_desc:
+            entry += f"\n{opt_desc}\n"
+        config_ref_lines.append(entry)
+    files["docs/reference/configuration.md"] = (
+        "# Configuration reference\n"
+        "\n"
+        + ("\n".join(config_ref_lines) if config_ref_lines else
+           "No configuration options are defined.\n")
+    )
+
+    # Integrations reference.
+    integ_ref_lines: list[str] = []
+    if requires:
+        integ_ref_lines.append("## Requires\n")
+        for rel_name, rel_data in requires.items():
+            iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+            integ_ref_lines.append(f"### `{rel_name}`\n\n- **Interface:** `{iface}`\n")
+    if provides:
+        integ_ref_lines.append("## Provides\n")
+        for rel_name, rel_data in provides.items():
+            iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
+            integ_ref_lines.append(f"### `{rel_name}`\n\n- **Interface:** `{iface}`\n")
+    files["docs/reference/integrations.md"] = (
+        "# Integrations reference\n"
+        "\n"
+        + ("\n".join(integ_ref_lines) if integ_ref_lines else
+           "No integrations are defined.\n")
+    )
+
+    # Actions reference (only if there are actions).
+    if actions:
+        action_ref_lines: list[str] = []
+        for action_name, action_data in actions.items():
+            desc = ""
+            params_block = ""
+            if isinstance(action_data, dict):
+                desc = action_data.get("description", "")
+                params = action_data.get("params", {})
+                if params:
+                    param_lines = []
+                    for p_name, p_data in params.items():
+                        p_type = p_data.get("type", "string") if isinstance(p_data, dict) else ""
+                        p_desc = p_data.get("description", "") if isinstance(p_data, dict) else ""
+                        param_lines.append(f"  - `{p_name}` ({p_type}): {p_desc}")
+                    params_block = "- **Parameters:**\n" + "\n".join(param_lines) + "\n"
+            entry = f"## `{action_name}`\n\n"
+            if desc:
+                entry += f"{desc}\n\n"
+            if params_block:
+                entry += f"{params_block}\n"
+            action_ref_lines.append(entry)
+        files["docs/reference/actions.md"] = (
+            "# Actions reference\n"
+            "\n"
+            + "\n".join(action_ref_lines)
+        )
+
+    # -- Explanation --------------------------------------------------------
+
+    files["docs/explanation/index.md"] = (
+        f"# Explanation\n"
+        f"\n"
+        f"Discussion and background information about {display_name}.\n"
+        f"\n"
+        f"```{{toctree}}\n"
+        f":maxdepth: 1\n"
+        f"\n"
+        f"architecture\n"
+        f"```\n"
+    )
+
+    files["docs/explanation/architecture.md"] = (
+        "# Architecture\n"
+        "\n"
+        + (f"{description}\n\n" if description else "")
+        + "## Charm design\n"
+        "\n"
+        "<!-- TODO: Describe the charm's architecture, Pebble layers, "
+        "relation data flow, and operational patterns. -->\n"
+    )
+
+    # -- Build infrastructure -----------------------------------------------
+
+    files["docs/conf.py"] = (
+        f'import datetime\n'
+        f'\n'
+        f'project = "{display_name}"\n'
+        f'author = "Canonical Ltd."\n'
+        f'\n'
+        f'html_title = project + " documentation"\n'
+        f'\n'
+        f'copyright = "{year}, %s" % author\n'
+        f'\n'
+        f'extensions = [\n'
+        f'    "canonical_sphinx",\n'
+        f']\n'
+        f'\n'
+        f'html_context = {{\n'
+        + (f'    "github_url": "{source_url}",\n' if source_url else "")
+        + '}\n'
+        '\n'
+        'exclude_patterns = [\n'
+        '    "_build",\n'
+        '    ".sphinx",\n'
+        ']\n'
+    )
+
+    files["docs/requirements.txt"] = (
+        "canonical-sphinx~=0.6\n"
+    )
+
+    files["docs/.custom_wordlist.txt"] = (
+        f"{charm_name}\n"
+        f"{display_name}\n"
+        f"Juju\n"
+        f"Charmhub\n"
+        f"Pebble\n"
+    )
+
+    files["docs/.gitignore"] = (
+        "_build/\n"
+        ".sphinx/\n"
+    )
+
+    # Makefile — pull in the canonical starter pack Makefile via include.
+    files["docs/Makefile"] = (
+        "# Docs Makefile — canonical starter pack\n"
+        "#\n"
+        "# Install:  make install\n"
+        "# Build:    make html\n"
+        "# Serve:    make run\n"
+        "\n"
+        "SPHINX_DIR       ?= .sphinx\n"
+        "SPHINX_OPTS      ?= -c . -d $(SPHINX_DIR)/.doctrees -j auto\n"
+        "SPHINX_BUILD     ?= $(DOCS_VENVDIR)/bin/sphinx-build\n"
+        "SPHINX_HOST      ?= 127.0.0.1\n"
+        "SPHINX_PORT      ?= 8000\n"
+        "DOCS_VENVDIR     ?= $(SPHINX_DIR)/venv\n"
+        "DOCS_VENV        ?= $(DOCS_VENVDIR)/bin/activate\n"
+        "DOCS_SOURCEDIR   ?= .\n"
+        "DOCS_BUILDDIR    ?= _build\n"
+        "\n"
+        "help:\n"
+        "\t@echo\n"
+        '\t@echo "  make run        — watch, build and serve the documentation"\n'
+        '\t@echo "  make html       — build HTML output"\n'
+        '\t@echo "  make serve      — serve already-built documentation"\n'
+        '\t@echo "  make clean-doc  — clean built doc files"\n'
+        '\t@echo "  make clean      — clean full environment"\n'
+        '\t@echo "  make install    — set up the build environment"\n'
+        "\t@echo\n"
+        "\n"
+        ".PHONY: help html run serve install clean clean-doc\n"
+        "\n"
+        "$(DOCS_VENVDIR):\n"
+        "\t@echo '... setting up virtualenv'\n"
+        "\tpython3 -m venv $(DOCS_VENVDIR)\n"
+        "\t. $(DOCS_VENV); pip install --upgrade -r requirements.txt \\\n"
+        "\t    --log $(DOCS_VENVDIR)/pip_install.log\n"
+        "\t@touch $(DOCS_VENVDIR)\n"
+        "\n"
+        "install: $(DOCS_VENVDIR)\n"
+        "\n"
+        "run: install\n"
+        "\t. $(DOCS_VENV); sphinx-autobuild -b dirhtml "
+        "\"$(DOCS_SOURCEDIR)\" \"$(DOCS_BUILDDIR)\" $(SPHINX_OPTS) "
+        "--host $(SPHINX_HOST) --port $(SPHINX_PORT)\n"
+        "\n"
+        "html: install\n"
+        "\t. $(DOCS_VENV); $(SPHINX_BUILD) -b dirhtml "
+        "\"$(DOCS_SOURCEDIR)\" \"$(DOCS_BUILDDIR)\" $(SPHINX_OPTS)\n"
+        "\n"
+        "serve:\n"
+        "\tcd \"$(DOCS_BUILDDIR)\" && python3 -m http.server "
+        "$(SPHINX_PORT) --bind $(SPHINX_HOST)\n"
+        "\n"
+        "clean: clean-doc\n"
+        "\t@test ! -e \"$(DOCS_VENVDIR)\" -o "
+        "-d \"$(DOCS_VENVDIR)\" && rm -rf $(DOCS_VENVDIR)\n"
+        "\n"
+        "clean-doc:\n"
+        "\t@test ! -e \"$(DOCS_BUILDDIR)\" -o "
+        "-d \"$(DOCS_BUILDDIR)\" && rm -rf $(DOCS_BUILDDIR)\n"
+    )
+
+    # ReadTheDocs configuration.
+    files[".readthedocs.yaml"] = (
+        "# Read the Docs configuration\n"
+        "# https://docs.readthedocs.io/en/stable/config-file/v2.html\n"
+        "\n"
+        "version: 2\n"
+        "\n"
+        "build:\n"
+        "  os: ubuntu-22.04\n"
+        "  tools:\n"
+        "    python: '3.12'\n"
+        "  jobs:\n"
+        "    post_checkout:\n"
+        "      - git fetch --unshallow || true\n"
+        "\n"
+        "sphinx:\n"
+        "  builder: dirhtml\n"
+        "  configuration: docs/conf.py\n"
+        "  fail_on_warning: true\n"
+        "\n"
+        "python:\n"
+        "  install:\n"
+        "    - requirements: docs/requirements.txt\n"
+    )
+
+    return files
+
+
+class GenerateDocsTool(Tool):
+    """Generate Diátaxis-structured documentation for a charm."""
+
+    @property
+    def name(self) -> str:
+        return "generate_docs"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Generate a docs/ directory with Diátaxis-structured documentation "
+            "(tutorial, how-to, reference, explanation) using the Canonical "
+            "starter pack. Reads charmcraft.yaml to populate configuration "
+            "reference, actions, and integrations. Includes Makefile, conf.py, "
+            "and .readthedocs.yaml for building with Sphinx."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the charm directory",
+                    "default": ".",
+                },
+                "charm_name": {
+                    "type": "string",
+                    "description": (
+                        "Charm name. If omitted, read from charmcraft.yaml."
+                    ),
+                },
+            },
+        }
+
+    async def execute(
+        self, path: str = ".", charm_name: str | None = None
+    ) -> ToolResult:
+        """Generate the docs scaffold in the charm directory."""
+        charm_dir = Path(path).resolve()
+        if not charm_dir.is_dir():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Directory not found: {path}",
+            )
+
+        metadata = _read_charm_metadata(charm_dir)
+        if not charm_name:
+            charm_name = metadata.get("name", charm_dir.name)
+
+        files = generate_docs_scaffold(charm_name, metadata)
+
+        written: list[str] = []
+        for rel_path, content in files.items():
+            full_path = charm_dir / rel_path
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_text(content)
+            written.append(rel_path)
+
+        summary = (
+            f"Generated documentation scaffold for '{charm_name}' "
+            f"({len(written)} files):\n"
+            + "\n".join(f"  {f}" for f in sorted(written))
+            + "\n\nBuild with: cd docs && make html"
+        )
+
+        return ToolResult(
+            success=True,
+            output=summary,
+            data={
+                "charm_name": charm_name,
+                "file_count": len(written),
+                "files": sorted(written),
+            },
         )

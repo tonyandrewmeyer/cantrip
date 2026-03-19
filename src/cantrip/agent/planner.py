@@ -472,7 +472,10 @@ def plan_improvement_fixes(
                     "3. Check for LICENSE file — suggest Apache-2.0 if missing.\n"
                     "4. If icon.svg is missing, run `generate_icon` to create a "
                     "placeholder icon (coloured circle with the charm's initial).\n"
-                    "5. Commit changes with a descriptive message."
+                    "5. If no docs/ directory exists, run `generate_docs` to "
+                    "create Diátaxis-structured documentation (tutorial, how-to, "
+                    "reference, explanation) with the Canonical starter pack.\n"
+                    "6. Commit changes with a descriptive message."
                 ),
                 dependencies=["confirm-improvements"],
             )

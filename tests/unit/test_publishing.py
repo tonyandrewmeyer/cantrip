@@ -3,6 +3,7 @@
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -10,8 +11,10 @@ import pytest
 from cantrip.agent.tools.publishing import (
     CharmcraftReleaseTool,
     CharmcraftUploadTool,
+    GenerateDocsTool,
     GenerateIconTool,
     GenerateReadmeTool,
+    generate_docs_scaffold,
     generate_placeholder_svg,
 )
 
@@ -439,3 +442,223 @@ class TestGenerateIconTool:
         assert result.success
         svg = (temp_dir / "icon.svg").read_text()
         assert ">C</text>" in svg
+
+
+# ===================================================================
+# TestGenerateDocsScaffold
+# ===================================================================
+
+_SAMPLE_METADATA: dict[str, Any] = {
+    "name": "my-app",
+    "display-name": "My App",
+    "summary": "A test charm",
+    "description": "A test charm for unit testing.",
+    "source": "https://github.com/example/my-app",
+    "config": {
+        "options": {
+            "port": {"type": "int", "default": 8080, "description": "Listen port"},
+            "debug": {"type": "boolean", "default": False, "description": "Enable debug"},
+        },
+    },
+    "actions": {
+        "backup": {"description": "Create a backup"},
+        "restore": {"description": "Restore from backup"},
+    },
+    "requires": {
+        "db": {"interface": "pgsql"},
+    },
+    "provides": {
+        "metrics-endpoint": {"interface": "prometheus_scrape"},
+    },
+}
+
+
+class TestGenerateDocsScaffold:
+    """Tests for generate_docs_scaffold — the pure docs generation function."""
+
+    def test_produces_diataxis_structure(self) -> None:
+        """Scaffold contains tutorial, how-to, reference, and explanation."""
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+
+        assert "docs/tutorial/getting-started.md" in files
+        assert "docs/how-to/index.md" in files
+        assert "docs/reference/index.md" in files
+        assert "docs/explanation/index.md" in files
+
+    def test_produces_build_infrastructure(self) -> None:
+        """Scaffold includes Makefile, conf.py, requirements.txt."""
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+
+        assert "docs/Makefile" in files
+        assert "docs/conf.py" in files
+        assert "docs/requirements.txt" in files
+        assert ".readthedocs.yaml" in files
+
+    def test_conf_py_contains_project_name(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        assert '"My App"' in files["docs/conf.py"]
+
+    def test_conf_py_uses_canonical_sphinx(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        assert "canonical_sphinx" in files["docs/conf.py"]
+
+    def test_requirements_includes_canonical_sphinx(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        assert "canonical-sphinx" in files["docs/requirements.txt"]
+
+    def test_index_rst_has_toctree(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        index = files["docs/index.rst"]
+        assert "toctree" in index
+        assert "tutorial/getting-started" in index
+        assert "how-to/index" in index
+        assert "reference/index" in index
+        assert "explanation/index" in index
+
+    def test_index_rst_has_grid_cards(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        index = files["docs/index.rst"]
+        assert "grid::" in index
+        assert "Tutorial" in index
+        assert "How-to" in index
+        assert "Reference" in index
+        assert "Explanation" in index
+
+    def test_config_reference_populated(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        config_ref = files["docs/reference/configuration.md"]
+        assert "`port`" in config_ref
+        assert "`debug`" in config_ref
+        assert "Listen port" in config_ref
+
+    def test_actions_reference_populated(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        assert "docs/reference/actions.md" in files
+        actions_ref = files["docs/reference/actions.md"]
+        assert "`backup`" in actions_ref
+        assert "`restore`" in actions_ref
+
+    def test_integrations_reference_populated(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        integ_ref = files["docs/reference/integrations.md"]
+        assert "`db`" in integ_ref
+        assert "`pgsql`" in integ_ref
+        assert "`metrics-endpoint`" in integ_ref
+
+    def test_tutorial_includes_deploy_command(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        tutorial = files["docs/tutorial/getting-started.md"]
+        assert "juju deploy my-app" in tutorial
+
+    def test_howto_deploy_exists(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        assert "docs/how-to/deploy.md" in files
+        assert "juju deploy my-app" in files["docs/how-to/deploy.md"]
+
+    def test_howto_actions_present_when_actions_defined(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        assert "docs/how-to/actions.md" in files
+
+    def test_howto_actions_absent_when_no_actions(self) -> None:
+        meta = {"name": "simple"}
+        files = generate_docs_scaffold("simple", meta)
+        assert "docs/how-to/actions.md" not in files
+
+    def test_actions_reference_absent_when_no_actions(self) -> None:
+        meta = {"name": "simple"}
+        files = generate_docs_scaffold("simple", meta)
+        assert "docs/reference/actions.md" not in files
+
+    def test_empty_metadata_still_produces_scaffold(self) -> None:
+        files = generate_docs_scaffold("bare", {})
+        assert "docs/index.rst" in files
+        assert "docs/Makefile" in files
+        assert "docs/conf.py" in files
+
+    def test_readthedocs_yaml_at_root(self) -> None:
+        """ReadTheDocs config is at repo root, not inside docs/."""
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        assert ".readthedocs.yaml" in files
+        rtd = files[".readthedocs.yaml"]
+        assert "docs/conf.py" in rtd
+
+    def test_makefile_has_run_target(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        makefile = files["docs/Makefile"]
+        assert "run:" in makefile
+        assert "html:" in makefile
+        assert "sphinx" in makefile.lower()
+
+    def test_gitignore_created(self) -> None:
+        files = generate_docs_scaffold("my-app", _SAMPLE_METADATA)
+        assert "docs/.gitignore" in files
+        assert "_build/" in files["docs/.gitignore"]
+
+
+# ===================================================================
+# TestGenerateDocsTool
+# ===================================================================
+
+
+class TestGenerateDocsTool:
+    """Tests for GenerateDocsTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return GenerateDocsTool()
+
+    @pytest.fixture
+    def temp_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+
+    @pytest.mark.asyncio
+    async def test_generates_docs_directory(self, tool, temp_dir) -> None:
+        """Creates a docs/ directory with expected files."""
+        (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        assert (temp_dir / "docs" / "index.rst").exists()
+        assert (temp_dir / "docs" / "Makefile").exists()
+        assert (temp_dir / "docs" / "conf.py").exists()
+        assert (temp_dir / "docs" / "tutorial" / "getting-started.md").exists()
+        assert (temp_dir / "docs" / "how-to" / "index.md").exists()
+        assert (temp_dir / "docs" / "reference" / "index.md").exists()
+        assert (temp_dir / "docs" / "explanation" / "index.md").exists()
+
+    @pytest.mark.asyncio
+    async def test_reads_name_from_charmcraft_yaml(self, tool, temp_dir) -> None:
+        (temp_dir / "charmcraft.yaml").write_text("name: redis-k8s\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        assert result.data["charm_name"] == "redis-k8s"
+
+    @pytest.mark.asyncio
+    async def test_explicit_name_overrides_yaml(self, tool, temp_dir) -> None:
+        (temp_dir / "charmcraft.yaml").write_text("name: redis-k8s\n")
+
+        result = await tool.execute(path=str(temp_dir), charm_name="custom")
+
+        assert result.success
+        assert result.data["charm_name"] == "custom"
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_directory(self, tool) -> None:
+        result = await tool.execute(path="/nonexistent/path")
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_readthedocs_yaml_at_charm_root(self, tool, temp_dir) -> None:
+        """ReadTheDocs config is written to the charm root, not docs/."""
+        (temp_dir / "charmcraft.yaml").write_text("name: test\n")
+
+        await tool.execute(path=str(temp_dir))
+
+        assert (temp_dir / ".readthedocs.yaml").exists()
+        assert not (temp_dir / "docs" / ".readthedocs.yaml").exists()
