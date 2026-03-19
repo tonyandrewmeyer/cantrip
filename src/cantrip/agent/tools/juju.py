@@ -4,6 +4,8 @@ import asyncio
 import functools
 import json
 import os
+import re
+import shlex
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -1087,12 +1089,14 @@ class CharmSyncTool(Tool):
             # Push each file to the unit.
             for local_path, remote_path in files:
                 remote_parent = str(Path(remote_path).parent)
+                safe_parent = shlex.quote(remote_parent)
+                safe_path = shlex.quote(remote_path)
 
                 if k8s:
                     await _run_juju(
                         juju.ssh,
                         unit,
-                        f"mkdir -p {remote_parent}",
+                        f"mkdir -p {safe_parent}",
                         container="charm",
                     )
                     await _run_juju(
@@ -1102,13 +1106,13 @@ class CharmSyncTool(Tool):
                         container="charm",
                     )
                 else:
-                    await _run_juju(juju.ssh, unit, f"sudo mkdir -p {remote_parent}")
+                    await _run_juju(juju.ssh, unit, f"sudo mkdir -p {safe_parent}")
                     content = local_path.read_text()
                     await _run_juju(
                         juju.cli,
                         "ssh",
                         unit,
-                        f"sudo tee {remote_path}",
+                        f"sudo tee {safe_path}",
                         stdin=content,
                     )
 
@@ -1189,6 +1193,17 @@ class JujuDispatchTool(Tool):
                 success=False,
                 output="",
                 error="Juju CLI not found. Is Juju installed?",
+            )
+
+        # Guard against shell metacharacters in the event name.
+        if not re.fullmatch(r"[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?", event):
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Invalid event name '{event}'. "
+                    "Must contain only lowercase letters, digits, hyphens, and underscores."
+                ),
             )
 
         charm_dir = _agent_charm_dir(unit)

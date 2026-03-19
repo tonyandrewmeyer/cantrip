@@ -295,6 +295,8 @@ def generate_terraform_module(charmcraft_path: pathlib.Path) -> dict[str, str]:
     ``{"main.tf": ..., "variables.tf": ..., "outputs.tf": ..., "terraform.tf": ...}``
     """
     raw = yaml.safe_load(charmcraft_path.read_text())
+    if not raw or not isinstance(raw, dict):
+        raise KeyError("charmcraft.yaml is empty or not a mapping")
 
     charm_name: str = raw["name"]
     res_name = _resource_name(charm_name)

@@ -2,11 +2,14 @@
 
 import datetime
 import json
+import logging
 import sqlite3
 from pathlib import Path
 
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState, Decision
+
+log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 4
 
@@ -246,11 +249,21 @@ class SessionStore:
         )
 
         decision_rows = self._db.execute(
-            "SELECT type, choice, reason FROM decisions ORDER BY id"
+            "SELECT type, choice, reason, timestamp FROM decisions ORDER BY id"
         ).fetchall()
         for dr in decision_rows:
+            ts = dr["timestamp"]
+            try:
+                timestamp = datetime.datetime.fromisoformat(ts) if ts else datetime.datetime.now()
+            except (ValueError, TypeError):
+                timestamp = datetime.datetime.now()
             state.decisions.append(
-                Decision(type=dr["type"], choice=dr["choice"], reason=dr["reason"])
+                Decision(
+                    type=dr["type"],
+                    choice=dr["choice"],
+                    reason=dr["reason"],
+                    timestamp=timestamp,
+                )
             )
 
         return state
@@ -289,21 +302,26 @@ class SessionStore:
         rows = self._db.execute("SELECT * FROM tasks ORDER BY created_at").fetchall()
         tasks: list[AgentTask] = []
         for r in rows:
-            raw_hint = r["model_hint"]
-            tasks.append(
-                AgentTask(
-                    id=r["id"],
-                    title=r["title"],
-                    status=TaskStatus(r["status"]),
-                    category=TaskCategory(r["category"]),
-                    description=r["description"],
-                    dependencies=json.loads(r["dependencies"]),
-                    result=r["result"],
-                    blocked_reason=r["blocked_reason"],
-                    model_hint=ModelHint(raw_hint) if raw_hint else None,
-                    created_at=datetime.datetime.fromisoformat(r["created_at"]),
+            try:
+                raw_hint = r["model_hint"]
+                deps = json.loads(r["dependencies"]) if r["dependencies"] else []
+                created = datetime.datetime.fromisoformat(r["created_at"])
+                tasks.append(
+                    AgentTask(
+                        id=r["id"],
+                        title=r["title"],
+                        status=TaskStatus(r["status"]),
+                        category=TaskCategory(r["category"]),
+                        description=r["description"],
+                        dependencies=deps,
+                        result=r["result"],
+                        blocked_reason=r["blocked_reason"],
+                        model_hint=ModelHint(raw_hint) if raw_hint else None,
+                        created_at=created,
+                    )
                 )
-            )
+            except (json.JSONDecodeError, ValueError, KeyError) as exc:
+                log.warning("Skipping corrupt task row %s: %s", r["id"], exc)
         return tasks
 
     # ── Messages ─────────────────────────────────────────────────────────
@@ -339,19 +357,26 @@ class SessionStore:
     def load_messages(self) -> list[dict[str, object]]:
         """Load all conversation messages ordered by ID."""
         rows = self._db.execute("SELECT * FROM messages ORDER BY id").fetchall()
-        return [
-            {
-                "id": r["id"],
-                "role": r["role"],
-                "content": r["content"],
-                "tool_calls": (json.loads(r["tool_calls"]) if r["tool_calls"] else None),
-                "tool_results": (json.loads(r["tool_results"]) if r["tool_results"] else None),
-                "metadata": (json.loads(r["metadata"]) if r["metadata"] else None),
-                "token_usage_id": r["token_usage_id"],
-                "timestamp": r["timestamp"],
-            }
-            for r in rows
-        ]
+        result: list[dict[str, object]] = []
+        for r in rows:
+            try:
+                result.append(
+                    {
+                        "id": r["id"],
+                        "role": r["role"],
+                        "content": r["content"],
+                        "tool_calls": (json.loads(r["tool_calls"]) if r["tool_calls"] else None),
+                        "tool_results": (
+                            json.loads(r["tool_results"]) if r["tool_results"] else None
+                        ),
+                        "metadata": (json.loads(r["metadata"]) if r["metadata"] else None),
+                        "token_usage_id": r["token_usage_id"],
+                        "timestamp": r["timestamp"],
+                    }
+                )
+            except (json.JSONDecodeError, KeyError) as exc:
+                log.warning("Skipping corrupt message row %s: %s", r["id"], exc)
+        return result
 
     # ── Subagent message recording ───────────────────────────────────────
 

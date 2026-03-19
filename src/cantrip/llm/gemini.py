@@ -1,6 +1,8 @@
 """Google Gemini LLM provider."""
 
 import base64
+import binascii
+import contextlib
 import json
 import os
 from collections.abc import AsyncIterator
@@ -111,12 +113,13 @@ class GeminiProvider(LLMProvider):
 
                 # Restore thought signature parts for Gemini 3 round-trip.
                 for tp in msg.metadata.get("_gemini_thought_parts", []):
-                    parts.append(
-                        genai_types.Part(
-                            thought=True,
-                            thought_signature=base64.b64decode(tp["thought_signature"]),
+                    with contextlib.suppress(KeyError, ValueError, binascii.Error):
+                        parts.append(
+                            genai_types.Part(
+                                thought=True,
+                                thought_signature=base64.b64decode(tp["thought_signature"]),
+                            )
                         )
-                    )
 
                 if msg.tool_calls:
                     if msg.content:
@@ -130,16 +133,14 @@ class GeminiProvider(LLMProvider):
                             )
                         )
                         if i < len(fc_sigs) and fc_sigs[i].get("thought_signature"):
-                            fc_part.thought_signature = base64.b64decode(
-                                fc_sigs[i]["thought_signature"]
-                            )
+                            with contextlib.suppress(ValueError, binascii.Error):
+                                fc_part.thought_signature = base64.b64decode(
+                                    fc_sigs[i]["thought_signature"]
+                                )
                         parts.append(fc_part)
                     result.append(genai_types.Content(role="model", parts=parts))
                 else:
-                    if not parts:
-                        parts.append(genai_types.Part(text=msg.content))
-                    else:
-                        parts.append(genai_types.Part(text=msg.content))
+                    parts.append(genai_types.Part(text=msg.content))
                     result.append(genai_types.Content(role="model", parts=parts))
 
             elif msg.role == Role.TOOL:
@@ -240,6 +241,8 @@ class GeminiProvider(LLMProvider):
         # Parse tool calls, text, and thought signatures from response parts.
         tool_calls = []
         text_parts = []
+        if not response.candidates:
+            raise ProviderError("Gemini returned an empty response (no candidates).")
         response_parts = response.candidates[0].content.parts or []
         thought_parts = self._collect_thought_parts(response_parts)
 

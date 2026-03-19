@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import shutil
 import urllib.parse
 from typing import Any
@@ -220,6 +221,13 @@ class TempoQueryTool(Tool):
 
         # Build the Tempo HTTP API URL.
         if trace_id:
+            # Trace IDs are hex strings — reject anything else to prevent injection.
+            if not re.fullmatch(r"[0-9a-fA-F]+", trace_id):
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"Invalid trace ID (must be hex): {trace_id[:50]}",
+                )
             url = f"http://localhost:3200/api/traces/{trace_id}"
         else:
             params: dict[str, str] = {"limit": str(limit)}
@@ -232,9 +240,11 @@ class TempoQueryTool(Tool):
             url = f"http://localhost:3200/api/search?{urllib.parse.urlencode(params)}"
 
         # Execute the HTTP request inside the Tempo unit via SSH.
+        # The URL is shell-escaped to prevent injection into the Python script.
+        safe_url = url.replace("'", "%27")
         python_script = (
             "import urllib.request, json, sys; "
-            f"req = urllib.request.Request('{url}'); "
+            f"req = urllib.request.Request('{safe_url}'); "
             f"resp = urllib.request.urlopen(req, timeout={_HTTP_TIMEOUT_SECONDS}); "
             "print(resp.read().decode())"
         )
@@ -365,9 +375,11 @@ class LokiQueryTool(Tool):
         }
         url = f"http://localhost:3100/loki/api/v1/query_range?{urllib.parse.urlencode(params)}"
 
+        # Shell-escape single quotes to prevent injection into the Python script.
+        safe_url = url.replace("'", "%27")
         python_script = (
             "import urllib.request, json, sys; "
-            f"req = urllib.request.Request('{url}'); "
+            f"req = urllib.request.Request('{safe_url}'); "
             f"resp = urllib.request.urlopen(req, timeout={_HTTP_TIMEOUT_SECONDS}); "
             "print(resp.read().decode())"
         )

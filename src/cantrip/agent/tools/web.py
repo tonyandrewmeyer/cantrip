@@ -85,6 +85,12 @@ class WebFetchTool(Tool):
 
     async def execute(self, url: str, extract_text: bool = True) -> ToolResult:
         """Fetch content from *url*."""
+        if not url.startswith(("http://", "https://")):
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Only http:// and https:// URLs are supported, got: {url[:50]}",
+            )
         try:
             async with httpx.AsyncClient(
                 timeout=30.0,

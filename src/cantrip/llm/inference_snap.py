@@ -79,9 +79,11 @@ def list_available_snaps() -> list[str]:
         )
         installed = []
         for line in result.stdout.splitlines():
-            name = line.split()[0]
-            if name in _SNAP_DEFAULTS:
-                installed.append(name)
+            parts = line.split()
+            if not parts:
+                continue
+            if parts[0] in _SNAP_DEFAULTS:
+                installed.append(parts[0])
         return installed
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return []
@@ -386,7 +388,12 @@ class InferenceSnapProvider(LLMProvider):
                 f"Failed to connect to inference snap at {self.base_url}: {e}"
             ) from e
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ProviderError(
+                f"Inference snap returned non-JSON response: {resp.text[:200]}"
+            ) from exc
         choice = data.get("choices", [{}])[0]
         message = choice.get("message", {})
 

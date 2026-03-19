@@ -865,7 +865,7 @@ class GenerateTerraformTool(Tool):
 
         try:
             files = terraform.generate_terraform_module(charmcraft_yaml)
-        except (KeyError, yaml.YAMLError) as exc:
+        except (KeyError, TypeError, yaml.YAMLError) as exc:
             return ToolResult(
                 success=False,
                 output="",

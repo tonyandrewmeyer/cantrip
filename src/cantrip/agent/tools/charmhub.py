@@ -1,5 +1,6 @@
 """Charmhub API tools for searching and inspecting charms."""
 
+import json
 from typing import Any
 
 import httpx
@@ -82,7 +83,14 @@ class CharmhubSearchTool(Tool):
                 error=f"Connection error searching Charmhub: {exc}",
             )
 
-        body = response.json()
+        try:
+            body = response.json()
+        except (ValueError, json.JSONDecodeError):
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Charmhub returned non-JSON response (HTTP {response.status_code})",
+            )
         raw_results = body.get("results", [])
         total = len(raw_results)
         truncated = total > MAX_SEARCH_RESULTS
@@ -194,7 +202,14 @@ class CharmhubInfoTool(Tool):
                 error=f"Connection error fetching Charmhub info: {exc}",
             )
 
-        body = response.json()
+        try:
+            body = response.json()
+        except (ValueError, json.JSONDecodeError):
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Charmhub returned non-JSON response (HTTP {response.status_code})",
+            )
         revision = body.get("default-release", {}).get("revision", {})
 
         # Parse metadata YAML.

@@ -120,7 +120,7 @@ class SkillsIndex:
         frontmatter_text = "\n".join(lines[1:end])
         data = yaml.safe_load(frontmatter_text)
 
-        if not isinstance(data, dict):
+        if not data or not isinstance(data, dict):
             raise ValueError(f"Frontmatter is not a mapping in {path}")
 
         name = data.get("name")
