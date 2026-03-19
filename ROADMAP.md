@@ -835,12 +835,14 @@ expected behaviour.
   test cases from the approved design: each relation endpoint gets a deploy+relate test,
   each action gets an execute test, each config option gets a set+verify test, and COS
   integration gets a relation test; uses Jubilant patterns
-- [ ] **Test template generation** — produce `tests/integration/test_charm.py` from the
-  design using the `jubilant-tests` skill patterns; tests should be runnable (and failing)
-  before any charm code is written
-- [ ] **Incremental test files** — for complex charms, split integration tests into
-  focused files (`test_deploy.py`, `test_relations.py`, `test_actions.py`) so subagents
-  can target specific failures
+- [x] **Test template generation** — `GenerateTestsTool` (`generate_tests`) produces
+  Jubilant-based integration test templates from `charmcraft.yaml`: `conftest.py` with
+  fixtures, `test_deploy.py`, `test_relations.py` (one test per endpoint),
+  `test_actions.py` (one test per action), and `test_config.py` (one test per option);
+  tests are runnable (and failing) before any charm code is written
+- [x] **Incremental test files** — tests are split into focused files (`test_deploy.py`,
+  `test_relations.py`, `test_actions.py`, `test_config.py`) so subagents can target
+  specific failures with the `pattern` parameter
 
 ### 12.3 Red/Green Build Subagent
 
