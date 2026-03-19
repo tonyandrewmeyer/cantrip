@@ -661,8 +661,9 @@ Bring the charm code up to current Ops framework standards.
   - Config-changed reconciliation pattern
   - Relation-created / relation-changed best practices
   - Proper Pebble readiness checks
-- [ ] **Dependency updates** — update charm library dependencies to latest versions;
-  flag any libraries fetched via `charmcraft fetch-libs` that have PyPI equivalents
+- [x] **Dependency updates** — `_check_fetch_libs` scans for `from charms.<lib>.v<N>` imports
+  and maps them against a known PyPI equivalents table; findings appear in the audit report
+  and feed into the `modernise-code` improvement task
 
 ### 10.5 Listing Readiness
 
