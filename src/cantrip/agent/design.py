@@ -5,6 +5,20 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class CompanionCharm:
+    """A companion charm that should be co-deployed with the primary charm.
+
+    Parsed from the ``## Companion charms`` section of a design proposal.
+    Each entry identifies a Charmhub charm, the endpoint to relate through,
+    and the Juju interface used.
+    """
+
+    charm_name: str
+    endpoint: str
+    interface: str
+
+
+@dataclass
 class DesignQuestion:
     """A single design question with suggested answers.
 
@@ -42,6 +56,7 @@ class DesignProposal:
     questions_for_user: list[DesignQuestion] = field(default_factory=list)
     security_surface: list[str] = field(default_factory=list)
     security_event_types: list[str] = field(default_factory=list)
+    companions: list[CompanionCharm] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     raw_design_md: str = ""
 
@@ -73,6 +88,13 @@ class DesignProposal:
         if self.integrations:
             items = "\n".join(f"- {i}" for i in self.integrations)
             sections.append(f"**Integrations:**\n{items}")
+
+        if self.companions:
+            items = "\n".join(
+                f"- {c.charm_name} via `{c.endpoint}` ({c.interface})"
+                for c in self.companions
+            )
+            sections.append(f"**Companion charms:**\n{items}")
 
         if self.config_options:
             items = "\n".join(f"- {c}" for c in self.config_options)
@@ -142,6 +164,7 @@ def parse_design_from_result(text: str) -> DesignProposal:
     proposal.security_surface = _get_list(heading_map, "security surface")
     proposal.security_event_types = _get_list(heading_map, "security event")
     proposal.questions_for_user = _get_questions(heading_map, "questions")
+    proposal.companions = _get_companions(heading_map)
     proposal.sources = _get_list(heading_map, "sources")
 
     return proposal
@@ -194,6 +217,34 @@ def _get_list(heading_map: dict[str, str], key: str) -> list[str]:
         if stripped.startswith("- ") or stripped.startswith("* "):
             items.append(stripped[2:].strip())
     return items
+
+
+_COMPANION_RE = re.compile(
+    r"^[-*]\s+(\S+)\s+via\s+(\S+)\s+\(([^)]+)\)\s*$"
+)
+
+
+def _get_companions(heading_map: dict[str, str]) -> list[CompanionCharm]:
+    """Extract companion charm entries from the section matching 'companion'.
+
+    Expected line format: ``- <charm-name> via <endpoint> (<interface>)``
+    Lines that do not match the pattern are silently skipped.
+    """
+    body = _get_field(heading_map, "companion")
+    if not body:
+        return []
+    companions: list[CompanionCharm] = []
+    for line in body.split("\n"):
+        match = _COMPANION_RE.match(line.strip())
+        if match:
+            companions.append(
+                CompanionCharm(
+                    charm_name=match.group(1),
+                    endpoint=match.group(2),
+                    interface=match.group(3),
+                )
+            )
+    return companions
 
 
 def _get_questions(heading_map: dict[str, str], key: str) -> list[DesignQuestion]:

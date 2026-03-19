@@ -1,6 +1,7 @@
 """Tests for the task planner and PlanTasksTool."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -441,6 +442,11 @@ class TestOneShotBuild:
         tasks = plan_one_shot_build(ctx, "design")
         assert "django" in tasks[0].title
 
+    def test_plan_one_shot_build_mentions_companion_charms(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        tasks = plan_one_shot_build(ctx, "design")
+        assert "companion" in tasks[0].description.lower()
+
 
 # ===================================================================
 # TestTaskPlannerReplan
@@ -673,6 +679,27 @@ class TestPlanTasksTool:
         assert any("my-charm" in t.title for t in queue.all_tasks())
 
     @pytest.mark.asyncio
+    async def test_improve_mode_routes_to_improvement(self) -> None:
+        """When state.mode is 'improve', PlanTasksTool generates improvement tasks."""
+        provider = FakeProvider()
+        state = AgentState(
+            mode="improve",
+            charm_name="my-charm",
+            charm_path=Path("/tmp/my-charm"),
+        )
+        queue = WorkQueue()
+        tool = PlanTasksTool(provider=provider, state=state, queue=queue)
+
+        result = await tool.execute(intent="Improve this charm")
+
+        assert result.success
+        task_ids = [t.id for t in queue.all_tasks()]
+        assert "audit-charm" in task_ids
+        assert "confirm-improvements" in task_ids
+        # No LLM call — improvement planning is deterministic.
+        assert provider._call_count == 0
+
+    @pytest.mark.asyncio
     async def test_replans_when_tasks_exist(self) -> None:
         """When the queue already has tasks, the tool should replan via the LLM."""
         replan_json = json.dumps(
@@ -878,6 +905,13 @@ class TestDesignToBuildPrompt:
         assert "redis-k8s" in prompt
         assert "dev" in prompt
 
+    def test_mentions_companion_charms(self) -> None:
+        """The design-to-build prompt instructs the LLM to handle companion charms."""
+        context = PlanningContext(intent="test")
+        prompt = _build_design_to_build_prompt(context)
+        assert "companion" in prompt.lower()
+        assert "Companion charms" in prompt
+
 
 # ===================================================================
 # TestPlanningContextNewFields
@@ -1074,6 +1108,14 @@ class TestPlanImprovementFixes:
 
         listing_tasks = [t for t in tasks if t.id == "listing-readiness"]
         assert len(listing_tasks) == 1
+
+    def test_icon_gap_produces_listing_task(self) -> None:
+        gaps = {"icon": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        listing_tasks = [t for t in tasks if t.id == "listing-readiness"]
+        assert len(listing_tasks) == 1
+        assert "generate_icon" in listing_tasks[0].description
 
     def test_validation_task_depends_on_all_fixes(self) -> None:
         gaps = {"cos_tracing": True, "unit_tests": True, "deprecated_apis": True}

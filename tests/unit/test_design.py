@@ -1,6 +1,11 @@
 """Tests for the design proposal module."""
 
-from cantrip.agent.design import DesignProposal, DesignQuestion, parse_design_from_result
+from cantrip.agent.design import (
+    CompanionCharm,
+    DesignProposal,
+    DesignQuestion,
+    parse_design_from_result,
+)
 
 # ===================================================================
 # TestDesignProposal
@@ -310,3 +315,76 @@ class TestParseDesignFromResult:
         proposal = parse_design_from_result(text)
         assert proposal.raw_design_md == text
         assert proposal.workload_name == ""
+
+
+# ===================================================================
+# TestCompanionCharms
+# ===================================================================
+
+
+class TestCompanionCharms:
+    """Tests for companion charm parsing and display."""
+
+    _DESIGN_WITH_COMPANIONS = (
+        "# Design: MyApp\n\n"
+        "## Substrate\nKubernetes\n\n"
+        "## Companion charms\n"
+        "- postgresql-k8s via db (postgresql_client)\n"
+        "- redis-k8s via cache (redis)\n"
+    )
+
+    def test_parses_companion_charms(self) -> None:
+        """Companion charms section produces structured CompanionCharm objects."""
+        proposal = parse_design_from_result(self._DESIGN_WITH_COMPANIONS)
+        assert len(proposal.companions) == 2
+        assert proposal.companions[0] == CompanionCharm(
+            charm_name="postgresql-k8s",
+            endpoint="db",
+            interface="postgresql_client",
+        )
+        assert proposal.companions[1] == CompanionCharm(
+            charm_name="redis-k8s",
+            endpoint="cache",
+            interface="redis",
+        )
+
+    def test_no_companion_section_returns_empty_list(self) -> None:
+        """Missing companion section produces an empty list."""
+        md = "# Design: Simple\n\n## Substrate\nK8s\n"
+        proposal = parse_design_from_result(md)
+        assert proposal.companions == []
+
+    def test_malformed_lines_skipped(self) -> None:
+        """Lines that do not match the expected format are silently skipped."""
+        md = (
+            "# Design: Test\n\n"
+            "## Companion charms\n"
+            "- postgresql-k8s via db (postgresql_client)\n"
+            "- this line is malformed\n"
+            "- also bad\n"
+            "- redis-k8s via cache (redis)\n"
+        )
+        proposal = parse_design_from_result(md)
+        assert len(proposal.companions) == 2
+        assert proposal.companions[0].charm_name == "postgresql-k8s"
+        assert proposal.companions[1].charm_name == "redis-k8s"
+
+    def test_format_for_chat_includes_companions(self) -> None:
+        """format_for_chat shows companion charms when present."""
+        proposal = DesignProposal(
+            workload_name="MyApp",
+            companions=[
+                CompanionCharm("postgresql-k8s", "db", "postgresql_client"),
+                CompanionCharm("redis-k8s", "cache", "redis"),
+            ],
+        )
+        chat = proposal.format_for_chat()
+        assert "**Companion charms:**" in chat
+        assert "postgresql-k8s via `db` (postgresql_client)" in chat
+        assert "redis-k8s via `cache` (redis)" in chat
+
+    def test_format_for_chat_omits_companions_when_empty(self) -> None:
+        """format_for_chat does not show companion section when list is empty."""
+        proposal = DesignProposal(workload_name="Simple")
+        chat = proposal.format_for_chat()
+        assert "Companion" not in chat

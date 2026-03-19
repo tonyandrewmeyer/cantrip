@@ -127,6 +127,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "registry_search",
             "registry_image_info",
             "generate_readme",
+            "generate_icon",
             "charm_validate",
             "run_charm_tests",
             "generate_terraform",
@@ -282,6 +283,10 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
         "- **Security surface**: Does the workload handle authentication, credentials, "
         "access control, or sensitive data? If yes, list the security surface indicators "
         "and recommend OWASP event types to log.\n\n"
+        "- **Companion charms**: What Charmhub charms does this workload need at deploy "
+        "time (databases, caches, message brokers, ingress)? List them in a "
+        "`## Companion charms` section using the format "
+        "`- <charm-name> via <endpoint> (<interface>)` per line.\n\n"
         "Format the output as DESIGN.md with clear headings for each section.\n\n"
         "Include a ## Security Surface section if the workload has authentication, "
         "credential management, access control, or data audit requirements. List the "
@@ -348,6 +353,12 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
         "Pack the charm and deploy it. Ensure all relations are established and "
         "the application reaches active/idle status. Use `juju_wait` to confirm "
         "readiness rather than polling `juju_status` repeatedly.\n\n"
+        "**Companion charms**: if the approved design lists companion charms "
+        "(in a `## Companion charms` section), deploy each companion from "
+        "Charmhub *before* relating them to the primary charm. For each "
+        "companion, use `juju_deploy` with the charm name from Charmhub, then "
+        "`juju_relate` using the endpoint and interface specified in the design. "
+        "Wait for all applications to settle before reporting success.\n\n"
         "**Efficiency**: chain pack → deploy → wait in as few rounds as possible. "
         "Establish all relations in a single round."
     ),

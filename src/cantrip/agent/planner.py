@@ -284,6 +284,8 @@ def plan_one_shot_build(context: PlanningContext, design_content: str) -> list[A
                 f"6. Write unit tests using Scenario (ops.testing) for edge cases and "
                 f"error paths\n"
                 f"7. Pack the charm with charmcraft pack\n\n"
+                f"If the design lists companion charms, include them in integration "
+                f"tests (deploy + relate each companion before asserting status).\n\n"
                 f"Approved design:\n{design_content}"
             ),
             dependencies=[],
@@ -453,7 +455,7 @@ def plan_improvement_fixes(
         fix_ids.append("modernise-code")
 
     # Listing readiness (README, metadata, licence).
-    listing_gaps = [k for k in ("readme", "licence") if gaps.get(k)]
+    listing_gaps = [k for k in ("readme", "licence", "icon") if gaps.get(k)]
     if listing_gaps or gaps.get("listing_metadata"):
         tasks.append(
             AgentTask(
@@ -468,7 +470,9 @@ def plan_improvement_fixes(
                     "2. Fill in missing charmcraft.yaml metadata fields "
                     "(display-name, summary, description, docs, issues, source).\n"
                     "3. Check for LICENSE file — suggest Apache-2.0 if missing.\n"
-                    "4. Commit changes with a descriptive message."
+                    "4. If icon.svg is missing, run `generate_icon` to create a "
+                    "placeholder icon (coloured circle with the charm's initial).\n"
+                    "5. Commit changes with a descriptive message."
                 ),
                 dependencies=["confirm-improvements"],
             )
@@ -821,6 +825,13 @@ The charm code is written to satisfy these tests, not the other way around.
 
 Adapt for the design — add rock-building steps for 12-factor charms, add integration \
 wiring for complex workloads, skip steps that do not apply. Honour any user overrides.
+
+### Companion charms
+
+If the design includes a `## Companion charms` section, generate a DEPLOY task for each \
+companion charm **before** the primary deploy + relate step. Each companion task should \
+deploy the charm from Charmhub and then relate it to the primary charm using the endpoint \
+and interface specified in the design.
 
 After all tests pass, include a **"Generate demo artefacts"** task (category: build) \
 that creates DEMO.md, demo.sh, TUTORIAL.md, and a demo/ directory with captured output \
