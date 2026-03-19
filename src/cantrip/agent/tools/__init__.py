@@ -60,6 +60,7 @@ from cantrip.agent.tools.juju import (
     JujuStatusTool,
     JujuWaitTool,
 )
+from cantrip.agent.tools.loadtest import GenerateLoadTestTool
 from cantrip.agent.tools.observability import (
     JujuDebugLogTool,
     LokiQueryTool,
@@ -185,6 +186,7 @@ __all__ = [
     "GenerateIconTool",
     "GenerateDocsTool",
     "GenerateDiagramTool",
+    "GenerateLoadTestTool",
     # Web
     "WebFetchTool",
     # Inference snaps

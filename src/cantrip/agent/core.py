@@ -48,6 +48,7 @@ from cantrip.agent.tools import (
     GenerateDiagramTool,
     GenerateDocsTool,
     GenerateIconTool,
+    GenerateLoadTestTool,
     GenerateReadmeTool,
     GenerateTerraformTool,
     GenerateTestsTool,
@@ -330,6 +331,7 @@ class CantripAgent:
             GenerateIconTool(),
             GenerateDocsTool(),
             GenerateDiagramTool(),
+            GenerateLoadTestTool(),
             # Web
             WebFetchTool(),
             # Charmhub
