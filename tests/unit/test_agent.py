@@ -666,6 +666,11 @@ class TestInferGapsFromAudit:
         gaps = _infer_gaps_from_audit(text)
         assert gaps["deprecated_apis"] is True
 
+    def test_detects_fetch_libs_as_deprecated(self) -> None:
+        text = "charmcraft fetch-libs import: charms.grafana_k8s — replace with PyPI"
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["deprecated_apis"] is True
+
     def test_no_false_positives_on_clean_audit(self) -> None:
         text = "All checks passed. The charm is well-structured."
         gaps = _infer_gaps_from_audit(text)

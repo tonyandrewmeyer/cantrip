@@ -41,6 +41,26 @@ _DEPRECATED_PATTERNS: list[tuple[str, str, str]] = [
 ]
 
 
+# Known charm libraries that have PyPI equivalents.  Keys are the charm
+# library module prefix (after ``from charms.``), values are the PyPI
+# package name and minimum version.
+_FETCH_LIBS_PYPI_MAP: dict[str, str] = {
+    "data_platform_libs": "data-platform-libs",
+    "grafana_k8s": "grafana-k8s-lib",
+    "loki_k8s": "loki-k8s-lib",
+    "prometheus_k8s": "prometheus-k8s-lib",
+    "tempo_coordinator_k8s": "tempo-coordinator-k8s-lib",
+    "tempo_k8s": "tempo-k8s-lib",
+    "traefik_k8s": "traefik-k8s-lib",
+    "catalogue_k8s": "catalogue-k8s-lib",
+    "certificate_transfer_interface": "certificate-transfer-interface-lib",
+    "tls_certificates_interface": "tls-certificates-interface-lib",
+    "observability_libs": "observability-libs",
+    "operator_libs_linux": "operator-libs-linux",
+    "sdcore_nms_k8s": "sdcore-nms-k8s-lib",
+}
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     """Load a YAML file, returning an empty dict on failure."""
     if not path.exists():
@@ -84,6 +104,45 @@ def _scan_deprecated_apis(python_files: list[Path]) -> list[dict[str, str]]:
                         "advice": advice,
                     }
                 )
+    return findings
+
+
+def _check_fetch_libs(python_files: list[Path]) -> list[dict[str, str]]:
+    """Detect charm library imports that have PyPI equivalents.
+
+    Scans for ``from charms.<lib_prefix>.v<N>.<module>`` patterns and
+    returns a list of findings with the import, the charm library prefix,
+    and the recommended PyPI replacement.
+    """
+    _IMPORT_RE = re.compile(r"from\s+charms\.(\w+)\.v\d+\.\w+")
+    findings: list[dict[str, str]] = []
+    seen_prefixes: set[str] = set()
+
+    for path in python_files:
+        try:
+            content = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for match in _IMPORT_RE.finditer(content):
+            prefix = match.group(1)
+            if prefix in seen_prefixes:
+                continue
+            seen_prefixes.add(prefix)
+            pypi_name = _FETCH_LIBS_PYPI_MAP.get(prefix)
+            if pypi_name:
+                findings.append({
+                    "lib_prefix": prefix,
+                    "pypi_package": pypi_name,
+                    "file": str(path),
+                    "advice": f"Replace with `pip install {pypi_name}`",
+                })
+            else:
+                findings.append({
+                    "lib_prefix": prefix,
+                    "pypi_package": "",
+                    "file": str(path),
+                    "advice": "Check PyPI for a published equivalent",
+                })
     return findings
 
 
@@ -152,6 +211,7 @@ def _format_audit_report(
     tests_present: dict[str, bool],
     has_ops_tracing: bool,
     deprecated_apis: list[dict[str, str]],
+    fetch_libs: list[dict[str, str]],
     has_readme: bool,
     has_licence: bool,
     has_icon: bool,
@@ -180,6 +240,21 @@ def _format_audit_report(
         must_fix.append(
             f"Deprecated API: {finding['api']} in {finding['file']} — {finding['advice']}"
         )
+
+    # Fetch-libs that should be replaced with PyPI packages.
+    for finding in fetch_libs:
+        pypi = finding["pypi_package"]
+        prefix = finding["lib_prefix"]
+        if pypi:
+            should_fix.append(
+                f"charmcraft fetch-libs import: charms.{prefix} — "
+                f"replace with PyPI package `{pypi}`"
+            )
+        else:
+            nice_to_have.append(
+                f"charmcraft fetch-libs import: charms.{prefix} — "
+                f"check PyPI for a published equivalent"
+            )
 
     # Listing completeness.
     for field_name, desc in _LISTING_FIELDS.items():
@@ -294,6 +369,7 @@ class CharmAuditTool(Tool):
         tests_present = _check_tests(charm_dir)
         has_ops_tracing = _check_ops_tracing(charm_dir, python_files)
         deprecated_apis = _scan_deprecated_apis(python_files)
+        fetch_libs = _check_fetch_libs(python_files)
         has_readme = (charm_dir / "README.md").exists()
         has_licence = (charm_dir / "LICENSE").exists() or (charm_dir / "LICENCE").exists()
         has_icon = (charm_dir / "icon.svg").exists()
@@ -305,6 +381,7 @@ class CharmAuditTool(Tool):
             tests_present=tests_present,
             has_ops_tracing=has_ops_tracing,
             deprecated_apis=deprecated_apis,
+            fetch_libs=fetch_libs,
             has_readme=has_readme,
             has_licence=has_licence,
             has_icon=has_icon,
@@ -332,6 +409,7 @@ class CharmAuditTool(Tool):
                     "icon": not has_icon,
                 },
                 "deprecated_apis": deprecated_apis,
+                "fetch_libs": fetch_libs,
                 "listing_fields": listing_present,
             },
         )

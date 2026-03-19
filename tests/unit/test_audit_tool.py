@@ -8,6 +8,7 @@ import pytest
 from cantrip.agent.tools.audit import (
     CharmAuditTool,
     _check_cos_relations,
+    _check_fetch_libs,
     _check_listing_fields,
     _check_ops_tracing,
     _check_tests,
@@ -337,3 +338,106 @@ class TestCharmAuditTool:
 
         assert len(result.data["deprecated_apis"]) >= 1
         assert result.data["deprecated_apis"][0]["api"] == "StoredState"
+
+    @pytest.mark.asyncio
+    async def test_fetch_libs_in_data(self, tool, temp_dir) -> None:
+        """Fetch-libs findings are reported in the data dict."""
+        _write_charmcraft_yaml(temp_dir)
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text(
+            "from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires\n"
+        )
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert len(result.data["fetch_libs"]) >= 1
+        assert result.data["fetch_libs"][0]["lib_prefix"] == "data_platform_libs"
+        assert result.data["fetch_libs"][0]["pypi_package"] == "data-platform-libs"
+
+    @pytest.mark.asyncio
+    async def test_fetch_libs_in_report(self, tool, temp_dir) -> None:
+        """Fetch-libs with known PyPI equivalents appear in the report."""
+        _write_charmcraft_yaml(temp_dir)
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text(
+            "from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider\n"
+        )
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert "grafana-k8s-lib" in result.output
+
+
+# ===================================================================
+# TestCheckFetchLibs
+# ===================================================================
+
+
+class TestCheckFetchLibs:
+    """Tests for _check_fetch_libs — detect charm library imports with PyPI equivalents."""
+
+    def test_no_fetch_libs(self, temp_dir) -> None:
+        src = temp_dir / "src"
+        src.mkdir()
+        f = src / "charm.py"
+        f.write_text("import ops\nclass MyCharm(ops.CharmBase): pass\n")
+        assert _check_fetch_libs([f]) == []
+
+    def test_detects_known_lib(self, temp_dir) -> None:
+        src = temp_dir / "src"
+        src.mkdir()
+        f = src / "charm.py"
+        f.write_text("from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires\n")
+
+        result = _check_fetch_libs([f])
+
+        assert len(result) == 1
+        assert result[0]["lib_prefix"] == "data_platform_libs"
+        assert result[0]["pypi_package"] == "data-platform-libs"
+
+    def test_detects_unknown_lib(self, temp_dir) -> None:
+        """Unknown charm libs are flagged without a specific PyPI package."""
+        src = temp_dir / "src"
+        src.mkdir()
+        f = src / "charm.py"
+        f.write_text("from charms.some_unknown_lib.v1.helpers import do_thing\n")
+
+        result = _check_fetch_libs([f])
+
+        assert len(result) == 1
+        assert result[0]["lib_prefix"] == "some_unknown_lib"
+        assert result[0]["pypi_package"] == ""
+        assert "check pypi" in result[0]["advice"].lower()
+
+    def test_deduplicates_same_prefix(self, temp_dir) -> None:
+        """Multiple imports from the same charm lib produce one finding."""
+        src = temp_dir / "src"
+        src.mkdir()
+        f = src / "charm.py"
+        f.write_text(
+            "from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider\n"
+            "from charms.grafana_k8s.v0.grafana_source import GrafanaSourceProvider\n"
+        )
+
+        result = _check_fetch_libs([f])
+
+        assert len(result) == 1
+        assert result[0]["lib_prefix"] == "grafana_k8s"
+
+    def test_multiple_libs_detected(self, temp_dir) -> None:
+        """Different charm libs each produce a finding."""
+        src = temp_dir / "src"
+        src.mkdir()
+        f = src / "charm.py"
+        f.write_text(
+            "from charms.grafana_k8s.v0.grafana_dashboard import X\n"
+            "from charms.loki_k8s.v1.loki_push_api import Y\n"
+        )
+
+        result = _check_fetch_libs([f])
+
+        prefixes = {r["lib_prefix"] for r in result}
+        assert "grafana_k8s" in prefixes
+        assert "loki_k8s" in prefixes
