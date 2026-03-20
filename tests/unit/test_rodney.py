@@ -124,6 +124,21 @@ class TestRodneyTool:
 
         assert mock_run.call_args[1]["timeout"] == 30
 
+    @pytest.mark.asyncio
+    async def test_os_error_handled(self, tool) -> None:
+        """OSError during subprocess execution returns a clean error."""
+        with (
+            patch("cantrip.agent.tools.rodney.shutil.which", return_value="/usr/bin/rodney"),
+            patch(
+                "cantrip.agent.tools.rodney.subprocess.run",
+                side_effect=OSError("Permission denied"),
+            ),
+        ):
+            result = await tool.execute(command="status")
+
+        assert not result.success
+        assert "Permission denied" in result.error
+
     def test_tool_metadata(self, tool) -> None:
         """Tool has correct name and parameter schema."""
         assert tool.name == "rodney"

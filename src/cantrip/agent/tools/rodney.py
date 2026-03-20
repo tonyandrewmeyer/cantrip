@@ -135,3 +135,9 @@ class RodneyTool(Tool):
                 output="",
                 error=f"rodney {command} timed out after {timeout}s",
             )
+        except (FileNotFoundError, OSError) as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Failed to run rodney: {e}",
+            )

@@ -128,3 +128,9 @@ class ShowboatTool(Tool):
                 output="",
                 error=f"showboat {command} timed out after {_TIMEOUT}s",
             )
+        except (FileNotFoundError, OSError) as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Failed to run showboat: {e}",
+            )

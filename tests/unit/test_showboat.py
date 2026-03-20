@@ -111,6 +111,24 @@ class TestShowboatTool:
                 result = await tool.execute(command=cmd, file="demo.md")
                 assert result.success, f"command {cmd} should succeed"
 
+    @pytest.mark.asyncio
+    async def test_os_error_handled(self, tool) -> None:
+        """OSError during subprocess execution returns a clean error."""
+        with (
+            patch(
+                "cantrip.agent.tools.showboat.shutil.which",
+                return_value="/usr/bin/showboat",
+            ),
+            patch(
+                "cantrip.agent.tools.showboat.subprocess.run",
+                side_effect=OSError("Permission denied"),
+            ),
+        ):
+            result = await tool.execute(command="init", file="demo.md")
+
+        assert not result.success
+        assert "Permission denied" in result.error
+
     def test_tool_metadata(self, tool) -> None:
         """Tool has correct name and parameter schema."""
         assert tool.name == "showboat"

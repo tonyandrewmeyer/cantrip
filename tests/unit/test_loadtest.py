@@ -8,6 +8,7 @@ import pytest
 
 from cantrip.agent.tools.loadtest import (
     GenerateLoadTestTool,
+    _detect_http_port,
     generate_load_test,
 )
 
@@ -115,6 +116,35 @@ class TestGenerateLoadTest:
         assert len(files) == 2
         assert "tests/load/conftest.py" in files
         assert "tests/load/test_load.py" in files
+
+
+class TestDetectHttpPort:
+    """Tests for _detect_http_port."""
+
+    def test_detects_port_from_config(self) -> None:
+        config = {"port": {"type": "int", "default": 8080}}
+        assert _detect_http_port(config, {}) == 8080
+
+    def test_detects_port_from_container_ports(self) -> None:
+        containers = {
+            "app": {"resource": "oci-image", "ports": [{"target": 8000}]},
+        }
+        assert _detect_http_port({}, containers) == 8000
+
+    def test_config_takes_precedence_over_containers(self) -> None:
+        config = {"http_port": {"type": "int", "default": 9090}}
+        containers = {"app": {"ports": [{"target": 8000}]}}
+        assert _detect_http_port(config, containers) == 9090
+
+    def test_returns_none_without_port(self) -> None:
+        assert _detect_http_port({}, {}) is None
+
+    def test_ignores_non_dict_container(self) -> None:
+        assert _detect_http_port({}, {"app": "not-a-dict"}) is None
+
+    def test_ignores_port_outside_valid_range(self) -> None:
+        config = {"port": {"type": "int", "default": 10}}
+        assert _detect_http_port(config, {}) is None
 
 
 # ===================================================================

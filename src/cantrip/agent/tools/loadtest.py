@@ -170,12 +170,15 @@ def _detect_http_port(
             if isinstance(default, int) and 80 <= default <= 65535:
                 return default
 
-    # Check container ports.
+    # Check container ports (charmcraft.yaml v2 uses "ports" in containers).
     for _ctr_name, ctr_data in containers.items():
         if not isinstance(ctr_data, dict):
             continue
-        # charmcraft.yaml v2 uses "ports" or "expose" in containers.
-        # Fall back to common defaults.
+        for port_entry in ctr_data.get("ports", []):
+            if isinstance(port_entry, dict):
+                target = port_entry.get("target")
+                if isinstance(target, int) and 80 <= target <= 65535:
+                    return target
     return None
 
 
