@@ -89,8 +89,10 @@ from cantrip.agent.tools import (
     RegistrySearchTool,
     RockcraftInitTool,
     RockcraftPackTool,
+    RodneyTool,
     RunCharmTestsTool,
     ScalingTestTool,
+    ShowboatTool,
     SkopeoRegistryPushTool,
     TempoQueryTool,
     TestReportTool,
@@ -332,6 +334,9 @@ class CantripAgent:
             GenerateDocsTool(),
             GenerateDiagramTool(),
             GenerateLoadTestTool(),
+            # Demo
+            ShowboatTool(),
+            RodneyTool(),
             # Web
             WebFetchTool(),
             # Charmhub

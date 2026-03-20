@@ -85,7 +85,9 @@ from cantrip.agent.tools.rockcraft import (
     RockcraftPackTool,
     SkopeoRegistryPushTool,
 )
+from cantrip.agent.tools.rodney import RodneyTool
 from cantrip.agent.tools.scaling import ScalingTestTool
+from cantrip.agent.tools.showboat import ShowboatTool
 from cantrip.agent.tools.skills import LoadSkillTool
 from cantrip.agent.tools.task_management import ManageTasksTool
 from cantrip.agent.tools.testing import GenerateTestsTool, RunCharmTestsTool
@@ -187,6 +189,9 @@ __all__ = [
     "GenerateDocsTool",
     "GenerateDiagramTool",
     "GenerateLoadTestTool",
+    # Demo
+    "ShowboatTool",
+    "RodneyTool",
     # Web
     "WebFetchTool",
     # Inference snaps
