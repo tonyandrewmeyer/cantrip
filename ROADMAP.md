@@ -931,17 +931,17 @@ agent-driven workflows with comprehensive `--help` that acts as a skill definiti
 
 Wrap the external tools as Cantrip agent tools so subagents can use them.
 
-- [ ] **`showboat` agent tool** — thin wrapper around Showboat CLI commands (`init`,
-  `note`, `exec`, `image`, `pop`, `verify`); added to the BUILD tool allowlist so
-  demo subagents can construct Markdown documents by running real commands
-- [ ] **`rodney` agent tool** — thin wrapper around Rodney CLI commands (`start`,
-  `stop`, `open`, `js`, `click`, `screenshot`); added to the BUILD tool allowlist
-  for visual capture tasks
-- [ ] **Dependency check** — the demo task checks for Showboat and Rodney availability
-  at the start; if missing, falls back to manual file writing (graceful degradation)
-- [ ] **Rodney for integration tests** — expose Rodney to TEST subagents for verifying
-  web-facing charms visually (does the ingress actually serve the app?), complementing
-  Jubilant's API-level checks
+- [x] **`showboat` agent tool** — `ShowboatTool` (`showboat`) wraps Showboat CLI commands
+  (`init`, `note`, `exec`, `image`, `pop`, `verify`); added to BUILD tool allowlist;
+  returns clear error when showboat is not installed (graceful degradation)
+- [x] **`rodney` agent tool** — `RodneyTool` (`rodney`) wraps Rodney CLI commands
+  (`start`, `stop`, `open`, `screenshot`, `wait`, `text`, `click`, `js`, etc.); added
+  to BUILD and TEST tool allowlists; uses `--local` for directory-scoped sessions;
+  screenshot commands get a longer timeout
+- [x] **Dependency check** — both tools check for CLI availability via `shutil.which`
+  and return actionable error messages when not installed (graceful degradation)
+- [x] **Rodney for integration tests** — `rodney` is in the TEST tool allowlist so
+  TEST subagents can visually verify web-facing charms
 
 ### 13.2 Demo Document Generation
 

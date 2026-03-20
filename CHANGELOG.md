@@ -13,6 +13,8 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Integration test template generation** — `GenerateTestsTool` (`generate_tests`) produces Jubilant-based integration test templates from `charmcraft.yaml`: conftest fixtures, deploy test, plus per-relation, per-action, and per-config tests in separate files; BUILD subagent guidance updated to use `generate_tests` as the first step of the red/green cycle
 - **Architecture diagram** — `GenerateDiagramTool` (`generate_diagram`) generates a Mermaid diagram from `charmcraft.yaml` showing requires/provides/peers relations and containers; also embedded in the generated docs explanation section
 - **Load test generation** — `GenerateLoadTestTool` (`generate_load_test`) produces Jubilant-based load tests measuring action throughput, config settling time, and scaling behaviour; for web-facing charms, also generates a k6 HTTP load test script with ramp stages and thresholds
+- **Showboat integration** — `ShowboatTool` (`showboat`) wraps the Showboat CLI for building demo documents by running real commands and capturing output inline; supports init, note, exec, image, pop, verify subcommands
+- **Rodney integration** — `RodneyTool` (`rodney`) wraps the Rodney CLI for headless browser automation; supports navigation, screenshots, element interaction, and JavaScript execution; available to BUILD and TEST subagents for visual capture and web UI verification
 
 ### Fixed
 - **Task persistence lost on save** — `save_state()` persisted charm metadata and messages but not the work queue; tasks were only saved by the background executor's internal `_persist()` loop, so CLI-mode sessions lost all tasks on restart
