@@ -714,10 +714,7 @@ class TestHandleImprovementConfirmation:
             status=TaskStatus.DONE,
         )
         audit_task.result = (
-            "## Must-fix\n"
-            "- Missing tracing relation\n"
-            "- No unit tests found\n"
-            "- Missing README.md\n"
+            "## Must-fix\n- Missing tracing relation\n- No unit tests found\n- Missing README.md\n"
         )
         confirm_task = AgentTask(
             id="confirm-improvements",

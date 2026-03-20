@@ -416,16 +416,12 @@ class GenerateTestsTool(Tool):
                 },
                 "charm_name": {
                     "type": "string",
-                    "description": (
-                        "Charm name. If omitted, read from charmcraft.yaml."
-                    ),
+                    "description": ("Charm name. If omitted, read from charmcraft.yaml."),
                 },
             },
         }
 
-    async def execute(
-        self, path: str = ".", charm_name: str | None = None
-    ) -> ToolResult:
+    async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate integration test files in the charm directory."""
         charm_dir = Path(path).resolve()
         if not charm_dir.is_dir():
@@ -466,9 +462,7 @@ class GenerateTestsTool(Tool):
             full_path.write_text(content)
             written.append(rel_path)
 
-        test_count = sum(
-            content.count("\ndef test_") for content in files.values()
-        )
+        test_count = sum(content.count("\ndef test_") for content in files.values())
 
         summary = (
             f"Generated integration test templates for '{charm_name}' "

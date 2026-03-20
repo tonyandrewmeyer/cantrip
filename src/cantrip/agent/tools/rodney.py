@@ -48,12 +48,26 @@ class RodneyTool(Tool):
                 "command": {
                     "type": "string",
                     "enum": [
-                        "start", "stop", "status",
-                        "open", "screenshot", "screenshot-el",
-                        "wait", "waitload", "waitstable", "waitidle",
-                        "text", "html", "click", "input",
-                        "js", "assert", "exists", "visible",
-                        "title", "url",
+                        "start",
+                        "stop",
+                        "status",
+                        "open",
+                        "screenshot",
+                        "screenshot-el",
+                        "wait",
+                        "waitload",
+                        "waitstable",
+                        "waitidle",
+                        "text",
+                        "html",
+                        "click",
+                        "input",
+                        "js",
+                        "assert",
+                        "exists",
+                        "visible",
+                        "title",
+                        "url",
                     ],
                     "description": "The rodney subcommand to run",
                 },
@@ -82,21 +96,14 @@ class RodneyTool(Tool):
             return ToolResult(
                 success=False,
                 output="",
-                error=(
-                    "rodney not found. Install from: "
-                    "https://github.com/simonw/rodney"
-                ),
+                error=("rodney not found. Install from: https://github.com/simonw/rodney"),
             )
 
         cmd = [rodney, "--local", command]
         if args:
             cmd.extend(args)
 
-        timeout = (
-            _SCREENSHOT_TIMEOUT
-            if command in ("screenshot", "screenshot-el")
-            else _TIMEOUT
-        )
+        timeout = _SCREENSHOT_TIMEOUT if command in ("screenshot", "screenshot-el") else _TIMEOUT
 
         try:
             result = subprocess.run(

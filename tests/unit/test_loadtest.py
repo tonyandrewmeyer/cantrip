@@ -137,8 +137,7 @@ class TestGenerateLoadTestTool:
     @pytest.mark.asyncio
     async def test_generates_load_test_files(self, tool, temp_dir) -> None:
         (temp_dir / "charmcraft.yaml").write_text(
-            "name: my-charm\n"
-            "actions:\n  backup:\n    description: backup data\n"
+            "name: my-charm\nactions:\n  backup:\n    description: backup data\n"
         )
 
         result = await tool.execute(path=str(temp_dir))
@@ -181,12 +180,7 @@ class TestGenerateLoadTestTool:
     async def test_k6_detection(self, tool, temp_dir) -> None:
         """Charm with HTTP port config gets a k6 script."""
         (temp_dir / "charmcraft.yaml").write_text(
-            "name: web-app\n"
-            "config:\n"
-            "  options:\n"
-            "    port:\n"
-            "      type: int\n"
-            "      default: 8080\n"
+            "name: web-app\nconfig:\n  options:\n    port:\n      type: int\n      default: 8080\n"
         )
 
         result = await tool.execute(path=str(temp_dir))

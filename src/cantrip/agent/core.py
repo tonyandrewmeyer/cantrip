@@ -1226,12 +1226,9 @@ def _infer_gaps_from_audit(text: str) -> dict[str, bool]:
             "integration test" in t and ("missing" in t or "no integration" in t)
         ),
         "deprecated_apis": (
-            "deprecated" in t or "storedstate" in t or "harness" in t
-            or "fetch-libs" in t
+            "deprecated" in t or "storedstate" in t or "harness" in t or "fetch-libs" in t
         ),
         "readme": "readme" in t and ("missing" in t or "no readme" in t),
-        "licence": (
-            ("licence" in t or "license" in t) and ("missing" in t or "no licen" in t)
-        ),
+        "licence": (("licence" in t or "license" in t) and ("missing" in t or "no licen" in t)),
         "listing_metadata": "listing" in t and ("missing" in t or "incomplete" in t),
     }

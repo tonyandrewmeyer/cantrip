@@ -42,9 +42,7 @@ class TestRodneyTool:
     @pytest.mark.asyncio
     async def test_screenshot_success(self, tool) -> None:
         """Screenshot command returns success."""
-        fake_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
+        fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with (
             patch("cantrip.agent.tools.rodney.shutil.which", return_value="/usr/bin/rodney"),
             patch("cantrip.agent.tools.rodney.subprocess.run", return_value=fake_result),
@@ -86,9 +84,7 @@ class TestRodneyTool:
     @pytest.mark.asyncio
     async def test_uses_local_flag(self, tool) -> None:
         """Rodney is invoked with --local for directory-scoped sessions."""
-        fake_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="ok", stderr=""
-        )
+        fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
         with (
             patch("cantrip.agent.tools.rodney.shutil.which", return_value="/usr/bin/rodney"),
             patch(
@@ -103,9 +99,7 @@ class TestRodneyTool:
     @pytest.mark.asyncio
     async def test_screenshot_gets_longer_timeout(self, tool) -> None:
         """Screenshot commands get a longer timeout than regular commands."""
-        fake_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
+        fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with (
             patch("cantrip.agent.tools.rodney.shutil.which", return_value="/usr/bin/rodney"),
             patch(
@@ -119,9 +113,7 @@ class TestRodneyTool:
     @pytest.mark.asyncio
     async def test_regular_command_timeout(self, tool) -> None:
         """Non-screenshot commands get the standard timeout."""
-        fake_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
+        fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with (
             patch("cantrip.agent.tools.rodney.shutil.which", return_value="/usr/bin/rodney"),
             patch(

@@ -434,7 +434,7 @@ def generate_placeholder_svg(charm_name: str) -> str:
         f'  <text x="128" y="140" text-anchor="middle" '
         f'font-family="sans-serif" font-size="120" font-weight="bold" '
         f'fill="white">{initial}</text>\n'
-        '</svg>\n'
+        "</svg>\n"
     )
 
 
@@ -473,9 +473,7 @@ class GenerateIconTool(Tool):
             },
         }
 
-    async def execute(
-        self, path: str = ".", charm_name: str | None = None
-    ) -> ToolResult:
+    async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate icon.svg in the charm directory."""
         charm_dir = Path(path).resolve()
         if not charm_dir.is_dir():
@@ -600,16 +598,12 @@ class GenerateDiagramTool(Tool):
                 },
                 "charm_name": {
                     "type": "string",
-                    "description": (
-                        "Charm name. If omitted, read from charmcraft.yaml."
-                    ),
+                    "description": ("Charm name. If omitted, read from charmcraft.yaml."),
                 },
             },
         }
 
-    async def execute(
-        self, path: str = ".", charm_name: str | None = None
-    ) -> ToolResult:
+    async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate architecture.md with a Mermaid diagram."""
         charm_dir = Path(path).resolve()
         if not charm_dir.is_dir():
@@ -625,23 +619,14 @@ class GenerateDiagramTool(Tool):
 
         diagram = generate_architecture_diagram(charm_name, metadata)
 
-        content = (
-            f"# {charm_name} — Architecture\n"
-            "\n"
-            "```mermaid\n"
-            f"{diagram}"
-            "```\n"
-        )
+        content = f"# {charm_name} — Architecture\n\n```mermaid\n{diagram}```\n"
 
         out_path = charm_dir / "architecture.md"
         out_path.write_text(content)
 
         return ToolResult(
             success=True,
-            output=(
-                f"Generated architecture diagram for '{charm_name}' "
-                f"at {out_path}"
-            ),
+            output=(f"Generated architecture diagram for '{charm_name}' at {out_path}"),
             data={"path": str(out_path), "charm_name": charm_name},
         )
 
@@ -768,10 +753,7 @@ def generate_docs_scaffold(
         f"```\n"
         + (
             "\n## Establish integrations\n\n"
-            + "".join(
-                f"```bash\n{line}\n```\n\n"
-                for line in relation_lines
-            )
+            + "".join(f"```bash\n{line}\n```\n\n" for line in relation_lines)
             if relation_lines
             else ""
         )
@@ -794,9 +776,7 @@ def generate_docs_scaffold(
         f"\n"
         f"deploy\n"
         f"configure\n"
-        f"integrate\n"
-        + ("actions\n" if actions else "")
-        + "```\n"
+        f"integrate\n" + ("actions\n" if actions else "") + "```\n"
     )
 
     files["docs/how-to/deploy.md"] = (
@@ -818,16 +798,17 @@ def generate_docs_scaffold(
     # Configuration how-to.
     config_lines: list[str] = []
     for opt_name in list(config.keys())[:3]:
-        config_lines.append(
-            f"```bash\njuju config {charm_name} {opt_name}=<value>\n```\n"
-        )
+        config_lines.append(f"```bash\njuju config {charm_name} {opt_name}=<value>\n```\n")
     files["docs/how-to/configure.md"] = (
         f"# Configure {display_name}\n"
         f"\n"
         f"Set configuration options using `juju config`:\n"
         f"\n"
-        + ("\n".join(config_lines) if config_lines else
-           f"```bash\njuju config {charm_name} <option>=<value>\n```\n")
+        + (
+            "\n".join(config_lines)
+            if config_lines
+            else f"```bash\njuju config {charm_name} <option>=<value>\n```\n"
+        )
         + "\nSee the [configuration reference](../reference/configuration) "
         "for the full list of options.\n"
     )
@@ -849,8 +830,11 @@ def generate_docs_scaffold(
     files["docs/how-to/integrate.md"] = (
         f"# Integrate {display_name}\n"
         f"\n"
-        + ("\n".join(integrate_lines) if integrate_lines else
-           "This charm has no integrations defined yet.\n")
+        + (
+            "\n".join(integrate_lines)
+            if integrate_lines
+            else "This charm has no integrations defined yet.\n"
+        )
         + "\nSee the [integrations reference](../reference/integrations) "
         "for details.\n"
     )
@@ -867,11 +851,7 @@ def generate_docs_scaffold(
                 + (f"{desc}\n\n" if desc else "")
                 + f"```bash\njuju run {charm_name}/leader {action_name}\n```\n"
             )
-        files["docs/how-to/actions.md"] = (
-            "# Run actions\n"
-            "\n"
-            + "\n".join(action_lines)
-        )
+        files["docs/how-to/actions.md"] = "# Run actions\n\n" + "\n".join(action_lines)
 
     # -- Reference ----------------------------------------------------------
 
@@ -888,8 +868,7 @@ def generate_docs_scaffold(
         f"\n"
         f"```{{toctree}}\n"
         f":maxdepth: 1\n"
-        f"\n"
-        + "\n".join(ref_toctree_entries) + "\n"
+        f"\n" + "\n".join(ref_toctree_entries) + "\n"
         "```\n"
     )
 
@@ -906,11 +885,10 @@ def generate_docs_scaffold(
         if opt_desc:
             entry += f"\n{opt_desc}\n"
         config_ref_lines.append(entry)
-    files["docs/reference/configuration.md"] = (
-        "# Configuration reference\n"
-        "\n"
-        + ("\n".join(config_ref_lines) if config_ref_lines else
-           "No configuration options are defined.\n")
+    files["docs/reference/configuration.md"] = "# Configuration reference\n\n" + (
+        "\n".join(config_ref_lines)
+        if config_ref_lines
+        else "No configuration options are defined.\n"
     )
 
     # Integrations reference.
@@ -925,11 +903,8 @@ def generate_docs_scaffold(
         for rel_name, rel_data in provides.items():
             iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
             integ_ref_lines.append(f"### `{rel_name}`\n\n- **Interface:** `{iface}`\n")
-    files["docs/reference/integrations.md"] = (
-        "# Integrations reference\n"
-        "\n"
-        + ("\n".join(integ_ref_lines) if integ_ref_lines else
-           "No integrations are defined.\n")
+    files["docs/reference/integrations.md"] = "# Integrations reference\n\n" + (
+        "\n".join(integ_ref_lines) if integ_ref_lines else "No integrations are defined.\n"
     )
 
     # Actions reference (only if there are actions).
@@ -954,10 +929,8 @@ def generate_docs_scaffold(
             if params_block:
                 entry += f"{params_block}\n"
             action_ref_lines.append(entry)
-        files["docs/reference/actions.md"] = (
-            "# Actions reference\n"
-            "\n"
-            + "\n".join(action_ref_lines)
+        files["docs/reference/actions.md"] = "# Actions reference\n\n" + "\n".join(
+            action_ref_lines
         )
 
     # -- Explanation --------------------------------------------------------
@@ -977,9 +950,7 @@ def generate_docs_scaffold(
     diagram = generate_architecture_diagram(charm_name, metadata)
     files["docs/explanation/architecture.md"] = (
         "# Architecture\n"
-        "\n"
-        + (f"{description}\n\n" if description else "")
-        + "## Relation topology\n"
+        "\n" + (f"{description}\n\n" if description else "") + "## Relation topology\n"
         "\n"
         "```mermaid\n"
         f"{diagram}"
@@ -994,45 +965,34 @@ def generate_docs_scaffold(
     # -- Build infrastructure -----------------------------------------------
 
     files["docs/conf.py"] = (
-        f'import datetime\n'
-        f'\n'
+        f"import datetime\n"
+        f"\n"
         f'project = "{display_name}"\n'
         f'author = "Canonical Ltd."\n'
-        f'\n'
+        f"\n"
         f'html_title = project + " documentation"\n'
-        f'\n'
+        f"\n"
         f'copyright = "{year}, %s" % author\n'
-        f'\n'
-        f'extensions = [\n'
+        f"\n"
+        f"extensions = [\n"
         f'    "canonical_sphinx",\n'
-        f']\n'
-        f'\n'
-        f'html_context = {{\n'
+        f"]\n"
+        f"\n"
+        f"html_context = {{\n"
         + (f'    "github_url": "{source_url}",\n' if source_url else "")
-        + '}\n'
-        '\n'
-        'exclude_patterns = [\n'
+        + "}\n"
+        "\n"
+        "exclude_patterns = [\n"
         '    "_build",\n'
         '    ".sphinx",\n'
-        ']\n'
+        "]\n"
     )
 
-    files["docs/requirements.txt"] = (
-        "canonical-sphinx~=0.6\n"
-    )
+    files["docs/requirements.txt"] = "canonical-sphinx~=0.6\n"
 
-    files["docs/.custom_wordlist.txt"] = (
-        f"{charm_name}\n"
-        f"{display_name}\n"
-        f"Juju\n"
-        f"Charmhub\n"
-        f"Pebble\n"
-    )
+    files["docs/.custom_wordlist.txt"] = f"{charm_name}\n{display_name}\nJuju\nCharmhub\nPebble\n"
 
-    files["docs/.gitignore"] = (
-        "_build/\n"
-        ".sphinx/\n"
-    )
+    files["docs/.gitignore"] = "_build/\n.sphinx/\n"
 
     # Makefile — pull in the canonical starter pack Makefile via include.
     files["docs/Makefile"] = (
@@ -1075,24 +1035,24 @@ def generate_docs_scaffold(
         "\n"
         "run: install\n"
         "\t. $(DOCS_VENV); sphinx-autobuild -b dirhtml "
-        "\"$(DOCS_SOURCEDIR)\" \"$(DOCS_BUILDDIR)\" $(SPHINX_OPTS) "
+        '"$(DOCS_SOURCEDIR)" "$(DOCS_BUILDDIR)" $(SPHINX_OPTS) '
         "--host $(SPHINX_HOST) --port $(SPHINX_PORT)\n"
         "\n"
         "html: install\n"
         "\t. $(DOCS_VENV); $(SPHINX_BUILD) -b dirhtml "
-        "\"$(DOCS_SOURCEDIR)\" \"$(DOCS_BUILDDIR)\" $(SPHINX_OPTS)\n"
+        '"$(DOCS_SOURCEDIR)" "$(DOCS_BUILDDIR)" $(SPHINX_OPTS)\n'
         "\n"
         "serve:\n"
-        "\tcd \"$(DOCS_BUILDDIR)\" && python3 -m http.server "
+        '\tcd "$(DOCS_BUILDDIR)" && python3 -m http.server '
         "$(SPHINX_PORT) --bind $(SPHINX_HOST)\n"
         "\n"
         "clean: clean-doc\n"
-        "\t@test ! -e \"$(DOCS_VENVDIR)\" -o "
-        "-d \"$(DOCS_VENVDIR)\" && rm -rf $(DOCS_VENVDIR)\n"
+        '\t@test ! -e "$(DOCS_VENVDIR)" -o '
+        '-d "$(DOCS_VENVDIR)" && rm -rf $(DOCS_VENVDIR)\n'
         "\n"
         "clean-doc:\n"
-        "\t@test ! -e \"$(DOCS_BUILDDIR)\" -o "
-        "-d \"$(DOCS_BUILDDIR)\" && rm -rf $(DOCS_BUILDDIR)\n"
+        '\t@test ! -e "$(DOCS_BUILDDIR)" -o '
+        '-d "$(DOCS_BUILDDIR)" && rm -rf $(DOCS_BUILDDIR)\n'
     )
 
     # ReadTheDocs configuration.
@@ -1152,16 +1112,12 @@ class GenerateDocsTool(Tool):
                 },
                 "charm_name": {
                     "type": "string",
-                    "description": (
-                        "Charm name. If omitted, read from charmcraft.yaml."
-                    ),
+                    "description": ("Charm name. If omitted, read from charmcraft.yaml."),
                 },
             },
         }
 
-    async def execute(
-        self, path: str = ".", charm_name: str | None = None
-    ) -> ToolResult:
+    async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate the docs scaffold in the charm directory."""
         charm_dir = Path(path).resolve()
         if not charm_dir.is_dir():

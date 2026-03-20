@@ -520,9 +520,7 @@ class CantripApp(App):
                 preview += "\n\n*(truncated — full report in task result)*"
             chat.add_system_message(f"**Audit complete:**\n\n{preview}")
 
-        chat.add_system_message(
-            "Approving all improvements. Generating fix tasks..."
-        )
+        chat.add_system_message("Approving all improvements. Generating fix tasks...")
 
         self.run_worker(
             self._complete_improvement_confirmation(task.id),

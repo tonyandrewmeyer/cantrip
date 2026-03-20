@@ -756,8 +756,7 @@ class TestGenerateDiagramTool:
     @pytest.mark.asyncio
     async def test_generates_architecture_md(self, tool, temp_dir) -> None:
         (temp_dir / "charmcraft.yaml").write_text(
-            "name: my-charm\n"
-            "requires:\n  db:\n    interface: pgsql\n"
+            "name: my-charm\nrequires:\n  db:\n    interface: pgsql\n"
         )
 
         result = await tool.execute(path=str(temp_dir))

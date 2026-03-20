@@ -81,9 +81,7 @@ class ShowboatTool(Tool):
             return ToolResult(
                 success=False,
                 output="",
-                error=(
-                    "showboat not found. Install with: pip install showboat"
-                ),
+                error=("showboat not found. Install with: pip install showboat"),
             )
 
         valid_commands = {"init", "note", "exec", "image", "pop", "verify"}

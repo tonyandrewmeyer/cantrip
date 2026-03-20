@@ -130,19 +130,23 @@ def _check_fetch_libs(python_files: list[Path]) -> list[dict[str, str]]:
             seen_prefixes.add(prefix)
             pypi_name = _FETCH_LIBS_PYPI_MAP.get(prefix)
             if pypi_name:
-                findings.append({
-                    "lib_prefix": prefix,
-                    "pypi_package": pypi_name,
-                    "file": str(path),
-                    "advice": f"Replace with `pip install {pypi_name}`",
-                })
+                findings.append(
+                    {
+                        "lib_prefix": prefix,
+                        "pypi_package": pypi_name,
+                        "file": str(path),
+                        "advice": f"Replace with `pip install {pypi_name}`",
+                    }
+                )
             else:
-                findings.append({
-                    "lib_prefix": prefix,
-                    "pypi_package": "",
-                    "file": str(path),
-                    "advice": "Check PyPI for a published equivalent",
-                })
+                findings.append(
+                    {
+                        "lib_prefix": prefix,
+                        "pypi_package": "",
+                        "file": str(path),
+                        "advice": "Check PyPI for a published equivalent",
+                    }
+                )
     return findings
 
 

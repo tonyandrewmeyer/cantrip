@@ -121,7 +121,7 @@ def generate_load_test(
             "        times.append(time.monotonic() - start)\n"
             "    avg = sum(times) / len(times)\n"
             '    print(f"\\nConfig settling: avg {avg:.1f}s over {iterations} changes")\n'
-            "    assert avg < 60, f\"Config changes take too long to settle: {avg:.1f}s\"\n"
+            '    assert avg < 60, f"Config changes take too long to settle: {avg:.1f}s"\n'
             "\n"
             "\n"
         )
@@ -136,7 +136,7 @@ def generate_load_test(
         "    elapsed = time.monotonic() - start\n"
         '    print(f"\\nScale 1→3: settled in {elapsed:.1f}s")\n'
         "    status = juju.status()\n"
-        '    assert len(status.apps[deployed_app].units) == 3\n'
+        "    assert len(status.apps[deployed_app].units) == 3\n"
         "    # Scale back down.\n"
         "    juju.scale(deployed_app, 1)\n"
         '    juju.wait(apps=[deployed_app], status="active", timeout=300)\n'
@@ -247,16 +247,12 @@ class GenerateLoadTestTool(Tool):
                 },
                 "charm_name": {
                     "type": "string",
-                    "description": (
-                        "Charm name. If omitted, read from charmcraft.yaml."
-                    ),
+                    "description": ("Charm name. If omitted, read from charmcraft.yaml."),
                 },
             },
         }
 
-    async def execute(
-        self, path: str = ".", charm_name: str | None = None
-    ) -> ToolResult:
+    async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate load test files in the charm directory."""
         charm_dir = Path(path).resolve()
         if not charm_dir.is_dir():

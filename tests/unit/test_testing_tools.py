@@ -400,8 +400,7 @@ class TestGenerateTestsTool:
     @pytest.mark.asyncio
     async def test_generates_test_files(self, tool, temp_dir) -> None:
         (temp_dir / "charmcraft.yaml").write_text(
-            "name: my-charm\n"
-            "actions:\n  backup:\n    description: backup data\n"
+            "name: my-charm\nactions:\n  backup:\n    description: backup data\n"
         )
 
         result = await tool.execute(path=str(temp_dir))

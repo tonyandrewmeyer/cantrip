@@ -82,27 +82,21 @@ class TestShowboatTool:
     @pytest.mark.asyncio
     async def test_workdir_passed(self, tool) -> None:
         """Working directory is forwarded to subprocess."""
-        fake_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="ok", stderr=""
-        )
+        fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
         with (
             patch("cantrip.agent.tools.showboat.shutil.which", return_value="/usr/bin/showboat"),
             patch(
                 "cantrip.agent.tools.showboat.subprocess.run", return_value=fake_result
             ) as mock_run,
         ):
-            await tool.execute(
-                command="exec", file="demo.md", args=["bash", "ls"], workdir="/tmp"
-            )
+            await tool.execute(command="exec", file="demo.md", args=["bash", "ls"], workdir="/tmp")
 
         assert mock_run.call_args[1]["cwd"] == "/tmp"
 
     @pytest.mark.asyncio
     async def test_all_valid_commands_accepted(self, tool) -> None:
         """All documented commands are accepted."""
-        fake_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="ok", stderr=""
-        )
+        fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
         for cmd in ("init", "note", "exec", "image", "pop", "verify"):
             with (
                 patch(
