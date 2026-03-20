@@ -243,7 +243,8 @@ class GeminiProvider(LLMProvider):
         text_parts = []
         if not response.candidates:
             raise ProviderError("Gemini returned an empty response (no candidates).")
-        response_parts = response.candidates[0].content.parts or []
+        candidate_content = response.candidates[0].content
+        response_parts = (candidate_content.parts if candidate_content else None) or []
         thought_parts = self._collect_thought_parts(response_parts)
 
         fc_signatures: list[dict[str, str]] = []
@@ -271,13 +272,16 @@ class GeminiProvider(LLMProvider):
         if fc_signatures:
             metadata["_gemini_fc_signatures"] = fc_signatures
 
+        usage_meta = response.usage_metadata
         return Response(
             content=content,
             tool_calls=tool_calls,
             finish_reason="tool_calls" if tool_calls else "stop",
             usage={
-                "prompt_tokens": response.usage_metadata.prompt_token_count or 0,
-                "completion_tokens": response.usage_metadata.candidates_token_count or 0,
+                "prompt_tokens": (usage_meta.prompt_token_count or 0) if usage_meta else 0,
+                "completion_tokens": (
+                    (usage_meta.candidates_token_count or 0) if usage_meta else 0
+                ),
             },
             metadata=metadata,
         )
@@ -300,7 +304,7 @@ class GeminiProvider(LLMProvider):
         config = self._build_config(temperature, system_prompt, gemini_tools)
 
         try:
-            response_stream = self._client.aio.models.generate_content_stream(
+            response_stream = await self._client.aio.models.generate_content_stream(
                 model=self.model_name,
                 contents=contents,
                 config=config,

@@ -185,17 +185,20 @@ def _print_task_event(task: object) -> None:
 
 
 async def _drain_executor(agent: CantripAgent) -> None:
-    """Wait for the background executor to finish all pending and active tasks."""
+    """Wait for the background executor to finish all pending and active tasks.
+
+    Times out after 60 seconds to avoid hanging on blocked tasks that
+    require user confirmation.
+    """
     queue = agent.work_queue
     if not queue.all_tasks():
         return
     print("[executor] Waiting for tasks to complete...")
-    while True:
+    deadline = asyncio.get_event_loop().time() + 60
+    while asyncio.get_event_loop().time() < deadline:
         tasks = queue.all_tasks()
-        pending_or_active = [
-            t for t in tasks if t.status.value in ("pending", "active", "blocked")
-        ]
-        if not pending_or_active:
+        still_running = [t for t in tasks if t.status.value in ("pending", "active")]
+        if not still_running:
             break
         await asyncio.sleep(1)
     print("[executor] All tasks finished.")

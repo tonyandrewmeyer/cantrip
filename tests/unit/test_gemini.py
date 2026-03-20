@@ -308,6 +308,48 @@ class TestGeminiProviderComplete:
         with pytest.raises(ProviderRateLimitError):
             await provider.complete(messages)
 
+    @pytest.mark.asyncio
+    async def test_complete_none_content_handled(self):
+        """Test that a response with None candidate content does not crash."""
+        provider, _ = _make_provider()
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = None
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 5
+        mock_response.usage_metadata.candidates_token_count = 0
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="Hello")]
+        result = await provider.complete(messages)
+
+        assert result.content == ""
+        assert result.tool_calls == []
+        assert result.finish_reason == "stop"
+
+    @pytest.mark.asyncio
+    async def test_complete_none_usage_metadata_handled(self):
+        """Test that a response with None usage_metadata does not crash."""
+        provider, _ = _make_provider()
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [_make_text_part("Ok")]
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata = None
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="Hello")]
+        result = await provider.complete(messages)
+
+        assert result.content == "Ok"
+        assert result.usage == {"prompt_tokens": 0, "completion_tokens": 0}
+
 
 class TestGeminiProviderStream:
     """Tests for GeminiProvider.stream."""
@@ -325,11 +367,11 @@ class TestGeminiProviderStream:
         chunk2.candidates = [MagicMock()]
         chunk2.candidates[0].content.parts = [_make_text_part("world!")]
 
-        async def mock_stream(*args, **kwargs):  # noqa: ARG001
+        async def _stream_gen():
             yield chunk1
             yield chunk2
 
-        provider._client.aio.models.generate_content_stream = mock_stream
+        provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
 
         messages = [Message(role=Role.USER, content="Hi")]
         chunks = []
@@ -354,10 +396,10 @@ class TestGeminiProviderStream:
             _make_function_call_part("read_file", {"path": "README.md"})
         ]
 
-        async def mock_stream(*args, **kwargs):  # noqa: ARG001
+        async def _stream_gen():
             yield chunk
 
-        provider._client.aio.models.generate_content_stream = mock_stream
+        provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
 
         messages = [Message(role=Role.USER, content="Read the file")]
         chunks = []
@@ -640,10 +682,10 @@ class TestThoughtSignatureRoundTrip:
             _make_text_part("Hi"),
         ]
 
-        async def mock_stream(*args, **kwargs):  # noqa: ARG001
+        async def _stream_gen():
             yield chunk1
 
-        provider._client.aio.models.generate_content_stream = mock_stream
+        provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
 
         chunks = []
         async for c in provider.stream([Message(role=Role.USER, content="Hey")]):

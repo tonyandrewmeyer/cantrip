@@ -5,6 +5,7 @@ BackgroundExecutor picks them up via subagents, and results are
 recorded on the work queue (and optionally persisted).
 """
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,9 @@ class TestPlanAndExecute:
         executor.start()
         try:
             await wait_for_queue_state(queue, done_count=3)
+            # Give the executor one more poll cycle to pick up and block the
+            # confirm task (it becomes ready after operational-discovery is done).
+            await asyncio.sleep(0.2)
         finally:
             await executor.stop()
 
