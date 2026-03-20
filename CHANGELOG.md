@@ -17,6 +17,10 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Rodney integration** — `RodneyTool` (`rodney`) wraps the Rodney CLI for headless browser automation; supports navigation, screenshots, element interaction, and JavaScript execution; available to BUILD and TEST subagents for visual capture and web UI verification
 
 ### Fixed
+- **Gemini streaming crash** — `stream()` did not `await` the `generate_content_stream()` coroutine, causing `TypeError: 'async for' requires an object with __aiter__ method`; streaming was completely broken for Gemini
+- **Gemini safety-filter crash** — `complete()` accessed `response.candidates[0].content.parts` without guarding against `content` being `None` (happens when Gemini safety-filters the response); now returns an empty response instead of crashing
+- **Gemini usage metadata crash** — `complete()` accessed `response.usage_metadata.prompt_token_count` without checking `usage_metadata` for `None`; now defaults to zero
+- **CLI drain hang** — `_drain_executor()` could loop forever waiting for blocked CONFIRM tasks that require user confirmation; now times out after 60 seconds and only waits for pending/active tasks
 - **Task persistence lost on save** — `save_state()` persisted charm metadata and messages but not the work queue; tasks were only saved by the background executor's internal `_persist()` loop, so CLI-mode sessions lost all tasks on restart
 - **COS deployment crashes on LXD controller** — preflight tried to deploy `cos-lite` (K8s-only charms) into a model on an IAAS/LXD cloud, always failing; now detects the cloud type and skips COS gracefully (full multi-controller COS support planned in ROADMAP Phase 22)
 - **Forward-referenced constants in autodeploy** — `_DEMO_PREFIX` and `_RETRY_PREFIX` were defined after their first use, causing `NameError` at runtime when `tasks_after_test()` or `tasks_after_build_failure()` was called
