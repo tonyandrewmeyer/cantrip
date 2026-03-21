@@ -113,10 +113,12 @@ async def _api_juju_status(request: web.Request) -> web.Response:
         return web.json_response({"apps": {}, "relations": []})
 
     try:
+        import functools
+
         import jubilant
 
         juju = jubilant.Juju(model=dev_model)
-        status = juju.status()
+        status = await asyncio.to_thread(functools.partial(juju.status))
     except Exception:
         log.debug("Failed to fetch juju status", exc_info=True)
         return web.json_response({"apps": {}, "relations": []})
@@ -162,28 +164,29 @@ async def _api_logs(request: web.Request) -> web.Response:
 
     agent: CantripAgent = request.app["agent"]
     dev_model = agent.state.dev_model
-    lines = int(request.query.get("lines", "100"))
+    try:
+        lines = int(request.query.get("lines", "100"))
+    except ValueError:
+        lines = 100
     level = request.query.get("level", "WARNING")
 
     if not dev_model or not shutil.which("juju"):
         return web.json_response({"lines": [], "error": "No model or juju CLI"})
 
     try:
-        result = subprocess.run(
-            [
-                "juju",
-                "debug-log",
-                "--model",
-                dev_model,
-                "-n",
-                str(lines),
-                "--level",
-                level,
-                "--no-tail",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
+        cmd = [
+            "juju",
+            "debug-log",
+            "--model",
+            dev_model,
+            "-n",
+            str(lines),
+            "--level",
+            level,
+            "--no-tail",
+        ]
+        result = await asyncio.to_thread(
+            subprocess.run, cmd, capture_output=True, text=True, timeout=15
         )
         log_lines = result.stdout.strip().split("\n") if result.stdout.strip() else []
     except (subprocess.TimeoutExpired, FileNotFoundError):

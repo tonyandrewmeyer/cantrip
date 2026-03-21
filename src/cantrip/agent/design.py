@@ -218,7 +218,7 @@ def _get_list(heading_map: dict[str, str], key: str) -> list[str]:
     return items
 
 
-_COMPANION_RE = re.compile(r"^[-*]\s+(\S+)\s+via\s+(\S+)\s+\(([^)]+)\)\s*$")
+_COMPANION_RE = re.compile(r"^[-*]\s+(\S+)\s+via\s+`?(\S+?)`?\s+\(([^)]+)\)\s*$")
 
 
 def _get_companions(heading_map: dict[str, str]) -> list[CompanionCharm]:
