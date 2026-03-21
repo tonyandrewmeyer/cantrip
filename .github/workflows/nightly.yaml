@@ -36,7 +36,7 @@ jobs:
   live-llm:
     name: Live LLM tests
     runs-on: ubuntu-latest
-    if: ${{ vars.GEMINI_API_KEY != '' || secrets.GEMINI_API_KEY != '' }}
+    if: ${{ vars.GEMINI_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v6
         with:
