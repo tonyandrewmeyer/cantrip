@@ -6,12 +6,33 @@ from typing import Any
 from cantrip.agent.tools.base import Tool, ToolResult
 
 
-class ReadFileTool(Tool):
-    """Tool to read file contents."""
+class PathAwareTool(Tool):
+    """Base class for tools that resolve paths relative to a base directory.
 
-    def __init__(self, base_path: Path | None = None):
-        """Initialise with optional base path restriction."""
+    Subclasses inherit ``_resolve_path`` which resolves user-supplied paths
+    against an optional *base_path* and prevents path-traversal escapes.
+    """
+
+    def __init__(self, base_path: Path | None = None) -> None:
         self.base_path = base_path
+
+    def _resolve_path(self, path: str) -> Path:
+        """Resolve *path*, ensuring it stays within ``base_path`` when set."""
+        resolved = Path(path)
+        if not resolved.is_absolute() and self.base_path:
+            resolved = self.base_path / path
+        resolved = resolved.resolve()
+
+        if self.base_path:
+            base_resolved = self.base_path.resolve()
+            if not resolved.is_relative_to(base_resolved):
+                raise ValueError(f"Path {path} is outside allowed directory")
+
+        return resolved
+
+
+class ReadFileTool(PathAwareTool):
+    """Tool to read file contents."""
 
     @property
     def name(self) -> str:
@@ -33,20 +54,6 @@ class ReadFileTool(Tool):
             },
             "required": ["path"],
         }
-
-    def _resolve_path(self, path: str) -> Path:
-        """Resolve path, ensuring it's within base_path if set."""
-        resolved = Path(path)
-        if not resolved.is_absolute() and self.base_path:
-            resolved = self.base_path / path
-        resolved = resolved.resolve()
-
-        if self.base_path:
-            base_resolved = self.base_path.resolve()
-            if not resolved.is_relative_to(base_resolved):
-                raise ValueError(f"Path {path} is outside allowed directory")
-
-        return resolved
 
     async def execute(self, path: str) -> ToolResult:
         """Read file contents."""
@@ -79,12 +86,8 @@ class ReadFileTool(Tool):
             )
 
 
-class WriteFileTool(Tool):
+class WriteFileTool(PathAwareTool):
     """Tool to write file contents."""
-
-    def __init__(self, base_path: Path | None = None):
-        """Initialise with optional base path restriction."""
-        self.base_path = base_path
 
     @property
     def name(self) -> str:
@@ -113,20 +116,6 @@ class WriteFileTool(Tool):
             "required": ["path", "content"],
         }
 
-    def _resolve_path(self, path: str) -> Path:
-        """Resolve path, ensuring it's within base_path if set."""
-        resolved = Path(path)
-        if not resolved.is_absolute() and self.base_path:
-            resolved = self.base_path / path
-        resolved = resolved.resolve()
-
-        if self.base_path:
-            base_resolved = self.base_path.resolve()
-            if not resolved.is_relative_to(base_resolved):
-                raise ValueError(f"Path {path} is outside allowed directory")
-
-        return resolved
-
     async def execute(self, path: str, content: str) -> ToolResult:
         """Write file contents."""
         try:
@@ -149,12 +138,8 @@ class WriteFileTool(Tool):
             )
 
 
-class ListDirectoryTool(Tool):
+class ListDirectoryTool(PathAwareTool):
     """Tool to list directory contents."""
-
-    def __init__(self, base_path: Path | None = None):
-        """Initialise with optional base path restriction."""
-        self.base_path = base_path
 
     @property
     def name(self) -> str:
@@ -176,20 +161,6 @@ class ListDirectoryTool(Tool):
                 },
             },
         }
-
-    def _resolve_path(self, path: str) -> Path:
-        """Resolve path, ensuring it's within base_path if set."""
-        resolved = Path(path)
-        if not resolved.is_absolute() and self.base_path:
-            resolved = self.base_path / path
-        resolved = resolved.resolve()
-
-        if self.base_path:
-            base_resolved = self.base_path.resolve()
-            if not resolved.is_relative_to(base_resolved):
-                raise ValueError(f"Path {path} is outside allowed directory")
-
-        return resolved
 
     async def execute(self, path: str = ".") -> ToolResult:
         """List directory contents."""
@@ -227,12 +198,8 @@ class ListDirectoryTool(Tool):
             )
 
 
-class EditFileTool(Tool):
+class EditFileTool(PathAwareTool):
     """Tool to make targeted edits to a file."""
-
-    def __init__(self, base_path: Path | None = None):
-        """Initialise with optional base path restriction."""
-        self.base_path = base_path
 
     @property
     def name(self) -> str:
@@ -262,20 +229,6 @@ class EditFileTool(Tool):
             },
             "required": ["path", "old_string", "new_string"],
         }
-
-    def _resolve_path(self, path: str) -> Path:
-        """Resolve path, ensuring it's within base_path if set."""
-        resolved = Path(path)
-        if not resolved.is_absolute() and self.base_path:
-            resolved = self.base_path / path
-        resolved = resolved.resolve()
-
-        if self.base_path:
-            base_resolved = self.base_path.resolve()
-            if not resolved.is_relative_to(base_resolved):
-                raise ValueError(f"Path {path} is outside allowed directory")
-
-        return resolved
 
     async def execute(self, path: str, old_string: str, new_string: str) -> ToolResult:
         """Edit file by replacing string."""

@@ -4,7 +4,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Refactored file tools** — extracted `PathAwareTool` base class in `tools/files.py` to eliminate four identical copies of `_resolve_path()` across `ReadFileTool`, `WriteFileTool`, `ListDirectoryTool`, and `EditFileTool`
+- **Refactored git tools** — extracted `_run_git()` helper in `tools/git.py` to consolidate the repeated pattern of git-not-found check, subprocess execution, timeout handling, and exit code inspection across all eight git tool classes
+- **Shared retry logic** — extracted `complete_with_retry()` into `agent/retry.py`, used by both the main conversation loop and subagent runners; eliminates duplicated retry-with-backoff implementations
+- **Shared tool execution** — extracted `execute_tool()` into `tools/base.py`, shared by `core.py` and `subagent.py`; consolidates error handling for unknown tools, bad arguments, and unexpected exceptions
+- **Centralised tool construction** — added `build_tools()` factory in `tools/__init__.py`, replacing 80+ individual class imports in `core.py` with a single function call
+- **Category guidance as markdown** — moved subagent category guidance (research, build, deploy, test, debug, infra) from inline Python strings to plain markdown files in `prompts/subagent/`; these can be maintained without Python knowledge; also moved demo and acceptance guidance to markdown files
+
 ### Added
+- **Acceptance testing (Phase 17)** — five new tools exercise a deployed charm like a real operator: `action_exerciser` runs every action and verifies results (skipping destructive actions by default); `relation_smoke_test` deploys well-known partner charms for each relation endpoint and verifies both sides settle; `workload_endpoint_test` discovers HTTP/TCP endpoints from charm metadata and probes them with health checks; `config_variation_test` sets each config option to a non-default value, waits for settle, and resets; `acceptance_report` consolidates all results into `ACCEPTANCE.md`. The build pipeline now chains TEST → acceptance → demo (previously TEST → demo directly). Planner guidance updated to include acceptance testing as a standard phase.
 - **Charm pairs** — design proposals now identify companion charms (databases, caches, ingress) needed at deploy time; companions are parsed into structured `CompanionCharm` data, shown to the user for confirmation, and flow into planner and deploy subagent guidance so they are automatically deployed and related alongside the primary charm
 - **Migration assistance** — `cantrip run --improve /path/to/charm` launches improvement mode: audits the existing charm, presents findings, and generates fix tasks for observability, tests, deprecated APIs, and listing readiness; wires the full audit → confirm → fix → validate → deploy → review pipeline end-to-end
 - **Placeholder icon generation** — `GenerateIconTool` (`generate_icon`) creates a simple SVG icon (coloured circle with the charm's initial letter) for charms missing `icon.svg`, unblocking Charmhub publishing; colour is deterministically derived from the charm name; the listing-readiness improvement task now includes icon generation

@@ -7,10 +7,12 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from importlib import resources
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
+from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm import base as llm
 
@@ -25,9 +27,6 @@ log = logging.getLogger(__name__)
 # Focused tasks need fewer rounds than the open-ended conversation loop.
 # Kept tight to encourage batching tool calls rather than one-per-round chains.
 MAX_SUBAGENT_ROUNDS = 8
-
-_TRANSIENT_RETRIES = 3
-_TRANSIENT_BASE_DELAY = 30  # seconds
 
 # Action-oriented — slightly more deterministic than conversation (0.7).
 _SUBAGENT_TEMPERATURE = 0.5
@@ -186,10 +185,20 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "upgrade_test",
             "generate_load_test",
             "rodney",
+            # Acceptance testing tools.
+            "action_exerciser",
+            "relation_smoke_test",
+            "workload_endpoint_test",
+            "config_variation_test",
+            "acceptance_report",
+            # Juju operations needed for acceptance testing.
             "juju_status",
             "juju_run_action",
             "juju_relate",
             "juju_wait",
+            "juju_deploy",
+            "juju_config",
+            "juju_ssh",
             "read_file",
             "list_directory",
             "virtual_file_read",
@@ -253,186 +262,32 @@ class SubagentContext:
 # Category-specific guidance injected into the system prompt
 # ---------------------------------------------------------------------------
 
+# Guidance files live in prompts/subagent/ as plain markdown so they can be
+# maintained and reused without touching Python code.
+_PROMPTS_PKG = "cantrip.agent.prompts.subagent"
+
+
+def _load_guidance(filename: str) -> str:
+    """Load a guidance markdown file from the subagent prompts package."""
+    return resources.files(_PROMPTS_PKG).joinpath(filename).read_text(encoding="utf-8").strip()
+
+
 _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
-    TaskCategory.RESEARCH: (
-        "### Research principles\n\n"
-        "- **Cite sources**: include URLs, file paths, and version numbers for every claim.\n"
-        "- **Structured output**: use Markdown with clear headings so downstream tasks "
-        "can parse your findings.\n"
-        "- **Flag gaps**: mark anything you could not determine as `[UNKNOWN]` rather than "
-        "guessing.\n"
-        "- **Batch fetches**: call `web_fetch` for multiple URLs in a single round. "
-        "Similarly, read multiple files at once rather than one per round.\n"
-        "- **Stop when sufficient**: 2-3 good sources per topic is enough. Do not "
-        "chase every link — gather the key facts and summarise.\n\n"
-        "### Task-type guidance\n\n"
-        "**source-analysis**: Clone the repository, then in one round read README, "
-        "dependency files (requirements.txt, pyproject.toml, package.json, go.mod, "
-        "pom.xml), Dockerfile, and entry points simultaneously. "
-        "Run `analyse_framework` in the same round if possible. "
-        "Write findings into WORKLOAD.md at the charm root and finish.\n\n"
-        "**web-research**: Fetch the project website, official docs, and one deployment "
-        "guide in a single round. Extract operational patterns: deployment, config, "
-        "monitoring, scaling. Summarise and finish — do not fetch more than 3-4 pages.\n\n"
-        "**charmhub-survey**: Call `charmhub_search` once. If results exist, call "
-        "`charmhub_info` for the top 1-2 candidates in one round. Summarise findings "
-        "and finish.\n\n"
-        "**operational-discovery**: Synthesise all research into a structured design "
-        "proposal. Answer the operational story questions:\n"
-        "- **Storage**: What data does the workload persist? File paths, databases, volumes?\n"
-        "- **Clustering**: Does it support clustering, replication, or federation?\n"
-        "- **Health**: What health/readiness endpoints or probes does it offer?\n"
-        "- **Config**: What are the critical configuration knobs?\n"
-        "- **Failure modes**: How does it fail? What recovery mechanisms exist?\n"
-        "- **Integrations**: What external services does it connect to?\n"
-        "- **Observability**: What metrics, logs, and traces does it emit?\n"
-        "- **Scaling**: How does it scale — horizontally, vertically, or both?\n"
-        "- **Backup**: What backup/restore procedures does it support?\n"
-        "- **Security surface**: Does the workload handle authentication, credentials, "
-        "access control, or sensitive data? If yes, list the security surface indicators "
-        "and recommend OWASP event types to log.\n\n"
-        "- **Companion charms**: What Charmhub charms does this workload need at deploy "
-        "time (databases, caches, message brokers, ingress)? List them in a "
-        "`## Companion charms` section using the format "
-        "`- <charm-name> via <endpoint> (<interface>)` per line.\n\n"
-        "Format the output as DESIGN.md with clear headings for each section.\n\n"
-        "Include a ## Security Surface section if the workload has authentication, "
-        "credential management, access control, or data audit requirements. List the "
-        "indicators and recommended event types (e.g. authn_login_success, authz_fail). "
-        "Omit this section for workloads with no security surface.\n\n"
-        "**Important — structured questions**: The ## Questions section must use this "
-        "exact format. Each question is a top-level bullet with a **bold key** prefix, "
-        "followed by 2-3 indented sub-bullets as suggested answers:\n\n"
-        "```\n"
-        "## Questions\n"
-        "- **Substrate**: Should this charm target Kubernetes or machine?\n"
-        "  - Kubernetes (recommended — Dockerfile detected)\n"
-        "  - Machine\n"
-        "- **Database**: Which database backend should the charm support?\n"
-        "  - PostgreSQL only\n"
-        "  - PostgreSQL and MySQL\n"
-        "  - SQLite (embedded, no relation needed)\n"
-        "```\n\n"
-        "The questions will be presented to the user one at a time with the suggestions "
-        "as selectable options, so keep each question focused and self-contained."
-    ),
-    TaskCategory.BUILD: (
-        "Write clean, well-structured code following ops framework conventions. "
-        "Include COS integration, and follow the charm type path (PaaS, custom, "
-        "or infrastructure) as appropriate.\n\n"
-        "**Red/green cycle**: follow an integration-tests-first approach.\n"
-        "1. Read the design and any existing files (including integration tests if "
-        "they already exist) in one round.\n"
-        "2. If integration tests do not exist yet, run `generate_tests` to "
-        "scaffold Jubilant-based integration tests from charmcraft.yaml, then "
-        "customise them to match the design. Alternatively, write them from "
-        "scratch — derive test "
-        "cases from the approved design: each relation endpoint gets a deploy+relate "
-        "test, each action gets an execute test, each config option gets a set+verify "
-        "test, and COS integration gets a relation test. Use Jubilant patterns. These "
-        "tests define the external contract and are expected to fail initially (red).\n"
-        "3. Write charm code (src/charm.py, Pebble layers, integrations, config) "
-        "targeting the integration tests (green).\n"
-        "4. Run `run_charm_tests` with `test_type='integration'` to check progress. "
-        "Use the `pattern` parameter to target specific failing tests for faster "
-        "iteration (e.g. `pattern='test_deploy'`).\n"
-        "5. If tests fail, read the output, fix the code, and re-run. Iterate until "
-        "integration tests pass or you exhaust your rounds.\n"
-        "6. Write unit tests using Scenario (ops.testing) for edge cases and error "
-        "paths that integration tests cannot easily cover: missing relations → "
-        "BlockedStatus, invalid config → error handling, Pebble not ready → "
-        "WaitingStatus.\n\n"
-        "**Efficiency**: write multiple files in a single round when they are "
-        "independent. Do not re-read files you just wrote.\n\n"
-        "**Version control**: before finishing, use `git_add` to stage your changes "
-        "and `git_commit` with a descriptive message summarising what was built. "
-        "Every build task should leave a clean commit.\n\n"
-        "**Self-check**: before finishing, run `charm_validate` to verify the charm "
-        "packs and tests pass. If validation fails, attempt one fix and "
-        "re-validate. Do not report success if validation fails.\n\n"
-        "**Security event logging**: if the design identifies a security surface, "
-        "generate a `src/log_security.py` helper that emits structured OWASP-format "
-        "security events (JSON with datetime, appid, type, event, level, description). "
-        "Call it from charm event handlers at the appropriate points (secret hooks, "
-        "relation changes, action handlers). Never log sensitive data.\n\n"
-        "**Tracing**: ops-tracing handles hook/Pebble/relation spans automatically. "
-        "Only add manual spans for long-running workload operations (backups, "
-        "migrations), external API calls, and decision logic with fallback paths. "
-        "Do not span simple Pebble or relation handlers."
-    ),
-    TaskCategory.DEPLOY: (
-        "Pack the charm and deploy it. Ensure all relations are established and "
-        "the application reaches active/idle status. Use `juju_wait` to confirm "
-        "readiness rather than polling `juju_status` repeatedly.\n\n"
-        "**Companion charms**: if the approved design lists companion charms "
-        "(in a `## Companion charms` section), deploy each companion from "
-        "Charmhub *before* relating them to the primary charm. For each "
-        "companion, use `juju_deploy` with the charm name from Charmhub, then "
-        "`juju_relate` using the endpoint and interface specified in the design. "
-        "Wait for all applications to settle before reporting success.\n\n"
-        "**Efficiency**: chain pack → deploy → wait in as few rounds as possible. "
-        "Establish all relations in a single round."
-    ),
-    TaskCategory.TEST: (
-        "Run the test suite and report results clearly. If tests fail, include "
-        "the failure output so debug tasks can act on it.\n\n"
-        "**Combined validation**: run both unit tests and integration tests as a "
-        "combined gate. Run unit tests first (faster feedback), then integration "
-        "tests. Report pass/fail counts for each.\n\n"
-        "**Efficiency**: run `run_charm_tests` for unit and integration in "
-        "successive rounds (unit first, then integration). Report pass/fail counts "
-        "and stop — do not attempt fixes (that is a debug task)."
-    ),
-    TaskCategory.DEBUG: (
-        "Investigate failures methodically. Query logs, traces, and unit status "
-        "in a single round to gather diagnostics. Then apply a targeted fix and "
-        "verify it resolves the issue. Report the root cause and what you changed.\n\n"
-        "**Efficiency**: fetch `juju_debug_log`, `loki_query`, and `juju_status` "
-        "in one round. Apply the fix, then verify — aim for 2-3 rounds total.\n\n"
-        "**Version control**: after applying a fix, use `git_add` to stage the "
-        "changed files and `git_commit` with a message describing the fix and "
-        "root cause. Every debug fix should be committed."
-    ),
-    TaskCategory.INFRA: (
-        "Set up infrastructure efficiently. Prepare the environment with Concierge, "
-        "create models, and initialise repositories. Report the final state of each "
-        "resource.\n\n"
-        "**Efficiency**: run independent setup steps in parallel (e.g. model creation "
-        "and git init)."
-    ),
+    TaskCategory.RESEARCH: _load_guidance("research.md"),
+    TaskCategory.BUILD: _load_guidance("build.md"),
+    TaskCategory.DEPLOY: _load_guidance("deploy.md"),
+    TaskCategory.TEST: _load_guidance("test.md"),
+    TaskCategory.DEBUG: _load_guidance("debug.md"),
+    TaskCategory.INFRA: _load_guidance("infra.md"),
 }
 
-# Task-specific guidance overlay for demo generation tasks.
-_DEMO_GUIDANCE = (
-    "### Demo generation\n\n"
-    "You are generating demo artefacts for a deployed, tested charm. "
-    "Capture real output from the live deployment.\n\n"
-    "**Steps:**\n"
-    "1. Read `charmcraft.yaml` to discover the charm's actions, config "
-    "options, and relation endpoints.\n"
-    "2. Read `WORKLOAD.md` and `DESIGN.md` (if they exist) for context.\n"
-    "3. Run `juju_status` and save the output to `demo/juju-status.txt`.\n"
-    "4. Run `juju_config` and save to `demo/config-reference.txt`.\n"
-    "5. For each action in the charm, run `juju_run_action` with sensible "
-    "defaults and save JSON results to `demo/actions/<name>.json`.\n"
-    "6. Capture a `juju_debug_log` snippet (last 50 lines) to "
-    "`demo/logs/event-log.txt`.\n"
-    "7. Write `DEMO.md` — an annotated walk-through interleaving real "
-    "command output with explanations. Structure: overview, deployment, "
-    "relations, configuration, actions, observability.\n"
-    "8. Write `demo.sh` — a self-contained bash script that reproduces "
-    "the full deployment: deploy, relate, configure, verify. Include an "
-    "optional `--cleanup` flag that destroys the model. Mark it executable.\n"
-    "9. Write `TUTORIAL.md` — a step-by-step guide covering: "
-    "prerequisites, deploying the charm, verifying the deployment, "
-    "exercising features (config, actions, scaling), observability, "
-    "and troubleshooting. Include copy-pasteable commands.\n"
-    "10. Stage all files with `git_add` and commit with a descriptive "
-    "message.\n\n"
-    "**Important:** draw on WORKLOAD.md and DESIGN.md to explain *why* "
-    "certain config options matter and what the actions do operationally "
-    "— not just how to run commands."
-)
+_DEMO_GUIDANCE = _load_guidance("demo.md")
+
+# Title prefix for acceptance test tasks — used to identify them in the
+# subagent prompt builder and in autodeploy follow-up logic.
+_ACCEPTANCE_PREFIX = "Acceptance test:"
+
+_ACCEPTANCE_GUIDANCE = _load_guidance("acceptance.md")
 
 
 # ---------------------------------------------------------------------------
@@ -576,6 +431,10 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
     # 4b. Task-specific guidance overlay for demo generation.
     if "demo" in task.title.lower() and task.category == TaskCategory.BUILD:
         sections.append(f"## Demo guidance\n\n{_DEMO_GUIDANCE}")
+
+    # 4c. Task-specific guidance overlay for acceptance testing.
+    if task.title.startswith(_ACCEPTANCE_PREFIX) and task.category == TaskCategory.TEST:
+        sections.append(f"## Acceptance testing guidance\n\n{_ACCEPTANCE_GUIDANCE}")
 
     # 5. Prior task results (dependency handoff).
     if context.prior_results:
@@ -772,66 +631,20 @@ class Subagent:
         messages: list[llm.Message],
         tools: list[llm.Tool] | None,
     ) -> llm.Response:
-        """Call ``provider.complete()`` with linear-backoff retry for transient errors.
-
-        When a shared ``ProviderThrottle`` is set, waits for any existing
-        cooldown before each attempt and signals the throttle on rate-limit
-        errors so other subagents back off too.
-        """
-        last_error: llm.ProviderRateLimitError | llm.ProviderOverloadedError | None = None
-        for attempt in range(1, _TRANSIENT_RETRIES + 1):
-            try:
-                # Respect shared cooldown from other subagents.
-                if self._throttle is not None:
-                    await self._throttle.wait_if_throttled(self._provider.name)
-                response = await self._provider.complete(
-                    messages=messages,
-                    tools=tools,
-                    temperature=_SUBAGENT_TEMPERATURE,
-                )
-                if self._on_usage:
-                    self._on_usage(response)
-                return response
-            except (llm.ProviderRateLimitError, llm.ProviderOverloadedError) as exc:
-                last_error = exc
-                if attempt == _TRANSIENT_RETRIES:
-                    raise
-                delay = _TRANSIENT_BASE_DELAY * attempt
-                # Signal the shared throttle so other subagents back off.
-                if self._throttle is not None:
-                    self._throttle.signal_rate_limit(self._provider.name, delay)
-                log.warning(
-                    "Subagent provider unavailable — retrying in %ds (attempt %d/%d): %s",
-                    delay,
-                    attempt,
-                    _TRANSIENT_RETRIES,
-                    exc,
-                )
-                await asyncio.sleep(delay)
-        # Unreachable — the final attempt re-raises above.
-        raise last_error  # type: ignore[misc]
+        """Call ``provider.complete()`` with linear-backoff retry for transient errors."""
+        response = await complete_with_retry(
+            self._provider,
+            messages,
+            tools,
+            temperature=_SUBAGENT_TEMPERATURE,
+            throttle=self._throttle,
+        )
+        if self._on_usage:
+            self._on_usage(response)
+        return response
 
     async def _execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Look up and execute a tool by name."""
-        tool = self._tool_map.get(name)
-        if not tool:
-            return ToolResult(
-                success=False,
-                output="",
-                error=f"Unknown tool: {name}",
-            )
-        try:
-            return await tool.execute(**arguments)
-        except TypeError as exc:
-            return ToolResult(
-                success=False,
-                output="",
-                error=f"Invalid arguments for {name}: {exc}",
-            )
-        except Exception as exc:
-            log.warning("Tool %s raised %s: %s", name, type(exc).__name__, exc)
-            return ToolResult(
-                success=False,
-                output="",
-                error=f"Tool execution failed: {exc}",
-            )
+        from cantrip.agent.tools.base import execute_tool
+
+        return await execute_tool(self._tool_map, name, arguments)

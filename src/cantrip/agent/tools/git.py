@@ -44,6 +44,46 @@ def _auth_hint(stderr: str) -> str:
     return stderr or "git operation failed"
 
 
+def _run_git(
+    args: list[str],
+    *,
+    cwd: str | None = None,
+    timeout: int = _GIT_TIMEOUT,
+    env: dict[str, str] | None = None,
+) -> ToolResult:
+    """Run a git command and return a ``ToolResult``.
+
+    Handles the git-not-found check, subprocess timeout, and non-zero
+    exit code — the three concerns every git tool repeats.
+    """
+    if not shutil.which("git"):
+        return ToolResult(success=False, output="", error="git not found. Is it installed?")
+
+    label = args[0] if args else "git"
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return ToolResult(success=False, output="", error=f"git {label} timed out")
+
+    if result.returncode != 0:
+        return ToolResult(
+            success=False,
+            output=result.stdout,
+            error=result.stderr or f"git {label} failed",
+        )
+
+    # Some commands (clone, push) write progress to stderr on success.
+    output = result.stdout.strip() or result.stderr.strip()
+    return ToolResult(success=True, output=output)
+
+
 class GitCloneTool(Tool):
     """Tool to clone a git repository."""
 
@@ -89,47 +129,22 @@ class GitCloneTool(Tool):
         depth: int | None = None,
     ) -> ToolResult:
         """Run git clone."""
-        if not shutil.which("git"):
-            return ToolResult(
-                success=False,
-                output="",
-                error="git not found. Is it installed?",
-            )
-
-        cmd = ["git", "clone"]
+        args = ["clone"]
         if depth is not None:
-            cmd.extend(["--depth", str(depth)])
-        cmd.append(url)
+            args.extend(["--depth", str(depth)])
+        args.append(url)
         if path:
-            cmd.append(path)
+            args.append(path)
 
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_NETWORK_TIMEOUT,
-                env=_no_prompt_env(),
-            )
+        result = _run_git(args, timeout=_GIT_NETWORK_TIMEOUT, env=_no_prompt_env())
 
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=_auth_hint(result.stderr),
-                )
+        # git clone writes progress to stderr; on failure, add auth hints.
+        if not result.success:
+            result.error = _auth_hint(result.error or "")
+        else:
+            result.data = {"url": url, "path": path}
 
-            return ToolResult(
-                success=True,
-                output=result.stderr.strip(),
-                data={"url": url, "path": path},
-            )
-        except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False,
-                output="",
-                error="git clone timed out",
-            )
+        return result
 
 
 class GitInitTool(Tool):
@@ -158,40 +173,10 @@ class GitInitTool(Tool):
 
     async def execute(self, path: str = ".") -> ToolResult:
         """Run git init."""
-        if not shutil.which("git"):
-            return ToolResult(
-                success=False,
-                output="",
-                error="git not found. Is it installed?",
-            )
-
-        try:
-            result = subprocess.run(
-                ["git", "init"],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_TIMEOUT,
-            )
-
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=result.stderr or "git init failed",
-                )
-
-            return ToolResult(
-                success=True,
-                output=result.stdout.strip(),
-                data={"path": path},
-            )
-        except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False,
-                output="",
-                error="git init timed out",
-            )
+        result = _run_git(["init"], cwd=path)
+        if result.success:
+            result.data = {"path": path}
+        return result
 
 
 class GitStatusTool(Tool):
@@ -220,39 +205,7 @@ class GitStatusTool(Tool):
 
     async def execute(self, path: str = ".") -> ToolResult:
         """Run git status."""
-        if not shutil.which("git"):
-            return ToolResult(
-                success=False,
-                output="",
-                error="git not found. Is it installed?",
-            )
-
-        try:
-            result = subprocess.run(
-                ["git", "status"],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_TIMEOUT,
-            )
-
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=result.stderr or "git status failed",
-                )
-
-            return ToolResult(
-                success=True,
-                output=result.stdout.strip(),
-            )
-        except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False,
-                output="",
-                error="git status timed out",
-            )
+        return _run_git(["status"], cwd=path)
 
 
 class GitDiffTool(Tool):
@@ -299,49 +252,16 @@ class GitDiffTool(Tool):
         ref: str | None = None,
     ) -> ToolResult:
         """Run git diff."""
-        if not shutil.which("git"):
-            return ToolResult(
-                success=False,
-                output="",
-                error="git not found. Is it installed?",
-            )
-
-        cmd = ["git", "diff"]
+        args = ["diff"]
         if staged:
-            cmd.append("--cached")
+            args.append("--cached")
         if ref:
-            cmd.append(ref)
+            args.append(ref)
 
-        try:
-            result = subprocess.run(
-                cmd,
-                cwd=path,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_TIMEOUT,
-            )
-
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=result.stderr or "git diff failed",
-                )
-
-            output = result.stdout.strip()
-            if not output:
-                output = "No changes."
-
-            return ToolResult(
-                success=True,
-                output=output,
-            )
-        except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False,
-                output="",
-                error="git diff timed out",
-            )
+        result = _run_git(args, cwd=path)
+        if result.success and not result.output:
+            result.output = "No changes."
+        return result
 
 
 class GitLogTool(Tool):
@@ -385,47 +305,14 @@ class GitLogTool(Tool):
         oneline: bool = False,
     ) -> ToolResult:
         """Run git log."""
-        if not shutil.which("git"):
-            return ToolResult(
-                success=False,
-                output="",
-                error="git not found. Is it installed?",
-            )
-
-        cmd = ["git", "log", f"--max-count={max_count}"]
+        args = ["log", f"--max-count={max_count}"]
         if oneline:
-            cmd.append("--oneline")
+            args.append("--oneline")
 
-        try:
-            result = subprocess.run(
-                cmd,
-                cwd=path,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_TIMEOUT,
-            )
-
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=result.stderr or "git log failed",
-                )
-
-            output = result.stdout.strip()
-            if not output:
-                output = "No commits yet."
-
-            return ToolResult(
-                success=True,
-                output=output,
-            )
-        except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False,
-                output="",
-                error="git log timed out",
-            )
+        result = _run_git(args, cwd=path)
+        if result.success and not result.output:
+            result.output = "No commits yet."
+        return result
 
 
 class GitAddTool(Tool):
@@ -463,46 +350,13 @@ class GitAddTool(Tool):
 
     async def execute(self, files: list[str], path: str = ".") -> ToolResult:
         """Run git add with explicit file paths."""
-        if not shutil.which("git"):
-            return ToolResult(
-                success=False,
-                output="",
-                error="git not found. Is it installed?",
-            )
-
         if not files:
-            return ToolResult(
-                success=False,
-                output="",
-                error="No files specified to stage.",
-            )
+            return ToolResult(success=False, output="", error="No files specified to stage.")
 
-        try:
-            result = subprocess.run(
-                ["git", "add", "--", *files],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_TIMEOUT,
-            )
-
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=result.stderr or "git add failed",
-                )
-
-            return ToolResult(
-                success=True,
-                output=f"Staged {len(files)} file(s).",
-            )
-        except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False,
-                output="",
-                error="git add timed out",
-            )
+        result = _run_git(["add", "--", *files], cwd=path)
+        if result.success:
+            result.output = f"Staged {len(files)} file(s)."
+        return result
 
 
 class GitCommitTool(Tool):
@@ -536,39 +390,7 @@ class GitCommitTool(Tool):
 
     async def execute(self, message: str, path: str = ".") -> ToolResult:
         """Run git commit."""
-        if not shutil.which("git"):
-            return ToolResult(
-                success=False,
-                output="",
-                error="git not found. Is it installed?",
-            )
-
-        try:
-            result = subprocess.run(
-                ["git", "commit", "--no-gpg-sign", "-m", message],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_TIMEOUT,
-            )
-
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=result.stderr or "git commit failed",
-                )
-
-            return ToolResult(
-                success=True,
-                output=result.stdout.strip(),
-            )
-        except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False,
-                output="",
-                error="git commit timed out",
-            )
+        return _run_git(["commit", "--no-gpg-sign", "-m", message], cwd=path)
 
 
 class GitPushTool(Tool):
@@ -640,47 +462,19 @@ class GitPushTool(Tool):
                 ),
             )
 
-        if not shutil.which("git"):
-            return ToolResult(
-                success=False,
-                output="",
-                error="git not found. Is it installed?",
-            )
-
-        cmd = ["git", "push"]
+        args = ["push"]
         if set_upstream:
-            cmd.append("-u")
-        cmd.append(remote)
+            args.append("-u")
+        args.append(remote)
         if branch:
-            cmd.append(branch)
+            args.append(branch)
 
-        try:
-            result = subprocess.run(
-                cmd,
-                cwd=path,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_NETWORK_TIMEOUT,
-                env=_no_prompt_env(),
-            )
+        result = _run_git(args, cwd=path, timeout=_GIT_NETWORK_TIMEOUT, env=_no_prompt_env())
 
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=_auth_hint(result.stderr),
-                )
+        if not result.success:
+            result.error = _auth_hint(result.error or "")
+        else:
+            result.output = result.output or "Pushed successfully."
+            result.data = {"remote": remote, "branch": branch}
 
-            # git push writes progress to stderr on success.
-            output = result.stderr.strip() or result.stdout.strip()
-            return ToolResult(
-                success=True,
-                output=output or "Pushed successfully.",
-                data={"remote": remote, "branch": branch},
-            )
-        except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False,
-                output="",
-                error="git push timed out",
-            )
+        return result

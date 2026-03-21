@@ -1,7 +1,19 @@
 """Agent tools."""
 
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from cantrip.agent.tools.acceptance import (
+    AcceptanceReportTool,
+    ActionExerciserTool,
+    ConfigVariationTool,
+    RelationSmokeTool,
+    WorkloadEndpointTool,
+)
 from cantrip.agent.tools.audit import CharmAuditTool
-from cantrip.agent.tools.base import Tool, ToolResult, tool_to_schema
+from cantrip.agent.tools.base import Tool, ToolResult, execute_tool, tool_to_schema
 from cantrip.agent.tools.benchmark import HookBenchmarkTool
 from cantrip.agent.tools.chaos import ChaosTestTool
 from cantrip.agent.tools.charm import (
@@ -24,6 +36,7 @@ from cantrip.agent.tools.environment import (
 from cantrip.agent.tools.files import (
     EditFileTool,
     ListDirectoryTool,
+    PathAwareTool,
     ReadFileTool,
     WriteFileTool,
 )
@@ -95,10 +108,139 @@ from cantrip.agent.tools.upgrade import UpgradeTestTool
 from cantrip.agent.tools.virtual_files import VirtualFileReadTool, VirtualFileSearchTool
 from cantrip.agent.tools.web import WebFetchTool
 
+
+def build_tools(
+    *,
+    base_path: Path | None = None,
+    skills_index: SkillsIndex | None = None,
+    virtual_store: VirtualFileStore | None = None,
+    provider: Any = None,
+    state: Any = None,
+    queue: Any = None,
+) -> list[Tool]:
+    """Build all agent tool instances.
+
+    Centralises tool construction so callers do not need to import
+    every tool class individually.  Parameters with dependencies
+    (skills, virtual store, etc.) are passed in explicitly.
+    """
+    tools: list[Tool] = [
+        # File operations
+        ReadFileTool(base_path=base_path),
+        WriteFileTool(base_path=base_path),
+        ListDirectoryTool(base_path=base_path),
+        EditFileTool(base_path=base_path),
+        # Audit
+        CharmAuditTool(),
+        # Charm operations
+        CharmcraftInitTool(),
+        CharmcraftPackTool(),
+        CharmValidateTool(),
+        CharmcraftFetchLibsTool(),
+        AnalyseFrameworkTool(),
+        # Terraform
+        GenerateTerraformTool(),
+        ValidateTerraformTool(),
+        # Publishing
+        CharmcraftUploadTool(),
+        CharmcraftReleaseTool(),
+        GenerateReadmeTool(),
+        GenerateIconTool(),
+        GenerateDocsTool(),
+        GenerateDiagramTool(),
+        GenerateLoadTestTool(),
+        # Demo
+        ShowboatTool(),
+        RodneyTool(),
+        # Web
+        WebFetchTool(),
+        # Charmhub
+        CharmhubSearchTool(),
+        CharmhubInfoTool(),
+        # Registry
+        RegistrySearchTool(),
+        RegistryImageInfoTool(),
+        # Rockcraft operations
+        RockcraftInitTool(),
+        RockcraftPackTool(),
+        SkopeoRegistryPushTool(),
+        # Environment
+        ConciergePrepareTool(),
+        ConciergeStatusTool(),
+        # Git operations
+        GitCloneTool(),
+        GitInitTool(),
+        GitStatusTool(),
+        GitDiffTool(),
+        GitLogTool(),
+        GitAddTool(),
+        GitCommitTool(),
+        GitPushTool(),
+        # GitHub operations
+        GhRepoCreateTool(),
+        GhPrCreateTool(),
+        GhIssueListTool(),
+        # Juju operations
+        JujuStatusTool(),
+        JujuDeployTool(),
+        JujuRefreshTool(),
+        JujuRelateTool(),
+        JujuSSHTool(),
+        JujuRunActionTool(),
+        JujuAddModelTool(),
+        JujuDestroyModelTool(),
+        JujuOfferTool(),
+        JujuConsumeTool(),
+        JujuConfigTool(),
+        JujuWaitTool(),
+        CharmSyncTool(),
+        JujuDispatchTool(),
+        # Observability
+        JujuDebugLogTool(),
+        TempoQueryTool(),
+        LokiQueryTool(),
+        # Inference snaps
+        ListInferenceSnapsTool(),
+        # Testing
+        RunCharmTestsTool(),
+        GenerateTestsTool(),
+        HookBenchmarkTool(),
+        FuzzTestTool(),
+        TestReportTool(),
+        ChaosTestTool(),
+        ScalingTestTool(),
+        UpgradeTestTool(),
+        # Acceptance testing
+        ActionExerciserTool(),
+        RelationSmokeTool(),
+        WorkloadEndpointTool(),
+        ConfigVariationTool(),
+        AcceptanceReportTool(),
+    ]
+
+    # Tools with dependencies.
+    if skills_index is not None:
+        tools.append(LoadSkillTool(skills_index))
+    if virtual_store is not None:
+        tools.append(VirtualFileReadTool(virtual_store))
+        tools.append(VirtualFileSearchTool(virtual_store))
+    if provider is not None and state is not None and queue is not None:
+        tools.append(PlanTasksTool(provider=provider, state=state, queue=queue))
+        tools.append(ManageTasksTool(queue=queue))
+
+    return tools
+
+
+if TYPE_CHECKING:
+    from cantrip.agent.context import VirtualFileStore
+    from cantrip.agent.skills import SkillsIndex
+
+
 __all__ = [
     # Base
     "Tool",
     "ToolResult",
+    "execute_tool",
     "tool_to_schema",
     # Audit
     "CharmAuditTool",
@@ -106,6 +248,7 @@ __all__ = [
     "HookBenchmarkTool",
     "FuzzTestTool",
     # Files
+    "PathAwareTool",
     "ReadFileTool",
     "WriteFileTool",
     "ListDirectoryTool",
@@ -172,6 +315,12 @@ __all__ = [
     "ChaosTestTool",
     "ScalingTestTool",
     "UpgradeTestTool",
+    # Acceptance testing
+    "ActionExerciserTool",
+    "RelationSmokeTool",
+    "WorkloadEndpointTool",
+    "ConfigVariationTool",
+    "AcceptanceReportTool",
     # Planning
     "PlanTasksTool",
     # Task management

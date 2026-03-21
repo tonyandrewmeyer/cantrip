@@ -191,39 +191,60 @@ async def run(self):
 ## Subagent Pattern
 
 Each background task runs as a **subagent**: a fresh LLM context with a focused system
-prompt and a subset of tools. Subagents are created by `SubagentRunner` (in
+prompt and a subset of tools. Subagents are created by the `Subagent` class (in
 `agent/subagent.py`).
 
 ### Why Subagents
 
 - **Clean context** — main agent's conversation history stays focused on user interaction
 - **Focused prompts** — each subagent gets instructions tailored to its task category
-- **Cost routing** — research and testing tasks use the light model; code writing uses primary
-- **Parallel potential** — subagents can run while the user chats with the main agent
+- **Cost routing** — research and infra tasks use the light model; code writing uses primary
+- **Parallel potential** — subagents run concurrently (bounded by semaphore) while the user chats
 
-### Subagent Categories
+### Category guidance
 
-| Category | System prompt focus | Tools available | Model |
-|----------|-------------------|-----------------|-------|
-| Research | "Find information about X. Search the web, read docs, check Charmhub." | WebFetch, CharmhubSearch, CharmhubInfo, RegistrySearch | Light |
-| Build | "Write charm code for X. Follow the design proposal." | ReadFile, WriteFile, EditFile, CharmcraftInit, CharmcraftPack, etc. | Primary |
-| Deploy | "Deploy/refresh the charm and verify it reaches active status." | JujuDeploy, JujuRefresh, JujuStatus, JujuWait, CharmSync | Light |
-| Test | "Run tests and report results." | RunCharmTests, ReadFile | Light |
-| Debug | "Diagnose this issue using traces and logs. Suggest a fix." | TempoQuery, LokiQuery, JujuDebugLog, ReadFile | Light |
-| Infra | "Set up the environment." | ConciergePrepare, ConciergeStatus, JujuAddModel | Light |
+Each category has a **markdown guidance file** in `prompts/subagent/` (plain markdown,
+no Python knowledge needed to edit):
 
-### Context Handoff
+| Category | Guidance file | Model |
+|----------|--------------|-------|
+| Research | `prompts/subagent/research.md` | Light |
+| Build | `prompts/subagent/build.md` | Primary |
+| Deploy | `prompts/subagent/deploy.md` | Primary |
+| Test | `prompts/subagent/test.md` | Primary |
+| Debug | `prompts/subagent/debug.md` | Primary |
+| Infra | `prompts/subagent/infra.md` | Light |
+
+Additional overlays: `demo.md` (for demo generation tasks) and `acceptance.md`
+(for acceptance testing tasks) are injected alongside the category guidance when
+the task title matches.
+
+Tool allowlists per category are defined in `_CATEGORY_TOOLS` in `subagent.py`.
+
+### Shared infrastructure
+
+Both the main conversation loop and subagents share:
+
+- **`retry.py`** — `complete_with_retry()` handles rate limits and overload with
+  linear backoff (3 retries, 30s base delay). Subagents coordinate via
+  `ProviderThrottle` to avoid thundering-herd retries.
+- **`tools/base.py`** — `execute_tool()` provides shared error handling for tool
+  dispatch (unknown tool, bad arguments, unexpected exceptions).
+- **`tools/__init__.py`** — `build_tools()` centralises tool construction so
+  callers do not need to import individual tool classes.
+
+### Context handoff
 
 Subagents receive:
-- Their focused system prompt (category-specific)
+- Their focused system prompt (category-specific guidance from markdown)
 - The task description from the AgentTask
 - Result summaries from completed dependency tasks
-- Relevant files (charm source, charmcraft.yaml, etc.) as needed
+- Charm context (name, path, type, framework, models)
+- Approved design content (for build/deploy/test tasks)
+- Decisions already confirmed by the user
 
-Subagents return a structured result:
-- Summary (injected into the next dependent task's context)
-- Files modified (if any)
-- Errors encountered (if any)
+Subagents return a text summary that is recorded as the task result and
+passed to downstream dependent tasks.
 
 ## Conversation Flow Examples
 

@@ -1,6 +1,5 @@
 """Core agent logic."""
 
-import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
@@ -25,95 +24,13 @@ from cantrip.agent.preflight import (
 )
 from cantrip.agent.prompts import build_system_prompt, claude_md
 from cantrip.agent.queue import AgentTask, TaskStatus, WorkQueue
+from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
-from cantrip.agent.tools import (
-    AnalyseFrameworkTool,
-    ChaosTestTool,
-    CharmAuditTool,
-    CharmcraftFetchLibsTool,
-    CharmcraftInitTool,
-    CharmcraftPackTool,
-    CharmcraftReleaseTool,
-    CharmcraftUploadTool,
-    CharmhubInfoTool,
-    CharmhubSearchTool,
-    CharmSyncTool,
-    CharmValidateTool,
-    ConciergePrepareTool,
-    ConciergeStatusTool,
-    EditFileTool,
-    FuzzTestTool,
-    GenerateDiagramTool,
-    GenerateDocsTool,
-    GenerateIconTool,
-    GenerateLoadTestTool,
-    GenerateReadmeTool,
-    GenerateTerraformTool,
-    GenerateTestsTool,
-    GhIssueListTool,
-    GhPrCreateTool,
-    GhRepoCreateTool,
-    GitAddTool,
-    GitCloneTool,
-    GitCommitTool,
-    GitDiffTool,
-    GitInitTool,
-    GitLogTool,
-    GitPushTool,
-    GitStatusTool,
-    HookBenchmarkTool,
-    JujuAddModelTool,
-    JujuConfigTool,
-    JujuConsumeTool,
-    JujuDebugLogTool,
-    JujuDeployTool,
-    JujuDestroyModelTool,
-    JujuDispatchTool,
-    JujuOfferTool,
-    JujuRefreshTool,
-    JujuRelateTool,
-    JujuRunActionTool,
-    JujuSSHTool,
-    JujuStatusTool,
-    JujuWaitTool,
-    ListDirectoryTool,
-    ListInferenceSnapsTool,
-    LoadSkillTool,
-    LokiQueryTool,
-    ManageTasksTool,
-    PlanTasksTool,
-    ReadFileTool,
-    RegistryImageInfoTool,
-    RegistrySearchTool,
-    RockcraftInitTool,
-    RockcraftPackTool,
-    RodneyTool,
-    RunCharmTestsTool,
-    ScalingTestTool,
-    ShowboatTool,
-    SkopeoRegistryPushTool,
-    TempoQueryTool,
-    TestReportTool,
-    Tool,
-    ToolResult,
-    UpgradeTestTool,
-    ValidateTerraformTool,
-    VirtualFileReadTool,
-    VirtualFileSearchTool,
-    WebFetchTool,
-    WriteFileTool,
-)
+from cantrip.agent.tools import Tool, ToolResult, build_tools
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
-from cantrip.llm.base import (
-    LLMProvider,
-    Message,
-    ProviderOverloadedError,
-    ProviderRateLimitError,
-    Response,
-    Role,
-)
+from cantrip.llm.base import LLMProvider, Message, Response, Role
 from cantrip.llm.base import Tool as LLMTool
 from cantrip.llm.base import ToolResult as LLMToolResult
 
@@ -124,10 +41,6 @@ __all__ = ["AgentState", "CantripAgent", "Decision"]
 
 # Maximum tool-call rounds before we force the model to respond with text.
 MAX_TOOL_ROUNDS = 20
-
-# Retry settings for transient LLM errors (rate limits, overload) during the tool loop.
-_TRANSIENT_RETRIES = 3
-_TRANSIENT_BASE_DELAY = 30  # seconds
 
 # Tools whose results may contain a test summary to surface in the TUI.
 _TEST_RESULT_TOOLS = frozenset({"run_charm_tests", "charm_validate"})
@@ -307,108 +220,14 @@ class CantripAgent:
 
     def _build_tools(self) -> list[Tool]:
         """Build available tools."""
-        base_path = self.state.charm_path
-
-        return [
-            # File operations
-            ReadFileTool(base_path=base_path),
-            WriteFileTool(base_path=base_path),
-            ListDirectoryTool(base_path=base_path),
-            EditFileTool(base_path=base_path),
-            # Audit
-            CharmAuditTool(),
-            # Charm operations
-            CharmcraftInitTool(),
-            CharmcraftPackTool(),
-            CharmValidateTool(),
-            CharmcraftFetchLibsTool(),
-            AnalyseFrameworkTool(),
-            # Terraform
-            GenerateTerraformTool(),
-            ValidateTerraformTool(),
-            # Publishing
-            CharmcraftUploadTool(),
-            CharmcraftReleaseTool(),
-            GenerateReadmeTool(),
-            GenerateIconTool(),
-            GenerateDocsTool(),
-            GenerateDiagramTool(),
-            GenerateLoadTestTool(),
-            # Demo
-            ShowboatTool(),
-            RodneyTool(),
-            # Web
-            WebFetchTool(),
-            # Charmhub
-            CharmhubSearchTool(),
-            CharmhubInfoTool(),
-            # Skills
-            LoadSkillTool(self._skills_index),
-            # Virtual files
-            VirtualFileReadTool(self._virtual_store),
-            VirtualFileSearchTool(self._virtual_store),
-            # Registry
-            RegistrySearchTool(),
-            RegistryImageInfoTool(),
-            # Rockcraft operations
-            RockcraftInitTool(),
-            RockcraftPackTool(),
-            SkopeoRegistryPushTool(),
-            # Environment
-            ConciergePrepareTool(),
-            ConciergeStatusTool(),
-            # Git operations
-            GitCloneTool(),
-            GitInitTool(),
-            GitStatusTool(),
-            GitDiffTool(),
-            GitLogTool(),
-            GitAddTool(),
-            GitCommitTool(),
-            GitPushTool(),
-            # GitHub operations
-            GhRepoCreateTool(),
-            GhPrCreateTool(),
-            GhIssueListTool(),
-            # Juju operations
-            JujuStatusTool(),
-            JujuDeployTool(),
-            JujuRefreshTool(),
-            JujuRelateTool(),
-            JujuSSHTool(),
-            JujuRunActionTool(),
-            JujuAddModelTool(),
-            JujuDestroyModelTool(),
-            JujuOfferTool(),
-            JujuConsumeTool(),
-            JujuConfigTool(),
-            JujuWaitTool(),
-            CharmSyncTool(),
-            JujuDispatchTool(),
-            # Observability
-            JujuDebugLogTool(),
-            TempoQueryTool(),
-            LokiQueryTool(),
-            # Inference snaps
-            ListInferenceSnapsTool(),
-            # Testing
-            RunCharmTestsTool(),
-            GenerateTestsTool(),
-            HookBenchmarkTool(),
-            FuzzTestTool(),
-            TestReportTool(),
-            ChaosTestTool(),
-            ScalingTestTool(),
-            UpgradeTestTool(),
-            # Planning
-            PlanTasksTool(
-                provider=self.provider,
-                state=self.state,
-                queue=self._work_queue,
-            ),
-            # Task management
-            ManageTasksTool(queue=self._work_queue),
-        ]
+        return build_tools(
+            base_path=self.state.charm_path,
+            skills_index=self._skills_index,
+            virtual_store=self._virtual_store,
+            provider=self.provider,
+            state=self.state,
+            queue=self._work_queue,
+        )
 
     def _build_system_prompt(self) -> str:
         """Build the current system prompt.
@@ -469,28 +288,9 @@ class CantripAgent:
 
     async def _execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Execute a tool by name."""
-        tool = self._tool_map.get(name)
-        if not tool:
-            return ToolResult(
-                success=False,
-                output="",
-                error=f"Unknown tool: {name}",
-            )
+        from cantrip.agent.tools.base import execute_tool
 
-        try:
-            return await tool.execute(**arguments)
-        except TypeError as e:
-            return ToolResult(
-                success=False,
-                output="",
-                error=f"Invalid arguments for {name}: {e}",
-            )
-        except Exception as e:
-            return ToolResult(
-                success=False,
-                output="",
-                error=f"Tool execution failed: {e}",
-            )
+        return await execute_tool(self._tool_map, name, arguments)
 
     def _capture_test_results(self, tool_name: str, result: ToolResult) -> None:
         """Update state with test results if the tool produced a test summary."""
@@ -531,30 +331,13 @@ class CantripAgent:
         tools: list[LLMTool] | None,
         temperature: float = 0.7,
     ) -> Response:
-        """Call provider.complete() with retry and exponential backoff for transient errors."""
-        last_error: ProviderRateLimitError | ProviderOverloadedError | None = None
-        for attempt in range(1, _TRANSIENT_RETRIES + 1):
-            try:
-                return await self.provider.complete(
-                    messages=messages,
-                    tools=tools,
-                    temperature=temperature,
-                )
-            except (ProviderRateLimitError, ProviderOverloadedError) as exc:
-                last_error = exc
-                if attempt == _TRANSIENT_RETRIES:
-                    raise
-                delay = _TRANSIENT_BASE_DELAY * attempt
-                log.warning(
-                    "Provider unavailable — retrying in %ds (attempt %d/%d): %s",
-                    delay,
-                    attempt,
-                    _TRANSIENT_RETRIES,
-                    exc,
-                )
-                await asyncio.sleep(delay)
-        # All retries exhausted (should be unreachable due to the raise above).
-        raise last_error  # type: ignore[misc]
+        """Call provider.complete() with retry and linear backoff for transient errors."""
+        return await complete_with_retry(
+            self.provider,
+            messages,
+            tools,
+            temperature=temperature,
+        )
 
     def _pause_executor(self) -> None:
         """Pause the background executor while handling a user message."""

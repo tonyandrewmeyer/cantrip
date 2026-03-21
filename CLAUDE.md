@@ -70,13 +70,18 @@ src/cantrip/
 │   ├── design.py        # Design document generation
 │   ├── preflight.py     # Pre-flight environment checks
 │   ├── autodeploy.py    # Automatic deploy after charm build
+│   ├── retry.py         # Shared LLM retry logic (rate limits, backoff)
 │   ├── watcher.py       # Event-driven watcher (status diffing, Loki polling)
 │   ├── queue.py         # WorkQueue, AgentTask — autonomous work scheduling
 │   ├── planner.py       # Task planner — LLM decomposes intent into tasks
 │   ├── executor.py      # Background executor — picks tasks, runs subagents
 │   ├── subagent.py      # Subagent runner — isolated LLM context per task
 │   ├── tools/           # Agent tools (file ops, charm ops, juju, git, web)
+│   │   ├── base.py      # Tool ABC, ToolResult, execute_tool()
+│   │   ├── files.py     # PathAwareTool base, file CRUD tools
+│   │   └── ...          # Per-domain tool modules
 │   └── prompts/         # System prompts (Jinja2 templates + builders)
+│       └── subagent/    # Category guidance (plain markdown, no Python)
 ├── llm/
 │   ├── base.py          # Abstract LLMProvider interface
 │   ├── gemini.py        # Google Gemini implementation
@@ -95,7 +100,7 @@ src/cantrip/
 
 ### Key Patterns
 
-**Tool Pattern:** Tools inherit from abstract `Tool` class with `name`, `description`, `parameters` (JSON Schema), and async `execute()` method.
+**Tool Pattern:** Tools inherit from `Tool` ABC (`tools/base.py`) with `name`, `description`, `parameters` (JSON Schema), and async `execute()`. File tools inherit from `PathAwareTool` which adds secure path resolution. Tool instances are built by `build_tools()` in `tools/__init__.py`. Tool execution with error handling is shared via `execute_tool()`.
 
 **LLM Provider Pattern:** Abstract `LLMProvider` base with `complete()`, `stream()`, and `count_tokens()` methods. Messages use `Role` enum (SYSTEM, USER, ASSISTANT, TOOL).
 
