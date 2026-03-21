@@ -346,7 +346,7 @@ class PreflightRunner:
         """
         try:
             juju = jubilant.Juju(model=cos_model_name)
-            status = juju.status()
+            status = await asyncio.to_thread(juju.status)
             if status.apps:
                 # COS model exists and has apps — assume ready.
                 self.result.cos_ready = True

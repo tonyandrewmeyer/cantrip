@@ -416,18 +416,28 @@ class SessionStore:
             "SELECT * FROM subagent_messages WHERE task_id = ? ORDER BY message_index",
             (task_id,),
         ).fetchall()
-        return [
-            {
-                "task_id": r["task_id"],
-                "message_index": r["message_index"],
-                "role": r["role"],
-                "content": r["content"],
-                "tool_calls": (json.loads(r["tool_calls"]) if r["tool_calls"] else None),
-                "tool_results": (json.loads(r["tool_results"]) if r["tool_results"] else None),
-                "timestamp": r["timestamp"],
-            }
-            for r in rows
-        ]
+        result: list[dict[str, object]] = []
+        for r in rows:
+            try:
+                tc = json.loads(r["tool_calls"]) if r["tool_calls"] else None
+            except (json.JSONDecodeError, TypeError):
+                tc = None
+            try:
+                tr = json.loads(r["tool_results"]) if r["tool_results"] else None
+            except (json.JSONDecodeError, TypeError):
+                tr = None
+            result.append(
+                {
+                    "task_id": r["task_id"],
+                    "message_index": r["message_index"],
+                    "role": r["role"],
+                    "content": r["content"],
+                    "tool_calls": tc,
+                    "tool_results": tr,
+                    "timestamp": r["timestamp"],
+                }
+            )
+        return result
 
     # ── Event log ────────────────────────────────────────────────────────
 
@@ -463,15 +473,21 @@ class SessionStore:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY id"
         rows = self._db.execute(query, params).fetchall()
-        return [
-            {
-                "id": r["id"],
-                "event_type": r["event_type"],
-                "detail": json.loads(r["detail"]),
-                "timestamp": r["timestamp"],
-            }
-            for r in rows
-        ]
+        result: list[dict[str, object]] = []
+        for r in rows:
+            try:
+                detail = json.loads(r["detail"])
+            except (json.JSONDecodeError, TypeError):
+                detail = {}
+            result.append(
+                {
+                    "id": r["id"],
+                    "event_type": r["event_type"],
+                    "detail": detail,
+                    "timestamp": r["timestamp"],
+                }
+            )
+        return result
 
     # ── Token usage ──────────────────────────────────────────────────────
 

@@ -203,3 +203,34 @@ class TestMigration:
             assert loaded.decisions == []
         finally:
             store.close()
+
+
+class TestCorruptDataResilience:
+    """Tests for handling corrupt data in the database."""
+
+    def test_corrupt_event_detail_json(self, store: SessionStore) -> None:
+        """Events with corrupt detail JSON are loaded with empty dict instead of crashing."""
+        # Insert a row with invalid JSON directly.
+        store._db.execute(
+            "INSERT INTO events (event_type, detail) VALUES (?, ?)",
+            ("test", "{invalid json}"),
+        )
+        store._db.commit()
+
+        events = store.load_events()
+        assert len(events) == 1
+        assert events[0]["detail"] == {}
+
+    def test_corrupt_subagent_tool_calls_json(self, store: SessionStore) -> None:
+        """Subagent messages with corrupt tool_calls JSON load as None."""
+        store._db.execute(
+            "INSERT INTO subagent_messages "
+            "(task_id, message_index, role, content, tool_calls) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("t1", 0, "assistant", "test", "{not valid json}"),
+        )
+        store._db.commit()
+
+        msgs = store.load_subagent_messages("t1")
+        assert len(msgs) == 1
+        assert msgs[0]["tool_calls"] is None

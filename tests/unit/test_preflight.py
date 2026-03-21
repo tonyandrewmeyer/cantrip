@@ -486,6 +486,17 @@ class TestBootstrap:
                 return default_juju
             return cos_juju
 
+        # to_thread is used for both juju.status and juju.deploy;
+        # let status succeed (returning empty-apps status) but make deploy fail.
+        call_count = 0
+
+        async def selective_to_thread(func, *args, **kwargs):  # noqa: ARG001
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return cos_status
+            raise cli_error("deploy failed")
+
         with (
             patch(
                 "cantrip.agent.preflight._run_concierge",
@@ -496,8 +507,7 @@ class TestBootstrap:
             patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
             patch(
                 "cantrip.agent.preflight.asyncio.to_thread",
-                new_callable=AsyncMock,
-                side_effect=cli_error("deploy failed"),
+                side_effect=selective_to_thread,
             ),
             patch("cantrip.agent.preflight._model_is_k8s", return_value=True),
         ):
