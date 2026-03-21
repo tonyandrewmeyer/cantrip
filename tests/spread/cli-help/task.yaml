@@ -1,0 +1,49 @@
+summary: Verify all CLI subcommands and flags work on a clean system
+
+systems:
+  - ubuntu-24.04
+  - ubuntu-22.04
+
+prepare: |
+  # Install uv.
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+  # Copy project into the spread working directory.
+  cp -r "$SPREAD_PATH" "$PROJECT_PATH"
+  cd "$PROJECT_PATH"
+  uv sync --dev
+
+execute: |
+  export PATH="$HOME/.local/bin:$PATH"
+  cd "$PROJECT_PATH"
+
+  # Version flag.
+  uv run cantrip --version | grep -q 'cantrip'
+
+  # Top-level help.
+  uv run cantrip --help | grep -q 'A small spell for building Juju charms'
+
+  # Run subcommand help.
+  uv run cantrip run --help | grep -q '\-\-provider'
+  uv run cantrip run --help | grep -q '\-\-no-tui'
+  uv run cantrip run --help | grep -q '\-\-model'
+  uv run cantrip run --help | grep -q '\-\-improve'
+
+  # Export-transcript subcommand help.
+  uv run cantrip export-transcript --help | grep -q '\-\-format'
+  uv run cantrip export-transcript --help | grep -q '\-\-task'
+  uv run cantrip export-transcript --help | grep -q '\-\-phase'
+  uv run cantrip export-transcript --help | grep -q '\-\-since'
+
+  # Export-transcript with missing .cantrip file should fail gracefully.
+  TMPDIR=$(mktemp -d)
+  if uv run cantrip export-transcript "$TMPDIR" 2>&1; then
+    echo "Expected non-zero exit for missing .cantrip" >&2
+    exit 1
+  fi
+  rm -rf "$TMPDIR"
+
+  echo "All CLI help checks passed."
+
+restore: |
+  rm -rf "$PROJECT_PATH"

@@ -1,0 +1,73 @@
+summary: Export transcripts in all formats from a seeded session
+
+systems:
+  - ubuntu-24.04
+  - ubuntu-22.04
+
+prepare: |
+  # Install uv.
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+  # Copy project into the spread working directory.
+  cp -r "$SPREAD_PATH" "$PROJECT_PATH"
+  cd "$PROJECT_PATH"
+  uv sync --dev
+
+  # Seed a .cantrip database using a helper script.
+  uv run python tests/spread/transcript-export/seed_db.py "$PROJECT_PATH/test-charm"
+
+execute: |
+  export PATH="$HOME/.local/bin:$PATH"
+  cd "$PROJECT_PATH"
+
+  CHARM_DIR="$PROJECT_PATH/test-charm"
+
+  # Export in all three formats.
+  uv run cantrip export-transcript "$CHARM_DIR" --format html
+  uv run cantrip export-transcript "$CHARM_DIR" --format markdown
+  uv run cantrip export-transcript "$CHARM_DIR" --format jsonl
+
+  # Verify output files exist and have content.
+  test -s "$CHARM_DIR/transcript.html"
+  test -s "$CHARM_DIR/transcript.md"
+  test -s "$CHARM_DIR/transcript.jsonl"
+
+  # HTML should be valid-ish.
+  grep -q '<html' "$CHARM_DIR/transcript.html"
+  grep -q 'spread-test-charm' "$CHARM_DIR/transcript.html"
+
+  # Markdown should have expected sections.
+  grep -q '# Cantrip Transcript' "$CHARM_DIR/transcript.md"
+  grep -q 'spread-test-charm' "$CHARM_DIR/transcript.md"
+  grep -q '## Tasks' "$CHARM_DIR/transcript.md"
+  grep -q '## Conversation' "$CHARM_DIR/transcript.md"
+
+  # JSONL lines should be valid JSON with a "type" field.
+  while IFS= read -r line; do
+    echo "$line" | python3 -c "
+import sys, json
+data = json.loads(sys.stdin.read())
+assert 'type' in data, 'Missing type field'
+assert data['type'] in ('message', 'event', 'task', 'subagent_message'), f'Bad type: {data[\"type\"]}'
+"
+  done < "$CHARM_DIR/transcript.jsonl"
+
+  # Verify filter flags work.
+  uv run cantrip export-transcript "$CHARM_DIR" --format jsonl --task research \
+    --output "$CHARM_DIR/filtered-task.jsonl"
+  test -s "$CHARM_DIR/filtered-task.jsonl"
+
+  uv run cantrip export-transcript "$CHARM_DIR" --format jsonl --phase build \
+    --output "$CHARM_DIR/filtered-phase.jsonl"
+  test -s "$CHARM_DIR/filtered-phase.jsonl"
+
+  # Custom output path.
+  uv run cantrip export-transcript "$CHARM_DIR" --format markdown \
+    --output /tmp/custom-transcript.md
+  test -s /tmp/custom-transcript.md
+
+  echo "All transcript export checks passed."
+
+restore: |
+  rm -rf "$PROJECT_PATH"
+  rm -f /tmp/custom-transcript.md
