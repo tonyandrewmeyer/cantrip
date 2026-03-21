@@ -20,6 +20,14 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Gemini streaming crash** — `stream()` did not `await` the `generate_content_stream()` coroutine, causing `TypeError: 'async for' requires an object with __aiter__ method`; streaming was completely broken for Gemini
 - **Gemini safety-filter crash** — `complete()` accessed `response.candidates[0].content.parts` without guarding against `content` being `None` (happens when Gemini safety-filters the response); now returns an empty response instead of crashing
 - **Gemini usage metadata crash** — `complete()` accessed `response.usage_metadata.prompt_token_count` without checking `usage_metadata` for `None`; now defaults to zero
+- **Gemini None function-call args crash** — `dict(None)` raised `TypeError` when Gemini returned a function call with `args=None`; now defaults to empty dict
+- **Companion endpoint backticks** — design parser kept Markdown backticks in companion charm endpoint names; regex now strips optional backticks
+- **Web server event loop blocking** — `/api/juju-status` and `/api/logs` called blocking `juju.status()` and `subprocess.run()` synchronously in async handlers; now use `asyncio.to_thread()`
+- **Web server query parameter crash** — `/api/logs?lines=abc` crashed with `ValueError`; now catches and defaults to 100
+- **Corrupt JSON in events/subagent messages** — `load_events()` and `load_subagent_messages()` crashed on malformed JSON; now handle gracefully (matching existing `load_messages()` pattern)
+- **Blocking juju.status in preflight** — `_ensure_cos()` called `juju.status()` synchronously in an async method; now uses `asyncio.to_thread()`
+- **Incomplete container port detection** — `_detect_http_port()` had a stub loop that never detected container ports from charmcraft.yaml; now parses `ports[].target` entries
+- **Unit name validation** — `_agent_charm_dir()` crashed with a cryptic unpacking error on malformed unit names; now validates format explicitly
 - **CLI drain hang** — `_drain_executor()` could loop forever waiting for blocked CONFIRM tasks that require user confirmation; now times out after 60 seconds and only waits for pending/active tasks
 - **Task persistence lost on save** — `save_state()` persisted charm metadata and messages but not the work queue; tasks were only saved by the background executor's internal `_persist()` loop, so CLI-mode sessions lost all tasks on restart
 - **COS deployment crashes on LXD controller** — preflight tried to deploy `cos-lite` (K8s-only charms) into a model on an IAAS/LXD cloud, always failing; now detects the cloud type and skips COS gracefully (full multi-controller COS support planned in ROADMAP Phase 22)
