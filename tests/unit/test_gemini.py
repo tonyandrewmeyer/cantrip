@@ -350,6 +350,38 @@ class TestGeminiProviderComplete:
         assert result.content == "Ok"
         assert result.usage == {"prompt_tokens": 0, "completion_tokens": 0}
 
+    @pytest.mark.asyncio
+    async def test_complete_function_call_none_args(self):
+        """Test that a function call with args=None does not crash."""
+        provider, _ = _make_provider()
+
+        fc = MagicMock()
+        fc.name = "test_tool"
+        fc.args = None
+
+        mock_part = MagicMock()
+        mock_part.function_call = fc
+        mock_part.text = None
+        mock_part.thought = False
+        mock_part.thought_signature = None
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [mock_part]
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 5
+        mock_response.usage_metadata.candidates_token_count = 2
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="Hello")]
+        result = await provider.complete(messages)
+
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].name == "test_tool"
+        assert result.tool_calls[0].arguments == {}
+
 
 class TestGeminiProviderStream:
     """Tests for GeminiProvider.stream."""

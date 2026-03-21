@@ -254,7 +254,7 @@ class GeminiProvider(LLMProvider):
                     ToolCall(
                         id=part.function_call.name,
                         name=part.function_call.name,
-                        arguments=dict(part.function_call.args),
+                        arguments=dict(part.function_call.args or {}),
                     )
                 )
                 sig = getattr(part, "thought_signature", None)
@@ -338,7 +338,7 @@ class GeminiProvider(LLMProvider):
                             ToolCall(
                                 id=part.function_call.name,
                                 name=part.function_call.name,
-                                arguments=dict(part.function_call.args),
+                                arguments=dict(part.function_call.args or {}),
                             )
                         )
                         sig = getattr(part, "thought_signature", None)
