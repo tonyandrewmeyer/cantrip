@@ -11,6 +11,7 @@ import re
 from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
+from cantrip.agent.subagent import _ACCEPTANCE_PREFIX
 from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
 
 # Title prefix for demo generation tasks — used to prevent loops.
@@ -141,19 +142,59 @@ def tasks_after_build(task: AgentTask) -> list[AgentTask]:
 
 
 def tasks_after_test(task: AgentTask) -> list[AgentTask]:
-    """Return a demo generation task after a successful TEST task.
+    """Return an acceptance test task after a successful TEST task.
 
-    After the charm passes validation, the demo task captures live
-    deployment output and writes DEMO.md, demo.sh, and TUTORIAL.md.
-    Only fires once — the demo BUILD task's own completion triggers
-    ``tasks_after_build`` (→ deploy), not another demo.
+    After the charm passes validation, the acceptance task exercises the
+    live deployment: running actions, testing relations, probing endpoints,
+    and varying config.  The acceptance task's own completion triggers
+    ``tasks_after_acceptance`` which produces the demo.
+
+    Skips if the task is already an acceptance or demo task to prevent loops.
     """
     if task.category != TaskCategory.TEST:
         return []
     if task.status != TaskStatus.DONE:
         return []
-    # Don't generate a demo for a demo-validation task.
+    # Don't chain from acceptance or demo tasks.
+    if task.title.startswith(_ACCEPTANCE_PREFIX):
+        return []
     if _DEMO_TITLE_PREFIX in task.title:
+        return []
+
+    return [
+        AgentTask(
+            title=f"{_ACCEPTANCE_PREFIX} put the charm through its paces",
+            category=TaskCategory.TEST,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                "The charm has been deployed and passed integration tests. "
+                "Now exercise it like a real operator would.\n\n"
+                "1. Run `action_exerciser` to test all charm actions.\n"
+                "2. Run `relation_smoke_test` to verify integrations.\n"
+                "3. Run `workload_endpoint_test` to probe endpoints.\n"
+                "4. Run `config_variation_test` to verify config options.\n"
+                "5. Run `scaling_test` to test scaling behaviour.\n"
+                "6. Run `acceptance_report` to consolidate results into "
+                "ACCEPTANCE.md.\n\n"
+                "Report the overall verdict. Failures become follow-up tasks."
+            ),
+            dependencies=[task.id],
+        ),
+    ]
+
+
+def tasks_after_acceptance(task: AgentTask) -> list[AgentTask]:
+    """Return a demo generation task after acceptance testing completes.
+
+    Only fires for completed acceptance test tasks (title starts with
+    the acceptance prefix).  Produces the same demo BUILD task that was
+    previously returned directly by ``tasks_after_test``.
+    """
+    if task.category != TaskCategory.TEST:
+        return []
+    if task.status != TaskStatus.DONE:
+        return []
+    if not task.title.startswith(_ACCEPTANCE_PREFIX):
         return []
 
     return [
@@ -162,7 +203,7 @@ def tasks_after_test(task: AgentTask) -> list[AgentTask]:
             category=TaskCategory.BUILD,
             model_hint=ModelHint.PRIMARY,
             description=(
-                "The charm has been deployed and tested successfully. "
+                "The charm has been deployed, tested, and acceptance-tested. "
                 "Generate demo artefacts from the live deployment.\n\n"
                 "Create a `demo/` directory and produce:\n"
                 "1. `demo/juju-status.txt` — `juju_status` output with relations\n"
@@ -281,6 +322,7 @@ def followup_tasks(task: AgentTask) -> list[AgentTask]:
     results.extend(tasks_after_deploy(task))
     results.extend(tasks_after_verify(task))
     results.extend(tasks_after_test(task))
+    results.extend(tasks_after_acceptance(task))
     return results
 
 

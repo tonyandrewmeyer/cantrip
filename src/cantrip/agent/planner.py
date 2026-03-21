@@ -836,9 +836,14 @@ companion charm **before** the primary deploy + relate step. Each companion task
 deploy the charm from Charmhub and then relate it to the primary charm using the endpoint \
 and interface specified in the design.
 
-After all tests pass, include a **"Generate demo artefacts"** task (category: build) \
+After all tests pass, include an **"Acceptance test: put the charm through its paces"** \
+task (category: test) that exercises the live deployment: running every action, testing \
+relations with partner charms, probing workload endpoints, varying config options, and \
+testing scaling. This task depends on the final test/validation task.
+
+After acceptance testing, include a **"Generate demo artefacts"** task (category: build) \
 that creates DEMO.md, demo.sh, TUTORIAL.md, and a demo/ directory with captured output \
-from the live deployment. This task depends on the final test/validation task.
+from the live deployment. This task depends on the acceptance test task.
 
 ### Context
 {context_block}

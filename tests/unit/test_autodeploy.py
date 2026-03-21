@@ -17,6 +17,7 @@ from cantrip.agent.autodeploy import (
 from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
+from cantrip.agent.subagent import _ACCEPTANCE_PREFIX
 from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
 
 # ===================================================================
@@ -353,15 +354,15 @@ class TestTasksAfterBuildFailure:
 class TestTasksAfterTest:
     """Tests for tasks_after_test — demo generation after successful tests."""
 
-    def test_creates_demo_for_successful_test(self) -> None:
+    def test_creates_acceptance_for_successful_test(self) -> None:
         task = AgentTask(id="t1", title="Validate charm", category=TaskCategory.TEST)
         task.status = TaskStatus.DONE
 
         result = tasks_after_test(task)
 
         assert len(result) == 1
-        assert result[0].category == TaskCategory.BUILD
-        assert result[0].title.startswith(_DEMO_TITLE_PREFIX)
+        assert result[0].category == TaskCategory.TEST
+        assert result[0].title.startswith(_ACCEPTANCE_PREFIX)
 
     def test_demo_uses_primary_model(self) -> None:
         task = AgentTask(id="t1", title="Validate", category=TaskCategory.TEST)
@@ -402,15 +403,15 @@ class TestTasksAfterTest:
 
         assert tasks_after_test(task) == []
 
-    def test_demo_description_mentions_demo_md(self) -> None:
+    def test_acceptance_description_mentions_tools(self) -> None:
         task = AgentTask(id="t1", title="Validate", category=TaskCategory.TEST)
         task.status = TaskStatus.DONE
 
         result = tasks_after_test(task)
 
-        assert "DEMO.md" in result[0].description
-        assert "demo.sh" in result[0].description
-        assert "TUTORIAL.md" in result[0].description
+        assert "action_exerciser" in result[0].description
+        assert "relation_smoke_test" in result[0].description
+        assert "acceptance_report" in result[0].description
 
 
 # ===================================================================
@@ -478,13 +479,13 @@ class TestFollowupTasks:
         assert result[0].title.startswith(_RETRY_PREFIX)
 
     def test_dispatches_to_test_handler(self) -> None:
-        """Successful TEST gets a demo generation follow-up."""
+        """Successful TEST gets an acceptance test follow-up."""
         task = AgentTask(id="t1", title="Validate charm", category=TaskCategory.TEST)
         task.status = TaskStatus.DONE
 
         result = followup_tasks(task)
 
-        assert any(t.title.startswith(_DEMO_TITLE_PREFIX) for t in result)
+        assert any(t.title.startswith(_ACCEPTANCE_PREFIX) for t in result)
 
 
 # ===================================================================

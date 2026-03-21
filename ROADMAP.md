@@ -1441,51 +1441,46 @@ live and summarises for the user.
 
 Run every action the charm exposes against a live deployment and verify the results.
 
-- [ ] **Discover actions** — after deploy, introspect the charm's `actions.yaml` (or the
-  equivalent metadata) to enumerate all available actions with their parameters and
-  descriptions
-- [ ] **Generate action invocations** — for each action, the agent constructs a plausible
-  invocation using the parameter schema. For actions with required parameters, the agent
-  infers reasonable test values from the parameter descriptions, types, and defaults.
-  For destructive-sounding actions (e.g. `delete-data`, `factory-reset`), flag them to the
-  user and skip unless explicitly approved
-- [ ] **Run and verify** — execute each action via `juju run`, capture stdout/stderr and the
-  action result (success/failure/status). Verify that successful actions return the
-  documented output schema. Record timing for each action
-- [ ] **Report** — produce a summary table of all actions: name, parameters used, result
-  status, duration, and any unexpected output. Flag actions that failed, timed out, or
-  returned undocumented fields
+- [x] **Discover actions** — `ActionExerciserTool` (`action_exerciser`) reads
+  `charmcraft.yaml` to enumerate all actions with their parameter schemas
+- [x] **Generate action invocations** — `_generate_action_params()` constructs plausible
+  parameter values from types, defaults, and enums; destructive-sounding actions (matching
+  `delete-`, `destroy-`, `reset-`, `purge-`, `wipe-`, `remove-`, `drop-`, `erase-`,
+  `nuke-` prefixes) are skipped by default (`skip_destructive=True`)
+- [x] **Run and verify** — executes each action via `juju run <app>/leader` with JSON
+  output; captures status (completed/failed/timeout) and output text
+- [x] **Report** — produces a Markdown table with action name, parameters, status, and
+  notes; includes overall PASS/FAIL verdict and structured `data` dict
 
 ### 17.2 Relation Smoke Tests
 
 Deploy commonly related charms and verify the integrations actually work.
 
-- [ ] **Identify relation endpoints** — from the charm's metadata, enumerate all `requires`,
-  `provides`, and `peers` endpoints with their interface types
-- [ ] **Select relation partners** — for each endpoint, identify a suitable charm to relate
-  to. Use well-known defaults: `mysql` or `postgresql` for `mysql_client`/`pgsql`
-  interfaces, `grafana-agent` for `cos-agent`, `traefik` or `nginx-ingress-integrator`
-  for `ingress`, etc. Query Charmhub dynamically for less common interfaces
-- [ ] **Deploy and relate** — deploy each partner charm, add the relation, and wait for
-  both units to settle to active/idle. Record which relations succeeded and which caused
-  errors or blocked status
+- [x] **Identify relation endpoints** — `RelationSmokeTool` (`relation_smoke_test`) reads
+  `charmcraft.yaml` to enumerate `requires`, `provides`, and `peers` endpoints with
+  interface types; peer relations are noted but skipped (tested via scaling instead)
+- [x] **Select relation partners** — `_INTERFACE_PARTNERS` maps 15 common interfaces to
+  well-known Charmhub charms (mysql-k8s, postgresql-k8s, traefik-k8s, grafana-k8s,
+  prometheus-k8s, loki-k8s, tempo-k8s, etc.); unknown interfaces are skipped with a note
+- [x] **Deploy and relate** — deploys each partner charm, relates to the endpoint, and
+  waits for the application to settle to active/idle; records success/failure per endpoint
 - [ ] **Verify data flow** — where possible, verify the relation actually does something:
   check that database credentials appeared in the databag, that the ingress proxy routes
   traffic, that COS scrape targets registered. This goes beyond "the relation hook didn't
   crash" to "the integration is functioning"
-- [ ] **Report** — summarise all relations tested: endpoint, partner charm, final status,
-  and any issues. Flag relations that left units in error or blocked state
+- [x] **Report** — produces a Markdown table with endpoint, interface, role, partner,
+  status, and notes; includes overall PASS/FAIL verdict
 
 ### 17.3 Workload Endpoint Testing
 
 Actually use the deployed workload the way a real user would.
 
-- [ ] **Discover endpoints** — from the charm's design document, config, and workload
-  metadata, identify how a user would interact with the running service: HTTP endpoints,
-  database ports, API URLs, CLI tools, web UIs. If the charm exposes an ingress relation,
-  use the ingress URL; otherwise use the unit's direct address
-- [ ] **Health checks** — hit health/readiness endpoints if they exist. Verify HTTP services
-  return 200. Check that database ports accept connections. Verify TLS if configured
+- [x] **Discover endpoints** — `WorkloadEndpointTool` (`workload_endpoint_test`) reads
+  container port declarations and config-based port options from `charmcraft.yaml`; also
+  accepts explicit endpoint definitions; discovers unit addresses via `juju status`
+- [x] **Health checks** — probes common health paths (`/health`, `/ready`, `/healthz`,
+  `/readyz`) for each discovered HTTP port via `curl`; TCP port liveness checked via
+  `juju ssh` with `/dev/tcp` test
 - [ ] **Functional probes** — go beyond health checks to actually exercise the workload:
   - For web applications: fetch the landing page, submit a form, check the response
   - For databases: connect, create a test table, insert and query a row, clean up
@@ -1494,64 +1489,55 @@ Actually use the deployed workload the way a real user would.
   - For storage: write and read back a test object
   The agent designs these probes based on what it learnt about the workload during the
   research phase. Probes should be non-destructive and use test/temporary data
-- [ ] **Report** — summarise what was tested, what worked, and what didn't. Include response
-  times and any unexpected behaviour. This report goes directly to the user as a
-  confidence check: "I deployed your charm, related it to PostgreSQL, hit the web UI,
-  and confirmed it serves pages correctly"
+- [x] **Report** — produces a Markdown table with endpoint, protocol, status, response
+  time, and notes; includes overall PASS/FAIL verdict
 
 ### 17.4 Config Variation Testing
 
 Exercise the charm's configuration options to verify they actually take effect.
 
-- [ ] **Enumerate config options** — from `config.yaml`, list all configuration options with
-  their types, defaults, and descriptions
-- [ ] **Generate test values** — for each config option, generate at least one non-default
-  value that should be valid. For boolean options, toggle them. For string options with
-  documented valid values, try each. For port numbers, try an alternative port. Skip
-  options that would break the deployment irreversibly (e.g. storage paths on a running
-  system)
-- [ ] **Apply and verify** — set each config value via `juju config`, wait for the charm to
-  settle, and verify the change took effect: check the workload's actual configuration
-  (via Pebble exec, API calls, or behaviour change), not just that the charm didn't crash
-- [ ] **Reset and continue** — restore each option to its default before testing the next,
-  to avoid cascading interactions. Record any options that cause the charm to enter
-  error/blocked state
-- [ ] **Report** — summarise config options tested, which took effect as expected, which had
-  no visible effect (potential dead config), and which caused problems
+- [x] **Enumerate config options** — `ConfigVariationTool` (`config_variation_test`) reads
+  config options from `charmcraft.yaml` with types, defaults, and descriptions
+- [x] **Generate test values** — `_generate_test_value()` produces a non-default value for
+  each type: toggle booleans, increment integers, append `-test` to strings; path/directory
+  options are skipped to avoid breaking the deployment
+- [x] **Apply and verify** — sets each config value via `juju config`, waits for the charm
+  to settle to active/idle, and records whether it settled correctly
+- [x] **Reset and continue** — restores each option to its default via `juju config --reset`
+  before testing the next, to avoid cascading interactions
+- [x] **Report** — produces a Markdown table with option, type, test value, settled status,
+  and notes; includes overall PASS/FAIL verdict
 
 ### 17.5 Upgrade and Lifecycle Testing
 
 Verify the charm handles lifecycle operations gracefully.
 
-- [ ] **Scale up/down** — add a second unit, wait for it to settle, verify the workload
-  functions with two units (e.g. both serve traffic, data replicates). Then remove the
-  extra unit and verify the remaining unit still works
+- [x] **Scale up/down** — covered by existing `ScalingTestTool` (`scaling_test`); the
+  acceptance test subagent guidance directs it to run `scaling_test` as part of the suite
 - [ ] **Config change under load** — if a health endpoint exists, change a config value
   while periodically hitting the endpoint, and report whether there was downtime or errors
   during the reconfiguration
-- [ ] **Refresh** — if the charm was built from a local path, rebuild it, refresh the
-  deployed charm to the new revision, and verify the workload still functions after upgrade
-- [ ] **Report** — summarise lifecycle operations tested and their outcomes. Flag any
-  operations that caused downtime, data loss, or stuck states
+- [x] **Refresh** — covered by existing `UpgradeTestTool` (`upgrade_test`); refreshes a
+  deployed charm with a new `.charm` file and verifies recovery
+- [x] **Report** — lifecycle results are included in the consolidated ACCEPTANCE.md via the
+  `lifecycle` parameter of `acceptance_report`
 
 ### 17.6 Acceptance Test Report
 
 Consolidate all acceptance testing into a single report for the user.
 
-- [ ] **ACCEPTANCE.md** — generate a Markdown report in the charm directory summarising all
-  acceptance tests performed: actions exercised, relations tested, endpoints probed, config
-  options verified, lifecycle operations checked. Each section includes pass/fail status,
-  timing, and notes on any issues found
-- [ ] **User presentation** — present a concise summary in the chat: "I've put your charm
-  through its paces — ran 5 actions, tested 3 relations, verified the web UI responds,
-  toggled 8 config options, and scaled to 2 units. Everything passed except [specific
-  issue]. Full report in ACCEPTANCE.md"
+- [x] **ACCEPTANCE.md** — `AcceptanceReportTool` (`acceptance_report`) accepts Markdown
+  output from each tool and writes a consolidated `ACCEPTANCE.md` in the charm directory
+  with sections for actions, relations, endpoints, config, and lifecycle
+- [x] **User presentation** — the tool returns a concise summary suitable for the chat:
+  section count and section names
 - [ ] **Feed back into build** — if acceptance tests reveal problems (broken actions,
   non-functional relations, dead config options), automatically create fix tasks in the
   work queue and iterate. The charm isn't done until acceptance tests pass
-- [ ] **Planner integration** — add acceptance testing as a standard phase in the build
-  pipeline, after integration tests pass. The planner generates acceptance test tasks
-  based on the charm's metadata (actions, relations, config options, workload type)
+- [x] **Planner integration** — acceptance testing is now a standard phase in the build
+  pipeline after integration tests pass; `_DESIGN_TO_BUILD_PROMPT` includes acceptance
+  test task guidance; `autodeploy.py` chains TEST → acceptance → demo; `_ACCEPTANCE_GUIDANCE`
+  overlay in `subagent.py` directs the subagent through the full acceptance suite
 
 **Exit criteria:** After building a charm, Cantrip deploys it, runs every action, relates
 it to appropriate partners, hits the workload endpoints, toggles config options, and tests
