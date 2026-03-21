@@ -1,8 +1,8 @@
 """Agent state data structures."""
 
+import datetime
+import pathlib
 from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from cantrip.llm.base import Message
@@ -15,7 +15,7 @@ class Decision:
     type: str
     choice: str
     reason: str | None = None
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime.datetime = field(default_factory=datetime.datetime.now)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -61,7 +61,7 @@ class AgentState:
     """Current agent state."""
 
     charm_name: str | None = None
-    charm_path: Path | None = None
+    charm_path: pathlib.Path | None = None
     charm_type: str | None = None  # "machine" or "k8s"
     framework: str | None = None
 

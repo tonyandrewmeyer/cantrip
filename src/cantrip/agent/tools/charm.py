@@ -294,7 +294,7 @@ class CharmcraftInitTool(Tool):
                 output="",
                 error="charmcraft init timed out",
             )
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, yaml.YAMLError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -413,7 +413,7 @@ class CharmcraftPackTool(Tool):
                 output="",
                 error="charmcraft pack timed out",
             )
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, yaml.YAMLError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -584,7 +584,7 @@ class CharmcraftFetchLibsTool(Tool):
                 output="",
                 error="charmcraft fetch-libs timed out",
             )
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, yaml.YAMLError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -818,7 +818,7 @@ class AnalyseFrameworkTool(Tool):
                 output="\n".join(output_lines),
                 data=findings,
             )
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, yaml.YAMLError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",

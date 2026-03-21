@@ -167,23 +167,14 @@ class BackgroundExecutor:
                         continue
                     # Mark active immediately so the next poll doesn't re-pick it.
                     self._queue.set_active(task.id)
-                    if self._store:
-                        self._store.record_event(
-                            "task_status_change",
-                            {
-                                "task_id": task.id,
-                                "task_title": task.title,
-                                "old_status": "pending",
-                                "new_status": "active",
-                            },
-                        )
+                    self._record_status_change(task, "active", old_status="pending")
                     at = asyncio.create_task(self._run_task_with_semaphore(task))
                     self._active_tasks.add(at)
                     at.add_done_callback(self._active_tasks.discard)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                log.exception("Unexpected error in executor loop")
+            except (KeyError, RuntimeError, OSError) as exc:
+                log.warning("Unexpected error in executor loop: %s", exc)
 
         # Wait for in-flight tasks to finish on shutdown.
         if self._active_tasks:
@@ -232,6 +223,42 @@ class BackgroundExecutor:
 
         return None
 
+    # -- Event recording helpers -----------------------------------------------
+
+    def _record_status_change(
+        self,
+        task: AgentTask,
+        new_status: str,
+        *,
+        old_status: str = "active",
+        error: str | None = None,
+    ) -> None:
+        """Record a task status change event in the session store."""
+        if not self._store:
+            return
+        detail: dict[str, str] = {
+            "task_id": task.id,
+            "task_title": task.title,
+            "old_status": old_status,
+            "new_status": new_status,
+        }
+        if error is not None:
+            detail["error"] = error[:500]
+        self._store.record_event("task_status_change", detail)
+
+    def _record_task_error(self, task: AgentTask, exc: BaseException) -> None:
+        """Record a task error event in the session store."""
+        if not self._store:
+            return
+        self._store.record_event(
+            "error",
+            {
+                "task_id": task.id,
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            },
+        )
+
     # -- Task execution ------------------------------------------------------
 
     _SNAPSHOT_CATEGORIES = frozenset({TaskCategory.BUILD, TaskCategory.DEBUG})
@@ -249,17 +276,7 @@ class BackgroundExecutor:
         error = self._pre_check_environment(task)
         if error is not None:
             self._queue.set_failed(task.id, error)
-            if self._store:
-                self._store.record_event(
-                    "task_status_change",
-                    {
-                        "task_id": task.id,
-                        "task_title": task.title,
-                        "old_status": "active",
-                        "new_status": "failed",
-                        "error": str(error)[:500],
-                    },
-                )
+            self._record_status_change(task, "failed", error=error)
             if self._on_task_failed:
                 self._on_task_failed(task)
             # For deploy failures due to missing model, queue an infra task.
@@ -290,78 +307,31 @@ class BackgroundExecutor:
         try:
             result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)
             elapsed = time.monotonic() - t0
-            log.info(
-                "Task '%s' completed in %.1fs",
-                task.title,
-                elapsed,
-            )
+            log.info("Task '%s' completed in %.1fs", task.title, elapsed)
             self._queue.set_done(task.id, result)
-            if self._store:
-                self._store.record_event(
-                    "task_status_change",
-                    {
-                        "task_id": task.id,
-                        "task_title": task.title,
-                        "old_status": "active",
-                        "new_status": "done",
-                    },
-                )
+            self._record_status_change(task, "done")
             if task.category in (TaskCategory.BUILD, TaskCategory.DEBUG):
                 self._check_uncommitted(task)
             if self._on_task_done:
                 self._on_task_done(task)
-        except TimeoutError:
+        except TimeoutError as exc:
             elapsed = time.monotonic() - t0
             log.warning("Task '%s' timed out after %.1fs", task.title, elapsed)
             if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
                 self._revert_on_failure(snapshot, task)
             self._queue.set_failed(task.id, "Task timed out")
-            if self._store:
-                self._store.record_event(
-                    "task_status_change",
-                    {
-                        "task_id": task.id,
-                        "task_title": task.title,
-                        "old_status": "active",
-                        "new_status": "failed",
-                        "error": "Task timed out",
-                    },
-                )
-                self._store.record_event(
-                    "error",
-                    {
-                        "task_id": task.id,
-                        "error_type": "TimeoutError",
-                        "error": "Task timed out",
-                    },
-                )
+            self._record_status_change(task, "failed", error="Task timed out")
+            self._record_task_error(task, exc)
             if self._on_task_failed:
                 self._on_task_failed(task)
-        except Exception as exc:
+        except (llm.ProviderError, llm.ProviderRateLimitError, OSError, RuntimeError) as exc:
             elapsed = time.monotonic() - t0
             log.warning("Task '%s' failed after %.1fs: %s", task.title, elapsed, exc)
             if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
                 self._revert_on_failure(snapshot, task)
             self._queue.set_failed(task.id, str(exc))
-            if self._store:
-                self._store.record_event(
-                    "task_status_change",
-                    {
-                        "task_id": task.id,
-                        "task_title": task.title,
-                        "old_status": "active",
-                        "new_status": "failed",
-                        "error": str(exc)[:500],
-                    },
-                )
-                self._store.record_event(
-                    "error",
-                    {
-                        "task_id": task.id,
-                        "error_type": type(exc).__name__,
-                        "error": str(exc)[:500],
-                    },
-                )
+            self._record_status_change(task, "failed", error=str(exc))
+            self._record_task_error(task, exc)
             if self._on_task_failed:
                 self._on_task_failed(task)
         finally:

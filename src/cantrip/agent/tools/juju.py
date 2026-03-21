@@ -110,7 +110,7 @@ class JujuStatusTool(Tool):
                 output="",
                 error="juju status timed out — the controller may be unavailable.",
             )
-        except Exception as e:
+        except (jubilant.CLIError, jubilant.TaskError, OSError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -229,7 +229,7 @@ class JujuDeployTool(Tool):
                 output="",
                 error="juju deploy timed out — the operation is taking too long.",
             )
-        except Exception as e:
+        except (jubilant.CLIError, jubilant.TaskError, OSError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -381,7 +381,7 @@ class JujuRelateTool(Tool):
                 output="",
                 error="juju integrate timed out — the controller may be unavailable.",
             )
-        except Exception as e:
+        except (jubilant.CLIError, jubilant.TaskError, OSError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -453,7 +453,7 @@ class JujuSSHTool(Tool):
                 output="",
                 error="juju ssh timed out — the unit may be unreachable.",
             )
-        except Exception as e:
+        except (jubilant.CLIError, jubilant.TaskError, OSError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",
@@ -527,7 +527,7 @@ class JujuRunActionTool(Tool):
                 output="",
                 error="juju run timed out — the action is taking too long.",
             )
-        except Exception as e:
+        except (jubilant.CLIError, jubilant.TaskError, OSError, ValueError) as e:
             return ToolResult(
                 success=False,
                 output="",

@@ -481,8 +481,8 @@ class EventWatcher:
                 await self._poll_status_once()
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                log.exception("Error polling juju status")
+            except (jubilant.CLIError, OSError, TimeoutError) as exc:
+                log.warning("Error polling juju status: %s", exc)
             await asyncio.sleep(self._config.status_interval)
 
     async def _poll_status_once(self) -> None:
@@ -506,8 +506,8 @@ class EventWatcher:
                 await self._poll_loki_once()
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                log.exception("Error polling Loki")
+            except (OSError, TimeoutError, ValueError) as exc:
+                log.warning("Error polling Loki: %s", exc)
             await asyncio.sleep(self._config.loki_interval)
 
     async def _poll_loki_once(self) -> None:

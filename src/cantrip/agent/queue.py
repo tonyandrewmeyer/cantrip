@@ -1,10 +1,10 @@
 """Work queue for autonomous agent task scheduling."""
 
+import datetime
 import enum
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 
 
 class TaskStatus(enum.StrEnum):
@@ -49,7 +49,7 @@ class AgentTask:
     result: str | None = None
     blocked_reason: str | None = None
     model_hint: ModelHint | None = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
 
     def __post_init__(self) -> None:
         """Generate a unique ID if not provided."""
