@@ -42,9 +42,7 @@ def _agent_charm_dir(unit: str) -> str:
     """
     parts = unit.split("/")
     if len(parts) != 2 or not parts[1].isdigit():
-        raise ValueError(
-            f"Invalid unit name '{unit}'. Expected format: 'app-name/0'"
-        )
+        raise ValueError(f"Invalid unit name '{unit}'. Expected format: 'app-name/0'")
     return f"/var/lib/juju/agents/unit-{parts[0]}-{parts[1]}/charm"
 
 
