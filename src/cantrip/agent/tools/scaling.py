@@ -168,7 +168,7 @@ class ScalingTestTool(Tool):
         )
         if scale_result.returncode != 0:
             # Fall back to add-unit for machine models.
-            current = initial_count or 1
+            current = initial_count if initial_count is not None else 1
             units_to_add = target_units - current
             if units_to_add > 0:
                 add_result = _run_juju(
@@ -199,7 +199,7 @@ class ScalingTestTool(Tool):
 
         # Step 3: scale back (optional).
         scale_down_ok = True
-        if scale_back and (scaled_count or target_units) > 1:
+        if scale_back and (scaled_count if scaled_count is not None else target_units) > 1:
             report_lines.append("## Scale Down to 1")
             report_lines.append("")
 

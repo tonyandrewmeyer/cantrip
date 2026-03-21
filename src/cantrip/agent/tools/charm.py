@@ -157,13 +157,16 @@ def _inject_pre_commit(target_path: Path) -> list[str]:
     actions.append("Created .pre-commit-config.yaml with format, lint, and unit hooks")
 
     if shutil.which("pre-commit"):
-        subprocess.run(
-            ["pre-commit", "install"],
-            cwd=target_path,
-            capture_output=True,
-            timeout=30,
-        )
-        actions.append("Ran pre-commit install")
+        try:
+            subprocess.run(
+                ["pre-commit", "install"],
+                cwd=target_path,
+                capture_output=True,
+                timeout=30,
+            )
+            actions.append("Ran pre-commit install")
+        except (subprocess.TimeoutExpired, OSError):
+            actions.append("pre-commit install failed — run manually")
     else:
         actions.append("pre-commit not found on PATH — run 'pre-commit install' manually")
 

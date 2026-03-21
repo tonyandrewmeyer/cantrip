@@ -234,7 +234,9 @@ class TempoQueryTool(Tool):
             if query:
                 params["q"] = query
             elif service_name:
-                params["q"] = f'{{ resource.service.name = "{service_name}" }}'
+                # Escape quotes to prevent TraceQL injection.
+                safe_name = service_name.replace("\\", "\\\\").replace('"', '\\"')
+                params["q"] = f'{{ resource.service.name = "{safe_name}" }}'
             else:
                 params["q"] = "{}"
             url = f"http://localhost:3200/api/search?{urllib.parse.urlencode(params)}"
