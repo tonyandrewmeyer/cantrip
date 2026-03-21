@@ -291,6 +291,8 @@ class TestBootstrap:
             ),
             patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -416,6 +418,8 @@ class TestBootstrap:
                 "cantrip.agent.preflight.asyncio.to_thread", new_callable=AsyncMock
             ) as mock_to_thread,
             patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             await runner.bootstrap("machine")
 
@@ -454,13 +458,18 @@ class TestBootstrap:
             patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
             patch(
-                "cantrip.agent.preflight.asyncio.to_thread", new_callable=AsyncMock
+                "cantrip.agent.preflight.asyncio.to_thread",
+                new_callable=AsyncMock,
+                side_effect=[cos_status, None],
             ) as mock_to_thread,
             patch("cantrip.agent.preflight._model_is_k8s", return_value=True),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
-        assert mock_to_thread.await_count == 1
+        # to_thread is called for juju.status (returns cos_status) and juju.deploy.
+        assert mock_to_thread.await_count == 2
         assert result.cos_ready is True
 
     @pytest.mark.asyncio
@@ -510,6 +519,8 @@ class TestBootstrap:
                 side_effect=selective_to_thread,
             ),
             patch("cantrip.agent.preflight._model_is_k8s", return_value=True),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -545,6 +556,8 @@ class TestBootstrap:
             patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
             patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
             patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=False),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -580,6 +593,8 @@ class TestBootstrap:
             patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
             patch("cantrip.agent.preflight._model_is_k8s", return_value=False),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -606,6 +621,8 @@ class TestBootstrap:
             ),
             patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -663,6 +680,7 @@ class TestPrepare:
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
             patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
         ):
             result = await runner.prepare("k8s")
 
@@ -811,6 +829,7 @@ class TestPrepare:
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
             patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
         ):
             await runner.prepare("k8s")
 
