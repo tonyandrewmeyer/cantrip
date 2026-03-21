@@ -274,6 +274,43 @@ def diff_snapshots(
 # ---------------------------------------------------------------------------
 
 
+_EVENT_INSTRUCTIONS: dict[str, list[str]] = {
+    "hook_failure": [
+        "Please investigate this hook failure:",
+        "1. Check `juju_debug_log` for the error traceback",
+        "2. If COS is available, query `loki_query` for related log entries",
+        "3. Diagnose the root cause and suggest or apply a fix",
+    ],
+    "new_relation": [
+        "A new relation was detected. Please:",
+        "1. Check `juju_status` to see the current state",
+        "2. Verify the relation is expected and properly configured",
+        "3. Report the relation status to the user",
+    ],
+    "log_error": [
+        "An error was found in the application logs:",
+        "1. Query `loki_query` for more context around this error",
+        "2. Check `juju_debug_log` for related hook activity",
+        "3. Diagnose the root cause and suggest or apply a fix",
+    ],
+}
+
+# Topology changes share the same instructions.
+for _cat in ("new_app", "removed_app", "new_unit", "removed_unit"):
+    _EVENT_INSTRUCTIONS[_cat] = [
+        "A topology change was detected. Please:",
+        "1. Check `juju_status` to see the current model state",
+        "2. Report the change to the user",
+    ]
+
+_DEFAULT_INSTRUCTIONS = [
+    "Please investigate this change:",
+    "1. Check `juju_status` for the current state",
+    "2. Use observability tools if needed to understand the cause",
+    "3. Report findings to the user",
+]
+
+
 def format_event_for_agent(event: WatcherEvent) -> str:
     """Format a WatcherEvent into a structured message for the LLM.
 
@@ -294,50 +331,8 @@ def format_event_for_agent(event: WatcherEvent) -> str:
     lines.append(event.detail)
     lines.append("")
 
-    if event.category == "hook_failure":
-        lines.extend(
-            [
-                "Please investigate this hook failure:",
-                "1. Check `juju_debug_log` for the error traceback",
-                "2. If COS is available, query `loki_query` for related log entries",
-                "3. Diagnose the root cause and suggest or apply a fix",
-            ]
-        )
-    elif event.category == "new_relation":
-        lines.extend(
-            [
-                "A new relation was detected. Please:",
-                "1. Check `juju_status` to see the current state",
-                "2. Verify the relation is expected and properly configured",
-                "3. Report the relation status to the user",
-            ]
-        )
-    elif event.category in ("new_app", "removed_app", "new_unit", "removed_unit"):
-        lines.extend(
-            [
-                "A topology change was detected. Please:",
-                "1. Check `juju_status` to see the current model state",
-                "2. Report the change to the user",
-            ]
-        )
-    elif event.category == "log_error":
-        lines.extend(
-            [
-                "An error was found in the application logs:",
-                "1. Query `loki_query` for more context around this error",
-                "2. Check `juju_debug_log` for related hook activity",
-                "3. Diagnose the root cause and suggest or apply a fix",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "Please investigate this change:",
-                "1. Check `juju_status` for the current state",
-                "2. Use observability tools if needed to understand the cause",
-                "3. Report findings to the user",
-            ]
-        )
+    instructions = _EVENT_INSTRUCTIONS.get(event.category, _DEFAULT_INSTRUCTIONS)
+    lines.extend(instructions)
 
     return "\n".join(lines)
 

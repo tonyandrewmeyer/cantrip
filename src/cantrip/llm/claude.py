@@ -250,17 +250,4 @@ class ClaudeProvider(LLMProvider):
 
         yield Chunk(tool_calls=tool_calls, is_final=True)
 
-    def count_tokens(self, messages: list[Message]) -> int:
-        """Count tokens in messages (approximate).
-
-        Accounts for message content, tool call names/arguments,
-        and tool result content.
-        """
-        total = 0
-        for msg in messages:
-            total += len(msg.content)
-            for tc in msg.tool_calls:
-                total += len(tc.name) + len(str(tc.arguments))
-            for tr in msg.tool_results:
-                total += len(tr.content)
-        return total // 4
+    # count_tokens inherited from LLMProvider (character-based heuristic).

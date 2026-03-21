@@ -75,6 +75,33 @@ class Tool:
     parameters: dict[str, Any]  # JSON Schema
 
 
+# Approximate characters per token — used for fast heuristic token counting
+# when a provider does not offer a native tokeniser.
+_CHARS_PER_TOKEN = 4
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimate the token count of *text* using a character-based heuristic."""
+    return len(text) // _CHARS_PER_TOKEN
+
+
+def estimate_message_tokens(messages: list["Message"]) -> int:
+    """Estimate total tokens across a list of messages.
+
+    Accounts for message content, tool call names/arguments, and tool
+    result content.  Used as the default ``count_tokens`` implementation
+    and by the context manager for budget tracking.
+    """
+    total = 0
+    for msg in messages:
+        total += len(msg.content)
+        for tc in msg.tool_calls:
+            total += len(tc.name) + len(str(tc.arguments))
+        for tr in msg.tool_results:
+            total += len(tr.content)
+    return total // _CHARS_PER_TOKEN
+
+
 class ProviderRateLimitError(Exception):
     """Raised when the LLM provider returns a rate-limit / quota error."""
 
@@ -123,6 +150,10 @@ class LLMProvider(ABC):
         """Maximum number of tools the provider can handle, or None for no limit."""
         return None
 
-    @abstractmethod
     def count_tokens(self, messages: list[Message]) -> int:
-        """Count tokens in messages (approximate)."""
+        """Count tokens in messages (approximate).
+
+        The default implementation uses a character-based heuristic.
+        Subclasses may override with a provider-specific tokeniser.
+        """
+        return estimate_message_tokens(messages)

@@ -11,6 +11,9 @@ from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRat
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
+# Maximum time to wait for the background executor to finish before exiting.
+_DRAIN_TIMEOUT_SECONDS = 60
+
 _STATUS_ICONS = {
     CheckStatus.PENDING: "○",
     CheckStatus.RUNNING: "⟳",
@@ -194,7 +197,7 @@ async def _drain_executor(agent: CantripAgent) -> None:
     if not queue.all_tasks():
         return
     print("[executor] Waiting for tasks to complete...")
-    deadline = asyncio.get_event_loop().time() + 60
+    deadline = asyncio.get_event_loop().time() + _DRAIN_TIMEOUT_SECONDS
     while asyncio.get_event_loop().time() < deadline:
         tasks = queue.all_tasks()
         still_running = [t for t in tasks if t.status.value in ("pending", "active")]

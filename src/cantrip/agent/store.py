@@ -13,6 +13,17 @@ log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 4
 
+
+def _safe_json_load(raw: str | None, fallback: object = None) -> object:
+    """Parse a JSON string, returning *fallback* on ``None``, empty, or corrupt input."""
+    if not raw:
+        return fallback
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return fallback
+
+
 _MAX_CONTENT_BYTES = 50_000
 
 _SCHEMA_SQL = """\
@@ -304,7 +315,7 @@ class SessionStore:
         for r in rows:
             try:
                 raw_hint = r["model_hint"]
-                deps = json.loads(r["dependencies"]) if r["dependencies"] else []
+                deps = _safe_json_load(r["dependencies"], fallback=[]) or []
                 created = datetime.datetime.fromisoformat(r["created_at"])
                 tasks.append(
                     AgentTask(
@@ -365,11 +376,9 @@ class SessionStore:
                         "id": r["id"],
                         "role": r["role"],
                         "content": r["content"],
-                        "tool_calls": (json.loads(r["tool_calls"]) if r["tool_calls"] else None),
-                        "tool_results": (
-                            json.loads(r["tool_results"]) if r["tool_results"] else None
-                        ),
-                        "metadata": (json.loads(r["metadata"]) if r["metadata"] else None),
+                        "tool_calls": _safe_json_load(r["tool_calls"]),
+                        "tool_results": _safe_json_load(r["tool_results"]),
+                        "metadata": _safe_json_load(r["metadata"]),
                         "token_usage_id": r["token_usage_id"],
                         "timestamp": r["timestamp"],
                     }
@@ -418,22 +427,14 @@ class SessionStore:
         ).fetchall()
         result: list[dict[str, object]] = []
         for r in rows:
-            try:
-                tc = json.loads(r["tool_calls"]) if r["tool_calls"] else None
-            except (json.JSONDecodeError, TypeError):
-                tc = None
-            try:
-                tr = json.loads(r["tool_results"]) if r["tool_results"] else None
-            except (json.JSONDecodeError, TypeError):
-                tr = None
             result.append(
                 {
                     "task_id": r["task_id"],
                     "message_index": r["message_index"],
                     "role": r["role"],
                     "content": r["content"],
-                    "tool_calls": tc,
-                    "tool_results": tr,
+                    "tool_calls": _safe_json_load(r["tool_calls"]),
+                    "tool_results": _safe_json_load(r["tool_results"]),
                     "timestamp": r["timestamp"],
                 }
             )
@@ -475,15 +476,11 @@ class SessionStore:
         rows = self._db.execute(query, params).fetchall()
         result: list[dict[str, object]] = []
         for r in rows:
-            try:
-                detail = json.loads(r["detail"])
-            except (json.JSONDecodeError, TypeError):
-                detail = {}
             result.append(
                 {
                     "id": r["id"],
                     "event_type": r["event_type"],
-                    "detail": detail,
+                    "detail": _safe_json_load(r["detail"], fallback={}),
                     "timestamp": r["timestamp"],
                 }
             )

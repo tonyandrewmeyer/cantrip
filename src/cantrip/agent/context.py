@@ -4,7 +4,14 @@ import logging
 import re
 from dataclasses import dataclass
 
-from cantrip.llm.base import LLMProvider, Message, Role
+from cantrip.llm.base import (
+    _CHARS_PER_TOKEN,
+    LLMProvider,
+    Message,
+    Role,
+    estimate_message_tokens,
+    estimate_tokens,
+)
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +47,7 @@ class VirtualFileStore:
         """Store content and return a virtual file ID."""
         self._counter += 1
         file_id = f"vf_{self._counter}"
-        token_estimate = len(content) // 4
+        token_estimate = estimate_tokens(content)
         self._files[file_id] = VirtualFile(
             id=file_id,
             name=name,
@@ -137,14 +144,7 @@ class ContextManager:
 
     def estimate_tokens(self, messages: list[Message]) -> int:
         """Estimate the total token count across all messages."""
-        total = 0
-        for msg in messages:
-            total += len(msg.content)
-            for tc in msg.tool_calls:
-                total += len(tc.name) + len(str(tc.arguments))
-            for tr in msg.tool_results:
-                total += len(tr.content)
-        return total // 4
+        return estimate_message_tokens(messages)
 
     def virtualise_message(self, message: Message) -> Message:
         """Replace oversized content with a virtual file pointer.
@@ -155,7 +155,7 @@ class ContextManager:
         if message.role == Role.TOOL and message.tool_results:
             return self._virtualise_tool_message(message)
 
-        content_tokens = len(message.content) // 4
+        content_tokens = estimate_tokens(message.content)
         if content_tokens < self._virtualisation_threshold:
             return message
 
@@ -164,7 +164,7 @@ class ContextManager:
             name=f"{message.role.value}_message",
             source=f"virtualised:{message.role.value}",
         )
-        preview_chars = self._virtualisation_preview * 4
+        preview_chars = self._virtualisation_preview * _CHARS_PER_TOKEN
         preview = message.content[:preview_chars]
         new_content = (
             f"{preview}\n\n"
@@ -185,14 +185,14 @@ class ContextManager:
         new_results = []
         changed = False
         for tr in message.tool_results:
-            content_tokens = len(tr.content) // 4
+            content_tokens = estimate_tokens(tr.content)
             if content_tokens >= self._virtualisation_threshold:
                 file_id = self._store.store(
                     content=tr.content,
                     name=f"tool_result:{tr.tool_call_id}",
                     source=f"tool_result:{tr.tool_call_id}",
                 )
-                preview_chars = self._virtualisation_preview * 4
+                preview_chars = self._virtualisation_preview * _CHARS_PER_TOKEN
                 preview = tr.content[:preview_chars]
                 new_content = (
                     f"{preview}\n\n"
