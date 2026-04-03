@@ -142,6 +142,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "juju_run_action",
             "juju_config",
             "juju_debug_log",
+            "tempo_query",
             "virtual_file_read",
             "virtual_file_search",
         }

@@ -4,6 +4,10 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Paginated HTML transcripts (Phase 14)** — `cantrip export-transcript --page-size N` splits long HTML transcripts into multiple files with previous/next navigation; tasks and events on page 1; each page is self-contained with inline CSS and search
+- **Complete demo generation (Phase 13)** — demo guidance now covers Showboat-driven DEMO.md with relation wiring, action and config showcases (falling back to `write_file` when Showboat is unavailable); trace capture via `tempo_query` to `demo/traces/` with span summary; Grafana dashboard export and screenshot via Rodney to `demo/dashboards/` and `demo/screenshots/`; web UI screenshot for web-facing charms; quick-start section at top of TUTORIAL.md; demo validation step; `GenerateReadmeTool` now links DEMO.md, TUTORIAL.md, and architecture.md in the README and embeds `demo/juju-status.txt` in a collapsible block; `tempo_query` added to BUILD tool allowlist
+
 ### Changed
 - **Refactored file tools** — extracted `PathAwareTool` base class in `tools/files.py` to eliminate four identical copies of `_resolve_path()` across `ReadFileTool`, `WriteFileTool`, `ListDirectoryTool`, and `EditFileTool`
 - **Refactored git tools** — extracted `_run_git()` helper in `tools/git.py` to consolidate the repeated pattern of git-not-found check, subprocess execution, timeout handling, and exit code inspection across all eight git tool classes

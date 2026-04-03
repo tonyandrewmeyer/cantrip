@@ -372,6 +372,35 @@ class GenerateReadmeTool(Tool):
             sections.append("## Design")
             sections.append("See [DESIGN.md](DESIGN.md) for the charm design rationale.")
 
+        # Architecture diagram.
+        architecture_path = charm_path / "architecture.md"
+        if architecture_path.exists():
+            sections.append("## Architecture")
+            sections.append(
+                "See [architecture.md](architecture.md) for the relation and "
+                "container topology diagram."
+            )
+
+        # Demo and tutorial links.
+        demo_path = charm_path / "DEMO.md"
+        tutorial_path = charm_path / "TUTORIAL.md"
+        juju_status_path = charm_path / "demo" / "juju-status.txt"
+        if demo_path.exists() or tutorial_path.exists():
+            sections.append("## Demo")
+            if tutorial_path.exists():
+                sections.append("See [TUTORIAL.md](TUTORIAL.md) for a guided walk-through.")
+            if demo_path.exists():
+                sections.append(
+                    "See [DEMO.md](DEMO.md) for an annotated demo with real "
+                    "command output and screenshots."
+                )
+            if juju_status_path.exists():
+                sections.append(
+                    "\n<details><summary>juju status</summary>\n\n"
+                    "```\n" + juju_status_path.read_text().rstrip() + "\n```\n\n"
+                    "</details>"
+                )
+
         # Contributing.
         sections.append("## Contributing")
         sections.append(

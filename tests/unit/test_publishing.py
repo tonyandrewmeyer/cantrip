@@ -368,6 +368,61 @@ class TestGenerateReadmeTool:
         assert not result.success
         assert "parse" in result.error.lower()
 
+    @pytest.mark.asyncio
+    async def test_includes_demo_links(self, tool, temp_dir):
+        """README links DEMO.md and TUTORIAL.md when they exist."""
+        (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
+        (temp_dir / "DEMO.md").write_text("# Demo\n")
+        (temp_dir / "TUTORIAL.md").write_text("# Tutorial\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        readme = (temp_dir / "README.md").read_text()
+        assert "## Demo" in readme
+        assert "DEMO.md" in readme
+        assert "TUTORIAL.md" in readme
+
+    @pytest.mark.asyncio
+    async def test_includes_juju_status_snapshot(self, tool, temp_dir):
+        """README embeds juju status snapshot when present."""
+        (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
+        (temp_dir / "DEMO.md").write_text("# Demo\n")
+        demo_dir = temp_dir / "demo"
+        demo_dir.mkdir()
+        (demo_dir / "juju-status.txt").write_text("Model  Controller\nmy-charm/0  active/idle")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        readme = (temp_dir / "README.md").read_text()
+        assert "juju status" in readme
+        assert "my-charm/0  active/idle" in readme
+
+    @pytest.mark.asyncio
+    async def test_includes_architecture_link(self, tool, temp_dir):
+        """README links architecture diagram when it exists."""
+        (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
+        (temp_dir / "architecture.md").write_text("```mermaid\ngraph LR\n```\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        readme = (temp_dir / "README.md").read_text()
+        assert "## Architecture" in readme
+        assert "architecture.md" in readme
+
+    @pytest.mark.asyncio
+    async def test_no_demo_section_without_files(self, tool, temp_dir):
+        """README omits Demo section when DEMO.md and TUTORIAL.md are absent."""
+        (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        readme = (temp_dir / "README.md").read_text()
+        assert "## Demo" not in readme
+
 
 # ===================================================================
 # TestGeneratePlaceholderSvg
