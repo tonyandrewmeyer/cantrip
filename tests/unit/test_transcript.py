@@ -8,7 +8,7 @@ import pytest
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
 from cantrip.transcript.export import TranscriptData, load_transcript
-from cantrip.transcript.html import render_html
+from cantrip.transcript.html import render_html, render_html_paginated
 from cantrip.transcript.jsonl import render_jsonl
 from cantrip.transcript.markdown import render_markdown
 
@@ -167,6 +167,118 @@ class TestHtmlRenderer:
         assert "Building now." in html
 
 
+class TestHtmlPaginated:
+    """Tests for paginated HTML export."""
+
+    @staticmethod
+    def _many_messages(count: int) -> TranscriptData:
+        """Build transcript data with *count* conversation messages."""
+        messages = [
+            {
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"Message {i}",
+                "timestamp": f"2026-03-15T10:{i:04d}",
+            }
+            for i in range(count)
+        ]
+        return TranscriptData(
+            charm_name="paged-charm",
+            messages=messages,
+            tasks=[
+                {
+                    "id": "t1",
+                    "title": "Some task",
+                    "status": "done",
+                    "category": "build",
+                }
+            ],
+            events=[
+                {
+                    "event_type": "session_start",
+                    "timestamp": "2026-03-15T10:00:00",
+                    "detail": {},
+                }
+            ],
+        )
+
+    def test_single_page_when_fewer_than_page_size(self):
+        data = self._many_messages(5)
+        pages = render_html_paginated(data, page_size=10)
+        assert len(pages) == 1
+        filename, html = pages[0]
+        assert filename == "transcript_1.html"
+        # Pagination nav is hidden when there is only one page.
+        assert "Previous" not in html
+        assert "Next" not in html
+
+    def test_splits_into_correct_number_of_pages(self):
+        data = self._many_messages(25)
+        pages = render_html_paginated(data, page_size=10)
+        assert len(pages) == 3
+        assert pages[0][0] == "transcript_1.html"
+        assert pages[1][0] == "transcript_2.html"
+        assert pages[2][0] == "transcript_3.html"
+
+    def test_first_page_has_tasks_and_events(self):
+        data = self._many_messages(25)
+        pages = render_html_paginated(data, page_size=10)
+        first_html = pages[0][1]
+        assert "Some task" in first_html
+        assert "session_start" in first_html
+
+    def test_later_pages_omit_tasks_and_events(self):
+        data = self._many_messages(25)
+        pages = render_html_paginated(data, page_size=10)
+        second_html = pages[1][1]
+        assert "Some task" not in second_html
+        assert "session_start" not in second_html
+
+    def test_messages_split_across_pages(self):
+        data = self._many_messages(25)
+        pages = render_html_paginated(data, page_size=10)
+        # Page 1 has messages 0–9.
+        assert "Message 0" in pages[0][1]
+        assert "Message 9" in pages[0][1]
+        assert "Message 10" not in pages[0][1]
+        # Page 2 has messages 10–19.
+        assert "Message 10" in pages[1][1]
+        assert "Message 19" in pages[1][1]
+        # Page 3 has messages 20–24.
+        assert "Message 20" in pages[2][1]
+        assert "Message 24" in pages[2][1]
+
+    def test_navigation_links(self):
+        data = self._many_messages(25)
+        pages = render_html_paginated(data, page_size=10)
+        first_html = pages[0][1]
+        assert "Previous" not in first_html
+        assert "transcript_2.html" in first_html
+        middle_html = pages[1][1]
+        assert "transcript_1.html" in middle_html
+        assert "transcript_3.html" in middle_html
+        last_html = pages[2][1]
+        assert "transcript_2.html" in last_html
+        assert "Next" not in last_html
+
+    def test_custom_stem(self):
+        data = self._many_messages(5)
+        pages = render_html_paginated(data, page_size=10, stem="session")
+        assert pages[0][0] == "session_1.html"
+
+    def test_page_info_displayed(self):
+        data = self._many_messages(25)
+        pages = render_html_paginated(data, page_size=10)
+        assert "Page 1 of 3" in pages[0][1]
+        assert "Page 2 of 3" in pages[1][1]
+        assert "Page 3 of 3" in pages[2][1]
+
+    def test_empty_data_produces_single_page(self):
+        data = TranscriptData()
+        pages = render_html_paginated(data, page_size=10)
+        assert len(pages) == 1
+        assert "<!DOCTYPE html>" in pages[0][1]
+
+
 class TestJsonlRenderer:
     def test_render_messages(self):
         data = _sample_data()
@@ -252,6 +364,40 @@ class TestMarkdownRenderer:
         data = TranscriptData()
         md = render_markdown(data)
         assert "# Cantrip Transcript" in md
+
+    def test_render_malformed_task_missing_fields(self):
+        """Tasks with missing fields use defaults instead of raising KeyError."""
+        data = TranscriptData(tasks=[{"id": "t1"}])
+        md = render_markdown(data)
+        assert "UNKNOWN" in md
+        assert "untitled" in md
+        assert "uncategorised" in md
+
+    def test_render_malformed_message_missing_role(self):
+        """Messages with missing role use default instead of raising KeyError."""
+        data = TranscriptData(messages=[{"content": "test"}])
+        md = render_markdown(data)
+        assert "UNKNOWN" in md
+
+    def test_render_malformed_tool_call_missing_name(self):
+        """Tool calls with missing name use default instead of raising KeyError."""
+        data = TranscriptData(
+            messages=[
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{"arguments": {}}],
+                }
+            ]
+        )
+        md = render_markdown(data)
+        assert "Tool: unknown" in md
+
+    def test_render_malformed_event_missing_type(self):
+        """Events with missing event_type use default instead of raising KeyError."""
+        data = TranscriptData(events=[{"detail": {}}])
+        md = render_markdown(data)
+        assert "**unknown**" in md
 
 
 # ===================================================================

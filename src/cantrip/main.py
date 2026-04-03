@@ -155,6 +155,13 @@ def parse_args() -> argparse.Namespace:
         dest="filter_since",
         help="Export only messages and events at or after an ISO timestamp",
     )
+    export_parser.add_argument(
+        "--page-size",
+        type=int,
+        default=None,
+        dest="page_size",
+        help="Split HTML output into pages of N conversation messages each",
+    )
 
     # When the first positional argument is not a known subcommand, treat
     # the entire argv as arguments to the "run" sub-parser.  This lets
@@ -204,6 +211,26 @@ def _export_transcript(args: argparse.Namespace) -> int:
     )
 
     fmt = args.fmt
+    page_size: int | None = getattr(args, "page_size", None)
+
+    if fmt == "html" and page_size is not None and page_size > 0:
+        from cantrip.transcript.html import render_html_paginated
+
+        output_dir = (args.output or charm_path).resolve()
+        if output_dir.suffix:
+            # User gave a file path — use its parent as the output directory
+            # and its stem as the filename prefix.
+            stem = output_dir.stem
+            output_dir = output_dir.parent
+        else:
+            stem = "transcript"
+        pages = render_html_paginated(data, page_size, stem=stem)
+        for filename, html in pages:
+            filepath = output_dir / filename
+            filepath.write_text(html)
+        print(f"Transcript exported to {output_dir}/ ({len(pages)} pages)")
+        return 0
+
     if fmt == "html":
         from cantrip.transcript.html import render_html
 
