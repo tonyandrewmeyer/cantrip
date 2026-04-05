@@ -15,6 +15,7 @@
     <div class="header-right">
       <button id="btn-help" class="header-btn" title="Help (?)" onclick="cantrip.toggleHelp()">?</button>
       <button id="btn-logs" class="header-btn" title="Logs (L)" onclick="cantrip.toggleLogs()">Logs</button>
+      <button id="btn-graph" class="header-btn" title="Graph (G)" onclick="cantrip.toggleGraph()">Graph</button>
       <span id="connection-status" class="status-dot disconnected" title="Disconnected"></span>
     </div>
   </header>
@@ -64,6 +65,7 @@
       <table class="shortcuts-table">
         <tr><td><kbd>?</kbd></td><td>Toggle this help</td></tr>
         <tr><td><kbd>L</kbd></td><td>Toggle log viewer</td></tr>
+        <tr><td><kbd>G</kbd></td><td>Toggle integration graph</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Close overlay</td></tr>
         <tr><td><kbd>Enter</kbd></td><td>Send message</td></tr>
       </table>
@@ -80,10 +82,21 @@
     </div>
   </div>
 
+  <!-- Graph overlay -->
+  <div id="graph-overlay" class="overlay hidden">
+    <div class="overlay-content overlay-wide">
+      <h2>Integration Graph</h2>
+      <div id="graph-view" class="graph-view">
+        <div class="juju-empty">Loading&hellip;</div>
+      </div>
+      <p class="overlay-hint">Press Escape or G to close &middot; R to refresh</p>
+    </div>
+  </div>
+
   <footer>
     <span id="status-label"></span>
     <span id="status-spacer"></span>
-    <span class="footer-hint">? Help &middot; L Logs</span>
+    <span class="footer-hint">? Help &middot; L Logs &middot; G Graph</span>
   </footer>
 
   <script src="/static/cantrip.js"></script>

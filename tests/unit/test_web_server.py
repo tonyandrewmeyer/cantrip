@@ -165,6 +165,7 @@ class TestJavaScriptFeatures:
         js = (_STATIC_DIR / "cantrip.js").read_text()
         assert "toggleHelp" in js
         assert "toggleLogs" in js
+        assert "toggleGraph" in js
 
     def test_js_has_logs_fetch(self) -> None:
         js = (_STATIC_DIR / "cantrip.js").read_text()
@@ -210,3 +211,40 @@ class TestTemplateFeatures:
         html = template.render(charm_name="", tasks=[], port=8471)
         assert "logs-overlay" in html
         assert "Juju Logs" in html
+
+    def test_template_has_graph_overlay(self) -> None:
+        import jinja2
+
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
+            autoescape=True,
+        )
+        template = env.get_template("index.html.j2")
+        html = template.render(charm_name="", tasks=[], port=8471)
+        assert "graph-overlay" in html
+        assert "Integration Graph" in html
+
+
+class TestGraphView:
+    """Tests for the integration graph view."""
+
+    def test_js_has_graph_toggle(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "toggleGraph" in js
+
+    def test_js_has_graph_renderer(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "_renderGraph" in js
+        assert "_fetchGraph" in js
+
+    def test_js_has_graph_keyboard_shortcut(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        # The G key triggers toggleGraph.
+        assert '"g"' in js or "'g'" in js
+
+    def test_css_has_graph_styles(self) -> None:
+        css = (_STATIC_DIR / "style.css").read_text()
+        assert ".graph-view" in css
+        assert ".graph-app" in css
+        assert ".graph-relations" in css
+        assert ".graph-relation" in css

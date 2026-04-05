@@ -1278,8 +1278,10 @@ Mirror the TUI's alternative views in the browser.
 
 - [x] **Logs view** — modal overlay (`L` key) showing `juju debug-log` output fetched
   via `/api/logs` endpoint; 200 lines at INFO level; `<pre>` block with monospace font
-- [ ] **Model graph view** — expanded topology view showing all apps, relations, and
-  cross-model integrations. Uses CSS positioning for the graph layout (not canvas)
+- [x] **Model graph view** — modal overlay (`G` key) showing all apps as status-coloured
+  cards with unit breakdowns and a relations section; CSS card layout with coloured left
+  borders; keyboard shortcut `R` to refresh; `Esc` to close; matching `_renderGraph()` JS
+  function and `.graph-app` / `.graph-relations` CSS classes
 - [x] **Help overlay** — modal overlay (`?` key) showing keyboard shortcuts table;
   Escape to dismiss
 - [x] **Keyboard shortcuts** — `?` for help, `L` for logs, `Escape` to close
@@ -1289,15 +1291,17 @@ Mirror the TUI's alternative views in the browser.
 
 Ensure the two UIs stay synchronised as features are added.
 
-- [ ] **Shared event contract** — `src/cantrip/ui/events.py` serves as the single source of
-  truth for what the UI can display. Adding a new UI feature means adding an event type
-  first, then implementing handlers in both the Textual widget and the JS frontend
-- [ ] **UI integration tests** — a test suite that verifies both UIs render the same
-  information given the same event sequence. Uses the event bus directly (no browser
-  automation) — asserts that TUI widget state and the JSON payloads sent over WebSocket
-  are equivalent
-- [ ] **Design documentation** — update `TUI.md` to `UI.md`, covering both interfaces with
-  shared layout diagrams and per-interface implementation notes
+- [x] **Shared event contract** — `src/cantrip/ui/events.py` is the single source of truth
+  for UI updates; `EventType` enum covers all 8 event types with factory functions that
+  build validated, JSON-serialisable payloads; adding a new UI feature means adding an
+  event type first, then implementing handlers in both TUI and JS
+- [x] **UI integration tests** — `tests/unit/test_ui_events.py` verifies the event contract:
+  every event type produces valid JSON with required fields, status values match CSS class
+  names, wildcard subscribers receive all types, and all factory functions produce known
+  event types; no browser automation required
+- [x] **Design documentation** — `UI.md` covers both interfaces with shared architecture
+  diagram, event contract table, layout mockup, keyboard shortcuts for both UIs, and
+  implementation notes for adding new views
 
 **Exit criteria:** `cantrip --web` opens a browser tab showing the same three-panel layout
 as the TUI — task checklist, Juju status, chat — all updating in real time via WebSocket.

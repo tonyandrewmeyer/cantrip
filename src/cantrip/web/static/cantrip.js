@@ -19,6 +19,8 @@ const cantrip = (() => {
   const helpOverlay = () => document.getElementById("help-overlay");
   const logsOverlay = () => document.getElementById("logs-overlay");
   const logsOutput = () => document.getElementById("logs-output");
+  const graphOverlay = () => document.getElementById("graph-overlay");
+  const graphView = () => document.getElementById("graph-view");
 
   // ── WebSocket connection ────────────────────────────────────────
 
@@ -284,6 +286,89 @@ const cantrip = (() => {
     } catch { output.textContent = "Error fetching logs."; }
   }
 
+  // ── Graph overlay ────────────────────────────────────────────────
+
+  function toggleGraph() {
+    const el = graphOverlay();
+    if (!el) return;
+    const wasHidden = el.classList.contains("hidden");
+    el.classList.toggle("hidden");
+    if (wasHidden) _fetchGraph();
+  }
+
+  async function _fetchGraph() {
+    const view = graphView();
+    if (!view) return;
+    view.innerHTML = '<div class="juju-empty">Loading\u2026</div>';
+    try {
+      const resp = await fetch("/api/juju-status");
+      if (!resp.ok) { view.innerHTML = '<div class="juju-empty">Failed to fetch status.</div>'; return; }
+      const data = await resp.json();
+      _renderGraph(view, data);
+    } catch { view.innerHTML = '<div class="juju-empty">Error fetching status.</div>'; }
+  }
+
+  function _renderGraph(container, data) {
+    const apps = data.apps || {};
+    const relations = data.relations || [];
+    const appNames = Object.keys(apps);
+
+    if (appNames.length === 0) {
+      container.innerHTML = '<div class="juju-empty">No applications deployed.</div>';
+      return;
+    }
+
+    container.innerHTML = "";
+
+    // App cards.
+    for (const name of appNames.sort()) {
+      const app = apps[name];
+      const div = document.createElement("div");
+      const status = app.status || "unknown";
+      div.className = `graph-app status-${status}`;
+
+      const units = app.units || {};
+      const unitCount = Object.keys(units).length;
+      const statusIcon = { active: "\u25cf", waiting: "\u25cb", blocked: "\u25cc", error: "\u2717" }[status] || "\u25cb";
+
+      let html =
+        `<div class="graph-app-name">${_esc(name)}</div>` +
+        `<div class="graph-app-status">${statusIcon} ${_esc(status)}` +
+        (app.message ? `: ${_esc(app.message.substring(0, 40))}` : "") + `</div>` +
+        `<div class="graph-app-units">${unitCount} unit${unitCount !== 1 ? "s" : ""}</div>`;
+
+      // Unit breakdown.
+      for (const [uName, uInfo] of Object.entries(units)) {
+        const uStatus = uInfo.status || "unknown";
+        const uIcon = { active: "\u25cf", waiting: "\u25cb", blocked: "\u25cc", error: "\u2717" }[uStatus] || "\u25cb";
+        const short = uName.split("/").pop();
+        html += `<div class="graph-app-unit">${uIcon} /${_esc(short)} ${_esc(uStatus)}</div>`;
+      }
+
+      div.innerHTML = html;
+      container.appendChild(div);
+    }
+
+    // Relations section.
+    if (relations.length > 0) {
+      const relDiv = document.createElement("div");
+      relDiv.className = "graph-relations";
+      let relHtml = "<h3>Relations</h3>";
+      for (const rel of relations) {
+        relHtml +=
+          `<div class="graph-relation">` +
+          `<span class="rel-app">${_esc(rel.provider || "")}</span>` +
+          ` \u2500\u2500 ` +
+          `<span class="rel-iface">[${_esc(rel.interface || "")}]</span>` +
+          ` \u2500\u2500\u25b8 ` +
+          `<span class="rel-app">${_esc(rel.requirer || "")}</span>` +
+          `</div>`;
+      }
+      relDiv.innerHTML = relHtml;
+      container.appendChild(relDiv);
+    }
+  }
+
   // ── Keyboard shortcuts ──────────────────────────────────────────
 
   function _handleKeyDown(e) {
@@ -296,11 +381,23 @@ const cantrip = (() => {
     } else if (e.key === "l" || e.key === "L") {
       e.preventDefault();
       toggleLogs();
+    } else if (e.key === "g" || e.key === "G") {
+      e.preventDefault();
+      toggleGraph();
+    } else if (e.key === "r" || e.key === "R") {
+      // Refresh graph if it is open.
+      const gOverlay = graphOverlay();
+      if (gOverlay && !gOverlay.classList.contains("hidden")) {
+        e.preventDefault();
+        _fetchGraph();
+      }
     } else if (e.key === "Escape") {
       const help = helpOverlay();
       const logs = logsOverlay();
+      const graph = graphOverlay();
       if (help && !help.classList.contains("hidden")) help.classList.add("hidden");
       else if (logs && !logs.classList.contains("hidden")) logs.classList.add("hidden");
+      else if (graph && !graph.classList.contains("hidden")) graph.classList.add("hidden");
     }
   }
 
@@ -327,6 +424,6 @@ const cantrip = (() => {
 
   return {
     connect, appendMessage, updateTask, replaceAllTasks, setThinking,
-    toggleHelp, toggleLogs,
+    toggleHelp, toggleLogs, toggleGraph,
   };
 })();

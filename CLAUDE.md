@@ -139,5 +139,5 @@ The system prompt in `src/cantrip/agent/prompts/system.py` contains embedded cha
 - `PLAN.md` - Architecture decisions, philosophy, detailed design
 - `AGENT.md` - Agent architecture (two-loop design, subagents, work queue, tools)
 - `ROADMAP.md` - Implementation phases
-- `TUI.md` - UI/UX design with ASCII mockups
+- `UI.md` - Shared UI design (TUI + Web), event bus contract, layout, shortcuts
 - `CHANGELOG.md` - Notable changes (keep updated)
