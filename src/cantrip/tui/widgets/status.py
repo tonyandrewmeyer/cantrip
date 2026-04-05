@@ -86,7 +86,30 @@ class AppBox(Static):
         unit_count = len(self.app_data.units)
         units_line = f"{unit_count} unit{'s' if unit_count != 1 else ''}"
 
-        yield Static(f"{name_line}\n{status_line}\n{units_line}")
+        # Build unit tree with subordinates nested under principals.
+        unit_lines: list[str] = []
+        for unit_name, unit in sorted(self.app_data.units.items()):
+            u_char = self._status_char(unit.workload_status.current)
+            u_msg = unit.workload_status.message
+            line = f"  {u_char} {unit_name}"
+            if u_msg:
+                line += f": {u_msg[:25]}"
+            unit_lines.append(line)
+            # Render subordinate units indented under their principal.
+            for sub_name, sub in sorted(unit.subordinates.items()):
+                s_char = self._status_char(sub.workload_status.current)
+                s_msg = sub.workload_status.message
+                sub_line = f"    └ {s_char} {sub_name}"
+                if s_msg:
+                    sub_line += f": {s_msg[:20]}"
+                unit_lines.append(sub_line)
+
+        tree_text = "\n".join(unit_lines) if unit_lines else ""
+        body = f"{name_line}\n{status_line}\n{units_line}"
+        if tree_text:
+            body += f"\n{tree_text}"
+
+        yield Static(body)
 
     def _status_char(self, status: str) -> str:
         """Get status indicator character."""
