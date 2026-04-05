@@ -79,6 +79,7 @@ from cantrip.agent.tools.observability import (
     LokiQueryTool,
     TempoQueryTool,
 )
+from cantrip.agent.tools.operational_readiness import OperationalReadinessTool
 from cantrip.agent.tools.planning import PlanTasksTool
 from cantrip.agent.tools.publishing import (
     CharmcraftReleaseTool,
@@ -133,6 +134,7 @@ def build_tools(
         EditFileTool(base_path=base_path),
         # Audit
         CharmAuditTool(),
+        OperationalReadinessTool(),
         # Charm operations
         CharmcraftInitTool(),
         CharmcraftPackTool(),
@@ -246,6 +248,7 @@ __all__ = [
     "tool_to_schema",
     # Audit
     "CharmAuditTool",
+    "OperationalReadinessTool",
     # Benchmark and Fuzz
     "HookBenchmarkTool",
     "FuzzTestTool",
