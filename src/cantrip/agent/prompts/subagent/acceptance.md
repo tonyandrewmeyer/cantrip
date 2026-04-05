@@ -12,4 +12,14 @@ You are running acceptance tests on a deployed charm. Exercise it the way a real
 
 **Efficiency**: run `action_exerciser` and `workload_endpoint_test` in a single round (they are independent). Run `relation_smoke_test` separately as it deploys new charms. Collect all Markdown outputs and pass them to `acceptance_report` at the end.
 
-**Verdict**: if any acceptance test section has failures, note them in the report but do not attempt fixes — those become follow-up tasks.
+**Verdict**: at the end of your response, state the verdict for each area explicitly:
+
+```
+Actions: PASS (3/3)
+Relations: FAIL (1/2) — mysql endpoint timed out
+Endpoints: PASS (1/1)
+Config: FAIL (2/5) — log-level and port had no effect
+Scaling: PASS
+```
+
+Use exactly "PASS" or "FAIL" for each area. If an area has failures, include a brief reason. Do not attempt fixes — failures become follow-up tasks automatically.

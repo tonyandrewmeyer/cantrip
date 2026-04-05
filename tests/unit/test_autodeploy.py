@@ -1,13 +1,16 @@
 """Tests for the auto-deploy loop follow-up logic."""
 
 from cantrip.agent.autodeploy import (
+    _ACCEPTANCE_FIX_PREFIX,
     _DEMO_TITLE_PREFIX,
     _RETRY_PREFIX,
     _VERIFY_PREFIX,
     _WATCHER_PREFIX,
+    _extract_acceptance_failures,
     _extract_test_counts,
     followup_tasks,
     task_for_watcher_event,
+    tasks_after_acceptance_failure,
     tasks_after_build,
     tasks_after_build_failure,
     tasks_after_deploy,
@@ -486,6 +489,217 @@ class TestFollowupTasks:
         result = followup_tasks(task)
 
         assert any(t.title.startswith(_ACCEPTANCE_PREFIX) for t in result)
+
+    def test_dispatches_to_acceptance_failure_handler(self) -> None:
+        """Acceptance with failures gets a fix task."""
+        task = AgentTask(
+            id="a1",
+            title=f"{_ACCEPTANCE_PREFIX} put the charm through its paces",
+            category=TaskCategory.TEST,
+        )
+        task.status = TaskStatus.DONE
+        task.result = "Actions: PASS (3/3)\nRelations: FAIL — mysql endpoint broken"
+
+        result = followup_tasks(task)
+
+        assert any(t.title.startswith(_ACCEPTANCE_FIX_PREFIX) for t in result)
+
+
+# ===================================================================
+# TestExtractAcceptanceFailures
+# ===================================================================
+
+
+class TestExtractAcceptanceFailures:
+    """Tests for _extract_acceptance_failures — acceptance verdict extraction."""
+
+    def test_fail_with_area(self) -> None:
+        text = "Actions: FAIL (1/3) — backup action returned error"
+        result = _extract_acceptance_failures(text)
+        assert "actions" in result
+
+    def test_multiple_failures(self) -> None:
+        text = (
+            "Actions: PASS (3/3)\n"
+            "Relations: FAIL (1/2) — mysql endpoint timed out\n"
+            "Endpoints: PASS (1/1)\n"
+            "Config: FAIL (2/5) — log-level and port had no effect\n"
+            "Scaling: PASS"
+        )
+        result = _extract_acceptance_failures(text)
+        assert "relations" in result
+        assert "config options" in result
+        assert "actions" not in result
+        assert "endpoints" not in result
+        assert "scaling" not in result
+
+    def test_no_failures(self) -> None:
+        text = "Actions: PASS\nRelations: PASS\nEndpoints: PASS"
+        assert _extract_acceptance_failures(text) == []
+
+    def test_prose_failure_mentions(self) -> None:
+        text = "The relation smoke test failed for the mysql endpoint."
+        result = _extract_acceptance_failures(text)
+        assert "relations" in result
+
+    def test_verdict_fail_pattern(self) -> None:
+        text = "verdict: fail for action exerciser, 2 actions broken"
+        result = _extract_acceptance_failures(text)
+        assert "actions" in result
+
+    def test_deduplicates_areas(self) -> None:
+        text = (
+            "Actions: FAIL — broken\n"
+            "The action exerciser also failed on backup action"
+        )
+        result = _extract_acceptance_failures(text)
+        assert result.count("actions") == 1
+
+    def test_empty_text(self) -> None:
+        assert _extract_acceptance_failures("") == []
+
+    def test_endpoint_failure(self) -> None:
+        text = "Endpoint checks failed: HTTP 503 on port 8080"
+        result = _extract_acceptance_failures(text)
+        assert "endpoints" in result
+
+    def test_scaling_failure(self) -> None:
+        text = "Scaling test: FAIL — peer relation broken after scale-up"
+        result = _extract_acceptance_failures(text)
+        assert "scaling" in result
+
+    def test_lifecycle_failure(self) -> None:
+        text = "Lifecycle: FAIL — charm did not recover after restart"
+        result = _extract_acceptance_failures(text)
+        assert "lifecycle" in result
+
+
+# ===================================================================
+# TestTasksAfterAcceptanceFailure
+# ===================================================================
+
+
+class TestTasksAfterAcceptanceFailure:
+    """Tests for tasks_after_acceptance_failure — fix tasks for acceptance issues."""
+
+    def _make_acceptance_task(
+        self, result: str | None = None, status: TaskStatus = TaskStatus.DONE
+    ) -> AgentTask:
+        task = AgentTask(
+            id="a1",
+            title=f"{_ACCEPTANCE_PREFIX} put the charm through its paces",
+            category=TaskCategory.TEST,
+        )
+        task.status = status
+        task.result = result
+        return task
+
+    def test_creates_fix_for_acceptance_failures(self) -> None:
+        task = self._make_acceptance_task(
+            "Actions: FAIL — backup broken\nRelations: PASS"
+        )
+
+        result = tasks_after_acceptance_failure(task)
+
+        assert len(result) == 1
+        assert result[0].category == TaskCategory.BUILD
+        assert result[0].title.startswith(_ACCEPTANCE_FIX_PREFIX)
+        assert "1 acceptance failure" in result[0].title
+
+    def test_fix_uses_primary_model(self) -> None:
+        task = self._make_acceptance_task("Config: FAIL — port ignored")
+
+        result = tasks_after_acceptance_failure(task)
+
+        assert result[0].model_hint == ModelHint.PRIMARY
+
+    def test_fix_depends_on_acceptance_task(self) -> None:
+        task = self._make_acceptance_task("Config: FAIL — port ignored")
+
+        result = tasks_after_acceptance_failure(task)
+
+        assert result[0].dependencies == ["a1"]
+
+    def test_fix_description_includes_failure_areas(self) -> None:
+        task = self._make_acceptance_task(
+            "Relations: FAIL — mysql broken\nEndpoints: FAIL — HTTP 503"
+        )
+
+        result = tasks_after_acceptance_failure(task)
+
+        assert "relations" in result[0].description
+        assert "endpoints" in result[0].description
+
+    def test_fix_description_includes_acceptance_result(self) -> None:
+        task = self._make_acceptance_task("Actions: FAIL — backup action returned error")
+
+        result = tasks_after_acceptance_failure(task)
+
+        assert "backup action" in result[0].description
+
+    def test_no_fix_when_all_pass(self) -> None:
+        task = self._make_acceptance_task(
+            "Actions: PASS (3/3)\nRelations: PASS (2/2)\nEndpoints: PASS"
+        )
+
+        assert tasks_after_acceptance_failure(task) == []
+
+    def test_no_fix_for_failed_acceptance_task(self) -> None:
+        """If the acceptance task itself failed (crashed), don't create a fix."""
+        task = self._make_acceptance_task(
+            "Actions: FAIL — broken", status=TaskStatus.FAILED
+        )
+
+        assert tasks_after_acceptance_failure(task) == []
+
+    def test_no_fix_for_non_acceptance_test(self) -> None:
+        task = AgentTask(id="t1", title="Validate charm", category=TaskCategory.TEST)
+        task.status = TaskStatus.DONE
+        task.result = "Actions: FAIL — broken"
+
+        assert tasks_after_acceptance_failure(task) == []
+
+    def test_no_fix_for_non_test_category(self) -> None:
+        task = AgentTask(
+            id="b1",
+            title=f"{_ACCEPTANCE_PREFIX} something",
+            category=TaskCategory.BUILD,
+        )
+        task.status = TaskStatus.DONE
+        task.result = "Actions: FAIL — broken"
+
+        assert tasks_after_acceptance_failure(task) == []
+
+    def test_no_fix_without_result(self) -> None:
+        task = self._make_acceptance_task(result=None)
+
+        assert tasks_after_acceptance_failure(task) == []
+
+    def test_no_fix_for_existing_fix(self) -> None:
+        """Prevents infinite fix chains."""
+        task = AgentTask(
+            id="a2",
+            title=(
+                f"{_ACCEPTANCE_PREFIX} "
+                f"{_ACCEPTANCE_FIX_PREFIX} re-run acceptance"
+            ),
+            category=TaskCategory.TEST,
+        )
+        task.status = TaskStatus.DONE
+        task.result = "Actions: FAIL — still broken"
+
+        assert tasks_after_acceptance_failure(task) == []
+
+    def test_multiple_failure_areas_in_title(self) -> None:
+        task = self._make_acceptance_task(
+            "Actions: FAIL — broken\n"
+            "Relations: FAIL — timeout\n"
+            "Config: FAIL — ignored"
+        )
+
+        result = tasks_after_acceptance_failure(task)
+
+        assert "3 acceptance failure" in result[0].title
 
 
 # ===================================================================

@@ -1547,9 +1547,12 @@ Consolidate all acceptance testing into a single report for the user.
   with sections for actions, relations, endpoints, config, and lifecycle
 - [x] **User presentation** — the tool returns a concise summary suitable for the chat:
   section count and section names
-- [ ] **Feed back into build** — if acceptance tests reveal problems (broken actions,
-  non-functional relations, dead config options), automatically create fix tasks in the
-  work queue and iterate. The charm isn't done until acceptance tests pass
+- [x] **Feed back into build** — if acceptance tests reveal problems (broken actions,
+  non-functional relations, dead config options), `tasks_after_acceptance_failure()` in
+  `autodeploy.py` parses the subagent's verdict text for failing areas and creates a
+  targeted BUILD fix task with remediation steps; loop guard via `_ACCEPTANCE_FIX_PREFIX`
+  prevents infinite chains; acceptance guidance updated to instruct structured PASS/FAIL
+  verdicts per area
 - [x] **Planner integration** — acceptance testing is now a standard phase in the build
   pipeline after integration tests pass; `_DESIGN_TO_BUILD_PROMPT` includes acceptance
   test task guidance; `autodeploy.py` chains TEST → acceptance → demo; `_ACCEPTANCE_GUIDANCE`

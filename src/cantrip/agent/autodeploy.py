@@ -20,6 +20,9 @@ _DEMO_TITLE_PREFIX = "Generate demo"
 # Prefix for retry tasks — used to prevent infinite retry chains.
 _RETRY_PREFIX = "[Red/Green retry]"
 
+# Prefix for acceptance fix tasks — used to prevent infinite fix chains.
+_ACCEPTANCE_FIX_PREFIX = "[Acceptance fix]"
+
 # Verification task title prefix, used to identify verify tasks in follow-up logic.
 _VERIFY_PREFIX = "Verify deployment:"
 
@@ -230,6 +233,113 @@ def tasks_after_acceptance(task: AgentTask) -> list[AgentTask]:
     ]
 
 
+def tasks_after_acceptance_failure(task: AgentTask) -> list[AgentTask]:
+    """Return a targeted BUILD fix when acceptance tests find failures.
+
+    When an acceptance test task completes (successfully — the subagent ran)
+    but its result text mentions failing acceptance sections, we spawn a
+    BUILD task to fix the identified issues.  This closes the acceptance →
+    fix → redeploy → re-test loop.
+
+    Only fires when:
+    - The task is a completed TEST task with the acceptance prefix.
+    - The result mentions at least one FAIL verdict.
+    - The task title does not already indicate a fix (prevent infinite loops).
+    """
+    if task.category != TaskCategory.TEST:
+        return []
+    if task.status != TaskStatus.DONE:
+        return []
+    if not task.title.startswith(_ACCEPTANCE_PREFIX):
+        return []
+    # Prevent infinite fix chains.
+    if _ACCEPTANCE_FIX_PREFIX in task.title:
+        return []
+    if not task.result:
+        return []
+
+    failures = _extract_acceptance_failures(task.result)
+    if not failures:
+        return []
+
+    failure_list = "\n".join(f"- {f}" for f in failures)
+
+    return [
+        AgentTask(
+            title=f"{_ACCEPTANCE_FIX_PREFIX} fix {len(failures)} acceptance failure(s)",
+            category=TaskCategory.BUILD,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Acceptance testing found {len(failures)} failing area(s):\n"
+                f"{failure_list}\n\n"
+                f"**Acceptance result (excerpt):**\n"
+                f"{_tail(task.result, 2000)}\n\n"
+                "Steps:\n"
+                "1. Read ACCEPTANCE.md and the charm code to understand each failure.\n"
+                "2. Fix the charm code to address the failures — do NOT remove or "
+                "weaken the acceptance tests.\n"
+                "3. Run `charmcraft_pack` and `juju_refresh` to redeploy.\n"
+                "4. Run `juju_wait` to confirm the deployment is healthy.\n"
+                "5. Re-run the failing acceptance tools to verify the fixes.\n"
+                "6. Commit once green."
+            ),
+            dependencies=[task.id],
+        ),
+    ]
+
+
+# Patterns that indicate acceptance test failures in subagent result text.
+# Each pattern matches within a single line to avoid cross-line false positives.
+
+# Structured verdict: "Actions: FAIL" or "Relations: FAIL (1/2) — reason".
+# The area must appear at the start of the match, before FAIL.
+_ACCEPTANCE_VERDICT_RE = re.compile(
+    r"(action|relation|endpoint|config|scaling|lifecycle)\S*"
+    r"\s*:\s*FAIL",
+    re.IGNORECASE,
+)
+
+# Prose: "the relation test failed" or "endpoint checks failed".
+# Area appears before the failure word on the same line.
+_ACCEPTANCE_PROSE_FAIL_RE = re.compile(
+    r"(action|relation|endpoint|config|scaling|lifecycle)\S*"
+    r"[^\n]{0,60}?(?:fail(?:ed|ure|ing)?|broken|error)",
+    re.IGNORECASE,
+)
+
+
+def _extract_acceptance_failures(text: str) -> list[str]:
+    """Extract failing acceptance areas from free-form subagent result text.
+
+    Returns a deduplicated list of area names (e.g. "actions", "relations")
+    that appear to have failures based on keyword matching.
+    """
+    areas: dict[str, str] = {}
+
+    # Normalise area names for deduplication.
+    area_map = {
+        "action": "actions",
+        "actions": "actions",
+        "relation": "relations",
+        "relations": "relations",
+        "endpoint": "endpoints",
+        "endpoints": "endpoints",
+        "config": "config options",
+        "configuration": "config options",
+        "scaling": "scaling",
+        "lifecycle": "lifecycle",
+    }
+
+    for pattern in (_ACCEPTANCE_VERDICT_RE, _ACCEPTANCE_PROSE_FAIL_RE):
+        for match in pattern.finditer(text):
+            snippet = match.group(0).lower()
+            for keyword, label in area_map.items():
+                if keyword in snippet and label not in areas:
+                    areas[label] = label
+
+    return list(areas.values())
+
+
 def tasks_after_build_failure(task: AgentTask) -> list[AgentTask]:
     """Return a targeted BUILD retry when integration tests partially pass.
 
@@ -329,6 +439,7 @@ def followup_tasks(task: AgentTask) -> list[AgentTask]:
     results.extend(tasks_after_verify(task))
     results.extend(tasks_after_test(task))
     results.extend(tasks_after_acceptance(task))
+    results.extend(tasks_after_acceptance_failure(task))
     return results
 
 
