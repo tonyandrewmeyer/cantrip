@@ -1205,16 +1205,19 @@ flow through a shared event bus that both UIs consume.
 
 Decouple agent state changes from UI rendering so both interfaces receive identical updates.
 
-- [ ] **Event bus abstraction** — an async publish/subscribe bus in `src/cantrip/ui/events.py`
-  that emits typed events: `TaskUpdated`, `ChatMessage`, `JujuStatusChanged`,
-  `WatcherEvent`, `StatusBarChanged`. Both the TUI widgets and the WebSocket handler
-  subscribe to the same bus
-- [ ] **Migrate TUI to event bus** — refactor existing Textual widgets (`TaskListWidget`,
-  `ChatWidget`, `JujuStatusWidget`, `StatusBar`) to consume events from the bus instead of
-  polling or direct state access. Existing behaviour must be preserved — this is a pure
-  refactor with no visible changes
-- [ ] **Serialisable event payloads** — every event carries a JSON-serialisable payload so
-  the WebSocket handler can forward events to the browser without transformation
+- [x] **Event bus abstraction** — `src/cantrip/ui/events.py` provides `EventBus` with typed
+  `EventType` enum (`TASK_UPDATED`, `CHAT_MESSAGE`, `THINKING_CHANGED`,
+  `JUJU_STATUS_CHANGED`, `WATCHER_EVENT`, `STATUS_BAR_CHANGED`, `PREFLIGHT_UPDATED`,
+  `TASKS_SNAPSHOT`), frozen `Event` dataclass, sync/async subscribers, wildcard subscriptions,
+  and thread-safe cross-thread publishing via `call_soon_threadsafe`
+- [x] **Migrate TUI to event bus** — `CantripApp` subscribes to `TASK_UPDATED` and
+  `WATCHER_EVENT` on the bus via `call_from_thread` for thread-safe Textual DOM updates;
+  the old `on_task_changed` callback parameter removed from `start_executor`; CLI mode
+  also migrated to bus subscription
+- [x] **Serialisable event payloads** — every event carries a `dict[str, Any]` payload built
+  by factory functions (`task_updated`, `chat_message`, `watcher_event`, etc.); `Event.to_json()`
+  serialises for WebSocket transport; the web server subscribes a wildcard handler that
+  forwards all bus events to WebSocket clients
 
 ### 15.2 Localhost HTTP Server
 
