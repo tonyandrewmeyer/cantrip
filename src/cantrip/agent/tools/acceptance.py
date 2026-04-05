@@ -11,6 +11,7 @@ Provides five tools for Phase 17 acceptance testing:
 import contextlib
 import json
 import re
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -865,7 +866,9 @@ class WorkloadEndpointTool(Tool):
             }
 
         # Use juju ssh to check port from within the model network.
-        check_cmd = f"bash -c 'echo > /dev/tcp/{host}/{port}'"
+        safe_host = shlex.quote(str(host))
+        safe_port = shlex.quote(str(port))
+        check_cmd = f"bash -c 'echo > /dev/tcp/{safe_host}/{safe_port}'"
         cmd = ["juju", "ssh", f"{app}/leader", "--", check_cmd]
         if model:
             cmd.extend(["--model", model])

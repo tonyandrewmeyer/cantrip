@@ -107,7 +107,7 @@ class JujuDebugLogTool(Tool):
                 error="Juju CLI not found. Is Juju installed?",
             )
 
-        cmd = ["juju", "debug-log", "--no-tail", f"-n{lines}"]
+        cmd = ["juju", "debug-log", f"--limit={lines}"]
         if model:
             cmd.extend(["-m", model])
         if unit:

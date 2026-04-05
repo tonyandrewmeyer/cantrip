@@ -108,6 +108,22 @@ class TestJujuDebugLogTool:
         assert "ok" in result.output
 
     @pytest.mark.asyncio
+    async def test_uses_limit_flag_not_no_tail(self, tool):
+        """Uses --limit instead of incompatible --no-tail + -n combination."""
+        proc = _make_fake_process(stdout="log line\n")
+
+        with (
+            _mock_juju_available(),
+            mock.patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec,
+        ):
+            await tool.execute(lines=25)
+
+        call_args = mock_exec.call_args[0]
+        assert "--limit=25" in call_args
+        assert "--no-tail" not in call_args
+        assert "-n25" not in call_args
+
+    @pytest.mark.asyncio
     async def test_unit_filter(self, tool):
         """Passes --include when unit is specified."""
         proc = _make_fake_process(stdout="filtered output\n")

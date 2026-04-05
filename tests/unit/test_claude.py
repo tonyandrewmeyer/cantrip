@@ -2,7 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
-from cantrip.llm.base import Message, Role, ToolCall
+import pytest
+
+from cantrip.llm.base import Message, ProviderRateLimitError, Role, ToolCall
 from cantrip.llm.base import ToolResult as LLMToolResult
 
 
@@ -214,3 +216,49 @@ class TestClaudeProviderToolConversion:
 
         assert provider._convert_tools(None) is None
         assert provider._convert_tools([]) is None
+
+
+class TestClaudeProviderStream:
+    """Tests for ClaudeProvider.stream error handling."""
+
+    def _make_provider(self):
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            mock_anthropic.RateLimitError = type("RateLimitError", (Exception,), {})
+            mock_anthropic.InternalServerError = type(
+                "InternalServerError", (Exception,), {"status_code": 503}
+            )
+            mock_anthropic.APIError = type("APIError", (Exception,), {})
+            from cantrip.llm.claude import ClaudeProvider
+
+            return ClaudeProvider(api_key="test-key"), mock_anthropic
+
+    @pytest.mark.asyncio
+    async def test_stream_rate_limit_during_iteration(self):
+        """Rate limit errors during stream iteration are caught and re-raised."""
+        import anthropic as real_anthropic
+
+        provider, _ = self._make_provider()
+
+        class _MockStreamCM:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise real_anthropic.RateLimitError(
+                    message="rate limited",
+                    response=MagicMock(status_code=429),
+                    body=None,
+                )
+
+        provider.client.messages.stream = MagicMock(return_value=_MockStreamCM())
+
+        with pytest.raises(ProviderRateLimitError):
+            async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
+                pass

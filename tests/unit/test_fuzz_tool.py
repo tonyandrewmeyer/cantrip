@@ -68,6 +68,20 @@ class TestFuzzActionParams:
         actions = {"simple": "not a dict"}
         assert _fuzz_action_params(actions) == []
 
+    def test_missing_properties_key_falls_back_to_empty(self) -> None:
+        """When params has no 'properties' key, fall back to empty dict."""
+        actions = {
+            "backup": {
+                "params": {
+                    "required": ["path"],
+                },
+            },
+        }
+        cases = _fuzz_action_params(actions)
+        # Should not crash; produces cases with empty params since there
+        # are no properties to fuzz.
+        assert all(c["params"] == {} for c in cases)
+
 
 class TestFuzzTestTool:
     """Integration tests for FuzzTestTool.execute."""

@@ -563,12 +563,12 @@ class EventWatcher:
         streams = data.get("data", {}).get("result", [])
         for stream in streams:
             labels = stream.get("stream", {})
-            app_name = labels.get("juju_application", labels.get("app", ""))
+            app_name = labels.get("juju_application") or labels.get("app", "")
             unit_name_label = labels.get("juju_unit", "")
             for entry in stream.get("values", []):
                 if len(entry) < 2:
                     continue
-                log_line = entry[1]
+                log_line = str(entry[1])
                 self._enqueue(
                     WatcherEvent(
                         source="loki",

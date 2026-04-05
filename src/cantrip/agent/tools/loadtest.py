@@ -98,7 +98,7 @@ def generate_load_test(
         # Pick the first config option for the test.
         opt_name = next(iter(config))
         opt_data = config[opt_name]
-        opt_type = opt_data.get("type", "string")
+        opt_type = opt_data.get("type", "string") if isinstance(opt_data, dict) else "string"
         if opt_type == "boolean":
             val_a, val_b = "true", "false"
         elif opt_type == "int":
@@ -165,6 +165,8 @@ def _detect_http_port(
     """
     # Check config for port-like options.
     for opt_name, opt_data in config.items():
+        if not isinstance(opt_data, dict):
+            continue
         if "port" in opt_name.lower() and opt_data.get("type") in ("int", "integer"):
             default = opt_data.get("default")
             if isinstance(default, int) and 80 <= default <= 65535:

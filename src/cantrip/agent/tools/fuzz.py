@@ -88,7 +88,7 @@ def _fuzz_action_params(
 
         for _ in range(min(3, _MAX_CASES)):
             fuzzed_params: dict[str, object] = {}
-            properties = params.get("properties", params)
+            properties = params.get("properties", {})
             for param_name, param_spec in properties.items():
                 if not isinstance(param_spec, dict):
                     continue

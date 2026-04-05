@@ -662,6 +662,66 @@ class TestLokiPolling:
         assert watcher.queue_size == 0
 
     @pytest.mark.asyncio
+    async def test_poll_loki_empty_juju_application_falls_back_to_app(self):
+        """When juju_application is empty, falls back to the 'app' label."""
+        loki_response = {
+            "data": {
+                "result": [
+                    {
+                        "stream": {"juju_application": "", "app": "fallback-app"},
+                        "values": [
+                            ["1700000000000000000", "ERROR: test"],
+                        ],
+                    }
+                ]
+            }
+        }
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.ssh.return_value = json.dumps(loki_response)
+
+        watcher = EventWatcher(dev_model="dev", cos_model="cos")
+
+        with mock.patch(
+            "cantrip.agent.watcher._find_cos_unit",
+            return_value=(mock_juju, "loki-k8s/0"),
+        ):
+            await watcher._poll_loki_once()
+
+        assert watcher.queue_size == 1
+        event = await watcher.dequeue()
+        assert event.app == "fallback-app"
+
+    @pytest.mark.asyncio
+    async def test_poll_loki_non_string_log_line(self):
+        """Non-string log values are safely converted to strings."""
+        loki_response = {
+            "data": {
+                "result": [
+                    {
+                        "stream": {"juju_application": "myapp"},
+                        "values": [
+                            ["1700000000000000000", 12345],
+                        ],
+                    }
+                ]
+            }
+        }
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.ssh.return_value = json.dumps(loki_response)
+
+        watcher = EventWatcher(dev_model="dev", cos_model="cos")
+
+        with mock.patch(
+            "cantrip.agent.watcher._find_cos_unit",
+            return_value=(mock_juju, "loki-k8s/0"),
+        ):
+            await watcher._poll_loki_once()
+
+        assert watcher.queue_size == 1
+        event = await watcher.dequeue()
+        assert "12345" in event.detail
+
+    @pytest.mark.asyncio
     async def test_poll_loki_empty_results(self):
         """Loki poll with no results enqueues nothing."""
         mock_juju = mock.MagicMock(spec=jubilant.Juju)

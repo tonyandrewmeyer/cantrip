@@ -230,6 +230,28 @@ class TestMessageConversion:
         assert "First part." in result[0]["content"]
         assert "Second part." in result[0]["content"]
 
+    def test_consecutive_user_messages_empty_content_no_extra_whitespace(self):
+        """Merging consecutive user messages skips empty content to avoid blank lines."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.USER, content="Hello"),
+            Message(role=Role.USER, content=""),
+        ]
+        _, result = provider._convert_messages(messages)
+        assert len(result) == 1
+        assert result[0]["content"] == "Hello"
+
+    def test_consecutive_assistant_messages_empty_content_no_extra_whitespace(self):
+        """Merging consecutive assistant messages skips empty content."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.ASSISTANT, content="First."),
+            Message(role=Role.ASSISTANT, content=""),
+        ]
+        _, result = provider._convert_messages(messages)
+        assert len(result) == 1
+        assert result[0]["content"] == "First."
+
     def test_assistant_with_tool_calls_not_merged(self):
         """Assistant messages with tool calls are not merged with subsequent ones."""
         provider = self._make_provider()
@@ -690,7 +712,7 @@ class TestListInferenceSnapsTool:
         from cantrip.agent.tools.inference import ListInferenceSnapsTool
 
         tool = ListInferenceSnapsTool()
-        with patch("cantrip.llm.inference_snap.list_available_snaps", return_value=[]):
+        with patch("cantrip.agent.tools.inference.list_available_snaps", return_value=[]):
             result = await tool.execute()
         assert result.success is True
         assert "No inference snaps found" in result.output
@@ -714,14 +736,14 @@ class TestListInferenceSnapsTool:
 
         with (
             patch(
-                "cantrip.llm.inference_snap.list_available_snaps",
+                "cantrip.agent.tools.inference.list_available_snaps",
                 return_value=["gemma3"],
             ),
             patch(
-                "cantrip.llm.inference_snap.discover_snap_endpoint",
+                "cantrip.agent.tools.inference.discover_snap_endpoint",
                 return_value="http://localhost:8328/v1",
             ),
-            patch("httpx.Client", return_value=mock_client),
+            patch("cantrip.agent.tools.inference.httpx.Client", return_value=mock_client),
         ):
             result = await tool.execute()
 

@@ -2,7 +2,14 @@
 
 from typing import Any
 
+import httpx
+
 from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.llm.inference_snap import (
+    _SNAP_DEFAULTS,
+    discover_snap_endpoint,
+    list_available_snaps,
+)
 
 
 class ListInferenceSnapsTool(Tool):
@@ -26,14 +33,6 @@ class ListInferenceSnapsTool(Tool):
 
     async def execute(self) -> ToolResult:
         """Discover installed inference snaps and their status."""
-        import httpx
-
-        from cantrip.llm.inference_snap import (
-            _SNAP_DEFAULTS,
-            discover_snap_endpoint,
-            list_available_snaps,
-        )
-
         installed = list_available_snaps()
         if not installed:
             return ToolResult(

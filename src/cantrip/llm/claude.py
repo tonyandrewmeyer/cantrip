@@ -207,6 +207,35 @@ class ClaudeProvider(LLMProvider):
 
         try:
             stream_cm = self.client.messages.stream(**kwargs)
+            async with stream_cm as stream:
+                async for event in stream:
+                    if event.type == "content_block_start":
+                        if event.content_block.type == "tool_use":
+                            current_tool = {
+                                "id": event.content_block.id,
+                                "name": event.content_block.name,
+                                "input_json": "",
+                            }
+
+                    elif event.type == "content_block_delta":
+                        if event.delta.type == "text_delta":
+                            yield Chunk(content=event.delta.text)
+                        elif event.delta.type == "input_json_delta" and current_tool is not None:
+                            current_tool["input_json"] += event.delta.partial_json
+
+                    elif event.type == "content_block_stop" and current_tool is not None:
+                        try:
+                            arguments = json.loads(current_tool["input_json"])
+                        except json.JSONDecodeError:
+                            arguments = {}
+                        tool_calls.append(
+                            ToolCall(
+                                id=current_tool["id"],
+                                name=current_tool["name"],
+                                arguments=arguments,
+                            )
+                        )
+                        current_tool = None
         except anthropic.RateLimitError as e:
             raise ProviderRateLimitError(
                 "Claude API rate limit exceeded. Please wait a moment and try again."
@@ -217,36 +246,6 @@ class ClaudeProvider(LLMProvider):
             ) from e
         except anthropic.APIError as e:
             raise ProviderError(f"Claude API error: {e}") from e
-
-        async with stream_cm as stream:
-            async for event in stream:
-                if event.type == "content_block_start":
-                    if event.content_block.type == "tool_use":
-                        current_tool = {
-                            "id": event.content_block.id,
-                            "name": event.content_block.name,
-                            "input_json": "",
-                        }
-
-                elif event.type == "content_block_delta":
-                    if event.delta.type == "text_delta":
-                        yield Chunk(content=event.delta.text)
-                    elif event.delta.type == "input_json_delta" and current_tool is not None:
-                        current_tool["input_json"] += event.delta.partial_json
-
-                elif event.type == "content_block_stop" and current_tool is not None:
-                    try:
-                        arguments = json.loads(current_tool["input_json"])
-                    except json.JSONDecodeError:
-                        arguments = {}
-                    tool_calls.append(
-                        ToolCall(
-                            id=current_tool["id"],
-                            name=current_tool["name"],
-                            arguments=arguments,
-                        )
-                    )
-                    current_tool = None
 
         yield Chunk(tool_calls=tool_calls, is_final=True)
 

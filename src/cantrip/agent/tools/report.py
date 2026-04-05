@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.tools.testing import _parse_pytest_summary
 
@@ -173,12 +175,10 @@ class TestReportTool(Tool):
         charmcraft = charm_dir / "charmcraft.yaml"
         if charmcraft.exists():
             try:
-                import yaml
-
                 with charmcraft.open() as f:
                     data = yaml.safe_load(f) or {}
                 charm_name = data.get("name", charm_name)
-            except (ImportError, Exception):  # noqa: BLE001
+            except (OSError, yaml.YAMLError):
                 pass
 
         unit_results = _run_tests(charm_dir, "unit")

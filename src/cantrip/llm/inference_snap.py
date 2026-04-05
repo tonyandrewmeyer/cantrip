@@ -244,7 +244,8 @@ class InferenceSnapProvider(LLMProvider):
             if msg.role == Role.USER:
                 # Merge with previous user message if consecutive.
                 if result and result[-1]["role"] == "user":
-                    result[-1]["content"] += "\n\n" + msg.content
+                    if msg.content:
+                        result[-1]["content"] += "\n\n" + msg.content
                 else:
                     result.append({"role": "user", "content": msg.content})
 
@@ -271,7 +272,8 @@ class InferenceSnapProvider(LLMProvider):
                         and result[-1]["role"] == "assistant"
                         and "tool_calls" not in result[-1]
                     ):
-                        result[-1]["content"] += "\n\n" + msg.content
+                        if msg.content:
+                            result[-1]["content"] += "\n\n" + msg.content
                         continue
                     entry["content"] = msg.content
                 result.append(entry)

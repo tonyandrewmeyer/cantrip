@@ -146,6 +146,16 @@ class TestDetectHttpPort:
         config = {"port": {"type": "int", "default": 10}}
         assert _detect_http_port(config, {}) is None
 
+    def test_non_dict_config_value_skipped(self) -> None:
+        """Config options with non-dict values are skipped without crashing."""
+        config = {"port": "not-a-dict", "http_port": {"type": "int", "default": 8080}}
+        assert _detect_http_port(config, {}) == 8080
+
+    def test_all_non_dict_config_values(self) -> None:
+        """When all config values are non-dict, returns None."""
+        config = {"port": "string-value", "debug": True}
+        assert _detect_http_port(config, {}) is None
+
 
 # ===================================================================
 # TestGenerateLoadTestTool

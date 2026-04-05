@@ -139,6 +139,16 @@ class TestGeminiProviderMessageConversion:
         assert len(parts) == 1
         assert parts[0].function_call.name == "read_file"
 
+    def test_assistant_empty_content_no_tool_calls_omitted(self):
+        """An assistant message with empty content and no tool calls is omitted."""
+        provider, _ = _make_provider()
+        messages = [Message(role=Role.ASSISTANT, content="")]
+
+        result = provider._convert_messages(messages)
+
+        # Empty content with no thought parts produces no Content entries.
+        assert len(result) == 0
+
     def test_tool_result_json(self):
         """Test converting a TOOL message with JSON content."""
         provider, _ = _make_provider()
@@ -700,6 +710,26 @@ class TestThoughtSignatureRoundTrip:
         assert parts[0].thought is True
         assert parts[0].thought_signature == sig
         assert parts[1].text == "Sure thing."
+
+    @pytest.mark.asyncio
+    async def test_stream_rate_limit_during_iteration(self):
+        """Rate limit errors during stream iteration are caught and re-raised."""
+        from google.genai import errors as genai_errors
+
+        provider, _ = _make_provider()
+        error = genai_errors.ClientError(code=429, response_json={})
+
+        async def _failing_stream():
+            yield MagicMock(candidates=None)
+            raise error
+
+        provider._client.aio.models.generate_content_stream = AsyncMock(
+            return_value=_failing_stream()
+        )
+
+        with pytest.raises(ProviderRateLimitError):
+            async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
+                pass
 
     @pytest.mark.asyncio
     async def test_stream_collects_thought_parts(self):

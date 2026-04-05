@@ -140,8 +140,10 @@ class GeminiProvider(LLMProvider):
                         parts.append(fc_part)
                     result.append(genai_types.Content(role="model", parts=parts))
                 else:
-                    parts.append(genai_types.Part(text=msg.content))
-                    result.append(genai_types.Content(role="model", parts=parts))
+                    if msg.content:
+                        parts.append(genai_types.Part(text=msg.content))
+                    if parts:
+                        result.append(genai_types.Content(role="model", parts=parts))
 
             elif msg.role == Role.TOOL:
                 # Tool results are sent as user-role function responses in Gemini.
@@ -303,12 +305,38 @@ class GeminiProvider(LLMProvider):
         gemini_tools = self._convert_tools(tools)
         config = self._build_config(temperature, system_prompt, gemini_tools)
 
+        tool_calls = []
+        all_thought_parts: list[dict[str, str]] = []
+        all_fc_signatures: list[dict[str, str]] = []
         try:
             response_stream = await self._client.aio.models.generate_content_stream(
                 model=self.model_name,
                 contents=contents,
                 config=config,
             )
+            async for chunk in response_stream:
+                if not chunk.candidates or not chunk.candidates[0].content:
+                    continue
+                if chunk.candidates[0].content.parts:
+                    all_thought_parts.extend(
+                        self._collect_thought_parts(chunk.candidates[0].content.parts)
+                    )
+                    for part in chunk.candidates[0].content.parts:
+                        if part.function_call and part.function_call.name:
+                            tool_calls.append(
+                                ToolCall(
+                                    id=part.function_call.name,
+                                    name=part.function_call.name,
+                                    arguments=dict(part.function_call.args or {}),
+                                )
+                            )
+                            sig = getattr(part, "thought_signature", None)
+                            if sig:
+                                all_fc_signatures.append(
+                                    {"thought_signature": base64.b64encode(sig).decode("ascii")}
+                                )
+                        elif part.text:
+                            yield Chunk(content=part.text)
         except genai.errors.ClientError as e:
             if e.code == 429:
                 raise ProviderRateLimitError(
@@ -321,33 +349,6 @@ class GeminiProvider(LLMProvider):
             ) from e
         except genai.errors.APIError as e:
             raise ProviderError(f"Gemini API error: {e}") from e
-
-        tool_calls = []
-        all_thought_parts: list[dict[str, str]] = []
-        all_fc_signatures: list[dict[str, str]] = []
-        async for chunk in response_stream:
-            if not chunk.candidates or not chunk.candidates[0].content:
-                continue
-            if chunk.candidates[0].content.parts:
-                all_thought_parts.extend(
-                    self._collect_thought_parts(chunk.candidates[0].content.parts)
-                )
-                for part in chunk.candidates[0].content.parts:
-                    if part.function_call and part.function_call.name:
-                        tool_calls.append(
-                            ToolCall(
-                                id=part.function_call.name,
-                                name=part.function_call.name,
-                                arguments=dict(part.function_call.args or {}),
-                            )
-                        )
-                        sig = getattr(part, "thought_signature", None)
-                        if sig:
-                            all_fc_signatures.append(
-                                {"thought_signature": base64.b64encode(sig).decode("ascii")}
-                            )
-                    elif part.text:
-                        yield Chunk(content=part.text)
 
         metadata: dict[str, Any] = {}
         if all_thought_parts:
