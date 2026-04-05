@@ -87,6 +87,18 @@ class WatcherEvent:
             self.dedup_key = hashlib.md5(raw.encode()).hexdigest()  # noqa: S324
 
 
+@dataclass(frozen=True)
+class DatabagSnapshot:
+    """Lightweight snapshot of a relation databag for diffing.
+
+    Keys are ``(unit_or_app, endpoint, related_app)`` tuples; values
+    are frozen key sets (we only track which keys exist, not values,
+    to avoid noise from counters and timestamps).
+    """
+
+    entries: tuple[tuple[str, str, str, frozenset[str]], ...] = ()
+
+
 @dataclass
 class WatcherConfig:
     """Configuration for the EventWatcher polling intervals and limits."""
@@ -95,6 +107,7 @@ class WatcherConfig:
     loki_interval: float = 15.0  # seconds between Loki polls
     dedup_window: float = 300.0  # seconds to suppress duplicate events
     max_queue: int = 50  # maximum queued events before dropping
+    snapshot_databags: bool = False  # opt-in relation databag diffing
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +166,121 @@ def capture_snapshot(status: jubilant.Status) -> StatusSnapshot:
         )
 
     return StatusSnapshot(apps=tuple(apps), offers=tuple(offers))
+
+
+def capture_databag_snapshot(model: str) -> DatabagSnapshot:
+    """Capture relation databag key sets via ``juju show-unit``.
+
+    Shells out to ``juju show-unit <unit> --model <model> --format json``
+    for each unit discovered in the model.  Only records which keys are
+    present in each databag (not values) to minimise noise.
+    """
+    import subprocess
+
+    entries: list[tuple[str, str, str, frozenset[str]]] = []
+
+    # First, get the list of units from juju status.
+    try:
+        result = subprocess.run(
+            ["juju", "status", "--model", model, "--format", "json"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            return DatabagSnapshot()
+        status_data = json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, json.JSONDecodeError):
+        return DatabagSnapshot()
+
+    apps = status_data.get("applications", {})
+    for app_name, app_data in apps.items():
+        units = app_data.get("units", {})
+        if not units:
+            continue
+        # Only inspect the first unit per app to keep the cost down.
+        unit_name = next(iter(units))
+        try:
+            result = subprocess.run(
+                ["juju", "show-unit", unit_name, "--model", model, "--format", "json"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode != 0:
+                continue
+            unit_data = json.loads(result.stdout)
+        except (
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+            OSError,
+            json.JSONDecodeError,
+        ):
+            continue
+
+        # Parse relation-info from the show-unit output.
+        unit_info = unit_data.get(unit_name, {})
+        for rel in unit_info.get("relation-info", []):
+            endpoint = rel.get("endpoint", "")
+            for related in rel.get("related-units", {}).values():
+                related_data = related.get("data", {})
+                keys = frozenset(related_data.keys())
+                related_app = related.get("name", "").rsplit("/", 1)[0] if related.get("name") else ""
+                entries.append((unit_name, endpoint, related_app, keys))
+
+    return DatabagSnapshot(entries=tuple(sorted(entries)))
+
+
+def diff_databag_snapshots(
+    old: DatabagSnapshot | None,
+    new: DatabagSnapshot,
+) -> list[WatcherEvent]:
+    """Compare two databag snapshots and return events for key changes."""
+    if old is None:
+        return []
+
+    events: list[WatcherEvent] = []
+
+    old_map: dict[tuple[str, str, str], frozenset[str]] = {
+        (unit, ep, rel): keys for unit, ep, rel, keys in old.entries
+    }
+    new_map: dict[tuple[str, str, str], frozenset[str]] = {
+        (unit, ep, rel): keys for unit, ep, rel, keys in new.entries
+    }
+
+    for key in sorted(set(old_map) | set(new_map)):
+        unit, endpoint, related = key
+        old_keys = old_map.get(key, frozenset())
+        new_keys = new_map.get(key, frozenset())
+        if old_keys == new_keys:
+            continue
+
+        added = new_keys - old_keys
+        removed = old_keys - new_keys
+        app = unit.rsplit("/", 1)[0]
+
+        parts: list[str] = []
+        if added:
+            parts.append(f"added: {', '.join(sorted(added))}")
+        if removed:
+            parts.append(f"removed: {', '.join(sorted(removed))}")
+        change_desc = "; ".join(parts)
+
+        events.append(
+            WatcherEvent(
+                source="status",
+                category="databag_change",
+                summary=f"Databag change: {unit} ({endpoint} ↔ {related})",
+                detail=(
+                    f"Relation databag for {unit} endpoint '{endpoint}' "
+                    f"(related to '{related}') changed: {change_desc}"
+                ),
+                app=app,
+                unit=unit,
+            )
+        )
+
+    return events
 
 
 def diff_snapshots(
@@ -398,6 +526,13 @@ for _cat in ("new_offer", "removed_offer", "offer_connection_change"):
         "3. Report the change to the user",
     ]
 
+_EVENT_INSTRUCTIONS["databag_change"] = [
+    "A relation databag change was detected. Please:",
+    "1. Run `juju_read_relation_data` to inspect the full databag contents",
+    "2. Check if the change is expected given recent operations",
+    "3. Report any unexpected asymmetries to the user",
+]
+
 _DEFAULT_INSTRUCTIONS = [
     "Please investigate this change:",
     "1. Check `juju_status` for the current state",
@@ -468,6 +603,7 @@ class EventWatcher:
         )
         self._dedup: dict[str, float] = {}
         self._last_snapshot: StatusSnapshot | None = None
+        self._last_databag: DatabagSnapshot | None = None
         self._latest_status: jubilant.Status | None = None
 
         self._status_task: asyncio.Task | None = None
@@ -586,6 +722,19 @@ class EventWatcher:
         self._last_snapshot = snapshot
         for event in events:
             self._enqueue(event)
+
+        # Optional databag diffing — runs in executor to avoid blocking.
+        if self._config.snapshot_databags:
+            try:
+                databag = await loop.run_in_executor(
+                    None, capture_databag_snapshot, self._dev_model
+                )
+                db_events = diff_databag_snapshots(self._last_databag, databag)
+                self._last_databag = databag
+                for event in db_events:
+                    self._enqueue(event)
+            except (OSError, ValueError) as exc:
+                log.debug("Databag snapshot failed: %s", exc)
 
     # -- Loki polling --------------------------------------------------------
 
