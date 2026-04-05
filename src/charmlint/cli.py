@@ -7,7 +7,78 @@ from pathlib import Path
 
 from charmlint.config import load_config
 from charmlint.linter import lint
-from charmlint.models import Severity
+from charmlint.models import Diagnostic, Severity
+
+# ---------------------------------------------------------------------------
+# ANSI colour helpers — disabled when stdout is not a terminal or --no-color
+# ---------------------------------------------------------------------------
+
+_RESET = "\033[0m"
+_BOLD = "\033[1m"
+_DIM = "\033[2m"
+
+_SEVERITY_STYLES: dict[Severity, str] = {
+    Severity.ERROR: "\033[1;31m",  # bold red
+    Severity.WARNING: "\033[1;33m",  # bold yellow
+    Severity.INFO: "\033[1;36m",  # bold cyan
+}
+
+_use_colour = True
+
+
+def _styled(text: str, style: str) -> str:
+    """Wrap *text* in ANSI escape codes if colour is enabled."""
+    if not _use_colour:
+        return text
+    return f"{style}{text}{_RESET}"
+
+
+def _format_diagnostic_colour(d: Diagnostic, charm_dir: Path) -> str:
+    """Format a diagnostic with ANSI colours."""
+    import contextlib
+
+    # Location (dim).
+    location = d.path or ""
+    if charm_dir and d.path:
+        with contextlib.suppress(ValueError):
+            location = str(Path(d.path).relative_to(charm_dir))
+    if d.line is not None:
+        location = f"{location}:{d.line}"
+
+    parts: list[str] = []
+    if location:
+        parts.append(_styled(location, _DIM))
+
+    # Rule ID (severity colour).
+    sev_style = _SEVERITY_STYLES.get(d.severity, "")
+    parts.append(_styled(d.rule_id, sev_style))
+
+    # Message (default text).
+    parts.append(d.message)
+
+    return " ".join(parts)
+
+
+def _format_summary_colour(total: int, errors: int, warnings: int, infos: int) -> str:
+    """Format the summary line with colours."""
+    if total == 0:
+        return _styled("No issues found.", "\033[1;32m")  # bold green
+
+    pieces: list[str] = []
+    if errors:
+        label = f"{errors} error{'s' if errors != 1 else ''}"
+        pieces.append(_styled(label, _SEVERITY_STYLES[Severity.ERROR]))
+    if warnings:
+        label = f"{warnings} warning{'s' if warnings != 1 else ''}"
+        pieces.append(_styled(label, _SEVERITY_STYLES[Severity.WARNING]))
+    if infos:
+        label = f"{infos} info"
+        pieces.append(_styled(label, _SEVERITY_STYLES[Severity.INFO]))
+
+    return (
+        _styled(f"Found {total} issue{'s' if total != 1 else ''}", _BOLD)
+        + f" ({', '.join(pieces)})"
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -50,13 +121,23 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Exit with code 2 if warnings are found (default: only errors cause non-zero exit)",
     )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable coloured output",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the charmlint CLI. Returns the exit code."""
+    global _use_colour  # noqa: PLW0603
+
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    # Determine colour mode: off if --no-color, not a TTY, or JSON output.
+    _use_colour = not args.no_color and sys.stdout.isatty() and args.output_format != "json"
 
     charm_dir = Path(args.path).resolve()
     if not charm_dir.is_dir():
@@ -80,10 +161,17 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report.to_dict(), indent=2))
     else:
         for diagnostic in report.diagnostics:
-            print(diagnostic.format_text(charm_dir))
+            print(_format_diagnostic_colour(diagnostic, charm_dir))
         if report.diagnostics:
             print()
-        print(report.summary_line())
+        print(
+            _format_summary_colour(
+                len(report.diagnostics),
+                report.error_count,
+                report.warning_count,
+                report.info_count,
+            )
+        )
 
     # Exit codes.
     if report.error_count > 0:
