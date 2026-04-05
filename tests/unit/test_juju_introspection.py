@@ -1,14 +1,17 @@
 """Tests for Juju introspection tools (relation data, app config, offers)."""
 
 import json
+from pathlib import Path
 from unittest import mock
 
 import pytest
+import yaml
 
 from cantrip.agent.tools.juju import (
     JujuGetAppConfigTool,
     JujuListOffersTool,
     JujuReadRelationDataTool,
+    _validate_config_against_charm,
 )
 
 
@@ -291,3 +294,112 @@ class TestJujuListOffersTool:
             result = await offers_tool.execute()
         assert result.success is False
         assert "timed out" in result.error
+
+
+# ===================================================================
+# TestValidateConfigAgainstCharm
+# ===================================================================
+
+
+class TestValidateConfigAgainstCharm:
+    """Tests for _validate_config_against_charm."""
+
+    def test_undeclared_key_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "charmcraft.yaml").write_text(
+            yaml.dump({"config": {"options": {"port": {"type": "int"}}}})
+        )
+        issues = _validate_config_against_charm({"port", "old-setting"}, str(tmp_path))
+        undeclared = [i for i in issues if i["key"] == "old-setting"]
+        assert len(undeclared) == 1
+        assert "deprecated" in undeclared[0]["issue"].lower()
+
+    def test_missing_declared_key_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "charmcraft.yaml").write_text(
+            yaml.dump({"config": {"options": {
+                "port": {"type": "int"},
+                "log-level": {"type": "string"},
+            }}})
+        )
+        issues = _validate_config_against_charm({"port"}, str(tmp_path))
+        missing = [i for i in issues if i["key"] == "log-level"]
+        assert len(missing) == 1
+        assert "not present" in missing[0]["issue"].lower()
+
+    def test_no_issues_when_matching(self, tmp_path: Path) -> None:
+        (tmp_path / "charmcraft.yaml").write_text(
+            yaml.dump({"config": {"options": {"port": {"type": "int"}}}})
+        )
+        issues = _validate_config_against_charm({"port"}, str(tmp_path))
+        assert issues == []
+
+    def test_no_charm_config_returns_empty(self, tmp_path: Path) -> None:
+        (tmp_path / "charmcraft.yaml").write_text(yaml.dump({"name": "test"}))
+        issues = _validate_config_against_charm({"port"}, str(tmp_path))
+        assert issues == []
+
+    def test_config_yaml_fallback(self, tmp_path: Path) -> None:
+        (tmp_path / "config.yaml").write_text(
+            yaml.dump({"options": {"port": {"type": "int"}}})
+        )
+        issues = _validate_config_against_charm({"port", "extra"}, str(tmp_path))
+        assert any(i["key"] == "extra" for i in issues)
+
+    def test_nonexistent_path(self) -> None:
+        issues = _validate_config_against_charm({"port"}, "/nonexistent")
+        assert issues == []
+
+
+# ===================================================================
+# TestGetAppConfigWithValidation
+# ===================================================================
+
+
+class TestGetAppConfigWithValidation:
+    """Tests for JujuGetAppConfigTool with charm_path validation."""
+
+    @pytest.fixture()
+    def tool(self) -> JujuGetAppConfigTool:
+        return JujuGetAppConfigTool()
+
+    @pytest.mark.asyncio()
+    async def test_validation_issues_in_output(
+        self, tool: JujuGetAppConfigTool, tmp_path: Path
+    ) -> None:
+        (tmp_path / "charmcraft.yaml").write_text(
+            yaml.dump({"config": {"options": {"port": {"type": "int"}}}})
+        )
+        config_output = json.dumps({
+            "settings": {
+                "port": {"type": "int", "value": 8080, "source": "default"},
+                "old-key": {"type": "string", "value": "x", "source": "user"},
+            }
+        })
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=config_output),
+        ):
+            result = await tool.execute(app="myapp", charm_path=str(tmp_path))
+
+        assert result.success is True
+        assert len(result.data["validation_issues"]) > 0
+        assert any(i["key"] == "old-key" for i in result.data["validation_issues"])
+        assert "Validation Issues" in result.output
+
+    @pytest.mark.asyncio()
+    async def test_no_validation_without_charm_path(
+        self, tool: JujuGetAppConfigTool
+    ) -> None:
+        config_output = json.dumps({
+            "settings": {
+                "port": {"type": "int", "value": 8080, "source": "default"},
+            }
+        })
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=config_output),
+        ):
+            result = await tool.execute(app="myapp")
+
+        assert result.data["validation_issues"] == []

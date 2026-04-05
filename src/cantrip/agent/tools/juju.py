@@ -1618,6 +1618,65 @@ class JujuReadRelationDataTool(Tool):
         )
 
 
+def _validate_config_against_charm(
+    deployed_keys: set[str],
+    charm_path: str,
+) -> list[dict[str, str]]:
+    """Cross-reference deployed config keys against charmcraft.yaml declarations.
+
+    Returns a list of validation issues (undeclared keys in deployed config,
+    declared keys absent from deployed config).
+    """
+    import yaml
+
+    issues: list[dict[str, str]] = []
+    charm_dir = Path(charm_path)
+
+    # Load declared config options from charmcraft.yaml or config.yaml.
+    declared_keys: set[str] = set()
+    for config_file in ("charmcraft.yaml", "config.yaml"):
+        config_path = charm_dir / config_file
+        if not config_path.exists():
+            continue
+        try:
+            with config_path.open() as f:
+                data = yaml.safe_load(f)
+            if not isinstance(data, dict):
+                continue
+            # charmcraft.yaml has config.options; config.yaml has options at top level.
+            config_section = data.get("config", {})
+            if isinstance(config_section, dict) and "options" in config_section:
+                declared_keys = set(config_section["options"].keys())
+                break
+            # config.yaml may have options at top level.
+            if config_file == "config.yaml" and "options" in data:
+                options = data["options"]
+                if isinstance(options, dict):
+                    declared_keys = set(options.keys())
+                    break
+        except (yaml.YAMLError, OSError):
+            continue
+
+    if not declared_keys:
+        return []
+
+    # Keys in deployed config but not declared (may be deprecated or undeclared).
+    for key in sorted(deployed_keys - declared_keys):
+        issues.append({
+            "key": key,
+            "issue": "Deployed but not declared in charm config — may be deprecated",
+        })
+
+    # Keys declared but not in deployed config (unusual — Juju usually shows all).
+    for key in sorted(declared_keys - deployed_keys):
+        issues.append({
+            "key": key,
+            "issue": "Declared in charm but not present in deployed config",
+        })
+
+    return issues
+
+
 class JujuGetAppConfigTool(Tool):
     """Tool to read application config with source tracking."""
 
@@ -1629,8 +1688,9 @@ class JujuGetAppConfigTool(Tool):
     def description(self) -> str:
         return (
             "Read all configuration values for a deployed application with "
-            "source tracking (default, user-set, or model-default). Useful for "
-            "debugging 'config not taking effect' issues."
+            "source tracking (default, user-set, or model-default). Optionally "
+            "cross-references against charmcraft.yaml to detect undeclared or "
+            "deprecated config keys."
         )
 
     @property
@@ -1646,6 +1706,13 @@ class JujuGetAppConfigTool(Tool):
                     "type": "string",
                     "description": "Model name (uses current model if not specified)",
                 },
+                "charm_path": {
+                    "type": "string",
+                    "description": (
+                        "Path to the charm directory for config validation "
+                        "(cross-references deployed config against charmcraft.yaml)"
+                    ),
+                },
             },
             "required": ["app"],
         }
@@ -1654,6 +1721,7 @@ class JujuGetAppConfigTool(Tool):
         self,
         app: str,
         model: str | None = None,
+        charm_path: str | None = None,
     ) -> ToolResult:
         """Read app config with source information."""
         if not _juju_available():
@@ -1719,10 +1787,28 @@ class JujuGetAppConfigTool(Tool):
             lines.append("")
             lines.append(f"* = user-set ({user_set_count} non-default value(s))")
 
+        # Config validation: cross-reference against charmcraft.yaml if provided.
+        validation: list[dict[str, str]] = []
+        if charm_path:
+            validation = _validate_config_against_charm(
+                {c["name"] for c in config_list}, charm_path
+            )
+            if validation:
+                lines.append("")
+                lines.append("## Validation Issues")
+                lines.append("")
+                for issue in validation:
+                    lines.append(f"  ! {issue['key']}: {issue['issue']}")
+
         return ToolResult(
             success=True,
             output="\n".join(lines),
-            data={"app": app, "config": config_list, "user_set_count": user_set_count},
+            data={
+                "app": app,
+                "config": config_list,
+                "user_set_count": user_set_count,
+                "validation_issues": validation,
+            },
         )
 
 

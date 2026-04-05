@@ -1797,9 +1797,10 @@ debug "why isn't my config taking effect?" issues.
   `juju config <app> --format json`; marks user-set values with `*`; returns structured
   data with per-option name, value, type, source, and description; added to RESEARCH,
   BUILD, DEBUG, and TEST allowlists
-- [ ] **Config validation** — cross-references deployed config against
-  `charmcraft.yaml` declared options to detect undeclared or deprecated config
-  keys
+- [x] **Config validation** — `_validate_config_against_charm()` cross-references
+  deployed config keys against `charmcraft.yaml` (or `config.yaml`) declarations;
+  detects undeclared/deprecated keys and declared-but-absent keys; triggered via
+  the `charm_path` parameter on `juju_get_app_config`
 
 ### 20.3 WebSocket Log Streaming
 
