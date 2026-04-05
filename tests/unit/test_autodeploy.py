@@ -600,10 +600,7 @@ class TestExtractAcceptanceFailures:
         assert "actions" in result
 
     def test_deduplicates_areas(self) -> None:
-        text = (
-            "Actions: FAIL — broken\n"
-            "The action exerciser also failed on backup action"
-        )
+        text = "Actions: FAIL — broken\nThe action exerciser also failed on backup action"
         result = _extract_acceptance_failures(text)
         assert result.count("actions") == 1
 
@@ -647,9 +644,7 @@ class TestTasksAfterAcceptanceFailure:
         return task
 
     def test_creates_fix_for_acceptance_failures(self) -> None:
-        task = self._make_acceptance_task(
-            "Actions: FAIL — backup broken\nRelations: PASS"
-        )
+        task = self._make_acceptance_task("Actions: FAIL — backup broken\nRelations: PASS")
 
         result = tasks_after_acceptance_failure(task)
 
@@ -698,9 +693,7 @@ class TestTasksAfterAcceptanceFailure:
 
     def test_no_fix_for_failed_acceptance_task(self) -> None:
         """If the acceptance task itself failed (crashed), don't create a fix."""
-        task = self._make_acceptance_task(
-            "Actions: FAIL — broken", status=TaskStatus.FAILED
-        )
+        task = self._make_acceptance_task("Actions: FAIL — broken", status=TaskStatus.FAILED)
 
         assert tasks_after_acceptance_failure(task) == []
 
@@ -731,10 +724,7 @@ class TestTasksAfterAcceptanceFailure:
         """Prevents infinite fix chains."""
         task = AgentTask(
             id="a2",
-            title=(
-                f"{_ACCEPTANCE_PREFIX} "
-                f"{_ACCEPTANCE_FIX_PREFIX} re-run acceptance"
-            ),
+            title=(f"{_ACCEPTANCE_PREFIX} {_ACCEPTANCE_FIX_PREFIX} re-run acceptance"),
             category=TaskCategory.TEST,
         )
         task.status = TaskStatus.DONE
@@ -744,9 +734,7 @@ class TestTasksAfterAcceptanceFailure:
 
     def test_multiple_failure_areas_in_title(self) -> None:
         task = self._make_acceptance_task(
-            "Actions: FAIL — broken\n"
-            "Relations: FAIL — timeout\n"
-            "Config: FAIL — ignored"
+            "Actions: FAIL — broken\nRelations: FAIL — timeout\nConfig: FAIL — ignored"
         )
 
         result = tasks_after_acceptance_failure(task)

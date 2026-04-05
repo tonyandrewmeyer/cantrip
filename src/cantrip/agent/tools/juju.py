@@ -1313,21 +1313,21 @@ class JujuListSecretsTool(Tool):
                 if secret.description:
                     lines.append(f"  Description: {secret.description}")
                 if secret.access:
-                    granted = ", ".join(
-                        f"{a.scope}:{a.role}" for a in secret.access
-                    )
+                    granted = ", ".join(f"{a.scope}:{a.role}" for a in secret.access)
                     lines.append(f"  Access: {granted}")
                 lines.append("")
 
-                secret_data.append({
-                    "uri": str(secret.uri),
-                    "name": secret.name,
-                    "owner": secret.owner,
-                    "revision": secret.revision,
-                    "rotation": secret.rotation,
-                    "description": secret.description,
-                    "created": str(secret.created),
-                })
+                secret_data.append(
+                    {
+                        "uri": str(secret.uri),
+                        "name": secret.name,
+                        "owner": secret.owner,
+                        "revision": secret.revision,
+                        "rotation": secret.rotation,
+                        "description": secret.description,
+                        "created": str(secret.created),
+                    }
+                )
 
             return ToolResult(
                 success=True,
@@ -1517,9 +1517,7 @@ class JujuReadRelationDataTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            stdout = await _run_juju(
-                juju.cli, "show-unit", unit, "--format", "json"
-            )
+            stdout = await _run_juju(juju.cli, "show-unit", unit, "--format", "json")
         except TimeoutError:
             return ToolResult(
                 success=False,
@@ -1595,21 +1593,28 @@ class JujuReadRelationDataTool(Tool):
             expected_keys = set()
             for rdata in related_units.values():
                 expected_keys.update(rdata.get("data", {}).keys())
-            missing_in_local = expected_keys - set(local_unit_data.keys()) - {"ingress-address", "private-address", "egress-subnets"}
+            missing_in_local = (
+                expected_keys
+                - set(local_unit_data.keys())
+                - {"ingress-address", "private-address", "egress-subnets"}
+            )
             if missing_in_local:
-                lines.append(f"**Asymmetry:** remote has keys not in local: {', '.join(sorted(missing_in_local))}")
+                lines.append(
+                    f"**Asymmetry:** remote has keys not in local: {', '.join(sorted(missing_in_local))}"
+                )
                 lines.append("")
 
-            relation_list.append({
-                "endpoint": ep,
-                "relation_id": rel_id,
-                "application_data": app_data,
-                "local_unit_data": local_unit_data,
-                "related_units": {
-                    runit: rdata.get("data", {})
-                    for runit, rdata in related_units.items()
-                },
-            })
+            relation_list.append(
+                {
+                    "endpoint": ep,
+                    "relation_id": rel_id,
+                    "application_data": app_data,
+                    "local_unit_data": local_unit_data,
+                    "related_units": {
+                        runit: rdata.get("data", {}) for runit, rdata in related_units.items()
+                    },
+                }
+            )
 
         return ToolResult(
             success=True,
@@ -1662,17 +1667,21 @@ def _validate_config_against_charm(
 
     # Keys in deployed config but not declared (may be deprecated or undeclared).
     for key in sorted(deployed_keys - declared_keys):
-        issues.append({
-            "key": key,
-            "issue": "Deployed but not declared in charm config — may be deprecated",
-        })
+        issues.append(
+            {
+                "key": key,
+                "issue": "Deployed but not declared in charm config — may be deprecated",
+            }
+        )
 
     # Keys declared but not in deployed config (unusual — Juju usually shows all).
     for key in sorted(declared_keys - deployed_keys):
-        issues.append({
-            "key": key,
-            "issue": "Declared in charm but not present in deployed config",
-        })
+        issues.append(
+            {
+                "key": key,
+                "issue": "Declared in charm but not present in deployed config",
+            }
+        )
 
     return issues
 
@@ -1775,13 +1784,15 @@ class JujuGetAppConfigTool(Tool):
             if source != "default":
                 user_set_count += 1
 
-            config_list.append({
-                "name": opt_name,
-                "value": value,
-                "type": opt_type,
-                "source": source,
-                "description": description,
-            })
+            config_list.append(
+                {
+                    "name": opt_name,
+                    "value": value,
+                    "type": opt_type,
+                    "source": source,
+                    "description": description,
+                }
+            )
 
         if user_set_count:
             lines.append("")
@@ -1869,25 +1880,26 @@ class JujuListOffersTool(Tool):
             for offer_name, offer in offers.items():
                 lines.append(f"- **{offer_name}** (app: {offer.app}, charm: {offer.charm})")
                 lines.append(
-                    f"  Connected: {offer.active_connected_count}/"
-                    f"{offer.total_connected_count}"
+                    f"  Connected: {offer.active_connected_count}/{offer.total_connected_count}"
                 )
                 if offer.endpoints:
                     for ep_name, ep in offer.endpoints.items():
                         lines.append(f"  Endpoint: {ep_name} ({ep.interface})")
                 lines.append("")
 
-                offer_list.append({
-                    "name": offer_name,
-                    "app": offer.app,
-                    "charm": offer.charm,
-                    "active_connected": offer.active_connected_count,
-                    "total_connected": offer.total_connected_count,
-                    "endpoints": {
-                        name: {"interface": ep.interface}
-                        for name, ep in (offer.endpoints or {}).items()
-                    },
-                })
+                offer_list.append(
+                    {
+                        "name": offer_name,
+                        "app": offer.app,
+                        "charm": offer.charm,
+                        "active_connected": offer.active_connected_count,
+                        "total_connected": offer.total_connected_count,
+                        "endpoints": {
+                            name: {"interface": ep.interface}
+                            for name, ep in (offer.endpoints or {}).items()
+                        },
+                    }
+                )
 
             return ToolResult(
                 success=True,

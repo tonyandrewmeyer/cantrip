@@ -103,9 +103,7 @@ def _fallback_parse(html_text: str, max_results: int = 5) -> list[_SearchResult]
     """
     results: list[_SearchResult] = []
     seen: set[str] = set()
-    for match in re.finditer(
-        r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]+)</a>', html_text
-    ):
+    for match in re.finditer(r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]+)</a>', html_text):
         url = match.group(1)
         title = match.group(2).strip()
         # Skip DuckDuckGo internal links.

@@ -49,35 +49,33 @@ class TestJujuReadRelationDataTool:
         assert result.success is False
 
     @pytest.mark.asyncio()
-    async def test_reads_relation_data(
-        self, relation_tool: JujuReadRelationDataTool
-    ) -> None:
-        show_unit_output = json.dumps({
-            "myapp/0": {
-                "relation-info": [
-                    {
-                        "endpoint": "database",
-                        "relation-id": 1,
-                        "application-data": {"version": "14"},
-                        "local-unit": {"data": {"egress-subnets": "10.0.0.0/24"}},
-                        "related-units": {
-                            "postgresql/0": {
-                                "data": {
-                                    "host": "10.0.0.5",
-                                    "port": "5432",
+    async def test_reads_relation_data(self, relation_tool: JujuReadRelationDataTool) -> None:
+        show_unit_output = json.dumps(
+            {
+                "myapp/0": {
+                    "relation-info": [
+                        {
+                            "endpoint": "database",
+                            "relation-id": 1,
+                            "application-data": {"version": "14"},
+                            "local-unit": {"data": {"egress-subnets": "10.0.0.0/24"}},
+                            "related-units": {
+                                "postgresql/0": {
+                                    "data": {
+                                        "host": "10.0.0.5",
+                                        "port": "5432",
+                                    }
                                 }
-                            }
-                        },
-                    }
-                ]
+                            },
+                        }
+                    ]
+                }
             }
-        })
+        )
 
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch(
-                "cantrip.agent.tools.juju._run_juju", return_value=show_unit_output
-            ),
+            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=show_unit_output),
         ):
             result = await relation_tool.execute(unit="myapp/0")
 
@@ -87,23 +85,21 @@ class TestJujuReadRelationDataTool:
         assert "host" in result.data["relations"][0]["related_units"]["postgresql/0"]
 
     @pytest.mark.asyncio()
-    async def test_filters_by_endpoint(
-        self, relation_tool: JujuReadRelationDataTool
-    ) -> None:
-        show_unit_output = json.dumps({
-            "myapp/0": {
-                "relation-info": [
-                    {"endpoint": "database", "relation-id": 1, "related-units": {}},
-                    {"endpoint": "cache", "relation-id": 2, "related-units": {}},
-                ]
+    async def test_filters_by_endpoint(self, relation_tool: JujuReadRelationDataTool) -> None:
+        show_unit_output = json.dumps(
+            {
+                "myapp/0": {
+                    "relation-info": [
+                        {"endpoint": "database", "relation-id": 1, "related-units": {}},
+                        {"endpoint": "cache", "relation-id": 2, "related-units": {}},
+                    ]
+                }
             }
-        })
+        )
 
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch(
-                "cantrip.agent.tools.juju._run_juju", return_value=show_unit_output
-            ),
+            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=show_unit_output),
         ):
             result = await relation_tool.execute(unit="myapp/0", endpoint="database")
 
@@ -112,16 +108,12 @@ class TestJujuReadRelationDataTool:
         assert result.data["relations"][0]["endpoint"] == "database"
 
     @pytest.mark.asyncio()
-    async def test_no_relations(
-        self, relation_tool: JujuReadRelationDataTool
-    ) -> None:
+    async def test_no_relations(self, relation_tool: JujuReadRelationDataTool) -> None:
         show_unit_output = json.dumps({"myapp/0": {"relation-info": []}})
 
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch(
-                "cantrip.agent.tools.juju._run_juju", return_value=show_unit_output
-            ),
+            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=show_unit_output),
         ):
             result = await relation_tool.execute(unit="myapp/0")
 
@@ -132,27 +124,21 @@ class TestJujuReadRelationDataTool:
     async def test_timeout(self, relation_tool: JujuReadRelationDataTool) -> None:
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch(
-                "cantrip.agent.tools.juju._run_juju", side_effect=TimeoutError
-            ),
+            mock.patch("cantrip.agent.tools.juju._run_juju", side_effect=TimeoutError),
         ):
             result = await relation_tool.execute(unit="myapp/0")
         assert result.success is False
         assert "timed out" in result.error
 
     @pytest.mark.asyncio()
-    async def test_cli_failure(
-        self, relation_tool: JujuReadRelationDataTool
-    ) -> None:
+    async def test_cli_failure(self, relation_tool: JujuReadRelationDataTool) -> None:
         import jubilant
 
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
             mock.patch(
                 "cantrip.agent.tools.juju._run_juju",
-                side_effect=jubilant.CLIError(
-                    1, ["juju", "show-unit"], stderr="unit not found"
-                ),
+                side_effect=jubilant.CLIError(1, ["juju", "show-unit"], stderr="unit not found"),
             ),
         ):
             result = await relation_tool.execute(unit="myapp/0")
@@ -179,31 +165,29 @@ class TestJujuGetAppConfigTool:
         assert result.success is False
 
     @pytest.mark.asyncio()
-    async def test_reads_config_with_sources(
-        self, config_tool: JujuGetAppConfigTool
-    ) -> None:
-        config_output = json.dumps({
-            "settings": {
-                "port": {
-                    "type": "int",
-                    "value": 8080,
-                    "source": "default",
-                    "description": "Listening port",
-                },
-                "log-level": {
-                    "type": "string",
-                    "value": "debug",
-                    "source": "user",
-                    "description": "Log level",
-                },
+    async def test_reads_config_with_sources(self, config_tool: JujuGetAppConfigTool) -> None:
+        config_output = json.dumps(
+            {
+                "settings": {
+                    "port": {
+                        "type": "int",
+                        "value": 8080,
+                        "source": "default",
+                        "description": "Listening port",
+                    },
+                    "log-level": {
+                        "type": "string",
+                        "value": "debug",
+                        "source": "user",
+                        "description": "Log level",
+                    },
+                }
             }
-        })
+        )
 
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch(
-                "cantrip.agent.tools.juju._run_juju", return_value=config_output
-            ),
+            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=config_output),
         ):
             result = await config_tool.execute(app="myapp")
 
@@ -218,9 +202,7 @@ class TestJujuGetAppConfigTool:
     async def test_timeout(self, config_tool: JujuGetAppConfigTool) -> None:
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch(
-                "cantrip.agent.tools.juju._run_juju", side_effect=TimeoutError
-            ),
+            mock.patch("cantrip.agent.tools.juju._run_juju", side_effect=TimeoutError),
         ):
             result = await config_tool.execute(app="myapp")
         assert result.success is False
@@ -315,10 +297,16 @@ class TestValidateConfigAgainstCharm:
 
     def test_missing_declared_key_detected(self, tmp_path: Path) -> None:
         (tmp_path / "charmcraft.yaml").write_text(
-            yaml.dump({"config": {"options": {
-                "port": {"type": "int"},
-                "log-level": {"type": "string"},
-            }}})
+            yaml.dump(
+                {
+                    "config": {
+                        "options": {
+                            "port": {"type": "int"},
+                            "log-level": {"type": "string"},
+                        }
+                    }
+                }
+            )
         )
         issues = _validate_config_against_charm({"port"}, str(tmp_path))
         missing = [i for i in issues if i["key"] == "log-level"]
@@ -338,9 +326,7 @@ class TestValidateConfigAgainstCharm:
         assert issues == []
 
     def test_config_yaml_fallback(self, tmp_path: Path) -> None:
-        (tmp_path / "config.yaml").write_text(
-            yaml.dump({"options": {"port": {"type": "int"}}})
-        )
+        (tmp_path / "config.yaml").write_text(yaml.dump({"options": {"port": {"type": "int"}}}))
         issues = _validate_config_against_charm({"port", "extra"}, str(tmp_path))
         assert any(i["key"] == "extra" for i in issues)
 
@@ -368,12 +354,14 @@ class TestGetAppConfigWithValidation:
         (tmp_path / "charmcraft.yaml").write_text(
             yaml.dump({"config": {"options": {"port": {"type": "int"}}}})
         )
-        config_output = json.dumps({
-            "settings": {
-                "port": {"type": "int", "value": 8080, "source": "default"},
-                "old-key": {"type": "string", "value": "x", "source": "user"},
+        config_output = json.dumps(
+            {
+                "settings": {
+                    "port": {"type": "int", "value": 8080, "source": "default"},
+                    "old-key": {"type": "string", "value": "x", "source": "user"},
+                }
             }
-        })
+        )
 
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
@@ -387,14 +375,14 @@ class TestGetAppConfigWithValidation:
         assert "Validation Issues" in result.output
 
     @pytest.mark.asyncio()
-    async def test_no_validation_without_charm_path(
-        self, tool: JujuGetAppConfigTool
-    ) -> None:
-        config_output = json.dumps({
-            "settings": {
-                "port": {"type": "int", "value": 8080, "source": "default"},
+    async def test_no_validation_without_charm_path(self, tool: JujuGetAppConfigTool) -> None:
+        config_output = json.dumps(
+            {
+                "settings": {
+                    "port": {"type": "int", "value": 8080, "source": "default"},
+                }
             }
-        })
+        )
 
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),

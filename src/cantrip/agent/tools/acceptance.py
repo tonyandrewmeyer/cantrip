@@ -114,9 +114,7 @@ def _verify_relation_data(
     if model:
         cmd.extend(["--model", model])
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return False, "Could not read relation data"
 
@@ -576,9 +574,7 @@ class RelationSmokeTool(Tool):
             if settled:
                 # Verify data actually flowed through the relation databag.
                 unit_name = f"{app}/0"
-                has_data, data_notes = _verify_relation_data(
-                    unit_name, ep_name, model
-                )
+                has_data, data_notes = _verify_relation_data(unit_name, ep_name, model)
                 if has_data:
                     notes = f"Active/idle, data flowing ({data_notes})"
                 else:
@@ -1259,20 +1255,24 @@ class ConfigUnderLoadTool(Tool):
                     ok = 200 <= status < 400
                     if not ok:
                         errors += 1
-                    probes.append({
-                        "probe": i + 1,
-                        "status": status,
-                        "elapsed_ms": round(elapsed * 1000),
-                        "ok": ok,
-                    })
+                    probes.append(
+                        {
+                            "probe": i + 1,
+                            "status": status,
+                            "elapsed_ms": round(elapsed * 1000),
+                            "ok": ok,
+                        }
+                    )
                 except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
                     errors += 1
-                    probes.append({
-                        "probe": i + 1,
-                        "status": 0,
-                        "elapsed_ms": 0,
-                        "ok": False,
-                    })
+                    probes.append(
+                        {
+                            "probe": i + 1,
+                            "status": 0,
+                            "elapsed_ms": 0,
+                            "ok": False,
+                        }
+                    )
                 await asyncio.sleep(probe_interval)
 
         async def _apply_config() -> None:

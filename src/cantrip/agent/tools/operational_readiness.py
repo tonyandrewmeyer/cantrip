@@ -38,12 +38,21 @@ _PILLARS = [
 # Status conditions the charm should report (via ops.StatusBase).
 _EXPECTED_STATUS_CONDITIONS: list[tuple[str, str]] = [
     ("missing.*config", "Sets status for missing required configuration"),
-    ("conflict.*config|invalid.*config|config.*invalid", "Sets status for conflicting/invalid config"),
-    (r"upstream|connect|unreachable|unavailable", "Sets status for inaccessible upstream services"),
+    (
+        "conflict.*config|invalid.*config|config.*invalid",
+        "Sets status for conflicting/invalid config",
+    ),
+    (
+        r"upstream|connect|unreachable|unavailable",
+        "Sets status for inaccessible upstream services",
+    ),
     (r"paus(?:e|ed|ing)", "Sets status for paused state"),
     (r"stop(?:ped)?|crash(?:ed)?", "Sets status for stopped/crashed services"),
     (r"missing.*relation|relation.*missing|no.*relation", "Sets status for missing relations"),
-    (r"relation.*incomplete|incomplete.*relation|waiting.*relation", "Sets status for incomplete relations"),
+    (
+        r"relation.*incomplete|incomplete.*relation|waiting.*relation",
+        "Sets status for incomplete relations",
+    ),
     (r"upgrad(?:e|ing)", "Sets status for upgrade in progress"),
 ]
 
@@ -122,9 +131,7 @@ def _check_status_reporting(
         # We check if the condition keyword appears in source that also
         # sets status (BlockedStatus, WaitingStatus, MaintenanceStatus).
         has_condition = bool(re.search(pattern, all_source, re.IGNORECASE))
-        has_status_call = bool(
-            re.search(r"(?:Blocked|Waiting|Maintenance)Status", all_source)
-        )
+        has_status_call = bool(re.search(r"(?:Blocked|Waiting|Maintenance)Status", all_source))
         passed = has_condition and has_status_call
         results.append((f"status:{description}", passed, description))
 
@@ -156,11 +163,13 @@ def _check_action_quality(
         if not isinstance(action_def, dict):
             continue
         has_description = bool(action_def.get("description"))
-        results.append((
-            f"action-quality:{action_name}",
-            has_description,
-            f"Action '{action_name}' has a description",
-        ))
+        results.append(
+            (
+                f"action-quality:{action_name}",
+                has_description,
+                f"Action '{action_name}' has a description",
+            )
+        )
 
         # Check parameters have descriptions.
         params = action_def.get("params", action_def.get("parameters", {}))
@@ -169,11 +178,13 @@ def _check_action_quality(
             for param_name, param_def in properties.items():
                 if isinstance(param_def, dict):
                     has_param_desc = bool(param_def.get("description"))
-                    results.append((
-                        f"action-quality:{action_name}:{param_name}",
-                        has_param_desc,
-                        f"Action '{action_name}' parameter '{param_name}' has a description",
-                    ))
+                    results.append(
+                        (
+                            f"action-quality:{action_name}:{param_name}",
+                            has_param_desc,
+                            f"Action '{action_name}' parameter '{param_name}' has a description",
+                        )
+                    )
 
     return results
 
@@ -192,21 +203,27 @@ def _check_config_quality(
         has_default = "default" in opt_def
         has_description = bool(opt_def.get("description"))
 
-        results.append((
-            f"config:{opt_name}:type",
-            has_type,
-            f"Config '{opt_name}' has a defined type",
-        ))
-        results.append((
-            f"config:{opt_name}:default",
-            has_default,
-            f"Config '{opt_name}' has a default value",
-        ))
-        results.append((
-            f"config:{opt_name}:description",
-            has_description,
-            f"Config '{opt_name}' has a description",
-        ))
+        results.append(
+            (
+                f"config:{opt_name}:type",
+                has_type,
+                f"Config '{opt_name}' has a defined type",
+            )
+        )
+        results.append(
+            (
+                f"config:{opt_name}:default",
+                has_default,
+                f"Config '{opt_name}' has a default value",
+            )
+        )
+        results.append(
+            (
+                f"config:{opt_name}:description",
+                has_description,
+                f"Config '{opt_name}' has a description",
+            )
+        )
 
     return results
 
@@ -233,11 +250,13 @@ def _check_documentation(
                     continue
 
         found_in_readme = keyword in readme_content.lower()
-        results.append((
-            f"docs:{keyword}",
-            found_in_docs or found_in_readme,
-            description,
-        ))
+        results.append(
+            (
+                f"docs:{keyword}",
+                found_in_docs or found_in_readme,
+                description,
+            )
+        )
 
     return results
 
@@ -272,11 +291,13 @@ def _check_reliability(
             continue
 
     has_stop_handler = bool(re.search(r"(?:stop|remove)_event|on\.stop|on\.remove", all_source))
-    results.append((
-        "reliability:graceful-shutdown",
-        has_stop_handler,
-        "Handles graceful shutdown (stop/remove event)",
-    ))
+    results.append(
+        (
+            "reliability:graceful-shutdown",
+            has_stop_handler,
+            "Handles graceful shutdown (stop/remove event)",
+        )
+    )
 
     return results
 
@@ -300,21 +321,25 @@ def _check_maintainability(
             for rel in all_relations.values()
             if isinstance(rel, dict)
         )
-        results.append((
-            f"maintainability:cos:{interface}",
-            present,
-            f"COS integration: {description}",
-        ))
+        results.append(
+            (
+                f"maintainability:cos:{interface}",
+                present,
+                f"COS integration: {description}",
+            )
+        )
 
     # Diagnostics/SOS action.
     action_names = set(actions.keys())
     diag_aliases = {"collect-diagnostics", "diagnostics", "sos", "collect-sos", "get-diagnostics"}
     has_diagnostics = bool(action_names & diag_aliases)
-    results.append((
-        "maintainability:diagnostics",
-        has_diagnostics,
-        "Diagnostics/SOS action to collect sanitised data",
-    ))
+    results.append(
+        (
+            "maintainability:diagnostics",
+            has_diagnostics,
+            "Diagnostics/SOS action to collect sanitised data",
+        )
+    )
 
     # Upgrade pre-flight.
     upgrade_aliases = {"pre-upgrade-check", "pre-upgrade", "upgrade-check"}
@@ -329,11 +354,13 @@ def _check_maintainability(
             continue
 
     has_upgrade_handler = bool(re.search(r"upgrade|pre.upgrade", all_source, re.IGNORECASE))
-    results.append((
-        "maintainability:upgrade-preflight",
-        has_pre_upgrade or has_upgrade_handler,
-        "Upgrade pre-flight checks exist",
-    ))
+    results.append(
+        (
+            "maintainability:upgrade-preflight",
+            has_pre_upgrade or has_upgrade_handler,
+            "Upgrade pre-flight checks exist",
+        )
+    )
 
     return results
 
@@ -365,11 +392,13 @@ def _check_security(
             continue
 
     has_tls_code = bool(re.search(r"tls|certificate|ssl", all_source, re.IGNORECASE))
-    results.append((
-        "security:encryption-transit",
-        has_tls_relation or has_tls_code,
-        "Data encryption in transit (TLS)",
-    ))
+    results.append(
+        (
+            "security:encryption-transit",
+            has_tls_relation or has_tls_code,
+            "Data encryption in transit (TLS)",
+        )
+    )
 
     # Juju secrets usage (vs plain-text config).
     has_juju_secrets = bool(re.search(r"juju.*secret|Secret(?:Changed|Rotate)", all_source))
@@ -377,15 +406,16 @@ def _check_security(
     config = _load_config_from_metadata_or_file(metadata)
     secret_config_names = {"password", "secret", "token", "api-key", "api_key", "credential"}
     has_secret_config = any(
-        any(s in opt_name.lower() for s in secret_config_names)
-        for opt_name in config
+        any(s in opt_name.lower() for s in secret_config_names) for opt_name in config
     )
     # Pass if using secrets API or if no secret-like config exists.
-    results.append((
-        "security:secrets-management",
-        has_juju_secrets or not has_secret_config,
-        "Secrets stored via Juju secrets, not plain-text config",
-    ))
+    results.append(
+        (
+            "security:secrets-management",
+            has_juju_secrets or not has_secret_config,
+            "Secrets stored via Juju secrets, not plain-text config",
+        )
+    )
 
     # Certificate management actions.
     cert_aliases = {"get-certificate", "view-certificate", "regenerate-certificate", "rotate-tls"}
@@ -393,11 +423,13 @@ def _check_security(
     has_cert_actions = bool(action_names & cert_aliases)
     # Only relevant if TLS is in use.
     if has_tls_relation or has_tls_code:
-        results.append((
-            "security:cert-management",
-            has_cert_actions,
-            "Certificate management actions (view/regenerate)",
-        ))
+        results.append(
+            (
+                "security:cert-management",
+                has_cert_actions,
+                "Certificate management actions (view/regenerate)",
+            )
+        )
 
     return results
 
@@ -457,12 +489,14 @@ def _score_pillar(checks: list[tuple[str, bool, str]]) -> tuple[int, int, int]:
 
 
 # Severity mapping for failed checks.
-_MUST_FIX_PREFIXES = frozenset({
-    "reliability:health-check",
-    "docs:installation",
-    "security:encryption-transit",
-    "security:secrets-management",
-})
+_MUST_FIX_PREFIXES = frozenset(
+    {
+        "reliability:health-check",
+        "docs:installation",
+        "security:encryption-transit",
+        "security:secrets-management",
+    }
+)
 
 
 def _format_readiness_report(
@@ -507,12 +541,14 @@ def _format_readiness_report(
             mark = "PASS" if passed else "FAIL"
             lines.append(f"- [{mark}] {detail}")
 
-            all_checks.append({
-                "name": check_name,
-                "pillar": pillar,
-                "passed": passed,
-                "detail": detail,
-            })
+            all_checks.append(
+                {
+                    "name": check_name,
+                    "pillar": pillar,
+                    "passed": passed,
+                    "detail": detail,
+                }
+            )
 
             # Categorise failures.
             if not passed:

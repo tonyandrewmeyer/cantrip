@@ -499,9 +499,7 @@ class TestCheckModernPatterns:
     def test_pebble_readiness_detected(self, temp_dir) -> None:
         src = temp_dir / "src"
         src.mkdir()
-        (src / "charm.py").write_text(
-            "if container.can_connect():\n    container.push(...)\n"
-        )
+        (src / "charm.py").write_text("if container.can_connect():\n    container.push(...)\n")
         result = _check_modern_patterns([src / "charm.py"])
         assert result["pebble_readiness"] is True
 

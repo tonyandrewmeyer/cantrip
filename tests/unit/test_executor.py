@@ -1375,9 +1375,7 @@ class TestNoopDetection:
         """First noop resets the task to pending for another attempt."""
         state = AgentState(charm_path="/tmp/charm")
         queue = WorkQueue()
-        task = AgentTask(
-            id="b1", title="Build charm", category=TaskCategory.BUILD
-        )
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
         queue.add_task(task)
         queue.set_active(task.id)
 
@@ -1410,9 +1408,7 @@ class TestNoopDetection:
         queue.set_active(task.id)
 
         on_failed = MagicMock()
-        executor = _make_executor(
-            queue=queue, state=state, on_task_failed=on_failed
-        )
+        executor = _make_executor(queue=queue, state=state, on_task_failed=on_failed)
 
         with (
             patch("cantrip.agent.executor.Subagent") as mock_cls,
@@ -1432,9 +1428,7 @@ class TestNoopDetection:
         """Normal execution with changes is not flagged as noop."""
         state = AgentState(charm_path="/tmp/charm")
         queue = WorkQueue()
-        task = AgentTask(
-            id="b1", title="Build charm", category=TaskCategory.BUILD
-        )
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
         queue.add_task(task)
         queue.set_active(task.id)
 
@@ -1453,7 +1447,9 @@ class TestNoopDetection:
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
             instance = mock_cls.return_value
-            instance.run = AsyncMock(return_value=SubagentResult(ExitState.COMPLETED, "completed work"))
+            instance.run = AsyncMock(
+                return_value=SubagentResult(ExitState.COMPLETED, "completed work")
+            )
             await executor._execute_task(task)
 
         assert task.status == TaskStatus.DONE
@@ -1464,9 +1460,7 @@ class TestNoopDetection:
         """Without a charm path, fingerprint is empty and noop is skipped."""
         state = AgentState()  # No charm_path.
         queue = WorkQueue()
-        task = AgentTask(
-            id="r1", title="Research", category=TaskCategory.RESEARCH
-        )
+        task = AgentTask(id="r1", title="Research", category=TaskCategory.RESEARCH)
         queue.add_task(task)
         queue.set_active(task.id)
 
@@ -1474,7 +1468,9 @@ class TestNoopDetection:
 
         with patch("cantrip.agent.executor.Subagent") as mock_cls:
             instance = mock_cls.return_value
-            instance.run = AsyncMock(return_value=SubagentResult(ExitState.COMPLETED, "research done"))
+            instance.run = AsyncMock(
+                return_value=SubagentResult(ExitState.COMPLETED, "research done")
+            )
             await executor._execute_task(task)
 
         assert task.status == TaskStatus.DONE

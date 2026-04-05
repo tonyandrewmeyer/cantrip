@@ -30,12 +30,14 @@ from cantrip.agent.tools.operational_readiness import (
 def tmp_charm(tmp_path: Path) -> Path:
     """Create a minimal charm directory."""
     (tmp_path / "charmcraft.yaml").write_text(
-        yaml.dump({
-            "name": "test-charm",
-            "requires": {
-                "database": {"interface": "mysql"},
-            },
-        })
+        yaml.dump(
+            {
+                "name": "test-charm",
+                "requires": {
+                    "database": {"interface": "mysql"},
+                },
+            }
+        )
     )
     src = tmp_path / "src"
     src.mkdir()
@@ -67,9 +69,7 @@ class TestCheckStatusReporting:
     def test_detects_missing_config_status(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         src.mkdir()
-        (src / "charm.py").write_text(
-            'self.unit.status = BlockedStatus("missing config")'
-        )
+        (src / "charm.py").write_text('self.unit.status = BlockedStatus("missing config")')
         results = _check_status_reporting([src / "charm.py"])
         # The "missing.*config" pattern should match.
         config_checks = [r for r in results if "missing required config" in r[2].lower()]
@@ -371,9 +371,7 @@ class TestOperationalReadinessTool:
         assert result.error is not None
 
     @pytest.mark.asyncio()
-    async def test_no_metadata(
-        self, tmp_path: Path, tool: OperationalReadinessTool
-    ) -> None:
+    async def test_no_metadata(self, tmp_path: Path, tool: OperationalReadinessTool) -> None:
         result = await tool.execute(path=str(tmp_path))
         assert result.success is False
         assert "charmcraft.yaml" in (result.error or "")
@@ -384,36 +382,38 @@ class TestOperationalReadinessTool:
     ) -> None:
         """A charm with many operational features should score higher."""
         (tmp_path / "charmcraft.yaml").write_text(
-            yaml.dump({
-                "name": "well-equipped",
-                "actions": {
-                    "get-health": {"description": "Check health"},
-                    "pause": {"description": "Pause services"},
-                    "resume": {"description": "Resume services"},
-                    "create-backup": {"description": "Create backup"},
-                    "restore-backup": {"description": "Restore from backup"},
-                    "collect-diagnostics": {"description": "Collect diagnostics"},
-                    "pre-upgrade-check": {"description": "Pre-upgrade checks"},
-                },
-                "config": {
-                    "options": {
-                        "port": {
-                            "type": "int",
-                            "default": 8080,
-                            "description": "Listening port",
+            yaml.dump(
+                {
+                    "name": "well-equipped",
+                    "actions": {
+                        "get-health": {"description": "Check health"},
+                        "pause": {"description": "Pause services"},
+                        "resume": {"description": "Resume services"},
+                        "create-backup": {"description": "Create backup"},
+                        "restore-backup": {"description": "Restore from backup"},
+                        "collect-diagnostics": {"description": "Collect diagnostics"},
+                        "pre-upgrade-check": {"description": "Pre-upgrade checks"},
+                    },
+                    "config": {
+                        "options": {
+                            "port": {
+                                "type": "int",
+                                "default": 8080,
+                                "description": "Listening port",
+                            },
                         },
                     },
-                },
-                "requires": {
-                    "tracing": {"interface": "tracing"},
-                    "metrics": {"interface": "metrics-endpoint"},
-                    "log-proxy": {"interface": "logging"},
-                    "certs": {"interface": "tls-certificates"},
-                },
-                "provides": {
-                    "dashboard": {"interface": "grafana-dashboard"},
-                },
-            })
+                    "requires": {
+                        "tracing": {"interface": "tracing"},
+                        "metrics": {"interface": "metrics-endpoint"},
+                        "log-proxy": {"interface": "logging"},
+                        "certs": {"interface": "tls-certificates"},
+                    },
+                    "provides": {
+                        "dashboard": {"interface": "grafana-dashboard"},
+                    },
+                }
+            )
         )
         src = tmp_path / "src"
         src.mkdir()

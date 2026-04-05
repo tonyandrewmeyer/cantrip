@@ -434,9 +434,7 @@ def plan_improvement_fixes(
 
     # Code modernisation (deprecated APIs, type annotations, modern patterns).
     needs_modernise = (
-        gaps.get("deprecated_apis")
-        or gaps.get("type_annotations")
-        or gaps.get("modern_patterns")
+        gaps.get("deprecated_apis") or gaps.get("type_annotations") or gaps.get("modern_patterns")
     )
     if needs_modernise:
         steps = []
@@ -667,15 +665,15 @@ def plan_operability_fixes(
     # Group gaps into implementation categories.
     status_gaps = [g for g in all_gaps if "status" in g.lower()]
     action_gaps = [
-        g for g in all_gaps
+        g
+        for g in all_gaps
         if any(k in g.lower() for k in ("action", "health", "pause", "resume", "diagnostics"))
     ]
     backup_gaps = [g for g in all_gaps if "backup" in g.lower() or "restore" in g.lower()]
     upgrade_gaps = [g for g in all_gaps if "upgrade" in g.lower()]
     cos_gaps = [g for g in all_gaps if "cos" in g.lower() or "observability" in g.lower()]
     security_gaps = [
-        g for g in all_gaps
-        if any(k in g.lower() for k in ("tls", "encrypt", "secret", "cert"))
+        g for g in all_gaps if any(k in g.lower() for k in ("tls", "encrypt", "secret", "cert"))
     ]
     doc_gaps = [g for g in all_gaps if "documentation" in g.lower() or "doc" in g.lower()]
 

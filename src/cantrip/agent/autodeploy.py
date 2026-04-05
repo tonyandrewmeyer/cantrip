@@ -232,9 +232,7 @@ def tasks_after_acceptance(task: AgentTask) -> list[AgentTask]:
         ),
         # Operability assessment runs in parallel with demo generation.
         AgentTask(
-            title=(
-                f"{OPERABILITY_PREFIX} Assess operational readiness"
-            ),
+            title=(f"{OPERABILITY_PREFIX} Assess operational readiness"),
             category=TaskCategory.RESEARCH,
             model_hint=ModelHint.PRIMARY,
             description=(

@@ -78,6 +78,7 @@ def _parse_exit_state(text: str) -> ExitState:
         return ExitState.NOOP
     return ExitState.COMPLETED
 
+
 log = logging.getLogger(__name__)
 
 # Focused tasks need fewer rounds than the open-ended conversation loop.

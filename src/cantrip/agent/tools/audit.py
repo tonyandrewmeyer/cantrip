@@ -334,9 +334,7 @@ def _format_audit_report(
 
     # Type annotations.
     if not has_type_annotations:
-        nice_to_have.append(
-            "No type annotations found — add return-type hints to functions"
-        )
+        nice_to_have.append("No type annotations found — add return-type hints to functions")
 
     # Modern patterns.
     if modern_patterns is not None:
@@ -500,9 +498,7 @@ class CharmAuditTool(Tool):
                     "licence": not has_licence,
                     "icon": not has_icon,
                     "type_annotations": not has_type_annotations,
-                    "modern_patterns": any(
-                        not v for v in modern_patterns.values()
-                    ),
+                    "modern_patterns": any(not v for v in modern_patterns.values()),
                 },
                 "modern_patterns": modern_patterns,
                 "deprecated_apis": deprecated_apis,

@@ -682,10 +682,7 @@ class CantripAgent:
             return []
 
         context = PlanningContext(
-            intent=(
-                f"Implement day-2 operations for "
-                f"{self.state.charm_name or 'the charm'}"
-            ),
+            intent=(f"Implement day-2 operations for {self.state.charm_name or 'the charm'}"),
             charm_name=self.state.charm_name,
             charm_type=self.state.charm_type,
             framework=self.state.framework,
