@@ -70,6 +70,7 @@ class CantripApp(App):
         light_snap_name: str | None = None,
         light_provider_name: str | None = None,
         improve_path: Path | None = None,
+        theme_name: str | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -83,6 +84,7 @@ class CantripApp(App):
         self._light_model_name: str | None = None
         self._max_concurrency = max_concurrency
         self._improve_path = improve_path
+        self._theme_name = theme_name
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -90,6 +92,13 @@ class CantripApp(App):
         self._watcher_autostart = watcher
         self._session_start = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
         self._pending_confirm_id: str | None = None
+
+        # Register bundled and user themes.
+        from cantrip.tui.themes import register_themes
+
+        register_themes(self)
+        if self._theme_name:
+            self.theme = self._theme_name
 
     def _fatal_error(self) -> None:
         """Print a plain traceback instead of Rich's decorated version.

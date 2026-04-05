@@ -106,6 +106,12 @@ def parse_args() -> argparse.Namespace:
         help="Improve an existing charm at the given path (audit, fix, redeploy)",
     )
     run_parser.add_argument(
+        "--theme",
+        type=str,
+        default=None,
+        help="TUI colour theme (cantrip, ubuntu, monokai, solarized-dark, light)",
+    )
+    run_parser.add_argument(
         "path",
         nargs="?",
         type=Path,
@@ -316,6 +322,7 @@ def _run(args: argparse.Namespace) -> int:
             light_snap_name=args.light_snap,
             light_provider_name=args.light_provider,
             improve_path=improve_path,
+            theme_name=args.theme,
         )
         app.run()
         return 0
