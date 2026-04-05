@@ -1670,99 +1670,61 @@ production operations?"
 
 A deterministic assessment tool modelled on the existing `charm_audit` pattern.
 
-- [ ] **`OperationalReadinessTool`** (`operational_readiness`) — evaluates a charm
-  against the Canonical operational readiness metrics; produces a structured report
+- [x] **`OperationalReadinessTool`** (`operational_readiness`) — evaluates a charm
+  against Canonical's operational readiness metrics; produces a structured report
   scored by pillar (Best Practices, Documentation, Reliability, Maintainability,
   Security); added to RESEARCH and BUILD tool allowlists
-- [ ] **Best Practices checks** — deterministic checks for:
-  - **Automation status reporting** — charm sets status for missing required configs,
-    conflicting configs, inaccessible upstream services, paused state, stopped/crashed
-    services, missing relations, incomplete relations, upgrade in progress, failed upgrade
-  - **Common operational actions** — charm exposes `pause`, `resume`, and
-    `get-health` (or equivalent) actions; actions are idempotent; secret management
-    is delegated to Juju secrets or an appropriate service
-  - **Solution-specific actions** — all actions have accurate names, clear descriptions,
-    and documented parameters; actions complete within 30 minutes
-  - **Configuration quality** — all config options have defined types, appropriate
-    defaults, accurate descriptions, and precise naming; invalid values produce
-    warnings rather than breaking the charm
-- [ ] **Documentation checks** — verify presence and completeness of:
-  - Installation/setup guide, configuration reference, usage instructions
-  - Troubleshooting guide, management procedures, upgrade guide
-  - Backup and restore documentation
-- [ ] **Reliability checks** — verify:
-  - Health validation mechanism exists (action or endpoint)
-  - Backup and restore actions exist (for stateful charms)
-  - Charm handles graceful and ungraceful shutdown without data loss
-- [ ] **Maintainability checks** — verify:
-  - Upgrade pre-flight checks exist (via upgrade action or hook)
-  - Full COS observability (health, cluster status, certificates, API metrics)
-  - Diagnostics/SOS action that collects sanitised configuration and status data
-  - Best-practice validation (missing required relations, config deviations)
-- [ ] **Security checks** — verify:
-  - Data encryption in transit (TLS relations or workload TLS)
-  - Secrets stored via Juju secrets, not plain-text config
-  - No custom PPAs; dependencies from Canonical-approved sources
-  - Certificate management automation (view and regenerate)
-- [ ] **Scoring** — each metric maps to a boolean (pass/fail); overall score is
-  percentage of passing checks per pillar; report groups findings as must-fix
-  (blocks production), should-fix (reduces risk), and advisory (organisational
-  items Cantrip flags but cannot implement directly)
-- [ ] **Advisory items** — the tool flags metrics that require organisational action
-  rather than code changes: platform compatibility matrix, reference architectures,
-  escalation methods, long-term stability testing, SSDLC compliance. These appear
-  in the report as recommendations with guidance on what the team needs to provide
+- [x] **Best Practices checks** — deterministic checks for status reporting (8
+  conditions: missing config, conflicting config, upstream unreachable, paused,
+  stopped/crashed, missing relations, incomplete relations, upgrade in progress);
+  common operational actions (get-health, pause, resume with aliases); action
+  quality (descriptions, parameter docs); configuration quality (type, default,
+  description per option)
+- [x] **Documentation checks** — verify presence of installation, configuration,
+  usage, troubleshooting, management, upgrade, and backup docs in README or docs/
+- [x] **Reliability checks** — health-check action, backup/restore actions,
+  graceful shutdown (stop/remove event handler)
+- [x] **Maintainability checks** — full COS observability (4 interfaces),
+  diagnostics/SOS action, upgrade pre-flight checks
+- [x] **Security checks** — TLS/encryption (relations or code), Juju secrets
+  usage (flags plain-text password config), certificate management actions
+- [x] **Scoring** — each check is pass/fail; per-pillar scores as percentages;
+  findings categorised as must-fix, should-fix, and advisory
+- [x] **Advisory items** — platform compatibility, reference architectures,
+  escalation methods, long-term stability testing, SSDLC compliance flagged
+  as organisational items requiring team action
 
 ### 19.2 Operational Readiness Skill
 
 Domain knowledge for subagents implementing operability features.
 
-- [ ] **`operational-readiness` skill** (`skills/operational-readiness/SKILL.md`) —
-  comprehensive guidance covering:
-  - **Status reporting patterns** — how to set status for each required condition
-    (missing config, missing relation, paused, upgrade in progress, etc.) using
-    `ops.StatusBase` subclasses with actionable messages
-  - **Health-check action pattern** — implementing a `get-health` action that
-    validates core processes, API responsiveness, cluster state, certificate
-    validity, and upstream connectivity; returning structured JSON results
-  - **Pause/resume pattern** — implementing `pause` and `resume` actions that
-    gracefully stop and restart workload services via Pebble, with status
-    reporting and data-loss prevention
-  - **Backup/restore pattern** — implementing `create-backup`, `list-backups`,
-    and `restore-backup` actions with encryption support; delegating to workload-
-    native tools (pg_dump, redis-cli, etc.)
-  - **Diagnostics bundle pattern** — implementing a `collect-diagnostics` action
-    that gathers sanitised config, status, logs, and observability data into a
-    tarball; scrubbing secrets, IP addresses, and certificates
-  - **Upgrade pre-flight pattern** — implementing pre-upgrade checks in the
-    `pre-upgrade-check` action or upgrade hook: version compatibility, resource
-    availability, cluster health, backup freshness
-  - **Certificate management** — viewing and regenerating certificates via
-    actions, integrating with TLS-certificates-operator or self-signed certs
-  - **Secret rotation** — using Juju secrets for credentials with rotation
-    support; never storing secrets in plain-text config
+- [x] **`operational-readiness` skill** (`skills/operational-readiness/SKILL.md`) —
+  comprehensive guidance covering: status reporting patterns (reconciliation
+  method, all condition types with code examples); health-check action (process,
+  API, relation, certificate checks); pause/resume (Pebble stop/start, paused
+  state persistence); backup/restore (workload-native tools, timestamps,
+  encryption); diagnostics bundle (scrubbed config, status, relations, logs);
+  upgrade pre-flight (version compat, cluster health, backup freshness,
+  resources); certificate management (view/regenerate actions); secret rotation
+  (Juju secrets API, secret-rotate event handling)
 
 ### 19.3 Operability Phase in the Planner
 
 Integrate operational readiness assessment into the autonomous build pipeline.
 
-- [ ] **Assessment task** — after the charm passes acceptance testing (Phase 17) or
-  integration tests (Phase 12), the planner generates an `assess-operational-readiness`
-  RESEARCH task that runs the `operational_readiness` tool
-- [ ] **Gap confirmation** — a CONFIRM task presents the readiness report to the user,
-  grouped by pillar, with must-fix items highlighted; user confirms which gaps to
-  address and which to defer (some may be out of scope for the current charm)
-- [ ] **Operability fix tasks** — for each confirmed gap category, the planner
-  generates BUILD tasks that load the `operational-readiness` skill:
-  - `implement-status-reporting` — add comprehensive status messages
-  - `implement-operational-actions` — add pause/resume, health check, diagnostics
-  - `implement-backup-restore` — add backup and restore actions (stateful charms)
-  - `implement-upgrade-procedures` — add pre-flight checks and upgrade support
-  - `improve-observability-completeness` — fill remaining COS gaps beyond basic
-    integration (alert rules, dashboard panels, all required metrics)
-  - `improve-security-posture` — migrate plain-text secrets, add TLS, etc.
-- [ ] **Validation** — after fixes, re-run the `operational_readiness` tool to
-  verify the score improved; present the before/after comparison to the user
+- [x] **Assessment task** — after acceptance testing completes, `tasks_after_acceptance()`
+  in `autodeploy.py` spawns an operability assessment RESEARCH task (parallel with
+  demo generation); `plan_operability_assessment()` creates the full assessment →
+  confirm pipeline with dependency on acceptance
+- [x] **Gap confirmation** — a CONFIRM task presents the readiness report to the user;
+  `plan_operability_fixes()` generates categorised BUILD tasks after confirmation
+- [x] **Operability fix tasks** — `plan_operability_fixes()` generates BUILD tasks for
+  each confirmed gap category: `implement-status-reporting`, `implement-operational-actions`,
+  `implement-backup-restore`, `implement-upgrade-procedures`, `improve-observability-completeness`,
+  `improve-security-posture`, `improve-operational-docs`; each loads the
+  `operational-readiness` skill
+- [x] **Validation** — a `reassess-operational-readiness` RESEARCH task depends on all
+  fix tasks and re-runs the tool to verify the score improved
 - [ ] **Improvement mode integration** — when Cantrip is used in "improve" mode
   (Phase 10), the operability assessment runs after the existing audit and code
   modernisation, extending the improvement pipeline with production-readiness checks
@@ -1771,18 +1733,14 @@ Integrate operational readiness assessment into the autonomous build pipeline.
 
 Produce a persistent artefact summarising the charm's production readiness.
 
-- [ ] **OPERATIONAL_READINESS.md** — generate a Markdown report in the charm directory
-  covering: overall score per pillar, individual check results with pass/fail status,
-  must-fix items with specific guidance, should-fix items with recommendations,
-  advisory items requiring team action, and a comparison with the previous assessment
-  (if one exists)
-- [ ] **Machine-readable output** — the tool returns a structured `data` dict (matching
-  the `charm_audit` pattern) with per-pillar scores, individual check results, and
-  categorised findings; stored in the agent state for downstream tasks
-- [ ] **Chat presentation** — present a concise summary in the chat: "Your charm scores
-  85% on operational readiness — 12/14 Best Practices pass, 5/7 Documentation items
-  present, 3/4 Reliability checks pass. Two must-fix items: no health-check action
-  and no backup/restore. Shall I implement these?"
+- [x] **OPERATIONAL_READINESS.md** — the tool writes a Markdown report with per-pillar
+  summary scores, individual [PASS]/[FAIL] checks, and an Advisory section for
+  organisational items
+- [x] **Machine-readable output** — `data` dict contains: `overall_score`, `total_passed`,
+  `total_checks`, `pillar_scores` (per-pillar passed/total/percentage), `checks` (list
+  of name/pillar/passed/detail dicts), and `findings` (must_fix/should_fix/advisory lists)
+- [x] **Chat presentation** — the tool's `output` field contains the full scored report;
+  the subagent's guidance instructs it to summarise per-pillar scores and must-fix items
 
 **Exit criteria:** Cantrip assesses a charm against Canonical's Operational Readiness
 Metrics, produces a scored report by pillar, and autonomously implements the
