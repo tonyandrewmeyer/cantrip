@@ -132,8 +132,10 @@ Place dashboard JSON files in `src/grafana_dashboards/`. The library picks them 
 
 ## Step 5: Deploy COS and Relate
 
+### Single controller (K8s)
+
 ```bash
-# Deploy COS-lite bundle to a separate model.
+# Deploy COS-lite bundle to a separate model on the same controller.
 juju add-model cos
 juju deploy cos-lite --trust
 
@@ -144,6 +146,43 @@ juju integrate my-charm:metrics-endpoint cos.prometheus:metrics-endpoint
 juju integrate my-charm:logging cos.loki:logging
 juju integrate my-charm:grafana-dashboard cos.grafana:grafana-dashboard
 ```
+
+### Multi-controller (LXD dev + K8s COS)
+
+When the dev controller is LXD (e.g. `concierge -p dev`), COS must run on the
+K8s controller. Preflight handles this automatically, but if doing it manually:
+
+```bash
+# Create COS model on the K8s controller.
+juju add-model cos -c concierge-k8s
+juju deploy cos-lite --trust --model cos
+
+# Create offers for COS endpoints.
+juju offer --model cos grafana-k8s:grafana-dashboard
+juju offer --model cos prometheus-k8s:receive-remote-write
+juju offer --model cos loki-k8s:logging
+juju offer --model cos tempo-k8s:tracing
+
+# Consume offers in the dev model.
+juju switch dev-model
+juju consume cos.grafana-k8s
+juju consume cos.prometheus-k8s
+juju consume cos.loki-k8s
+juju consume cos.tempo-k8s
+
+# For machine charms, deploy grafana-agent (snap-based) locally.
+juju deploy grafana-agent
+juju integrate my-charm:cos-agent grafana-agent
+juju integrate grafana-agent grafana-k8s
+juju integrate grafana-agent prometheus-k8s
+juju integrate grafana-agent loki-k8s
+
+# For K8s charms, use grafana-agent-k8s (sidecar).
+juju deploy grafana-agent-k8s
+juju integrate my-charm grafana-agent-k8s
+```
+
+Use `juju_offer`, `juju_consume`, and `juju_list_offers` tools for this.
 
 ## Step 6: Verify Observability
 

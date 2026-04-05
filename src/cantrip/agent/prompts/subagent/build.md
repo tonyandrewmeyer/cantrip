@@ -17,3 +17,5 @@ Write clean, well-structured code following ops framework conventions. Include C
 **Security event logging**: if the design identifies a security surface, generate a `src/log_security.py` helper that emits structured OWASP-format security events (JSON with datetime, appid, type, event, level, description). Call it from charm event handlers at the appropriate points (secret hooks, relation changes, action handlers). Never log sensitive data.
 
 **Tracing**: ops-tracing handles hook/Pebble/relation spans automatically. Only add manual spans for long-running workload operations (backups, migrations), external API calls, and decision logic with fallback paths. Do not span simple Pebble or relation handlers.
+
+**Cross-model COS**: when COS is on a separate controller (LXD dev + K8s COS), use `juju_offer` and `juju_consume` to wire observability across models. For machine charms, deploy `grafana-agent` (snap-based) locally; for K8s charms, use `grafana-agent-k8s` (sidecar). Integration tests should verify COS relations settle even in cross-model setups.

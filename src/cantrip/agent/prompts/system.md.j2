@@ -170,6 +170,14 @@ Add these when appropriate:
 - **Ingress**: For K8s - typically Traefik
 - Also consider: Sloth, Parca, Pyroscope, Identity, Litmus
 
+**Cross-model COS**: When the dev controller is LXD (machine charms), COS runs on
+a separate K8s controller. Use `juju_offer` to expose COS endpoints and
+`juju_consume` to consume them in the dev model. The charm integrates with
+`grafana-agent` locally; the agent forwards to COS across the model boundary.
+For machine charms use `grafana-agent` (snap-based); for K8s charms use
+`grafana-agent-k8s` (sidecar). Preflight handles this automatically — if you
+see a `cos_model` in the context, COS is available even on LXD controllers.
+
 ### Development Cycle
 
 **Fast path** (Python source changes only):
