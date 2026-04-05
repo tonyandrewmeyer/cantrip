@@ -4,7 +4,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **Juju snap confinement (Phase 23.1)** — `JujuDeployTool` and `JujuRefreshTool` now copy `.charm` files from outside `$HOME` to `~/snap/juju/common/` before deploying, working around Juju snap strict confinement that prevented deploys from `/tmp` and other restricted paths; temp copies are cleaned up regardless of success or failure
+
 ### Added
+- **E2E integration tests (Phase 23.2)** — tests exercise real tools against the live Juju environment: `juju_status` against real controllers, file CRUD operations, preflight warm-up and multi-controller discovery, snap confinement copy behaviour, and session state persistence round-trips; tests skip gracefully when `juju` is unavailable
 - **Web UI integration graph (Phase 15.5)** — new `G` key overlay showing all deployed apps as status-coloured cards with unit breakdowns and a relations section; `R` refreshes, `Esc` closes; reuses the existing `/api/juju-status` endpoint
 - **UI feature parity (Phase 15.6)** — `UI.md` replaces `TUI.md` with shared architecture diagram, event contract table, and implementation notes for both interfaces; `test_ui_events.py` verifies the event contract (all event types serialise correctly, status values match CSS classes, wildcard bus covers all types)
 - **Shared UI event bus (Phase 15.1)** — `src/cantrip/ui/events.py` provides an async publish/subscribe `EventBus` with typed events, sync/async subscribers, wildcard subscriptions, and thread-safe cross-thread publishing; the TUI, web server, and CLI all subscribe to the bus for task and watcher updates instead of using direct callbacks; every event carries a JSON-serialisable payload via factory functions; `start_executor` no longer takes an `on_task_changed` callback

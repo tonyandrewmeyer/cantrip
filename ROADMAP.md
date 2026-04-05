@@ -2059,6 +2059,37 @@ environments, with the agent handling the cross-model wiring automatically.
 
 ---
 
+## Phase 23: End-to-End Testing and Bug Fixes
+
+**Goal:** Exercise Cantrip against a real Juju environment and fix what breaks.
+
+### 23.1 — Snap Confinement Fix ✓
+
+The Juju snap uses strict confinement and cannot read files outside `$HOME`.
+When Cantrip builds a charm in `/tmp` (common in CI and testing), `juju deploy`
+fails with "no charm was found".
+
+- [x] **Deploy tool workaround** — `JujuDeployTool.execute()` detects when a `.charm`
+  file is outside `$HOME` and copies it to `~/snap/juju/common/` before deploying;
+  the temp copy is cleaned up in a `finally` block
+- [x] **Refresh tool workaround** — same fix applied to `JujuRefreshTool.execute()`
+- [x] **Unit tests** — 4 tests covering copy-on-deploy, no-copy-in-home, cleanup-on-success,
+  and cleanup-on-error
+
+### 23.2 — E2E Integration Tests ✓
+
+Integration tests that exercise real tools against the live Juju environment.
+
+- [x] **Juju tools** — `juju_status` against real controller (default model, named model,
+  non-existent model)
+- [x] **File tools** — write/read round-trip, list directory, edit file (real filesystem)
+- [x] **Preflight** — warm-up detects juju, prepare finds controller and discovers
+  multi-controller topology
+- [x] **Snap confinement** — deploy with `.charm` from `/tmp` copies to snap-accessible path
+- [x] **State persistence** — save/load session and task round-trips via SQLite
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
