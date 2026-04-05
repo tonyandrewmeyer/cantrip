@@ -15,7 +15,6 @@ from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
-from cantrip.agent.watcher import WatcherEvent
 from cantrip.llm import LLMProvider, create_provider, resolve_light_model
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.tui.screens.graph import GraphScreen
@@ -30,6 +29,7 @@ from cantrip.tui.widgets.modelbar import ModelInfoBar
 from cantrip.tui.widgets.status import MultiModelStatusWidget
 from cantrip.tui.widgets.statusbar import StatusBar
 from cantrip.tui.widgets.tasks import TaskChecklistWidget
+from cantrip.ui import events as ui_events
 
 # Preflight check names shown during the eager prepare (full bootstrap).
 _PREPARE_CHECKS = ["concierge", "prepare", "juju", "controller", "cos"]
@@ -372,31 +372,47 @@ class CantripApp(App):
         """Start the background executor and wire task-change notifications."""
         if not self._agent:
             return
-        checklist = self.query_one("#task-checklist", TaskChecklistWidget)
 
-        def _on_task_changed(task: AgentTask) -> None:
-            checklist.notify_changed(self._agent.work_queue.all_tasks())
-            # Detect when a confirm task becomes blocked.
-            if (
-                task.category == TaskCategory.CONFIRM
-                and task.status == TaskStatus.BLOCKED
-                and self._pending_confirm_id is None
-            ):
-                self._pending_confirm_id = task.id
-                if task.id == "confirm-improvements":
-                    self.call_from_thread(self._present_improvement_confirmation, task)
-                else:
-                    self.call_from_thread(self._present_design_questions, task)
-
-        self._agent.start_executor(
-            on_task_changed=_on_task_changed,
-            max_concurrency=self._max_concurrency,
+        # Subscribe to task updates via the shared event bus.
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.TASK_UPDATED, self._on_bus_task_updated
         )
 
+        self._agent.start_executor(max_concurrency=self._max_concurrency)
+
         # Prime the display with any tasks restored from a previous session.
+        checklist = self.query_one("#task-checklist", TaskChecklistWidget)
         existing = self._agent.work_queue.all_tasks()
         if existing:
             checklist.notify_changed(existing)
+
+    def _on_bus_task_updated(self, event: ui_events.Event) -> None:
+        """Handle a task-updated event from the bus."""
+        if not self._agent:
+            return
+
+        def _update() -> None:
+            checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+            checklist.notify_changed(self._agent.work_queue.all_tasks())
+
+            # Detect when a confirm task becomes blocked.
+            payload = event.payload
+            if (
+                payload.get("category") == TaskCategory.CONFIRM.value
+                and payload.get("status") == TaskStatus.BLOCKED.value
+                and self._pending_confirm_id is None
+            ):
+                task_id = payload["id"]
+                self._pending_confirm_id = task_id
+                task = self._agent.work_queue.get_task(task_id)
+                if task is None:
+                    return
+                if task_id == "confirm-improvements":
+                    self._present_improvement_confirmation(task)
+                else:
+                    self._present_design_questions(task)
+
+        self.call_from_thread(_update)
 
     def on_task_checklist_widget_tasks_available(self) -> None:
         """Show the status panel when tasks first appear."""
@@ -562,8 +578,8 @@ class CantripApp(App):
         """Start the event watcher if possible.
 
         Events are automatically routed to the task queue by the agent's
-        ``start_watcher`` method.  The TUI only needs the ``on_event``
-        callback to display a chat notification.
+        ``start_watcher`` method.  The TUI subscribes to ``WATCHER_EVENT``
+        on the bus to display chat notifications.
         """
         if not self._agent:
             return
@@ -574,7 +590,13 @@ class CantripApp(App):
                 "Deploy a charm first, then press F5 to start watching."
             )
             return
-        started = self._agent.start_watcher(on_event=self._on_watcher_event)
+
+        # Subscribe to watcher events via the bus.
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.WATCHER_EVENT, self._on_bus_watcher_event
+        )
+
+        started = self._agent.start_watcher()
         if started:
             self._update_status_bar_watcher()
             chat.add_system_message("Watcher started — monitoring development model for events.")
@@ -588,17 +610,21 @@ class CantripApp(App):
         await self._agent.stop_watcher()
         self._update_status_bar_watcher()
 
-    def _on_watcher_event(self, event: WatcherEvent) -> None:
-        """Callback from the watcher when a new event is enqueued."""
-        chat = self.query_one("#chat", ChatWidget)
-        chat.add_system_message(f"[Watcher] {event.summary}")
+    def _on_bus_watcher_event(self, event: ui_events.Event) -> None:
+        """Handle a watcher event from the bus."""
 
-        # Feed the latest status snapshot into the multi-model widget.
-        if self._agent and self._agent._watcher:
-            latest = self._agent._watcher.latest_status
-            if latest is not None:
-                status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
-                status_widget.dev_status = latest
+        def _update() -> None:
+            chat = self.query_one("#chat", ChatWidget)
+            chat.add_system_message(f"[Watcher] {event.payload.get('summary', '')}")
+
+            # Feed the latest status snapshot into the multi-model widget.
+            if self._agent and self._agent._watcher:
+                latest = self._agent._watcher.latest_status
+                if latest is not None:
+                    status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
+                    status_widget.dev_status = latest
+
+        self.call_from_thread(_update)
 
     def _update_status_bar_watcher(self) -> None:
         """Update the status bar watcher indicator."""

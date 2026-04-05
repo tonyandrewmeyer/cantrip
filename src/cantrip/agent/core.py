@@ -805,8 +805,18 @@ class CantripAgent:
             return False
 
         def _auto_route(event: WatcherEvent) -> None:
-            """Route the event to the task queue, then fire the external callback."""
+            """Route the event to the task queue, then publish to the bus."""
             self.route_watcher_event(event)
+            self._event_bus.publish(
+                ui_events.watcher_event(
+                    source=event.source,
+                    category=event.category,
+                    summary=event.summary,
+                    detail=getattr(event, "detail", ""),
+                    app=getattr(event, "app", ""),
+                    unit=getattr(event, "unit", ""),
+                )
+            )
             if on_event is not None:
                 on_event(event)
 
