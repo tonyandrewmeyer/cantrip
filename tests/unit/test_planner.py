@@ -1194,8 +1194,23 @@ class TestPlanImprovementFixes:
         assert "Jubilant" in test_task.description
         assert "run_charm_tests" in test_task.description
 
+    def test_operability_assessment_after_deploy(self) -> None:
+        gaps = {"cos_tracing": True}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        assess = [t for t in tasks if t.id == "assess-operational-readiness"]
+        assert len(assess) == 1
+        assert assess[0].category == TaskCategory.RESEARCH
+        assert "deploy-verify-improvements" in assess[0].dependencies
+
+    def test_no_operability_without_fixes(self) -> None:
+        gaps: dict[str, bool] = {}
+        tasks = plan_improvement_fixes(self._ctx(), gaps)
+
+        assert not any(t.id == "assess-operational-readiness" for t in tasks)
+
     def test_full_pipeline_task_count(self) -> None:
-        """With all gaps, the pipeline has: 4 fixes + validate + deploy + review = 7."""
+        """With all gaps: 4 fixes + validate + deploy + review + assess = 8."""
         gaps = {
             "cos_tracing": True,
             "unit_tests": True,
@@ -1204,7 +1219,7 @@ class TestPlanImprovementFixes:
         }
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        assert len(tasks) == 7
+        assert len(tasks) == 8
         ids = [t.id for t in tasks]
         assert "fill-observability" in ids
         assert "fill-tests" in ids
@@ -1212,6 +1227,7 @@ class TestPlanImprovementFixes:
         assert "listing-readiness" in ids
         assert "validate-improvements" in ids
         assert "deploy-verify-improvements" in ids
+        assert "assess-operational-readiness" in ids
         assert "diff-review" in ids
 
 

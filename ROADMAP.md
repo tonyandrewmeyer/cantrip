@@ -1725,9 +1725,10 @@ Integrate operational readiness assessment into the autonomous build pipeline.
   `operational-readiness` skill
 - [x] **Validation** — a `reassess-operational-readiness` RESEARCH task depends on all
   fix tasks and re-runs the tool to verify the score improved
-- [ ] **Improvement mode integration** — when Cantrip is used in "improve" mode
-  (Phase 10), the operability assessment runs after the existing audit and code
-  modernisation, extending the improvement pipeline with production-readiness checks
+- [x] **Improvement mode integration** — `plan_improvement_fixes()` now appends an
+  `assess-operational-readiness` RESEARCH task after the deploy-verify step, running
+  in parallel with the diff review; the improvement pipeline evaluates production
+  readiness after all code-quality fixes are deployed
 
 ### 19.4 Operational Readiness Report
 

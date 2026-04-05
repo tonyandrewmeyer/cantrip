@@ -539,6 +539,24 @@ def plan_improvement_fixes(
             )
         )
 
+        # Operability assessment — runs in parallel with diff review.
+        tasks.append(
+            AgentTask(
+                id="assess-operational-readiness",
+                title=f"{OPERABILITY_PREFIX} Assess operational readiness",
+                category=TaskCategory.RESEARCH,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Evaluate the improved charm at {charm_path} against "
+                    "Canonical's Operational Readiness Metrics.\n\n"
+                    "1. Run `operational_readiness` on the charm directory.\n"
+                    "2. Review OPERATIONAL_READINESS.md.\n"
+                    "3. Summarise per-pillar scores and must-fix items."
+                ),
+                dependencies=["deploy-verify-improvements"],
+            )
+        )
+
     return tasks
 
 
