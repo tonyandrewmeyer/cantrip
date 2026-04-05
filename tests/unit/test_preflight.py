@@ -460,16 +460,22 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight.asyncio.to_thread",
                 new_callable=AsyncMock,
-                side_effect=[cos_status, None],
+                side_effect=[[], cos_status, None],
             ) as mock_to_thread,
             patch("cantrip.agent.preflight._model_is_k8s", return_value=True),
+            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
             patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch(
+                "cantrip.agent.preflight._is_already_provisioned",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
-        # to_thread is called for juju.status (returns cos_status) and juju.deploy.
-        assert mock_to_thread.await_count == 2
+        # to_thread called for list_controllers, juju.status, juju.deploy.
+        assert mock_to_thread.await_count == 3
         assert result.cos_ready is True
 
     @pytest.mark.asyncio
@@ -495,15 +501,16 @@ class TestBootstrap:
                 return default_juju
             return cos_juju
 
-        # to_thread is used for both juju.status and juju.deploy;
-        # let status succeed (returning empty-apps status) but make deploy fail.
+        # to_thread calls: list_controllers, juju.status, juju.deploy (fails).
         call_count = 0
 
         async def selective_to_thread(func, *args, **kwargs):  # noqa: ARG001
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return cos_status
+                return []  # list_controllers
+            if call_count == 2:
+                return cos_status  # juju.status
             raise cli_error("deploy failed")
 
         with (
@@ -519,7 +526,13 @@ class TestBootstrap:
                 side_effect=selective_to_thread,
             ),
             patch("cantrip.agent.preflight._model_is_k8s", return_value=True),
+            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
             patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch(
+                "cantrip.agent.preflight._is_already_provisioned",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
@@ -529,7 +542,7 @@ class TestBootstrap:
 
     @pytest.mark.asyncio
     async def test_bootstrap_cos_skipped_on_non_k8s_controller(self):
-        """bootstrap skips COS when the current controller is not Kubernetes."""
+        """bootstrap skips COS when no Kubernetes controller is available."""
         state = AgentState()
         runner = PreflightRunner(state)
 
@@ -547,6 +560,18 @@ class TestBootstrap:
                 return default_juju
             return cos_juju
 
+        # to_thread calls: list_controllers, juju.status (raises), _find_k8s_controller.
+        call_count = 0
+
+        async def selective_to_thread(func, *args, **kwargs):  # noqa: ARG001
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return []  # list_controllers
+            if call_count == 2:
+                raise cli_error("model not found")  # juju.status
+            return None  # _find_k8s_controller
+
         with (
             patch(
                 "cantrip.agent.preflight._run_concierge",
@@ -555,8 +580,17 @@ class TestBootstrap:
             ),
             patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
             patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
+            patch(
+                "cantrip.agent.preflight.asyncio.to_thread",
+                side_effect=selective_to_thread,
+            ),
             patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=False),
             patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch(
+                "cantrip.agent.preflight._is_already_provisioned",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
@@ -592,8 +626,18 @@ class TestBootstrap:
             ),
             patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch(
+                "cantrip.agent.preflight.asyncio.to_thread",
+                new_callable=AsyncMock,
+                side_effect=[[], cos_status],
+            ),
             patch("cantrip.agent.preflight._model_is_k8s", return_value=False),
             patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch(
+                "cantrip.agent.preflight._is_already_provisioned",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")

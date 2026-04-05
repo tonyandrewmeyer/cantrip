@@ -77,13 +77,20 @@ class PreflightResult:
     controller_ready: bool = False
     cos_model: str | None = None
     cos_ready: bool = False
+    cos_controller: str | None = None  # Controller hosting COS (if cross-controller)
     preset: str | None = None
+    controllers: list[dict[str, Any]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
     @property
     def fully_ready(self) -> bool:
         """True when Juju, controller, and COS are all ready."""
         return self.juju_available and self.controller_ready and self.cos_ready
+
+    @property
+    def is_cross_controller(self) -> bool:
+        """True when COS is on a different controller than the dev model."""
+        return self.cos_controller is not None
 
 
 PreflightCallback = collections.abc.Callable[[PreflightEvent], Any]
@@ -340,10 +347,13 @@ class PreflightRunner:
 
         cos-lite contains only Kubernetes charms, so it can only be deployed
         on a K8s controller.  When the active controller is IAAS (e.g. LXD),
-        a separate K8s controller and cross-model relations are needed — see
-        ROADMAP.md Phase 22 for the full plan.  For now we detect the
-        mismatch and skip gracefully.
+        a separate K8s controller is detected automatically (Phase 22) and
+        COS is deployed there with cross-model offers for observability.
         """
+        # Populate controller list for multi-controller reporting.
+        if not self.result.controllers:
+            self.result.controllers = await asyncio.to_thread(list_controllers)
+
         try:
             juju = jubilant.Juju(model=cos_model_name)
             status = await asyncio.to_thread(juju.status)
@@ -359,31 +369,55 @@ class PreflightRunner:
                 self._emit(
                     "cos",
                     CheckStatus.SKIPPED,
-                    "COS model is on a non-Kubernetes cloud (see ROADMAP Phase 22)",
+                    "COS model is on a non-Kubernetes cloud",
                 )
                 return
             self._emit("cos", CheckStatus.RUNNING, "Deploying cos-lite")
         except jubilant.CLIError:
-            # Model does not exist — check if the current controller supports
-            # K8s before trying to create it.
-            if not _current_controller_is_k8s():
+            # Model does not exist — need to create it.
+            if _current_controller_is_k8s():
+                # Current controller is K8s — create model here.
+                self._emit("cos", CheckStatus.RUNNING, f"Creating model {cos_model_name}")
+                try:
+                    juju_default = jubilant.Juju()
+                    await asyncio.to_thread(juju_default.add_model, cos_model_name)
+                    juju = jubilant.Juju(model=cos_model_name)
+                except jubilant.CLIError as exc:
+                    self._emit(
+                        "cos", CheckStatus.FAILED, "Failed to create COS model",
+                        detail=str(exc),
+                    )
+                    self.result.errors.append(f"COS model creation failed: {exc}")
+                    return
+            else:
+                # Current controller is IAAS — look for a K8s controller.
+                k8s_ctrl = await asyncio.to_thread(_find_k8s_controller)
+                if not k8s_ctrl:
+                    self._emit(
+                        "cos",
+                        CheckStatus.SKIPPED,
+                        "No Kubernetes controller found — COS requires K8s",
+                    )
+                    return
                 self._emit(
                     "cos",
-                    CheckStatus.SKIPPED,
-                    "Current controller is not Kubernetes — COS skipped (see ROADMAP Phase 22)",
+                    CheckStatus.RUNNING,
+                    f"Creating COS model on K8s controller '{k8s_ctrl}'",
                 )
-                return
-            self._emit("cos", CheckStatus.RUNNING, f"Creating model {cos_model_name}")
-            try:
-                juju_default = jubilant.Juju()
-                await asyncio.to_thread(juju_default.add_model, cos_model_name)
+                self.result.cos_controller = k8s_ctrl
+                created = await asyncio.to_thread(
+                    _create_model_on_controller, cos_model_name, k8s_ctrl
+                )
+                if not created:
+                    self._emit(
+                        "cos", CheckStatus.FAILED,
+                        f"Failed to create COS model on controller '{k8s_ctrl}'",
+                    )
+                    self.result.errors.append(
+                        f"COS model creation on {k8s_ctrl} failed"
+                    )
+                    return
                 juju = jubilant.Juju(model=cos_model_name)
-            except jubilant.CLIError as exc:
-                self._emit(
-                    "cos", CheckStatus.FAILED, "Failed to create COS model", detail=str(exc)
-                )
-                self.result.errors.append(f"COS model creation failed: {exc}")
-                return
 
         # Deploy cos-lite into the model.
         try:
@@ -395,6 +429,26 @@ class PreflightRunner:
         except jubilant.CLIError as exc:
             self._emit("cos", CheckStatus.FAILED, "COS deployment failed", detail=str(exc))
             self.result.errors.append(f"COS deployment failed: {exc}")
+            return
+
+        # If COS is on a different controller, set up cross-model offers.
+        if not _current_controller_is_k8s():
+            self._emit(
+                "cos", CheckStatus.RUNNING, "Setting up cross-model COS offers"
+            )
+            offers = await asyncio.to_thread(
+                _setup_cos_cross_model_offers, cos_model_name
+            )
+            if offers:
+                self._emit(
+                    "cos", CheckStatus.PASSED,
+                    f"COS offers created: {', '.join(offers)}",
+                )
+            else:
+                self._emit(
+                    "cos", CheckStatus.PASSED,
+                    "COS deployed (offers will be configured during charm integration)",
+                )
 
 
 def _model_is_k8s(model_name: str) -> bool:
@@ -441,3 +495,151 @@ def _current_controller_is_k8s() -> bool:
         return False
     except (subprocess.TimeoutExpired, OSError, ValueError):
         return False
+
+
+_K8S_CLOUDS = frozenset({"k8s", "microk8s", "kubernetes"})
+
+
+def _find_k8s_controller() -> str | None:
+    """Find a K8s controller among all registered Juju controllers.
+
+    Returns the controller name, or ``None`` if no K8s controller exists.
+    Used when the active controller is IAAS (LXD) and COS needs to be
+    deployed on a separate K8s controller (e.g. ``concierge-k8s``).
+    """
+    juju_bin = shutil.which("juju")
+    if not juju_bin:
+        return None
+    try:
+        result = subprocess.run(
+            [juju_bin, "controllers", "--format=json"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        controllers = data.get("controllers", {})
+        for name, info in controllers.items():
+            cloud = info.get("cloud", "")
+            if cloud in _K8S_CLOUDS:
+                return name
+        return None
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+
+
+def list_controllers() -> list[dict[str, Any]]:
+    """Enumerate all registered Juju controllers with their cloud types.
+
+    Returns a list of dicts with ``name``, ``cloud``, ``is_k8s``, and
+    ``models`` count.  Used by the preflight multi-controller report.
+    """
+    juju_bin = shutil.which("juju")
+    if not juju_bin:
+        return []
+    try:
+        result = subprocess.run(
+            [juju_bin, "controllers", "--format=json"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            return []
+        data = json.loads(result.stdout)
+        controllers = data.get("controllers", {})
+        out: list[dict[str, Any]] = []
+        for name, info in sorted(controllers.items()):
+            cloud = info.get("cloud", "")
+            out.append({
+                "name": name,
+                "cloud": cloud,
+                "is_k8s": cloud in _K8S_CLOUDS,
+                "models": info.get("model-count", 0),
+            })
+        return out
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return []
+
+
+def _create_model_on_controller(
+    model_name: str,
+    controller: str,
+) -> bool:
+    """Create a Juju model on a specific controller.
+
+    Returns ``True`` on success, ``False`` on failure.
+    """
+    juju_bin = shutil.which("juju")
+    if not juju_bin:
+        return False
+    try:
+        result = subprocess.run(
+            [juju_bin, "add-model", model_name, "-c", controller],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _setup_cos_cross_model_offers(cos_model: str) -> list[str]:
+    """Create cross-model offers for COS endpoints.
+
+    Offers grafana, prometheus, loki, and tempo endpoints so that
+    charms on other controllers can consume them.  Returns a list of
+    offer URLs (e.g. ``cos.grafana:grafana-dashboard``).
+    """
+    juju_bin = shutil.which("juju")
+    if not juju_bin:
+        return []
+
+    # COS-lite app names and their offer-worthy endpoints.
+    cos_endpoints = [
+        ("grafana", "grafana-dashboard"),
+        ("prometheus", "receive-remote-write"),
+        ("loki", "logging"),
+        ("tempo", "tracing"),
+    ]
+
+    offers: list[str] = []
+    for app_hint, endpoint in cos_endpoints:
+        # Find the actual app name (may be grafana-k8s, prometheus-k8s, etc.).
+        try:
+            result = subprocess.run(
+                [juju_bin, "status", "--model", cos_model, "--format=json"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode != 0:
+                continue
+            status = json.loads(result.stdout)
+            app_name = None
+            for name in status.get("applications", {}):
+                if app_hint in name:
+                    app_name = name
+                    break
+            if not app_name:
+                continue
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            continue
+
+        # Create the offer.
+        try:
+            result = subprocess.run(
+                [juju_bin, "offer", "--model", cos_model, f"{app_name}:{endpoint}"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0:
+                offers.append(f"{cos_model}.{app_name}:{endpoint}")
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+    return offers
