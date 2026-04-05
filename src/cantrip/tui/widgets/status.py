@@ -124,7 +124,11 @@ class AppBox(Static):
 
 
 class RelationLine(Static):
-    """Widget showing a relation between apps."""
+    """Widget showing a relation between apps.
+
+    Click or press Enter to open a detail panel showing the full
+    relation databag contents.
+    """
 
     DEFAULT_CSS = """
     RelationLine {
@@ -132,16 +136,35 @@ class RelationLine(Static):
         padding: 0 2;
         color: $text-muted;
     }
+
+    RelationLine:hover {
+        background: $surface-darken-1;
+    }
     """
 
-    def __init__(self, relation_name: str) -> None:
-        """Initialise with relation name."""
+    class Selected(Message):
+        """Posted when the user selects a relation line."""
+
+        def __init__(self, endpoint: str, related_app: str) -> None:
+            super().__init__()
+            self.endpoint = endpoint
+            self.related_app = related_app
+
+    def __init__(self, relation_name: str, endpoint: str = "", related_app: str = "") -> None:
+        """Initialise with relation name and metadata for detail lookup."""
         super().__init__()
         self.relation_name = relation_name
+        self.endpoint = endpoint
+        self.related_app = related_app
 
     def compose(self) -> ComposeResult:
         """Compose the relation line."""
         yield Static(f"│ {self.relation_name}")
+
+    def on_click(self) -> None:
+        """Open the relation detail panel on click."""
+        if self.endpoint:
+            self.post_message(self.Selected(self.endpoint, self.related_app))
 
 
 class JujuStatusWidget(Widget):
@@ -320,7 +343,11 @@ class JujuStatusWidget(Widget):
 
             for rel_name, related_apps in app.relations.items():
                 for related in related_apps:
-                    container.mount(RelationLine(f"{rel_name} → {related.related_app}"))
+                    container.mount(RelationLine(
+                        f"{rel_name} → {related.related_app}",
+                        endpoint=rel_name,
+                        related_app=related.related_app,
+                    ))
 
         if not matched and self.filter_text:
             container.mount(
