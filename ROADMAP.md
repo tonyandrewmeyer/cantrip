@@ -2004,9 +2004,9 @@ by task category. The executor is no harder to test than a pure function.
 
 ---
 
-## Phase 22: COS on Multi-Controller Environments
+## Phase 22: COS on Multi-Controller Environments ✓
 
-**Status:** Planned
+**Status:** Complete
 **Goal:** COS-lite deploys and integrates correctly regardless of whether the
 development controller is LXD or K8s, using cross-model relations when the COS
 model lives on a different controller.
@@ -2017,33 +2017,34 @@ development controller is LXD (as with `concierge -p dev`), there is typically a
 separate K8s controller (`concierge-k8s`) already bootstrapped. Preflight
 currently skips COS deployment when the active controller is not K8s.
 
-### 22.1 — Detect K8s controller for COS
+### 22.1 — Detect K8s controller for COS ✓
 
-When the current controller is IAAS, discover the K8s controller (e.g.
-`concierge-k8s`) and target COS model creation there. This requires either
-Jubilant controller-targeting support or direct `juju add-model -c <controller>`
-subprocess calls.
+`_find_k8s_controller()` enumerates all registered controllers via
+`juju controllers --format json` and returns the first with a K8s cloud.
+`list_controllers()` returns a list of all controllers with name, cloud,
+`is_k8s` flag, and model count for multi-controller reporting.
 
-### 22.2 — Cross-model COS integration
+### 22.2 — Cross-model COS integration ✓
 
-When COS is on a different controller than the charm, set up cross-model
-relations using `juju offer` and `juju consume`. The charm still integrates with
-`grafana-agent` locally, but the agent forwards to COS across the model
-boundary. Investigate whether the integration pattern differs for LXD vs K8s
-charms (e.g. `grafana-agent` snap on machines vs `grafana-agent-k8s` sidecar).
+`_ensure_cos()` now detects IAAS controllers and creates the COS model on a
+discovered K8s controller via `_create_model_on_controller()`. After deploying
+cos-lite, `_setup_cos_cross_model_offers()` creates offers for grafana,
+prometheus, loki, and tempo endpoints. Machine charms use `grafana-agent`
+(snap-based); K8s charms use `grafana-agent-k8s` (sidecar).
 
-### 22.3 — Preflight multi-controller awareness
+### 22.3 — Preflight multi-controller awareness ✓
 
-Extend `PreflightRunner` to understand multi-controller environments: enumerate
-available controllers, pick the right one for COS, and report status for each.
-The TUI/CLI should show which controller hosts COS and whether cross-model
-relations are healthy.
+`PreflightResult` gains `controllers` list (all registered controllers with
+cloud type), `cos_controller` field (which controller hosts COS), and
+`is_cross_controller` property. Controller enumeration runs automatically
+in `_ensure_cos()` before COS deployment decisions.
 
-### 22.4 — System prompt and skill updates
+### 22.4 — System prompt and skill updates ✓
 
-Update the system prompt's COS integration guidance and the relevant skills to
-handle the cross-model case. The agent needs to know when to use `juju offer` /
-`juju consume` and how to configure `grafana-agent` for cross-model forwarding.
+System prompt adds cross-model COS guidance in the Default Integrations
+section. Observability skill gains a full multi-controller deployment
+section with offer/consume commands for both machine and K8s charms.
+Build subagent guidance adds cross-model COS integration note.
 
 **Outcome:** COS observability works out of the box on both `concierge -p k8s`
 (single controller) and `concierge -p dev` (LXD + K8s dual controller)
@@ -2164,4 +2165,4 @@ environments, with the agent handling the cross-model wiring automatically.
 | M19: Operationally Ready | 19 | Cantrip assesses and improves charms against Canonical's Operational Readiness Metrics |
 | M20: Deep Introspection | 20 ✓ | Agent reads relation databags, config sources, secrets, and offers to diagnose issues autonomously |
 | M21: Hardened Orchestrator | 21 ✓ | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
-| M22: Multi-Controller COS | 22 | COS observability works on both single-controller (K8s) and dual-controller (LXD + K8s) environments |
+| M22: Multi-Controller COS | 22 ✓ | COS observability works on both single-controller (K8s) and dual-controller (LXD + K8s) environments |
