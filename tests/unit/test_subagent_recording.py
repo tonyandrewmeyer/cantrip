@@ -52,7 +52,7 @@ class TestSubagentRecording:
             store=store,
         )
         result = await subagent.run()
-        assert result == "Research complete."
+        assert result.text == "Research complete."
 
         msgs = store.load_subagent_messages("test-task")
         # Should have: system, user, final assistant
@@ -82,4 +82,4 @@ class TestSubagentRecording:
             # No store parameter
         )
         result = await subagent.run()
-        assert result == "Done."
+        assert result.text == "Done."

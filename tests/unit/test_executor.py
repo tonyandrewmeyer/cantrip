@@ -15,6 +15,7 @@ from cantrip.agent.executor import (
 )
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
+from cantrip.agent.subagent import ExitState, SubagentResult
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
@@ -1388,7 +1389,7 @@ class TestNoopDetection:
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
             instance = mock_cls.return_value
-            instance.run = AsyncMock(return_value="done")
+            instance.run = AsyncMock(return_value=SubagentResult(ExitState.COMPLETED, "done"))
             await executor._execute_task(task)
 
         assert task.status == TaskStatus.PENDING
@@ -1419,7 +1420,7 @@ class TestNoopDetection:
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
             instance = mock_cls.return_value
-            instance.run = AsyncMock(return_value="done")
+            instance.run = AsyncMock(return_value=SubagentResult(ExitState.COMPLETED, "done"))
             await executor._execute_task(task)
 
         assert task.status == TaskStatus.BLOCKED
@@ -1452,7 +1453,7 @@ class TestNoopDetection:
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
             instance = mock_cls.return_value
-            instance.run = AsyncMock(return_value="completed work")
+            instance.run = AsyncMock(return_value=SubagentResult(ExitState.COMPLETED, "completed work"))
             await executor._execute_task(task)
 
         assert task.status == TaskStatus.DONE
@@ -1473,7 +1474,7 @@ class TestNoopDetection:
 
         with patch("cantrip.agent.executor.Subagent") as mock_cls:
             instance = mock_cls.return_value
-            instance.run = AsyncMock(return_value="research done")
+            instance.run = AsyncMock(return_value=SubagentResult(ExitState.COMPLETED, "research done"))
             await executor._execute_task(task)
 
         assert task.status == TaskStatus.DONE
@@ -1500,3 +1501,108 @@ class TestNoopDetection:
         state = AgentState()
         executor = _make_executor(state=state)
         assert executor._is_noop("", "") is False
+
+
+# ===================================================================
+# TestExitStateHandling
+# ===================================================================
+
+
+class TestExitStateHandling:
+    """Tests for structured subagent exit state handling."""
+
+    @pytest.mark.asyncio
+    async def test_blocked_exit_blocks_task(self) -> None:
+        """Subagent signalling BLOCKED causes the task to be blocked."""
+        state = AgentState(charm_path="/tmp/charm")
+        queue = WorkQueue()
+        task = AgentTask(id="b1", title="Build", category=TaskCategory.BUILD)
+        queue.add_task(task)
+        queue.set_active(task.id)
+
+        on_failed = MagicMock()
+        executor = _make_executor(queue=queue, state=state, on_task_failed=on_failed)
+
+        result = SubagentResult(ExitState.BLOCKED, "Need database credentials")
+        with (
+            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch.object(executor, "_snapshot_head", return_value="abc123"),
+        ):
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(return_value=result)
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.BLOCKED
+        on_failed.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_failed_exit_fails_task(self) -> None:
+        """Subagent signalling FAILED causes the task to fail."""
+        state = AgentState(charm_path="/tmp/charm")
+        queue = WorkQueue()
+        task = AgentTask(id="b1", title="Build", category=TaskCategory.BUILD)
+        queue.add_task(task)
+        queue.set_active(task.id)
+
+        on_failed = MagicMock()
+        executor = _make_executor(queue=queue, state=state, on_task_failed=on_failed)
+
+        result = SubagentResult(ExitState.FAILED, "charmcraft pack error", "Full error details")
+        with (
+            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch.object(executor, "_snapshot_head", return_value="abc123"),
+        ):
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(return_value=result)
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.FAILED
+        assert "Full error details" in (task.result or "")
+        on_failed.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_noop_exit_triggers_noop_handling(self) -> None:
+        """Subagent signalling NOOP triggers the noop counter."""
+        state = AgentState(charm_path="/tmp/charm")
+        queue = WorkQueue()
+        task = AgentTask(id="b1", title="Build", category=TaskCategory.BUILD)
+        queue.add_task(task)
+        queue.set_active(task.id)
+
+        executor = _make_executor(queue=queue, state=state)
+
+        result = SubagentResult(ExitState.NOOP, "Nothing to do")
+        with (
+            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch.object(executor, "_fingerprint", return_value="different"),
+            patch.object(executor, "_snapshot_head", return_value="abc123"),
+        ):
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(return_value=result)
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.PENDING
+        assert task.noop_count == 1
+
+    @pytest.mark.asyncio
+    async def test_completed_exit_marks_done(self) -> None:
+        """Subagent signalling COMPLETED marks the task as done."""
+        state = AgentState(charm_path="/tmp/charm")
+        queue = WorkQueue()
+        task = AgentTask(id="r1", title="Research", category=TaskCategory.RESEARCH)
+        queue.add_task(task)
+        queue.set_active(task.id)
+
+        executor = _make_executor(queue=queue, state=state)
+
+        result = SubagentResult(ExitState.COMPLETED, "Research complete", "Found 3 sources")
+        with (
+            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch.object(executor, "_fingerprint", side_effect=["a", "b"]),
+        ):
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(return_value=result)
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.DONE
+        assert task.result == "Found 3 sources"

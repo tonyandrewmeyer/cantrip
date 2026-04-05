@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import logging
+import re as _re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,6 +23,60 @@ if TYPE_CHECKING:
 
 # Called after each LLM completion with the response, for token tracking.
 UsageCallback = Callable[[llm.Response], None] | None
+
+
+# ---------------------------------------------------------------------------
+# Structured exit contracts
+# ---------------------------------------------------------------------------
+
+
+class ExitState(enum.StrEnum):
+    """Exit state reported by a subagent at the end of its run."""
+
+    COMPLETED = "completed"  # Work done, state changed.
+    BLOCKED = "blocked"  # Needs user input or missing dependency.
+    FAILED = "failed"  # Error encountered, needs retry or escalation.
+    NOOP = "noop"  # Nothing to do — task may already be satisfied.
+
+
+@dataclass(frozen=True)
+class SubagentResult:
+    """Structured outcome of a subagent run."""
+
+    exit_state: ExitState
+    summary: str
+    detail: str = ""
+
+    @property
+    def text(self) -> str:
+        """Full text representation (for backwards compatibility with str results)."""
+        return self.detail or self.summary
+
+
+# Regex to extract an exit state tag from the LLM's final response.
+# Matches patterns like "[EXIT: completed]" or "EXIT_STATE: blocked".
+_EXIT_STATE_RE = _re.compile(
+    r"\[?EXIT(?:_STATE)?:\s*(completed|blocked|failed|noop)\]?",
+    _re.IGNORECASE,
+)
+
+
+def _parse_exit_state(text: str) -> ExitState:
+    """Extract an exit state from a subagent's final response text.
+
+    Falls back to COMPLETED if no explicit signal is found (the subagent
+    finished without error, so we assume it completed).
+    """
+    match = _EXIT_STATE_RE.search(text)
+    if match:
+        return ExitState(match.group(1).lower())
+    # Heuristic fallback: look for keywords indicating non-completion.
+    lower = text.lower()
+    if "blocked" in lower and ("need" in lower or "waiting" in lower or "cannot" in lower):
+        return ExitState.BLOCKED
+    if "nothing to do" in lower or "already" in lower and "no changes" in lower:
+        return ExitState.NOOP
+    return ExitState.COMPLETED
 
 log = logging.getLogger(__name__)
 
@@ -398,7 +454,17 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
         "- **Finish early**: once you have enough information to produce a good "
         "result, summarise and finish. Do not exhaustively explore every lead.\n"
         "- **Be direct**: execute the task, report the outcome. Skip preamble "
-        "and unnecessary commentary."
+        "and unnecessary commentary.\n\n"
+        "### Exit signalling\n\n"
+        "Every response MUST end with an exit state tag on its own line:\n\n"
+        "- `[EXIT: completed]` — work done, state changed\n"
+        "- `[EXIT: blocked]` — cannot proceed; needs user input or a missing "
+        "dependency\n"
+        "- `[EXIT: failed]` — error encountered; explain what went wrong\n"
+        "- `[EXIT: noop]` — nothing to do; the task is already satisfied\n\n"
+        "Never produce a bare text response while work is pending. If you "
+        "cannot make progress, signal `blocked` or `failed` — do not "
+        "silently give up."
     )
 
     # 2. Task block.
@@ -541,8 +607,8 @@ class Subagent:
         self._throttle = throttle
         self._store = store
 
-    async def run(self) -> str:
-        """Execute the task and return a text summary of the outcome."""
+    async def run(self) -> SubagentResult:
+        """Execute the task and return a structured outcome."""
         system_prompt = _build_subagent_prompt(self._context)
         user_instruction = _task_instruction(self._context.task)
 
@@ -651,7 +717,29 @@ class Subagent:
                 response.content,
             )
 
-        return response.content
+        exit_state = _parse_exit_state(response.content)
+
+        # Record exit state in the session store.
+        if self._store:
+            self._store.record_event(
+                "subagent_exit",
+                {
+                    "task_id": self._context.task.id,
+                    "task_title": self._context.task.title,
+                    "exit_state": exit_state.value,
+                    "rounds": rounds,
+                },
+            )
+
+        # Build a one-line summary from the first line of the response.
+        first_line = response.content.split("\n", 1)[0].strip()
+        summary = first_line[:200] if first_line else f"Task {exit_state.value}"
+
+        return SubagentResult(
+            exit_state=exit_state,
+            summary=summary,
+            detail=response.content,
+        )
 
     async def _complete_with_retry(
         self,

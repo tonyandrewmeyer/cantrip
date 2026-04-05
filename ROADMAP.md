@@ -1948,15 +1948,17 @@ Handle SIGINT/SIGTERM cleanly in the autonomous work loop.
 Define explicit exit states for subagents so the executor can reliably
 determine what happened.
 
-- [ ] **Exit state enum** — `SubagentResult` with values: `completed` (work
-  done, state changed), `blocked` (needs user input or missing dependency),
-  `failed` (error, needs retry or escalation), `noop` (nothing to do)
-- [ ] **Mandatory signalling** — subagent prompts include instruction that every
-  run must produce an observable state change or explicitly signal why it could
-  not. Follows orc's "never emit a bare text response while work is pending"
-  rule
-- [ ] **Result recording** — executor records the exit state and a one-line
-  summary in the session store for each subagent run, providing an audit trail
+- [x] **Exit state enum** — `ExitState` StrEnum with values: `completed`, `blocked`,
+  `failed`, `noop`; `SubagentResult` frozen dataclass with `exit_state`, `summary`,
+  and `detail`; `_parse_exit_state()` extracts the state from the LLM's final response
+  using regex (`[EXIT: completed]` format) with heuristic fallbacks
+- [x] **Mandatory signalling** — subagent system prompt now includes an "Exit
+  signalling" section requiring every response to end with an `[EXIT: state]` tag;
+  instructs subagents to never produce bare text while work is pending
+- [x] **Result recording** — the executor records exit state and round count in the
+  session store via `record_event("subagent_exit", ...)`; the executor now handles
+  `blocked` and `failed` exit states directly (blocking or failing the task) and
+  combines `noop` exit state with fingerprint-based noop detection
 
 ### 21.6 Scoped Tool Access per Task Category
 

@@ -10,11 +10,14 @@ from cantrip.agent.subagent import (
     _CATEGORY_GUIDANCE,
     _CATEGORY_TOOLS,
     MAX_SUBAGENT_ROUNDS,
+    ExitState,
     ProviderThrottle,
     Subagent,
     SubagentContext,
+    SubagentResult,
     _build_subagent_prompt,
     _filter_tools,
+    _parse_exit_state,
     _select_provider,
     _task_instruction,
     _tools_for_llm,
@@ -472,7 +475,7 @@ class TestSubagentRun:
 
         result = await subagent.run()
 
-        assert result == "Task complete."
+        assert result.text == "Task complete."
 
     @pytest.mark.asyncio
     async def test_one_tool_call_round(self) -> None:
@@ -495,7 +498,7 @@ class TestSubagentRun:
 
         result = await subagent.run()
 
-        assert result == "Done reading."
+        assert result.text == "Done reading."
         tool.execute.assert_called_once_with(path="f.py")
 
     @pytest.mark.asyncio
@@ -551,7 +554,7 @@ class TestSubagentRun:
         subagent = Subagent(ctx, tools=[], provider=primary, light_provider=light)
         result = await subagent.run()
 
-        assert result == "light"
+        assert result.text == "light"
 
 
 # ===================================================================
@@ -588,7 +591,7 @@ class TestSubagentRetry:
         finally:
             subagent_mod.asyncio.sleep = original_sleep  # type: ignore[assignment]
 
-        assert result == "recovered"
+        assert result.text == "recovered"
         assert call_count == 2
 
     @pytest.mark.asyncio
@@ -639,7 +642,7 @@ class TestSubagentToolExecution:
 
         result = await subagent.run()
 
-        assert result == "Handled."
+        assert result.text == "Handled."
 
     @pytest.mark.asyncio
     async def test_type_error_returns_error_result(self) -> None:
@@ -667,7 +670,7 @@ class TestSubagentToolExecution:
 
         result = await subagent.run()
 
-        assert result == "Error handled."
+        assert result.text == "Error handled."
 
 
 # ===================================================================
@@ -888,7 +891,7 @@ class TestProviderThrottle:
         finally:
             subagent_mod.asyncio.sleep = original_sleep  # type: ignore[assignment]
 
-        assert result == "recovered"
+        assert result.text == "recovered"
         # The throttle should have recorded a cooldown for the provider.
         assert provider.name in throttle._cooldowns
 
@@ -1087,3 +1090,85 @@ class TestAdvancedTestingToolAllowlists:
 
     def test_upgrade_test_in_test_tools(self) -> None:
         assert "upgrade_test" in _CATEGORY_TOOLS[TaskCategory.TEST]
+
+
+# ===================================================================
+# TestParseExitState
+# ===================================================================
+
+
+class TestParseExitState:
+    """Tests for _parse_exit_state — extracting exit states from LLM text."""
+
+    def test_explicit_completed(self) -> None:
+        assert _parse_exit_state("Done.\n\n[EXIT: completed]") == ExitState.COMPLETED
+
+    def test_explicit_blocked(self) -> None:
+        assert _parse_exit_state("Need creds.\n[EXIT: blocked]") == ExitState.BLOCKED
+
+    def test_explicit_failed(self) -> None:
+        assert _parse_exit_state("[EXIT: failed]") == ExitState.FAILED
+
+    def test_explicit_noop(self) -> None:
+        assert _parse_exit_state("Already done.\n[EXIT: noop]") == ExitState.NOOP
+
+    def test_case_insensitive(self) -> None:
+        assert _parse_exit_state("[EXIT: COMPLETED]") == ExitState.COMPLETED
+
+    def test_without_brackets(self) -> None:
+        assert _parse_exit_state("EXIT: blocked") == ExitState.BLOCKED
+
+    def test_exit_state_variant(self) -> None:
+        assert _parse_exit_state("[EXIT_STATE: failed]") == ExitState.FAILED
+
+    def test_fallback_to_completed(self) -> None:
+        assert _parse_exit_state("All done, charm deployed.") == ExitState.COMPLETED
+
+    def test_heuristic_blocked(self) -> None:
+        text = "I'm blocked — I need the database password from the user."
+        assert _parse_exit_state(text) == ExitState.BLOCKED
+
+    def test_heuristic_noop(self) -> None:
+        text = "Nothing to do — the charm already has all COS relations."
+        assert _parse_exit_state(text) == ExitState.NOOP
+
+
+# ===================================================================
+# TestSubagentResult
+# ===================================================================
+
+
+class TestSubagentResult:
+    """Tests for the SubagentResult dataclass."""
+
+    def test_text_returns_detail_when_present(self) -> None:
+        r = SubagentResult(ExitState.COMPLETED, "summary", "full detail")
+        assert r.text == "full detail"
+
+    def test_text_falls_back_to_summary(self) -> None:
+        r = SubagentResult(ExitState.COMPLETED, "summary")
+        assert r.text == "summary"
+
+    def test_frozen(self) -> None:
+        r = SubagentResult(ExitState.COMPLETED, "done")
+        with pytest.raises(AttributeError):
+            r.exit_state = ExitState.FAILED  # type: ignore[misc]
+
+
+# ===================================================================
+# TestExitSignallingInPrompt
+# ===================================================================
+
+
+class TestExitSignallingInPrompt:
+    """Tests that the subagent prompt includes exit signalling instructions."""
+
+    def test_prompt_includes_exit_instructions(self) -> None:
+        ctx = SubagentContext(
+            task=AgentTask(title="Build charm", category=TaskCategory.BUILD),
+        )
+        prompt = _build_subagent_prompt(ctx)
+        assert "[EXIT: completed]" in prompt
+        assert "[EXIT: blocked]" in prompt
+        assert "[EXIT: failed]" in prompt
+        assert "[EXIT: noop]" in prompt

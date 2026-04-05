@@ -12,7 +12,12 @@ from cantrip.agent.autodeploy import followup_tasks
 from cantrip.agent.queue import AgentTask, TaskCategory, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
-from cantrip.agent.subagent import ProviderThrottle, Subagent, SubagentContext
+from cantrip.agent.subagent import (
+    ExitState,
+    ProviderThrottle,
+    Subagent,
+    SubagentContext,
+)
 from cantrip.agent.tools.base import Tool
 from cantrip.llm import base as llm
 
@@ -344,11 +349,36 @@ class BackgroundExecutor:
         try:
             result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)
             elapsed = time.monotonic() - t0
-            log.info("Task '%s' completed in %.1fs", task.title, elapsed)
+            log.info(
+                "Task '%s' %s in %.1fs",
+                task.title,
+                result.exit_state.value,
+                elapsed,
+            )
 
-            # Noop detection: check if the subagent changed anything.
+            # Handle subagent-signalled blocked/noop/failed states.
+            if result.exit_state == ExitState.BLOCKED:
+                self._queue.set_blocked(task.id, result.summary)
+                self._record_status_change(task, "blocked", error=result.summary)
+                if self._on_task_failed:
+                    self._on_task_failed(task)
+                return
+
+            if result.exit_state == ExitState.FAILED:
+                self._queue.set_failed(task.id, result.text)
+                self._record_status_change(task, "failed", error=result.summary)
+                if self._on_task_failed:
+                    self._on_task_failed(task)
+                return
+
+            # Noop detection: check both the exit state signal and
+            # the filesystem fingerprint for observable changes.
             fp_after = self._fingerprint()
-            if self._is_noop(fp_before, fp_after):
+            is_noop = (
+                result.exit_state == ExitState.NOOP
+                or self._is_noop(fp_before, fp_after)
+            )
+            if is_noop:
                 task.noop_count += 1
                 log.warning(
                     "Task '%s' completed without observable changes (noop %d/%d)",
@@ -374,7 +404,7 @@ class BackgroundExecutor:
                 self._record_status_change(task, "pending", error="noop — retrying")
                 return
 
-            self._queue.set_done(task.id, result)
+            self._queue.set_done(task.id, result.text)
             self._record_status_change(task, "done")
             if task.category in (TaskCategory.BUILD, TaskCategory.DEBUG):
                 self._check_uncommitted(task)
