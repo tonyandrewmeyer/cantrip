@@ -49,10 +49,22 @@ class AppSnapshot:
 
 
 @dataclass(frozen=True)
+class OfferSnapshot:
+    """Lightweight snapshot of a cross-model offer."""
+
+    name: str
+    application: str
+    endpoints: frozenset[str]
+    active_connected_count: int
+    total_connected_count: int
+
+
+@dataclass(frozen=True)
 class StatusSnapshot:
     """Lightweight snapshot of the full model status."""
 
     apps: tuple[AppSnapshot, ...]
+    offers: tuple[OfferSnapshot, ...] = ()
 
 
 @dataclass
@@ -120,7 +132,27 @@ def capture_snapshot(status: jubilant.Status) -> StatusSnapshot:
                 relations=frozenset(relation_names),
             )
         )
-    return StatusSnapshot(apps=tuple(apps))
+    # Extract cross-model offers if present.
+    offers: list[OfferSnapshot] = []
+    raw_offers = getattr(status, "offers", None) or {}
+    for offer_name, offer in sorted(raw_offers.items()):
+        endpoints: set[str] = set()
+        for ep in getattr(offer, "endpoints", {}).values():
+            iface = getattr(ep, "interface", "")
+            endpoints.add(f"{ep.name}:{iface}" if iface else ep.name)
+        active = getattr(offer, "active_connected_count", 0)
+        total = getattr(offer, "total_connected_count", 0)
+        offers.append(
+            OfferSnapshot(
+                name=offer_name,
+                application=getattr(offer, "application_name", ""),
+                endpoints=frozenset(endpoints),
+                active_connected_count=active,
+                total_connected_count=total,
+            )
+        )
+
+    return StatusSnapshot(apps=tuple(apps), offers=tuple(offers))
 
 
 def diff_snapshots(
@@ -266,6 +298,60 @@ def diff_snapshots(
                     )
                 )
 
+    # -- Offer diffing -------------------------------------------------------
+
+    old_offers = {o.name: o for o in old.offers}
+    new_offers = {o.name: o for o in new.offers}
+
+    for name in sorted(set(new_offers) - set(old_offers)):
+        offer = new_offers[name]
+        events.append(
+            WatcherEvent(
+                source="status",
+                category="new_offer",
+                summary=f"New offer: {name}",
+                detail=(
+                    f"Offer '{name}' from application '{offer.application}' "
+                    f"with {offer.total_connected_count} connection(s)."
+                ),
+                app=offer.application,
+            )
+        )
+
+    for name in sorted(set(old_offers) - set(new_offers)):
+        offer = old_offers[name]
+        events.append(
+            WatcherEvent(
+                source="status",
+                category="removed_offer",
+                summary=f"Offer removed: {name}",
+                detail=f"Offer '{name}' from application '{offer.application}' was removed.",
+                app=offer.application,
+            )
+        )
+
+    for name in sorted(set(old_offers) & set(new_offers)):
+        old_offer = old_offers[name]
+        new_offer = new_offers[name]
+        if old_offer.total_connected_count != new_offer.total_connected_count:
+            events.append(
+                WatcherEvent(
+                    source="status",
+                    category="offer_connection_change",
+                    summary=(
+                        f"Offer '{name}': {old_offer.total_connected_count} "
+                        f"→ {new_offer.total_connected_count} connection(s)"
+                    ),
+                    detail=(
+                        f"Offer '{name}' from '{new_offer.application}' changed from "
+                        f"{old_offer.total_connected_count} to "
+                        f"{new_offer.total_connected_count} total connection(s) "
+                        f"({new_offer.active_connected_count} active)."
+                    ),
+                    app=new_offer.application,
+                )
+            )
+
     return events
 
 
@@ -301,6 +387,15 @@ for _cat in ("new_app", "removed_app", "new_unit", "removed_unit"):
         "A topology change was detected. Please:",
         "1. Check `juju_status` to see the current model state",
         "2. Report the change to the user",
+    ]
+
+# Offer events.
+for _cat in ("new_offer", "removed_offer", "offer_connection_change"):
+    _EVENT_INSTRUCTIONS[_cat] = [
+        "A cross-model offer change was detected. Please:",
+        "1. Run `juju_list_offers` to see the current offer topology",
+        "2. Check `juju_status` for the current model state",
+        "3. Report the change to the user",
     ]
 
 _DEFAULT_INSTRUCTIONS = [

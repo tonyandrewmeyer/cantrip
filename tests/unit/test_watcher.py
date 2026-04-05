@@ -10,6 +10,7 @@ import pytest
 from cantrip.agent.watcher import (
     AppSnapshot,
     EventWatcher,
+    OfferSnapshot,
     StatusSnapshot,
     UnitSnapshot,
     WatcherConfig,
@@ -27,6 +28,7 @@ from cantrip.agent.watcher import (
 def _snap(
     apps: dict[str, tuple[str, str, list[tuple[str, str, str, str]], frozenset[str]]]
     | None = None,
+    offers: list[OfferSnapshot] | None = None,
 ) -> StatusSnapshot:
     """Build a StatusSnapshot from a compact dict.
 
@@ -35,7 +37,7 @@ def _snap(
     Each unit in the list is ``(name, workload_status, workload_message, agent_status)``.
     """
     if apps is None:
-        return StatusSnapshot(apps=())
+        return StatusSnapshot(apps=(), offers=tuple(offers or []))
     result: list[AppSnapshot] = []
     for name, (status, msg, units_list, rels) in sorted(apps.items()):
         units = tuple(
@@ -56,7 +58,24 @@ def _snap(
                 relations=rels,
             )
         )
-    return StatusSnapshot(apps=tuple(result))
+    return StatusSnapshot(apps=tuple(result), offers=tuple(offers or []))
+
+
+def _offer(
+    name: str = "myoffer",
+    application: str = "myapp",
+    endpoints: frozenset[str] = frozenset({"db:mysql"}),
+    active: int = 1,
+    total: int = 1,
+) -> OfferSnapshot:
+    """Build an OfferSnapshot with sensible defaults."""
+    return OfferSnapshot(
+        name=name,
+        application=application,
+        endpoints=endpoints,
+        active_connected_count=active,
+        total_connected_count=total,
+    )
 
 
 _EMPTY_RELS: frozenset[str] = frozenset()
@@ -280,6 +299,56 @@ class TestDiffSnapshots:
         assert len(events) == 1
         assert events[0].category == "removed_unit"
         assert "myapp/1" in events[0].summary
+
+
+class TestOfferDiffing:
+    """Tests for offer topology diffing."""
+
+    def test_new_offer_detected(self):
+        """A new offer is detected."""
+        old = _snap(offers=[])
+        new = _snap(offers=[_offer(name="myoffer", application="myapp")])
+        events = diff_snapshots(old, new)
+        assert len(events) == 1
+        assert events[0].category == "new_offer"
+        assert "myoffer" in events[0].summary
+
+    def test_removed_offer_detected(self):
+        """A removed offer is detected."""
+        old = _snap(offers=[_offer(name="myoffer")])
+        new = _snap(offers=[])
+        events = diff_snapshots(old, new)
+        assert len(events) == 1
+        assert events[0].category == "removed_offer"
+        assert "myoffer" in events[0].summary
+
+    def test_offer_connection_change_detected(self):
+        """A change in connection count is detected."""
+        old = _snap(offers=[_offer(name="myoffer", total=1, active=1)])
+        new = _snap(offers=[_offer(name="myoffer", total=3, active=2)])
+        events = diff_snapshots(old, new)
+        assert len(events) == 1
+        assert events[0].category == "offer_connection_change"
+        assert "1" in events[0].summary
+        assert "3" in events[0].summary
+
+    def test_no_change_in_offers(self):
+        """Identical offers produce no events."""
+        offer = _offer(name="myoffer", total=2, active=1)
+        snap = _snap(offers=[offer])
+        assert diff_snapshots(snap, snap) == []
+
+    def test_offer_format_includes_instructions(self):
+        """Offer events include investigation instructions."""
+        event = WatcherEvent(
+            source="status",
+            category="new_offer",
+            summary="New offer: myoffer",
+            detail="Offer appeared",
+            app="myapp",
+        )
+        result = format_event_for_agent(event)
+        assert "juju_list_offers" in result
 
 
 # ---------------------------------------------------------------------------
