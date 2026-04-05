@@ -6,7 +6,7 @@ from textual.containers import Vertical
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Static
+from textual.widgets import Input, Static
 
 
 class AppBox(Static):
@@ -145,7 +145,12 @@ class RelationLine(Static):
 
 
 class JujuStatusWidget(Widget):
-    """Widget displaying full Juju model status."""
+    """Widget displaying full Juju model status.
+
+    Press ``/`` to open an inline search filter.  The filter matches
+    case-insensitively against app names, unit names, relation names,
+    and status keywords.  Press ``Escape`` to clear the filter.
+    """
 
     class StatusAvailable(Message):
         """Posted when status data first becomes available."""
@@ -170,10 +175,22 @@ class JujuStatusWidget(Widget):
         color: $text-muted;
         margin-bottom: 1;
     }
+
+    JujuStatusWidget #status-filter {
+        dock: top;
+        height: 1;
+        margin-bottom: 1;
+        display: none;
+    }
+
+    JujuStatusWidget #status-filter.visible {
+        display: block;
+    }
     """
 
     status: reactive[statustypes.Status | None] = reactive(None)
     current_app: reactive[str | None] = reactive(None)
+    filter_text: reactive[str] = reactive("")
 
     def __init__(
         self,
@@ -188,7 +205,26 @@ class JujuStatusWidget(Widget):
 
     def compose(self) -> ComposeResult:
         """Compose the status display."""
+        yield Input(placeholder="Filter apps, units, relations…", id="status-filter")
         yield Vertical(id="status-container")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Update filter text as the user types."""
+        if event.input.id == "status-filter":
+            self.filter_text = event.value
+
+    def key_slash(self) -> None:
+        """Show the filter input on ``/`` key."""
+        filter_input = self.query_one("#status-filter", Input)
+        filter_input.add_class("visible")
+        filter_input.focus()
+
+    def key_escape(self) -> None:
+        """Clear the filter and hide the input on ``Escape``."""
+        filter_input = self.query_one("#status-filter", Input)
+        filter_input.value = ""
+        filter_input.remove_class("visible")
+        self.filter_text = ""
 
     def watch_status(self, old: statustypes.Status | None, new: statustypes.Status | None) -> None:
         """React to status changes."""
@@ -199,6 +235,40 @@ class JujuStatusWidget(Widget):
     def watch_current_app(self, _app: str | None) -> None:
         """React to current app changes."""
         self._refresh_display()
+
+    def watch_filter_text(self, _text: str) -> None:
+        """React to filter text changes."""
+        self._refresh_display()
+
+    def _app_matches_filter(self, app_name: str, app: statustypes.AppStatus) -> bool:
+        """Return True if the app matches the current filter text."""
+        if not self.filter_text:
+            return True
+        needle = self.filter_text.lower()
+        # Match against app name.
+        if needle in app_name.lower():
+            return True
+        # Match against app status.
+        if needle in app.app_status.current.lower():
+            return True
+        if needle in app.app_status.message.lower():
+            return True
+        # Match against unit names and statuses.
+        for unit_name, unit in app.units.items():
+            if needle in unit_name.lower():
+                return True
+            if needle in unit.workload_status.current.lower():
+                return True
+            if needle in unit.workload_status.message.lower():
+                return True
+        # Match against relation names.
+        for rel_name, related_apps in app.relations.items():
+            if needle in rel_name.lower():
+                return True
+            for related in related_apps:
+                if needle in related.related_app.lower():
+                    return True
+        return False
 
     def _refresh_display(self) -> None:
         """Refresh the status display."""
@@ -239,14 +309,23 @@ class JujuStatusWidget(Widget):
             container.mount(Static("No applications deployed.", classes="no-apps"))
             return
 
-        # Apps with relations
+        # Apps with relations, filtered by search text.
+        matched = False
         for app_name, app in self.status.apps.items():
+            if not self._app_matches_filter(app_name, app):
+                continue
+            matched = True
             highlight = app_name == self.current_app
             container.mount(AppBox(app_name, app, highlight=highlight))
 
             for rel_name, related_apps in app.relations.items():
                 for related in related_apps:
                     container.mount(RelationLine(f"{rel_name} → {related.related_app}"))
+
+        if not matched and self.filter_text:
+            container.mount(
+                Static(f"No matches for '{self.filter_text}'.", classes="no-apps")
+            )
 
     def update_status(self, status: statustypes.Status) -> None:
         """Update the displayed status."""
