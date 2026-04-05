@@ -12,9 +12,9 @@ import aiohttp.web as web
 import jinja2
 
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.queue import AgentTask
 from cantrip.llm import create_provider, resolve_light_model
 from cantrip.llm.base import ProviderError
+from cantrip.ui import events as ui_events
 
 log = logging.getLogger(__name__)
 
@@ -303,28 +303,17 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
 
 # ---------------------------------------------------------------------------
-# Task change callback
+# Event bus bridge
 # ---------------------------------------------------------------------------
 
 
-def _make_task_callback(app: web.Application):
-    """Create a callback that broadcasts task changes to WebSocket clients."""
+def _make_bus_forwarder(app: web.Application) -> ui_events.Subscriber:
+    """Return a wildcard subscriber that forwards bus events to WebSocket clients."""
 
-    def _on_task_changed(task: AgentTask) -> None:
-        _broadcast(
-            app,
-            "task_updated",
-            {
-                "id": task.id,
-                "title": task.title,
-                "status": task.status.value,
-                "category": task.category.value,
-                "description": task.description,
-                "result": task.result,
-            },
-        )
+    def _forward(event: ui_events.Event) -> None:
+        _broadcast(app, event.type.value, event.payload)
 
-    return _on_task_changed
+    return _forward
 
 
 # ---------------------------------------------------------------------------
@@ -367,10 +356,12 @@ async def _run_web_async(agent: CantripAgent, port: int) -> None:
     """Start the web server and agent executor."""
     app = _create_app(agent, port)
 
+    # Forward all bus events to WebSocket clients.
+    agent.event_bus.bind_loop(asyncio.get_running_loop())
+    agent.event_bus.subscribe(None, _make_bus_forwarder(app))
+
     # Start the executor so autonomous tasks run.
-    agent.start_executor(
-        on_task_changed=_make_task_callback(app),
-    )
+    agent.start_executor()
 
     runner = web.AppRunner(app)
     await runner.setup()
