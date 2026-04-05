@@ -10,11 +10,13 @@ from cantrip.agent.tools.acceptance import (
     _INTERFACE_PARTNERS,
     AcceptanceReportTool,
     ActionExerciserTool,
+    ConfigUnderLoadTool,
     ConfigVariationTool,
     RelationSmokeTool,
     WorkloadEndpointTool,
     _generate_action_params,
     _generate_test_value,
+    _verify_relation_data,
 )
 
 # ---------------------------------------------------------------------------
@@ -587,3 +589,135 @@ class TestAcceptanceAutodeploy:
 
         follow_ups = tasks_after_acceptance(task)
         assert len(follow_ups) == 0
+
+
+# ---------------------------------------------------------------------------
+# TestVerifyRelationData
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyRelationData:
+    """Tests for _verify_relation_data — databag content verification."""
+
+    def test_detects_meaningful_app_data(self) -> None:
+        show_output = {
+            "myapp/0": {
+                "relation-info": [
+                    {
+                        "endpoint": "database",
+                        "application-data": {"connection-string": "postgresql://..."},
+                        "related-units": {},
+                    }
+                ]
+            }
+        }
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = __import__("json").dumps(show_output)
+
+        with patch("subprocess.run", return_value=mock_result):
+            has_data, notes = _verify_relation_data("myapp/0", "database", None)
+
+        assert has_data is True
+        assert "connection-string" in notes
+
+    def test_address_only_is_empty(self) -> None:
+        show_output = {
+            "myapp/0": {
+                "relation-info": [
+                    {
+                        "endpoint": "database",
+                        "application-data": {},
+                        "related-units": {
+                            "pg/0": {
+                                "data": {
+                                    "ingress-address": "10.0.0.1",
+                                    "private-address": "10.0.0.1",
+                                }
+                            }
+                        },
+                    }
+                ]
+            }
+        }
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = __import__("json").dumps(show_output)
+
+        with patch("subprocess.run", return_value=mock_result):
+            has_data, notes = _verify_relation_data("myapp/0", "database", None)
+
+        assert has_data is False
+        assert "empty" in notes.lower()
+
+    def test_cli_failure(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+
+        with patch("subprocess.run", return_value=mock_result):
+            has_data, notes = _verify_relation_data("myapp/0", "database", None)
+
+        assert has_data is False
+
+
+# ---------------------------------------------------------------------------
+# TestConfigUnderLoadTool
+# ---------------------------------------------------------------------------
+
+
+class TestConfigUnderLoadTool:
+    """Tests for ConfigUnderLoadTool."""
+
+    def test_tool_properties(self) -> None:
+        tool = ConfigUnderLoadTool()
+        assert tool.name == "config_under_load_test"
+        assert "app" in tool.parameters["required"]
+        assert "config_key" in tool.parameters["required"]
+        assert "health_url" in tool.parameters["required"]
+
+    @pytest.mark.asyncio()
+    async def test_no_juju(self) -> None:
+        tool = ConfigUnderLoadTool()
+        with patch("shutil.which", return_value=None):
+            result = await tool.execute(
+                app="myapp",
+                config_key="port",
+                config_value="9090",
+                health_url="http://10.0.0.1:8080/health",
+            )
+        assert result.success is False
+
+    @pytest.mark.asyncio()
+    async def test_all_probes_pass(self) -> None:
+        tool = ConfigUnderLoadTool()
+
+        # Mock curl returning 200 for all probes.
+        curl_result = MagicMock()
+        curl_result.returncode = 0
+        curl_result.stdout = "200"
+
+        config_result = MagicMock()
+        config_result.returncode = 0
+
+        def _mock_run(cmd, **_kwargs):
+            if cmd[0] == "curl":
+                return curl_result
+            return config_result
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/juju"),
+            patch("subprocess.run", side_effect=_mock_run),
+        ):
+            result = await tool.execute(
+                app="myapp",
+                config_key="port",
+                config_value="9090",
+                health_url="http://10.0.0.1:8080/health",
+                probe_count=3,
+                probe_interval=0.01,
+            )
+
+        assert result.success is True
+        assert result.data["errors"] == 0
+        assert result.data["verdict"] == "pass"
+        assert len(result.data["probes"]) == 3

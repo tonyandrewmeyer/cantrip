@@ -257,6 +257,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "relation_smoke_test",
             "workload_endpoint_test",
             "config_variation_test",
+            "config_under_load_test",
             "acceptance_report",
             # Juju operations needed for acceptance testing.
             "juju_status",

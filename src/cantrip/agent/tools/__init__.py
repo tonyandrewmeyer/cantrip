@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from cantrip.agent.tools.acceptance import (
     AcceptanceReportTool,
     ActionExerciserTool,
+    ConfigUnderLoadTool,
     ConfigVariationTool,
     RelationSmokeTool,
     WorkloadEndpointTool,
@@ -230,6 +231,7 @@ def build_tools(
         WorkloadEndpointTool(),
         ConfigVariationTool(),
         AcceptanceReportTool(),
+        ConfigUnderLoadTool(),
     ]
 
     # Tools with dependencies.
@@ -341,6 +343,7 @@ __all__ = [
     "WorkloadEndpointTool",
     "ConfigVariationTool",
     "AcceptanceReportTool",
+    "ConfigUnderLoadTool",
     # Planning
     "PlanTasksTool",
     # Task management

@@ -100,6 +100,56 @@ def _load_charm_metadata(charm_dir: Path) -> dict[str, Any] | None:
         return None
 
 
+def _verify_relation_data(
+    unit: str,
+    endpoint: str,
+    model: str | None,
+) -> tuple[bool, str]:
+    """Check whether a relation databag has non-trivial data.
+
+    Returns (has_data, notes) where has_data is True if the related unit
+    published at least one key beyond standard address fields.
+    """
+    cmd = ["juju", "show-unit", unit, "--format", "json"]
+    if model:
+        cmd.extend(["--model", model])
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False, "Could not read relation data"
+
+    if result.returncode != 0:
+        return False, "juju show-unit failed"
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False, "Invalid JSON from show-unit"
+
+    unit_data = data.get(unit, {})
+    # Standard address-only keys that don't indicate real data flow.
+    _ADDRESS_KEYS = {"ingress-address", "private-address", "egress-subnets"}
+
+    for rel in unit_data.get("relation-info", []):
+        if rel.get("endpoint") != endpoint:
+            continue
+        # Check application-level data.
+        app_data = rel.get("application-data", {})
+        meaningful_app = set(app_data.keys()) - _ADDRESS_KEYS
+        if meaningful_app:
+            return True, f"App data keys: {', '.join(sorted(meaningful_app))}"
+        # Check related unit data.
+        for _runit, rdata in rel.get("related-units", {}).items():
+            meaningful_unit = set(rdata.get("data", {}).keys()) - _ADDRESS_KEYS
+            if meaningful_unit:
+                return True, f"Unit data keys: {', '.join(sorted(meaningful_unit))}"
+        return False, "Relation established but databag is empty (address-only)"
+
+    return False, "Endpoint not found in relation-info"
+
+
 def _get_unit_address(app: str, model: str | None) -> str | None:
     """Get the address of the first unit via juju status --format json."""
     result = _run_juju(["status", "--format", "json", app], model)
@@ -523,6 +573,19 @@ class RelationSmokeTool(Tool):
             # Wait for both to settle.
             settled = _wait_for_app(app, model, timeout)
 
+            if settled:
+                # Verify data actually flowed through the relation databag.
+                unit_name = f"{app}/0"
+                has_data, data_notes = _verify_relation_data(
+                    unit_name, ep_name, model
+                )
+                if has_data:
+                    notes = f"Active/idle, data flowing ({data_notes})"
+                else:
+                    notes = f"Active/idle but {data_notes}"
+            else:
+                notes = "Did not settle"
+
             results.append(
                 {
                     "endpoint": ep_name,
@@ -530,7 +593,7 @@ class RelationSmokeTool(Tool):
                     "role": role,
                     "partner": partner,
                     "status": "pass" if settled else "failed",
-                    "notes": "Both sides active/idle" if settled else "Did not settle",
+                    "notes": notes,
                 }
             )
 
@@ -1090,6 +1153,180 @@ class ConfigVariationTool(Tool):
                 "options_failed": failed,
                 "results": results,
                 "verdict": "pass" if all_ok else "fail",
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# 17.5 Config Under Load
+# ---------------------------------------------------------------------------
+
+
+class ConfigUnderLoadTool(Tool):
+    """Change a config option while probing a health endpoint for downtime."""
+
+    @property
+    def name(self) -> str:
+        return "config_under_load_test"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Change a config option while periodically probing a health "
+            "endpoint, and report whether there was downtime or errors "
+            "during the reconfiguration. Tests that config changes are "
+            "applied gracefully without service interruption."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "app": {
+                    "type": "string",
+                    "description": "Application name",
+                },
+                "config_key": {
+                    "type": "string",
+                    "description": "Config option to change",
+                },
+                "config_value": {
+                    "type": "string",
+                    "description": "New value to set",
+                },
+                "health_url": {
+                    "type": "string",
+                    "description": (
+                        "Health endpoint URL to probe (e.g. http://<unit-ip>:8080/health)"
+                    ),
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name",
+                },
+                "probe_count": {
+                    "type": "integer",
+                    "description": "Number of health probes to send (default 10)",
+                    "default": 10,
+                },
+                "probe_interval": {
+                    "type": "number",
+                    "description": "Seconds between probes (default 3)",
+                    "default": 3,
+                },
+            },
+            "required": ["app", "config_key", "config_value", "health_url"],
+        }
+
+    async def execute(
+        self,
+        app: str,
+        config_key: str,
+        config_value: str,
+        health_url: str,
+        model: str | None = None,
+        probe_count: int = 10,
+        probe_interval: float = 3,
+    ) -> ToolResult:
+        """Apply a config change while probing a health endpoint."""
+        if not shutil.which("juju"):
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found.",
+            )
+
+        import asyncio
+        import time
+
+        probes: list[dict[str, Any]] = []
+        errors = 0
+
+        async def _probe_loop() -> None:
+            nonlocal errors
+            for i in range(probe_count):
+                t0 = time.monotonic()
+                try:
+                    result = subprocess.run(
+                        ["curl", "-sf", "-o", "/dev/null", "-w", "%{http_code}", health_url],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    elapsed = time.monotonic() - t0
+                    status = int(result.stdout.strip()) if result.stdout.strip().isdigit() else 0
+                    ok = 200 <= status < 400
+                    if not ok:
+                        errors += 1
+                    probes.append({
+                        "probe": i + 1,
+                        "status": status,
+                        "elapsed_ms": round(elapsed * 1000),
+                        "ok": ok,
+                    })
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
+                    errors += 1
+                    probes.append({
+                        "probe": i + 1,
+                        "status": 0,
+                        "elapsed_ms": 0,
+                        "ok": False,
+                    })
+                await asyncio.sleep(probe_interval)
+
+        async def _apply_config() -> None:
+            # Wait for a few probes to establish baseline, then apply.
+            await asyncio.sleep(probe_interval * 2)
+            cmd = ["juju", "config", app, f"{config_key}={config_value}"]
+            if model:
+                cmd.extend(["--model", model])
+            subprocess.run(cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT)
+
+        # Run probes and config change concurrently.
+        await asyncio.gather(_probe_loop(), _apply_config())
+
+        # Reset config.
+        reset_cmd = ["juju", "config", app, "--reset", config_key]
+        if model:
+            reset_cmd.extend(["--model", model])
+        with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            subprocess.run(reset_cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT)
+
+        verdict = "PASS" if errors == 0 else "FAIL"
+        lines = [
+            "# Config Under Load Test",
+            "",
+            f"**Application:** {app}",
+            f"**Config change:** {config_key}={config_value}",
+            f"**Health endpoint:** {health_url}",
+            f"**Probes:** {probe_count} at {probe_interval}s intervals",
+            "",
+            "## Results",
+            "",
+            f"**Errors during reconfiguration:** {errors}/{probe_count}",
+            "",
+            "| Probe | Status | Time (ms) | OK |",
+            "|-------|--------|-----------|----|",
+        ]
+        for p in probes:
+            lines.append(
+                f"| {p['probe']} | {p['status']} | {p['elapsed_ms']} | "
+                f"{'yes' if p['ok'] else 'NO'} |"
+            )
+        lines.extend(["", f"**Verdict: {verdict}**", ""])
+
+        return ToolResult(
+            success=errors == 0,
+            output="\n".join(lines),
+            error=None if errors == 0 else f"{errors} probe(s) failed during config change",
+            data={
+                "app": app,
+                "config_key": config_key,
+                "config_value": config_value,
+                "probes": probes,
+                "errors": errors,
+                "verdict": verdict.lower(),
             },
         )
 

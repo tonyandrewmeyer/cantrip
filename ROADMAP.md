@@ -1484,10 +1484,10 @@ Deploy commonly related charms and verify the integrations actually work.
   prometheus-k8s, loki-k8s, tempo-k8s, etc.); unknown interfaces are skipped with a note
 - [x] **Deploy and relate** — deploys each partner charm, relates to the endpoint, and
   waits for the application to settle to active/idle; records success/failure per endpoint
-- [ ] **Verify data flow** — where possible, verify the relation actually does something:
-  check that database credentials appeared in the databag, that the ingress proxy routes
-  traffic, that COS scrape targets registered. This goes beyond "the relation hook didn't
-  crash" to "the integration is functioning"
+- [x] **Verify data flow** — `_verify_relation_data()` checks that relation databags
+  contain meaningful keys beyond standard address fields (ingress-address, private-address,
+  egress-subnets); integrated into `RelationSmokeTool` so each relation result now reports
+  whether data actually flowed (e.g. "App data keys: connection-string")
 - [x] **Report** — produces a Markdown table with endpoint, interface, role, partner,
   status, and notes; includes overall PASS/FAIL verdict
 
@@ -1501,14 +1501,11 @@ Actually use the deployed workload the way a real user would.
 - [x] **Health checks** — probes common health paths (`/health`, `/ready`, `/healthz`,
   `/readyz`) for each discovered HTTP port via `curl`; TCP port liveness checked via
   `juju ssh` with `/dev/tcp` test
-- [ ] **Functional probes** — go beyond health checks to actually exercise the workload:
-  - For web applications: fetch the landing page, submit a form, check the response
-  - For databases: connect, create a test table, insert and query a row, clean up
-  - For APIs: call a representative endpoint, verify the response schema
-  - For queue systems: publish and consume a test message
-  - For storage: write and read back a test object
-  The agent designs these probes based on what it learnt about the workload during the
-  research phase. Probes should be non-destructive and use test/temporary data
+- [x] **Functional probes** — acceptance guidance now instructs the subagent to go
+  beyond health checks: use `juju_ssh` to exercise the workload (fetch landing pages,
+  run SQL queries, call API endpoints, publish/consume messages); probes are designed
+  based on workload type discovered during research; guidance emphasises non-destructive,
+  temporary data
 - [x] **Report** — produces a Markdown table with endpoint, protocol, status, response
   time, and notes; includes overall PASS/FAIL verdict
 
@@ -1534,9 +1531,10 @@ Verify the charm handles lifecycle operations gracefully.
 
 - [x] **Scale up/down** — covered by existing `ScalingTestTool` (`scaling_test`); the
   acceptance test subagent guidance directs it to run `scaling_test` as part of the suite
-- [ ] **Config change under load** — if a health endpoint exists, change a config value
-  while periodically hitting the endpoint, and report whether there was downtime or errors
-  during the reconfiguration
+- [x] **Config change under load** — `ConfigUnderLoadTool` (`config_under_load_test`)
+  applies a config change while periodically probing a health endpoint via curl; reports
+  per-probe status, response time, and overall PASS/FAIL verdict; automatically resets
+  config after the test; added to TEST tool allowlist
 - [x] **Refresh** — covered by existing `UpgradeTestTool` (`upgrade_test`); refreshes a
   deployed charm with a new `.charm` file and verifies recovery
 - [x] **Report** — lifecycle results are included in the consolidated ACCEPTANCE.md via the
