@@ -1965,13 +1965,12 @@ determine what happened.
 Limit what tools each subagent category can use, reducing the blast radius of
 mistakes.
 
-- [ ] **Task-category tool allowlists** — formalise the existing RESEARCH /
-  BUILD / TEST / DEBUG categories into a configuration structure (similar to
-  orc's squad permissions) rather than hardcoding in the planner prompt
-- [ ] **Category-based scoping** — when spawning a subagent, only inject the
-  tools from its category's allowlist into the LLM context. A RESEARCH subagent
-  should not have access to `charmcraft_pack` or `juju_deploy`; a BUILD
-  subagent should not have access to web search
+- [x] **Task-category tool allowlists** — `_CATEGORY_TOOLS` dict in `subagent.py`
+  maps each `TaskCategory` to a `frozenset` of allowed tool names; covers all
+  seven categories (RESEARCH, BUILD, DEPLOY, TEST, DEBUG, INFRA, CONFIRM)
+- [x] **Category-based scoping** — `_filter_tools()` in `subagent.py` filters the
+  full tool list to only those in the category's allowlist; called in the `Subagent`
+  constructor so each subagent only sees its permitted tools in the LLM context
 
 **Exit criteria:** The autonomous work loop has a formally verified state
 machine, is testable without LLM or infrastructure dependencies, detects and
