@@ -1836,11 +1836,12 @@ topology beyond the current model.
 For charms that use Juju secrets, the agent needs to verify secrets are
 correctly created and granted.
 
-- [ ] **`list_secrets` tool** — lists Juju secrets in the current model with
-  owner, granted applications, and rotation policy; added to RESEARCH and
-  DEBUG tool allowlists
-- [ ] **Secret content inspection** — optionally decode and display secret
-  values (with user confirmation, since secrets may contain sensitive data)
+- [x] **`list_secrets` tool** — `JujuListSecretsTool` (`juju_list_secrets`) lists all
+  Juju secrets in the model with owner, revision, rotation policy, description, and
+  access grants; supports filtering by owner; added to RESEARCH and DEBUG tool allowlists
+- [x] **Secret content inspection** — `JujuShowSecretTool` (`juju_show_secret`) inspects
+  a specific secret by name or URI; optionally reveals content via `reveal=True` parameter;
+  added to RESEARCH and DEBUG tool allowlists
 
 ### 20.6 TUI Status Enhancements
 
@@ -1920,16 +1921,15 @@ calls, Juju, or git.
 Detect subagents that exit successfully but accomplish nothing, preventing the
 autonomous loop from spinning indefinitely.
 
-- [ ] **State snapshot before/after** — before spawning a subagent, capture a
-  lightweight fingerprint of relevant state (files in charm directory, task
-  statuses, decisions recorded, deployed revision). After the subagent exits
-  with success, capture another snapshot
-- [ ] **Noop detection** — if before == after, the subagent produced no
-  observable effect. Log it, mark the task as needing attention, and do not
-  re-dispatch the same task immediately
-- [ ] **Noop escalation** — after N consecutive noops on the same task (default
-  2), escalate to the user via the conversation loop: "I've attempted this task
-  twice without making progress — here's what I tried. Can you help?"
+- [x] **State snapshot before/after** — `_fingerprint()` in the executor captures
+  git HEAD hash + `git status --porcelain` before and after subagent execution;
+  lightweight and runs in <1s
+- [x] **Noop detection** — `_is_noop()` compares before/after fingerprints; if
+  identical, the task is reset to PENDING for another attempt and `noop_count`
+  is incremented on the `AgentTask` dataclass
+- [x] **Noop escalation** — after `_MAX_NOOP_COUNT` (default 2) consecutive noops,
+  the task is blocked with a descriptive reason; the conversation loop presents
+  it to the user for guidance
 
 ### 21.4 Two-Stage Graceful Shutdown
 

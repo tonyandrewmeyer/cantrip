@@ -22,6 +22,9 @@ _POLL_INTERVAL = 1.0  # seconds between checking for ready tasks
 _TASK_TIMEOUT = 600  # seconds — max wall-clock time per task (10 min)
 DEFAULT_MAX_CONCURRENCY = 3
 
+# Maximum number of consecutive noops before escalating to the user.
+_MAX_NOOP_COUNT = 2
+
 # Called when a task completes or fails, for TUI/conversation-loop coordination.
 TaskEventCallback = Callable[[AgentTask], None] | None
 
@@ -259,6 +262,37 @@ class BackgroundExecutor:
             },
         )
 
+    # -- Noop detection -------------------------------------------------------
+
+    def _fingerprint(self) -> str:
+        """Capture a lightweight fingerprint of the charm directory.
+
+        Returns a string combining git status output and HEAD hash.
+        If no charm path is set or git is unavailable, returns an empty string.
+        """
+        if not self._state.charm_path:
+            return ""
+        charm_dir = str(self._state.charm_path)
+        parts: list[str] = []
+        for cmd in (["git", "rev-parse", "HEAD"], ["git", "status", "--porcelain"]):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    cwd=charm_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    parts.append(result.stdout.strip())
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                pass
+        return "\n".join(parts)
+
+    def _is_noop(self, before: str, after: str) -> bool:
+        """Return True if the fingerprints are identical (no observable change)."""
+        return bool(before) and before == after
+
     # -- Task execution ------------------------------------------------------
 
     _SNAPSHOT_CATEGORIES = frozenset({TaskCategory.BUILD, TaskCategory.DEBUG})
@@ -293,6 +327,9 @@ class BackgroundExecutor:
         if task.category in self._SNAPSHOT_CATEGORIES:
             snapshot = self._snapshot_head()
 
+        # Capture pre-execution fingerprint for noop detection.
+        fp_before = self._fingerprint()
+
         context = self._build_context(task)
         subagent = Subagent(
             context,
@@ -308,6 +345,35 @@ class BackgroundExecutor:
             result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)
             elapsed = time.monotonic() - t0
             log.info("Task '%s' completed in %.1fs", task.title, elapsed)
+
+            # Noop detection: check if the subagent changed anything.
+            fp_after = self._fingerprint()
+            if self._is_noop(fp_before, fp_after):
+                task.noop_count += 1
+                log.warning(
+                    "Task '%s' completed without observable changes (noop %d/%d)",
+                    task.title,
+                    task.noop_count,
+                    _MAX_NOOP_COUNT,
+                )
+                if task.noop_count >= _MAX_NOOP_COUNT:
+                    # Escalate: block the task so the user can intervene.
+                    self._queue.set_blocked(
+                        task.id,
+                        f"Attempted {task.noop_count} time(s) without progress — "
+                        f"needs user guidance",
+                    )
+                    self._record_status_change(
+                        task, "blocked", error="noop escalation"
+                    )
+                    if self._on_task_failed:
+                        self._on_task_failed(task)
+                    return
+                # Reset to pending for another attempt.
+                self._queue.set_pending(task.id)
+                self._record_status_change(task, "pending", error="noop — retrying")
+                return
+
             self._queue.set_done(task.id, result)
             self._record_status_change(task, "done")
             if task.category in (TaskCategory.BUILD, TaskCategory.DEBUG):

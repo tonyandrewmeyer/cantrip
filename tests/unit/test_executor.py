@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cantrip.agent.executor import DEFAULT_MAX_CONCURRENCY, BackgroundExecutor
+from cantrip.agent.executor import (
+    _MAX_NOOP_COUNT,
+    DEFAULT_MAX_CONCURRENCY,
+    BackgroundExecutor,
+)
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.tools.base import Tool, ToolResult
@@ -1355,3 +1359,144 @@ class TestGitRevertOnTaskFailure:
             await executor._execute_task(task)
 
         mock_revert.assert_not_called()
+
+
+# ===================================================================
+# TestNoopDetection
+# ===================================================================
+
+
+class TestNoopDetection:
+    """Tests for noop detection in _execute_task."""
+
+    @pytest.mark.asyncio
+    async def test_noop_resets_to_pending(self) -> None:
+        """First noop resets the task to pending for another attempt."""
+        state = AgentState(charm_path="/tmp/charm")
+        queue = WorkQueue()
+        task = AgentTask(
+            id="b1", title="Build charm", category=TaskCategory.BUILD
+        )
+        queue.add_task(task)
+        queue.set_active(task.id)
+
+        executor = _make_executor(queue=queue, state=state)
+
+        with (
+            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch.object(executor, "_fingerprint", return_value="same-hash"),
+            patch.object(executor, "_snapshot_head", return_value="abc123"),
+        ):
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(return_value="done")
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.PENDING
+        assert task.noop_count == 1
+
+    @pytest.mark.asyncio
+    async def test_noop_escalation_blocks_task(self) -> None:
+        """After MAX_NOOP_COUNT noops, the task is blocked for user intervention."""
+        state = AgentState(charm_path="/tmp/charm")
+        queue = WorkQueue()
+        task = AgentTask(
+            id="b1",
+            title="Build charm",
+            category=TaskCategory.BUILD,
+            noop_count=_MAX_NOOP_COUNT - 1,
+        )
+        queue.add_task(task)
+        queue.set_active(task.id)
+
+        on_failed = MagicMock()
+        executor = _make_executor(
+            queue=queue, state=state, on_task_failed=on_failed
+        )
+
+        with (
+            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch.object(executor, "_fingerprint", return_value="same-hash"),
+            patch.object(executor, "_snapshot_head", return_value="abc123"),
+        ):
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(return_value="done")
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.BLOCKED
+        assert task.noop_count == _MAX_NOOP_COUNT
+        on_failed.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_noop_when_fingerprint_changes(self) -> None:
+        """Normal execution with changes is not flagged as noop."""
+        state = AgentState(charm_path="/tmp/charm")
+        queue = WorkQueue()
+        task = AgentTask(
+            id="b1", title="Build charm", category=TaskCategory.BUILD
+        )
+        queue.add_task(task)
+        queue.set_active(task.id)
+
+        executor = _make_executor(queue=queue, state=state)
+
+        call_count = 0
+
+        def _changing_fingerprint() -> str:
+            nonlocal call_count
+            call_count += 1
+            return f"hash-{call_count}"
+
+        with (
+            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch.object(executor, "_fingerprint", side_effect=_changing_fingerprint),
+            patch.object(executor, "_snapshot_head", return_value="abc123"),
+        ):
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(return_value="completed work")
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.DONE
+        assert task.noop_count == 0
+
+    @pytest.mark.asyncio
+    async def test_no_noop_when_no_charm_path(self) -> None:
+        """Without a charm path, fingerprint is empty and noop is skipped."""
+        state = AgentState()  # No charm_path.
+        queue = WorkQueue()
+        task = AgentTask(
+            id="r1", title="Research", category=TaskCategory.RESEARCH
+        )
+        queue.add_task(task)
+        queue.set_active(task.id)
+
+        executor = _make_executor(queue=queue, state=state)
+
+        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(return_value="research done")
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.DONE
+        assert task.noop_count == 0
+
+    def test_fingerprint_without_charm_path(self) -> None:
+        """Fingerprint returns empty string when no charm path is set."""
+        state = AgentState()
+        executor = _make_executor(state=state)
+        assert executor._fingerprint() == ""
+
+    def test_is_noop_identical(self) -> None:
+        state = AgentState()
+        executor = _make_executor(state=state)
+        assert executor._is_noop("abc", "abc") is True
+
+    def test_is_noop_different(self) -> None:
+        state = AgentState()
+        executor = _make_executor(state=state)
+        assert executor._is_noop("abc", "def") is False
+
+    def test_is_noop_empty_before(self) -> None:
+        """Empty before-fingerprint means we can't detect noop."""
+        state = AgentState()
+        executor = _make_executor(state=state)
+        assert executor._is_noop("", "") is False

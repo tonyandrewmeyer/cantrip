@@ -50,6 +50,7 @@ class AgentTask:
     blocked_reason: str | None = None
     model_hint: ModelHint | None = None
     created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
+    noop_count: int = 0
 
     def __post_init__(self) -> None:
         """Generate a unique ID if not provided."""
@@ -131,6 +132,12 @@ class WorkQueue:
         return ready
 
     # -- Status transitions -------------------------------------------------
+
+    def set_pending(self, task_id: str) -> None:
+        """Reset a task back to pending (e.g. after a noop attempt)."""
+        task = self._get_or_raise(task_id)
+        task.status = TaskStatus.PENDING
+        self._notify(task)
 
     def set_active(self, task_id: str) -> None:
         """Mark a task as actively being worked on."""
