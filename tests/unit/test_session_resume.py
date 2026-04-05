@@ -1,6 +1,8 @@
 """Tests for session resume protocol (Phase 11.3)."""
 
+import sqlite3
 from pathlib import Path
+from unittest.mock import patch
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
@@ -139,6 +141,38 @@ class TestBuildResumeSummary:
         agent.build_resume_summary()
 
         assert len(agent.state.messages) == 0
+
+
+class TestLoadStateErrorHandling:
+    """Tests for CantripAgent.load_state exception handling."""
+
+    def test_sqlite_error_returns_false(self, tmp_path: Path):
+        """An sqlite3.Error during load_state returns False gracefully."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        agent._ensure_store()
+        assert agent._store is not None
+
+        with patch.object(
+            agent._store, "load_session", side_effect=sqlite3.DatabaseError("corrupt")
+        ):
+            result = agent.load_state()
+
+        assert result is False
+        assert agent._store is None
+
+    def test_value_error_returns_false(self, tmp_path: Path):
+        """A ValueError during load_state returns False gracefully."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        agent._ensure_store()
+        assert agent._store is not None
+
+        with patch.object(agent._store, "load_session", side_effect=ValueError("bad data")):
+            result = agent.load_state()
+
+        assert result is False
+        assert agent._store is None
 
 
 class TestStaleTaskRecovery:

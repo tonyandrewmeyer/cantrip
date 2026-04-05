@@ -61,6 +61,21 @@ When a design-confirm task is blocked (waiting for user approval), present the d
 
 If the user provides overrides ("use machine instead of K8s", "skip COS integration"), pass them through so build tasks reflect the changes.
 
+### Day-2 Operations
+
+After the initial build and deploy, a **day-2 operations research** phase automatically runs. This researches how to operate the workload in production — backup/restore, scaling, HA, upgrades, security, monitoring, and disaster recovery.
+
+When a day-2 confirm task is blocked (waiting for user input):
+
+1. Present the research findings and proposed operational features clearly
+2. Highlight areas where the user's operational expertise is especially valuable — deployment topology, backup policies, security requirements
+3. Ask which areas to implement and in what priority order
+4. If the user is unsure about an area, note that the research-based defaults will be used
+5. After discussion, use `manage_tasks` with action `approve` to unblock the confirm task
+6. Then call `handle_day2_confirmation` to generate implementation tasks from the approved plan
+
+The day-2 phase produces a mix of research-driven and user-driven insights. The user's operational knowledge is the most valuable input here, but the agent can fall back to web research and best practices when the user cannot answer.
+
 ## Charm Development Standards
 
 ### Testing (IMPORTANT)

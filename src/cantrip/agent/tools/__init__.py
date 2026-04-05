@@ -107,6 +107,7 @@ from cantrip.agent.tools.testing import GenerateTestsTool, RunCharmTestsTool
 from cantrip.agent.tools.upgrade import UpgradeTestTool
 from cantrip.agent.tools.virtual_files import VirtualFileReadTool, VirtualFileSearchTool
 from cantrip.agent.tools.web import WebFetchTool
+from cantrip.agent.tools.web_search import WebSearchTool
 
 
 def build_tools(
@@ -154,6 +155,7 @@ def build_tools(
         RodneyTool(),
         # Web
         WebFetchTool(),
+        WebSearchTool(),
         # Charmhub
         CharmhubSearchTool(),
         CharmhubInfoTool(),
@@ -343,6 +345,7 @@ __all__ = [
     "RodneyTool",
     # Web
     "WebFetchTool",
+    "WebSearchTool",
     # Inference snaps
     "ListInferenceSnapsTool",
 ]

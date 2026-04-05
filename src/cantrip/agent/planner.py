@@ -625,6 +625,103 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
     return tasks
 
 
+# ---------------------------------------------------------------------------
+# Day-2 operations research phase
+# ---------------------------------------------------------------------------
+
+# Title prefix for day-2 tasks — used by the subagent prompt builder
+# to overlay day-2 guidance.
+DAY2_RESEARCH_PREFIX = "Day 2:"
+
+
+def plan_day2_ops_phase(
+    context: PlanningContext,
+    depends_on: str,
+) -> list[AgentTask]:
+    """Generate the day-2 operations research phase.
+
+    Produces research tasks that investigate backup/restore, scaling,
+    HA, upgrades, monitoring, security hardening, and disaster recovery
+    for the workload.  The phase depends on *depends_on* (typically the
+    last deploy or test task from the build phase).
+
+    After the user confirms the day-2 plan, ``handle_day2_confirmation``
+    generates implementation tasks from the findings.
+    """
+    workload = context.charm_name or "the workload"
+
+    return [
+        AgentTask(
+            id="day2-research",
+            title=f"{DAY2_RESEARCH_PREFIX} research operations for {workload}",
+            category=TaskCategory.RESEARCH,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Research day-2 operational concerns for {workload}.\n\n"
+                "Use web_search and web_fetch to find documentation on:\n"
+                "- Backup and restore procedures\n"
+                "- Horizontal and vertical scaling\n"
+                "- High availability and clustering\n"
+                "- Upgrade and migration paths\n"
+                "- Security hardening and credential rotation\n"
+                "- Monitoring, alerting, and observability best practices\n"
+                "- Disaster recovery runbooks\n\n"
+                "Also check Charmhub for how existing charms handle these "
+                "operations (actions, config, relations).\n\n"
+                "Write findings into DAY2.md with clear headings per topic."
+            ),
+            dependencies=[depends_on],
+        ),
+        AgentTask(
+            id="day2-synthesis",
+            title=f"{DAY2_RESEARCH_PREFIX} synthesise day-2 plan for {workload}",
+            category=TaskCategory.RESEARCH,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                "Synthesise day-2 research into a structured plan proposing "
+                "specific charm features for each operational area.\n\n"
+                "For each area, propose concrete charm features:\n"
+                "- Actions (backup, restore, rotate-credentials, promote-standby)\n"
+                "- Config options (backup-schedule, ha-mode, tls-enabled)\n"
+                "- Relations (s3-credentials for backup, peer for HA)\n"
+                "- Operational patterns (leader election, rolling upgrades)\n\n"
+                "Write output as DAY2-PLAN.md with structured questions using the "
+                "standard format (bold key, indented suggestions). Questions should "
+                "focus on areas where the user's operational expertise is most "
+                "valuable — deployment topology, backup policies, security needs."
+            ),
+            dependencies=["day2-research"],
+        ),
+        AgentTask(
+            id="confirm-day2",
+            title="Discuss day-2 operations with user",
+            category=TaskCategory.CONFIRM,
+            description=(
+                "Present the day-2 operations plan for user discussion. "
+                "The user may approve areas, skip areas, provide additional "
+                "operational context, or indicate they are unsure (in which "
+                "case the research findings serve as the default)."
+            ),
+            dependencies=["day2-synthesis"],
+        ),
+    ]
+
+
+def find_day2_anchor(tasks: list[AgentTask]) -> str | None:
+    """Find the task ID to use as the dependency anchor for day-2 tasks.
+
+    Scans *tasks* in reverse for the last DEPLOY or TEST category task.
+    Falls back to the last task overall if no deploy/test task is found.
+    Returns ``None`` only when *tasks* is empty.
+    """
+    # Prefer the last deploy or test task.
+    for task in reversed(tasks):
+        if task.category in (TaskCategory.DEPLOY, TaskCategory.TEST):
+            return task.id
+    # Fallback to the very last task.
+    return tasks[-1].id if tasks else None
+
+
 class TaskPlanner:
     """Stateless planner that decomposes intent into ordered agent tasks.
 
@@ -699,6 +796,33 @@ class TaskPlanner:
         )
         new_tasks = _parse_task_list(response.content)
         return _merge_tasks(context.existing_tasks, new_tasks)
+
+    async def plan_from_day2_findings(
+        self,
+        findings: str,
+        context: PlanningContext,
+        overrides: str | None = None,
+    ) -> list[AgentTask]:
+        """Generate implementation tasks from confirmed day-2 findings.
+
+        Called after the user discusses and approves the day-2 operations
+        plan.  Uses a dedicated prompt focused on adding operational
+        features to an existing charm.
+        """
+        prompt = _build_day2_to_build_prompt(context)
+        user_msg = f"## Approved day-2 operations plan\n\n{findings}"
+        if overrides:
+            user_msg += f"\n\n## User overrides\n\n{overrides}"
+        messages = [
+            llm.Message(role=llm.Role.SYSTEM, content=prompt),
+            llm.Message(role=llm.Role.USER, content=user_msg),
+        ]
+        response = await self._provider.complete(
+            messages=messages,
+            tools=None,
+            temperature=_PLANNING_TEMPERATURE,
+        )
+        return _parse_task_list(response.content)
 
 
 # ---------------------------------------------------------------------------
@@ -894,6 +1018,61 @@ def _build_replanning_prompt(context: PlanningContext) -> str:
     )
     base = _build_planning_prompt(context)
     return base + extra
+
+
+_DAY2_TO_BUILD_PROMPT = """\
+You are a task planner for Cantrip, an AI agent that builds Juju charms autonomously.
+
+The user has approved a day-2 operations plan for an existing, deployed charm. Generate \
+the **build and test** tasks needed to implement the approved operational features. \
+Return **only** a JSON array — no surrounding text.
+
+Each task object must have:
+- "id": short unique slug (e.g. "add-backup-action", "add-ha-config")
+- "title": concise imperative title
+- "category": one of {categories}
+- "description": detailed implementation instructions
+- "dependencies": list of task IDs that must complete before this one starts
+
+### Day-2 implementation patterns
+
+For each approved operational area, generate a BUILD task that modifies the existing \
+charm. Use `edit_file` to modify `src/charm.py`, `charmcraft.yaml`, and test files — \
+do NOT rewrite from scratch.
+
+Common patterns:
+- **Backup/restore**: Add `backup` and `restore` Juju actions; add an `s3-credentials` \
+relation (via the s3-integrator interface) if off-site storage is needed; add \
+`backup-schedule` config option for automated backups.
+- **Scaling**: Add or enhance the `peer` relation for data sharing; add config options \
+for replication mode; handle `relation-joined`/`relation-departed` for cluster membership.
+- **HA**: Add leader-election handling in `_on_leader_elected`; add `promote-standby` \
+action for manual failover; ensure peer relation shares cluster state.
+- **Upgrades**: Handle `upgrade-charm` event; add rolling-restart logic if the workload \
+supports it; add a `pre-upgrade-check` action that validates readiness.
+- **Security**: Add `rotate-credentials` action; use Juju secrets for sensitive config; \
+add TLS config options and certificate relation if applicable.
+- **Monitoring**: Add custom Prometheus metrics via the `metrics-endpoint` relation; \
+create Grafana dashboard JSON in `src/grafana_dashboards/`; add alert rules in \
+`src/prometheus_alert_rules/`.
+- **Disaster recovery**: Add `export-state` and `import-state` actions; document RTO/RPO \
+in README.
+
+Each task should commit its changes with `git_add` and `git_commit`. Include a final \
+validation task (category: test) that runs `charm_validate` and `run_charm_tests` to \
+verify nothing is broken.
+
+### Context
+{context_block}
+"""
+
+
+def _build_day2_to_build_prompt(context: PlanningContext) -> str:
+    """Build the system prompt for generating tasks from day-2 findings."""
+    return _DAY2_TO_BUILD_PROMPT.format(
+        categories=", ".join(sorted(_VALID_CATEGORIES)),
+        context_block=_format_context_block(context),
+    )
 
 
 def _format_context_block(context: PlanningContext) -> str:

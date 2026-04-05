@@ -324,7 +324,15 @@ class BackgroundExecutor:
             self._record_task_error(task, exc)
             if self._on_task_failed:
                 self._on_task_failed(task)
-        except (llm.ProviderError, llm.ProviderRateLimitError, OSError, RuntimeError) as exc:
+        except (
+            llm.ProviderError,
+            llm.ProviderRateLimitError,
+            OSError,
+            RuntimeError,
+            ValueError,
+            KeyError,
+            AttributeError,
+        ) as exc:
             elapsed = time.monotonic() - t0
             log.warning("Task '%s' failed after %.1fs: %s", task.title, elapsed, exc)
             if snapshot and task.category in self._SNAPSHOT_CATEGORIES:

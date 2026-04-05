@@ -1,6 +1,7 @@
 """Core agent logic."""
 
 import logging
+import sqlite3
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,9 @@ from cantrip.agent.executor import BackgroundExecutor
 from cantrip.agent.planner import (
     PlanningContext,
     TaskPlanner,
+    find_day2_anchor,
     is_one_shot_build,
+    plan_day2_ops_phase,
     plan_improvement_fixes,
     plan_one_shot_build,
 )
@@ -628,6 +631,12 @@ class CantripAgent:
             )
         self._work_queue.add_tasks(build_tasks)
 
+        # Append day-2 operations research phase after the build/deploy tasks.
+        anchor = find_day2_anchor(build_tasks)
+        if anchor:
+            day2_tasks = plan_day2_ops_phase(context, depends_on=anchor)
+            self._work_queue.add_tasks(day2_tasks)
+
         self._ensure_store()
         if self._store:
             self._store.record_event(
@@ -641,6 +650,69 @@ class CantripAgent:
             )
 
         return build_tasks
+
+    # -- Day-2 operations confirmation -----------------------------------------
+
+    async def handle_day2_confirmation(
+        self,
+        confirm_task_id: str,
+        overrides: str | None = None,
+    ) -> list[AgentTask]:
+        """Process an approved day-2 confirm task and generate implementation tasks.
+
+        1. Finds the synthesis task result from the dependency chain.
+        2. Generates implementation tasks via the planner.
+        3. Adds implementation tasks to the work queue.
+        """
+        confirm_task = self._work_queue.get_task(confirm_task_id)
+        if confirm_task is None:
+            log.warning("Day-2 confirm task %s not found", confirm_task_id)
+            return []
+
+        # Walk dependencies to find the synthesis result.
+        day2_text = ""
+        for dep_id in confirm_task.dependencies:
+            dep = self._work_queue.get_task(dep_id)
+            if dep is not None and dep.result:
+                day2_text = dep.result
+                break
+
+        if not day2_text:
+            log.warning("No day-2 synthesis result found for confirmation")
+            return []
+
+        context = PlanningContext(
+            intent=(
+                f"Implement day-2 operations for "
+                f"{self.state.charm_name or 'the charm'}"
+            ),
+            charm_name=self.state.charm_name,
+            charm_type=self.state.charm_type,
+            framework=self.state.framework,
+            dev_model=self.state.dev_model,
+            cos_model=self.state.cos_model,
+            environment_ready=self.state.environment_ready,
+        )
+
+        planner = TaskPlanner(self.provider)
+        impl_tasks = await planner.plan_from_day2_findings(
+            findings=day2_text,
+            context=context,
+            overrides=overrides,
+        )
+        self._work_queue.add_tasks(impl_tasks)
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "day2_confirmed",
+                {
+                    "charm_name": self.state.charm_name,
+                    "impl_task_count": len(impl_tasks),
+                },
+            )
+
+        return impl_tasks
 
     # -- Improvement confirmation ----------------------------------------------
 
@@ -848,7 +920,7 @@ class CantripAgent:
 
         try:
             loaded = self._store.load_session()
-        except Exception:
+        except (sqlite3.Error, KeyError, ValueError, TypeError):
             log.warning("Failed to load session — .cantrip file may be corrupt")
             self._store = None
             return False

@@ -88,6 +88,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
     TaskCategory.RESEARCH: frozenset(
         {
             "web_fetch",
+            "web_search",
             "charmhub_search",
             "charmhub_info",
             "registry_search",
@@ -290,6 +291,11 @@ _ACCEPTANCE_PREFIX = "Acceptance test:"
 
 _ACCEPTANCE_GUIDANCE = _load_guidance("acceptance.md")
 
+# Title prefix for day-2 operations research tasks.
+DAY2_PREFIX = "Day 2:"
+
+_DAY2_GUIDANCE = _load_guidance("day2.md")
+
 
 # ---------------------------------------------------------------------------
 # Pure helper functions
@@ -436,6 +442,10 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
     # 4c. Task-specific guidance overlay for acceptance testing.
     if task.title.startswith(_ACCEPTANCE_PREFIX) and task.category == TaskCategory.TEST:
         sections.append(f"## Acceptance testing guidance\n\n{_ACCEPTANCE_GUIDANCE}")
+
+    # 4d. Task-specific guidance overlay for day-2 operations research.
+    if task.title.startswith(DAY2_PREFIX) and task.category == TaskCategory.RESEARCH:
+        sections.append(f"## Day-2 operations guidance\n\n{_DAY2_GUIDANCE}")
 
     # 5. Prior task results (dependency handoff).
     if context.prior_results:

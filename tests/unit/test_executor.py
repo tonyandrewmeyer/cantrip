@@ -336,6 +336,39 @@ class TestExecuteTask:
         assert task.result == "LLM exploded"
 
     @pytest.mark.asyncio
+    async def test_value_error_marks_task_failed(self) -> None:
+        """A ValueError from a subagent marks the task as failed."""
+        queue = WorkQueue()
+        task = AgentTask(id="t1", title="Build", category=TaskCategory.BUILD)
+        queue.add_task(task)
+
+        executor = _make_executor(queue=queue)
+
+        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(side_effect=ValueError("bad data"))
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.FAILED
+        assert task.result == "bad data"
+
+    @pytest.mark.asyncio
+    async def test_key_error_marks_task_failed(self) -> None:
+        """A KeyError from a subagent marks the task as failed."""
+        queue = WorkQueue()
+        task = AgentTask(id="t1", title="Build", category=TaskCategory.BUILD)
+        queue.add_task(task)
+
+        executor = _make_executor(queue=queue)
+
+        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+            instance = mock_cls.return_value
+            instance.run = AsyncMock(side_effect=KeyError("missing_key"))
+            await executor._execute_task(task)
+
+        assert task.status == TaskStatus.FAILED
+
+    @pytest.mark.asyncio
     async def test_timeout_marks_task_failed(self) -> None:
         queue = WorkQueue()
         task = AgentTask(id="t1", title="Slow", category=TaskCategory.BUILD)
