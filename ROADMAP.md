@@ -1646,6 +1646,21 @@ on whether to adopt an agent framework, stay with the bespoke approach, or take 
 path. If adoption is recommended, the document includes a migration sketch. If staying
 bespoke, the document articulates what we'd be giving up and why that's acceptable.
 
+**Decision:** Stay bespoke. Two hybrid options identified for future work:
+
+1. **Adopt Pydantic AI's `@agent.tool` decorator pattern** — add a `@tool` decorator
+   to the `Tool` base class that auto-generates JSON Schema from type hints and
+   docstrings, eliminating the manual `parameters` property on each tool. This borrows
+   the *pattern*, not the library — no new dependency. Would reduce boilerplate across
+   40+ tools. Estimated effort: 1 day.
+
+2. **Keep Claude Agent SDK as a migration target** — if Cantrip ever drops
+   multi-provider support (i.e. Claude becomes the only model), the Agent SDK's
+   subagent model, session management, and built-in tools map well to Cantrip's
+   inner loop. Revisit if the provider landscape changes.
+
+Full analysis: [`FRAMEWORK_EVALUATION.md`](FRAMEWORK_EVALUATION.md).
+
 ---
 
 ## Phase 19: Operational Readiness Assessment
