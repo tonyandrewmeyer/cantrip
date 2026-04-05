@@ -195,6 +195,41 @@ async def _api_logs(request: web.Request) -> web.Response:
     return web.json_response({"lines": log_lines})
 
 
+async def _ws_logs_stream(request: web.Request) -> web.WebSocketResponse:
+    """Stream live log lines via WebSocket using juju debug-log --tail."""
+    from cantrip.juju.log_stream import juju_available, stream_lines
+
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    agent: CantripAgent = request.app["agent"]
+    dev_model = agent.state.dev_model
+    level = request.query.get("level", "WARNING")
+
+    if not dev_model or not juju_available():
+        await ws.send_json({"error": "No model or juju CLI"})
+        await ws.close()
+        return ws
+
+    try:
+        async for line in stream_lines(
+            dev_model,
+            level=level,
+            lines=50,
+            max_lines=5000,
+        ):
+            if ws.closed:
+                break
+            await ws.send_json({"line": line})
+    except (OSError, asyncio.CancelledError):
+        pass
+    finally:
+        if not ws.closed:
+            await ws.close()
+
+    return ws
+
+
 async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
     """Handle a WebSocket connection for real-time chat and updates."""
     ws = web.WebSocketResponse()
@@ -316,6 +351,7 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     app.router.add_get("/api/state", _api_state)
     app.router.add_get("/api/juju-status", _api_juju_status)
     app.router.add_get("/api/logs", _api_logs)
+    app.router.add_get("/api/logs-stream", _ws_logs_stream)
     app.router.add_get("/ws", _websocket_handler)
     app.router.add_static("/static", _STATIC_DIR, name="static")
 

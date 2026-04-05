@@ -279,6 +279,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
     TaskCategory.DEBUG: frozenset(
         {
             "juju_debug_log",
+            "juju_stream_logs",
             "tempo_query",
             "loki_query",
             "juju_status",

@@ -151,6 +151,111 @@ class JujuDebugLogTool(Tool):
         )
 
 
+class JujuStreamLogsTool(Tool):
+    """Tool to stream real-time logs from a Juju model.
+
+    Uses ``juju debug-log --tail`` for live log streaming.  Returns a
+    batch of recent log lines, useful for monitoring ongoing operations
+    or watching for errors as they happen.
+    """
+
+    @property
+    def name(self) -> str:
+        return "juju_stream_logs"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Stream real-time logs from a Juju model using juju debug-log --tail. "
+            "Returns a batch of recent log lines. Useful for monitoring live operations."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string",
+                    "description": "Model name (required)",
+                },
+                "lines": {
+                    "type": "integer",
+                    "description": "Number of initial lines to fetch (default 50)",
+                    "default": 50,
+                },
+                "unit": {
+                    "type": "string",
+                    "description": "Filter logs to a specific unit (e.g. 'my-app/0')",
+                },
+                "level": {
+                    "type": "string",
+                    "enum": ["ERROR", "WARNING", "INFO", "DEBUG"],
+                    "description": "Minimum log level to include (default WARNING)",
+                },
+                "max_lines": {
+                    "type": "integer",
+                    "description": "Maximum total lines to return (default 100)",
+                    "default": 100,
+                },
+            },
+            "required": ["model"],
+        }
+
+    async def execute(
+        self,
+        model: str,
+        lines: int = 50,
+        unit: str | None = None,
+        level: str = "WARNING",
+        max_lines: int = 100,
+    ) -> ToolResult:
+        """Stream real-time logs from the model."""
+        from cantrip.juju.log_stream import juju_available, stream_lines
+
+        if not juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        collected: list[str] = []
+        try:
+            async for line in stream_lines(
+                model,
+                level=level,
+                unit=unit,
+                lines=lines,
+                max_lines=max_lines,
+            ):
+                collected.append(line)
+        except (OSError, TimeoutError) as exc:
+            if collected:
+                # Return what we got so far.
+                output = "\n".join(collected)
+                return ToolResult(
+                    success=True,
+                    output=_truncate(f"{output}\n\n(streaming interrupted: {exc})"),
+                )
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Log streaming failed: {exc}",
+            )
+
+        if not collected:
+            return ToolResult(
+                success=True,
+                output="(no log output matching the given filters)",
+            )
+
+        return ToolResult(
+            success=True,
+            output=_truncate("\n".join(collected)),
+        )
+
+
 class TempoQueryTool(Tool):
     """Tool to query Tempo for distributed traces via the COS model."""
 

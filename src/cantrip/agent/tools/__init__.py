@@ -82,6 +82,7 @@ from cantrip.agent.tools.juju import (
 from cantrip.agent.tools.loadtest import GenerateLoadTestTool
 from cantrip.agent.tools.observability import (
     JujuDebugLogTool,
+    JujuStreamLogsTool,
     LokiQueryTool,
     TempoQueryTool,
 )
@@ -212,6 +213,7 @@ def build_tools(
         JujuListOffersTool(),
         # Observability
         JujuDebugLogTool(),
+        JujuStreamLogsTool(),
         TempoQueryTool(),
         LokiQueryTool(),
         # Inference snaps
