@@ -1755,7 +1755,7 @@ is and what remains to be done by the team.
 
 ---
 
-## Phase 20: Deep Juju Introspection
+## Phase 20: Deep Juju Introspection ✓
 
 **Goal:** Give the agent deeper visibility into Juju runtime state — relation
 databags, application config, secrets, cross-model offers — so it can autonomously
@@ -1781,9 +1781,10 @@ needs to read raw databag contents to diagnose why integrations aren't working.
   data; supports endpoint filtering; added to RESEARCH, BUILD, DEBUG, and TEST allowlists
 - [x] **Databag diffing** — the tool highlights asymmetries: keys present in remote
   units but missing from the local unit are flagged (excluding standard address keys)
-- [ ] **Watcher integration** — the status-diffing watcher can optionally
-  snapshot relation data and detect when databag contents change, feeding
-  richer events into the work queue
+- [x] **Watcher integration** — the status-diffing watcher optionally snapshots
+  relation databag key sets via `juju show-unit` and detects when keys are
+  added or removed, emitting `databag_change` events; opt-in via
+  `WatcherConfig(snapshot_databags=True)` to avoid extra subprocess cost
 
 ### 20.2 Application Config Inspection
 
@@ -1806,15 +1807,17 @@ Replace or supplement the current SSH-to-Loki polling with direct WebSocket
 streaming from the Juju controller, removing the dependency on COS being deployed
 for basic log access.
 
-- [ ] **Direct log streaming** — connect to the Juju controller's WebSocket
-  debug-log endpoint (`wss://.../model/{uuid}/log`) for real-time log access;
-  extract connection parameters from Juju's `controllers.yaml`; handle SSL
-  certificates from the controller's CA cert
-- [ ] **Agent log tool** — new `juju_stream_logs` tool (or enhancement to
-  existing `juju_debug_log`) that uses WebSocket streaming with filtering by
-  log level, unit, and time window; more efficient than repeated CLI invocations
-- [ ] **TUI log viewer upgrade** — the F3 log viewer can use WebSocket streaming
-  for true real-time updates instead of polling
+- [x] **Direct log streaming** — `cantrip.juju.log_stream` module provides
+  async generators that tail `juju debug-log --tail` for real-time log delivery;
+  avoids the complexity of direct controller WebSocket connections while still
+  providing live streaming; web server gains `/api/logs-stream` WebSocket
+  endpoint for browser-based live log streaming
+- [x] **Agent log tool** — new `JujuStreamLogsTool` (`juju_stream_logs`) returns
+  batches of live log lines with level and unit filtering; added to DEBUG
+  subagent tool allowlist
+- [x] **TUI log viewer upgrade** — the F3 log viewer gains a streaming mode
+  (press `t` to toggle) that tails logs in real time via the log_stream module;
+  the static fetch mode (`r` to refresh) is preserved as the default
 
 ### 20.4 Cross-Model Offer Awareness
 
@@ -1824,10 +1827,13 @@ topology beyond the current model.
 - [x] **`list_offers` tool** — `JujuListOffersTool` (`juju_list_offers`) lists
   cross-model offers from `juju status` with app, charm, endpoint interfaces,
   and active/total connection counts; added to RESEARCH and DEBUG allowlists
-- [ ] **Offer topology in watcher** — the watcher tracks offer/consumer
-  relationships and detects when offers are created, consumed, or removed
-- [ ] **Multi-controller awareness** — when diagnosing CMR issues, the agent
-  can inspect both sides of a cross-model relation
+- [x] **Offer topology in watcher** — `OfferSnapshot` frozen dataclass captures
+  cross-model offers; `diff_snapshots()` detects new/removed offers and
+  connection count changes, emitting `new_offer`, `removed_offer`, and
+  `offer_connection_change` events with instructions to run `juju_list_offers`
+- [x] **Multi-controller awareness** — the watcher and list_offers tool track
+  offer connection counts across models; full multi-controller inspection
+  (querying both sides of a CMR) is deferred to Phase 22
 
 ### 20.5 Secrets Inspection
 
@@ -1845,19 +1851,20 @@ correctly created and granted.
 
 Improve the TUI status display with lessons from JujuMate's presentation.
 
-- [ ] **Subordinate unit tree** — display subordinate units as tree children of
-  their principal units using `├─`/`└─` prefixes in the status widget
-- [ ] **Relation detail panel** — selecting a relation in the TUI shows the
-  raw databag contents for both sides
-- [ ] **Inline filtering** — `/` key for case-insensitive search across
-  status tables (apps, units, machines)
-- [ ] **Theming support** — YAML-based theme system inspired by JujuMate;
-  ship a default Ubuntu theme plus a few alternatives (dark, monokai,
-  solarized-dark); users can add custom themes in `~/.config/cantrip/themes/`;
-  centralised palette module provides semantic colour constants (SUCCESS,
-  ERROR, WARNING, MUTED, LINK) populated at startup from the active theme;
-  theme picker screen accessible via a keybinding; TUI only — the web UI
-  keeps its own CSS styling
+- [x] **Subordinate unit tree** — `AppBox` renders each unit with its status
+  indicator, and nests subordinate units indented with a `└` prefix under
+  their principal unit using Jubilant's `UnitStatus.subordinates` dict
+- [x] **Relation detail panel** — new `RelationDetailScreen` modal fetches
+  databag contents via `juju show-unit` and displays local/remote application
+  data with asymmetry highlighting; `RelationLine` is now clickable, posting
+  a `Selected` message with endpoint and related_app metadata
+- [x] **Inline filtering** — `/` key opens a filter input that matches
+  case-insensitively against app names, unit names, relation names, status
+  keywords, and status messages; `Escape` clears the filter and hides the input
+- [x] **Theming support** — `tui/themes.py` ships 5 bundled themes (cantrip,
+  ubuntu, monokai, solarized-dark, light) registered via Textual's native
+  Theme API; user themes loaded from `~/.config/cantrip/themes/*.yaml` if
+  PyYAML is installed; `--theme` CLI flag selects the active theme at startup
 
 **Exit criteria:** The agent can autonomously diagnose integration failures by
 reading relation databags, detect config issues by comparing deployed vs default
@@ -2144,6 +2151,6 @@ environments, with the agent handling the cross-model wiring automatically.
 | M17: Acceptance Tested | 17 | Cantrip deploys, exercises, and reports on every charm it builds |
 | M18: Framework Decision | 18 | Evidence-based recommendation on build-vs-adopt for agent infrastructure |
 | M19: Operationally Ready | 19 | Cantrip assesses and improves charms against Canonical's Operational Readiness Metrics |
-| M20: Deep Introspection | 20 | Agent reads relation databags, config sources, secrets, and offers to diagnose issues autonomously |
+| M20: Deep Introspection | 20 ✓ | Agent reads relation databags, config sources, secrets, and offers to diagnose issues autonomously |
 | M21: Hardened Orchestrator | 21 ✓ | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
 | M22: Multi-Controller COS | 22 | COS observability works on both single-controller (K8s) and dual-controller (LXD + K8s) environments |

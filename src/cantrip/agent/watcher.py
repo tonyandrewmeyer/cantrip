@@ -194,7 +194,7 @@ def capture_databag_snapshot(model: str) -> DatabagSnapshot:
         return DatabagSnapshot()
 
     apps = status_data.get("applications", {})
-    for app_name, app_data in apps.items():
+    for _app_name, app_data in apps.items():
         units = app_data.get("units", {})
         if not units:
             continue
