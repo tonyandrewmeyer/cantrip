@@ -1,0 +1,83 @@
+name: ntfy
+type: charm
+title: ntfy Push Notification Server
+summary: Self-hosted push notification server.
+description: |
+  Deploys ntfy, a self-hosted push notification server.  Generates a
+  server.yml configuration file from charm config, manages persistent
+  storage for the message cache and attachments, and integrates with
+  COS for observability.
+
+base: ubuntu@24.04
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+
+parts:
+  charm:
+    plugin: charm
+
+requires:
+  ingress:
+    interface: ingress
+    limit: 1
+  logging:
+    interface: loki_push_api
+  tracing:
+    interface: tracing
+
+provides:
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
+
+config:
+  options:
+    base-url:
+      type: string
+      description: >
+        External base URL for the server (e.g. https://ntfy.example.com).
+        Required for attachments, web push, and email notifications.
+      default: ""
+    cache-duration:
+      type: string
+      description: How long messages are kept in the cache (e.g. 12h, 24h, 72h).
+      default: "12h"
+    log-level:
+      type: string
+      description: Log verbosity (trace, debug, info, warn, error).
+      default: "info"
+    upstream-base-url:
+      type: string
+      description: >
+        Upstream ntfy server for iOS push forwarding.  Typically
+        https://ntfy.sh for production deployments.
+      default: ""
+
+actions:
+  add-user:
+    description: Create a new ntfy user.
+    params:
+      username:
+        type: string
+        description: Username for the new user.
+      role:
+        type: string
+        description: User role (user or admin).
+        default: user
+
+storage:
+  data:
+    type: filesystem
+    description: Persistent storage for message cache, auth database, and attachments.
+    minimum-size: 1G
+
+containers:
+  ntfy:
+    resource: oci-image
+
+resources:
+  oci-image:
+    type: oci-image
+    description: ntfy OCI image (e.g. binwiederhier/ntfy:v2.19.2).

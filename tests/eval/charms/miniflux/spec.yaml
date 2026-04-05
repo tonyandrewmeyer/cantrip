@@ -1,0 +1,193 @@
+name: miniflux
+description: >
+  Miniflux RSS reader — a Go 12-factor web app with PostgreSQL (Path A).
+  Tests the PaaS charm path: env-var configuration, single HTTP port,
+  health checks, Prometheus metrics, and database relation.
+
+charm_path: twelve-factor
+substrate: k8s
+
+# Pin to a specific release so the gold standards stay valid.
+workload:
+  repo: https://github.com/miniflux/v2
+  tag: "2.2.18"
+  image: miniflux/miniflux:2.2.18
+  port: 8080
+  health: /healthcheck
+
+prompt: >
+  Build a Kubernetes charm for Miniflux, the minimalist RSS feed reader.
+  The upstream repo is https://github.com/miniflux/v2 (tag 2.2.18) and
+  there is an official OCI image at miniflux/miniflux:2.2.18.  Miniflux
+  is a single Go binary configured entirely via environment variables.
+  It needs PostgreSQL (DATABASE_URL), listens on port 8080, and has a
+  health endpoint at /healthcheck.  It has built-in Prometheus metrics.
+  I need ingress for external access, COS integration, sensible config
+  options, and a "create-admin" action to bootstrap the first user.
+
+follow_ups: []
+
+rubric:
+  # ── Structure ──────────────────────────────────────────────────────
+  - name: charmcraft-yaml
+    description: Primary project file exists
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: charmcraft.yaml}
+    points: 3
+
+  - name: charm-source
+    description: Main charm source file
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: src/charm.py}
+    points: 3
+
+  - name: unit-test-dir
+    description: Unit test directory
+    category: structure
+    severity: major
+    check: dir_exists
+    args: {path: tests/unit}
+    points: 2
+
+  - name: integration-test-dir
+    description: Integration test directory
+    category: structure
+    severity: minor
+    check: dir_exists
+    args: {path: tests/integration}
+    points: 1
+
+  # ── Metadata ───────────────────────────────────────────────────────
+  - name: charm-name
+    description: Charm name is set
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: name}
+    points: 2
+
+  - name: postgresql-relation
+    description: Requires a postgresql relation (postgresql_client interface)
+    category: metadata
+    severity: critical
+    check: has_relation
+    args: {relation: postgresql, interface: postgresql_client}
+    points: 3
+
+  - name: ingress-relation
+    description: Ingress relation for external access
+    category: metadata
+    severity: major
+    check: has_relation
+    args: {relation: ingress}
+    points: 2
+
+  - name: container-declared
+    description: OCI container declared in metadata
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: containers}
+    points: 2
+
+  - name: create-admin-action
+    description: Action to bootstrap the first admin user
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: create-admin}
+    points: 2
+
+  # ── Code ───────────────────────────────────────────────────────────
+  - name: uses-ops
+    description: Charm uses the ops framework
+    category: code
+    severity: critical
+    check: uses_ops_framework
+    points: 3
+
+  - name: sets-database-url
+    description: Charm passes DATABASE_URL to the workload
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: DATABASE_URL
+      message: Charm sets DATABASE_URL environment variable
+    points: 3
+
+  - name: sets-listen-addr
+    description: Charm configures LISTEN_ADDR for the workload
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: LISTEN_ADDR
+      message: Charm sets LISTEN_ADDR environment variable
+    points: 1
+
+  - name: pebble-layer
+    description: Charm defines a Pebble layer
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "pebble|Layer|add_layer"
+      message: Charm configures Pebble layer
+    points: 3
+
+  - name: health-check-reference
+    description: Charm references the health check endpoint
+    category: code
+    severity: minor
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: healthcheck|health
+      message: Charm uses /healthcheck endpoint
+    points: 1
+
+  # ── COS ────────────────────────────────────────────────────────────
+  - name: cos-integration
+    description: COS integration for observability
+    category: cos
+    severity: major
+    check: has_cos_integration
+    points: 3
+
+  - name: metrics-relation
+    description: Prometheus scrape endpoint for built-in metrics
+    category: cos
+    severity: major
+    check: has_relation
+    args: {relation: metrics-endpoint, interface: prometheus_scrape}
+    points: 2
+
+  # ── Testing ────────────────────────────────────────────────────────
+  - name: has-unit-tests
+    description: At least one unit test file
+    category: testing
+    severity: major
+    check: has_unit_tests
+    points: 2
+
+  - name: uses-scenario
+    description: Unit tests use Scenario (ops.testing)
+    category: testing
+    severity: major
+    check: uses_scenario_tests
+    points: 2
+
+  - name: no-harness
+    description: No deprecated Harness usage
+    category: testing
+    severity: critical
+    check: no_harness
+    points: 2

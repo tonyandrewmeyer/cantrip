@@ -1,0 +1,85 @@
+name: meilisearch
+type: charm
+title: Meilisearch
+summary: Lightning-fast full-text search engine.
+description: |
+  Deploys Meilisearch, a fast and relevant full-text search engine.
+  Manages persistent storage for the LMDB database, snapshots, and dumps.
+  Exposes actions for backup operations and API key management.
+  Integrates with COS for observability.
+
+base: ubuntu@24.04
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+
+parts:
+  charm:
+    plugin: charm
+
+requires:
+  logging:
+    interface: loki_push_api
+  tracing:
+    interface: tracing
+
+provides:
+  meilisearch:
+    interface: meilisearch
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
+
+config:
+  options:
+    master-key:
+      type: string
+      description: >
+        Master key for API authentication.  Required when environment is
+        set to production.  Must be at least 16 bytes.
+      default: ""
+    environment:
+      type: string
+      description: >
+        Runtime environment: production (requires master-key) or development.
+      default: "production"
+    log-level:
+      type: string
+      description: Log verbosity (ERROR, WARN, INFO, DEBUG, TRACE, OFF).
+      default: "INFO"
+    max-indexing-memory:
+      type: string
+      description: >
+        Maximum RAM for indexing operations (e.g. 1GiB, 2GiB).  Defaults
+        to two-thirds of available memory.
+      default: ""
+    scheduled-snapshot-interval:
+      type: int
+      description: >
+        Interval in seconds between automatic snapshots.  Set to 0 to
+        disable scheduled snapshots.
+      default: 0
+
+actions:
+  create-snapshot:
+    description: Create a point-in-time binary snapshot of the database.
+  create-dump:
+    description: Create a portable, version-independent dump.
+  get-keys:
+    description: List all API keys.
+
+storage:
+  data:
+    type: filesystem
+    description: Persistent storage for the LMDB database, snapshots, and dumps.
+    minimum-size: 5G
+
+containers:
+  meilisearch:
+    resource: oci-image
+
+resources:
+  oci-image:
+    type: oci-image
+    description: Meilisearch OCI image (e.g. getmeili/meilisearch:v1.39.0).

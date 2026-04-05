@@ -1,0 +1,229 @@
+name: ntfy
+description: >
+  ntfy push notification server — a Go daemon with config file templating
+  (Path B, custom K8s charm).  Tests the custom charm path: Pebble layer
+  with generated config file, persistent storage, authentication setup,
+  health checks, and Prometheus metrics.
+
+charm_path: custom
+substrate: k8s
+
+workload:
+  repo: https://github.com/binwiederhier/ntfy
+  tag: "v2.19.2"
+  image: binwiederhier/ntfy:v2.19.2
+  port: 80
+  health: /v1/health
+
+prompt: >
+  Build a Kubernetes charm for ntfy, the self-hosted push notification
+  server.  The upstream repo is https://github.com/binwiederhier/ntfy
+  (tag v2.19.2) and the OCI image is binwiederhier/ntfy:v2.19.2.  ntfy
+  is a single Go binary started with "ntfy serve" that uses a YAML config
+  file at /etc/ntfy/server.yml.  It listens on port 80 by default, uses
+  SQLite for message caching (at cache-file path) and auth (at auth-file
+  path), and stores attachments on disk.  It has a health endpoint at
+  /v1/health and optional Prometheus metrics.  The charm should generate
+  the server.yml config file from charm config options, manage persistent
+  storage for the cache and attachments, set auth-default-access to
+  deny-all for security, support ingress (with behind-proxy: true), and
+  integrate with COS.  Config options should include base-url,
+  cache-duration, and log-level at minimum.
+
+follow_ups: []
+
+rubric:
+  # ── Structure ──────────────────────────────────────────────────────
+  - name: charmcraft-yaml
+    description: Primary project file exists
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: charmcraft.yaml}
+    points: 3
+
+  - name: charm-source
+    description: Main charm source file
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: src/charm.py}
+    points: 3
+
+  - name: unit-test-dir
+    description: Unit test directory
+    category: structure
+    severity: major
+    check: dir_exists
+    args: {path: tests/unit}
+    points: 2
+
+  - name: integration-test-dir
+    description: Integration test directory
+    category: structure
+    severity: minor
+    check: dir_exists
+    args: {path: tests/integration}
+    points: 1
+
+  # ── Metadata ───────────────────────────────────────────────────────
+  - name: charm-name
+    description: Charm name is set
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: name}
+    points: 2
+
+  - name: container-declared
+    description: OCI container declared in metadata
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: containers}
+    points: 2
+
+  - name: ingress-relation
+    description: Ingress relation for external access
+    category: metadata
+    severity: major
+    check: has_relation
+    args: {relation: ingress}
+    points: 2
+
+  - name: base-url-config
+    description: Config option for the external base URL
+    category: metadata
+    severity: major
+    check: has_config_option
+    args: {option: base-url, type: string}
+    points: 2
+
+  - name: cache-duration-config
+    description: Config option for message cache duration
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: cache-duration, type: string}
+    points: 1
+
+  - name: log-level-config
+    description: Config option for log verbosity
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: log-level, type: string}
+    points: 1
+
+  # ── Code ───────────────────────────────────────────────────────────
+  - name: uses-ops
+    description: Charm uses the ops framework
+    category: code
+    severity: critical
+    check: uses_ops_framework
+    points: 3
+
+  - name: generates-config-file
+    description: Charm generates server.yml config file
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "server\\.yml|server_yml|push_file|push.*config"
+      message: Charm generates ntfy server.yml configuration
+    points: 3
+
+  - name: ntfy-serve-command
+    description: Pebble layer uses "ntfy serve" command
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "ntfy.*serve"
+      message: Charm runs ntfy with serve command
+    points: 3
+
+  - name: pebble-layer
+    description: Charm defines a Pebble layer
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "pebble|Layer|add_layer"
+      message: Charm configures Pebble layer
+    points: 3
+
+  - name: deny-all-default
+    description: Sets auth-default-access to deny-all for security
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "deny.all|deny_all"
+      message: Charm defaults to deny-all auth access
+    points: 2
+
+  - name: behind-proxy
+    description: Sets behind-proxy when ingress is related
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "behind.proxy|behind_proxy"
+      message: Charm handles behind-proxy for ingress
+    points: 2
+
+  - name: health-check
+    description: References health endpoint
+    category: code
+    severity: minor
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "v1/health|health"
+      message: Charm uses /v1/health endpoint
+    points: 1
+
+  # ── Storage ────────────────────────────────────────────────────────
+  - name: storage-declared
+    description: Persistent storage declared for cache and attachments
+    category: metadata
+    severity: major
+    check: metadata_field
+    args: {field: storage}
+    points: 2
+
+  # ── COS ────────────────────────────────────────────────────────────
+  - name: cos-integration
+    description: COS integration for observability
+    category: cos
+    severity: major
+    check: has_cos_integration
+    points: 3
+
+  # ── Testing ────────────────────────────────────────────────────────
+  - name: has-unit-tests
+    description: At least one unit test file
+    category: testing
+    severity: major
+    check: has_unit_tests
+    points: 2
+
+  - name: uses-scenario
+    description: Unit tests use Scenario (ops.testing)
+    category: testing
+    severity: major
+    check: uses_scenario_tests
+    points: 2
+
+  - name: no-harness
+    description: No deprecated Harness usage
+    category: testing
+    severity: critical
+    check: no_harness
+    points: 2

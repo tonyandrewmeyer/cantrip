@@ -1,0 +1,70 @@
+name: miniflux
+type: charm
+title: Miniflux RSS Reader
+summary: A minimalist RSS feed reader.
+description: |
+  Deploys Miniflux, a minimalist and opinionated RSS feed reader written
+  in Go.  Uses PostgreSQL for storage, integrates with COS for
+  observability, and supports ingress for external access.
+
+base: ubuntu@24.04
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+
+parts:
+  charm:
+    plugin: charm
+
+requires:
+  postgresql:
+    interface: postgresql_client
+  ingress:
+    interface: ingress
+    limit: 1
+  logging:
+    interface: loki_push_api
+  tracing:
+    interface: tracing
+
+provides:
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
+
+config:
+  options:
+    base-url:
+      type: string
+      description: External base URL for link generation (e.g. https://rss.example.com).
+      default: ""
+    polling-frequency:
+      type: int
+      description: Feed polling interval in minutes.
+      default: 60
+    worker-pool-size:
+      type: int
+      description: Number of background feed-polling workers.
+      default: 16
+
+actions:
+  create-admin:
+    description: Create the initial admin user.
+    params:
+      username:
+        type: string
+        description: Admin username.
+        default: admin
+      password:
+        type: string
+        description: Admin password.
+
+containers:
+  miniflux:
+    resource: oci-image
+
+resources:
+  oci-image:
+    type: oci-image
+    description: Miniflux OCI image (e.g. miniflux/miniflux:2.2.18).

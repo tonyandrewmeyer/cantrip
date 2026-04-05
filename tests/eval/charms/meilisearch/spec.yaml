@@ -1,0 +1,242 @@
+name: meilisearch
+description: >
+  Meilisearch full-text search engine — a Rust single-binary infrastructure
+  service (Path C).  Tests the infrastructure charm path: persistent storage
+  management, operational actions (snapshots, dumps), API key handling,
+  resource tuning config, and COS integration.
+
+charm_path: infrastructure
+substrate: k8s
+
+workload:
+  repo: https://github.com/meilisearch/meilisearch
+  tag: "v1.39.0"
+  image: getmeili/meilisearch:v1.39.0
+  port: 7700
+  health: /health
+
+prompt: >
+  Build a Kubernetes charm for Meilisearch, the full-text search engine.
+  The upstream repo is https://github.com/meilisearch/meilisearch (tag
+  v1.39.0) and the OCI image is getmeili/meilisearch:v1.39.0.  Meilisearch
+  is a single Rust binary that listens on port 7700 and stores its data in
+  an LMDB database at the path set by MEILI_DB_PATH.  It's configured via
+  environment variables (MEILI_* prefix).  Key vars: MEILI_MASTER_KEY
+  (required in production), MEILI_ENV (production/development),
+  MEILI_DB_PATH, MEILI_HTTP_ADDR.  Health check at GET /health.  The charm
+  needs persistent storage for the database, snapshots, and dumps.  It
+  should expose actions for create-snapshot, create-dump, and get-keys.
+  Config options should include master-key, environment (prod/dev),
+  log-level, max-indexing-memory, and scheduled-snapshot-interval.  It
+  should provide a relation interface so client charms can discover the
+  host, port, and API key.  Integrate with COS for observability.
+
+follow_ups: []
+
+rubric:
+  # ── Structure ──────────────────────────────────────────────────────
+  - name: charmcraft-yaml
+    description: Primary project file exists
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: charmcraft.yaml}
+    points: 3
+
+  - name: charm-source
+    description: Main charm source file
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: src/charm.py}
+    points: 3
+
+  - name: unit-test-dir
+    description: Unit test directory
+    category: structure
+    severity: major
+    check: dir_exists
+    args: {path: tests/unit}
+    points: 2
+
+  - name: integration-test-dir
+    description: Integration test directory
+    category: structure
+    severity: minor
+    check: dir_exists
+    args: {path: tests/integration}
+    points: 1
+
+  # ── Metadata ───────────────────────────────────────────────────────
+  - name: charm-name
+    description: Charm name is set
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: name}
+    points: 2
+
+  - name: container-declared
+    description: OCI container declared in metadata
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: containers}
+    points: 2
+
+  - name: storage-declared
+    description: Persistent storage for LMDB data
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: storage}
+    points: 3
+
+  - name: provides-relation
+    description: Provides a relation for client charms to discover the search endpoint
+    category: metadata
+    severity: major
+    check: metadata_field
+    args: {field: provides}
+    points: 2
+
+  - name: master-key-config
+    description: Config option for the master key
+    category: metadata
+    severity: critical
+    check: has_config_option
+    args: {option: master-key, type: string}
+    points: 2
+
+  - name: environment-config
+    description: Config option for production vs development mode
+    category: metadata
+    severity: major
+    check: has_config_option
+    args: {option: environment, type: string}
+    points: 1
+
+  - name: log-level-config
+    description: Config option for log level
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: log-level, type: string}
+    points: 1
+
+  - name: create-snapshot-action
+    description: Action to create a point-in-time snapshot
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: create-snapshot}
+    points: 2
+
+  - name: create-dump-action
+    description: Action to create a portable dump
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: create-dump}
+    points: 2
+
+  - name: get-keys-action
+    description: Action to retrieve API keys
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: get-keys}
+    points: 2
+
+  # ── Code ───────────────────────────────────────────────────────────
+  - name: uses-ops
+    description: Charm uses the ops framework
+    category: code
+    severity: critical
+    check: uses_ops_framework
+    points: 3
+
+  - name: sets-master-key
+    description: Charm passes MEILI_MASTER_KEY to the workload
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: MEILI_MASTER_KEY
+      message: Charm sets MEILI_MASTER_KEY environment variable
+    points: 3
+
+  - name: sets-env-production
+    description: Charm configures MEILI_ENV
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: MEILI_ENV
+      message: Charm sets MEILI_ENV environment variable
+    points: 2
+
+  - name: sets-db-path
+    description: Charm configures MEILI_DB_PATH for persistent storage
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: MEILI_DB_PATH
+      message: Charm sets MEILI_DB_PATH to storage mount
+    points: 2
+
+  - name: pebble-layer
+    description: Charm defines a Pebble layer
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "pebble|Layer|add_layer"
+      message: Charm configures Pebble layer
+    points: 3
+
+  - name: health-check
+    description: References the /health endpoint
+    category: code
+    severity: minor
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: /health|health
+      message: Charm uses /health endpoint
+    points: 1
+
+  # ── COS ────────────────────────────────────────────────────────────
+  - name: cos-integration
+    description: COS integration for observability
+    category: cos
+    severity: major
+    check: has_cos_integration
+    points: 3
+
+  # ── Testing ────────────────────────────────────────────────────────
+  - name: has-unit-tests
+    description: At least one unit test file
+    category: testing
+    severity: major
+    check: has_unit_tests
+    points: 2
+
+  - name: uses-scenario
+    description: Unit tests use Scenario (ops.testing)
+    category: testing
+    severity: major
+    check: uses_scenario_tests
+    points: 2
+
+  - name: no-harness
+    description: No deprecated Harness usage
+    category: testing
+    severity: critical
+    check: no_harness
+    points: 2
