@@ -1,14 +1,15 @@
-"""Charm audit tool — deterministic checks for existing charm quality."""
+"""Charm audit tool — delegates to charmlint for deterministic checks."""
 
+import contextlib
 import re
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from cantrip.agent.tools.base import Tool, ToolResult
+from charmlint import LintConfig, lint
+from charmlint.models import Severity
 
-# COS relation interfaces that a well-integrated charm should provide/require.
+# COS relation descriptions for the report.
 _COS_RELATIONS = {
     "tracing": "ops-tracing / Tempo integration",
     "metrics-endpoint": "Prometheus metrics",
@@ -16,7 +17,7 @@ _COS_RELATIONS = {
     "grafana-dashboard": "Grafana dashboard",
 }
 
-# Metadata fields expected for a polished Charmhub listing.
+# Listing fields for the report.
 _LISTING_FIELDS = {
     "display-name": "Human-readable charm name",
     "summary": "One-line summary",
@@ -26,208 +27,6 @@ _LISTING_FIELDS = {
     "source": "Source code URL",
     "tags": "Charmhub tags",
 }
-
-# Patterns indicating deprecated ops framework APIs.
-_DEPRECATED_PATTERNS: list[tuple[str, str, str]] = [
-    (r"\bStoredState\b", "StoredState", "Use instance attributes or Juju secrets instead"),
-    (r"\bfrom\s+ops\.testing\s+import\s+Harness\b", "Harness", "Use Scenario (ops.testing)"),
-    (r"\bHarness\s*\(", "Harness", "Use Scenario (ops.testing)"),
-    (r"\bself\.framework\.breakpoint\b", "framework.breakpoint", "Removed in modern ops"),
-    (
-        r"\bfrom\s+charms\.\w+\.v\d+\.",
-        "charmcraft fetch-libs import",
-        "Prefer PyPI versions of charm libraries",
-    ),
-]
-
-
-# Known charm libraries that have PyPI equivalents.  Keys are the charm
-# library module prefix (after ``from charms.``), values are the PyPI
-# package name and minimum version.
-_FETCH_LIBS_PYPI_MAP: dict[str, str] = {
-    "data_platform_libs": "data-platform-libs",
-    "grafana_k8s": "grafana-k8s-lib",
-    "loki_k8s": "loki-k8s-lib",
-    "prometheus_k8s": "prometheus-k8s-lib",
-    "tempo_coordinator_k8s": "tempo-coordinator-k8s-lib",
-    "tempo_k8s": "tempo-k8s-lib",
-    "traefik_k8s": "traefik-k8s-lib",
-    "catalogue_k8s": "catalogue-k8s-lib",
-    "certificate_transfer_interface": "certificate-transfer-interface-lib",
-    "tls_certificates_interface": "tls-certificates-interface-lib",
-    "observability_libs": "observability-libs",
-    "operator_libs_linux": "operator-libs-linux",
-    "sdcore_nms_k8s": "sdcore-nms-k8s-lib",
-}
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    """Load a YAML file, returning an empty dict on failure."""
-    if not path.exists():
-        return {}
-    try:
-        with path.open() as f:
-            data = yaml.safe_load(f)
-        return data if isinstance(data, dict) else {}
-    except (yaml.YAMLError, OSError):
-        return {}
-
-
-def _collect_python_files(charm_dir: Path) -> list[Path]:
-    """Collect all Python files in src/ and lib/ directories."""
-    files: list[Path] = []
-    for subdir in ("src", "lib"):
-        d = charm_dir / subdir
-        if d.is_dir():
-            files.extend(d.rglob("*.py"))
-    return files
-
-
-def _scan_deprecated_apis(python_files: list[Path]) -> list[dict[str, str]]:
-    """Scan Python files for deprecated ops API usage."""
-    findings: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for path in python_files:
-        try:
-            content = path.read_text(errors="replace")
-        except OSError:
-            continue
-        for pattern, name, advice in _DEPRECATED_PATTERNS:
-            if name in seen:
-                continue
-            if re.search(pattern, content):
-                seen.add(name)
-                findings.append(
-                    {
-                        "api": name,
-                        "file": str(path),
-                        "advice": advice,
-                    }
-                )
-    return findings
-
-
-def _check_fetch_libs(python_files: list[Path]) -> list[dict[str, str]]:
-    """Detect charm library imports that have PyPI equivalents.
-
-    Scans for ``from charms.<lib_prefix>.v<N>.<module>`` patterns and
-    returns a list of findings with the import, the charm library prefix,
-    and the recommended PyPI replacement.
-    """
-    _IMPORT_RE = re.compile(r"from\s+charms\.(\w+)\.v\d+\.\w+")
-    findings: list[dict[str, str]] = []
-    seen_prefixes: set[str] = set()
-
-    for path in python_files:
-        try:
-            content = path.read_text(errors="replace")
-        except OSError:
-            continue
-        for match in _IMPORT_RE.finditer(content):
-            prefix = match.group(1)
-            if prefix in seen_prefixes:
-                continue
-            seen_prefixes.add(prefix)
-            pypi_name = _FETCH_LIBS_PYPI_MAP.get(prefix)
-            if pypi_name:
-                findings.append(
-                    {
-                        "lib_prefix": prefix,
-                        "pypi_package": pypi_name,
-                        "file": str(path),
-                        "advice": f"Replace with `pip install {pypi_name}`",
-                    }
-                )
-            else:
-                findings.append(
-                    {
-                        "lib_prefix": prefix,
-                        "pypi_package": "",
-                        "file": str(path),
-                        "advice": "Check PyPI for a published equivalent",
-                    }
-                )
-    return findings
-
-
-def _check_cos_relations(metadata: dict[str, Any]) -> dict[str, bool]:
-    """Check which COS relation interfaces are present in the metadata."""
-    all_relations: dict[str, Any] = {}
-    for section in ("requires", "provides", "peers"):
-        all_relations.update(metadata.get(section, {}))
-
-    present: dict[str, bool] = {}
-    for interface, _desc in _COS_RELATIONS.items():
-        present[interface] = any(
-            rel.get("interface") == interface
-            for rel in all_relations.values()
-            if isinstance(rel, dict)
-        )
-    return present
-
-
-def _check_listing_fields(metadata: dict[str, Any]) -> dict[str, bool]:
-    """Check which Charmhub listing metadata fields are populated."""
-    return {field: bool(metadata.get(field)) for field in _LISTING_FIELDS}
-
-
-def _check_tests(charm_dir: Path) -> dict[str, bool]:
-    """Check for existence of test directories and files."""
-    unit_dir = charm_dir / "tests" / "unit"
-    integration_dir = charm_dir / "tests" / "integration"
-    return {
-        "unit_tests": unit_dir.is_dir() and bool(list(unit_dir.glob("test_*.py"))),
-        "integration_tests": (
-            integration_dir.is_dir() and bool(list(integration_dir.glob("test_*.py")))
-        ),
-    }
-
-
-def _check_ops_tracing(charm_dir: Path, python_files: list[Path]) -> bool:
-    """Check whether ops-tracing is set up in the charm."""
-    # Check requirements for ops-tracing dependency.
-    for req_file in ("requirements.txt", "pyproject.toml"):
-        path = charm_dir / req_file
-        if path.exists():
-            try:
-                content = path.read_text(errors="replace")
-                if "ops-tracing" in content:
-                    return True
-            except OSError:
-                pass
-
-    # Check source for setup call.
-    for path in python_files:
-        try:
-            content = path.read_text(errors="replace")
-            if "ops_tracing" in content or "setup_tracing" in content:
-                return True
-        except OSError:
-            pass
-
-    return False
-
-
-def _check_type_annotations(python_files: list[Path]) -> bool:
-    """Check whether charm source files use type annotations.
-
-    Returns True if at least one function definition in src/ has a
-    return-type annotation.  This is a lightweight heuristic — we are
-    not running a type checker, just looking for evidence that the
-    codebase uses type hints.
-    """
-    for path in python_files:
-        # Only check src/ files (skip lib/).
-        if "lib" in path.parts:
-            continue
-        try:
-            content = path.read_text(errors="replace")
-        except OSError:
-            continue
-        # Look for `def foo(...) -> ...:` pattern.
-        if re.search(r"def\s+\w+\([^)]*\)\s*->", content):
-            return True
-    return False
 
 
 # Patterns indicating modern Ops framework usage.
@@ -255,21 +54,17 @@ _MODERN_PATTERNS: list[tuple[str, str, str]] = [
 ]
 
 
-def _check_modern_patterns(python_files: list[Path]) -> dict[str, bool]:
-    """Check whether the charm uses modern Ops framework patterns.
-
-    Returns a dict of pattern name → whether the pattern is present.
-    """
+def _check_modern_patterns(charm_dir: Path) -> dict[str, bool]:
+    """Check whether the charm uses modern Ops framework patterns."""
     results: dict[str, bool] = {name: False for _, name, _ in _MODERN_PATTERNS}
 
     all_source = ""
-    for path in python_files:
-        if "lib" in path.parts:
-            continue
-        try:
-            all_source += path.read_text(errors="replace") + "\n"
-        except OSError:
-            continue
+    for subdir in ("src",):
+        d = charm_dir / subdir
+        if d.is_dir():
+            for path in d.rglob("*.py"):
+                with contextlib.suppress(OSError):
+                    all_source += path.read_text(errors="replace") + "\n"
 
     for pattern, name, _desc in _MODERN_PATTERNS:
         if re.search(pattern, all_source):
@@ -278,108 +73,59 @@ def _check_modern_patterns(python_files: list[Path]) -> dict[str, bool]:
     return results
 
 
-def _format_audit_report(
+def _charmlint_to_audit_report(
+    charm_dir: Path,
     charm_name: str,
-    cos_present: dict[str, bool],
-    listing_present: dict[str, bool],
-    tests_present: dict[str, bool],
-    has_ops_tracing: bool,
-    deprecated_apis: list[dict[str, str]],
-    fetch_libs: list[dict[str, str]],
-    has_readme: bool,
-    has_licence: bool,
-    has_icon: bool,
-    has_type_annotations: bool = True,
-    modern_patterns: dict[str, bool] | None = None,
-) -> tuple[str, dict[str, list[str]]]:
-    """Format an AUDIT.md report and categorised findings dict."""
+) -> tuple[str, dict[str, list[str]], dict[str, Any]]:
+    """Run charmlint and convert results to the legacy audit report format.
+
+    Returns (report_text, findings_dict, data_dict).
+    """
+    report = lint(charm_dir, LintConfig())
+
     must_fix: list[str] = []
     should_fix: list[str] = []
     nice_to_have: list[str] = []
 
-    # COS integration gaps.
-    for interface, desc in _COS_RELATIONS.items():
-        if not cos_present.get(interface):
-            should_fix.append(f"Missing COS relation: {interface} ({desc})")
-
-    if not has_ops_tracing:
-        should_fix.append("ops-tracing not detected — add for distributed tracing")
-
-    # Test gaps.
-    if not tests_present["unit_tests"]:
-        must_fix.append("No unit tests found in tests/unit/")
-    if not tests_present["integration_tests"]:
-        should_fix.append("No integration tests found in tests/integration/")
-
-    # Deprecated APIs.
-    for finding in deprecated_apis:
-        must_fix.append(
-            f"Deprecated API: {finding['api']} in {finding['file']} — {finding['advice']}"
-        )
-
-    # Fetch-libs that should be replaced with PyPI packages.
-    for finding in fetch_libs:
-        pypi = finding["pypi_package"]
-        prefix = finding["lib_prefix"]
-        if pypi:
-            should_fix.append(
-                f"charmcraft fetch-libs import: charms.{prefix} — "
-                f"replace with PyPI package `{pypi}`"
-            )
+    for d in report.diagnostics:
+        if d.rule_id == "FATAL":
+            continue
+        msg = d.message
+        if d.fix_hint:
+            msg += f" — {d.fix_hint}"
+        if d.severity == Severity.ERROR:
+            must_fix.append(msg)
+        elif d.severity == Severity.WARNING:
+            should_fix.append(msg)
         else:
-            nice_to_have.append(
-                f"charmcraft fetch-libs import: charms.{prefix} — "
-                f"check PyPI for a published equivalent"
-            )
+            nice_to_have.append(msg)
 
-    # Type annotations.
-    if not has_type_annotations:
-        nice_to_have.append("No type annotations found — add return-type hints to functions")
-
-    # Modern patterns.
-    if modern_patterns is not None:
-        for _pattern, name, desc in _MODERN_PATTERNS:
-            if not modern_patterns.get(name):
-                nice_to_have.append(f"Missing modern pattern: {desc}")
-
-    # Listing completeness.
-    for field_name, desc in _LISTING_FIELDS.items():
-        if not listing_present.get(field_name):
-            category = nice_to_have if field_name == "tags" else should_fix
-            category.append(f"Missing metadata: {field_name} ({desc})")
-
-    # Files.
-    if not has_readme:
-        should_fix.append("No README.md found")
-    if not has_licence:
-        nice_to_have.append("No LICENSE file found")
-    if not has_icon:
-        nice_to_have.append("No icon.svg found")
+    # Modern patterns are not in charmlint yet — check directly.
+    modern_patterns = _check_modern_patterns(charm_dir)
+    for _pattern, name, desc in _MODERN_PATTERNS:
+        if not modern_patterns.get(name):
+            nice_to_have.append(f"Missing modern pattern: {desc}")
 
     # Build the Markdown report.
     lines = [f"# Audit Report: {charm_name}", ""]
-
     if must_fix:
         lines.append("## Must Fix")
         lines.append("")
         for item in must_fix:
             lines.append(f"- {item}")
         lines.append("")
-
     if should_fix:
         lines.append("## Should Fix")
         lines.append("")
         for item in should_fix:
             lines.append(f"- {item}")
         lines.append("")
-
     if nice_to_have:
         lines.append("## Nice to Have")
         lines.append("")
         for item in nice_to_have:
             lines.append(f"- {item}")
         lines.append("")
-
     if not must_fix and not should_fix and not nice_to_have:
         lines.append("No issues found — the charm looks good!")
         lines.append("")
@@ -390,11 +136,70 @@ def _format_audit_report(
         "nice_to_have": nice_to_have,
     }
 
-    return "\n".join(lines), findings
+    # Build the gaps dict from charmlint diagnostics.
+    rule_ids = {d.rule_id for d in report.diagnostics}
+    gaps = {
+        "cos_tracing": "COS001" in rule_ids,
+        "cos_metrics": "COS002" in rule_ids,
+        "cos_logging": "COS003" in rule_ids,
+        "cos_dashboards": "COS004" in rule_ids,
+        "ops_tracing": "COS005" in rule_ids,
+        "unit_tests": "TEST001" in rule_ids,
+        "integration_tests": "TEST002" in rule_ids,
+        "readme": "DOC001" in rule_ids,
+        "licence": "STR001" in rule_ids,
+        "icon": "STR002" in rule_ids,
+        "type_annotations": "STR003" in rule_ids,
+        "modern_patterns": any(not v for v in modern_patterns.values()),
+    }
+
+    # Build deprecated_apis list from DEP diagnostics.
+    deprecated_apis = [
+        {"api": d.rule_id, "file": d.path or "", "advice": d.message}
+        for d in report.diagnostics
+        if d.rule_id.startswith("DEP")
+    ]
+
+    # Build fetch_libs list from LIB diagnostics.
+    fetch_libs = [
+        {"lib_prefix": d.message.split(" ")[0] if d.message else "", "advice": d.message}
+        for d in report.diagnostics
+        if d.rule_id.startswith("LIB")
+    ]
+
+    # Build listing_fields from META diagnostics.
+    listing_present = dict.fromkeys(_LISTING_FIELDS, True)
+    _META_TO_FIELD = {
+        "META002": "display-name",
+        "META003": "summary",
+        "META004": "description",
+        "META005": "docs",
+        "META006": "issues",
+        "META007": "source",
+    }
+    for rid, field in _META_TO_FIELD.items():
+        if rid in rule_ids:
+            listing_present[field] = False
+
+    data = {
+        "charm_name": charm_name,
+        "total_issues": sum(len(v) for v in findings.values()),
+        "findings": findings,
+        "gaps": gaps,
+        "modern_patterns": modern_patterns,
+        "deprecated_apis": deprecated_apis,
+        "fetch_libs": fetch_libs,
+        "listing_fields": listing_present,
+    }
+
+    return "\n".join(lines), findings, data
 
 
 class CharmAuditTool(Tool):
-    """Tool to audit an existing charm against best practices."""
+    """Tool to audit an existing charm against best practices.
+
+    Delegates to charmlint for deterministic checks.
+    """
 
     @property
     def name(self) -> str:
@@ -407,7 +212,7 @@ class CharmAuditTool(Tool):
             "Checks COS integration, test coverage, deprecated APIs, "
             "metadata completeness, and listing readiness. Returns a "
             "structured AUDIT.md report with categorised findings "
-            "(must-fix, should-fix, nice-to-have)."
+            "(must-fix, should-fix, nice-to-have). Powered by charmlint."
         )
 
     @property
@@ -433,76 +238,38 @@ class CharmAuditTool(Tool):
                 error=f"Path not found: {path}",
             )
 
-        # Load metadata from charmcraft.yaml or legacy metadata.yaml.
-        metadata = _load_yaml(charm_dir / "charmcraft.yaml")
-        if not metadata:
-            metadata = _load_yaml(charm_dir / "metadata.yaml")
-        if not metadata:
+        # Check for metadata file.
+        has_metadata = (charm_dir / "charmcraft.yaml").exists() or (
+            charm_dir / "metadata.yaml"
+        ).exists()
+        if not has_metadata:
             return ToolResult(
                 success=False,
                 output="",
-                error=("No charmcraft.yaml or metadata.yaml found — is this a charm directory?"),
+                error="No charmcraft.yaml or metadata.yaml found — is this a charm directory?",
             )
 
-        charm_name = metadata.get("name", charm_dir.name)
+        # Load charm name from metadata.
+        import yaml
 
-        # Collect source files.
-        python_files = _collect_python_files(charm_dir)
+        for meta_file in ("charmcraft.yaml", "metadata.yaml"):
+            meta_path = charm_dir / meta_file
+            if meta_path.exists():
+                try:
+                    with meta_path.open() as f:
+                        metadata = yaml.safe_load(f)
+                    if isinstance(metadata, dict):
+                        charm_name = metadata.get("name", charm_dir.name)
+                        break
+                except (yaml.YAMLError, OSError):
+                    pass
+        else:
+            charm_name = charm_dir.name
 
-        # Run all checks.
-        cos_present = _check_cos_relations(metadata)
-        listing_present = _check_listing_fields(metadata)
-        tests_present = _check_tests(charm_dir)
-        has_ops_tracing = _check_ops_tracing(charm_dir, python_files)
-        deprecated_apis = _scan_deprecated_apis(python_files)
-        fetch_libs = _check_fetch_libs(python_files)
-        has_readme = (charm_dir / "README.md").exists()
-        has_licence = (charm_dir / "LICENSE").exists() or (charm_dir / "LICENCE").exists()
-        has_icon = (charm_dir / "icon.svg").exists()
-        has_type_annotations = _check_type_annotations(python_files)
-        modern_patterns = _check_modern_patterns(python_files)
-
-        report, findings = _format_audit_report(
-            charm_name=charm_name,
-            cos_present=cos_present,
-            listing_present=listing_present,
-            tests_present=tests_present,
-            has_ops_tracing=has_ops_tracing,
-            deprecated_apis=deprecated_apis,
-            fetch_libs=fetch_libs,
-            has_readme=has_readme,
-            has_licence=has_licence,
-            has_icon=has_icon,
-            has_type_annotations=has_type_annotations,
-            modern_patterns=modern_patterns,
-        )
-
-        total_issues = sum(len(v) for v in findings.values())
+        report_text, findings, data = _charmlint_to_audit_report(charm_dir, charm_name)
 
         return ToolResult(
             success=True,
-            output=report,
-            data={
-                "charm_name": charm_name,
-                "total_issues": total_issues,
-                "findings": findings,
-                "gaps": {
-                    "cos_tracing": not cos_present.get("tracing", False),
-                    "cos_metrics": not cos_present.get("metrics-endpoint", False),
-                    "cos_logging": not cos_present.get("logging", False),
-                    "cos_dashboards": not cos_present.get("grafana-dashboard", False),
-                    "ops_tracing": not has_ops_tracing,
-                    "unit_tests": not tests_present["unit_tests"],
-                    "integration_tests": not tests_present["integration_tests"],
-                    "readme": not has_readme,
-                    "licence": not has_licence,
-                    "icon": not has_icon,
-                    "type_annotations": not has_type_annotations,
-                    "modern_patterns": any(not v for v in modern_patterns.values()),
-                },
-                "modern_patterns": modern_patterns,
-                "deprecated_apis": deprecated_apis,
-                "fetch_libs": fetch_libs,
-                "listing_fields": listing_present,
-            },
+            output=report_text,
+            data=data,
         )

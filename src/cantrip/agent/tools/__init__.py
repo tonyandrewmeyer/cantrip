@@ -30,6 +30,7 @@ from cantrip.agent.tools.charmhub import (
     CharmhubInfoTool,
     CharmhubSearchTool,
 )
+from cantrip.agent.tools.charmlint_tool import CharmlintTool
 from cantrip.agent.tools.environment import (
     ConciergePrepareTool,
     ConciergeStatusTool,
@@ -139,8 +140,9 @@ def build_tools(
         WriteFileTool(base_path=base_path),
         ListDirectoryTool(base_path=base_path),
         EditFileTool(base_path=base_path),
-        # Audit
+        # Audit & lint
         CharmAuditTool(),
+        CharmlintTool(),
         OperationalReadinessTool(),
         # Charm operations
         CharmcraftInitTool(),
