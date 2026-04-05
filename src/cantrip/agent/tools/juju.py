@@ -189,6 +189,7 @@ class JujuDeployTool(Tool):
                 error="Juju CLI not found. Is Juju installed?",
             )
 
+        temp_copy: Path | None = None
         try:
             juju = jubilant.Juju(model=model)
 
@@ -199,6 +200,20 @@ class JujuDeployTool(Tool):
                 charm = str(charm_path.resolve())
             elif not charm_path.is_absolute() and (Path.cwd() / charm_path).exists():
                 charm = str((Path.cwd() / charm_path).resolve())
+
+            # The Juju snap uses strict confinement and cannot read files
+            # outside the user's home directory.  If the charm file lives
+            # in a non-accessible location (e.g. /tmp), copy it to a
+            # snap-accessible path before deploying.
+            charm_file = Path(charm)
+            if charm_file.suffix == ".charm" and charm_file.exists():
+                home = Path.home()
+                if not str(charm_file).startswith(str(home)):
+                    snap_dir = home / "snap" / "juju" / "common"
+                    snap_dir.mkdir(parents=True, exist_ok=True)
+                    temp_copy = snap_dir / charm_file.name
+                    shutil.copy2(charm_file, temp_copy)
+                    charm = str(temp_copy)
 
             # Build deploy arguments.
             deploy_args: dict[str, Any] = {"charm": charm}
@@ -235,6 +250,9 @@ class JujuDeployTool(Tool):
                 output="",
                 error=str(e),
             )
+        finally:
+            if temp_copy is not None and temp_copy.exists():
+                temp_copy.unlink(missing_ok=True)
 
 
 class JujuRefreshTool(Tool):
@@ -291,10 +309,21 @@ class JujuRefreshTool(Tool):
                 error="Juju CLI not found. Is Juju installed?",
             )
 
+        temp_copy: Path | None = None
         try:
             juju = jubilant.Juju(model=model)
             refresh_args: dict[str, Any] = {"app": app_name}
             if path:
+                # Copy to snap-accessible path if needed (same as deploy).
+                charm_file = Path(path)
+                if charm_file.suffix == ".charm" and charm_file.exists():
+                    home = Path.home()
+                    if not str(charm_file.resolve()).startswith(str(home)):
+                        snap_dir = home / "snap" / "juju" / "common"
+                        snap_dir.mkdir(parents=True, exist_ok=True)
+                        temp_copy = snap_dir / charm_file.name
+                        shutil.copy2(charm_file, temp_copy)
+                        path = str(temp_copy)
                 refresh_args["path"] = path
             if resources:
                 refresh_args["resources"] = resources
@@ -318,6 +347,9 @@ class JujuRefreshTool(Tool):
                 output="",
                 error=str(e),
             )
+        finally:
+            if temp_copy is not None and temp_copy.exists():
+                temp_copy.unlink(missing_ok=True)
 
 
 class JujuRelateTool(Tool):

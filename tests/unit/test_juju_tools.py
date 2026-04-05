@@ -343,6 +343,100 @@ class TestJujuDeployTool:
         assert "trust" not in call_kwargs
 
 
+class TestJujuDeploySnapConfinement:
+    """Tests for snap confinement workaround in JujuDeployTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return JujuDeployTool()
+
+    @pytest.mark.asyncio
+    async def test_copies_charm_from_tmp_to_snap_dir(self, tool, tmp_path):
+        """A .charm file outside $HOME is copied to ~/snap/juju/common/."""
+        # Create a fake .charm file in /tmp.
+        charm_file = tmp_path / "test.charm"
+        charm_file.write_text("fake")
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        home = tmp_path / "fake_home"
+        home.mkdir()
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju.Path.home", return_value=home),
+        ):
+            result = await tool.execute(charm=str(charm_file))
+
+        assert result.success
+        # The deploy should have used the snap-accessible copy.
+        call_kwargs = mock_juju.deploy.call_args[1]
+        deployed_path = call_kwargs["charm"]
+        assert "snap/juju/common" in deployed_path
+
+    @pytest.mark.asyncio
+    async def test_no_copy_when_inside_home(self, tool, tmp_path):
+        """A .charm file inside $HOME is NOT copied."""
+        charm_file = tmp_path / "test.charm"
+        charm_file.write_text("fake")
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju.Path.home", return_value=tmp_path),
+        ):
+            result = await tool.execute(charm=str(charm_file))
+
+        assert result.success
+        call_kwargs = mock_juju.deploy.call_args[1]
+        deployed_path = call_kwargs["charm"]
+        assert "snap/juju/common" not in deployed_path
+
+    @pytest.mark.asyncio
+    async def test_temp_copy_cleaned_up_on_success(self, tool, tmp_path):
+        """The temporary copy is removed after successful deploy."""
+        charm_file = tmp_path / "test.charm"
+        charm_file.write_text("fake")
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        home = tmp_path / "fake_home"
+        home.mkdir()
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju.Path.home", return_value=home),
+        ):
+            await tool.execute(charm=str(charm_file))
+
+        snap_copy = home / "snap" / "juju" / "common" / "test.charm"
+        assert not snap_copy.exists()
+
+    @pytest.mark.asyncio
+    async def test_temp_copy_cleaned_up_on_error(self, tool, tmp_path):
+        """The temporary copy is removed even when deploy fails."""
+        charm_file = tmp_path / "test.charm"
+        charm_file.write_text("fake")
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.deploy.side_effect = jubilant.CLIError(1, "deploy failed")
+        home = tmp_path / "fake_home"
+        home.mkdir()
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju.Path.home", return_value=home),
+        ):
+            result = await tool.execute(charm=str(charm_file))
+
+        assert not result.success
+        snap_copy = home / "snap" / "juju" / "common" / "test.charm"
+        assert not snap_copy.exists()
+
+
 class TestJujuRefreshTool:
     """Tests for JujuRefreshTool."""
 
