@@ -5,6 +5,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Juju introspection tools (Phase 20.1, 20.2, 20.4)** — new `juju_read_relation_data` tool reads relation databags via `juju show-unit` with endpoint filtering and asymmetry detection; new `juju_get_app_config` tool reads deployed config with source tracking (default/user-set); new `juju_list_offers` tool lists cross-model offers with connection counts; all added to relevant subagent allowlists
 - **Noop detection (Phase 21.3)** — the executor now captures a git fingerprint before and after each subagent run; if no observable change occurred, the task is retried automatically; after 2 consecutive noops the task is blocked and escalated to the user for guidance
 - **Juju secrets inspection (Phase 20.5)** — new `juju_list_secrets` tool lists all secrets in a model with owner, rotation, and access grants; new `juju_show_secret` tool inspects a specific secret with optional content reveal; both added to RESEARCH and DEBUG subagent allowlists
 - **Code modernisation checks (Phase 10.4)** — charm audit now checks for type annotations (return-type hints on functions) and modern Ops framework patterns (holistic status reconciliation, config-changed handling, relation-changed handling, Pebble readiness checks); gaps feed into the `modernise-code` improvement task with specific remediation guidance

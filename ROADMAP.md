@@ -1777,14 +1777,12 @@ to debug the most common failure modes autonomously.
 Relation data mismatches are the most common charm integration failure. The agent
 needs to read raw databag contents to diagnose why integrations aren't working.
 
-- [ ] **`read_relation_data` tool** — reads app-level and unit-level relation
-  databags for a given application and relation; returns structured data showing
-  both sides of the relation (provider and requirer databags); uses Jubilant or
-  falls back to `juju show-unit` parsing; added to RESEARCH, BUILD, DEBUG, and
-  TEST tool allowlists
-- [ ] **Databag diffing** — when called with a relation endpoint, the tool
-  highlights asymmetries (e.g. provider published data but requirer hasn't
-  consumed it, or expected keys are missing)
+- [x] **`read_relation_data` tool** — `JujuReadRelationDataTool` (`juju_read_relation_data`)
+  reads app-level and unit-level relation databags via `juju show-unit --format json`;
+  returns structured data with application data, local unit data, and related units'
+  data; supports endpoint filtering; added to RESEARCH, BUILD, DEBUG, and TEST allowlists
+- [x] **Databag diffing** — the tool highlights asymmetries: keys present in remote
+  units but missing from the local unit are flagged (excluding standard address keys)
 - [ ] **Watcher integration** — the status-diffing watcher can optionally
   snapshot relation data and detect when databag contents change, feeding
   richer events into the work queue
@@ -1794,10 +1792,11 @@ needs to read raw databag contents to diagnose why integrations aren't working.
 The agent needs to distinguish default config values from user-set values to
 debug "why isn't my config taking effect?" issues.
 
-- [ ] **`get_app_config` tool** — reads all configuration values for an
-  application with source tracking (default vs user-set vs model-default);
-  returns structured data; uses `juju config <app> --format yaml`; added to
-  RESEARCH, BUILD, DEBUG, and TEST tool allowlists
+- [x] **`get_app_config` tool** — `JujuGetAppConfigTool` (`juju_get_app_config`) reads
+  all configuration values with source tracking (default/user/model-default) via
+  `juju config <app> --format json`; marks user-set values with `*`; returns structured
+  data with per-option name, value, type, source, and description; added to RESEARCH,
+  BUILD, DEBUG, and TEST allowlists
 - [ ] **Config validation** — cross-references deployed config against
   `charmcraft.yaml` declared options to detect undeclared or deprecated config
   keys
@@ -1823,9 +1822,9 @@ for basic log access.
 For complex multi-model deployments, the agent needs to understand the broader
 topology beyond the current model.
 
-- [ ] **`list_offers` tool** — lists cross-model offers across all known
-  controllers, with endpoint details and consumer tracking; added to RESEARCH
-  and DEBUG tool allowlists
+- [x] **`list_offers` tool** — `JujuListOffersTool` (`juju_list_offers`) lists
+  cross-model offers from `juju status` with app, charm, endpoint interfaces,
+  and active/total connection counts; added to RESEARCH and DEBUG allowlists
 - [ ] **Offer topology in watcher** — the watcher tracks offer/consumer
   relationships and detects when offers are created, consumed, or removed
 - [ ] **Multi-controller awareness** — when diagnosing CMR issues, the agent

@@ -1462,3 +1462,361 @@ class JujuShowSecretTool(Tool):
                 output="",
                 error=str(e),
             )
+
+
+class JujuReadRelationDataTool(Tool):
+    """Tool to read relation databag contents."""
+
+    @property
+    def name(self) -> str:
+        return "juju_read_relation_data"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Read app-level and unit-level relation databags for a deployed "
+            "application. Shows both sides of a relation to diagnose integration "
+            "failures. Returns structured data including provider and requirer "
+            "databags."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "unit": {
+                    "type": "string",
+                    "description": "Unit name (e.g. 'my-app/0')",
+                },
+                "endpoint": {
+                    "type": "string",
+                    "description": "Relation endpoint to filter (optional — shows all if omitted)",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified)",
+                },
+            },
+            "required": ["unit"],
+        }
+
+    async def execute(
+        self,
+        unit: str,
+        endpoint: str | None = None,
+        model: str | None = None,
+    ) -> ToolResult:
+        """Read relation data via juju show-unit."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+            stdout = await _run_juju(
+                juju.cli, "show-unit", unit, "--format", "json"
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju show-unit timed out.",
+            )
+        except (jubilant.CLIError, OSError, ValueError) as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"juju show-unit failed: {e}",
+            )
+
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="Failed to parse juju show-unit output.",
+            )
+
+        unit_data = data.get(unit, {})
+        relations = unit_data.get("relation-info", [])
+
+        if endpoint:
+            relations = [r for r in relations if r.get("endpoint") == endpoint]
+
+        if not relations:
+            msg = f"No relation data found for {unit}"
+            if endpoint:
+                msg += f" on endpoint '{endpoint}'"
+            return ToolResult(
+                success=True,
+                output=msg,
+                data={"unit": unit, "relations": []},
+            )
+
+        lines = [f"Relation data for {unit}:", ""]
+        relation_list: list[dict[str, Any]] = []
+
+        for rel in relations:
+            ep = rel.get("endpoint", "unknown")
+            rel_id = rel.get("relation-id", "?")
+            lines.append(f"## {ep} (relation {rel_id})")
+            lines.append("")
+
+            related_units = rel.get("related-units", {})
+            app_data = rel.get("application-data", {})
+
+            if app_data:
+                lines.append("**Application data:**")
+                for key, value in app_data.items():
+                    lines.append(f"  {key}: {value}")
+                lines.append("")
+
+            local_unit_data = rel.get("local-unit", {}).get("data", {})
+            if local_unit_data:
+                lines.append(f"**Local unit data ({unit}):**")
+                for key, value in local_unit_data.items():
+                    lines.append(f"  {key}: {value}")
+                lines.append("")
+
+            if related_units:
+                for runit, rdata in related_units.items():
+                    lines.append(f"**Related unit: {runit}**")
+                    unit_rel_data = rdata.get("data", {})
+                    for key, value in unit_rel_data.items():
+                        lines.append(f"  {key}: {value}")
+                    lines.append("")
+
+            # Highlight asymmetries.
+            expected_keys = set()
+            for rdata in related_units.values():
+                expected_keys.update(rdata.get("data", {}).keys())
+            missing_in_local = expected_keys - set(local_unit_data.keys()) - {"ingress-address", "private-address", "egress-subnets"}
+            if missing_in_local:
+                lines.append(f"**Asymmetry:** remote has keys not in local: {', '.join(sorted(missing_in_local))}")
+                lines.append("")
+
+            relation_list.append({
+                "endpoint": ep,
+                "relation_id": rel_id,
+                "application_data": app_data,
+                "local_unit_data": local_unit_data,
+                "related_units": {
+                    runit: rdata.get("data", {})
+                    for runit, rdata in related_units.items()
+                },
+            })
+
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data={"unit": unit, "relations": relation_list},
+        )
+
+
+class JujuGetAppConfigTool(Tool):
+    """Tool to read application config with source tracking."""
+
+    @property
+    def name(self) -> str:
+        return "juju_get_app_config"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Read all configuration values for a deployed application with "
+            "source tracking (default, user-set, or model-default). Useful for "
+            "debugging 'config not taking effect' issues."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "app": {
+                    "type": "string",
+                    "description": "Application name",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified)",
+                },
+            },
+            "required": ["app"],
+        }
+
+    async def execute(
+        self,
+        app: str,
+        model: str | None = None,
+    ) -> ToolResult:
+        """Read app config with source information."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+            stdout = await _run_juju(juju.cli, "config", app, "--format", "json")
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju config timed out.",
+            )
+        except (jubilant.CLIError, OSError, ValueError) as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"juju config failed: {e}",
+            )
+
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="Failed to parse juju config output.",
+            )
+
+        settings = data.get("settings", {})
+        lines = [f"Configuration for {app}:", ""]
+        config_list: list[dict[str, Any]] = []
+        user_set_count = 0
+
+        for opt_name, opt_data in sorted(settings.items()):
+            if not isinstance(opt_data, dict):
+                continue
+            source = opt_data.get("source", "default")
+            value = opt_data.get("value", "")
+            opt_type = opt_data.get("type", "")
+            description = opt_data.get("description", "")
+
+            marker = "*" if source != "default" else " "
+            lines.append(f"  {marker} {opt_name}: {value} ({opt_type}, {source})")
+
+            if source != "default":
+                user_set_count += 1
+
+            config_list.append({
+                "name": opt_name,
+                "value": value,
+                "type": opt_type,
+                "source": source,
+                "description": description,
+            })
+
+        if user_set_count:
+            lines.append("")
+            lines.append(f"* = user-set ({user_set_count} non-default value(s))")
+
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data={"app": app, "config": config_list, "user_set_count": user_set_count},
+        )
+
+
+class JujuListOffersTool(Tool):
+    """Tool to list cross-model offers."""
+
+    @property
+    def name(self) -> str:
+        return "juju_list_offers"
+
+    @property
+    def description(self) -> str:
+        return (
+            "List cross-model offers in the current model or controller, with "
+            "endpoint details and consumer tracking. Useful for diagnosing "
+            "cross-model relation issues."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified)",
+                },
+            },
+        }
+
+    async def execute(
+        self,
+        model: str | None = None,
+    ) -> ToolResult:
+        """List cross-model offers via juju status (offers section)."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+            status = await _run_juju(juju.status)
+
+            offers = status.offers
+            if not offers:
+                return ToolResult(
+                    success=True,
+                    output="No cross-model offers found in the model.",
+                    data={"offers": [], "count": 0},
+                )
+
+            lines = [f"Found {len(offers)} offer(s):", ""]
+            offer_list: list[dict[str, Any]] = []
+
+            for offer_name, offer in offers.items():
+                lines.append(f"- **{offer_name}** (app: {offer.app}, charm: {offer.charm})")
+                lines.append(
+                    f"  Connected: {offer.active_connected_count}/"
+                    f"{offer.total_connected_count}"
+                )
+                if offer.endpoints:
+                    for ep_name, ep in offer.endpoints.items():
+                        lines.append(f"  Endpoint: {ep_name} ({ep.interface})")
+                lines.append("")
+
+                offer_list.append({
+                    "name": offer_name,
+                    "app": offer.app,
+                    "charm": offer.charm,
+                    "active_connected": offer.active_connected_count,
+                    "total_connected": offer.total_connected_count,
+                    "endpoints": {
+                        name: {"interface": ep.interface}
+                        for name, ep in (offer.endpoints or {}).items()
+                    },
+                })
+
+            return ToolResult(
+                success=True,
+                output="\n".join(lines),
+                data={"offers": offer_list, "count": len(offers)},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju status timed out — the controller may be unavailable.",
+            )
+        except (jubilant.CLIError, jubilant.TaskError, OSError, ValueError) as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
