@@ -67,7 +67,7 @@ class TestDesignConfirmation:
 
         # Tasks should be in the queue.
         all_tasks = agent.work_queue.all_tasks()
-        assert len(all_tasks) == 5  # synthesis + confirm + 3 build
+        assert len(all_tasks) == 8  # synthesis + confirm + 3 build + 3 day-2
 
     @pytest.mark.asyncio
     async def test_design_confirmation_with_overrides(self, tmp_path: Path):
