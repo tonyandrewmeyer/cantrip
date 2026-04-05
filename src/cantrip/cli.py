@@ -8,6 +8,7 @@ from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.llm import create_provider, resolve_light_model
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
+from cantrip.ui import events as ui_events
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -112,8 +113,12 @@ async def _repl(agent: CantripAgent) -> None:
         if summary:
             print(f"[resume] {summary}\n")
 
+    # Subscribe to task updates via the event bus.
+    agent.event_bus.bind_loop(asyncio.get_running_loop())
+    agent.event_bus.subscribe(ui_events.EventType.TASK_UPDATED, _on_bus_task_event)
+
     # Start the background executor so tasks are actually executed.
-    agent.start_executor(on_task_changed=_print_task_event)
+    agent.start_executor()
 
     # Eagerly prepare the full environment in the background.
     prepare_task = asyncio.create_task(_prepare_cli(agent))
@@ -178,12 +183,10 @@ async def _repl(agent: CantripAgent) -> None:
     await agent.stop_executor()
 
 
-def _print_task_event(task: object) -> None:
+def _on_bus_task_event(event: ui_events.Event) -> None:
     """Print a brief status line when a task changes state."""
-    title = getattr(task, "title", "?")
-    status = getattr(task, "status", None)
-    if status is not None:
-        status = status.value if hasattr(status, "value") else str(status)
+    title = event.payload.get("title", "?")
+    status = event.payload.get("status", "?")
     print(f"\r  [task] {title} — {status}")
 
 

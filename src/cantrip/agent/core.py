@@ -882,29 +882,22 @@ class CantripAgent:
 
     def start_executor(
         self,
-        on_task_changed: Callable[[AgentTask], None] | None = None,
         max_concurrency: int | None = None,
     ) -> None:
         """Create and start the background executor.
 
-        Mirrors the ``start_watcher`` / ``stop_watcher`` pattern.  The
-        *on_task_changed* callback is installed on the work queue so every
-        task mutation can drive TUI updates.  *max_concurrency* controls
-        how many subagent tasks run in parallel (default 3).
+        Every task mutation is published to the shared ``event_bus`` so
+        that both UIs receive updates.  *max_concurrency* controls how
+        many subagent tasks run in parallel (default 3).
         """
         if self._executor is not None and self._executor.running:
             return
         self._ensure_store()
 
-        # Install a callback that publishes to the event bus *and* fires
-        # the caller's callback (if any).  This keeps the old API working
-        # while both UIs can subscribe to the bus independently.
-        def _notify_bus_and_callback(task: AgentTask) -> None:
+        def _notify_bus(task: AgentTask) -> None:
             self._event_bus.publish(ui_events.task_updated_from_task(task))
-            if on_task_changed is not None:
-                on_task_changed(task)
 
-        self._work_queue._on_task_changed = _notify_bus_and_callback
+        self._work_queue._on_task_changed = _notify_bus
         kwargs: dict[str, object] = {
             "queue": self._work_queue,
             "tools": self._tools,
