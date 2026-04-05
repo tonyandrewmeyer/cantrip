@@ -1,7 +1,12 @@
 """Shared test fixtures and helpers."""
 
+from __future__ import annotations
+
+import pathlib
+
 import pytest
 
+from cantrip.agent.queue import AgentTask
 from cantrip.llm.base import LLMProvider, Message, Response, Tool
 
 
@@ -67,3 +72,105 @@ class FakeProvider(LLMProvider):
 def fake_provider() -> FakeProvider:
     """Return a FakeProvider with no canned responses."""
     return FakeProvider()
+
+
+# ---------------------------------------------------------------------------
+# Fake service implementations for executor protocol injection (Phase 21.2)
+# ---------------------------------------------------------------------------
+
+
+class FakeGitService:
+    """In-memory fake for the GitService protocol.
+
+    Tracks calls and returns configurable values without touching the
+    filesystem or invoking subprocess.
+    """
+
+    def __init__(
+        self,
+        *,
+        fingerprints: list[str] | None = None,
+        head: str | None = "abc123",
+        uncommitted: bool = False,
+    ) -> None:
+        self._fingerprints = list(fingerprints or [])
+        self._fp_idx = 0
+        self._head = head
+        self._uncommitted = uncommitted
+        self.revert_calls: list[tuple[str, str, str]] = []
+
+    def fingerprint(self, charm_path: str | pathlib.Path | None) -> str:
+        if not charm_path or not self._fingerprints:
+            return ""
+        if self._fp_idx < len(self._fingerprints):
+            fp = self._fingerprints[self._fp_idx]
+            self._fp_idx += 1
+            return fp
+        return self._fingerprints[-1]
+
+    def snapshot_head(self, charm_path: str | pathlib.Path | None) -> str | None:
+        if not charm_path:
+            return None
+        return self._head
+
+    def revert_to_clean(
+        self,
+        charm_path: str | pathlib.Path,
+        task: AgentTask,
+        snapshot: str,
+    ) -> None:
+        self.revert_calls.append((str(charm_path), task.id, snapshot))
+
+    def has_uncommitted_changes(self, charm_path: str | pathlib.Path) -> bool:  # noqa: ARG002
+        return self._uncommitted
+
+
+class FakeStateService:
+    """In-memory fake for the StateService protocol."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, str]]] = []
+        self.usage_records: list[dict[str, object]] = []
+        self.saved_tasks: list[list[AgentTask]] = []
+
+    def record_event(self, event_type: str, detail: dict[str, str]) -> None:
+        self.events.append((event_type, detail))
+
+    def record_usage(
+        self,
+        provider: str,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+    ) -> None:
+        self.usage_records.append(
+            {
+                "provider": provider,
+                "model": model,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            }
+        )
+
+    def save_tasks(self, tasks: list[AgentTask]) -> None:
+        self.saved_tasks.append(list(tasks))
+
+
+class FakeEnvironmentChecker:
+    """Fake for the EnvironmentChecker protocol."""
+
+    def __init__(self, error: str | None = None) -> None:
+        self._error = error
+
+    def check(self, task: AgentTask) -> str | None:  # noqa: ARG002
+        return self._error
+
+
+class FakeFollowupPlanner:
+    """Fake for the FollowupPlanner protocol."""
+
+    def __init__(self, followups: list[AgentTask] | None = None) -> None:
+        self._followups = followups or []
+
+    def followup_tasks(self, task: AgentTask) -> list[AgentTask]:  # noqa: ARG002
+        return list(self._followups)

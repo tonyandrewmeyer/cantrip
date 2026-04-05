@@ -1868,7 +1868,7 @@ without the user needing to run manual Juju commands.
 
 ---
 
-## Phase 21: Orchestrator Hardening — Lessons from orc
+## Phase 21: Orchestrator Hardening — Lessons from orc ✓
 
 **Goal:** Harden the autonomous work loop with patterns proven in
 [orc](https://github.com/PietroPasotti/orc), Pietro Pasotti's multi-agent
@@ -1883,20 +1883,22 @@ LLM calls), and **isolation** (scoping what subagents can access).
 Extract the "what happens next" decision from the executor into a pure function
 over a data snapshot, following orc's `route(WorldState) → action` pattern.
 
-- [ ] **`WorkQueueState` dataclass** — frozen snapshot capturing everything that
-  influences the next-task decision: pending task count by category, active
-  subagent count, blocked tasks, completed tasks awaiting confirmation, charm
-  build state (designed / building / deployed / testing)
-- [ ] **`route()` pure function** — maps a `WorkQueueState` to the next action
-  (spawn research subagent, spawn build subagent, wait for user confirmation,
-  run tests, deploy, idle). No I/O, no side effects. All routing logic in one
-  place
-- [ ] **Cross-check tests** — parametrised tests that run both `route()` and the
-  real executor's decision path, asserting they agree. Modelled on orc's
-  `TestRouteMatchesImplementation`
-- [ ] **Deadlock-freedom verification** — BFS over all reachable
-  `WorkQueueState` values to prove every non-terminal state has a path to
-  completion. Run as a unit test, not a manual proof
+- [x] **`WorkQueueState` dataclass** — frozen snapshot capturing everything that
+  influences the next-task decision: task count by status, active subagent count,
+  max concurrency, paused/draining flags, charm path and dev model presence;
+  `TaskInfo` frozen dataclass for individual task snapshots; `snapshot_from_queue()`
+  builds the snapshot from live `AgentTask` objects
+- [x] **`route()` pure function** — maps a `WorkQueueState` to a `RoutingDecision`
+  (spawn task, wait for confirmation, wait for in-flight, idle). No I/O, no side
+  effects. The executor's `_run_loop` now delegates to `route()` for every
+  scheduling decision
+- [x] **Cross-check tests** — parametrised tests that run both `route()` and the
+  real `WorkQueue.all_ready()`, asserting they agree on task selection, confirm
+  handling, dependency chains, concurrency limits, and pause behaviour
+- [x] **Deadlock-freedom verification** — BFS over 93 reachable `WorkQueueState`
+  values (0–2 tasks × all status/category/paused/draining combinations) proves
+  every non-terminal, non-paused state has a path to progress; also verifies
+  all `RouteAction` values are reachable
 
 ### 21.2 Protocol-Based Service Injection for Executor
 
@@ -1904,15 +1906,21 @@ Replace direct dependencies in the executor and subagent runner with Protocol-
 typed service interfaces, making the autonomous loop testable without real LLM
 calls, Juju, or git.
 
-- [ ] **Service protocols** — define `Protocol` interfaces for each domain the
-  executor touches: `LLMService` (subagent invocation), `CharmBuildService`
-  (charmcraft/rockcraft), `DeployService` (Juju operations), `StateService`
-  (session store reads/writes), `ToolRegistry` (tool allowlist per task category)
-- [ ] **Fake implementations** — `FakeLLM`, `FakeCharmBuild`, `FakeDeploy`,
-  `FakeState` in conftest.py; each mirrors its Protocol with minimal in-memory
-  state. Follow orc's pattern of `make_services()` + `make_executor()` helpers
-- [ ] **Executor refactor** — the background executor accepts services via
-  constructor injection rather than importing and calling modules directly
+- [x] **Service protocols** — `src/cantrip/agent/services.py` defines
+  `runtime_checkable` Protocol interfaces: `GitService` (fingerprint, snapshot,
+  revert, uncommitted check), `StateService` (record_event, record_usage,
+  save_tasks), `EnvironmentChecker` (pre-task validation), `FollowupPlanner`
+  (post-task follow-up creation), `SubagentRunner` (subagent invocation)
+- [x] **Fake implementations** — `FakeGitService`, `FakeStateService`,
+  `FakeEnvironmentChecker`, `FakeFollowupPlanner` in `tests/conftest.py`;
+  each mirrors its Protocol with minimal in-memory state; `_make_executor()`
+  test helper wires all fakes together
+- [x] **Executor refactor** — `BackgroundExecutor` accepts optional `git_service`,
+  `env_checker`, `state_service`, and `followup_planner` via keyword-only
+  constructor parameters; when not provided, default implementations delegate
+  to subprocess calls and `SessionStore` (full backward compatibility);
+  `_SessionStoreAdapter` bridges the existing `SessionStore` to the
+  `StateService` protocol
 
 ### 21.3 Noop Detection
 
@@ -2137,5 +2145,5 @@ environments, with the agent handling the cross-model wiring automatically.
 | M18: Framework Decision | 18 | Evidence-based recommendation on build-vs-adopt for agent infrastructure |
 | M19: Operationally Ready | 19 | Cantrip assesses and improves charms against Canonical's Operational Readiness Metrics |
 | M20: Deep Introspection | 20 | Agent reads relation databags, config sources, secrets, and offers to diagnose issues autonomously |
-| M21: Hardened Orchestrator | 21 | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
+| M21: Hardened Orchestrator | 21 ✓ | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
 | M22: Multi-Controller COS | 22 | COS observability works on both single-controller (K8s) and dual-controller (LXD + K8s) environments |

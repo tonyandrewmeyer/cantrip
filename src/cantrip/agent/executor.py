@@ -8,8 +8,16 @@ import subprocess
 import time
 from collections.abc import Callable
 
+from cantrip.agent import routing
 from cantrip.agent.autodeploy import followup_tasks
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.routing import RouteAction, route, snapshot_from_queue
+from cantrip.agent.services import (
+    EnvironmentChecker,
+    FollowupPlanner,
+    GitService,
+    StateService,
+)
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
 from cantrip.agent.subagent import (
@@ -34,6 +42,183 @@ _MAX_NOOP_COUNT = 2
 TaskEventCallback = Callable[[AgentTask], None] | None
 
 
+# ---------------------------------------------------------------------------
+# Default service implementations (used when no protocol impl is injected)
+# ---------------------------------------------------------------------------
+
+
+class _DefaultGitService:
+    """Git operations using subprocess calls."""
+
+    def fingerprint(self, charm_path: str | pathlib.Path | None) -> str:
+        if not charm_path:
+            return ""
+        charm_dir = str(charm_path)
+        parts: list[str] = []
+        for cmd in (["git", "rev-parse", "HEAD"], ["git", "status", "--porcelain"]):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    cwd=charm_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    parts.append(result.stdout.strip())
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                pass
+        return "\n".join(parts)
+
+    def snapshot_head(self, charm_path: str | pathlib.Path | None) -> str | None:
+        if not charm_path:
+            return None
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(charm_path),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return None
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip() or None
+
+    def revert_to_clean(
+        self,
+        charm_path: str | pathlib.Path,
+        task: AgentTask,
+        snapshot: str,
+    ) -> None:
+        charm_dir = str(charm_path)
+
+        # Capture the diff so the failure can be diagnosed.
+        diff_text = ""
+        try:
+            diff_result = subprocess.run(
+                ["git", "diff"],
+                cwd=charm_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if diff_result.returncode == 0 and diff_result.stdout.strip():
+                diff_text = diff_result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
+
+        if diff_text:
+            existing = task.result or ""
+            task.result = f"[reverted diff]\n{diff_text}\n\n{existing}"
+
+        # Restore tracked files to their committed state.
+        with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            subprocess.run(
+                ["git", "checkout", "."],
+                cwd=charm_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+        log.warning(
+            "Reverted tracked files in %s after failed task '%s' (snapshot %s)",
+            charm_dir,
+            task.title,
+            snapshot[:12],
+        )
+
+    def has_uncommitted_changes(self, charm_path: str | pathlib.Path) -> bool:
+        charm_dir = str(charm_path)
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=charm_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return False
+        if result.returncode != 0:
+            return False
+        return bool(result.stdout.strip())
+
+
+class _DefaultEnvironmentChecker:
+    """Pre-task environment validation using AgentState."""
+
+    def __init__(self, state: AgentState) -> None:
+        self._state = state
+
+    def check(self, task: AgentTask) -> str | None:
+        if task.category == TaskCategory.DEPLOY:
+            if not self._state.dev_model:
+                return "No development model set \u2014 cannot deploy"
+            if not self._state.charm_path:
+                return "No charm path set \u2014 cannot deploy"
+            if not pathlib.Path(self._state.charm_path).exists():
+                return f"Charm path {self._state.charm_path} does not exist"
+
+        if task.category == TaskCategory.TEST:
+            if not self._state.charm_path:
+                return "No charm path set \u2014 cannot test"
+            charm_dir = pathlib.Path(self._state.charm_path)
+            if not charm_dir.exists():
+                return f"Charm path {self._state.charm_path} does not exist"
+            if not list(charm_dir.glob("*.charm")):
+                return "No packed charm found \u2014 run charmcraft_pack first"
+
+        return None
+
+
+class _DefaultFollowupPlanner:
+    """Creates follow-up tasks using autodeploy.followup_tasks()."""
+
+    def __init__(self, state: AgentState) -> None:
+        self._state = state
+
+    def followup_tasks(self, task: AgentTask) -> list[AgentTask]:
+        if not self._state.dev_model:
+            return []
+        return followup_tasks(task)
+
+
+class _SessionStoreAdapter:
+    """Adapts a SessionStore to the StateService protocol."""
+
+    def __init__(self, store: SessionStore) -> None:
+        self._store = store
+
+    def record_event(self, event_type: str, detail: dict[str, str]) -> None:
+        self._store.record_event(event_type, detail)
+
+    def record_usage(
+        self,
+        provider: str,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+    ) -> None:
+        self._store.record_usage(
+            provider=provider,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+
+    def save_tasks(self, tasks: list[AgentTask]) -> None:
+        self._store.save_tasks(tasks)
+
+
+# ---------------------------------------------------------------------------
+# BackgroundExecutor
+# ---------------------------------------------------------------------------
+
+
 class BackgroundExecutor:
     """Orchestrator that picks tasks from the work queue and runs subagents.
 
@@ -48,6 +233,11 @@ class BackgroundExecutor:
     The executor can be *paused* (e.g. while the user is steering via chat)
     and *resumed* afterwards.  While paused the poll loop sleeps without
     picking new tasks, but any task already running continues to completion.
+
+    Services (git, environment checker, state persistence, follow-up
+    planning) are injected via constructor parameters.  When not supplied,
+    default implementations are used that delegate to subprocess calls
+    and the ``SessionStore`` / ``AgentState``.
     """
 
     def __init__(
@@ -61,6 +251,11 @@ class BackgroundExecutor:
         on_task_done: TaskEventCallback = None,
         on_task_failed: TaskEventCallback = None,
         max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+        *,
+        git_service: GitService | None = None,
+        env_checker: EnvironmentChecker | None = None,
+        state_service: StateService | None = None,
+        followup_planner: FollowupPlanner | None = None,
     ) -> None:
         self._queue = queue
         self._tools = tools
@@ -71,6 +266,16 @@ class BackgroundExecutor:
         self._on_task_done = on_task_done
         self._on_task_failed = on_task_failed
         self._max_concurrency = max(1, max_concurrency)
+
+        # Injected services — fall back to defaults when not provided.
+        self._git: GitService = git_service or _DefaultGitService()
+        self._env_checker: EnvironmentChecker = env_checker or _DefaultEnvironmentChecker(state)
+        self._state_service: StateService | None = state_service
+        if self._state_service is None and store is not None:
+            self._state_service = _SessionStoreAdapter(store)
+        self._followup_planner: FollowupPlanner = followup_planner or _DefaultFollowupPlanner(
+            state
+        )
 
         self._running = False
         self._paused = False
@@ -171,8 +376,10 @@ class BackgroundExecutor:
             return
         self._draining = True
         self._paused = True
-        log.info("Background executor draining — waiting for %d in-flight task(s)",
-                 len(self._active_tasks))
+        log.info(
+            "Background executor draining — waiting for %d in-flight task(s)",
+            len(self._active_tasks),
+        )
         # Wait for all in-flight tasks to finish.
         if self._active_tasks:
             await asyncio.gather(*self._active_tasks, return_exceptions=True)
@@ -189,8 +396,9 @@ class BackgroundExecutor:
         """
         if not self._running:
             return
-        log.warning("Force-stopping executor — cancelling %d in-flight task(s)",
-                    len(self._active_tasks))
+        log.warning(
+            "Force-stopping executor — cancelling %d in-flight task(s)", len(self._active_tasks)
+        )
         # Cancel all in-flight async tasks.
         for at in self._active_tasks:
             at.cancel()
@@ -226,37 +434,42 @@ class BackgroundExecutor:
 
     # -- Core loop -----------------------------------------------------------
 
+    def _snapshot(self) -> routing.WorkQueueState:
+        """Build a frozen snapshot of the current queue + executor state."""
+        return snapshot_from_queue(
+            tasks=self._queue.all_tasks(),
+            active_subagent_count=len(self._active_tasks),
+            max_concurrency=self._max_concurrency,
+            paused=self._paused,
+            draining=self._draining,
+            has_charm_path=bool(self._state.charm_path),
+            has_dev_model=bool(self._state.dev_model),
+        )
+
     async def _run_loop(self) -> None:
         """Poll for ready tasks and execute them concurrently until stopped."""
         while self._running:
             try:
-                if self._paused:
-                    await asyncio.sleep(_POLL_INTERVAL)
-                    continue
+                decision = route(self._snapshot())
 
-                # Determine how many slots are free.
-                in_flight = len(self._active_tasks)
-                free_slots = self._max_concurrency - in_flight
-
-                if free_slots <= 0:
-                    await asyncio.sleep(_POLL_INTERVAL)
-                    continue
-
-                ready = self._queue.all_ready(limit=free_slots)
-                if not ready:
-                    await asyncio.sleep(_POLL_INTERVAL)
-                    continue
-
-                for task in ready:
-                    if task.category == TaskCategory.CONFIRM:
-                        self._handle_confirm(task)
+                if decision.action == RouteAction.SPAWN_TASK:
+                    task = self._queue.get_task(decision.task_id)
+                    if task is not None and task.status == TaskStatus.PENDING:
+                        self._queue.set_active(task.id)
+                        self._record_status_change(task, "active", old_status="pending")
+                        at = asyncio.create_task(self._run_task_with_semaphore(task))
+                        self._active_tasks.add(at)
+                        at.add_done_callback(self._active_tasks.discard)
+                        # Check for more ready tasks without sleeping.
                         continue
-                    # Mark active immediately so the next poll doesn't re-pick it.
-                    self._queue.set_active(task.id)
-                    self._record_status_change(task, "active", old_status="pending")
-                    at = asyncio.create_task(self._run_task_with_semaphore(task))
-                    self._active_tasks.add(at)
-                    at.add_done_callback(self._active_tasks.discard)
+
+                elif decision.action == RouteAction.WAIT_FOR_CONFIRMATION:
+                    task = self._queue.get_task(decision.task_id)
+                    if task is not None and task.status == TaskStatus.PENDING:
+                        self._handle_confirm(task)
+
+                # WAIT_FOR_IN_FLIGHT and IDLE both sleep before re-checking.
+                await asyncio.sleep(_POLL_INTERVAL)
             except asyncio.CancelledError:
                 raise
             except (KeyError, RuntimeError, OSError) as exc:
@@ -284,30 +497,8 @@ class BackgroundExecutor:
     # -- Pre-task environment checks -----------------------------------------
 
     def _pre_check_environment(self, task: AgentTask) -> str | None:
-        """Verify the environment is usable before launching a subagent.
-
-        Returns an error string if a pre-condition is not met, or ``None``
-        when everything looks fine.  Only DEPLOY and TEST categories have
-        pre-checks; all other categories pass unconditionally.
-        """
-        if task.category == TaskCategory.DEPLOY:
-            if not self._state.dev_model:
-                return "No development model set \u2014 cannot deploy"
-            if not self._state.charm_path:
-                return "No charm path set \u2014 cannot deploy"
-            if not pathlib.Path(self._state.charm_path).exists():
-                return f"Charm path {self._state.charm_path} does not exist"
-
-        if task.category == TaskCategory.TEST:
-            if not self._state.charm_path:
-                return "No charm path set \u2014 cannot test"
-            charm_dir = pathlib.Path(self._state.charm_path)
-            if not charm_dir.exists():
-                return f"Charm path {self._state.charm_path} does not exist"
-            if not list(charm_dir.glob("*.charm")):
-                return "No packed charm found \u2014 run charmcraft_pack first"
-
-        return None
+        """Verify the environment is usable before launching a subagent."""
+        return self._env_checker.check(task)
 
     # -- Event recording helpers -----------------------------------------------
 
@@ -320,7 +511,7 @@ class BackgroundExecutor:
         error: str | None = None,
     ) -> None:
         """Record a task status change event in the session store."""
-        if not self._store:
+        if not self._state_service:
             return
         detail: dict[str, str] = {
             "task_id": task.id,
@@ -330,13 +521,13 @@ class BackgroundExecutor:
         }
         if error is not None:
             detail["error"] = error[:500]
-        self._store.record_event("task_status_change", detail)
+        self._state_service.record_event("task_status_change", detail)
 
     def _record_task_error(self, task: AgentTask, exc: BaseException) -> None:
         """Record a task error event in the session store."""
-        if not self._store:
+        if not self._state_service:
             return
-        self._store.record_event(
+        self._state_service.record_event(
             "error",
             {
                 "task_id": task.id,
@@ -348,29 +539,8 @@ class BackgroundExecutor:
     # -- Noop detection -------------------------------------------------------
 
     def _fingerprint(self) -> str:
-        """Capture a lightweight fingerprint of the charm directory.
-
-        Returns a string combining git status output and HEAD hash.
-        If no charm path is set or git is unavailable, returns an empty string.
-        """
-        if not self._state.charm_path:
-            return ""
-        charm_dir = str(self._state.charm_path)
-        parts: list[str] = []
-        for cmd in (["git", "rev-parse", "HEAD"], ["git", "status", "--porcelain"]):
-            try:
-                result = subprocess.run(
-                    cmd,
-                    cwd=charm_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                if result.returncode == 0:
-                    parts.append(result.stdout.strip())
-            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                pass
-        return "\n".join(parts)
+        """Capture a lightweight fingerprint of the charm directory."""
+        return self._git.fingerprint(self._state.charm_path)
 
     def _is_noop(self, before: str, after: str) -> bool:
         """Return True if the fingerprints are identical (no observable change)."""
@@ -452,10 +622,7 @@ class BackgroundExecutor:
             # Noop detection: check both the exit state signal and
             # the filesystem fingerprint for observable changes.
             fp_after = self._fingerprint()
-            is_noop = (
-                result.exit_state == ExitState.NOOP
-                or self._is_noop(fp_before, fp_after)
-            )
+            is_noop = result.exit_state == ExitState.NOOP or self._is_noop(fp_before, fp_after)
             if is_noop:
                 task.noop_count += 1
                 log.warning(
@@ -471,9 +638,7 @@ class BackgroundExecutor:
                         f"Attempted {task.noop_count} time(s) without progress — "
                         f"needs user guidance",
                     )
-                    self._record_status_change(
-                        task, "blocked", error="noop escalation"
-                    )
+                    self._record_status_change(task, "blocked", error="noop escalation")
                     if self._on_task_failed:
                         self._on_task_failed(task)
                     return
@@ -523,83 +688,19 @@ class BackgroundExecutor:
     # -- Git snapshot / revert -----------------------------------------------
 
     def _snapshot_head(self) -> str | None:
-        """Return the current HEAD commit hash for the charm directory.
-
-        Returns ``None`` if no charm path is set or if the git command fails
-        (e.g. not a git repository).
-        """
-        if not self._state.charm_path:
-            return None
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                cwd=str(self._state.charm_path),
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            return None
-        if result.returncode != 0:
-            return None
-        return result.stdout.strip() or None
+        """Return the current HEAD commit hash for the charm directory."""
+        return self._git.snapshot_head(self._state.charm_path)
 
     def _revert_on_failure(self, snapshot: str, task: AgentTask) -> None:
-        """Revert tracked files to their committed state after a failed task.
-
-        Captures the current diff as diagnostic information and prepends it
-        to the task result, then restores tracked files with ``git checkout``.
-        Untracked files are intentionally left alone.
-        """
-        charm_dir = str(self._state.charm_path)
-
-        # Capture the diff so the failure can be diagnosed.
-        diff_text = ""
-        try:
-            diff_result = subprocess.run(
-                ["git", "diff"],
-                cwd=charm_dir,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if diff_result.returncode == 0 and diff_result.stdout.strip():
-                diff_text = diff_result.stdout.strip()
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            pass
-
-        if diff_text:
-            existing = task.result or ""
-            task.result = f"[reverted diff]\n{diff_text}\n\n{existing}"
-
-        # Restore tracked files to their committed state.
-        with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            subprocess.run(
-                ["git", "checkout", "."],
-                cwd=charm_dir,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
-        log.warning(
-            "Reverted tracked files in %s after failed task '%s' (snapshot %s)",
-            charm_dir,
-            task.title,
-            snapshot[:12],
-        )
+        """Revert tracked files to their committed state after a failed task."""
+        if self._state.charm_path:
+            self._git.revert_to_clean(self._state.charm_path, task, snapshot)
 
     # -- Follow-up creation --------------------------------------------------
 
     def _create_followups(self, task: AgentTask) -> None:
-        """Create follow-up tasks for a completed or failed task.
-
-        Only creates follow-ups when a development model is set (no point
-        verifying or diagnosing without a deployment target).
-        """
-        if not self._state.dev_model:
-            return
-        new_tasks = followup_tasks(task)
+        """Create follow-up tasks for a completed or failed task."""
+        new_tasks = self._followup_planner.followup_tasks(task)
         if new_tasks:
             self._queue.add_tasks(new_tasks)
             log.info(
@@ -611,31 +712,14 @@ class BackgroundExecutor:
     # -- Uncommitted change detection -----------------------------------------
 
     def _check_uncommitted(self, task: AgentTask) -> None:
-        """Log a warning if the charm directory has uncommitted changes.
-
-        Called after successful BUILD or DEBUG tasks to flag cases where
-        the subagent forgot to commit its work.
-        """
+        """Log a warning if the charm directory has uncommitted changes."""
         if not self._state.charm_path:
             return
-        charm_dir = str(self._state.charm_path)
-        try:
-            result = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=charm_dir,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            return
-        if result.returncode != 0:
-            return
-        if result.stdout.strip():
+        if self._git.has_uncommitted_changes(self._state.charm_path):
             log.warning(
                 "Task '%s' completed but left uncommitted changes in %s",
                 task.title,
-                charm_dir,
+                self._state.charm_path,
             )
 
     # -- Context building ----------------------------------------------------
@@ -672,8 +756,8 @@ class BackgroundExecutor:
 
     def _record_usage(self, response: llm.Response) -> None:
         """Record token usage from a subagent LLM response."""
-        if self._store and response.usage:
-            self._store.record_usage(
+        if self._state_service and response.usage:
+            self._state_service.record_usage(
                 provider=self._provider.name,
                 model=self._provider.model_name,
                 prompt_tokens=response.usage.get("prompt_tokens", 0),
@@ -683,6 +767,6 @@ class BackgroundExecutor:
     # -- Persistence ---------------------------------------------------------
 
     def _persist(self) -> None:
-        """Save tasks via the session store if one is available."""
-        if self._store is not None:
-            self._store.save_tasks(self._queue.all_tasks())
+        """Save tasks via the state service if one is available."""
+        if self._state_service is not None:
+            self._state_service.save_tasks(self._queue.all_tasks())
