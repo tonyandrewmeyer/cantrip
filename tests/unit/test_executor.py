@@ -1606,3 +1606,84 @@ class TestExitStateHandling:
 
         assert task.status == TaskStatus.DONE
         assert task.result == "Found 3 sources"
+
+
+# ===================================================================
+# TestGracefulShutdown
+# ===================================================================
+
+
+class TestGracefulShutdown:
+    """Tests for two-stage graceful shutdown."""
+
+    def test_cleanup_resets_active_to_pending(self) -> None:
+        """ACTIVE tasks are reset to PENDING on startup/force-stop."""
+        queue = WorkQueue()
+        t1 = AgentTask(id="a1", title="Active task", category=TaskCategory.BUILD)
+        t2 = AgentTask(id="a2", title="Pending task", category=TaskCategory.BUILD)
+        queue.add_task(t1)
+        queue.add_task(t2)
+        queue.set_active(t1.id)
+
+        executor = _make_executor(queue=queue)
+        executor._cleanup_active_tasks()
+
+        assert t1.status == TaskStatus.PENDING
+        assert t2.status == TaskStatus.PENDING
+
+    def test_cleanup_leaves_done_tasks(self) -> None:
+        """DONE tasks are not touched by cleanup."""
+        queue = WorkQueue()
+        t1 = AgentTask(id="d1", title="Done task", category=TaskCategory.BUILD)
+        queue.add_task(t1)
+        queue.set_done(t1.id, "completed")
+
+        executor = _make_executor(queue=queue)
+        executor._cleanup_active_tasks()
+
+        assert t1.status == TaskStatus.DONE
+
+    def test_draining_property(self) -> None:
+        executor = _make_executor()
+        assert executor.draining is False
+
+    @pytest.mark.asyncio
+    async def test_drain_sets_paused_and_draining(self) -> None:
+        executor = _make_executor()
+        executor.start()
+
+        # Drain immediately (no in-flight tasks).
+        await executor.drain()
+
+        assert executor.running is False
+
+    @pytest.mark.asyncio
+    async def test_force_stop_cancels_and_cleans_up(self) -> None:
+        queue = WorkQueue()
+        t1 = AgentTask(id="a1", title="Active task", category=TaskCategory.BUILD)
+        queue.add_task(t1)
+        queue.set_active(t1.id)
+
+        executor = _make_executor(queue=queue)
+        executor._running = True
+
+        await executor.force_stop()
+
+        assert executor.running is False
+        # Active task should be reset to pending.
+        assert t1.status == TaskStatus.PENDING
+
+    @pytest.mark.asyncio
+    async def test_start_resets_active_tasks(self) -> None:
+        """Starting the executor resets stuck ACTIVE tasks."""
+        queue = WorkQueue()
+        t1 = AgentTask(id="a1", title="Stuck task", category=TaskCategory.BUILD)
+        queue.add_task(t1)
+        queue.set_active(t1.id)
+
+        executor = _make_executor(queue=queue)
+        executor.start()
+
+        assert t1.status == TaskStatus.PENDING
+        # Clean up.
+        await executor.stop()

@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 
 from cantrip.agent.autodeploy import followup_tasks
-from cantrip.agent.queue import AgentTask, TaskCategory, WorkQueue
+from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
 from cantrip.agent.subagent import (
@@ -74,6 +74,7 @@ class BackgroundExecutor:
 
         self._running = False
         self._paused = False
+        self._draining = False
         self._task: asyncio.Task | None = None
         # Track in-flight async tasks so the loop knows how many slots are free.
         self._active_tasks: set[asyncio.Task[None]] = set()
@@ -98,12 +99,23 @@ class BackgroundExecutor:
         """Maximum number of tasks that can run concurrently."""
         return self._max_concurrency
 
+    @property
+    def draining(self) -> bool:
+        """Whether the executor is draining (finishing in-flight, no new tasks)."""
+        return self._draining
+
     def start(self) -> None:
-        """Start the background poll-and-execute loop."""
+        """Start the background poll-and-execute loop.
+
+        Resets any tasks stuck in ACTIVE status back to PENDING so they
+        are re-dispatched (they were interrupted by a previous shutdown).
+        """
         if self._running:
             return
+        self._cleanup_active_tasks()
         self._running = True
         self._paused = False
+        self._draining = False
         self._semaphore = asyncio.Semaphore(self._max_concurrency)
         self._task = asyncio.create_task(self._run_loop())
         log.info("Background executor started (concurrency=%d)", self._max_concurrency)
@@ -144,7 +156,73 @@ class BackgroundExecutor:
         if not self._paused:
             return
         self._paused = False
+        self._draining = False
         log.info("Background executor resumed")
+
+    async def drain(self) -> None:
+        """Drain the executor: stop scheduling new tasks and wait for in-flight ones.
+
+        This is the first stage of a graceful shutdown.  The poll loop
+        stops picking new tasks, but any subagent already running is
+        allowed to finish.  After all in-flight tasks complete, the
+        executor saves state and stops.
+        """
+        if not self._running:
+            return
+        self._draining = True
+        self._paused = True
+        log.info("Background executor draining — waiting for %d in-flight task(s)",
+                 len(self._active_tasks))
+        # Wait for all in-flight tasks to finish.
+        if self._active_tasks:
+            await asyncio.gather(*self._active_tasks, return_exceptions=True)
+        self._persist()
+        await self.stop()
+        log.info("Background executor drained and stopped")
+
+    async def force_stop(self) -> None:
+        """Force-stop the executor: cancel all in-flight tasks and save state.
+
+        This is the second stage of shutdown (e.g. second SIGINT).
+        In-flight subagent tasks are cancelled immediately.  Any task
+        marked ACTIVE is reset to PENDING for the next session.
+        """
+        if not self._running:
+            return
+        log.warning("Force-stopping executor — cancelling %d in-flight task(s)",
+                    len(self._active_tasks))
+        # Cancel all in-flight async tasks.
+        for at in self._active_tasks:
+            at.cancel()
+        if self._active_tasks:
+            await asyncio.gather(*self._active_tasks, return_exceptions=True)
+            self._active_tasks.clear()
+        # Reset active tasks to pending so they are retried next session.
+        self._cleanup_active_tasks()
+        self._persist()
+        self._running = False
+        self._paused = False
+        self._draining = False
+        if self._task:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+            self._task = None
+        log.info("Background executor force-stopped")
+
+    def _cleanup_active_tasks(self) -> None:
+        """Reset any ACTIVE tasks back to PENDING.
+
+        Called on startup and on force-stop to ensure interrupted tasks
+        are retried rather than stuck forever.
+        """
+        reset_count = 0
+        for task in self._queue.all_tasks():
+            if task.status == TaskStatus.ACTIVE:
+                self._queue.set_pending(task.id)
+                reset_count += 1
+        if reset_count:
+            log.info("Reset %d active task(s) to pending", reset_count)
 
     # -- Core loop -----------------------------------------------------------
 

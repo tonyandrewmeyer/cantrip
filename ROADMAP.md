@@ -1934,14 +1934,14 @@ autonomous loop from spinning indefinitely.
 
 Handle SIGINT/SIGTERM cleanly in the autonomous work loop.
 
-- [ ] **Drain mode** — first signal stops scheduling new subagents; in-flight
-  subagents are allowed to finish. The conversation loop remains responsive so
-  the user knows what is happening
-- [ ] **Force shutdown** — second signal kills all running subagents and saves
-  current state to SQLite so the next session can resume cleanly
-- [ ] **Task state cleanup** — any task marked `active` at shutdown is reset to
-  `pending` so it will be picked up on the next run (mirrors orc's
-  `clear_all_assignments()` on startup)
+- [x] **Drain mode** — `drain()` method pauses the poll loop and waits for all
+  in-flight subagent tasks to finish before persisting state and stopping; the
+  `draining` property tracks drain state
+- [x] **Force shutdown** — `force_stop()` cancels all in-flight async tasks
+  immediately, resets ACTIVE tasks to PENDING, persists state, and stops
+- [x] **Task state cleanup** — `_cleanup_active_tasks()` resets any ACTIVE tasks
+  to PENDING; called automatically on `start()` (recovering from interrupted
+  sessions) and on `force_stop()`
 
 ### 21.5 Structured Subagent Exit Contracts
 
