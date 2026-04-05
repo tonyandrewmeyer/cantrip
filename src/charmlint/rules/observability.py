@@ -3,8 +3,8 @@
 import re
 from typing import Any
 
-from charmlint.models import CharmContext, Diagnostic, Severity
-from charmlint.rules import Rule
+from .. import models
+from . import Rule
 
 # COS relation interface checks.
 # First element is the interface *value* (not the relation name).
@@ -54,9 +54,9 @@ def _make_cos_rule(_iface: str, _id: str, _name: str, _msg: str) -> type[Rule]:
         id = rid
         name = rname
         description = msg
-        default_severity = Severity.WARNING
+        default_severity = models.Severity.WARNING
 
-        def check(self, context: CharmContext) -> list[Diagnostic]:
+        def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
             interfaces = _all_relation_interfaces(context.metadata)
             if iface not in interfaces:
                 return [self.diagnostic(msg, path="charmcraft.yaml")]
@@ -77,9 +77,9 @@ class OpsTracingNotInstalled(Rule):
     id = "COS005"
     name = "ops-tracing-not-installed"
     description = "ops-tracing not detected in dependencies or source"
-    default_severity = Severity.WARNING
+    default_severity = models.Severity.WARNING
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         # Check requirements files.
         for req_name in ("requirements.txt", "pyproject.toml"):
             req_path = context.charm_dir / req_name

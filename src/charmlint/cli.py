@@ -1,13 +1,14 @@
 """Command-line interface for charmlint."""
 
 import argparse
+import contextlib
 import json
+import pathlib
 import sys
-from pathlib import Path
 
-from charmlint.config import load_config
-from charmlint.linter import lint
-from charmlint.models import Diagnostic, Severity
+from . import config as _config
+from . import linter as _linter
+from . import models
 
 # ---------------------------------------------------------------------------
 # ANSI colour helpers — disabled when stdout is not a terminal or --no-color
@@ -17,10 +18,10 @@ _RESET = "\033[0m"
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
 
-_SEVERITY_STYLES: dict[Severity, str] = {
-    Severity.ERROR: "\033[1;31m",  # bold red
-    Severity.WARNING: "\033[1;33m",  # bold yellow
-    Severity.INFO: "\033[1;36m",  # bold cyan
+_SEVERITY_STYLES: dict[models.Severity, str] = {
+    models.Severity.ERROR: "\033[1;31m",  # bold red
+    models.Severity.WARNING: "\033[1;33m",  # bold yellow
+    models.Severity.INFO: "\033[1;36m",  # bold cyan
 }
 
 _use_colour = True
@@ -33,15 +34,13 @@ def _styled(text: str, style: str) -> str:
     return f"{style}{text}{_RESET}"
 
 
-def _format_diagnostic_colour(d: Diagnostic, charm_dir: Path) -> str:
+def _format_diagnostic_colour(d: models.Diagnostic, charm_dir: pathlib.Path) -> str:
     """Format a diagnostic with ANSI colours."""
-    import contextlib
-
     # Location (dim).
     location = d.path or ""
     if charm_dir and d.path:
         with contextlib.suppress(ValueError):
-            location = str(Path(d.path).relative_to(charm_dir))
+            location = str(pathlib.Path(d.path).relative_to(charm_dir))
     if d.line is not None:
         location = f"{location}:{d.line}"
 
@@ -67,13 +66,13 @@ def _format_summary_colour(total: int, errors: int, warnings: int, infos: int) -
     pieces: list[str] = []
     if errors:
         label = f"{errors} error{'s' if errors != 1 else ''}"
-        pieces.append(_styled(label, _SEVERITY_STYLES[Severity.ERROR]))
+        pieces.append(_styled(label, _SEVERITY_STYLES[models.Severity.ERROR]))
     if warnings:
         label = f"{warnings} warning{'s' if warnings != 1 else ''}"
-        pieces.append(_styled(label, _SEVERITY_STYLES[Severity.WARNING]))
+        pieces.append(_styled(label, _SEVERITY_STYLES[models.Severity.WARNING]))
     if infos:
         label = f"{infos} info"
-        pieces.append(_styled(label, _SEVERITY_STYLES[Severity.INFO]))
+        pieces.append(_styled(label, _SEVERITY_STYLES[models.Severity.INFO]))
 
     return (
         _styled(f"Found {total} issue{'s' if total != 1 else ''}", _BOLD)
@@ -139,23 +138,23 @@ def main(argv: list[str] | None = None) -> int:
     # Determine colour mode: off if --no-color, not a TTY, or JSON output.
     _use_colour = not args.no_color and sys.stdout.isatty() and args.output_format != "json"
 
-    charm_dir = Path(args.path).resolve()
+    charm_dir = pathlib.Path(args.path).resolve()
     if not charm_dir.is_dir():
         print(f"Error: {args.path} is not a directory", file=sys.stderr)
         return 1
 
     # Load config from file, then overlay CLI flags.
-    config_path = Path(args.config) if args.config else None
-    config = load_config(charm_dir, config_path)
+    config_path = pathlib.Path(args.config) if args.config else None
+    config = _config.load_config(charm_dir, config_path)
 
     if args.select:
         config.select = [s.strip() for s in args.select.split(",")]
     if args.ignore:
         config.ignore.extend(s.strip() for s in args.ignore.split(","))
     if args.severity:
-        config.min_severity = Severity(args.severity)
+        config.min_severity = models.Severity(args.severity)
 
-    report = lint(charm_dir, config)
+    report = _linter.lint(charm_dir, config)
 
     if args.output_format == "json":
         print(json.dumps(report.to_dict(), indent=2))

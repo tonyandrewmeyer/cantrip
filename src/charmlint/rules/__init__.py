@@ -1,14 +1,14 @@
 """Rule base class and registry for charmlint."""
 
-from abc import ABC, abstractmethod
+import abc
 
-from charmlint.models import CharmContext, Diagnostic, Severity
+from .. import models
 
 # Global rule registry — populated by Rule.__init_subclass__.
 _RULES: dict[str, "Rule"] = {}
 
 
-class Rule(ABC):
+class Rule(abc.ABC):
     """Base class for all charmlint rules.
 
     Subclasses must define ``id``, ``name``, ``description``, and
@@ -19,7 +19,7 @@ class Rule(ABC):
     id: str
     name: str
     description: str
-    default_severity: Severity
+    default_severity: models.Severity
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
@@ -27,21 +27,21 @@ class Rule(ABC):
         if hasattr(cls, "id") and not getattr(cls, "_abstract", False):
             _RULES[cls.id] = cls()
 
-    @abstractmethod
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    @abc.abstractmethod
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         """Run the rule against the given charm context."""
 
     def diagnostic(
         self,
         message: str,
         *,
-        severity: Severity | None = None,
+        severity: models.Severity | None = None,
         path: str | None = None,
         line: int | None = None,
         fix_hint: str | None = None,
-    ) -> Diagnostic:
+    ) -> models.Diagnostic:
         """Convenience helper to create a Diagnostic for this rule."""
-        return Diagnostic(
+        return models.Diagnostic(
             rule_id=self.id,
             severity=severity or self.default_severity,
             message=message,

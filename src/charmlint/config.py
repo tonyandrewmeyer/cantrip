@@ -10,25 +10,25 @@ via CLI) and merges with defaults.  Configuration supports:
 """
 
 import contextlib
-from dataclasses import dataclass, field
-from pathlib import Path
+import dataclasses
+import pathlib
 from typing import Any
 
 import yaml
 
-from charmlint.models import Severity
+from . import models
 
 _CONFIG_FILENAME = ".charmlint.yaml"
 
 
-@dataclass
+@dataclasses.dataclass
 class LintConfig:
     """Resolved lint configuration."""
 
-    severity_overrides: dict[str, str] = field(default_factory=dict)
-    select: list[str] = field(default_factory=list)
-    ignore: list[str] = field(default_factory=list)
-    min_severity: Severity | None = None
+    severity_overrides: dict[str, str] = dataclasses.field(default_factory=dict)
+    select: list[str] = dataclasses.field(default_factory=list)
+    ignore: list[str] = dataclasses.field(default_factory=list)
+    min_severity: models.Severity | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "LintConfig":
@@ -49,7 +49,7 @@ class LintConfig:
         min_severity = None
         if min_sev_raw:
             with contextlib.suppress(ValueError):
-                min_severity = Severity(str(min_sev_raw).lower())
+                min_severity = models.Severity(str(min_sev_raw).lower())
 
         return cls(
             severity_overrides=severity_overrides,
@@ -59,7 +59,7 @@ class LintConfig:
         )
 
 
-def load_config(charm_dir: Path, config_path: Path | None = None) -> LintConfig:
+def load_config(charm_dir: pathlib.Path, config_path: pathlib.Path | None = None) -> LintConfig:
     """Load configuration from a ``.charmlint.yaml`` file.
 
     Searches the charm directory for a config file.  If *config_path*

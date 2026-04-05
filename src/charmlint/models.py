@@ -1,13 +1,13 @@
 """Core data models for charmlint."""
 
 import contextlib
-from dataclasses import dataclass, field
-from enum import StrEnum
-from pathlib import Path
+import dataclasses
+import enum
+import pathlib
 from typing import Any
 
 
-class Severity(StrEnum):
+class Severity(enum.StrEnum):
     """Diagnostic severity level."""
 
     ERROR = "error"
@@ -15,7 +15,7 @@ class Severity(StrEnum):
     INFO = "info"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class Diagnostic:
     """A single lint finding."""
 
@@ -26,12 +26,12 @@ class Diagnostic:
     line: int | None = None
     fix_hint: str | None = None
 
-    def format_text(self, charm_dir: Path | None = None) -> str:
+    def format_text(self, charm_dir: pathlib.Path | None = None) -> str:
         """Format as a ruff-style single-line diagnostic."""
         location = self.path or ""
         if charm_dir and self.path:
             with contextlib.suppress(ValueError):
-                location = str(Path(self.path).relative_to(charm_dir))
+                location = str(pathlib.Path(self.path).relative_to(charm_dir))
         if self.line is not None:
             location = f"{location}:{self.line}"
         prefix = f"{location}: " if location else ""
@@ -53,27 +53,27 @@ class Diagnostic:
         return result
 
 
-@dataclass
+@dataclasses.dataclass
 class CharmContext:
     """All the data a rule needs, loaded once by the linter engine."""
 
-    charm_dir: Path
-    metadata: dict[str, Any] = field(default_factory=dict)
-    actions: dict[str, Any] = field(default_factory=dict)
-    config_options: dict[str, Any] = field(default_factory=dict)
-    python_files: list[Path] = field(default_factory=list)
-    python_sources: dict[Path, str] = field(default_factory=dict)
+    charm_dir: pathlib.Path
+    metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
+    actions: dict[str, Any] = dataclasses.field(default_factory=dict)
+    config_options: dict[str, Any] = dataclasses.field(default_factory=dict)
+    python_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
+    python_sources: dict[pathlib.Path, str] = dataclasses.field(default_factory=dict)
     readme_content: str = ""
     has_tests_unit: bool = False
     has_tests_integration: bool = False
 
 
-@dataclass
+@dataclasses.dataclass
 class LintReport:
     """Aggregated lint results."""
 
-    charm_dir: Path
-    diagnostics: list[Diagnostic] = field(default_factory=list)
+    charm_dir: pathlib.Path
+    diagnostics: list[Diagnostic] = dataclasses.field(default_factory=list)
 
     @property
     def error_count(self) -> int:

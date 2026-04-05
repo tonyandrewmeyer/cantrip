@@ -1,7 +1,7 @@
 """Config quality rules — types, defaults, descriptions."""
 
-from charmlint.models import CharmContext, Diagnostic, Severity
-from charmlint.rules import Rule
+from .. import models
+from . import Rule
 
 
 class ConfigMissingType(Rule):
@@ -10,10 +10,10 @@ class ConfigMissingType(Rule):
     id = "CFG001"
     name = "config-missing-type"
     description = "Config option is missing a type"
-    default_severity = Severity.WARNING
+    default_severity = models.Severity.WARNING
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
-        diagnostics: list[Diagnostic] = []
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
+        diagnostics: list[models.Diagnostic] = []
         for opt_name, opt_def in context.config_options.items():
             if not isinstance(opt_def, dict):
                 continue
@@ -33,10 +33,10 @@ class ConfigMissingDefault(Rule):
     id = "CFG002"
     name = "config-missing-default"
     description = "Config option is missing a default value"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
-        diagnostics: list[Diagnostic] = []
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
+        diagnostics: list[models.Diagnostic] = []
         for opt_name, opt_def in context.config_options.items():
             if not isinstance(opt_def, dict):
                 continue
@@ -56,10 +56,10 @@ class ConfigMissingDescription(Rule):
     id = "CFG003"
     name = "config-missing-description"
     description = "Config option is missing a description"
-    default_severity = Severity.WARNING
+    default_severity = models.Severity.WARNING
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
-        diagnostics: list[Diagnostic] = []
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
+        diagnostics: list[models.Diagnostic] = []
         for opt_name, opt_def in context.config_options.items():
             if not isinstance(opt_def, dict):
                 continue

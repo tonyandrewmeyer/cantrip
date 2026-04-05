@@ -9,6 +9,7 @@ Public API::
         print(d.format_text())
 """
 
+# Re-exports for the public API.
 from charmlint.config import LintConfig
 from charmlint.linter import lint
 from charmlint.models import Diagnostic, LintReport, Severity

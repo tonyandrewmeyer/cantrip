@@ -1,10 +1,10 @@
 """Deprecated API detection rules."""
 
+import pathlib
 import re
-from pathlib import Path
 
-from charmlint.models import CharmContext, Diagnostic, Severity
-from charmlint.rules import Rule
+from .. import models
+from . import Rule
 
 # (regex_pattern, rule_id, name, message, fix_hint)
 _DEPRECATED_CHECKS: list[tuple[str, str, str, str, str]] = [
@@ -32,7 +32,9 @@ _DEPRECATED_CHECKS: list[tuple[str, str, str, str, str]] = [
 ]
 
 
-def _find_first_match(pattern: str, sources: dict[Path, str]) -> tuple[Path, int] | None:
+def _find_first_match(
+    pattern: str, sources: dict[pathlib.Path, str]
+) -> tuple[pathlib.Path, int] | None:
     """Find the first file and line matching a pattern."""
     compiled = re.compile(pattern)
     for path, content in sources.items():
@@ -60,9 +62,9 @@ def _make_deprecated_rule(
         id = rid
         name = rname
         description = msg
-        default_severity = Severity.ERROR
+        default_severity = models.Severity.ERROR
 
-        def check(self, context: CharmContext) -> list[Diagnostic]:
+        def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
             match = _find_first_match(pat, context.python_sources)
             if match:
                 fpath, line = match

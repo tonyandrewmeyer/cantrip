@@ -2,8 +2,8 @@
 
 import re
 
-from charmlint.models import CharmContext, Diagnostic, Severity
-from charmlint.rules import Rule
+from .. import models
+from . import Rule
 
 
 class NoLicence(Rule):
@@ -12,9 +12,9 @@ class NoLicence(Rule):
     id = "STR001"
     name = "no-licence"
     description = "No LICENSE/LICENCE file found"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         has_licence = (context.charm_dir / "LICENSE").exists() or (
             context.charm_dir / "LICENCE"
         ).exists()
@@ -29,9 +29,9 @@ class NoIcon(Rule):
     id = "STR002"
     name = "no-icon"
     description = "No icon.svg found"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         if not (context.charm_dir / "icon.svg").exists():
             return [self.diagnostic("No icon.svg found")]
         return []
@@ -43,9 +43,9 @@ class NoTypeAnnotations(Rule):
     id = "STR003"
     name = "no-type-annotations"
     description = "No type annotations found in charm source"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         for path, content in context.python_sources.items():
             # Only check src/ files (skip lib/).
             if "lib" in path.parts:

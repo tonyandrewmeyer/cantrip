@@ -2,8 +2,8 @@
 
 import re
 
-from charmlint.models import CharmContext, Diagnostic, Severity
-from charmlint.rules import Rule
+from .. import models
+from . import Rule
 
 _SECRET_CONFIG_KEYWORDS = {"password", "secret", "token", "api-key", "api_key", "credential"}
 
@@ -14,9 +14,9 @@ class SecretInPlainConfig(Rule):
     id = "SEC001"
     name = "secret-in-plain-config"
     description = "Secret-like config option found — use Juju secrets instead"
-    default_severity = Severity.ERROR
+    default_severity = models.Severity.ERROR
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         # Check if the charm uses Juju secrets API.
         all_source = "\n".join(
             content for path, content in context.python_sources.items() if "lib" not in path.parts
@@ -30,7 +30,7 @@ class SecretInPlainConfig(Rule):
                 secret_opts.append(opt_name)
 
         if secret_opts and not has_juju_secrets:
-            diagnostics: list[Diagnostic] = []
+            diagnostics: list[models.Diagnostic] = []
             for opt in secret_opts:
                 diagnostics.append(
                     self.diagnostic(
@@ -50,9 +50,9 @@ class NoTLSSupport(Rule):
     id = "SEC002"
     name = "no-tls-support"
     description = "No TLS/encryption support detected"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         # Check for tls-certificates relation.
         for section in ("requires", "provides", "peers"):
             for rel_def in context.metadata.get(section, {}).values():

@@ -1,17 +1,17 @@
 """Core linter engine — loads charm context, discovers rules, runs them."""
 
 import contextlib
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import yaml
 
-from charmlint.config import LintConfig
-from charmlint.models import CharmContext, Diagnostic, LintReport, Severity
-from charmlint.rules import Rule, get_all_rules
+from . import config as _config
+from . import models
+from . import rules as _rules
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
+def _load_yaml(path: pathlib.Path) -> dict[str, Any]:
     """Load a YAML file, returning an empty dict on failure."""
     if not path.exists():
         return {}
@@ -23,9 +23,9 @@ def _load_yaml(path: Path) -> dict[str, Any]:
         return {}
 
 
-def _collect_python_files(charm_dir: Path) -> list[Path]:
+def _collect_python_files(charm_dir: pathlib.Path) -> list[pathlib.Path]:
     """Collect all Python files in src/ and lib/ directories."""
-    files: list[Path] = []
+    files: list[pathlib.Path] = []
     for subdir in ("src", "lib"):
         d = charm_dir / subdir
         if d.is_dir():
@@ -33,16 +33,16 @@ def _collect_python_files(charm_dir: Path) -> list[Path]:
     return files
 
 
-def _read_python_sources(python_files: list[Path]) -> dict[Path, str]:
+def _read_python_sources(python_files: list[pathlib.Path]) -> dict[pathlib.Path, str]:
     """Read all Python files into a content cache."""
-    sources: dict[Path, str] = {}
+    sources: dict[pathlib.Path, str] = {}
     for path in python_files:
         with contextlib.suppress(OSError):
             sources[path] = path.read_text(errors="replace")
     return sources
 
 
-def _check_tests(charm_dir: Path) -> tuple[bool, bool]:
+def _check_tests(charm_dir: pathlib.Path) -> tuple[bool, bool]:
     """Return (has_unit_tests, has_integration_tests)."""
     unit_dir = charm_dir / "tests" / "unit"
     integration_dir = charm_dir / "tests" / "integration"
@@ -51,7 +51,7 @@ def _check_tests(charm_dir: Path) -> tuple[bool, bool]:
     return has_unit, has_integration
 
 
-def build_context(charm_dir: Path) -> CharmContext:
+def build_context(charm_dir: pathlib.Path) -> models.CharmContext:
     """Load all charm data into a CharmContext for rule evaluation."""
     charm_dir = charm_dir.resolve()
 
@@ -89,7 +89,7 @@ def build_context(charm_dir: Path) -> CharmContext:
 
     has_unit, has_integration = _check_tests(charm_dir)
 
-    return CharmContext(
+    return models.CharmContext(
         charm_dir=charm_dir,
         metadata=metadata,
         actions=actions,
@@ -102,7 +102,7 @@ def build_context(charm_dir: Path) -> CharmContext:
     )
 
 
-def _should_run_rule(rule: Rule, config: LintConfig) -> bool:
+def _should_run_rule(rule: _rules.Rule, config: _config.LintConfig) -> bool:
     """Determine whether a rule should run given the config."""
     rule_id = rule.id
     category = rule_id.rstrip("0123456789")
@@ -123,28 +123,28 @@ def _should_run_rule(rule: Rule, config: LintConfig) -> bool:
     return not (rule_id in config.ignore or category in config.ignore)
 
 
-def _effective_severity(rule: Rule, config: LintConfig) -> Severity | None:
+def _effective_severity(rule: _rules.Rule, config: _config.LintConfig) -> models.Severity | None:
     """Resolve the effective severity for a rule, applying config overrides."""
     rule_id = rule.id
     override = config.severity_overrides.get(rule_id)
     if override and override != "off":
         try:
-            return Severity(override)
+            return models.Severity(override)
         except ValueError:
             pass
     return None
 
 
 def lint(
-    charm_dir: Path,
-    config: LintConfig | None = None,
-) -> LintReport:
+    charm_dir: pathlib.Path,
+    config: _config.LintConfig | None = None,
+) -> models.LintReport:
     """Run all enabled rules against a charm directory.
 
     This is the main public API.
     """
     if config is None:
-        config = LintConfig()
+        config = _config.LintConfig()
 
     # Ensure all rule modules are imported so rules register themselves.
     _ensure_rules_loaded()
@@ -152,12 +152,12 @@ def lint(
     context = build_context(charm_dir)
 
     if not context.metadata:
-        return LintReport(
+        return models.LintReport(
             charm_dir=charm_dir,
             diagnostics=[
-                Diagnostic(
+                models.Diagnostic(
                     rule_id="FATAL",
-                    severity=Severity.ERROR,
+                    severity=models.Severity.ERROR,
                     message=(
                         "No charmcraft.yaml or metadata.yaml found — is this a charm directory?"
                     ),
@@ -165,9 +165,9 @@ def lint(
             ],
         )
 
-    all_diagnostics: list[Diagnostic] = []
+    all_diagnostics: list[models.Diagnostic] = []
 
-    for rule in get_all_rules().values():
+    for rule in _rules.get_all_rules().values():
         if not _should_run_rule(rule, config):
             continue
 
@@ -177,7 +177,7 @@ def lint(
         override = _effective_severity(rule, config)
         if override is not None:
             diagnostics = [
-                Diagnostic(
+                models.Diagnostic(
                     rule_id=d.rule_id,
                     severity=override,
                     message=d.message,
@@ -190,7 +190,11 @@ def lint(
 
         # Filter by minimum severity.
         if config.min_severity:
-            severity_order = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
+            severity_order = {
+                models.Severity.ERROR: 0,
+                models.Severity.WARNING: 1,
+                models.Severity.INFO: 2,
+            }
             min_order = severity_order.get(config.min_severity, 2)
             diagnostics = [
                 d for d in diagnostics if severity_order.get(d.severity, 2) <= min_order
@@ -198,7 +202,7 @@ def lint(
 
         all_diagnostics.extend(diagnostics)
 
-    return LintReport(charm_dir=charm_dir, diagnostics=all_diagnostics)
+    return models.LintReport(charm_dir=charm_dir, diagnostics=all_diagnostics)
 
 
 _rules_loaded = False
@@ -211,14 +215,16 @@ def _ensure_rules_loaded() -> None:
         return
     _rules_loaded = True
 
-    import charmlint.rules.actions  # noqa: F401
-    import charmlint.rules.config_quality  # noqa: F401
-    import charmlint.rules.deprecated  # noqa: F401
-    import charmlint.rules.documentation  # noqa: F401
-    import charmlint.rules.libraries  # noqa: F401
-    import charmlint.rules.metadata  # noqa: F401
-    import charmlint.rules.observability  # noqa: F401
-    import charmlint.rules.security  # noqa: F401
-    import charmlint.rules.status  # noqa: F401
-    import charmlint.rules.structure  # noqa: F401
-    import charmlint.rules.testing  # noqa: F401
+    from .rules import (
+        actions,  # noqa: F401
+        config_quality,  # noqa: F401
+        deprecated,  # noqa: F401
+        documentation,  # noqa: F401
+        libraries,  # noqa: F401
+        metadata,  # noqa: F401
+        observability,  # noqa: F401
+        security,  # noqa: F401
+        status,  # noqa: F401
+        structure,  # noqa: F401
+        testing,  # noqa: F401
+    )

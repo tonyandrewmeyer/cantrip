@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from charmlint.models import CharmContext, Diagnostic, Severity
-from charmlint.rules import Rule
+from .. import models
+from . import Rule
 
 # Expected operational actions with their aliases.
 _EXPECTED_ACTIONS: dict[str, tuple[str, list[str]]] = {
@@ -31,9 +31,9 @@ def _make_action_rule(_id: str, _canonical: str, _aliases: list[str]) -> type[Ru
         id = rid
         name = f"missing-{canonical}-action"
         description = f"Missing '{canonical}' action (or alias)"
-        default_severity = Severity.WARNING
+        default_severity = models.Severity.WARNING
 
-        def check(self, context: CharmContext) -> list[Diagnostic]:
+        def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
             action_names = set(context.actions.keys())
             if any(n in action_names for n in all_names):
                 return []
@@ -60,10 +60,10 @@ class ActionMissingDescription(Rule):
     id = "ACT004"
     name = "action-missing-description"
     description = "Action is missing a description"
-    default_severity = Severity.WARNING
+    default_severity = models.Severity.WARNING
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
-        diagnostics: list[Diagnostic] = []
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
+        diagnostics: list[models.Diagnostic] = []
         for action_name, action_def in context.actions.items():
             if not isinstance(action_def, dict):
                 continue
@@ -83,10 +83,10 @@ class ActionParamMissingDescription(Rule):
     id = "ACT005"
     name = "action-param-missing-description"
     description = "Action parameter is missing a description"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
-        diagnostics: list[Diagnostic] = []
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
+        diagnostics: list[models.Diagnostic] = []
         for action_name, action_def in context.actions.items():
             if not isinstance(action_def, dict):
                 continue

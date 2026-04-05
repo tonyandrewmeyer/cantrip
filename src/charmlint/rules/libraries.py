@@ -2,8 +2,8 @@
 
 import re
 
-from charmlint.models import CharmContext, Diagnostic, Severity
-from charmlint.rules import Rule
+from .. import models
+from . import Rule
 
 # Known charm libraries that have PyPI equivalents.
 _FETCH_LIBS_PYPI_MAP: dict[str, str] = {
@@ -31,10 +31,10 @@ class FetchLibsHasPyPI(Rule):
     id = "LIB001"
     name = "fetch-libs-has-pypi"
     description = "Charm library import has a PyPI equivalent"
-    default_severity = Severity.WARNING
+    default_severity = models.Severity.WARNING
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
-        diagnostics: list[Diagnostic] = []
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
+        diagnostics: list[models.Diagnostic] = []
         seen: set[str] = set()
 
         for path, content in context.python_sources.items():
@@ -64,10 +64,10 @@ class FetchLibsUnknownPyPI(Rule):
     id = "LIB002"
     name = "fetch-libs-unknown-pypi"
     description = "Charm library import — check PyPI for a published equivalent"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
-        diagnostics: list[Diagnostic] = []
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
+        diagnostics: list[models.Diagnostic] = []
         seen: set[str] = set()
 
         for path, content in context.python_sources.items():

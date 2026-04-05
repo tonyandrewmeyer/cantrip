@@ -1,26 +1,18 @@
 """Documentation rules — README and docs presence."""
 
-from charmlint.models import CharmContext, Diagnostic, Severity
-from charmlint.rules import Rule
-
-# Documentation topics to check for.
-_DOC_TOPICS: list[tuple[str, str]] = [
-    ("installation", "Installation/setup guide"),
-    ("configuration", "Configuration reference"),
-    ("usage", "Usage instructions"),
-    ("troubleshooting", "Troubleshooting guide"),
-]
+from .. import models
+from . import Rule
 
 
 class NoReadme(Rule):
-    """Check for README.md presence (also in structure, but docs-focused here)."""
+    """Check for README.md presence."""
 
     id = "DOC001"
     name = "no-readme"
     description = "No README.md found"
-    default_severity = Severity.WARNING
+    default_severity = models.Severity.WARNING
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         if not (context.charm_dir / "README.md").exists():
             return [self.diagnostic("No README.md found")]
         return []
@@ -32,9 +24,9 @@ class MissingInstallationDocs(Rule):
     id = "DOC002"
     name = "missing-installation-docs"
     description = "No installation/setup documentation found"
-    default_severity = Severity.WARNING
+    default_severity = models.Severity.WARNING
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         return _check_doc_topic(self, context, "installation", "installation/setup")
 
 
@@ -44,9 +36,9 @@ class MissingConfigurationDocs(Rule):
     id = "DOC003"
     name = "missing-configuration-docs"
     description = "No configuration documentation found"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         return _check_doc_topic(self, context, "configuration", "configuration")
 
 
@@ -56,9 +48,9 @@ class MissingUsageDocs(Rule):
     id = "DOC004"
     name = "missing-usage-docs"
     description = "No usage documentation found"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         return _check_doc_topic(self, context, "usage", "usage")
 
 
@@ -68,18 +60,18 @@ class MissingTroubleshootingDocs(Rule):
     id = "DOC005"
     name = "missing-troubleshooting-docs"
     description = "No troubleshooting documentation found"
-    default_severity = Severity.INFO
+    default_severity = models.Severity.INFO
 
-    def check(self, context: CharmContext) -> list[Diagnostic]:
+    def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
         return _check_doc_topic(self, context, "troubleshooting", "troubleshooting")
 
 
 def _check_doc_topic(
     rule: Rule,
-    context: CharmContext,
+    context: models.CharmContext,
     keyword: str,
     label: str,
-) -> list[Diagnostic]:
+) -> list[models.Diagnostic]:
     """Check if a documentation topic is present in README or docs/."""
     # Check README.
     if keyword in context.readme_content.lower():

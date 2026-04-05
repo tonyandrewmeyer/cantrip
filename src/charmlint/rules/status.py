@@ -2,8 +2,8 @@
 
 import re
 
-from charmlint.models import CharmContext, Diagnostic, Severity
-from charmlint.rules import Rule
+from .. import models
+from . import Rule
 
 # Each check: (condition_pattern, rule_id, name, message)
 _STATUS_CHECKS: list[tuple[str, str, str, str]] = [
@@ -28,7 +28,7 @@ _STATUS_CHECKS: list[tuple[str, str, str, str]] = [
 ]
 
 
-def _src_content(context: CharmContext) -> str:
+def _src_content(context: models.CharmContext) -> str:
     """Concatenate all src/ Python source (not lib/)."""
     parts: list[str] = []
     for path, content in context.python_sources.items():
@@ -45,9 +45,9 @@ def _make_status_rule(_pat: str, _id: str, _name: str, _msg: str) -> type[Rule]:
         id = rid
         name = rname
         description = msg
-        default_severity = Severity.WARNING
+        default_severity = models.Severity.WARNING
 
-        def check(self, context: CharmContext) -> list[Diagnostic]:
+        def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
             source = _src_content(context)
             if not source:
                 return []
