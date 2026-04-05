@@ -2090,6 +2090,85 @@ Integration tests that exercise real tools against the live Juju environment.
 
 ---
 
+## Phase 24: Charm Linter (`charmlint`)
+
+**Goal:** Extract the charm-quality knowledge embedded in Cantrip's audit and
+operational readiness tools into a standalone, deterministic linter that can
+run independently from the CLI, as a library, or in pre-commit hooks — just
+like ruff or pylint, but for Juju charms.
+
+Cantrip's `CharmAuditTool` and `OperationalReadinessTool` contain dozens of
+deterministic checks (COS integration, deprecated APIs, test presence,
+metadata completeness, config quality, status reporting, security). These
+checks are currently locked inside the agent tool infrastructure. Extracting
+them into a standalone package makes them useful beyond Cantrip and provides
+a fast feedback loop for charm developers.
+
+### 24.1 Standalone Package
+
+A new top-level `src/charmlint/` package with zero Cantrip dependencies.
+
+- [x] **Core models** — `Diagnostic`, `Severity`, `CharmContext`, `LintReport`
+  dataclasses; `Rule` ABC with automatic registration via `__init_subclass__`;
+  rule registry for discovery
+- [x] **Linter engine** — `build_context()` loads all charm data once
+  (metadata, actions, config, Python sources, README, test directories);
+  `lint()` runs all enabled rules and collects diagnostics; config-based
+  filtering (select, ignore, severity overrides, minimum severity)
+- [x] **Configuration** — `.charmlint.yaml` config file with per-rule severity
+  overrides, category-level select/ignore, and minimum severity filter
+
+### 24.2 Rule Set (35 Rules, 10 Categories)
+
+Rules extracted from `CharmAuditTool` and `OperationalReadinessTool`.
+
+- [x] **Metadata** (META001–META007) — name, display-name, summary,
+  description, docs/issues/source URLs
+- [x] **Observability** (COS001–COS005) — tracing, metrics-endpoint,
+  logging, grafana-dashboard relations; ops-tracing dependency
+- [x] **Testing** (TEST001–TEST003) — unit test presence, integration test
+  presence, deprecated Harness usage
+- [x] **Deprecated APIs** (DEP001–DEP003) — StoredState, Harness import,
+  framework.breakpoint
+- [x] **Libraries** (LIB001–LIB002) — fetch-libs imports with known PyPI
+  equivalents; unknown libraries flagged for manual check
+- [x] **Actions** (ACT001–ACT005) — expected operational actions (get-health,
+  pause, resume with aliases); action and parameter description completeness
+- [x] **Config quality** (CFG001–CFG003) — type, default, description for
+  each config option
+- [x] **Status reporting** (STS001–STS003) — BlockedStatus for missing/invalid
+  config; status for missing relations
+- [x] **Security** (SEC001–SEC002) — secret-like config options without Juju
+  secrets API; TLS support detection
+- [x] **Structure** (STR001–STR003) — licence, icon, type annotations
+
+### 24.3 CLI
+
+Ruff-style command-line interface with text and JSON output.
+
+- [x] **CLI entry point** — `charmlint /path/to/charm` with `--format`,
+  `--select`, `--ignore`, `--severity`, `--config`, `--strict` flags
+- [x] **Text output** — ruff-style `path:line: RULE message` format with
+  summary line
+- [x] **JSON output** — machine-readable report with diagnostics array
+- [x] **Exit codes** — 0 for clean, 1 for errors, 2 for warnings with
+  `--strict`
+- [x] **`python -m charmlint`** — module entry point
+- [x] **pyproject.toml** — `charmlint` console script entry point
+
+### 24.4 Tests
+
+- [x] **58 unit tests** — models, config, linter engine, CLI, and every rule
+  category; fixture helpers for creating charm directories with various
+  configurations
+
+**Exit criteria:** `charmlint /path/to/charm` runs independently, reports
+issues in ruff-style format with configurable severity and filtering, and
+all 35 rules have passing tests. The package has zero Cantrip dependencies
+and can be installed and used standalone.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
