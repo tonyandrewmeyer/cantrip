@@ -36,6 +36,7 @@ from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.llm.base import LLMProvider, Message, Response, Role
 from cantrip.llm.base import Tool as LLMTool
 from cantrip.llm.base import ToolResult as LLMToolResult
+from cantrip.ui import events as ui_events
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ class CantripAgent:
             charm_path = Path(charm_path)
         self.state = AgentState(charm_path=charm_path)
         self._work_queue = WorkQueue()
+        self._event_bus = ui_events.EventBus()
         self._preflight = PreflightRunner(self.state)
 
         # Context window management.
@@ -96,6 +98,11 @@ class CantripAgent:
 
         if charm_path:
             self._ensure_claude_md(charm_path)
+
+    @property
+    def event_bus(self) -> ui_events.EventBus:
+        """The shared UI event bus."""
+        return self._event_bus
 
     @property
     def work_queue(self) -> WorkQueue:
@@ -878,7 +885,16 @@ class CantripAgent:
         if self._executor is not None and self._executor.running:
             return
         self._ensure_store()
-        self._work_queue._on_task_changed = on_task_changed
+
+        # Install a callback that publishes to the event bus *and* fires
+        # the caller's callback (if any).  This keeps the old API working
+        # while both UIs can subscribe to the bus independently.
+        def _notify_bus_and_callback(task: AgentTask) -> None:
+            self._event_bus.publish(ui_events.task_updated_from_task(task))
+            if on_task_changed is not None:
+                on_task_changed(task)
+
+        self._work_queue._on_task_changed = _notify_bus_and_callback
         kwargs: dict[str, object] = {
             "queue": self._work_queue,
             "tools": self._tools,
