@@ -10,6 +10,7 @@ from cantrip.agent.autodeploy import (
     _extract_test_counts,
     followup_tasks,
     task_for_watcher_event,
+    tasks_after_acceptance,
     tasks_after_acceptance_failure,
     tasks_after_build,
     tasks_after_build_failure,
@@ -17,7 +18,7 @@ from cantrip.agent.autodeploy import (
     tasks_after_test,
     tasks_after_verify,
 )
-from cantrip.agent.planner import SPRINT_BUILD_PREFIX
+from cantrip.agent.planner import OPERABILITY_PREFIX, SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import _ACCEPTANCE_PREFIX
@@ -415,6 +416,57 @@ class TestTasksAfterTest:
         assert "action_exerciser" in result[0].description
         assert "relation_smoke_test" in result[0].description
         assert "acceptance_report" in result[0].description
+
+
+# ===================================================================
+# TestTasksAfterAcceptance
+# ===================================================================
+
+
+class TestTasksAfterAcceptance:
+    """Tests for tasks_after_acceptance — demo + operability after acceptance."""
+
+    def _make_acceptance_task(self) -> AgentTask:
+        task = AgentTask(
+            id="a1",
+            title=f"{_ACCEPTANCE_PREFIX} put the charm through its paces",
+            category=TaskCategory.TEST,
+        )
+        task.status = TaskStatus.DONE
+        return task
+
+    def test_creates_demo_and_operability_tasks(self) -> None:
+        task = self._make_acceptance_task()
+        result = tasks_after_acceptance(task)
+
+        assert len(result) == 2
+        titles = [t.title for t in result]
+        assert any(_DEMO_TITLE_PREFIX in t for t in titles)
+        assert any(OPERABILITY_PREFIX in t for t in titles)
+
+    def test_both_depend_on_acceptance(self) -> None:
+        task = self._make_acceptance_task()
+        result = tasks_after_acceptance(task)
+
+        for t in result:
+            assert t.dependencies == ["a1"]
+
+    def test_operability_is_research(self) -> None:
+        task = self._make_acceptance_task()
+        result = tasks_after_acceptance(task)
+
+        operability = [t for t in result if OPERABILITY_PREFIX in t.title]
+        assert operability[0].category == TaskCategory.RESEARCH
+
+    def test_no_tasks_for_failed_acceptance(self) -> None:
+        task = self._make_acceptance_task()
+        task.status = TaskStatus.FAILED
+        assert tasks_after_acceptance(task) == []
+
+    def test_no_tasks_for_non_acceptance_test(self) -> None:
+        task = AgentTask(id="t1", title="Validate charm", category=TaskCategory.TEST)
+        task.status = TaskStatus.DONE
+        assert tasks_after_acceptance(task) == []
 
 
 # ===================================================================

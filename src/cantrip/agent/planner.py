@@ -542,6 +542,267 @@ def plan_improvement_fixes(
     return tasks
 
 
+# ---------------------------------------------------------------------------
+# Operational Readiness (Phase 19)
+# ---------------------------------------------------------------------------
+
+# Prefix for operability assessment tasks — used to identify them in
+# the autodeploy follow-up logic and prevent duplicate assessments.
+OPERABILITY_PREFIX = "[Operability]"
+
+
+def plan_operability_assessment(
+    context: PlanningContext,
+    depends_on: str | None = None,
+) -> list[AgentTask]:
+    """Generate the operability assessment → confirm → fix pipeline.
+
+    Creates three initial tasks:
+    1. RESEARCH — run ``operational_readiness`` tool on the charm.
+    2. CONFIRM — present findings to the user for approval.
+    3. (Conditional) BUILD tasks are generated after confirmation via
+       ``plan_operability_fixes()``.
+
+    If *depends_on* is provided, the assessment task depends on it (e.g.
+    the acceptance test task ID).
+    """
+    charm_path = context.existing_charm_path or "."
+    charm_name = context.charm_name or "the charm"
+
+    deps = [depends_on] if depends_on else []
+
+    return [
+        AgentTask(
+            id="assess-operational-readiness",
+            title=f"{OPERABILITY_PREFIX} Assess operational readiness of {charm_name}",
+            category=TaskCategory.RESEARCH,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                f"Evaluate the charm at {charm_path} against Canonical's "
+                "Operational Readiness Metrics.\n\n"
+                "1. Run `operational_readiness` tool on the charm directory.\n"
+                "2. Review the OPERATIONAL_READINESS.md report.\n"
+                "3. Summarise the per-pillar scores and must-fix items."
+            ),
+            dependencies=deps,
+        ),
+        AgentTask(
+            id="confirm-operability",
+            title=f"{OPERABILITY_PREFIX} Confirm operational readiness gaps",
+            category=TaskCategory.CONFIRM,
+            description=(
+                f"Present operational readiness findings for {charm_name}.\n\n"
+                "The assessment identified gaps across Best Practices, "
+                "Documentation, Reliability, Maintainability, and Security "
+                "pillars. Confirm which gaps to address and which to defer."
+            ),
+            dependencies=["assess-operational-readiness"],
+        ),
+    ]
+
+
+def plan_operability_fixes(
+    context: PlanningContext,
+    findings: dict[str, list[str]],
+) -> list[AgentTask]:
+    """Generate BUILD tasks to close confirmed operability gaps.
+
+    Called after the user confirms which gaps to address.  Each fix area
+    becomes a BUILD task depending on confirmation.  A re-assessment task
+    at the end verifies the score improved.
+    """
+    charm_path = context.existing_charm_path or "."
+    tasks: list[AgentTask] = []
+    fix_ids: list[str] = []
+
+    must_fix = findings.get("must_fix", [])
+    should_fix = findings.get("should_fix", [])
+    all_gaps = must_fix + should_fix
+
+    # Group gaps into implementation categories.
+    status_gaps = [g for g in all_gaps if "status" in g.lower()]
+    action_gaps = [
+        g for g in all_gaps
+        if any(k in g.lower() for k in ("action", "health", "pause", "resume", "diagnostics"))
+    ]
+    backup_gaps = [g for g in all_gaps if "backup" in g.lower() or "restore" in g.lower()]
+    upgrade_gaps = [g for g in all_gaps if "upgrade" in g.lower()]
+    cos_gaps = [g for g in all_gaps if "cos" in g.lower() or "observability" in g.lower()]
+    security_gaps = [
+        g for g in all_gaps
+        if any(k in g.lower() for k in ("tls", "encrypt", "secret", "cert"))
+    ]
+    doc_gaps = [g for g in all_gaps if "documentation" in g.lower() or "doc" in g.lower()]
+
+    if status_gaps:
+        task_id = "implement-status-reporting"
+        tasks.append(
+            AgentTask(
+                id=task_id,
+                title=f"{OPERABILITY_PREFIX} Implement comprehensive status reporting",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Add comprehensive status reporting to the charm at {charm_path}.\n\n"
+                    "1. Load the `operational-readiness` skill.\n"
+                    "2. Implement a `_reconcile()` method that checks all conditions "
+                    "and sets appropriate status (BlockedStatus, WaitingStatus, "
+                    "MaintenanceStatus, ActiveStatus).\n"
+                    "3. Call `_reconcile()` from every event handler.\n"
+                    "4. Run tests and commit."
+                ),
+                dependencies=["confirm-operability"],
+            )
+        )
+        fix_ids.append(task_id)
+
+    if action_gaps:
+        task_id = "implement-operational-actions"
+        tasks.append(
+            AgentTask(
+                id=task_id,
+                title=f"{OPERABILITY_PREFIX} Add operational actions",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Add operational actions to the charm at {charm_path}.\n\n"
+                    "1. Load the `operational-readiness` skill.\n"
+                    "2. Add `get-health` action with comprehensive checks.\n"
+                    "3. Add `pause` and `resume` actions for workload control.\n"
+                    "4. Add `collect-diagnostics` action for troubleshooting.\n"
+                    "5. Update actions.yaml or charmcraft.yaml with descriptions "
+                    "and parameter schemas.\n"
+                    "6. Run tests and commit."
+                ),
+                dependencies=["confirm-operability"],
+            )
+        )
+        fix_ids.append(task_id)
+
+    if backup_gaps:
+        task_id = "implement-backup-restore"
+        tasks.append(
+            AgentTask(
+                id=task_id,
+                title=f"{OPERABILITY_PREFIX} Add backup and restore actions",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Add backup and restore capabilities to the charm at {charm_path}.\n\n"
+                    "1. Load the `operational-readiness` skill.\n"
+                    "2. Add `create-backup`, `list-backups`, and `restore-backup` "
+                    "actions using workload-native tools.\n"
+                    "3. Run tests and commit."
+                ),
+                dependencies=["confirm-operability"],
+            )
+        )
+        fix_ids.append(task_id)
+
+    if upgrade_gaps:
+        task_id = "implement-upgrade-procedures"
+        tasks.append(
+            AgentTask(
+                id=task_id,
+                title=f"{OPERABILITY_PREFIX} Add upgrade pre-flight checks",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Add upgrade support to the charm at {charm_path}.\n\n"
+                    "1. Load the `operational-readiness` skill.\n"
+                    "2. Add `pre-upgrade-check` action that validates version "
+                    "compatibility, cluster health, and backup freshness.\n"
+                    "3. Handle upgrade events gracefully.\n"
+                    "4. Run tests and commit."
+                ),
+                dependencies=["confirm-operability"],
+            )
+        )
+        fix_ids.append(task_id)
+
+    if cos_gaps:
+        task_id = "improve-observability-completeness"
+        tasks.append(
+            AgentTask(
+                id=task_id,
+                title=f"{OPERABILITY_PREFIX} Complete COS observability",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Fill remaining COS gaps in the charm at {charm_path}.\n\n"
+                    "1. Load the `observability` and `operational-readiness` skills.\n"
+                    "2. Add any missing COS relations (tracing, metrics, logging, "
+                    "grafana-dashboard).\n"
+                    "3. Add alert rules and dashboard panels beyond basic integration.\n"
+                    "4. Run tests and commit."
+                ),
+                dependencies=["confirm-operability"],
+            )
+        )
+        fix_ids.append(task_id)
+
+    if security_gaps:
+        task_id = "improve-security-posture"
+        tasks.append(
+            AgentTask(
+                id=task_id,
+                title=f"{OPERABILITY_PREFIX} Improve security posture",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Improve the security posture of the charm at {charm_path}.\n\n"
+                    "1. Load the `operational-readiness` skill.\n"
+                    "2. Migrate any plain-text secret config to Juju secrets.\n"
+                    "3. Add TLS support if missing.\n"
+                    "4. Add certificate management actions if relevant.\n"
+                    "5. Run tests and commit."
+                ),
+                dependencies=["confirm-operability"],
+            )
+        )
+        fix_ids.append(task_id)
+
+    if doc_gaps:
+        task_id = "improve-operational-docs"
+        tasks.append(
+            AgentTask(
+                id=task_id,
+                title=f"{OPERABILITY_PREFIX} Improve operational documentation",
+                category=TaskCategory.BUILD,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Add missing operational documentation for the charm at {charm_path}.\n\n"
+                    "1. Add installation/setup guide if missing.\n"
+                    "2. Add configuration reference.\n"
+                    "3. Add troubleshooting, upgrade, and backup/restore docs.\n"
+                    "4. Commit."
+                ),
+                dependencies=["confirm-operability"],
+            )
+        )
+        fix_ids.append(task_id)
+
+    # Re-assessment after fixes.
+    if fix_ids:
+        tasks.append(
+            AgentTask(
+                id="reassess-operational-readiness",
+                title=f"{OPERABILITY_PREFIX} Re-assess operational readiness",
+                category=TaskCategory.RESEARCH,
+                model_hint=ModelHint.PRIMARY,
+                description=(
+                    f"Re-run operational readiness assessment on {charm_path}.\n\n"
+                    "1. Run `operational_readiness` tool.\n"
+                    "2. Compare before/after scores.\n"
+                    "3. Present the improvement summary to the user."
+                ),
+                dependencies=fix_ids,
+            )
+        )
+
+    return tasks
+
+
 def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
     """Generate the standard research → synthesis → confirm task sequence.
 

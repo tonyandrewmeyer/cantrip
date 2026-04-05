@@ -8,7 +8,7 @@ test without mocking.
 
 import re
 
-from cantrip.agent.planner import SPRINT_BUILD_PREFIX
+from cantrip.agent.planner import OPERABILITY_PREFIX, SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import _ACCEPTANCE_PREFIX
@@ -187,11 +187,11 @@ def tasks_after_test(task: AgentTask) -> list[AgentTask]:
 
 
 def tasks_after_acceptance(task: AgentTask) -> list[AgentTask]:
-    """Return a demo generation task after acceptance testing completes.
+    """Return demo and operability tasks after acceptance testing completes.
 
     Only fires for completed acceptance test tasks (title starts with
-    the acceptance prefix).  Produces the same demo BUILD task that was
-    previously returned directly by ``tasks_after_test``.
+    the acceptance prefix).  Produces a demo BUILD task and an operability
+    assessment RESEARCH task, both depending on the acceptance task.
     """
     if task.category != TaskCategory.TEST:
         return []
@@ -200,7 +200,7 @@ def tasks_after_acceptance(task: AgentTask) -> list[AgentTask]:
     if not task.title.startswith(_ACCEPTANCE_PREFIX):
         return []
 
-    return [
+    results = [
         AgentTask(
             title=f"{_DEMO_TITLE_PREFIX} charm artefacts",
             category=TaskCategory.BUILD,
@@ -230,7 +230,25 @@ def tasks_after_acceptance(task: AgentTask) -> list[AgentTask]:
             ),
             dependencies=[task.id],
         ),
+        # Operability assessment runs in parallel with demo generation.
+        AgentTask(
+            title=(
+                f"{OPERABILITY_PREFIX} Assess operational readiness"
+            ),
+            category=TaskCategory.RESEARCH,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                "Run the `operational_readiness` tool on the charm to evaluate "
+                "it against Canonical's Operational Readiness Metrics.\n\n"
+                "1. Run `operational_readiness` on the charm directory.\n"
+                "2. Review OPERATIONAL_READINESS.md.\n"
+                "3. Summarise per-pillar scores and must-fix items for the user."
+            ),
+            dependencies=[task.id],
+        ),
     ]
+
+    return results
 
 
 def tasks_after_acceptance_failure(task: AgentTask) -> list[AgentTask]:

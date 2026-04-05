@@ -539,9 +539,12 @@ class TestAcceptanceAutodeploy:
         task.status = TaskStatus.DONE
 
         follow_ups = tasks_after_acceptance(task)
-        assert len(follow_ups) == 1
+        assert len(follow_ups) == 2
         assert "demo" in follow_ups[0].title.lower()
         assert follow_ups[0].category == TaskCategory.BUILD
+        # Second follow-up is the operability assessment.
+        assert "operability" in follow_ups[1].title.lower()
+        assert follow_ups[1].category == TaskCategory.RESEARCH
 
     def test_acceptance_does_not_chain_to_itself(self) -> None:
         from cantrip.agent.autodeploy import tasks_after_test
