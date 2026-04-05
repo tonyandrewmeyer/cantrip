@@ -432,8 +432,38 @@ def plan_improvement_fixes(
         )
         fix_ids.append("fill-tests")
 
-    # Deprecated API migration (if detected by audit).
-    if gaps.get("deprecated_apis"):
+    # Code modernisation (deprecated APIs, type annotations, modern patterns).
+    needs_modernise = (
+        gaps.get("deprecated_apis")
+        or gaps.get("type_annotations")
+        or gaps.get("modern_patterns")
+    )
+    if needs_modernise:
+        steps = []
+        if gaps.get("deprecated_apis"):
+            steps.append(
+                "- Replace StoredState with instance attributes or Juju secrets.\n"
+                "- Replace Harness test imports with Scenario.\n"
+                "- Replace charmcraft fetch-libs imports with PyPI equivalents "
+                "where available."
+            )
+        if gaps.get("type_annotations"):
+            steps.append(
+                "- Add return-type annotations to all public functions and methods.\n"
+                "- Add parameter type hints where missing."
+            )
+        if gaps.get("modern_patterns"):
+            steps.append(
+                "- Implement a `_reconcile()` method as the single source of truth "
+                "for unit status (holistic status handling).\n"
+                "- Use the config-changed reconciliation pattern: config-changed "
+                "calls `_reconcile()` which validates and applies config.\n"
+                "- Handle relation-created / relation-changed events properly: "
+                "validate relation data, set status, and reconcile.\n"
+                "- Add Pebble readiness checks: handle pebble-ready event, guard "
+                "container operations with `can_connect()`."
+            )
+        step_text = "\n".join(steps)
         tasks.append(
             AgentTask(
                 id="modernise-code",
@@ -441,13 +471,10 @@ def plan_improvement_fixes(
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
                 description=(
-                    f"Migrate deprecated APIs in the charm at {charm_path}.\n\n"
-                    "1. Replace StoredState with instance attributes or Juju secrets.\n"
-                    "2. Replace Harness test imports with Scenario.\n"
-                    "3. Replace charmcraft fetch-libs imports with PyPI equivalents "
-                    "where available.\n"
-                    "4. Run tests after each change to verify nothing breaks.\n"
-                    "5. Commit changes with a descriptive message."
+                    f"Modernise the charm code at {charm_path}.\n\n"
+                    f"{step_text}\n\n"
+                    "Run tests after each change to verify nothing breaks.\n"
+                    "Commit changes with a descriptive message."
                 ),
                 dependencies=["confirm-improvements"],
             )

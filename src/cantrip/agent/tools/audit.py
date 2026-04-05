@@ -208,6 +208,76 @@ def _check_ops_tracing(charm_dir: Path, python_files: list[Path]) -> bool:
     return False
 
 
+def _check_type_annotations(python_files: list[Path]) -> bool:
+    """Check whether charm source files use type annotations.
+
+    Returns True if at least one function definition in src/ has a
+    return-type annotation.  This is a lightweight heuristic — we are
+    not running a type checker, just looking for evidence that the
+    codebase uses type hints.
+    """
+    for path in python_files:
+        # Only check src/ files (skip lib/).
+        if "lib" in path.parts:
+            continue
+        try:
+            content = path.read_text(errors="replace")
+        except OSError:
+            continue
+        # Look for `def foo(...) -> ...:` pattern.
+        if re.search(r"def\s+\w+\([^)]*\)\s*->", content):
+            return True
+    return False
+
+
+# Patterns indicating modern Ops framework usage.
+_MODERN_PATTERNS: list[tuple[str, str, str]] = [
+    (
+        r"def\s+_(?:reconcile|update_status|set_status)\b",
+        "holistic_status",
+        "Holistic status handling — single reconciliation method for unit status",
+    ),
+    (
+        r"config.changed|config_changed|_on_config_changed",
+        "config_reconciliation",
+        "Config-changed event handler",
+    ),
+    (
+        r"relation.changed|relation_changed|_on_.*_relation_changed",
+        "relation_handling",
+        "Relation-changed event handler",
+    ),
+    (
+        r"PebbleReadyEvent|pebble.ready|pebble_ready|can_connect\(\)",
+        "pebble_readiness",
+        "Pebble readiness checks",
+    ),
+]
+
+
+def _check_modern_patterns(python_files: list[Path]) -> dict[str, bool]:
+    """Check whether the charm uses modern Ops framework patterns.
+
+    Returns a dict of pattern name → whether the pattern is present.
+    """
+    results: dict[str, bool] = {name: False for _, name, _ in _MODERN_PATTERNS}
+
+    all_source = ""
+    for path in python_files:
+        if "lib" in path.parts:
+            continue
+        try:
+            all_source += path.read_text(errors="replace") + "\n"
+        except OSError:
+            continue
+
+    for pattern, name, _desc in _MODERN_PATTERNS:
+        if re.search(pattern, all_source):
+            results[name] = True
+
+    return results
+
+
 def _format_audit_report(
     charm_name: str,
     cos_present: dict[str, bool],
@@ -219,6 +289,8 @@ def _format_audit_report(
     has_readme: bool,
     has_licence: bool,
     has_icon: bool,
+    has_type_annotations: bool = True,
+    modern_patterns: dict[str, bool] | None = None,
 ) -> tuple[str, dict[str, list[str]]]:
     """Format an AUDIT.md report and categorised findings dict."""
     must_fix: list[str] = []
@@ -259,6 +331,18 @@ def _format_audit_report(
                 f"charmcraft fetch-libs import: charms.{prefix} — "
                 f"check PyPI for a published equivalent"
             )
+
+    # Type annotations.
+    if not has_type_annotations:
+        nice_to_have.append(
+            "No type annotations found — add return-type hints to functions"
+        )
+
+    # Modern patterns.
+    if modern_patterns is not None:
+        for _pattern, name, desc in _MODERN_PATTERNS:
+            if not modern_patterns.get(name):
+                nice_to_have.append(f"Missing modern pattern: {desc}")
 
     # Listing completeness.
     for field_name, desc in _LISTING_FIELDS.items():
@@ -377,6 +461,8 @@ class CharmAuditTool(Tool):
         has_readme = (charm_dir / "README.md").exists()
         has_licence = (charm_dir / "LICENSE").exists() or (charm_dir / "LICENCE").exists()
         has_icon = (charm_dir / "icon.svg").exists()
+        has_type_annotations = _check_type_annotations(python_files)
+        modern_patterns = _check_modern_patterns(python_files)
 
         report, findings = _format_audit_report(
             charm_name=charm_name,
@@ -389,6 +475,8 @@ class CharmAuditTool(Tool):
             has_readme=has_readme,
             has_licence=has_licence,
             has_icon=has_icon,
+            has_type_annotations=has_type_annotations,
+            modern_patterns=modern_patterns,
         )
 
         total_issues = sum(len(v) for v in findings.values())
@@ -411,7 +499,12 @@ class CharmAuditTool(Tool):
                     "readme": not has_readme,
                     "licence": not has_licence,
                     "icon": not has_icon,
+                    "type_annotations": not has_type_annotations,
+                    "modern_patterns": any(
+                        not v for v in modern_patterns.values()
+                    ),
                 },
+                "modern_patterns": modern_patterns,
                 "deprecated_apis": deprecated_apis,
                 "fetch_libs": fetch_libs,
                 "listing_fields": listing_present,

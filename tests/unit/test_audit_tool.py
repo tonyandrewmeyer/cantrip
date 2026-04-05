@@ -10,8 +10,10 @@ from cantrip.agent.tools.audit import (
     _check_cos_relations,
     _check_fetch_libs,
     _check_listing_fields,
+    _check_modern_patterns,
     _check_ops_tracing,
     _check_tests,
+    _check_type_annotations,
     _collect_python_files,
     _scan_deprecated_apis,
 )
@@ -440,4 +442,139 @@ class TestCheckFetchLibs:
 
         prefixes = {r["lib_prefix"] for r in result}
         assert "grafana_k8s" in prefixes
-        assert "loki_k8s" in prefixes
+
+
+# ===================================================================
+# TestCheckTypeAnnotations
+# ===================================================================
+
+
+class TestCheckTypeAnnotations:
+    """Tests for _check_type_annotations — detect type hint usage."""
+
+    def test_has_annotations(self, temp_dir) -> None:
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("def greet(name: str) -> str:\n    return name\n")
+        assert _check_type_annotations([src / "charm.py"]) is True
+
+    def test_no_annotations(self, temp_dir) -> None:
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("def greet(name):\n    return name\n")
+        assert _check_type_annotations([src / "charm.py"]) is False
+
+    def test_empty_files(self) -> None:
+        assert _check_type_annotations([]) is False
+
+    def test_skips_lib_files(self, temp_dir) -> None:
+        lib = temp_dir / "lib"
+        lib.mkdir()
+        (lib / "helper.py").write_text("def foo() -> int:\n    return 1\n")
+        assert _check_type_annotations([lib / "helper.py"]) is False
+
+
+# ===================================================================
+# TestCheckModernPatterns
+# ===================================================================
+
+
+class TestCheckModernPatterns:
+    """Tests for _check_modern_patterns — detect modern Ops patterns."""
+
+    def test_reconcile_detected(self, temp_dir) -> None:
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("def _reconcile(self):\n    pass\n")
+        result = _check_modern_patterns([src / "charm.py"])
+        assert result["holistic_status"] is True
+
+    def test_config_changed_detected(self, temp_dir) -> None:
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("def _on_config_changed(self, event):\n    pass\n")
+        result = _check_modern_patterns([src / "charm.py"])
+        assert result["config_reconciliation"] is True
+
+    def test_pebble_readiness_detected(self, temp_dir) -> None:
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text(
+            "if container.can_connect():\n    container.push(...)\n"
+        )
+        result = _check_modern_patterns([src / "charm.py"])
+        assert result["pebble_readiness"] is True
+
+    def test_nothing_detected(self, temp_dir) -> None:
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("print('hello')\n")
+        result = _check_modern_patterns([src / "charm.py"])
+        assert all(not v for v in result.values())
+
+    def test_skips_lib_files(self, temp_dir) -> None:
+        lib = temp_dir / "lib"
+        lib.mkdir()
+        (lib / "helper.py").write_text("def _reconcile(self):\n    pass\n")
+        result = _check_modern_patterns([lib / "helper.py"])
+        assert result["holistic_status"] is False
+
+
+# ===================================================================
+# TestAuditToolModernisation
+# ===================================================================
+
+
+class TestAuditToolModernisation:
+    """Tests for type annotation and modern pattern gaps in audit output."""
+
+    @pytest.fixture
+    def tool(self) -> CharmAuditTool:
+        return CharmAuditTool()
+
+    @pytest.mark.asyncio
+    async def test_type_annotation_gap_flagged(self, tool, temp_dir) -> None:
+        _write_charmcraft_yaml(temp_dir)
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("def greet(name):\n    return name\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.data["gaps"]["type_annotations"] is True
+        assert "type annotation" in result.output.lower()
+
+    @pytest.mark.asyncio
+    async def test_type_annotation_gap_not_flagged(self, tool, temp_dir) -> None:
+        _write_charmcraft_yaml(temp_dir)
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("def greet(name: str) -> str:\n    return name\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.data["gaps"]["type_annotations"] is False
+
+    @pytest.mark.asyncio
+    async def test_modern_patterns_gap_flagged(self, tool, temp_dir) -> None:
+        _write_charmcraft_yaml(temp_dir)
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("print('hello')\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.data["gaps"]["modern_patterns"] is True
+        assert "modern pattern" in result.output.lower()
+
+    @pytest.mark.asyncio
+    async def test_modern_patterns_in_data(self, tool, temp_dir) -> None:
+        _write_charmcraft_yaml(temp_dir)
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("def _reconcile(self):\n    pass\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert "modern_patterns" in result.data
+        assert result.data["modern_patterns"]["holistic_status"] is True

@@ -657,12 +657,16 @@ Bring the charm code up to current Ops framework standards.
 - [x] **Deprecated API migration** — `charm_audit` scans for StoredState, Harness,
   `charmcraft fetch-libs` imports, and `framework.breakpoint`; `plan_improvement_fixes`
   generates a `modernise-code` BUILD task with specific migration instructions
-- [ ] **Type annotations** — add type hints where missing
-- [ ] **Modern patterns** — apply current idiomatic patterns:
-  - Holistic status handling
-  - Config-changed reconciliation pattern
-  - Relation-created / relation-changed best practices
-  - Proper Pebble readiness checks
+- [x] **Type annotations** — `_check_type_annotations()` in `audit.py` scans src/
+  Python files for `def foo(...) -> ...` patterns; absence flagged as nice-to-have
+  in the audit report and sets `data["gaps"]["type_annotations"]`; the `modernise-code`
+  BUILD task now includes type hint guidance when this gap is detected
+- [x] **Modern patterns** — `_check_modern_patterns()` in `audit.py` scans for four
+  patterns: holistic status handling (`_reconcile`/`_update_status`), config-changed
+  event handler, relation-changed event handler, and Pebble readiness checks
+  (`can_connect()`/`PebbleReadyEvent`); missing patterns flagged as nice-to-have;
+  `data["gaps"]["modern_patterns"]` and `data["modern_patterns"]` detail dict added;
+  `modernise-code` BUILD task includes specific guidance for each missing pattern
 - [x] **Dependency updates** — `_check_fetch_libs` scans for `from charms.<lib>.v<N>` imports
   and maps them against a known PyPI equivalents table; findings appear in the audit report
   and feed into the `modernise-code` improvement task

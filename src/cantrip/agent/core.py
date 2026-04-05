@@ -1086,4 +1086,6 @@ def _infer_gaps_from_audit(text: str) -> dict[str, bool]:
         "readme": "readme" in t and ("missing" in t or "no readme" in t),
         "licence": (("licence" in t or "license" in t) and ("missing" in t or "no licen" in t)),
         "listing_metadata": "listing" in t and ("missing" in t or "incomplete" in t),
+        "type_annotations": "type annotation" in t and ("missing" in t or "no type" in t),
+        "modern_patterns": "modern pattern" in t and ("missing" in t or "no modern" in t),
     }
