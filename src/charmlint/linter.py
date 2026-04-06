@@ -217,6 +217,7 @@ def _ensure_rules_loaded() -> None:
 
     from .rules import (
         actions,  # noqa: F401
+        charmcraft_compat,  # noqa: F401
         config_quality,  # noqa: F401
         deprecated,  # noqa: F401
         documentation,  # noqa: F401
