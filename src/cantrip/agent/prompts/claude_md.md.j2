@@ -33,7 +33,7 @@ Charms are built using Ops. Ops provides the charm with a way to communicate wit
 
 ## Quality Checks
 
-Charm code is always formatted, linted, and statically type-checked before committing. Format the code using `tox -e format` and run the linting and type checking using `tox -e lint`. Under the hood, these use `ruff format`, `ruff check` and `pyright`.
+Charm code is always formatted, linted, and statically type-checked before committing. If a `tox.ini` is present, use `tox -e format` and `tox -e lint`. Otherwise, run `ruff format` and `ruff check` directly (or via `Makefile` targets if available). Type checking uses `pyright`.
 
 Charms always have a comprehensive set of automated tests. These tests are often run locally but also always run in a CI workflow for every PR and merge to main.
 
@@ -51,11 +51,11 @@ Use `pytest` for tests, and prefer pytest's `monkeypatch` over the standard libr
 
 We **never** use `ops.testing.Harness` for unit tests, and we **never** use `pytest-operator` or `python-libjuju` (the `juju` module) for integration tests.
 
-Integration tests can be run with `tox -e integration`, but also with `charmcraft test`.
+Integration tests can be run with `tox -e integration` (if tox is configured), `charmcraft test`, or directly via `pytest tests/integration`.
 
 GitHub workflows should be created for:
 
-* CI: Running `tox -e lint`, `tox -e unit`, and `tox -e integration` — prefer `uv` over using `pip` directly.
+* CI: Running lint, unit, and integration tests (via `tox`, `make`, or direct `pytest`/`ruff` commands) — prefer `uv` over using `pip` directly.
 * Zizmor: to ensure that the workflows are secure. See https://docs.zizmor.sh/usage/
 
 A pre-commit configuration should be added that has the standard pre-commit checks and also `ruff check` and `ruff format check`. Dependabot should be configured to open PRs for security updates.

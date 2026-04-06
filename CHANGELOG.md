@@ -12,6 +12,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Added
 - **Code health roadmap (Phase 25)** — 20-item technical debt and code-review findings tracked in ROADMAP.md with severity tiers (critical/high/medium/low)
+
+### Changed
+- **Shared juju subprocess helper (Phase 25.4)** — extracted identical `_run_juju()` and `_wait_for_app()` from four tool modules (acceptance, chaos, scaling, upgrade) into `juju_subprocess.py`
+- **Shared system prompt extraction (Phase 25.5)** — moved identical `_get_system_prompt()` from claude.py and gemini.py to `LLMProvider` base class
+- **Shared light provider resolution (Phase 25.6)** — extracted identical three-mode provider resolution from `tui/app.py` and `cli.py` into `resolve_light_provider()` in `cantrip.llm`
+- **Deduplicated conversation loop (Phase 25.7)** — extracted common logic from `process_message()` and `process_message_streaming()` into `_run_conversation_loop()`; also fixed streaming path missing `<tool_result>` wrapper
+- **Data-driven terraform variables (Phase 25.8)** — replaced 150-line repetitive `_generate_variables_tf()` with 45-line data-driven approach
 - **Charm linter (Phase 24)** — new standalone `charmlint` package (`src/charmlint/`) with 35 deterministic lint rules across 10 categories (metadata, observability, testing, deprecated APIs, libraries, actions, config quality, status reporting, security, structure); runs independently via `charmlint /path/to/charm` CLI with ruff-style text or JSON output; supports `.charmlint.yaml` config for per-rule severity overrides, category selection, and rule ignoring; zero Cantrip dependencies — only requires `pyyaml`; registered as `charmlint` console script in pyproject.toml; 58 unit tests covering all rules, config, linter engine, and CLI
 - **E2E integration tests (Phase 23.2)** — tests exercise real tools against the live Juju environment: `juju_status` against real controllers, file CRUD operations, preflight warm-up and multi-controller discovery, snap confinement copy behaviour, and session state persistence round-trips; tests skip gracefully when `juju` is unavailable
 - **Web UI integration graph (Phase 15.5)** — new `G` key overlay showing all deployed apps as status-coloured cards with unit breakdowns and a relations section; `R` refreshes, `Esc` closes; reuses the existing `/api/juju-status` endpoint

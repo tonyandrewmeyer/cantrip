@@ -2256,8 +2256,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.13 Medium — `claude_md.md.j2` References `tox` Instead of `uv`/`make`
 
-- [ ] Generated CLAUDE.md tells subagents to use `tox -e format` etc. Should
-  reference `make format` / `uv run`.
+- [x] Generated CLAUDE.md no longer hardcodes `tox` — references `tox` (if
+  present), `make`, or direct `ruff`/`pytest` commands as appropriate.
 
 ### 25.14 Medium — Missing Error Handling in `terraform.py`
 
