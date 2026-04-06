@@ -2207,8 +2207,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.5 High — Duplicated `_get_system_prompt()` Across LLM Providers
 
-- [ ] claude.py, gemini.py, and inference_snap.py each implement identical
-  system-prompt extraction. Move to a shared method on `LLMProvider` base class.
+- [x] claude.py and gemini.py had identical `_get_system_prompt()` methods.
+  Moved to `LLMProvider` base class; inference_snap.py extracts inline (different pattern).
 
 ### 25.6 High — Duplicated Light Provider Resolution
 

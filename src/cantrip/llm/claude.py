@@ -51,13 +51,6 @@ class ClaudeProvider(LLMProvider):
         self.client = anthropic.AsyncAnthropic(api_key=self.api_key)
         self.model_name = model
 
-    def _get_system_prompt(self, messages: list[Message]) -> str | None:
-        """Extract system prompt from messages."""
-        for msg in messages:
-            if msg.role == Role.SYSTEM:
-                return msg.content
-        return None
-
     def _convert_messages(self, messages: list[Message]) -> list[dict]:
         """Convert messages to Anthropic API format.
 

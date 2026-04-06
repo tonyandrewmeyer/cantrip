@@ -180,13 +180,6 @@ class GeminiProvider(LLMProvider):
             )
         return [genai_types.Tool(function_declarations=declarations)]
 
-    def _get_system_prompt(self, messages: list[Message]) -> str | None:
-        """Extract system prompt from messages."""
-        for msg in messages:
-            if msg.role == Role.SYSTEM:
-                return msg.content
-        return None
-
     @staticmethod
     def _collect_thought_parts(
         parts: list[Any],

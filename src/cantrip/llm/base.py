@@ -150,6 +150,14 @@ class LLMProvider(ABC):
         """Maximum number of tools the provider can handle, or None for no limit."""
         return None
 
+    @staticmethod
+    def _get_system_prompt(messages: list[Message]) -> str | None:
+        """Extract the first system prompt from *messages*, or ``None``."""
+        for msg in messages:
+            if msg.role == Role.SYSTEM:
+                return msg.content
+        return None
+
     def count_tokens(self, messages: list[Message]) -> int:
         """Count tokens in messages (approximate).
 
