@@ -3,7 +3,9 @@
 import datetime
 import json
 import logging
+import os
 import sqlite3
+import stat
 from pathlib import Path
 
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
@@ -121,10 +123,14 @@ class SessionStore:
 
     def open(self) -> None:
         """Open the database and ensure the schema exists."""
+        is_new = not self._db_path.exists()
         self._conn = sqlite3.connect(
             str(self._db_path),
             check_same_thread=False,
         )
+        # Restrict database to owner-only access (rw-------).
+        if is_new:
+            os.chmod(self._db_path, stat.S_IRUSR | stat.S_IWUSR)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA_SQL)

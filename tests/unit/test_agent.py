@@ -266,9 +266,10 @@ class TestContextManagement:
         assert "vf_1" in tool_msg.tool_results[0].content
 
         # The full content should be in the virtual file store.
+        # The stored content includes the <tool_result> delimiter wrapping.
         vf = agent._virtual_store.get("vf_1")
         assert vf is not None
-        assert len(vf.content) == 50_000
+        assert "X" * 50_000 in vf.content
 
     @pytest.mark.asyncio
     async def test_budget_message_not_stored_in_state(self):

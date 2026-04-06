@@ -1390,9 +1390,8 @@ class JujuShowSecretTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Show details of a specific Juju secret by name or URI. "
-            "Optionally reveals the secret content (use with caution — "
-            "secrets may contain sensitive data like passwords and tokens)."
+            "Show metadata of a specific Juju secret by name or URI. "
+            "Secret contents are never revealed to protect sensitive data."
         )
 
     @property
@@ -1410,11 +1409,6 @@ class JujuShowSecretTool(Tool):
                     "type": "string",
                     "description": "Model name (uses current model if not specified)",
                 },
-                "reveal": {
-                    "type": "boolean",
-                    "description": "Reveal secret content (default false)",
-                    "default": False,
-                },
             },
             "required": ["identifier"],
         }
@@ -1423,9 +1417,8 @@ class JujuShowSecretTool(Tool):
         self,
         identifier: str,
         model: str | None = None,
-        reveal: bool = False,
     ) -> ToolResult:
-        """Show details of a specific secret."""
+        """Show metadata of a specific secret (contents are never revealed)."""
         if not _juju_available():
             return ToolResult(
                 success=False,
@@ -1435,7 +1428,7 @@ class JujuShowSecretTool(Tool):
 
         try:
             juju = jubilant.Juju(model=model)
-            secret = await _run_juju(juju.show_secret, identifier, reveal=reveal)
+            secret = await _run_juju(juju.show_secret, identifier, reveal=False)
 
             lines = [f"Secret: {secret.name or identifier}", ""]
             lines.append(f"URI: {secret.uri}")
@@ -1463,19 +1456,6 @@ class JujuShowSecretTool(Tool):
                 "updated": str(secret.updated),
                 "rotation": secret.rotation,
             }
-
-            # If revealed, include the content.
-            if reveal and hasattr(secret, "content"):
-                content = secret.content
-                lines.append("")
-                lines.append("Content:")
-                if isinstance(content, dict):
-                    for key, value in content.items():
-                        lines.append(f"  {key}: {value}")
-                    data["content"] = content
-                else:
-                    lines.append(f"  {content}")
-                    data["content"] = str(content)
 
             return ToolResult(
                 success=True,

@@ -1,7 +1,11 @@
 """System prompt for the Cantrip agent."""
 
+import re
 from pathlib import Path
 from typing import Any
+
+# Characters that could trigger Jinja2 template logic.
+_JINJA_SYNTAX = re.compile(r"[{}%]")
 
 _TEMPLATE_DIR = Path(__file__).parent
 
@@ -109,14 +113,28 @@ def build_system_prompt(
     Returns:
         Complete system prompt with context.
     """
+    def _sanitise(value: str | None) -> str | None:
+        """Strip characters that could be interpreted as Jinja2 template syntax."""
+        if value is None:
+            return None
+        return _JINJA_SYNTAX.sub("", value)
+
+    # Sanitise every user-controlled string to prevent template injection.
+    safe_decisions: list[dict] | None = None
+    if recent_decisions:
+        safe_decisions = [
+            {k: _JINJA_SYNTAX.sub("", str(v)) for k, v in d.items()}
+            for d in recent_decisions
+        ]
+
     return _get_template(compact=compact).render(
-        charm_name=charm_name,
-        charm_path=charm_path,
-        charm_type=charm_type,
-        framework=framework,
-        dev_model=dev_model,
-        cos_model=cos_model,
-        recent_decisions=recent_decisions,
+        charm_name=_sanitise(charm_name),
+        charm_path=_sanitise(charm_path),
+        charm_type=_sanitise(charm_type),
+        framework=_sanitise(framework),
+        dev_model=_sanitise(dev_model),
+        cos_model=_sanitise(cos_model),
+        recent_decisions=safe_decisions,
         skills_index=skills_index,
         environment_ready=environment_ready,
         watcher_enabled=watcher_enabled,

@@ -1,11 +1,48 @@
 """Web fetch tool for retrieving content from URLs."""
 
 import html.parser
+import ipaddress
+import socket
+import urllib.parse
 from typing import Any
 
 import httpx
 
 from cantrip.agent.tools.base import Tool, ToolResult
+
+# Hostnames that resolve to cloud metadata services.
+_METADATA_HOSTNAMES = frozenset({
+    "metadata.google.internal",
+    "instance-data.ec2.internal",
+})
+
+
+def _is_private_url(url: str) -> str | None:
+    """Return a reason string if *url* targets a private or internal resource, else ``None``."""
+    parsed = urllib.parse.urlparse(url)
+    hostname = parsed.hostname or ""
+
+    # Block cloud metadata IP and hostnames.
+    if hostname in _METADATA_HOSTNAMES:
+        return "URL targets a cloud metadata endpoint"
+
+    # Resolve hostname to IP addresses and check each one.
+    try:
+        addr_info = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        # Cannot resolve — let httpx handle the error later.
+        return None
+
+    for _family, _type, _proto, _canonname, sockaddr in addr_info:
+        ip_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+            return f"URL resolves to a private/internal address ({ip_str})"
+
+    return None
 
 # Truncate responses beyond this to avoid blowing up LLM context.
 MAX_RESPONSE_CHARS = 100_000
@@ -90,6 +127,14 @@ class WebFetchTool(Tool):
                 success=False,
                 output="",
                 error=f"Only http:// and https:// URLs are supported, got: {url[:50]}",
+            )
+
+        reason = _is_private_url(url)
+        if reason:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Blocked: {reason}",
             )
         try:
             async with httpx.AsyncClient(

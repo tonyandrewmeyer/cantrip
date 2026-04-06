@@ -421,6 +421,10 @@ class CantripAgent:
                 result = await self._execute_tool(tc.name, tc.arguments)
                 self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
+                # Wrap tool output in delimiters to reduce prompt injection risk.
+                content = (
+                    f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"
+                )
                 tool_results.append(
                     LLMToolResult(
                         tool_call_id=tc.id,

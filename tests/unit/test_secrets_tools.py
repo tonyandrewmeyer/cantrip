@@ -162,32 +162,25 @@ class TestJujuShowSecretTool:
         assert "Description: Database credentials" in result.output
 
     @pytest.mark.asyncio()
-    async def test_reveals_content(self, show_tool: JujuShowSecretTool) -> None:
+    async def test_never_reveals_content(self, show_tool: JujuShowSecretTool) -> None:
+        """Secret contents are never exposed, even if the secret has content."""
         secret = _make_secret()
         secret.content = {"password": "s3cret", "username": "admin"}
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=secret),
-        ):
-            result = await show_tool.execute(identifier="db-creds", reveal=True)
-
-        assert result.success is True
-        assert result.data["content"]["password"] == "s3cret"
-        assert "password: s3cret" in result.output
-
-    @pytest.mark.asyncio()
-    async def test_no_reveal_no_content(self, show_tool: JujuShowSecretTool) -> None:
-        secret = _make_secret()
-        # No content attribute when not revealed.
-        del secret.content
-        with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=secret),
+            mock.patch(
+                "cantrip.agent.tools.juju._run_juju", return_value=secret
+            ) as run_mock,
         ):
             result = await show_tool.execute(identifier="db-creds")
 
         assert result.success is True
+        # Content must never appear in output or data.
         assert "content" not in result.data
+        assert "s3cret" not in result.output
+        # Reveal must always be False in the underlying call.
+        _call_kwargs = run_mock.call_args
+        assert _call_kwargs.kwargs.get("reveal") is False
 
     @pytest.mark.asyncio()
     async def test_timeout(self, show_tool: JujuShowSecretTool) -> None:
