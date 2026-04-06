@@ -2217,8 +2217,9 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.7 High — `core.py` Streaming Duplication
 
-- [ ] `process_message()` and `process_message_streaming()` share 90%+ code.
-  Extract a common `_process_message_impl()`.
+- [x] `process_message()` and `process_message_streaming()` shared 90%+ code.
+  Extracted common `_run_conversation_loop()`. Also fixed the streaming path
+  which was missing the `<tool_result>` wrapper (inconsistency with non-streaming).
 
 ### 25.8 High — Long Functions Needing Decomposition
 

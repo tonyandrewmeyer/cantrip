@@ -375,8 +375,12 @@ class CantripAgent:
         finally:
             self._resume_executor()
 
-    async def _process_message_inner(self, user_message: str) -> str:
-        """Inner implementation of process_message (executor already paused)."""
+    async def _run_conversation_loop(self, user_message: str) -> Response:
+        """Shared conversation loop: send a message, execute tool calls, repeat.
+
+        Returns the final ``Response`` once the model responds without tool
+        calls (or the maximum round count is reached).
+        """
         # Record session start event on first message.
         if not self.state.messages:
             self._ensure_store()
@@ -465,6 +469,11 @@ class CantripAgent:
         )
         self.state.messages.append(final_msg)
         self._record_message(final_msg)
+        return response
+
+    async def _process_message_inner(self, user_message: str) -> str:
+        """Inner implementation of process_message (executor already paused)."""
+        response = await self._run_conversation_loop(user_message)
         return response.content
 
     async def process_message_streaming(self, user_message: str) -> AsyncIterator[str]:
@@ -479,97 +488,10 @@ class CantripAgent:
         """
         self._pause_executor()
         try:
-            async for chunk in self._process_message_streaming_inner(user_message):
-                yield chunk
+            response = await self._run_conversation_loop(user_message)
+            yield response.content
         finally:
             self._resume_executor()
-
-    async def _process_message_streaming_inner(self, user_message: str) -> AsyncIterator[str]:
-        """Inner implementation of streaming (executor already paused)."""
-        # Record session start event on first message.
-        if not self.state.messages:
-            self._ensure_store()
-            if self._store:
-                self._store.record_event(
-                    "session_start",
-                    {
-                        "provider": self.provider.name,
-                        "model": self.provider.model_name,
-                        "charm_name": self.state.charm_name,
-                    },
-                )
-
-        user_msg = Message(role=Role.USER, content=user_message)
-        user_msg = self._context_manager.virtualise_message(user_msg)
-        self.state.messages.append(user_msg)
-        self._record_message(user_msg)
-
-        llm_tools = self._tools_for_llm() if self._tools else None
-
-        # Use non-streaming complete for potential tool call rounds.
-        messages = self._build_llm_messages(include_budget=True)
-        response = await self._complete_with_retry(messages, llm_tools)
-        self._record_usage(response)
-
-        rounds = 0
-        while response.tool_calls and rounds < MAX_TOOL_ROUNDS:
-            rounds += 1
-
-            assistant_msg = Message(
-                role=Role.ASSISTANT,
-                content=response.content,
-                tool_calls=response.tool_calls,
-                metadata=response.metadata,
-            )
-            self.state.messages.append(assistant_msg)
-            self._record_message(assistant_msg)
-
-            tool_results = []
-            for tc in response.tool_calls:
-                result = await self._execute_tool(tc.name, tc.arguments)
-                self._capture_test_results(tc.name, result)
-                content = result.output if result.success else (result.error or "Unknown error")
-                tool_results.append(
-                    LLMToolResult(
-                        tool_call_id=tc.id,
-                        content=content,
-                        is_error=not result.success,
-                    )
-                )
-
-            tool_msg = Message(
-                role=Role.TOOL,
-                content="",
-                tool_results=tool_results,
-            )
-            # Virtualise large tool results before storing.
-            tool_msg = self._context_manager.virtualise_message(tool_msg)
-            self.state.messages.append(tool_msg)
-            self._record_message(tool_msg)
-
-            # Compact if the context window is getting full.
-            if self._context_manager.should_compact(self.state.messages):
-                log.info("Compacting conversation context")
-                self.state.messages = await self._context_manager.compact(
-                    self.state.messages,
-                    system_prompt=self._build_system_prompt(),
-                    provider=self._get_provider("compaction"),
-                )
-
-            messages = self._build_llm_messages(include_budget=True)
-            response = await self._complete_with_retry(messages, llm_tools)
-            self._record_usage(response)
-
-        # Now stream the final text response.
-        # Since we already have the content from complete(), just yield it.
-        final_msg = Message(
-            role=Role.ASSISTANT,
-            content=response.content,
-            metadata=response.metadata,
-        )
-        self.state.messages.append(final_msg)
-        self._record_message(final_msg)
-        yield response.content
 
     # -- Design confirmation ---------------------------------------------------
 
