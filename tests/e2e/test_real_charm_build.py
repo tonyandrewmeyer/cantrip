@@ -173,7 +173,7 @@ class TestRealCharmBuild:
                     no_wait=True,
                 )
                 log.info("Destroyed model %s", qualified_name)
-            except Exception as exc:
+            except (jubilant.CLIError, OSError, subprocess.SubprocessError) as exc:
                 log.warning("Failed to destroy model %s: %s", qualified_name, exc)
 
     def _setup_juju_model(self) -> tuple[str, str] | None:
@@ -203,7 +203,7 @@ class TestRealCharmBuild:
             self._models_to_destroy.append(qualified)
             log.info("Created test model: %s (on %s)", model_name, k8s_controller)
             return model_name, qualified
-        except Exception as exc:
+        except (jubilant.CLIError, OSError, subprocess.SubprocessError) as exc:
             log.warning("Failed to create test model: %s", exc)
             return None
 
@@ -294,7 +294,7 @@ class TestRealCharmBuild:
                     juju = jubilant.Juju(model=qualified_model)
                     status = juju.status()
                     app_deployed = bool(status.apps)
-                except Exception:
+                except (jubilant.CLIError, OSError, subprocess.SubprocessError):
                     pass
 
             if app_deployed:
@@ -435,7 +435,7 @@ class TestRealCharmBuild:
                     if app_status == "active":
                         break
                     log.debug("Current status of %s: %s", app_name, app_status)
-            except Exception as exc:
+            except (jubilant.CLIError, OSError, subprocess.SubprocessError) as exc:
                 log.debug("juju status poll error: %s", exc)
             time.sleep(10)
 

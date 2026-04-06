@@ -380,7 +380,7 @@ class InferenceSnapProvider(LLMProvider):
                 ) from e
             # Include the response body for debugging 4xx errors.
             detail = ""
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(AttributeError, UnicodeDecodeError, ValueError):
                 detail = e.response.text[:500]
             raise ProviderError(
                 f"Inference snap error ({e.response.status_code}): {detail or e}"

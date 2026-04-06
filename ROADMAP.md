@@ -2169,6 +2169,136 @@ and can be installed and used standalone.
 
 ---
 
+## Phase 25: Code Health
+
+**Goal:** Address technical debt, security issues, and inconsistencies
+identified during a comprehensive code review. Items are grouped by severity
+and numbered for cross-reference.
+
+### 25.1 Critical — Bare `Exception` Catches
+
+Replace every bare `except Exception` with specific exception types, per the
+project style guide ("Never catch bare `Exception`"). Locations:
+
+- [x] `agent/tools/base.py` — `execute_tool()` catch-all
+- [x] `cli.py` — REPL error handler
+- [x] `llm/inference_snap.py` — `contextlib.suppress(Exception)` around response text
+- [x] `tests/eval/scorer.py` — checker invocation
+- [x] `tests/e2e/test_real_charm_build.py` — model destroy, create, status poll (×4)
+- [x] `tests/live/test_juju_live.py` — model destroy in fixture
+- [x] `web/server.py` — juju status fetch and chat error handler
+- [x] `ui/events.py` — event subscriber dispatch
+- [x] `tui/screens/logs.py` — `contextlib.suppress(Exception)` in title update
+
+### 25.2 Critical — Shell Injection in Watcher
+
+- [x] `agent/watcher.py` Loki polling constructs a Python script via f-string and
+  passes it through SSH. Use `shlex.quote()` or argument-list approach to prevent
+  injection if the URL contains special characters.
+
+### 25.3 Critical — `pyproject.toml` Target Version Mismatch
+
+- [x] `target-version = "py311"` but `requires-python = ">=3.12"`. Update to `"py312"`.
+
+### 25.4 High — Duplicated `_run_juju()` Across Tool Modules
+
+- [ ] Extract the `_run_juju()` helper (duplicated in chaos.py, scaling.py,
+  loadtest.py, upgrade.py, acceptance.py) into a shared utility module.
+
+### 25.5 High — Duplicated `_get_system_prompt()` Across LLM Providers
+
+- [ ] claude.py, gemini.py, and inference_snap.py each implement identical
+  system-prompt extraction. Move to a shared method on `LLMProvider` base class.
+
+### 25.6 High — Duplicated Light Provider Resolution
+
+- [ ] `tui/app.py` and `cli.py` both contain the same provider selection logic.
+  Extract to a shared utility function.
+
+### 25.7 High — `core.py` Streaming Duplication
+
+- [ ] `process_message()` and `process_message_streaming()` share 90%+ code.
+  Extract a common `_process_message_impl()`.
+
+### 25.8 High — Long Functions Needing Decomposition
+
+- [ ] `watcher.py:diff_snapshots()` (~200 lines) — split into per-entity helpers
+- [ ] `charm/terraform.py:_generate_variables_tf()` (150 lines) — make data-driven
+- [ ] `subagent.py:_build_subagent_prompt()` (133 lines) — extract section builders
+- [ ] `executor.py:_execute_task()` (134 lines) — extract pre-checks, result, error
+- [ ] `preflight.py:_ensure_cos()` (107 lines) — split into check/create/deploy/offer
+- [ ] `gemini.py:_convert_messages()` (75 lines) — extract role-specific converters
+
+### 25.9 Medium — Import Style Violations
+
+- [ ] `core.py` — imports `Tool as LLMTool` / `ToolResult as LLMToolResult` instead
+  of importing the module
+- [ ] `subagent.py`, `context.py`, `planning.py`, `audit.py` — local imports inside
+  methods; move to module top
+- [ ] `tui/app.py` — imports widget/screen objects directly instead of modules
+
+### 25.10 Medium — Fragile String Matching
+
+- [ ] `watcher.py` — substring `"hook failed"` detection; use word-boundary regex
+- [ ] `charm.py` — string replacement for code injection is brittle
+- [ ] `autodeploy.py` — loose keyword matching in free-form text
+
+### 25.11 Medium — TUI Reactive Boilerplate
+
+- [ ] `modelbar.py` — 12 identical `watch_*` methods
+- [ ] `statusbar.py` — 4 identical watcher methods
+
+### 25.12 Medium — Encapsulation Violations in `tui/app.py`
+
+- [ ] Accesses `self._agent.context_manager._compaction_threshold` (double private)
+- [ ] Accesses `self._agent._store`
+
+### 25.13 Medium — `claude_md.md.j2` References `tox` Instead of `uv`/`make`
+
+- [ ] Generated CLAUDE.md tells subagents to use `tox -e format` etc. Should
+  reference `make format` / `uv run`.
+
+### 25.14 Medium — Missing Error Handling in `terraform.py`
+
+- [ ] `generate_terraform_module()` — no try/except around `yaml.safe_load()`,
+  no validation of required keys before access.
+
+### 25.15 Medium — Overly Broad Exception Grouping in `executor.py`
+
+- [ ] Catches `ProviderError, RateLimitError, OSError, RuntimeError, ValueError,
+  KeyError, AttributeError` with a single handler.
+
+### 25.16 Medium — Silent Failures in `core.py`
+
+- [ ] `handle_design_confirmation()`, `handle_day2_confirmation()`,
+  `handle_improvement_confirmation()` silently return empty lists.
+
+### 25.17 Low — Dead Code / Unused Declarations
+
+- [ ] `tui/widgets/chat.py` — reactive `messages` attribute never used
+- [ ] `core.py` — `db_path` and `old_dir` resolve to the same path
+
+### 25.18 Low — Magic Strings Without Constants
+
+- [ ] `tui/app.py` — `"confirm-improvements"` hardcoded
+- [ ] `main.py` — magic string checks for project identity
+- [ ] Status indicators, CSS classes, log levels scattered throughout TUI widgets
+
+### 25.19 Low — `git.py` Hardcodes `--no-gpg-sign`
+
+- [ ] GPG signing disabled unconditionally. Should be configurable or documented.
+
+### 25.20 Low — Missing Test Coverage
+
+- [ ] Invalid YAML input to terraform generation
+- [ ] IPv6 handling in `web.py` private URL detection
+- [ ] Error-path tests for file operations
+
+**Exit criteria:** All critical items (25.1–25.3) resolved. High and medium
+items tracked and addressed incrementally. `make check` passes throughout.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -2253,6 +2383,14 @@ and can be installed and used standalone.
 | COS system prompt updates (22.4) | Phase 22.2 | Updates prompts and skills for cross-model COS |
 | Secrets inspection (20.5) | Phase 0.3 Juju integration | Lists and inspects Juju secrets |
 | TUI status enhancements (20.6) | Phase 1.3 TUI + Phase 20.1 | Needs relation data tool for detail panel |
+| Bare Exception catches (25.1) | None | Style-guide compliance; can start any time |
+| Shell injection fix (25.2) | None | Security fix; can start any time |
+| Target version fix (25.3) | None | Config fix; can start any time |
+| Duplicated `_run_juju()` (25.4) | None | Refactor; can start any time |
+| Duplicated `_get_system_prompt()` (25.5) | None | Refactor; can start any time |
+| Duplicated light provider resolution (25.6) | None | Refactor; can start any time |
+| Streaming duplication (25.7) | None | Refactor; can start any time |
+| Long function decomposition (25.8) | None | Refactor; can start any time |
 
 ---
 
@@ -2283,3 +2421,4 @@ and can be installed and used standalone.
 | M20: Deep Introspection | 20 ✓ | Agent reads relation databags, config sources, secrets, and offers to diagnose issues autonomously |
 | M21: Hardened Orchestrator | 21 ✓ | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
 | M22: Multi-Controller COS | 22 ✓ | COS observability works on both single-controller (K8s) and dual-controller (LXD + K8s) environments |
+| M25: Code Health | 25 | All critical and high code-review findings resolved; `make check` green |

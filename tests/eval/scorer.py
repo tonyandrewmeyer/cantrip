@@ -141,7 +141,7 @@ def _evaluate_criterion(criterion: Criterion, charm_dir: pathlib.Path) -> Criter
 
     try:
         passed, detail = checker(charm_dir, **criterion.args)
-    except Exception as exc:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         return CriterionResult(
             criterion=criterion,
             passed=False,

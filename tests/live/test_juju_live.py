@@ -64,7 +64,7 @@ def live_model():
     try:
         juju.destroy_model(model_name, force=True, destroy_storage=True, no_wait=True)
         log.info("Destroyed live test model: %s", model_name)
-    except Exception as exc:
+    except (jubilant.CLIError, OSError) as exc:
         log.warning("Failed to destroy model %s: %s", model_name, exc)
 
 

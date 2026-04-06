@@ -119,8 +119,8 @@ async def _api_juju_status(request: web.Request) -> web.Response:
 
         juju = jubilant.Juju(model=dev_model)
         status = await asyncio.to_thread(functools.partial(juju.status))
-    except Exception:
-        log.debug("Failed to fetch juju status", exc_info=True)
+    except (jubilant.CLIError, OSError, TimeoutError) as exc:
+        log.debug("Failed to fetch juju status: %s", exc)
         return web.json_response({"apps": {}, "relations": []})
 
     apps: dict[str, dict] = {}
@@ -278,7 +278,7 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                                     "content": f"Provider error: {e}",
                                 },
                             )
-                        except Exception as e:
+                        except (OSError, ValueError, RuntimeError) as e:
                             _broadcast(request.app, "thinking", {"active": False})
                             _broadcast(
                                 request.app,

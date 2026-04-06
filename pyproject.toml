@@ -72,7 +72,7 @@ packages = ["src/cantrip", "src/charmlint"]
 
 [tool.ruff]
 line-length = 99
-target-version = "py311"
+target-version = "py312"
 # Gold-standard charm implementations are reference charms, not cantrip source.
 extend-exclude = ["tests/eval/charms/*/gold-*"]
 

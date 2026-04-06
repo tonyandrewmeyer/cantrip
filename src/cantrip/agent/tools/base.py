@@ -1,6 +1,7 @@
 """Base tool interface for agent tools."""
 
 import logging
+import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -69,6 +70,14 @@ async def execute_tool(
             output="",
             error=f"Invalid arguments for {name}: {exc}",
         )
-    except Exception as exc:
+    except (
+        OSError,
+        ValueError,
+        RuntimeError,
+        KeyError,
+        AttributeError,
+        UnicodeDecodeError,
+        subprocess.SubprocessError,
+    ) as exc:
         log.warning("Tool %s raised %s: %s", name, type(exc).__name__, exc)
         return ToolResult(success=False, output="", error=f"Tool execution failed: {exc}")

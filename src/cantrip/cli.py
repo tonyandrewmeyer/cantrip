@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import json
 import sys
 
 from cantrip.agent.core import CantripAgent
@@ -173,7 +174,7 @@ async def _repl(agent: CantripAgent) -> None:
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
             print(f"\nProvider error: {e}\n", file=sys.stderr)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as e:
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
             print(f"\nUnexpected error: {e}\n", file=sys.stderr)

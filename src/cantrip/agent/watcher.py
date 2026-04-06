@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import shlex
 import time
 import urllib.parse
 from collections.abc import Callable
@@ -782,7 +783,7 @@ class EventWatcher:
 
         python_script = (
             "import urllib.request, json, sys; "
-            f"req = urllib.request.Request('{url}'); "
+            "req = urllib.request.Request(sys.argv[1]); "
             "resp = urllib.request.urlopen(req, timeout=10); "
             "print(resp.read().decode())"
         )
@@ -792,7 +793,7 @@ class EventWatcher:
                 None,
                 juju.ssh,
                 unit_name,
-                f'python3 -c "{python_script}"',
+                f"python3 -c {shlex.quote(python_script)} {shlex.quote(url)}",
             )
         except jubilant.CLIError:
             log.debug("SSH to Loki unit failed — skipping poll")

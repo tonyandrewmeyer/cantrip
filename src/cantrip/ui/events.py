@@ -121,7 +121,14 @@ class EventBus:
                     result = callback(event)
                     if asyncio.iscoroutine(result):
                         asyncio.ensure_future(result)
-                except Exception:
+                except (  # noqa: PERF203
+                    TypeError,
+                    AttributeError,
+                    KeyError,
+                    ValueError,
+                    RuntimeError,
+                    OSError,
+                ):
                     log.exception("Error in event subscriber for %s", event.type)
 
 

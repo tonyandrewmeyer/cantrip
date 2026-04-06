@@ -6,8 +6,12 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Fixed
 - **Juju snap confinement (Phase 23.1)** — `JujuDeployTool` and `JujuRefreshTool` now copy `.charm` files from outside `$HOME` to `~/snap/juju/common/` before deploying, working around Juju snap strict confinement that prevented deploys from `/tmp` and other restricted paths; temp copies are cleaned up regardless of success or failure
+- **Bare `Exception` catches (Phase 25.1)** — replaced every bare `except Exception` with specific exception types across 11 locations (tools/base.py, cli.py, inference_snap.py, scorer.py, test_real_charm_build.py, test_juju_live.py, web/server.py, ui/events.py, tui/screens/logs.py), per the project style guide
+- **Shell injection in watcher (Phase 25.2)** — Loki polling via SSH now passes the URL as a `shlex.quote()`-escaped argument instead of interpolating it into a Python script string, preventing injection via crafted URLs
+- **Ruff target version (Phase 25.3)** — `pyproject.toml` `target-version` updated from `py311` to `py312` to match `requires-python = ">=3.12"`
 
 ### Added
+- **Code health roadmap (Phase 25)** — 20-item technical debt and code-review findings tracked in ROADMAP.md with severity tiers (critical/high/medium/low)
 - **Charm linter (Phase 24)** — new standalone `charmlint` package (`src/charmlint/`) with 35 deterministic lint rules across 10 categories (metadata, observability, testing, deprecated APIs, libraries, actions, config quality, status reporting, security, structure); runs independently via `charmlint /path/to/charm` CLI with ruff-style text or JSON output; supports `.charmlint.yaml` config for per-rule severity overrides, category selection, and rule ignoring; zero Cantrip dependencies — only requires `pyyaml`; registered as `charmlint` console script in pyproject.toml; 58 unit tests covering all rules, config, linter engine, and CLI
 - **E2E integration tests (Phase 23.2)** — tests exercise real tools against the live Juju environment: `juju_status` against real controllers, file CRUD operations, preflight warm-up and multi-controller discovery, snap confinement copy behaviour, and session state persistence round-trips; tests skip gracefully when `juju` is unavailable
 - **Web UI integration graph (Phase 15.5)** — new `G` key overlay showing all deployed apps as status-coloured cards with unit breakdowns and a relations section; `R` refreshes, `Esc` closes; reuses the existing `/api/juju-status` endpoint

@@ -222,7 +222,7 @@ class LogScreen(ModalScreen):
 
     def _update_title(self) -> None:
         """Update the title bar with current mode and level."""
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(LookupError):
             title = self.query_one("#log-title", Static)
             mode = "STREAMING" if self.streaming else self.level
             title.update(f"Juju Logs [{mode}]                      [Esc Close]")
