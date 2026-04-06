@@ -6,46 +6,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from cantrip.agent.tools import juju_subprocess
 from cantrip.agent.tools.base import Tool, ToolResult
-
-# Subprocess timeout (seconds).
-_SUBPROCESS_TIMEOUT = 60
 
 # Wait timeout for units to settle after upgrade (seconds).
 _SETTLE_TIMEOUT = 300
-
-
-def _run_juju(
-    args: list[str],
-    model: str | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run a juju command and return the result."""
-    cmd = ["juju"] + args
-    if model:
-        cmd.extend(["--model", model])
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=_SUBPROCESS_TIMEOUT,
-    )
-
-
-def _wait_for_app(app: str, model: str | None, timeout: int) -> bool:
-    """Wait for all units of an application to reach active/idle."""
-    cmd = ["juju", "wait-for", "application", app, "--timeout", f"{timeout}s"]
-    if model:
-        cmd.extend(["--model", model])
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout + 30,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return False
 
 
 def _get_app_status(
@@ -53,7 +18,7 @@ def _get_app_status(
     model: str | None,
 ) -> dict[str, Any]:
     """Get structured status for an application."""
-    result = _run_juju(["status", "--format", "json", app], model)
+    result = juju_subprocess.run_juju(["status", "--format", "json", app], model)
     if result.returncode != 0:
         return {}
     try:
@@ -66,7 +31,7 @@ def _get_app_status(
 def _check_hook_failures(app: str, model: str | None, lines: int = 100) -> list[str]:
     """Check debug-log for hook failures during upgrade."""
     try:
-        result = _run_juju(
+        result = juju_subprocess.run_juju(
             ["debug-log", "-n", str(lines), "--no-tail", "--include", app],
             model,
         )
@@ -203,7 +168,7 @@ class UpgradeTestTool(Tool):
                 refresh_cmd.extend(["--resource", f"{res_name}={res_value}"])
 
         try:
-            refresh_result = _run_juju(refresh_cmd, model)
+            refresh_result = juju_subprocess.run_juju(refresh_cmd, model)
         except subprocess.TimeoutExpired:
             return ToolResult(
                 success=False,
@@ -226,7 +191,7 @@ class UpgradeTestTool(Tool):
         report_lines.append("## Post-Upgrade Recovery")
         report_lines.append("")
 
-        recovered = _wait_for_app(app, model, timeout)
+        recovered = juju_subprocess.wait_for_app(app, model, timeout)
         report_lines.append(f"Recovery: **{'SUCCESS' if recovered else 'FAILED'}**")
         report_lines.append("")
 

@@ -19,10 +19,8 @@ from typing import Any
 
 import yaml
 
+from cantrip.agent.tools import juju_subprocess
 from cantrip.agent.tools.base import Tool, ToolResult
-
-# Subprocess timeout (seconds).
-_SUBPROCESS_TIMEOUT = 60
 
 # Wait timeout after changes (seconds).
 _SETTLE_TIMEOUT = 300
@@ -58,35 +56,6 @@ _INTERFACE_PARTNERS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _run_juju(args: list[str], model: str | None = None) -> subprocess.CompletedProcess[str]:
-    """Run a juju command and return the result."""
-    cmd = ["juju"] + args
-    if model:
-        cmd.extend(["--model", model])
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=_SUBPROCESS_TIMEOUT,
-    )
-
-
-def _wait_for_app(app: str, model: str | None, timeout: int) -> bool:
-    """Wait for all units of an application to reach active/idle."""
-    cmd = ["juju", "wait-for", "application", app, "--timeout", f"{timeout}s"]
-    if model:
-        cmd.extend(["--model", model])
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout + 30,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return False
-
 
 def _load_charm_metadata(charm_dir: Path) -> dict[str, Any] | None:
     """Load and parse charmcraft.yaml from a charm directory."""
@@ -114,7 +83,7 @@ def _verify_relation_data(
     if model:
         cmd.extend(["--model", model])
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=juju_subprocess.JUJU_SUBPROCESS_TIMEOUT)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return False, "Could not read relation data"
 
@@ -150,7 +119,7 @@ def _verify_relation_data(
 
 def _get_unit_address(app: str, model: str | None) -> str | None:
     """Get the address of the first unit via juju status --format json."""
-    result = _run_juju(["status", "--format", "json", app], model)
+    result = juju_subprocess.run_juju(["status", "--format", "json", app], model)
     if result.returncode != 0:
         return None
     try:
@@ -538,11 +507,11 @@ class RelationSmokeTool(Tool):
 
             # Deploy partner (ignore failure if already deployed).
             with contextlib.suppress(subprocess.TimeoutExpired):
-                _run_juju(["deploy", partner], model)
+                juju_subprocess.run_juju(["deploy", partner], model)
 
             # Relate.
             try:
-                relate_result = _run_juju(["relate", f"{app}:{ep_name}", partner], model)
+                relate_result = juju_subprocess.run_juju(["relate", f"{app}:{ep_name}", partner], model)
                 if relate_result.returncode != 0 and "already exists" not in relate_result.stderr:
                     results.append(
                         {
@@ -569,7 +538,7 @@ class RelationSmokeTool(Tool):
                 continue
 
             # Wait for both to settle.
-            settled = _wait_for_app(app, model, timeout)
+            settled = juju_subprocess.wait_for_app(app, model, timeout)
 
             if settled:
                 # Verify data actually flowed through the relation databag.
@@ -1057,7 +1026,7 @@ class ConfigVariationTool(Tool):
 
             # Set the config value.
             try:
-                set_result = _run_juju(["config", app, f"{opt_name}={test_value}"], model)
+                set_result = juju_subprocess.run_juju(["config", app, f"{opt_name}={test_value}"], model)
                 if set_result.returncode != 0:
                     results.append(
                         {
@@ -1082,7 +1051,7 @@ class ConfigVariationTool(Tool):
                 continue
 
             # Wait for settle.
-            settled = _wait_for_app(app, model, timeout)
+            settled = juju_subprocess.wait_for_app(app, model, timeout)
 
             results.append(
                 {
@@ -1096,8 +1065,8 @@ class ConfigVariationTool(Tool):
 
             # Reset to default.
             try:
-                _run_juju(["config", app, "--reset", opt_name], model)
-                _wait_for_app(app, model, timeout)
+                juju_subprocess.run_juju(["config", app, "--reset", opt_name], model)
+                juju_subprocess.wait_for_app(app, model, timeout)
             except subprocess.TimeoutExpired:
                 pass
 
@@ -1281,7 +1250,7 @@ class ConfigUnderLoadTool(Tool):
             cmd = ["juju", "config", app, f"{config_key}={config_value}"]
             if model:
                 cmd.extend(["--model", model])
-            subprocess.run(cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT)
+            subprocess.run(cmd, capture_output=True, text=True, timeout=juju_subprocess.JUJU_SUBPROCESS_TIMEOUT)
 
         # Run probes and config change concurrently.
         await asyncio.gather(_probe_loop(), _apply_config())
@@ -1291,7 +1260,7 @@ class ConfigUnderLoadTool(Tool):
         if model:
             reset_cmd.extend(["--model", model])
         with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            subprocess.run(reset_cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT)
+            subprocess.run(reset_cmd, capture_output=True, text=True, timeout=juju_subprocess.JUJU_SUBPROCESS_TIMEOUT)
 
         verdict = "PASS" if errors == 0 else "FAIL"
         lines = [

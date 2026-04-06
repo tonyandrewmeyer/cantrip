@@ -2202,8 +2202,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.4 High — Duplicated `_run_juju()` Across Tool Modules
 
-- [ ] Extract the `_run_juju()` helper (duplicated in chaos.py, scaling.py,
-  loadtest.py, upgrade.py, acceptance.py) into a shared utility module.
+- [x] Extract the `_run_juju()` and `_wait_for_app()` helpers (duplicated in
+  chaos.py, scaling.py, upgrade.py, acceptance.py) into `juju_subprocess.py`.
 
 ### 25.5 High — Duplicated `_get_system_prompt()` Across LLM Providers
 

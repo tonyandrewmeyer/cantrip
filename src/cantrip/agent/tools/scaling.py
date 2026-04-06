@@ -1,51 +1,18 @@
 """Scaling test tool — verifies charm behaviour under unit scaling."""
 
 import shutil
-import subprocess
 from typing import Any
 
+from cantrip.agent.tools import juju_subprocess
 from cantrip.agent.tools.base import Tool, ToolResult
-
-# Subprocess timeout (seconds).
-_SUBPROCESS_TIMEOUT = 60
 
 # Wait timeout for units to settle (seconds).
 _SETTLE_TIMEOUT = 300
 
 
-def _run_juju(args: list[str], model: str | None = None) -> subprocess.CompletedProcess[str]:
-    """Run a juju command and return the result."""
-    cmd = ["juju"] + args
-    if model:
-        cmd.extend(["--model", model])
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=_SUBPROCESS_TIMEOUT,
-    )
-
-
-def _wait_for_app(app: str, model: str | None, timeout: int) -> bool:
-    """Wait for all units of an application to reach active/idle."""
-    cmd = ["juju", "wait-for", "application", app, "--timeout", f"{timeout}s"]
-    if model:
-        cmd.extend(["--model", model])
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout + 30,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return False
-
-
 def _get_unit_count(app: str, model: str | None) -> int | None:
     """Get the current number of units for an application."""
-    result = _run_juju(["status", "--format", "json", app], model)
+    result = juju_subprocess.run_juju(["status", "--format", "json", app], model)
     if result.returncode != 0:
         return None
     try:
@@ -151,7 +118,7 @@ class ScalingTestTool(Tool):
         report_lines.append(f"## Initial State: {initial_count or '?'} unit(s)")
         report_lines.append("")
 
-        initial_status = _run_juju(["status", app], model)
+        initial_status = juju_subprocess.run_juju(["status", app], model)
         if initial_status.returncode == 0:
             report_lines.append("```")
             report_lines.append(initial_status.stdout.strip())
@@ -162,7 +129,7 @@ class ScalingTestTool(Tool):
         report_lines.append(f"## Scale Up to {target_units}")
         report_lines.append("")
 
-        scale_result = _run_juju(
+        scale_result = juju_subprocess.run_juju(
             ["scale-application", app, str(target_units)],
             model,
         )
@@ -171,7 +138,7 @@ class ScalingTestTool(Tool):
             current = initial_count if initial_count is not None else 1
             units_to_add = target_units - current
             if units_to_add > 0:
-                add_result = _run_juju(
+                add_result = juju_subprocess.run_juju(
                     ["add-unit", app, "-n", str(units_to_add)],
                     model,
                 )
@@ -183,12 +150,12 @@ class ScalingTestTool(Tool):
                     )
 
         # Wait for all units to settle.
-        scale_up_ok = _wait_for_app(app, model, timeout)
+        scale_up_ok = juju_subprocess.wait_for_app(app, model, timeout)
         report_lines.append(f"Scale-up recovery: **{'SUCCESS' if scale_up_ok else 'FAILED'}**")
         report_lines.append("")
 
         # Capture scaled-up status.
-        scaled_status = _run_juju(["status", app], model)
+        scaled_status = juju_subprocess.run_juju(["status", app], model)
         if scaled_status.returncode == 0:
             report_lines.append("```")
             report_lines.append(scaled_status.stdout.strip())
@@ -203,14 +170,14 @@ class ScalingTestTool(Tool):
             report_lines.append("## Scale Down to 1")
             report_lines.append("")
 
-            _run_juju(["scale-application", app, "1"], model)
-            scale_down_ok = _wait_for_app(app, model, timeout)
+            juju_subprocess.run_juju(["scale-application", app, "1"], model)
+            scale_down_ok = juju_subprocess.wait_for_app(app, model, timeout)
             report_lines.append(
                 f"Scale-down recovery: **{'SUCCESS' if scale_down_ok else 'FAILED'}**"
             )
             report_lines.append("")
 
-            final_status = _run_juju(["status", app], model)
+            final_status = juju_subprocess.run_juju(["status", app], model)
             if final_status.returncode == 0:
                 report_lines.append("```")
                 report_lines.append(final_status.stdout.strip())

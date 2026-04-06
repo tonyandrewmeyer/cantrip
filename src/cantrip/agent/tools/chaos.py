@@ -4,10 +4,8 @@ import shutil
 import subprocess
 from typing import Any
 
+from cantrip.agent.tools import juju_subprocess
 from cantrip.agent.tools.base import Tool, ToolResult
-
-# Subprocess timeout (seconds).
-_SUBPROCESS_TIMEOUT = 60
 
 # Wait timeout after disruption (seconds).
 _RECOVERY_TIMEOUT = 300
@@ -21,19 +19,6 @@ _DISRUPTIONS = frozenset(
         "config-reset",
     }
 )
-
-
-def _run_juju(args: list[str], model: str | None = None) -> subprocess.CompletedProcess[str]:
-    """Run a juju command and return the result."""
-    cmd = ["juju"] + args
-    if model:
-        cmd.extend(["--model", model])
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=_SUBPROCESS_TIMEOUT,
-    )
 
 
 class ChaosTestTool(Tool):
@@ -123,7 +108,7 @@ class ChaosTestTool(Tool):
             )
 
         # Step 1: capture pre-disruption status.
-        pre_status = _run_juju(["status", "--format", "json", app], model)
+        pre_status = juju_subprocess.run_juju(["status", "--format", "json", app], model)
         if pre_status.returncode != 0:
             return ToolResult(
                 success=False,
@@ -144,7 +129,7 @@ class ChaosTestTool(Tool):
         recovery = self._wait_for_recovery(app, model, timeout)
 
         # Step 4: capture post-recovery status.
-        post_status = _run_juju(["status", app], model)
+        post_status = juju_subprocess.run_juju(["status", app], model)
 
         report_lines = [
             "# Chaos Test Report",
@@ -186,7 +171,7 @@ class ChaosTestTool(Tool):
         """Perform the disruption and return a description of what was done."""
         try:
             if disruption == "kill-unit":
-                result = _run_juju(["remove-unit", f"{app}/0", "--no-prompt"], model)
+                result = juju_subprocess.run_juju(["remove-unit", f"{app}/0", "--no-prompt"], model)
                 if result.returncode != 0:
                     return f"Error: failed to remove unit: {result.stderr}"
                 return f"Removed unit {app}/0."
@@ -195,26 +180,26 @@ class ChaosTestTool(Tool):
                 if not relation:
                     return "Error: relation parameter required for remove-relation."
                 parts = relation.split()
-                result = _run_juju(["remove-relation", *parts], model)
+                result = juju_subprocess.run_juju(["remove-relation", *parts], model)
                 if result.returncode != 0:
                     return f"Error: failed to remove relation: {result.stderr}"
                 return f"Removed relation: {relation}."
 
             if disruption == "scale-down":
-                result = _run_juju(["scale-application", app, "0"], model)
+                result = juju_subprocess.run_juju(["scale-application", app, "0"], model)
                 if result.returncode != 0:
                     # Fall back to remove-unit for machine models.
-                    result = _run_juju(["remove-unit", f"{app}/0", "--no-prompt"], model)
+                    result = juju_subprocess.run_juju(["remove-unit", f"{app}/0", "--no-prompt"], model)
                     if result.returncode != 0:
                         return f"Error: failed to scale down: {result.stderr}"
                 # Restore to 1 unit.
-                restore = _run_juju(["scale-application", app, "1"], model)
+                restore = juju_subprocess.run_juju(["scale-application", app, "1"], model)
                 if restore.returncode != 0:
-                    _run_juju(["add-unit", app], model)
+                    juju_subprocess.run_juju(["add-unit", app], model)
                 return f"Scaled {app} down to 0, then back to 1."
 
             if disruption == "config-reset":
-                result = _run_juju(["config", app, "--reset", "--all"], model)
+                result = juju_subprocess.run_juju(["config", app, "--reset", "--all"], model)
                 if result.returncode != 0:
                     return f"Error: failed to reset config: {result.stderr}"
                 return f"Reset all config options for {app} to defaults."

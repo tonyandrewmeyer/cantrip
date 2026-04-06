@@ -350,7 +350,7 @@ class TestWorkloadEndpointTool:
         with (
             patch("shutil.which", return_value="/usr/bin/juju"),
             patch(
-                "cantrip.agent.tools.acceptance._run_juju",
+                "cantrip.agent.tools.juju_subprocess.run_juju",
                 return_value=mock_status,
             ),
         ):
@@ -433,11 +433,11 @@ class TestConfigVariationTool:
         with (
             patch("shutil.which", return_value="/usr/bin/juju"),
             patch(
-                "cantrip.agent.tools.acceptance._run_juju",
+                "cantrip.agent.tools.juju_subprocess.run_juju",
                 return_value=mock_proc,
             ),
             patch(
-                "cantrip.agent.tools.acceptance._wait_for_app",
+                "cantrip.agent.tools.juju_subprocess.wait_for_app",
                 return_value=True,
             ),
         ):
