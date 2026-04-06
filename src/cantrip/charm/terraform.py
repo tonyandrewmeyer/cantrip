@@ -58,6 +58,15 @@ def _generate_main_tf(
     return "\n".join(lines)
 
 
+def _hcl_variable(name: str, description: str, hcl_type: str, default: str | None) -> str:
+    """Render a single HCL ``variable`` block."""
+    lines = [f'variable "{name}" {{', f'  description = "{description}"', f"  type        = {hcl_type}"]
+    if default is not None:
+        lines.append(f"  default     = {default}")
+    lines.append("}")
+    return "\n".join(lines)
+
+
 def _generate_variables_tf(
     charm_name: str,
     has_resources: bool,
@@ -67,146 +76,37 @@ def _generate_variables_tf(
 
     Variables are emitted in alphabetical order per CC008.
     """
-    # Collect all variable blocks, then sort alphabetically by variable name.
-    variables: list[tuple[str, str]] = []
-
-    variables.append(
-        (
-            "app_name",
-            textwrap.dedent(f"""\
-        variable "app_name" {{
-          description = "Name of the application in the Juju model."
-          type        = string
-          default     = "{charm_name}"
-        }}
-    """),
-        )
-    )
-
-    variables.append(
-        (
-            "base",
-            textwrap.dedent("""\
-        variable "base" {
-          description = "Base for the charm (e.g. ubuntu@22.04)."
-          type        = string
-          default     = null
-        }
-    """),
-        )
-    )
-
-    variables.append(
-        (
-            "channel",
-            textwrap.dedent("""\
-        variable "channel" {
-          description = "Channel to deploy the charm from."
-          type        = string
-          default     = "latest/edge"
-        }
-    """),
-        )
-    )
-
-    variables.append(
+    # Each entry: (name, description, hcl_type, default_or_None).
+    specs: list[tuple[str, str, str, str | None]] = [
+        ("app_name", "Name of the application in the Juju model.", "string", f'"{charm_name}"'),
+        ("base", "Base for the charm (e.g. ubuntu@22.04).", "string", "null"),
+        ("channel", "Channel to deploy the charm from.", "string", '"latest/edge"'),
         (
             "config",
-            textwrap.dedent(f"""\
-        variable "config" {{
-          description = "Charm configuration options. See https://charmhub.io/{charm_name}/configure for details."
-          type        = map(string)
-          default     = {{}}
-        }}
-    """),
-        )
-    )
-
-    variables.append(
-        (
-            "constraints",
-            textwrap.dedent("""\
-        variable "constraints" {
-          description = "Juju constraints for the application."
-          type        = string
-          default     = null
-        }
-    """),
-        )
-    )
-
-    variables.append(
-        (
-            "model_uuid",
-            textwrap.dedent("""\
-        variable "model_uuid" {
-          description = "UUID of the Juju model to deploy to."
-          type        = string
-        }
-    """),
-        )
-    )
+            f"Charm configuration options. See https://charmhub.io/{charm_name}/configure for details.",
+            "map(string)",
+            "{}",
+        ),
+        ("constraints", "Juju constraints for the application.", "string", "null"),
+        ("model_uuid", "UUID of the Juju model to deploy to.", "string", None),
+        ("revision", "Charm revision to deploy. Uses latest from channel if null.", "number", "null"),
+        ("units", "Number of units to deploy.", "number", "1"),
+    ]
 
     if has_resources:
-        variables.append(
-            (
-                "resources",
-                textwrap.dedent("""\
-            variable "resources" {
-              description = "Map of resource names to OCI image revisions."
-              type        = map(string)
-              default     = {}
-            }
-        """),
-            )
-        )
-
-    variables.append(
-        (
-            "revision",
-            textwrap.dedent("""\
-        variable "revision" {
-          description = "Charm revision to deploy. Uses latest from channel if null."
-          type        = number
-          default     = null
-        }
-    """),
-        )
-    )
-
+        specs.append(("resources", "Map of resource names to OCI image revisions.", "map(string)", "{}"))
     if has_storage:
-        variables.append(
-            (
-                "storage_directives",
-                textwrap.dedent("""\
-            variable "storage_directives" {
-              description = "Map of storage names to directives (e.g. pool,size,count)."
-              type        = map(string)
-              default     = {}
-            }
-        """),
-            )
+        specs.append(
+            ("storage_directives", "Map of storage names to directives (e.g. pool,size,count).", "map(string)", "{}")
         )
-
-    variables.append(
-        (
-            "units",
-            textwrap.dedent("""\
-        variable "units" {
-          description = "Number of units to deploy."
-          type        = number
-          default     = 1
-        }
-    """),
-        )
-    )
 
     # Sort alphabetically by variable name.
-    variables.sort(key=lambda pair: pair[0])
+    specs.sort(key=lambda s: s[0])
 
-    blocks: list[str] = [_COPYRIGHT]
-    for _name, block in variables:
-        blocks.append(block)
+    blocks = [_COPYRIGHT]
+    for name, description, hcl_type, default in specs:
+        blocks.append(_hcl_variable(name, description, hcl_type, default))
+        blocks.append("")
 
     return "\n".join(blocks)
 
