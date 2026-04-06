@@ -182,7 +182,7 @@ nav {
 
 .hero-logo {
   margin-bottom: 2rem;
-  filter: drop-shadow(0 0 30px rgba(99,102,241,0.3));
+  filter: drop-shadow(0 0 30px rgba(232,140,50,0.3));
   animation: float 6s ease-in-out infinite;
 }
 
