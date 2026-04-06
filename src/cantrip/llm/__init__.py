@@ -18,6 +18,7 @@ __all__ = [
     "Response",
     "create_provider",
     "resolve_light_model",
+    "resolve_light_provider",
 ]
 
 # Maps a main model to a cheaper variant within the same provider family.
@@ -43,6 +44,45 @@ def resolve_light_model(provider_name: str, main_model: str) -> str:
     """
     _ = provider_name  # Reserved for future routing logic.
     return _LIGHT_MODEL_MAP.get(main_model, main_model)
+
+
+def resolve_light_provider(
+    primary_provider: LLMProvider,
+    provider_name: str,
+    *,
+    light_provider_name: str | None = None,
+    light_model_override: str | None = None,
+    snap_name: str = "gemma3",
+    light_snap_name: str | None = None,
+) -> tuple[LLMProvider | None, str | None]:
+    """Resolve a light provider for cheap internal tasks.
+
+    Returns ``(provider, display_name)`` or ``(None, None)`` when the
+    primary provider is already the lightest available.
+
+    Three modes:
+
+    1. **Hybrid** (``light_provider_name`` set): cross-provider routing.
+    2. **Multi-snap** (``light_snap_name`` set, primary is inference-snap):
+       a lighter snap for internal work.
+    3. **Same-provider** (default): cheaper model within the same family.
+    """
+    if light_provider_name:
+        light_snap = light_snap_name or snap_name
+        light = create_provider(light_provider_name, light_model_override, snap_name=light_snap)
+        return light, f"{light_provider_name}:{light.model_name}"
+
+    if light_snap_name and provider_name == "inference-snap":
+        light = create_provider("inference-snap", snap_name=light_snap_name)
+        return light, light_snap_name
+
+    main_model = primary_provider.model_name
+    resolved = light_model_override or resolve_light_model(provider_name, main_model)
+    if resolved != main_model:
+        light = create_provider(provider_name, resolved, snap_name=snap_name)
+        return light, resolved
+
+    return None, None
 
 
 def create_provider(

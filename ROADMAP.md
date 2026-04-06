@@ -2212,8 +2212,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.6 High — Duplicated Light Provider Resolution
 
-- [ ] `tui/app.py` and `cli.py` both contain the same provider selection logic.
-  Extract to a shared utility function.
+- [x] `tui/app.py` and `cli.py` both contained the same provider selection
+  logic. Extracted to `resolve_light_provider()` in `cantrip.llm`.
 
 ### 25.7 High — `core.py` Streaming Duplication
 

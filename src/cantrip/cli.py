@@ -7,7 +7,7 @@ import sys
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
-from cantrip.llm import create_provider, resolve_light_model
+from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.ui import events as ui_events
 
@@ -42,26 +42,14 @@ def run_cli(args: argparse.Namespace) -> int:
         return 1
 
     # Resolve light provider for internal tasks (e.g. compaction).
-    light_provider = None
-    light_model_name = None
-    light_provider_name = getattr(args, "light_provider", None)
-
-    if light_provider_name:
-        # Hybrid mode: cross-provider routing.
-        light_snap = light_snap_name or snap_name
-        light_provider = create_provider(
-            light_provider_name, args.light_model, snap_name=light_snap
-        )
-        light_model_name = f"{light_provider_name}:{light_provider.model_name}"
-    elif light_snap_name and args.provider == "inference-snap":
-        light_provider = create_provider("inference-snap", snap_name=light_snap_name)
-        light_model_name = light_snap_name
-    else:
-        main_model = provider.model_name
-        resolved = args.light_model or resolve_light_model(args.provider, main_model)
-        if resolved != main_model:
-            light_provider = create_provider(args.provider, resolved, snap_name=snap_name)
-            light_model_name = resolved
+    light_provider, light_model_name = resolve_light_provider(
+        provider,
+        args.provider,
+        light_provider_name=getattr(args, "light_provider", None),
+        light_model_override=args.light_model,
+        snap_name=snap_name,
+        light_snap_name=light_snap_name,
+    )
 
     improve_path = getattr(args, "improve", None)
 
