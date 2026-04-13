@@ -35,7 +35,7 @@ dependencies = [
     "cryptography>=46.0.5",        # Transitive; pinned for CVE fix
 
     # Web UI
-    "aiohttp>=3.9",                # HTTP server + WebSocket
+    "aiohttp>=3.13.4",                # HTTP server + WebSocket
 
     # Utilities
     "pyyaml>=6.0",                 # YAML handling
