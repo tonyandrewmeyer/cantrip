@@ -25,7 +25,7 @@ dependencies = [
     "textual>=0.50.0",
 
     # LLM providers
-    "google-genai>=1.0.0",         # Gemini
+    "google-genai>=1.69.0",         # Gemini
     "anthropic>=0.18.0",           # Claude
 
     # Juju integration
