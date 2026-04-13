@@ -32,7 +32,7 @@ dependencies = [
     "jubilant>=0.1.0",             # Juju control
 
     # Security
-    "cryptography>=46.0.5",        # Transitive; pinned for CVE fix
+    "cryptography>=46.0.6",        # Transitive; pinned for CVE fix
 
     # Web UI
     "aiohttp>=3.9",                # HTTP server + WebSocket
