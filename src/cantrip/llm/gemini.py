@@ -99,70 +99,87 @@ class GeminiProvider(LLMProvider):
         for msg in messages:
             if msg.role == Role.SYSTEM:
                 continue
-
             elif msg.role == Role.USER:
-                result.append(
-                    genai_types.Content(
-                        role="user",
-                        parts=[genai_types.Part(text=msg.content)],
+                result.append(self._convert_user_message(msg))
+            elif msg.role == Role.ASSISTANT:
+                content = self._convert_assistant_message(msg)
+                if content is not None:
+                    result.append(content)
+            elif msg.role == Role.TOOL:
+                result.append(self._convert_tool_message(msg))
+        return result
+
+    @staticmethod
+    def _convert_user_message(msg: Message) -> genai_types.Content:
+        """Convert a USER message to Gemini format."""
+        return genai_types.Content(
+            role="user",
+            parts=[genai_types.Part(text=msg.content)],
+        )
+
+    @staticmethod
+    def _convert_assistant_message(msg: Message) -> genai_types.Content | None:
+        """Convert an ASSISTANT message to Gemini format.
+
+        Returns ``None`` when the message has no content or parts to send
+        (e.g. an empty assistant turn with no tool calls).
+        """
+        parts: list[genai_types.Part] = []
+
+        # Restore thought signature parts for Gemini 3 round-trip.
+        for tp in msg.metadata.get("_gemini_thought_parts", []):
+            with contextlib.suppress(KeyError, ValueError, binascii.Error):
+                parts.append(
+                    genai_types.Part(
+                        thought=True,
+                        thought_signature=base64.b64decode(tp["thought_signature"]),
                     )
                 )
 
-            elif msg.role == Role.ASSISTANT:
-                parts: list[genai_types.Part] = []
-
-                # Restore thought signature parts for Gemini 3 round-trip.
-                for tp in msg.metadata.get("_gemini_thought_parts", []):
-                    with contextlib.suppress(KeyError, ValueError, binascii.Error):
-                        parts.append(
-                            genai_types.Part(
-                                thought=True,
-                                thought_signature=base64.b64decode(tp["thought_signature"]),
-                            )
-                        )
-
-                if msg.tool_calls:
-                    if msg.content:
-                        parts.append(genai_types.Part(text=msg.content))
-                    fc_sigs = msg.metadata.get("_gemini_fc_signatures", [])
-                    for i, tc in enumerate(msg.tool_calls):
-                        fc_part = genai_types.Part(
-                            function_call=genai_types.FunctionCall(
-                                name=tc.name,
-                                args=tc.arguments,
-                            )
-                        )
-                        if i < len(fc_sigs) and fc_sigs[i].get("thought_signature"):
-                            with contextlib.suppress(ValueError, binascii.Error):
-                                fc_part.thought_signature = base64.b64decode(
-                                    fc_sigs[i]["thought_signature"]
-                                )
-                        parts.append(fc_part)
-                    result.append(genai_types.Content(role="model", parts=parts))
-                else:
-                    if msg.content:
-                        parts.append(genai_types.Part(text=msg.content))
-                    if parts:
-                        result.append(genai_types.Content(role="model", parts=parts))
-
-            elif msg.role == Role.TOOL:
-                # Tool results are sent as user-role function responses in Gemini.
-                parts = []
-                for tr in msg.tool_results:
-                    # Parse content back to dict if possible for structured response.
-                    try:
-                        response_data = json.loads(tr.content)
-                    except (json.JSONDecodeError, TypeError):
-                        response_data = {"result": tr.content}
-                    parts.append(
-                        genai_types.Part.from_function_response(
-                            name=tr.tool_call_id,
-                            response=response_data,
-                        )
+        if msg.tool_calls:
+            if msg.content:
+                parts.append(genai_types.Part(text=msg.content))
+            fc_sigs = msg.metadata.get("_gemini_fc_signatures", [])
+            for i, tc in enumerate(msg.tool_calls):
+                fc_part = genai_types.Part(
+                    function_call=genai_types.FunctionCall(
+                        name=tc.name,
+                        args=tc.arguments,
                     )
-                result.append(genai_types.Content(role="user", parts=parts))
+                )
+                if i < len(fc_sigs) and fc_sigs[i].get("thought_signature"):
+                    with contextlib.suppress(ValueError, binascii.Error):
+                        fc_part.thought_signature = base64.b64decode(
+                            fc_sigs[i]["thought_signature"]
+                        )
+                parts.append(fc_part)
+            return genai_types.Content(role="model", parts=parts)
 
-        return result
+        if msg.content:
+            parts.append(genai_types.Part(text=msg.content))
+        if parts:
+            return genai_types.Content(role="model", parts=parts)
+        return None
+
+    @staticmethod
+    def _convert_tool_message(msg: Message) -> genai_types.Content:
+        """Convert a TOOL message to Gemini format.
+
+        Tool results are sent as user-role function responses.
+        """
+        parts: list[genai_types.Part] = []
+        for tr in msg.tool_results:
+            try:
+                response_data = json.loads(tr.content)
+            except (json.JSONDecodeError, TypeError):
+                response_data = {"result": tr.content}
+            parts.append(
+                genai_types.Part.from_function_response(
+                    name=tr.tool_call_id,
+                    response=response_data,
+                )
+            )
+        return genai_types.Content(role="user", parts=parts)
 
     def _convert_tools(self, tools: list[Tool] | None) -> list[genai_types.Tool] | None:
         """Convert tools to Gemini format."""

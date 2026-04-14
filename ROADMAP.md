@@ -2233,7 +2233,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
   `_handle_result` helpers; three duplicate except blocks collapsed via shared helper
 - [x] `preflight.py:_ensure_cos()` (107→20 lines) — split into `_check_cos_model`,
   `_create_cos_model`, `_deploy_cos_lite`, `_create_cos_offers` helpers
-- [ ] `gemini.py:_convert_messages()` (75 lines) — extract role-specific converters
+- [x] `gemini.py:_convert_messages()` (75→20 lines) — extracted `_convert_user_message`,
+  `_convert_assistant_message`, `_convert_tool_message` helpers
 
 ### 25.9 Medium — Import Style Violations
 
