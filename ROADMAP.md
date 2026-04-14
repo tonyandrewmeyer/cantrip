@@ -3065,6 +3065,89 @@ includes dependency review. `make check` passes throughout.
 
 ---
 
+## Phase 36: Review Claude Code Best Practices for Cantrip
+
+**Goal:** Review the community-curated best practices at
+`github.com/shanraisshan/claude-code-best-practice` and evaluate whether any
+techniques would improve (a) how we build Cantrip itself (CLAUDE.md, workflow,
+prompt structure, tool design) or (b) how the Cantrip agent operates (system
+prompts, subagent guidance, tool patterns, conversation loop design).
+
+- [ ] Clone and review the repository contents — extract every concrete
+  recommendation (prompt engineering, CLAUDE.md structure, tool use patterns,
+  context management, task decomposition, etc.)
+- [ ] Evaluate each recommendation against Cantrip's current CLAUDE.md and
+  development workflow — adopt anything that would improve Claude Code's
+  effectiveness when working on this codebase
+- [ ] Evaluate each recommendation against Cantrip's own agent architecture —
+  system prompts (`src/cantrip/agent/prompts/`), subagent guidance
+  (`src/cantrip/agent/prompts/subagent/`), tool design (`src/cantrip/agent/tools/`),
+  and conversation loop (`src/cantrip/agent/core.py`) — adopt patterns that
+  would make Cantrip a more effective autonomous agent
+- [ ] Document findings: what was adopted, what was rejected (and why)
+
+**Exit criteria:** Review complete. Any adopted changes are implemented and
+passing `make check`.
+
+---
+
+## Phase 37: Upstream Ecosystem Catch-Up
+
+**Goal:** Review recent changes (last ~3 months) in the core charm ecosystem
+libraries and adjust Cantrip's code generation, skills, system prompts, and
+tool wrappers to stay current.
+
+### 37.1 High — ops Framework Changes
+
+- [ ] Review `canonical/operator` changelog and recent commits — new event
+  types, deprecations, API changes, testing helpers, Pebble client updates
+- [ ] Update system prompt charm expertise (`src/cantrip/agent/prompts/system.py`)
+  if any patterns or best practices have changed
+- [ ] Update Scenario test generation guidance if `ops.testing` has new features
+  or changed APIs
+- [ ] Bump minimum `ops` version in generated charms if needed
+
+### 37.2 High — Jubilant Changes
+
+- [ ] Review `canonical/jubilant` changelog — new helpers, changed APIs,
+  deprecations
+- [ ] Update Cantrip's Jubilant wrapper (`src/cantrip/juju/`) and integration
+  test generation guidance
+- [ ] Update the `jubilant-tests` skill if new Jubilant patterns are available
+- [ ] Bump Cantrip's own Jubilant floor in `pyproject.toml` if needed
+
+### 37.3 Medium — Concierge and Pebble Changes
+
+- [ ] Review `jnsgruk/concierge` for new features or changed deployment patterns
+- [ ] Review Pebble client changes (bundled with ops) — new layer options,
+  check types, notice handling, file push/pull changes
+- [ ] Update Cantrip's Concierge integration (`src/cantrip/agent/preflight.py`)
+  and Pebble layer generation guidance
+
+### 37.4 Medium — Charm Libraries (charmlibs) Changes
+
+- [ ] Review recent releases of key charm libraries: `data-platform-libs`,
+  `observability-libs`, `traefik-k8s`, `grafana-agent`, `loki-k8s`,
+  `prometheus-k8s`, `catalogue-k8s`
+- [ ] Check for new PyPI-published versions that replace `charmcraft fetch-libs`
+- [ ] Update the `observability` and `relation-data-design` skills if
+  integration patterns have changed
+- [ ] Update system prompt guidance on which libraries to use and how
+
+### 37.5 Low — Charmcraft and Rockcraft Changes
+
+- [ ] Review `canonical/charmcraft` changelog — new `charmcraft.yaml` fields,
+  changed pack behaviour, new commands
+- [ ] Review `canonical/rockcraft` changelog — new `rockcraft.yaml` features,
+  changed base images, new extensions
+- [ ] Update charm and rock template generation if schemas have changed
+
+**Exit criteria:** Cantrip's generated code, skills, and prompts reflect the
+current state of the ecosystem. No deprecated APIs used in generated charms.
+`make check` passes throughout.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
