@@ -1,4 +1,4 @@
-.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean
+.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage
 
 # Format code with ruff
 format:
@@ -47,9 +47,15 @@ check: lint unit
 # Run everything (format + check)
 all: format check
 
+# Run unit tests with coverage report
+coverage:
+	uv run coverage run -m pytest tests/unit -v
+	uv run coverage report
+	uv run coverage html
+
 # Clean build artifacts
 clean:
-	rm -rf .pytest_cache .ruff_cache .ty_cache
+	rm -rf .pytest_cache .ruff_cache .ty_cache .coverage htmlcov
 	rm -rf dist build *.egg-info
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
@@ -73,5 +79,6 @@ help:
 	@echo "  test        - Run all tests (unit + integration + e2e)"
 	@echo "  check       - Run lint + unit tests"
 	@echo "  all         - Run format + check"
+	@echo "  coverage    - Run unit tests with coverage report"
 	@echo "  clean       - Remove build artifacts"
 	@echo "  install     - Install dependencies"

@@ -6,7 +6,12 @@ from unittest import mock
 
 import pytest
 
-from cantrip.agent.tools.charm import AnalyseFrameworkTool, CharmcraftInitTool, _inject_pre_commit
+from cantrip.agent.tools.charm import (
+    AnalyseFrameworkTool,
+    CharmcraftInitTool,
+    _inject_coverage_threshold,
+    _inject_pre_commit,
+)
 from cantrip.agent.tools.environment import (
     ConciergePrepareTool,
     ConciergeStatusTool,
@@ -19,7 +24,7 @@ from cantrip.agent.tools.files import (
     ReadFileTool,
     WriteFileTool,
 )
-from cantrip.agent.tools.testing import _build_pytest_target
+from cantrip.agent.tools.testing import _build_pytest_target, _parse_coverage_total
 
 
 class TestReadFileTool:
@@ -1051,3 +1056,109 @@ class TestBuildPytestTarget:
         """Handles .py suffix in file::function form gracefully."""
         result = _build_pytest_target(test_dir, "test_deploy.py::test_smoke")
         assert result == [f"{test_dir / 'test_deploy.py'}::test_smoke"]
+
+
+# ===================================================================
+# TestParseCoverageTotal
+# ===================================================================
+
+
+class TestParseCoverageTotal:
+    """Tests for _parse_coverage_total — coverage percentage extraction."""
+
+    def test_typical_coverage_report(self):
+        output = (
+            "Name             Stmts   Miss  Cover\n"
+            "------------------------------------\n"
+            "src/charm.py        50      5    90%\n"
+            "TOTAL              100     10    90%\n"
+        )
+        assert _parse_coverage_total(output) == 90
+
+    def test_zero_coverage(self):
+        output = "TOTAL    100    100    0%\n"
+        assert _parse_coverage_total(output) == 0
+
+    def test_full_coverage(self):
+        output = "TOTAL    100    0    100%\n"
+        assert _parse_coverage_total(output) == 100
+
+    def test_no_coverage_output(self):
+        output = "=== 5 passed in 0.3s ===\n"
+        assert _parse_coverage_total(output) is None
+
+    def test_embedded_in_tox_output(self):
+        """Coverage line buried in larger tox output is still found."""
+        output = (
+            "unit: commands[0]> coverage run ...\n"
+            "========= 10 passed in 1.2s =========\n"
+            "unit: commands[1]> coverage report\n"
+            "Name             Stmts   Miss  Cover\n"
+            "------------------------------------\n"
+            "src/charm.py        80      4    95%\n"
+            "TOTAL              200     10    95%\n"
+            "unit: OK\n"
+        )
+        assert _parse_coverage_total(output) == 95
+
+
+# ===================================================================
+# TestInjectCoverageThreshold
+# ===================================================================
+
+
+class TestInjectCoverageThreshold:
+    """Tests for _inject_coverage_threshold — pyproject.toml injection."""
+
+    def test_adds_fail_under_to_existing_report_section(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td)
+            pyproject = target / "pyproject.toml"
+            pyproject.write_text(
+                "[tool.coverage.run]\nbranch = true\n\n"
+                "[tool.coverage.report]\nshow_missing = true\n"
+            )
+            actions = _inject_coverage_threshold(target)
+            content = pyproject.read_text()
+            assert "fail_under = 80" in content
+            assert len(actions) == 1
+            assert "80%" in actions[0]
+
+    def test_skips_when_fail_under_already_set(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td)
+            pyproject = target / "pyproject.toml"
+            pyproject.write_text(
+                "[tool.coverage.report]\nfail_under = 90\nshow_missing = true\n"
+            )
+            actions = _inject_coverage_threshold(target)
+            content = pyproject.read_text()
+            assert "fail_under = 90" in content
+            assert content.count("fail_under") == 1
+            assert "already configured" in actions[0]
+
+    def test_creates_report_section_when_only_run_exists(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td)
+            pyproject = target / "pyproject.toml"
+            pyproject.write_text("[tool.coverage.run]\nbranch = true\n")
+            _inject_coverage_threshold(target)
+            content = pyproject.read_text()
+            assert "[tool.coverage.report]" in content
+            assert "fail_under = 80" in content
+
+    def test_creates_both_sections_when_no_coverage_config(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td)
+            pyproject = target / "pyproject.toml"
+            pyproject.write_text("[project]\nname = 'my-charm'\n")
+            _inject_coverage_threshold(target)
+            content = pyproject.read_text()
+            assert "[tool.coverage.run]" in content
+            assert "[tool.coverage.report]" in content
+            assert "fail_under = 80" in content
+
+    def test_no_pyproject_returns_skip_message(self):
+        with tempfile.TemporaryDirectory() as td:
+            actions = _inject_coverage_threshold(Path(td))
+            assert "skipped" in actions[0]

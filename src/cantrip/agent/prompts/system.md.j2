@@ -107,11 +107,19 @@ After scaffolding or modifying a charm, generate and run tests:
 5. Offer to run integration tests with `run_charm_tests` with `test_type: "integration"`.
    Only run them if the user agrees — they need a live Juju controller and take minutes.
 
+**Coverage:**
+
+Unit tests run with `coverage` and charms are configured with `fail_under = 80` in
+`pyproject.toml`. When `charm_validate` or `run_charm_tests` reports coverage, keep it
+above that threshold. If coverage drops after adding new code, write additional tests
+before moving on. Coverage does not need to be 100%, but it should stay high and not
+decrease as the charm evolves.
+
 **Completion:**
 
-Before marking a charm as done, run `charm_validate` to verify unit tests pass and the
-charm packs successfully. Integration tests are not included in `charm_validate` — they
-run separately on request.
+Before marking a charm as done, run `charm_validate` to verify unit tests pass, coverage is
+adequate, and the charm packs successfully. Integration tests are not included in `charm_validate`
+— they run separately on request.
 
 ### Libraries
 - Prefer PyPI versions where available

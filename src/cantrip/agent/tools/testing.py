@@ -26,6 +26,10 @@ _SUMMARY_RE = re.compile(
     r"[, ]*(?:(?P<skipped>\d+) skipped)?"
 )
 
+# Matches the TOTAL line from ``coverage report``, e.g.:
+#   TOTAL    1234    56    95%
+_COVERAGE_TOTAL_RE = re.compile(r"^TOTAL\s+\d+\s+\d+\s+(\d+)%", re.MULTILINE)
+
 
 def _parse_pytest_summary(output: str) -> dict[str, int]:
     """Extract passed/failed/error/skipped counts from pytest output.
@@ -48,6 +52,18 @@ def _parse_pytest_summary(output: str) -> dict[str, int]:
         if counts:
             return counts
     return {}
+
+
+def _parse_coverage_total(output: str) -> int | None:
+    """Extract the total coverage percentage from ``coverage report`` output.
+
+    Returns the integer percentage (e.g. 85) or ``None`` if no coverage
+    summary is found.
+    """
+    match = _COVERAGE_TOTAL_RE.search(output)
+    if match:
+        return int(match.group(1))
+    return None
 
 
 def _truncate_output(output: str) -> str:
@@ -208,14 +224,19 @@ class RunCharmTestsTool(Tool):
             combined += "\n" + result.stderr
 
         summary = _parse_pytest_summary(combined)
+        coverage_pct = _parse_coverage_total(combined)
         output = _truncate_output(combined)
 
         success = result.returncode == 0
+        data: dict[str, Any] = {"summary": summary, "runner": runner}
+        if coverage_pct is not None:
+            data["coverage_pct"] = coverage_pct
+
         return ToolResult(
             success=success,
             output=output,
             error=None if success else f"Tests failed (exit code {result.returncode})",
-            data={"summary": summary, "runner": runner},
+            data=data,
         )
 
 

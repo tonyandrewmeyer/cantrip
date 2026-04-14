@@ -48,7 +48,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",
-    "pytest-cov>=4.0",
+    "coverage[toml]>=7.4",
     "ty",
     "ruff>=0.2.0",
 ]
@@ -108,6 +108,14 @@ unresolved-attribute = "ignore"  # Textual internals
 invalid-assignment = "ignore"  # Textual reactive types
 not-iterable = "ignore"  # Async iterator typing
 invalid-argument-type = "ignore"  # Third-party lib calls
+
+[tool.coverage.run]
+source = ["cantrip"]
+core = "sysmon"
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

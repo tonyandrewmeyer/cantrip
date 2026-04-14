@@ -173,6 +173,56 @@ def _inject_pre_commit(target_path: Path) -> list[str]:
     return actions
 
 
+# Minimum unit-test coverage percentage for generated charms.
+_COVERAGE_THRESHOLD = 80
+
+
+def _inject_coverage_threshold(target_path: Path) -> list[str]:
+    """Add a ``fail_under`` threshold to the charm's coverage configuration.
+
+    Reads the generated ``pyproject.toml``, locates (or creates) the
+    ``[tool.coverage.report]`` section, and sets ``fail_under`` so that
+    ``tox -e unit`` fails when coverage drops below the threshold.
+
+    Returns a list of human-readable descriptions of what was done.
+    """
+    pyproject = target_path / "pyproject.toml"
+    if not pyproject.exists():
+        return ["pyproject.toml not found — skipped coverage threshold injection"]
+
+    content = pyproject.read_text()
+
+    # Already has fail_under — don't duplicate.
+    if "fail_under" in content:
+        return ["Coverage fail_under already configured in pyproject.toml"]
+
+    if "[tool.coverage.report]" in content:
+        content = content.replace(
+            "[tool.coverage.report]",
+            f"[tool.coverage.report]\nfail_under = {_COVERAGE_THRESHOLD}",
+        )
+    elif "[tool.coverage.run]" in content:
+        # Has a run section but no report section — add one after it.
+        # Append a report section at the end.
+        content = content.rstrip("\n") + (
+            f"\n\n[tool.coverage.report]\n"
+            f"fail_under = {_COVERAGE_THRESHOLD}\n"
+            f"show_missing = true\n"
+        )
+    else:
+        # No coverage config at all — add both sections.
+        content = content.rstrip("\n") + (
+            f"\n\n[tool.coverage.run]\n"
+            f"branch = true\n"
+            f"\n[tool.coverage.report]\n"
+            f"fail_under = {_COVERAGE_THRESHOLD}\n"
+            f"show_missing = true\n"
+        )
+
+    pyproject.write_text(content)
+    return [f"Set coverage fail_under = {_COVERAGE_THRESHOLD}% in pyproject.toml"]
+
+
 class CharmcraftInitTool(Tool):
     """Tool to initialise a new charm with charmcraft."""
 
@@ -267,7 +317,12 @@ class CharmcraftInitTool(Tool):
             # Set up pre-commit hooks delegating to tox environments.
             pre_commit_actions = _inject_pre_commit(target_path)
 
-            post_init_summary = "\n".join(tracing_actions + pre_commit_actions)
+            # Ensure unit-test coverage has a fail_under threshold.
+            coverage_actions = _inject_coverage_threshold(target_path)
+
+            post_init_summary = "\n".join(
+                tracing_actions + pre_commit_actions + coverage_actions
+            )
 
             return ToolResult(
                 success=True,
@@ -464,10 +519,12 @@ class CharmValidateTool(Tool):
                 error=f"Path not found: {path}",
             )
 
-        # Step 1 — Unit tests.
+        # Step 1 — Unit tests (with coverage).
         tests_status = "skipped"
         tests_summary: dict[str, Any] = {}
         tests_detail = "skipped"
+        coverage_pct: int | None = None
+        coverage_detail = ""
 
         if not skip_tests:
             test_dir = charm_path / "tests" / "unit"
@@ -476,6 +533,7 @@ class CharmValidateTool(Tool):
                     path=str(charm_path), test_type="unit"
                 )
                 tests_summary = test_result.data.get("summary", {})
+                coverage_pct = test_result.data.get("coverage_pct")
                 if test_result.success:
                     tests_status = "passed"
                     passed = tests_summary.get("passed", 0)
@@ -486,6 +544,17 @@ class CharmValidateTool(Tool):
                     passed = tests_summary.get("passed", 0)
                     failed = tests_summary.get("failed", 0)
                     tests_detail = f"FAILED ({passed} passed, {failed} failed)"
+
+                if coverage_pct is not None:
+                    if coverage_pct >= _COVERAGE_THRESHOLD:
+                        coverage_detail = f"PASSED ({coverage_pct}%)"
+                    else:
+                        coverage_detail = (
+                            f"LOW ({coverage_pct}%, "
+                            f"target {_COVERAGE_THRESHOLD}%)"
+                        )
+                else:
+                    coverage_detail = "not reported"
             else:
                 tests_detail = "SKIPPED (no tests/unit/ directory)"
 
@@ -505,18 +574,22 @@ class CharmValidateTool(Tool):
         # Build report.
         overall = "passed" if tests_status != "failed" and pack_status == "passed" else "failed"
 
-        report = (
-            "## Validation Report\n\n"
-            f"- Unit tests: {tests_detail}\n"
-            f"- Charmcraft pack: {pack_detail}\n\n"
-            f"Overall: {overall.upper()}"
-        )
+        report_lines = [
+            "## Validation Report\n",
+            f"- Unit tests: {tests_detail}",
+        ]
+        if coverage_detail:
+            report_lines.append(f"- Coverage: {coverage_detail}")
+        report_lines.append(f"- Charmcraft pack: {pack_detail}")
+        report_lines.append(f"\nOverall: {overall.upper()}")
+        report = "\n".join(report_lines)
 
         return ToolResult(
             success=overall == "passed",
             output=report,
             data={
                 "tests": {"status": tests_status, "summary": tests_summary},
+                "coverage": {"pct": coverage_pct, "threshold": _COVERAGE_THRESHOLD},
                 "pack": {"status": pack_status, "charm_file": pack_charm_file},
                 "overall": overall,
             },
