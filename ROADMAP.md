@@ -2229,7 +2229,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 - [x] `subagent.py:_build_subagent_prompt()` (133→20 lines) — extracted
   `_charm_context_section`, `_guidance_sections`, `_handoff_sections`, and
   moved static text to module-level constants
-- [ ] `executor.py:_execute_task()` (134 lines) — extract pre-checks, result, error
+- [x] `executor.py:_execute_task()` (134→40 lines) — extracted `_fail_task` and
+  `_handle_result` helpers; three duplicate except blocks collapsed via shared helper
 - [ ] `preflight.py:_ensure_cos()` (107 lines) — split into check/create/deploy/offer
 - [ ] `gemini.py:_convert_messages()` (75 lines) — extract role-specific converters
 

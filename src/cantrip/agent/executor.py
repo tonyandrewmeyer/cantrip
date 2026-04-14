@@ -25,6 +25,7 @@ from cantrip.agent.subagent import (
     ProviderThrottle,
     Subagent,
     SubagentContext,
+    SubagentResult,
 )
 from cantrip.agent.tools.base import Tool
 from cantrip.llm import base as llm
@@ -550,6 +551,77 @@ class BackgroundExecutor:
 
     _SNAPSHOT_CATEGORIES = frozenset({TaskCategory.BUILD, TaskCategory.DEBUG})
 
+    def _fail_task(
+        self,
+        task: AgentTask,
+        error: str,
+        exc: BaseException | None,
+        snapshot: str | None,
+    ) -> None:
+        """Record a task failure: revert, mark failed, notify callback."""
+        if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
+            self._revert_on_failure(snapshot, task)
+        self._queue.set_failed(task.id, error)
+        self._record_status_change(task, "failed", error=error)
+        if exc is not None:
+            self._record_task_error(task, exc)
+        if self._on_task_failed:
+            self._on_task_failed(task)
+
+    def _handle_result(
+        self,
+        task: AgentTask,
+        result: SubagentResult,
+        fp_before: str,
+    ) -> None:
+        """Process a subagent result: handle exit states, noop detection, success."""
+        if result.exit_state == ExitState.BLOCKED:
+            self._queue.set_blocked(task.id, result.summary)
+            self._record_status_change(task, "blocked", error=result.summary)
+            if self._on_task_failed:
+                self._on_task_failed(task)
+            return
+
+        if result.exit_state == ExitState.FAILED:
+            self._queue.set_failed(task.id, result.text)
+            self._record_status_change(task, "failed", error=result.summary)
+            if self._on_task_failed:
+                self._on_task_failed(task)
+            return
+
+        # Noop detection: check both the exit state signal and
+        # the filesystem fingerprint for observable changes.
+        fp_after = self._fingerprint()
+        is_noop = result.exit_state == ExitState.NOOP or self._is_noop(fp_before, fp_after)
+        if is_noop:
+            task.noop_count += 1
+            log.warning(
+                "Task '%s' completed without observable changes (noop %d/%d)",
+                task.title,
+                task.noop_count,
+                _MAX_NOOP_COUNT,
+            )
+            if task.noop_count >= _MAX_NOOP_COUNT:
+                self._queue.set_blocked(
+                    task.id,
+                    f"Attempted {task.noop_count} time(s) without progress — "
+                    f"needs user guidance",
+                )
+                self._record_status_change(task, "blocked", error="noop escalation")
+                if self._on_task_failed:
+                    self._on_task_failed(task)
+                return
+            self._queue.set_pending(task.id)
+            self._record_status_change(task, "pending", error="noop — retrying")
+            return
+
+        self._queue.set_done(task.id, result.text)
+        self._record_status_change(task, "done")
+        if task.category in (TaskCategory.BUILD, TaskCategory.DEBUG):
+            self._check_uncommitted(task)
+        if self._on_task_done:
+            self._on_task_done(task)
+
     async def _execute_task(self, task: AgentTask) -> None:
         """Run a single task via a subagent, recording the outcome.
 
@@ -562,17 +634,11 @@ class BackgroundExecutor:
         """
         error = self._pre_check_environment(task)
         if error is not None:
-            self._queue.set_failed(task.id, error)
-            self._record_status_change(task, "failed", error=error)
-            if self._on_task_failed:
-                self._on_task_failed(task)
-            # For deploy failures due to missing model, queue an infra task.
+            self._fail_task(task, error, exc=None, snapshot=None)
             if task.category == TaskCategory.DEPLOY and not self._state.dev_model:
-                fix_task = AgentTask(
-                    title="Set up development model",
-                    category=TaskCategory.INFRA,
+                self._queue.add_task(
+                    AgentTask(title="Set up development model", category=TaskCategory.INFRA)
                 )
-                self._queue.add_task(fix_task)
             self._persist()
             return
 
@@ -580,7 +646,6 @@ class BackgroundExecutor:
         if task.category in self._SNAPSHOT_CATEGORIES:
             snapshot = self._snapshot_head()
 
-        # Capture pre-execution fingerprint for noop detection.
         fp_before = self._fingerprint()
 
         context = self._build_context(task)
@@ -597,92 +662,20 @@ class BackgroundExecutor:
         try:
             result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)
             elapsed = time.monotonic() - t0
-            log.info(
-                "Task '%s' %s in %.1fs",
-                task.title,
-                result.exit_state.value,
-                elapsed,
-            )
-
-            # Handle subagent-signalled blocked/noop/failed states.
-            if result.exit_state == ExitState.BLOCKED:
-                self._queue.set_blocked(task.id, result.summary)
-                self._record_status_change(task, "blocked", error=result.summary)
-                if self._on_task_failed:
-                    self._on_task_failed(task)
-                return
-
-            if result.exit_state == ExitState.FAILED:
-                self._queue.set_failed(task.id, result.text)
-                self._record_status_change(task, "failed", error=result.summary)
-                if self._on_task_failed:
-                    self._on_task_failed(task)
-                return
-
-            # Noop detection: check both the exit state signal and
-            # the filesystem fingerprint for observable changes.
-            fp_after = self._fingerprint()
-            is_noop = result.exit_state == ExitState.NOOP or self._is_noop(fp_before, fp_after)
-            if is_noop:
-                task.noop_count += 1
-                log.warning(
-                    "Task '%s' completed without observable changes (noop %d/%d)",
-                    task.title,
-                    task.noop_count,
-                    _MAX_NOOP_COUNT,
-                )
-                if task.noop_count >= _MAX_NOOP_COUNT:
-                    # Escalate: block the task so the user can intervene.
-                    self._queue.set_blocked(
-                        task.id,
-                        f"Attempted {task.noop_count} time(s) without progress — "
-                        f"needs user guidance",
-                    )
-                    self._record_status_change(task, "blocked", error="noop escalation")
-                    if self._on_task_failed:
-                        self._on_task_failed(task)
-                    return
-                # Reset to pending for another attempt.
-                self._queue.set_pending(task.id)
-                self._record_status_change(task, "pending", error="noop — retrying")
-                return
-
-            self._queue.set_done(task.id, result.text)
-            self._record_status_change(task, "done")
-            if task.category in (TaskCategory.BUILD, TaskCategory.DEBUG):
-                self._check_uncommitted(task)
-            if self._on_task_done:
-                self._on_task_done(task)
+            log.info("Task '%s' %s in %.1fs", task.title, result.exit_state.value, elapsed)
+            self._handle_result(task, result, fp_before)
         except TimeoutError as exc:
-            elapsed = time.monotonic() - t0
-            log.warning("Task '%s' timed out after %.1fs", task.title, elapsed)
-            if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
-                self._revert_on_failure(snapshot, task)
-            self._queue.set_failed(task.id, "Task timed out")
-            self._record_status_change(task, "failed", error="Task timed out")
-            self._record_task_error(task, exc)
-            if self._on_task_failed:
-                self._on_task_failed(task)
+            log.warning("Task '%s' timed out after %.1fs", task.title, time.monotonic() - t0)
+            self._fail_task(task, "Task timed out", exc, snapshot)
         except (llm.ProviderError, llm.ProviderRateLimitError) as exc:
-            elapsed = time.monotonic() - t0
-            log.warning("Task '%s' failed (provider error) after %.1fs: %s", task.title, elapsed, exc)
-            if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
-                self._revert_on_failure(snapshot, task)
-            self._queue.set_failed(task.id, str(exc))
-            self._record_status_change(task, "failed", error=str(exc))
-            self._record_task_error(task, exc)
-            if self._on_task_failed:
-                self._on_task_failed(task)
+            log.warning(
+                "Task '%s' failed (provider) after %.1fs: %s",
+                task.title, time.monotonic() - t0, exc,
+            )
+            self._fail_task(task, str(exc), exc, snapshot)
         except (OSError, RuntimeError, ValueError, KeyError, AttributeError) as exc:
-            elapsed = time.monotonic() - t0
-            log.warning("Task '%s' failed after %.1fs: %s", task.title, elapsed, exc)
-            if snapshot and task.category in self._SNAPSHOT_CATEGORIES:
-                self._revert_on_failure(snapshot, task)
-            self._queue.set_failed(task.id, str(exc))
-            self._record_status_change(task, "failed", error=str(exc))
-            self._record_task_error(task, exc)
-            if self._on_task_failed:
-                self._on_task_failed(task)
+            log.warning("Task '%s' failed after %.1fs: %s", task.title, time.monotonic() - t0, exc)
+            self._fail_task(task, str(exc), exc, snapshot)
         finally:
             self._create_followups(task)
             self._persist()
