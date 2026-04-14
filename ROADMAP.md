@@ -2240,7 +2240,7 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.10 Medium — Fragile String Matching
 
-- [ ] `watcher.py` — substring `"hook failed"` detection; use word-boundary regex
+- [x] `watcher.py` — replaced substring `"hook failed"` with compiled `\bhook failed\b` regex
 - [ ] `charm.py` — string replacement for code injection is brittle
 - [ ] `autodeploy.py` — loose keyword matching in free-form text
 
@@ -2266,8 +2266,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.15 Medium — Overly Broad Exception Grouping in `executor.py`
 
-- [ ] Catches `ProviderError, RateLimitError, OSError, RuntimeError, ValueError,
-  KeyError, AttributeError` with a single handler.
+- [x] Split into two handlers: LLM provider errors (transient) and general code
+  errors (OSError, ValueError, etc.) for clearer diagnostics.
 
 ### 25.16 Medium — Silent Failures in `core.py`
 

@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import re
 import shlex
 import time
 import urllib.parse
@@ -21,6 +22,11 @@ import jubilant
 from cantrip.agent.tools.observability import _find_cos_unit
 
 log = logging.getLogger(__name__)
+
+# Compiled regex for detecting hook failures in unit workload messages.
+# Juju emits "hook failed: <hookname>" — use word boundaries to avoid
+# matching unrelated text that happens to contain those words.
+_HOOK_FAILED_RE = re.compile(r"\bhook failed\b", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -389,10 +395,12 @@ def diff_snapshots(
             if new_unit.workload_status == "maintenance":
                 continue
 
-            # Hook failure detection.
+            # Hook failure detection.  Juju's standard message is
+            # "hook failed: <hookname>" — use a word-boundary match to
+            # avoid false positives from unrelated text.
             is_hook_failure = (
                 new_unit.workload_status == "error"
-                or "hook failed" in new_unit.workload_message.lower()
+                or _HOOK_FAILED_RE.search(new_unit.workload_message) is not None
             )
 
             if is_hook_failure:
