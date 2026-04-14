@@ -202,7 +202,7 @@ class LogScreen(ModalScreen):
         log_widget = self.query_one("#log-output", RichLog)
         try:
             async for line in stream_lines(
-                self._model,  # type: ignore[arg-type]
+                self._model,
                 level=self.level,
                 lines=50,
                 max_lines=2000,
