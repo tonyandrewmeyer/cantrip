@@ -908,7 +908,7 @@ Use the [Agent Skills](https://agentskills.io/home) pattern for modular, lazy-lo
 
 ## Open Questions
 
-See QUESTIONS.md for items needing clarification.
+See `QUESTIONS.md` (in this directory) for items needing clarification.
 
 ## File Structure
 

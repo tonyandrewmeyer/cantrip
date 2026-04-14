@@ -14,6 +14,7 @@ make lint      # Ruff check + ty type checker
 make unit      # Run unit tests
 make check     # lint + unit tests
 make all       # format + check
+make coverage  # Unit tests with coverage report
 uv sync --dev  # Install dependencies
 ```
 
@@ -55,7 +56,7 @@ uv run pytest tests/unit/test_tools.py::test_function_name -v
 
 ## Architecture
 
-Two concurrent loops: a **conversation loop** (user confirms/steers) and an **autonomous work loop** (agent executes tasks from a work queue via subagents). See PLAN.md for the full architecture diagram.
+Two concurrent loops: a **conversation loop** (user confirms/steers) and an **autonomous work loop** (agent executes tasks from a work queue via subagents). See `design/PLAN.md` for the full architecture diagram.
 
 ```
 src/cantrip/
@@ -133,11 +134,12 @@ The system prompt in `src/cantrip/agent/prompts/system.py` contains embedded cha
 
 - **Commit at appropriate times.** Don't wait until the end of a large task — commit after each logical, self-contained piece of work (e.g. after finishing a feature, fixing a bug, or completing a refactor). Each commit should leave the tree in a working state (`make check` passes).
 - **Keep `CHANGELOG.md` up to date.** When adding a significant feature or making a notable change, add an entry under the `## Unreleased` section. Small fixes and trivial refactors don't need changelog entries — use judgement. The changelog is for users, not developers.
+- **Maintain test coverage.** Periodically run `make coverage` to check the coverage rate. New code should include tests; coverage should not decrease over time. It does not need to be 100%, but it should remain high and trend upwards rather than down.
 
 ## Reference Documents
 
-- `PLAN.md` - Architecture decisions, philosophy, detailed design
-- `AGENT.md` - Agent architecture (two-loop design, subagents, work queue, tools)
+- `design/PLAN.md` - Architecture decisions, philosophy, detailed design
+- `design/AGENT.md` - Agent architecture (two-loop design, subagents, work queue, tools)
 - `ROADMAP.md` - Implementation phases
-- `UI.md` - Shared UI design (TUI + Web), event bus contract, layout, shortcuts
+- `design/UI.md` - Shared UI design (TUI + Web), event bus contract, layout, shortcuts
 - `CHANGELOG.md` - Notable changes (keep updated)

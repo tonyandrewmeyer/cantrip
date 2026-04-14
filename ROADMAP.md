@@ -1666,7 +1666,7 @@ bespoke, the document articulates what we'd be giving up and why that's acceptab
    subagent model, session management, and built-in tools map well to Cantrip's
    inner loop. Revisit if the provider landscape changes.
 
-Full analysis: [`FRAMEWORK_EVALUATION.md`](FRAMEWORK_EVALUATION.md).
+Full analysis: [`design/FRAMEWORK_EVALUATION.md`](design/FRAMEWORK_EVALUATION.md).
 
 ---
 
@@ -1897,7 +1897,7 @@ without the user needing to run manual Juju commands.
 
 **Goal:** Harden the autonomous work loop with patterns proven in
 [orc](https://github.com/PietroPasotti/orc), Pietro Pasotti's multi-agent
-orchestrator. Full analysis in [`.source/orc-analysis.md`](.source/orc-analysis.md).
+orchestrator. Full analysis in [`design/orc-analysis.md`](design/orc-analysis.md).
 
 This phase addresses three categories: **reliability** (preventing infinite
 loops, handling crashes), **testability** (making the executor testable without

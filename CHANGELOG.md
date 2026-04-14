@@ -11,7 +11,12 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Ruff target version (Phase 25.3)** — `pyproject.toml` `target-version` updated from `py311` to `py312` to match `requires-python = ">=3.12"`
 
 ### Added
+- **Multi-edit and run_command tools (Phase 26.5, 26.6)** — new `multi_edit` tool applies multiple edits to a single file atomically with rollback on failure; new `run_command` tool executes shell commands in a sandboxed working directory with timeout and output limits
+- **PR review tools (Phase 26.4)** — new `pr_review_comments` and `pr_review_reply` tools for fetching and replying to GitHub PR review comments via the `gh` CLI
+- **llms.txt awareness (Phase 26.3)** — `web_fetch` tool now auto-discovers and fetches `/llms.txt` when available, providing LLM-friendly site summaries
+- **File pattern matching tool (Phase 26.2)** — new `GlobTool` (`glob`) finds files by glob pattern with optional exclusions; added to RESEARCH, BUILD, TEST, and DEBUG subagent allowlists
 - **Content search tool (Phase 26.1)** — new `GrepTool` (`grep`) wraps ripgrep (with GNU grep fallback) for regex content search across the codebase; supports glob filters, context lines, case sensitivity, and max results; added to RESEARCH, BUILD, TEST, and DEBUG subagent allowlists; 29 unit tests
+- **Unknown-field detection (CC005, CC006)** — charmlint now warns on unrecognised top-level and per-base fields in `charmcraft.yaml`
 - **Agent tooling roadmap (Phase 26)** — six new tool items tracked in ROADMAP.md: grep, glob, llms.txt, PR review, multi-edit, scoped command runner
 - **Code health roadmap (Phase 25)** — 20-item technical debt and code-review findings tracked in ROADMAP.md with severity tiers (critical/high/medium/low)
 

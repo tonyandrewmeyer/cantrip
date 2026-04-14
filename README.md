@@ -75,10 +75,10 @@ uv run mypy src
 
 ## Documentation
 
-- [PLAN.md](PLAN.md) - Project decisions and architecture
+- [PLAN.md](design/PLAN.md) - Project decisions and architecture
 - [ROADMAP.md](ROADMAP.md) - Implementation phases
-- [TUI.md](TUI.md) - TUI design
-- [AGENT.md](AGENT.md) - Agent architecture
+- [UI.md](design/UI.md) - UI design
+- [AGENT.md](design/AGENT.md) - Agent architecture
 
 ## Licence
 
