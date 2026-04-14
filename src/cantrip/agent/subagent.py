@@ -216,6 +216,8 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "juju_get_app_config",
             "juju_debug_log",
             "tempo_query",
+            "pr_review",
+            "pr_review_reply",
             "virtual_file_read",
             "virtual_file_search",
         }
@@ -307,6 +309,8 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "list_directory",
             "grep",
             "glob",
+            "pr_review",
+            "pr_review_reply",
             "git_diff",
             "git_status",
             "git_add",

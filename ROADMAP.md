@@ -2336,14 +2336,14 @@ or prevent entire workflows (PR review iteration).
 - [x] Cache domain → llms.txt availability for the session to avoid repeated probes
 - [x] Unit tests (8 new tests)
 
-### 26.4 Medium — PR Review Comments (`pr_review`)
+### 26.4 Medium — PR Review Comments (`pr_review`) ✓
 
-- [ ] New `PrReviewTool` (`pr_review`) that fetches PR review comments via
+- [x] New `PrReviewTool` (`pr_review`) that fetches PR review comments via
   `gh api repos/{owner}/{repo}/pulls/{number}/comments`
-- [ ] Returns structured data: file, line, body, author, resolved status
-- [ ] Companion `pr_review_reply` tool to post replies to review comments
-- [ ] Add to BUILD and DEBUG subagent allowlists
-- [ ] Unit tests
+- [x] Returns structured data: file, line, body, author, and state
+- [x] Companion `PrReviewReplyTool` (`pr_review_reply`) to post replies to review comments
+- [x] Add to BUILD and DEBUG subagent allowlists
+- [x] Unit tests (19 tests)
 
 ### 26.5 Low — Batch File Editing (`multi_edit`)
 

@@ -91,6 +91,7 @@ from cantrip.agent.tools.observability import (
 )
 from cantrip.agent.tools.operational_readiness import OperationalReadinessTool
 from cantrip.agent.tools.planning import PlanTasksTool
+from cantrip.agent.tools.pr_review import PrReviewReplyTool, PrReviewTool
 from cantrip.agent.tools.publishing import (
     CharmcraftReleaseTool,
     CharmcraftUploadTool,
@@ -197,6 +198,8 @@ def build_tools(
         GhRepoCreateTool(),
         GhPrCreateTool(),
         GhIssueListTool(),
+        PrReviewTool(),
+        PrReviewReplyTool(),
         # Juju operations
         JujuStatusTool(),
         JujuDeployTool(),
@@ -334,6 +337,8 @@ __all__ = [
     "GhRepoCreateTool",
     "GhPrCreateTool",
     "GhIssueListTool",
+    "PrReviewTool",
+    "PrReviewReplyTool",
     # Observability
     "JujuDebugLogTool",
     "TempoQueryTool",
