@@ -350,105 +350,127 @@ class PreflightRunner:
         a separate K8s controller is detected automatically (Phase 22) and
         COS is deployed there with cross-model offers for observability.
         """
-        # Populate controller list for multi-controller reporting.
         if not self.result.controllers:
             self.result.controllers = await asyncio.to_thread(list_controllers)
 
+        juju = await self._check_cos_model(cos_model_name)
+        if juju is None:
+            return
+
+        if not await self._deploy_cos_lite(juju, cos_model_name):
+            return
+
+        await self._create_cos_offers(cos_model_name)
+
+    async def _check_cos_model(self, cos_model_name: str) -> jubilant.Juju | None:
+        """Check the COS model and create it if needed.
+
+        Returns a ``Juju`` instance targeting the COS model when cos-lite
+        still needs to be deployed, or ``None`` when the model is already
+        ready, was skipped, or creation failed.
+        """
         try:
             juju = jubilant.Juju(model=cos_model_name)
             status = await asyncio.to_thread(juju.status)
             if status.apps:
-                # COS model exists and has apps — assume ready.
                 self.result.cos_ready = True
                 self.result.cos_model = cos_model_name
                 self._state.cos_model = cos_model_name
                 self._emit("cos", CheckStatus.PASSED, "COS model ready")
-                return
-            # Model exists but is empty — check its type before deploying.
+                return None
             if not _model_is_k8s(cos_model_name):
                 self._emit(
-                    "cos",
-                    CheckStatus.SKIPPED,
+                    "cos", CheckStatus.SKIPPED,
                     "COS model is on a non-Kubernetes cloud",
                 )
-                return
+                return None
             self._emit("cos", CheckStatus.RUNNING, "Deploying cos-lite")
+            return juju
         except jubilant.CLIError:
-            # Model does not exist — need to create it.
-            if _current_controller_is_k8s():
-                # Current controller is K8s — create model here.
-                self._emit("cos", CheckStatus.RUNNING, f"Creating model {cos_model_name}")
-                try:
-                    juju_default = jubilant.Juju()
-                    await asyncio.to_thread(juju_default.add_model, cos_model_name)
-                    juju = jubilant.Juju(model=cos_model_name)
-                except jubilant.CLIError as exc:
-                    self._emit(
-                        "cos", CheckStatus.FAILED, "Failed to create COS model",
-                        detail=str(exc),
-                    )
-                    self.result.errors.append(f"COS model creation failed: {exc}")
-                    return
-            else:
-                # Current controller is IAAS — look for a K8s controller.
-                k8s_ctrl = await asyncio.to_thread(_find_k8s_controller)
-                if not k8s_ctrl:
-                    self._emit(
-                        "cos",
-                        CheckStatus.SKIPPED,
-                        "No Kubernetes controller found — COS requires K8s",
-                    )
-                    return
-                self._emit(
-                    "cos",
-                    CheckStatus.RUNNING,
-                    f"Creating COS model on K8s controller '{k8s_ctrl}'",
-                )
-                self.result.cos_controller = k8s_ctrl
-                created = await asyncio.to_thread(
-                    _create_model_on_controller, cos_model_name, k8s_ctrl
-                )
-                if not created:
-                    self._emit(
-                        "cos", CheckStatus.FAILED,
-                        f"Failed to create COS model on controller '{k8s_ctrl}'",
-                    )
-                    self.result.errors.append(
-                        f"COS model creation on {k8s_ctrl} failed"
-                    )
-                    return
-                juju = jubilant.Juju(model=cos_model_name)
+            return await self._create_cos_model(cos_model_name)
 
-        # Deploy cos-lite into the model.
+    async def _create_cos_model(self, cos_model_name: str) -> jubilant.Juju | None:
+        """Create the COS model on an appropriate K8s controller.
+
+        Returns a ``Juju`` instance for the new model, or ``None`` if
+        creation failed or no K8s controller is available.
+        """
+        if _current_controller_is_k8s():
+            self._emit("cos", CheckStatus.RUNNING, f"Creating model {cos_model_name}")
+            try:
+                juju_default = jubilant.Juju()
+                await asyncio.to_thread(juju_default.add_model, cos_model_name)
+                return jubilant.Juju(model=cos_model_name)
+            except jubilant.CLIError as exc:
+                self._emit(
+                    "cos", CheckStatus.FAILED, "Failed to create COS model",
+                    detail=str(exc),
+                )
+                self.result.errors.append(f"COS model creation failed: {exc}")
+                return None
+
+        # Current controller is IAAS — look for a K8s controller.
+        k8s_ctrl = await asyncio.to_thread(_find_k8s_controller)
+        if not k8s_ctrl:
+            self._emit(
+                "cos", CheckStatus.SKIPPED,
+                "No Kubernetes controller found — COS requires K8s",
+            )
+            return None
+        self._emit(
+            "cos", CheckStatus.RUNNING,
+            f"Creating COS model on K8s controller '{k8s_ctrl}'",
+        )
+        self.result.cos_controller = k8s_ctrl
+        created = await asyncio.to_thread(
+            _create_model_on_controller, cos_model_name, k8s_ctrl
+        )
+        if not created:
+            self._emit(
+                "cos", CheckStatus.FAILED,
+                f"Failed to create COS model on controller '{k8s_ctrl}'",
+            )
+            self.result.errors.append(f"COS model creation on {k8s_ctrl} failed")
+            return None
+        return jubilant.Juju(model=cos_model_name)
+
+    async def _deploy_cos_lite(
+        self, juju: jubilant.Juju, cos_model_name: str
+    ) -> bool:
+        """Deploy cos-lite into the COS model.
+
+        Returns ``True`` on success, ``False`` on failure.
+        """
         try:
             await asyncio.to_thread(juju.deploy, "cos-lite", trust=True)
             self.result.cos_ready = True
             self.result.cos_model = cos_model_name
             self._state.cos_model = cos_model_name
             self._emit("cos", CheckStatus.PASSED, "COS deployed")
+            return True
         except jubilant.CLIError as exc:
             self._emit("cos", CheckStatus.FAILED, "COS deployment failed", detail=str(exc))
             self.result.errors.append(f"COS deployment failed: {exc}")
-            return
+            return False
 
-        # If COS is on a different controller, set up cross-model offers.
-        if not _current_controller_is_k8s():
+    async def _create_cos_offers(self, cos_model_name: str) -> None:
+        """Set up cross-model offers if COS is on a different controller."""
+        if _current_controller_is_k8s():
+            return
+        self._emit("cos", CheckStatus.RUNNING, "Setting up cross-model COS offers")
+        offers = await asyncio.to_thread(
+            _setup_cos_cross_model_offers, cos_model_name
+        )
+        if offers:
             self._emit(
-                "cos", CheckStatus.RUNNING, "Setting up cross-model COS offers"
+                "cos", CheckStatus.PASSED,
+                f"COS offers created: {', '.join(offers)}",
             )
-            offers = await asyncio.to_thread(
-                _setup_cos_cross_model_offers, cos_model_name
+        else:
+            self._emit(
+                "cos", CheckStatus.PASSED,
+                "COS deployed (offers will be configured during charm integration)",
             )
-            if offers:
-                self._emit(
-                    "cos", CheckStatus.PASSED,
-                    f"COS offers created: {', '.join(offers)}",
-                )
-            else:
-                self._emit(
-                    "cos", CheckStatus.PASSED,
-                    "COS deployed (offers will be configured during charm integration)",
-                )
 
 
 def _model_is_k8s(model_name: str) -> bool:

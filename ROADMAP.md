@@ -2231,7 +2231,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
   moved static text to module-level constants
 - [x] `executor.py:_execute_task()` (134→40 lines) — extracted `_fail_task` and
   `_handle_result` helpers; three duplicate except blocks collapsed via shared helper
-- [ ] `preflight.py:_ensure_cos()` (107 lines) — split into check/create/deploy/offer
+- [x] `preflight.py:_ensure_cos()` (107→20 lines) — split into `_check_cos_model`,
+  `_create_cos_model`, `_deploy_cos_lite`, `_create_cos_offers` helpers
 - [ ] `gemini.py:_convert_messages()` (75 lines) — extract role-specific converters
 
 ### 25.9 Medium — Import Style Violations
