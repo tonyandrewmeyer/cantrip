@@ -2223,7 +2223,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.8 High — Long Functions Needing Decomposition
 
-- [ ] `watcher.py:diff_snapshots()` (~200 lines) — split into per-entity helpers
+- [x] `watcher.py:diff_snapshots()` (~200→15 lines) — split into `_diff_apps`,
+  `_diff_units`, `_diff_offers` helpers
 - [x] `charm/terraform.py:_generate_variables_tf()` (150→45 lines) — data-driven specs
 - [ ] `subagent.py:_build_subagent_prompt()` (133 lines) — extract section builders
 - [ ] `executor.py:_execute_task()` (134 lines) — extract pre-checks, result, error

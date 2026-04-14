@@ -290,28 +290,99 @@ def diff_databag_snapshots(
     return events
 
 
-def diff_snapshots(
-    old: StatusSnapshot | None,
+def _diff_units(
+    app_name: str,
+    old_app: AppSnapshot,
+    new_app: AppSnapshot,
+) -> list[WatcherEvent]:
+    """Compare units within an application and return detected events."""
+    events: list[WatcherEvent] = []
+    old_units = {u.name: u for u in old_app.units}
+    new_units = {u.name: u for u in new_app.units}
+
+    for uname in sorted(set(new_units) - set(old_units)):
+        events.append(
+            WatcherEvent(
+                source="status",
+                category="new_unit",
+                summary=f"New unit: {uname}",
+                detail=f"Unit '{uname}' was added to '{app_name}'.",
+                app=app_name,
+                unit=uname,
+            )
+        )
+
+    for uname in sorted(set(old_units) - set(new_units)):
+        events.append(
+            WatcherEvent(
+                source="status",
+                category="removed_unit",
+                summary=f"Unit removed: {uname}",
+                detail=f"Unit '{uname}' was removed from '{app_name}'.",
+                app=app_name,
+                unit=uname,
+            )
+        )
+
+    for uname in sorted(set(old_units) & set(new_units)):
+        old_unit = old_units[uname]
+        new_unit = new_units[uname]
+
+        if old_unit.workload_status == new_unit.workload_status:
+            continue
+
+        # Ignore transient maintenance status — normal during hook execution.
+        if new_unit.workload_status == "maintenance":
+            continue
+
+        # Hook failure detection.  Juju's standard message is
+        # "hook failed: <hookname>" — use a word-boundary match to
+        # avoid false positives from unrelated text.
+        is_hook_failure = (
+            new_unit.workload_status == "error"
+            or _HOOK_FAILED_RE.search(new_unit.workload_message) is not None
+        )
+
+        if is_hook_failure:
+            events.append(
+                WatcherEvent(
+                    source="status",
+                    category="hook_failure",
+                    summary=f"Hook failure on {uname}",
+                    detail=f"Unit '{uname}' entered error state: {new_unit.workload_message}",
+                    app=app_name,
+                    unit=uname,
+                )
+            )
+        else:
+            events.append(
+                WatcherEvent(
+                    source="status",
+                    category="status_change",
+                    summary=f"{uname}: {old_unit.workload_status} -> {new_unit.workload_status}",
+                    detail=(
+                        f"Unit '{uname}' changed from "
+                        f"'{old_unit.workload_status}' to "
+                        f"'{new_unit.workload_status}'"
+                        f"{': ' + new_unit.workload_message if new_unit.workload_message else ''}"
+                    ),
+                    app=app_name,
+                    unit=uname,
+                )
+            )
+
+    return events
+
+
+def _diff_apps(
+    old: StatusSnapshot,
     new: StatusSnapshot,
 ) -> list[WatcherEvent]:
-    """Compare two status snapshots and return detected events.
-
-    Detects:
-    - New applications added to the model
-    - Applications removed from the model
-    - Unit workload status changes (excluding transient ``maintenance``)
-    - Hook failures (unit enters ``error`` status or message contains "hook failed")
-    - New relations between applications
-    - Units added or removed from an application
-    """
-    if old is None:
-        return []
-
+    """Compare applications and their units between two snapshots."""
     events: list[WatcherEvent] = []
     old_apps = {a.name: a for a in old.apps}
     new_apps = {a.name: a for a in new.apps}
 
-    # New apps.
     for name in sorted(set(new_apps) - set(old_apps)):
         events.append(
             WatcherEvent(
@@ -323,7 +394,6 @@ def diff_snapshots(
             )
         )
 
-    # Removed apps.
     for name in sorted(set(old_apps) - set(new_apps)):
         events.append(
             WatcherEvent(
@@ -335,14 +405,11 @@ def diff_snapshots(
             )
         )
 
-    # Compare apps that exist in both snapshots.
     for name in sorted(set(old_apps) & set(new_apps)):
         old_app = old_apps[name]
         new_app = new_apps[name]
 
-        # New relations.
-        new_rels = new_app.relations - old_app.relations
-        for rel in sorted(new_rels):
+        for rel in sorted(new_app.relations - old_app.relations):
             events.append(
                 WatcherEvent(
                     source="status",
@@ -353,90 +420,17 @@ def diff_snapshots(
                 )
             )
 
-        # Diff units.
-        old_units = {u.name: u for u in old_app.units}
-        new_units = {u.name: u for u in new_app.units}
+        events.extend(_diff_units(name, old_app, new_app))
 
-        # New units.
-        for uname in sorted(set(new_units) - set(old_units)):
-            events.append(
-                WatcherEvent(
-                    source="status",
-                    category="new_unit",
-                    summary=f"New unit: {uname}",
-                    detail=f"Unit '{uname}' was added to '{name}'.",
-                    app=name,
-                    unit=uname,
-                )
-            )
+    return events
 
-        # Removed units.
-        for uname in sorted(set(old_units) - set(new_units)):
-            events.append(
-                WatcherEvent(
-                    source="status",
-                    category="removed_unit",
-                    summary=f"Unit removed: {uname}",
-                    detail=f"Unit '{uname}' was removed from '{name}'.",
-                    app=name,
-                    unit=uname,
-                )
-            )
 
-        # Status changes for existing units.
-        for uname in sorted(set(old_units) & set(new_units)):
-            old_unit = old_units[uname]
-            new_unit = new_units[uname]
-
-            if old_unit.workload_status == new_unit.workload_status:
-                continue
-
-            # Ignore transient maintenance status — normal during hook execution.
-            if new_unit.workload_status == "maintenance":
-                continue
-
-            # Hook failure detection.  Juju's standard message is
-            # "hook failed: <hookname>" — use a word-boundary match to
-            # avoid false positives from unrelated text.
-            is_hook_failure = (
-                new_unit.workload_status == "error"
-                or _HOOK_FAILED_RE.search(new_unit.workload_message) is not None
-            )
-
-            if is_hook_failure:
-                events.append(
-                    WatcherEvent(
-                        source="status",
-                        category="hook_failure",
-                        summary=f"Hook failure on {uname}",
-                        detail=(
-                            f"Unit '{uname}' entered error state: {new_unit.workload_message}"
-                        ),
-                        app=name,
-                        unit=uname,
-                    )
-                )
-            else:
-                events.append(
-                    WatcherEvent(
-                        source="status",
-                        category="status_change",
-                        summary=(
-                            f"{uname}: {old_unit.workload_status} -> {new_unit.workload_status}"
-                        ),
-                        detail=(
-                            f"Unit '{uname}' changed from "
-                            f"'{old_unit.workload_status}' to "
-                            f"'{new_unit.workload_status}'"
-                            f"{': ' + new_unit.workload_message if new_unit.workload_message else ''}"
-                        ),
-                        app=name,
-                        unit=uname,
-                    )
-                )
-
-    # -- Offer diffing -------------------------------------------------------
-
+def _diff_offers(
+    old: StatusSnapshot,
+    new: StatusSnapshot,
+) -> list[WatcherEvent]:
+    """Compare cross-model offers between two snapshots."""
+    events: list[WatcherEvent] = []
     old_offers = {o.name: o for o in old.offers}
     new_offers = {o.name: o for o in new.offers}
 
@@ -489,6 +483,27 @@ def diff_snapshots(
                 )
             )
 
+    return events
+
+
+def diff_snapshots(
+    old: StatusSnapshot | None,
+    new: StatusSnapshot,
+) -> list[WatcherEvent]:
+    """Compare two status snapshots and return detected events.
+
+    Detects:
+    - New/removed applications and their units
+    - Unit workload status changes (excluding transient ``maintenance``)
+    - Hook failures (unit enters ``error`` status or message matches "hook failed")
+    - New relations between applications
+    - Cross-model offer changes
+    """
+    if old is None:
+        return []
+
+    events = _diff_apps(old, new)
+    events.extend(_diff_offers(old, new))
     return events
 
 
