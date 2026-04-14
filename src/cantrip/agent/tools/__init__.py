@@ -83,6 +83,7 @@ from cantrip.agent.tools.juju import (
     JujuWaitTool,
 )
 from cantrip.agent.tools.loadtest import GenerateLoadTestTool
+from cantrip.agent.tools.multi_edit import MultiEditTool
 from cantrip.agent.tools.observability import (
     JujuDebugLogTool,
     JujuStreamLogsTool,
@@ -111,6 +112,7 @@ from cantrip.agent.tools.rockcraft import (
     SkopeoRegistryPushTool,
 )
 from cantrip.agent.tools.rodney import RodneyTool
+from cantrip.agent.tools.run_command import RunCommandTool
 from cantrip.agent.tools.scaling import ScalingTestTool
 from cantrip.agent.tools.showboat import ShowboatTool
 from cantrip.agent.tools.skills import LoadSkillTool
@@ -145,6 +147,7 @@ def build_tools(
         EditFileTool(base_path=base_path),
         GrepTool(base_path=base_path),
         GlobTool(base_path=base_path),
+        MultiEditTool(base_path=base_path),
         # Audit & lint
         CharmAuditTool(),
         CharmlintTool(),
@@ -243,6 +246,8 @@ def build_tools(
         ConfigVariationTool(),
         AcceptanceReportTool(),
         ConfigUnderLoadTool(),
+        # Command runner
+        RunCommandTool(),
     ]
 
     # Tools with dependencies.
@@ -283,6 +288,7 @@ __all__ = [
     "EditFileTool",
     "GrepTool",
     "GlobTool",
+    "MultiEditTool",
     # Charm
     "CharmcraftInitTool",
     "CharmcraftPackTool",
@@ -382,6 +388,8 @@ __all__ = [
     # Web
     "WebFetchTool",
     "WebSearchTool",
+    # Command runner
+    "RunCommandTool",
     # Inference snaps
     "ListInferenceSnapsTool",
 ]

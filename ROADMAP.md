@@ -2345,24 +2345,25 @@ or prevent entire workflows (PR review iteration).
 - [x] Add to BUILD and DEBUG subagent allowlists
 - [x] Unit tests (19 tests)
 
-### 26.5 Low — Batch File Editing (`multi_edit`)
+### 26.5 Low — Batch File Editing (`multi_edit`) ✓
 
-- [ ] New `MultiEditTool` (`multi_edit`) that applies multiple search-replace edits
+- [x] New `MultiEditTool` (`multi_edit`) that applies multiple search-replace edits
   to one or more files in a single call
-- [ ] Parameters: list of `{file, old, new}` triples
-- [ ] Reduces round-trips for mechanical refactors
-- [ ] Unit tests
+- [x] Parameters: list of `{file, old, new}` triples
+- [x] Reduces round-trips for mechanical refactors
+- [x] Unit tests (13 tests)
 
-### 26.6 Low — Scoped Command Runner (`run_command`)
+### 26.6 Low — Scoped Command Runner (`run_command`) ✓
 
-- [ ] New `RunCommandTool` (`run_command`) that runs pre-approved commands only
+- [x] New `RunCommandTool` (`run_command`) that runs pre-approved commands only
   (e.g. `make`, `uv`, `ruff`, `pytest`, `pip`) with timeout and output capture
-- [ ] Allowlist is configurable per-session
-- [ ] Not a general shell — rejects anything not on the allowlist
-- [ ] Unit tests
+- [x] Allowlist is configurable per-session
+- [x] Not a general shell — rejects anything not on the allowlist
+- [x] Unit tests (18 tests)
 
-**Exit criteria:** grep and glob tools working and wired into subagent
-allowlists. `make check` passes throughout.
+**Exit criteria:** All six tools (grep, glob, llms.txt, pr_review, multi_edit,
+run_command) working and wired into subagent allowlists. `make check` passes
+throughout. ✓
 
 ---
 
