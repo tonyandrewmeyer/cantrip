@@ -3131,6 +3131,13 @@ adopt. Items marked with a source commit hash.
 - [ ] Adopt the recommended comprehensive `juju` fixture from the migration
   guide: `keep_models` CLI option, `wait_timeout=10*60`, debug log dump on
   test failure. (1198db8)
+- [ ] Use `pytest-jubilant` in generated charms — it provides the `juju`
+  fixture (with automatic model creation/teardown, `wait_timeout`, and debug
+  log collection on failure) and the `charm` fixture (build + `.resolve()`)
+  out of the box. Update the `jubilant-tests` skill, system prompt, and
+  `conftest.py` generation to use `pytest-jubilant` instead of hand-rolling
+  fixtures. Add `pytest-jubilant` to the generated `pyproject.toml` test
+  dependencies.
 
 **Charm code generation:**
 
