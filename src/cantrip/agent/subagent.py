@@ -441,110 +441,106 @@ def _task_instruction(task: AgentTask) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_subagent_prompt(context: SubagentContext) -> str:
-    """Build a focused system prompt for the subagent."""
-    task = context.task
+_ROLE_PREAMBLE = (
+    "You are an autonomous subagent of Cantrip, an AI agent that builds "
+    "Juju charms. You have been assigned a single focused task. Complete "
+    "it using the tools available to you, then respond with a clear "
+    "summary of what you did and the outcome.\n\n"
+    "### Efficiency rules\n\n"
+    "- **Batch tool calls**: call multiple tools in a single round whenever "
+    "possible. For example, fetch several URLs at once, or read multiple "
+    "files in parallel, rather than one per round.\n"
+    "- **Finish early**: once you have enough information to produce a good "
+    "result, summarise and finish. Do not exhaustively explore every lead.\n"
+    "- **Be direct**: execute the task, report the outcome. Skip preamble "
+    "and unnecessary commentary.\n\n"
+    "### Exit signalling\n\n"
+    "Every response MUST end with an exit state tag on its own line:\n\n"
+    "- `[EXIT: completed]` — work done, state changed\n"
+    "- `[EXIT: blocked]` — cannot proceed; needs user input or a missing "
+    "dependency\n"
+    "- `[EXIT: failed]` — error encountered; explain what went wrong\n"
+    "- `[EXIT: noop]` — nothing to do; the task is already satisfied\n\n"
+    "Never produce a bare text response while work is pending. If you "
+    "cannot make progress, signal `blocked` or `failed` — do not "
+    "silently give up."
+)
+
+_SPRINT_GUIDANCE = (
+    "## Guidance\n\n"
+    "**Sprint mode — speed is everything.**\n\n"
+    "Do NOT write tests. Do NOT run charm_validate. Do NOT add "
+    "COS/observability. Do NOT rewrite the scaffolded charm code "
+    "unless it will not pack.\n\n"
+    "Steps:\n"
+    "1. Run charmcraft_init — this scaffolds a working charm.\n"
+    "2. Fix charmcraft.yaml: change base to ubuntu@24.04, "
+    "change plugin from uv to charm, remove build-snaps.\n"
+    "3. Overwrite requirements.txt with ONLY `ops>=3,<4` — remove "
+    "ops-tracing or any other deps (they cause slow source builds).\n"
+    "4. Run charmcraft_pack with destructive_mode=true for speed.\n"
+    "5. git_init, git_add all files, git_commit.\n"
+    "6. Done. Do not iterate or improve — just ship it.\n\n"
+    "**Efficiency**: aim for 3-4 tool rounds total."
+)
+
+_COMPLETION_INSTRUCTION = (
+    "## Completion\n\n"
+    "When you have finished, respond with a clear summary of what you "
+    "accomplished and any important details for subsequent tasks."
+)
+
+
+def _charm_context_section(context: SubagentContext) -> str | None:
+    """Build the charm context section, or ``None`` if there is nothing to show."""
+    lines: list[str] = []
+    for label, value in (
+        ("Charm name", context.charm_name),
+        ("Charm path", context.charm_path),
+        ("Charm type", context.charm_type),
+        ("Framework", context.framework),
+        ("Dev model", context.dev_model),
+        ("COS model", context.cos_model),
+    ):
+        if value:
+            lines.append(f"- {label}: {value}")
+    return ("## Charm context\n\n" + "\n".join(lines)) if lines else None
+
+
+def _guidance_sections(task: AgentTask) -> list[str]:
+    """Build category and task-specific guidance sections."""
     sections: list[str] = []
 
-    # 1. Role preamble.
-    sections.append(
-        "You are an autonomous subagent of Cantrip, an AI agent that builds "
-        "Juju charms. You have been assigned a single focused task. Complete "
-        "it using the tools available to you, then respond with a clear "
-        "summary of what you did and the outcome.\n\n"
-        "### Efficiency rules\n\n"
-        "- **Batch tool calls**: call multiple tools in a single round whenever "
-        "possible. For example, fetch several URLs at once, or read multiple "
-        "files in parallel, rather than one per round.\n"
-        "- **Finish early**: once you have enough information to produce a good "
-        "result, summarise and finish. Do not exhaustively explore every lead.\n"
-        "- **Be direct**: execute the task, report the outcome. Skip preamble "
-        "and unnecessary commentary.\n\n"
-        "### Exit signalling\n\n"
-        "Every response MUST end with an exit state tag on its own line:\n\n"
-        "- `[EXIT: completed]` — work done, state changed\n"
-        "- `[EXIT: blocked]` — cannot proceed; needs user input or a missing "
-        "dependency\n"
-        "- `[EXIT: failed]` — error encountered; explain what went wrong\n"
-        "- `[EXIT: noop]` — nothing to do; the task is already satisfied\n\n"
-        "Never produce a bare text response while work is pending. If you "
-        "cannot make progress, signal `blocked` or `failed` — do not "
-        "silently give up."
-    )
-
-    # 2. Task block.
-    sections.append(
-        f"## Task\n\n"
-        f"- **Title:** {task.title}\n"
-        f"- **Category:** {task.category.value}\n"
-        f"- **Description:** {task.description or 'No additional details.'}"
-    )
-
-    # 3. Charm context (omit None values).
-    context_lines: list[str] = []
-    if context.charm_name:
-        context_lines.append(f"- Charm name: {context.charm_name}")
-    if context.charm_path:
-        context_lines.append(f"- Charm path: {context.charm_path}")
-    if context.charm_type:
-        context_lines.append(f"- Charm type: {context.charm_type}")
-    if context.framework:
-        context_lines.append(f"- Framework: {context.framework}")
-    if context.dev_model:
-        context_lines.append(f"- Dev model: {context.dev_model}")
-    if context.cos_model:
-        context_lines.append(f"- COS model: {context.cos_model}")
-    if context_lines:
-        sections.append("## Charm context\n\n" + "\n".join(context_lines))
-
-    # 4. Category-specific guidance.
-    # Sprint builds get stripped-down guidance — speed over completeness.
     if task.title.startswith(SPRINT_BUILD_PREFIX) and task.category == TaskCategory.BUILD:
-        sections.append(
-            "## Guidance\n\n"
-            "**Sprint mode — speed is everything.**\n\n"
-            "Do NOT write tests. Do NOT run charm_validate. Do NOT add "
-            "COS/observability. Do NOT rewrite the scaffolded charm code "
-            "unless it will not pack.\n\n"
-            "Steps:\n"
-            "1. Run charmcraft_init — this scaffolds a working charm.\n"
-            "2. Fix charmcraft.yaml: change base to ubuntu@24.04, "
-            "change plugin from uv to charm, remove build-snaps.\n"
-            "3. Overwrite requirements.txt with ONLY `ops>=3,<4` — remove "
-            "ops-tracing or any other deps (they cause slow source builds).\n"
-            "4. Run charmcraft_pack with destructive_mode=true for speed.\n"
-            "5. git_init, git_add all files, git_commit.\n"
-            "6. Done. Do not iterate or improve — just ship it.\n\n"
-            "**Efficiency**: aim for 3-4 tool rounds total."
-        )
+        sections.append(_SPRINT_GUIDANCE)
     else:
         guidance = _CATEGORY_GUIDANCE.get(task.category)
         if guidance:
             sections.append(f"## Guidance\n\n{guidance}")
 
-    # 4b. Task-specific guidance overlay for demo generation.
     if "demo" in task.title.lower() and task.category == TaskCategory.BUILD:
         sections.append(f"## Demo guidance\n\n{_DEMO_GUIDANCE}")
-
-    # 4c. Task-specific guidance overlay for acceptance testing.
     if task.title.startswith(_ACCEPTANCE_PREFIX) and task.category == TaskCategory.TEST:
         sections.append(f"## Acceptance testing guidance\n\n{_ACCEPTANCE_GUIDANCE}")
-
-    # 4d. Task-specific guidance overlay for day-2 operations research.
     if task.title.startswith(DAY2_PREFIX) and task.category == TaskCategory.RESEARCH:
         sections.append(f"## Day-2 operations guidance\n\n{_DAY2_GUIDANCE}")
 
-    # 5. Prior task results (dependency handoff).
+    return sections
+
+
+def _handoff_sections(context: SubagentContext) -> list[str]:
+    """Build prior results, decisions, and design sections."""
+    sections: list[str] = []
+
     if context.prior_results:
-        result_lines = []
-        for dep_id, result in context.prior_results.items():
-            result_lines.append(f"### {dep_id}\n\n{result}")
+        result_lines = [
+            f"### {dep_id}\n\n{result}" for dep_id, result in context.prior_results.items()
+        ]
         sections.append(
             "## Prior task results\n\n"
             "Results from dependency tasks for context:\n\n" + "\n\n".join(result_lines)
         )
 
-    # 6. Decisions already made.
     if context.decisions:
         decision_lines = []
         for d in context.decisions:
@@ -558,7 +554,6 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
             + "\n".join(decision_lines)
         )
 
-    # 7. Approved design (for build/deploy/test subagents).
     if context.design_content:
         sections.append(
             "## Approved design\n\n"
@@ -566,12 +561,28 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
             + context.design_content
         )
 
-    # 8. Completion instruction.
+    return sections
+
+
+def _build_subagent_prompt(context: SubagentContext) -> str:
+    """Build a focused system prompt for the subagent."""
+    task = context.task
+    sections: list[str] = [_ROLE_PREAMBLE]
+
     sections.append(
-        "## Completion\n\n"
-        "When you have finished, respond with a clear summary of what you "
-        "accomplished and any important details for subsequent tasks."
+        f"## Task\n\n"
+        f"- **Title:** {task.title}\n"
+        f"- **Category:** {task.category.value}\n"
+        f"- **Description:** {task.description or 'No additional details.'}"
     )
+
+    charm_ctx = _charm_context_section(context)
+    if charm_ctx:
+        sections.append(charm_ctx)
+
+    sections.extend(_guidance_sections(task))
+    sections.extend(_handoff_sections(context))
+    sections.append(_COMPLETION_INSTRUCTION)
 
     return "\n\n".join(sections)
 

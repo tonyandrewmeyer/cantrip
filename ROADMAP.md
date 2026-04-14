@@ -2226,7 +2226,9 @@ project style guide ("Never catch bare `Exception`"). Locations:
 - [x] `watcher.py:diff_snapshots()` (~200→15 lines) — split into `_diff_apps`,
   `_diff_units`, `_diff_offers` helpers
 - [x] `charm/terraform.py:_generate_variables_tf()` (150→45 lines) — data-driven specs
-- [ ] `subagent.py:_build_subagent_prompt()` (133 lines) — extract section builders
+- [x] `subagent.py:_build_subagent_prompt()` (133→20 lines) — extracted
+  `_charm_context_section`, `_guidance_sections`, `_handoff_sections`, and
+  moved static text to module-level constants
 - [ ] `executor.py:_execute_task()` (134 lines) — extract pre-checks, result, error
 - [ ] `preflight.py:_ensure_cos()` (107 lines) — split into check/create/deploy/offer
 - [ ] `gemini.py:_convert_messages()` (75 lines) — extract role-specific converters
