@@ -50,10 +50,10 @@ def _mock_agent() -> MagicMock:
     agent.provider.context_window_tokens = 1_048_576
     # Context manager mocks.
     agent.context_manager = MagicMock()
-    agent.context_manager._compaction_threshold = 0.80
+    agent.context_manager.compaction_threshold = 0.80
     agent.context_manager.estimate_tokens = MagicMock(return_value=0)
     # Store mocks (None by default — no session store).
-    agent._store = None
+    agent.store = None
     # Session resume — default to no prior session.
     agent.load_state = MagicMock(return_value=False)
     agent.save_state = MagicMock()

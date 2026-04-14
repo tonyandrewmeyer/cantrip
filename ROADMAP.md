@@ -2251,8 +2251,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.12 Medium — Encapsulation Violations in `tui/app.py`
 
-- [ ] Accesses `self._agent.context_manager._compaction_threshold` (double private)
-- [ ] Accesses `self._agent._store`
+- [x] Added `compaction_threshold` property to `ContextManager` and `store`
+  property to `CantripAgent`; TUI no longer reaches into private members.
 
 ### 25.13 Medium — `claude_md.md.j2` References `tox` Instead of `uv`/`make`
 
@@ -2271,8 +2271,9 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.16 Medium — Silent Failures in `core.py`
 
-- [ ] `handle_design_confirmation()`, `handle_day2_confirmation()`,
-  `handle_improvement_confirmation()` silently return empty lists.
+- [x] `handle_design_confirmation()`, `handle_day2_confirmation()`,
+  `handle_improvement_confirmation()` now log at ERROR level (not WARNING)
+  when task or result not found.
 
 ### 25.17 Low — Dead Code / Unused Declarations
 

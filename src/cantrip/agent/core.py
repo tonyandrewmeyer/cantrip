@@ -137,6 +137,12 @@ class CantripAgent:
             _ = self._tools
         return self._tool_map_cache  # type: ignore[return-value]
 
+    @property
+    def store(self) -> SessionStore | None:
+        """Return the session store, initialising lazily if needed."""
+        self._ensure_store()
+        return self._store
+
     def _ensure_store(self) -> None:
         """Initialise the session store on first need."""
         if self._store_initialised:
@@ -509,7 +515,7 @@ class CantripAgent:
         """
         confirm_task = self._work_queue.get_task(confirm_task_id)
         if confirm_task is None:
-            log.warning("Design confirm task %s not found", confirm_task_id)
+            log.error("Design confirm task %s not found — cannot generate build tasks", confirm_task_id)
             return []
 
         # Walk dependencies to find the synthesis result.
@@ -521,7 +527,7 @@ class CantripAgent:
                 break
 
         if not design_text:
-            log.warning("No synthesis result found for design confirmation")
+            log.error("No synthesis result found for design confirmation (task %s)", confirm_task_id)
             return []
 
         # Parse the design and store on state.
@@ -598,7 +604,7 @@ class CantripAgent:
         """
         confirm_task = self._work_queue.get_task(confirm_task_id)
         if confirm_task is None:
-            log.warning("Day-2 confirm task %s not found", confirm_task_id)
+            log.error("Day-2 confirm task %s not found — cannot generate implementation tasks", confirm_task_id)
             return []
 
         # Walk dependencies to find the synthesis result.
@@ -610,7 +616,7 @@ class CantripAgent:
                 break
 
         if not day2_text:
-            log.warning("No day-2 synthesis result found for confirmation")
+            log.error("No day-2 synthesis result found for confirmation (task %s)", confirm_task_id)
             return []
 
         context = PlanningContext(
@@ -660,7 +666,7 @@ class CantripAgent:
         """
         confirm_task = self._work_queue.get_task(confirm_task_id)
         if confirm_task is None:
-            log.warning("Improvement confirm task %s not found", confirm_task_id)
+            log.error("Improvement confirm task %s not found — cannot generate fix tasks", confirm_task_id)
             return []
 
         # Walk dependencies to find the audit result.
@@ -672,7 +678,7 @@ class CantripAgent:
                 break
 
         if not audit_text:
-            log.warning("No audit result found for improvement confirmation")
+            log.error("No audit result found for improvement confirmation (task %s)", confirm_task_id)
             return []
 
         self.state.audit_report = audit_text

@@ -220,7 +220,7 @@ class CantripApp(App):
         bar.provider_name = provider.name
         bar.model_name = provider.model_name
         bar.context_window = provider.context_window_tokens
-        bar.compact_threshold = self._agent.context_manager._compaction_threshold
+        bar.compact_threshold = self._agent.context_manager.compaction_threshold
 
         if self._light_model_name:
             bar.light_model_name = self._light_model_name
@@ -235,20 +235,20 @@ class CantripApp(App):
         bar.context_used = self._agent.context_manager.estimate_tokens(self._agent.state.messages)
 
         # Token usage from the store.
-        self._agent._ensure_store()
-        if self._agent._store:
+        store = self._agent.store
+        if store:
             # Current session usage (since this TUI launched).
-            session = self._agent._store.get_usage_since(self._session_start)
+            session = store.get_usage_since(self._session_start)
             bar.session_prompt_tokens = session.get("prompt_tokens", 0)
             bar.session_completion_tokens = session.get("completion_tokens", 0)
             bar.session_request_count = session.get("request_count", 0)
 
             # All-time usage for this charm.
-            alltime = self._agent._store.get_total_usage()
+            alltime = store.get_total_usage()
             bar.alltime_prompt_tokens = alltime.get("prompt_tokens", 0)
             bar.alltime_completion_tokens = alltime.get("completion_tokens", 0)
 
-            by_model = self._agent._store.get_usage_by_model()
+            by_model = store.get_usage_by_model()
             total_requests = 0
             for r in by_model:
                 count = r.get("request_count", 0)

@@ -143,6 +143,11 @@ class ContextManager:
         self._virtualisation_threshold = virtualisation_threshold
         self._virtualisation_preview = virtualisation_preview
 
+    @property
+    def compaction_threshold(self) -> float:
+        """Fraction of context window at which compaction triggers."""
+        return self._compaction_threshold
+
     def estimate_tokens(self, messages: list[Message]) -> int:
         """Estimate the total token count across all messages."""
         return estimate_message_tokens(messages)
