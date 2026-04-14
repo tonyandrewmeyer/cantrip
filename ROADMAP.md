@@ -2308,6 +2308,64 @@ items tracked and addressed incrementally. `make check` passes throughout.
 
 ---
 
+## Phase 26: Agent Tooling Gaps
+
+**Goal:** Fill gaps in the agent's toolbox that force subagents into slow,
+token-heavy workarounds (walking directory trees, reading files one-by-one)
+or prevent entire workflows (PR review iteration).
+
+### 26.1 High — Content Search (`grep`) ✓
+
+- [x] New `GrepTool` (`grep`) wrapping `rg` (ripgrep) with fallback to `grep -r`
+- [x] Parameters: pattern (regex), path (search root), glob filter, context lines,
+  case sensitivity, max results
+- [x] Add to BUILD, DEBUG, RESEARCH, and TEST subagent allowlists
+- [x] Unit tests (29 tests)
+
+### 26.2 High — File Pattern Matching (`glob`)
+
+- [ ] New `GlobTool` (`glob`) for finding files by pattern (`**/*.py`, `src/**/*_test.go`)
+- [ ] Parameters: pattern, path (search root), max results
+- [ ] Add to all subagent allowlists that have `list_directory`
+- [ ] Unit tests
+
+### 26.3 High — `llms.txt` Awareness in Web Tools
+
+- [ ] `web_fetch` checks for `/.well-known/llms.txt` (and `/llms.txt` fallback)
+  on first fetch to a domain, and prefers LLM-friendly content when available
+- [ ] Cache domain → llms.txt availability for the session to avoid repeated probes
+- [ ] Unit tests
+
+### 26.4 Medium — PR Review Comments (`pr_review`)
+
+- [ ] New `PrReviewTool` (`pr_review`) that fetches PR review comments via
+  `gh api repos/{owner}/{repo}/pulls/{number}/comments`
+- [ ] Returns structured data: file, line, body, author, resolved status
+- [ ] Companion `pr_review_reply` tool to post replies to review comments
+- [ ] Add to BUILD and DEBUG subagent allowlists
+- [ ] Unit tests
+
+### 26.5 Low — Batch File Editing (`multi_edit`)
+
+- [ ] New `MultiEditTool` (`multi_edit`) that applies multiple search-replace edits
+  to one or more files in a single call
+- [ ] Parameters: list of `{file, old, new}` triples
+- [ ] Reduces round-trips for mechanical refactors
+- [ ] Unit tests
+
+### 26.6 Low — Scoped Command Runner (`run_command`)
+
+- [ ] New `RunCommandTool` (`run_command`) that runs pre-approved commands only
+  (e.g. `make`, `uv`, `ruff`, `pytest`, `pip`) with timeout and output capture
+- [ ] Allowlist is configurable per-session
+- [ ] Not a general shell — rejects anything not on the allowlist
+- [ ] Unit tests
+
+**Exit criteria:** grep and glob tools working and wired into subagent
+allowlists. `make check` passes throughout.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |

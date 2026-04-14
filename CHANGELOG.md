@@ -11,6 +11,8 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Ruff target version (Phase 25.3)** — `pyproject.toml` `target-version` updated from `py311` to `py312` to match `requires-python = ">=3.12"`
 
 ### Added
+- **Content search tool (Phase 26.1)** — new `GrepTool` (`grep`) wraps ripgrep (with GNU grep fallback) for regex content search across the codebase; supports glob filters, context lines, case sensitivity, and max results; added to RESEARCH, BUILD, TEST, and DEBUG subagent allowlists; 29 unit tests
+- **Agent tooling roadmap (Phase 26)** — six new tool items tracked in ROADMAP.md: grep, glob, llms.txt, PR review, multi-edit, scoped command runner
 - **Code health roadmap (Phase 25)** — 20-item technical debt and code-review findings tracked in ROADMAP.md with severity tiers (critical/high/medium/low)
 
 ### Changed
