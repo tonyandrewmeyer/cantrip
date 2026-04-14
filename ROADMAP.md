@@ -2278,7 +2278,7 @@ project style guide ("Never catch bare `Exception`"). Locations:
 ### 25.17 Low — Dead Code / Unused Declarations
 
 - [x] `tui/widgets/chat.py` — removed unused reactive `messages` attribute and import
-- [ ] `core.py` — `db_path` and `old_dir` resolve to the same path (intentional — migration logic)
+- [~] `core.py` — `db_path` and `old_dir` resolve to the same path (intentional — migration logic; not a bug)
 
 ### 25.18 Low — Magic Strings Without Constants
 
