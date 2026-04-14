@@ -64,4 +64,5 @@ async def complete_with_retry(
             await asyncio.sleep(delay)
 
     # Unreachable — the final attempt re-raises above.
-    raise last_error  # type: ignore[misc]
+    assert last_error is not None
+    raise last_error

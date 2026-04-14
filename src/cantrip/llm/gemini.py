@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
 from cantrip.llm.base import (
@@ -237,17 +238,17 @@ class GeminiProvider(LLMProvider):
                 contents=contents,
                 config=config,
             )
-        except genai.errors.ClientError as e:
+        except genai_errors.ClientError as e:
             if e.code == 429:
                 raise ProviderRateLimitError(
                     "Gemini API rate limit exceeded. Please wait a moment and try again."
                 ) from e
             raise ProviderError(f"Gemini API error: {e}") from e
-        except genai.errors.ServerError as e:
+        except genai_errors.ServerError as e:
             raise ProviderOverloadedError(
                 f"Gemini API temporarily unavailable ({e.code}). Will retry shortly."
             ) from e
-        except genai.errors.APIError as e:
+        except genai_errors.APIError as e:
             raise ProviderError(f"Gemini API error: {e}") from e
 
         # Parse tool calls, text, and thought signatures from response parts.
@@ -347,17 +348,17 @@ class GeminiProvider(LLMProvider):
                                 )
                         elif part.text:
                             yield Chunk(content=part.text)
-        except genai.errors.ClientError as e:
+        except genai_errors.ClientError as e:
             if e.code == 429:
                 raise ProviderRateLimitError(
                     "Gemini API rate limit exceeded. Please wait a moment and try again."
                 ) from e
             raise ProviderError(f"Gemini API error: {e}") from e
-        except genai.errors.ServerError as e:
+        except genai_errors.ServerError as e:
             raise ProviderOverloadedError(
                 f"Gemini API temporarily unavailable ({e.code}). Will retry shortly."
             ) from e
-        except genai.errors.APIError as e:
+        except genai_errors.APIError as e:
             raise ProviderError(f"Gemini API error: {e}") from e
 
         metadata: dict[str, Any] = {}

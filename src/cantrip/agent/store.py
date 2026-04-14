@@ -205,7 +205,8 @@ class SessionStore:
         """Return the active connection, opening the database on first access."""
         if self._conn is None:
             self.open()
-        return self._conn  # type: ignore[return-value]
+        assert self._conn is not None
+        return self._conn
 
     # ── Session CRUD ─────────────────────────────────────────────────────
 
@@ -370,7 +371,8 @@ class SessionStore:
             ),
         )
         self._db.commit()
-        return cursor.lastrowid  # type: ignore[return-value]
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
 
     def load_messages(self) -> list[dict[str, object]]:
         """Load all conversation messages ordered by ID."""
@@ -460,7 +462,8 @@ class SessionStore:
             (event_type, json.dumps(detail or {})),
         )
         self._db.commit()
-        return cursor.lastrowid  # type: ignore[return-value]
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
 
     def load_events(
         self,
@@ -511,7 +514,8 @@ class SessionStore:
             (provider, model, prompt_tokens, completion_tokens),
         )
         self._db.commit()
-        return cursor.lastrowid  # type: ignore[return-value]
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
 
     def get_total_usage(self) -> dict[str, int]:
         """Return aggregate token counts across all requests."""
