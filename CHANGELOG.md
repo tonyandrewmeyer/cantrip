@@ -15,6 +15,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Store not re-initialisable after corrupt session** — `_store_initialised` flag is now reset when `load_state` fails, allowing the store to be re-opened with a fresh database
 
 ### Added
+- **Web UI playwright testing** — verified 17/18 test cases pass (page load, overlays, keyboard shortcuts, WebSocket connection, API endpoints, mobile viewport); identified frontend improvements (Markdown renderer, multiline input, tool call visibility, preflight status)
 - **Roadmap Phases 27–33** — seven new phases covering LLM provider hardening (prompt caching, extended thinking, max_tokens fix), agent core robustness (SQLite safety, executor resilience, subagent context management), TUI polish (dead features wired up, blocking subprocess fixes), tool completeness (missing Juju/git tools, shell injection fix), UX improvements (streaming, chat search, cost tracking), planning quality (compact prompt, dependency validation), and new capabilities (bundles, charm migration, multi-charm workspaces)
 
 - **Juju snap confinement (Phase 23.1)** — `JujuDeployTool` and `JujuRefreshTool` now copy `.charm` files from outside `$HOME` to `~/snap/juju/common/` before deploying, working around Juju snap strict confinement that prevented deploys from `/tmp` and other restricted paths; temp copies are cleaned up regardless of success or failure

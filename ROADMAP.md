@@ -2774,7 +2774,26 @@ experienced users.
 - [ ] Handle `ProviderRateLimitError` distinctly in WebSocket handler (currently
   uses generic "Provider error" message)
 
-### 31.13 Low — Web UI Input Validation
+### 31.13 Medium — Web UI Frontend Improvements
+
+- [ ] Markdown renderer is basic — no support for tables, links, images, nested lists,
+  or `*` bullet lists (only `- ` is handled); consider using a proper Markdown library
+  (marked.js or similar) instead of regex-based rendering
+- [ ] No Markdown rendering for user messages — user sees raw text while assistant
+  messages get rendered HTML; apply the same renderer to user messages
+- [ ] No message timestamps displayed (same issue as TUI)
+- [ ] No visual indication of which tool calls the agent is making — the "Thinking..."
+  indicator has no detail about what the agent is actually doing
+- [ ] No scroll-to-bottom button when viewing long chat history
+- [ ] Chat input has no multiline support (single `<input>` instead of `<textarea>`)
+- [ ] No way to cancel an in-flight request from the web UI
+- [ ] Juju status polling interval is hardcoded at 15s with no way to force refresh
+  (except via the Graph overlay's `R` key)
+- [ ] `--improve` flag is silently ignored when using `--web` mode
+- [ ] No preflight status shown in the web UI — the user has no visibility into
+  environment preparation progress
+
+### 31.14 Low — Web UI Input Validation
 
 - [ ] `/api/logs` `lines` parameter has no upper bound — clamp to `max(1, min(lines, 5000))`
 - [ ] `/api/logs` and `/api/logs-stream` `level` parameter passed unsanitised to
