@@ -131,12 +131,14 @@ class TestSnapshotFromQueue:
     def test_basic_conversion(self):
         tasks = [
             AgentTask(id="t1", title="Research", category=TaskCategory.RESEARCH),
-            AgentTask(id="t2", title="Build", category=TaskCategory.BUILD,
-                      dependencies=["t1"]),
+            AgentTask(id="t2", title="Build", category=TaskCategory.BUILD, dependencies=["t1"]),
         ]
         state = snapshot_from_queue(
-            tasks, active_subagent_count=0, max_concurrency=3,
-            has_charm_path=True, has_dev_model=True,
+            tasks,
+            active_subagent_count=0,
+            max_concurrency=3,
+            has_charm_path=True,
+            has_dev_model=True,
         )
         assert len(state.tasks) == 2
         assert state.tasks[0].id == "t1"

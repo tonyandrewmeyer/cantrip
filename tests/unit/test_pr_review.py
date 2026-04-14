@@ -151,19 +151,21 @@ class TestPrReviewToolExecution:
 
         api_result = mock.MagicMock()
         api_result.returncode = 0
-        api_result.stdout = json.dumps([
-            {
-                "id": 100,
-                "user": {"login": "reviewer"},
-                "body": "Please refactor this",
-                "path": "src/app.py",
-                "line": 15,
-                "side": "RIGHT",
-                "in_reply_to_id": None,
-                "created_at": "2024-01-01T00:00:00Z",
-                "updated_at": "2024-01-01T00:00:00Z",
-            },
-        ])
+        api_result.stdout = json.dumps(
+            [
+                {
+                    "id": 100,
+                    "user": {"login": "reviewer"},
+                    "body": "Please refactor this",
+                    "path": "src/app.py",
+                    "line": 15,
+                    "side": "RIGHT",
+                    "in_reply_to_id": None,
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z",
+                },
+            ]
+        )
 
         call_count = 0
 
@@ -300,7 +302,10 @@ class TestPrReviewReplyToolExecution:
     async def test_gh_not_installed(self, tool):
         with mock.patch("cantrip.agent.tools.pr_review.shutil.which", return_value=None):
             result = await tool.execute(
-                repo="owner/repo", pr_number=1, comment_id=100, body="Done",
+                repo="owner/repo",
+                pr_number=1,
+                comment_id=100,
+                body="Done",
             )
         assert not result.success
 
@@ -333,7 +338,10 @@ class TestPrReviewReplyToolExecution:
             ) as mock_subproc,
         ):
             result = await tool.execute(
-                repo="owner/repo", pr_number=42, comment_id=100, body="Fixed!",
+                repo="owner/repo",
+                pr_number=42,
+                comment_id=100,
+                body="Fixed!",
             )
 
         assert result.success
@@ -374,7 +382,10 @@ class TestPrReviewReplyToolExecution:
             ),
         ):
             result = await tool.execute(
-                repo="owner/repo", pr_number=1, comment_id=100, body="test",
+                repo="owner/repo",
+                pr_number=1,
+                comment_id=100,
+                body="test",
             )
 
         assert not result.success

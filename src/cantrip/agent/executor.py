@@ -604,8 +604,7 @@ class BackgroundExecutor:
             if task.noop_count >= _MAX_NOOP_COUNT:
                 self._queue.set_blocked(
                     task.id,
-                    f"Attempted {task.noop_count} time(s) without progress — "
-                    f"needs user guidance",
+                    f"Attempted {task.noop_count} time(s) without progress — needs user guidance",
                 )
                 self._record_status_change(task, "blocked", error="noop escalation")
                 if self._on_task_failed:
@@ -670,7 +669,9 @@ class BackgroundExecutor:
         except (llm.ProviderError, llm.ProviderRateLimitError) as exc:
             log.warning(
                 "Task '%s' failed (provider) after %.1fs: %s",
-                task.title, time.monotonic() - t0, exc,
+                task.title,
+                time.monotonic() - t0,
+                exc,
             )
             self._fail_task(task, str(exc), exc, snapshot)
         except (OSError, RuntimeError, ValueError, KeyError, AttributeError) as exc:

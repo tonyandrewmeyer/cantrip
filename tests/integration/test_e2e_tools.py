@@ -96,9 +96,7 @@ class TestFileTools:
         read = tool_map["read_file"]
 
         await write.execute(path="edit_test.txt", content="foo bar baz")
-        result = await edit.execute(
-            path="edit_test.txt", old_string="bar", new_string="qux"
-        )
+        result = await edit.execute(path="edit_test.txt", old_string="bar", new_string="qux")
         assert result.success
 
         result = await read.execute(path="edit_test.txt")
@@ -153,9 +151,7 @@ class TestSnapConfinement:
 
             # This will fail because it's not a real charm, but the error
             # should be from juju (charm format), not from snap confinement.
-            result: ToolResult = await deploy.execute(
-                charm=str(dummy_charm), model="dev"
-            )
+            result: ToolResult = await deploy.execute(charm=str(dummy_charm), model="dev")
             assert not result.success
             # The error should NOT be about file not found / permission denied.
             # It should be about the charm format being invalid.

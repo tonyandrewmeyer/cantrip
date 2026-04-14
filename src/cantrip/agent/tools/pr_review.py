@@ -74,7 +74,8 @@ class PrReviewTool(Tool):
             return ToolResult(success=False, output="", error=err)
 
         cmd = [
-            "gh", "api",
+            "gh",
+            "api",
             f"repos/{repo}/pulls/{pr_number}/comments",
             "--paginate",
         ]
@@ -87,9 +88,7 @@ class PrReviewTool(Tool):
                 timeout=_GH_TIMEOUT,
             )
         except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False, output="", error="gh api timed out"
-            )
+            return ToolResult(success=False, output="", error="gh api timed out")
 
         if result.returncode != 0:
             return ToolResult(
@@ -200,7 +199,11 @@ class PrReviewReplyTool(Tool):
         }
 
     async def execute(
-        self, repo: str, pr_number: int, comment_id: int, body: str,
+        self,
+        repo: str,
+        pr_number: int,
+        comment_id: int,
+        body: str,
     ) -> ToolResult:
         """Post a reply via ``gh api``."""
         err = _check_gh()
@@ -209,10 +212,13 @@ class PrReviewReplyTool(Tool):
 
         payload = json.dumps({"body": body})
         cmd = [
-            "gh", "api",
+            "gh",
+            "api",
             f"repos/{repo}/pulls/{pr_number}/comments/{comment_id}/replies",
-            "--method", "POST",
-            "--input", "-",
+            "--method",
+            "POST",
+            "--input",
+            "-",
         ]
 
         try:
@@ -224,9 +230,7 @@ class PrReviewReplyTool(Tool):
                 timeout=_GH_TIMEOUT,
             )
         except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False, output="", error="gh api timed out"
-            )
+            return ToolResult(success=False, output="", error="gh api timed out")
 
         if result.returncode != 0:
             return ToolResult(

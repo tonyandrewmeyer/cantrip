@@ -153,16 +153,12 @@ class TestBusBroadcastContract:
     def test_event_type_enum_covers_all_factories(self):
         """Every factory function produces a known event type."""
         factory_types = {
-            events.task_updated(
-                task_id="x", title="x", status="x", category="x"
-            ).type,
+            events.task_updated(task_id="x", title="x", status="x", category="x").type,
             events.chat_message(role="x", content="x").type,
             events.thinking_changed(active=True).type,
             events.watcher_event(source="x", category="x", summary="x").type,
             events.status_bar_changed().type,
-            events.preflight_updated(
-                group_index=0, item_index=0, status="x"
-            ).type,
+            events.preflight_updated(group_index=0, item_index=0, status="x").type,
             events.tasks_snapshot([]).type,
             events.juju_status_changed(status_data={}).type,
         }

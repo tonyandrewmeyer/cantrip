@@ -168,9 +168,7 @@ class TestJujuShowSecretTool:
         secret.content = {"password": "s3cret", "username": "admin"}
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch(
-                "cantrip.agent.tools.juju._run_juju", return_value=secret
-            ) as run_mock,
+            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=secret) as run_mock,
         ):
             result = await show_tool.execute(identifier="db-creds")
 

@@ -105,17 +105,19 @@ class TestRenderMarkdown:
         assert "File written" in md
 
     def test_error_tool_result_prefixed(self):
-        data = _sample_data(messages=[
-            {
-                "role": "tool",
-                "content": "",
-                "timestamp": "",
-                "tool_calls": [],
-                "tool_results": [
-                    {"tool_call_id": "tc1", "content": "BOOM", "is_error": True},
-                ],
-            },
-        ])
+        data = _sample_data(
+            messages=[
+                {
+                    "role": "tool",
+                    "content": "",
+                    "timestamp": "",
+                    "tool_calls": [],
+                    "tool_results": [
+                        {"tool_call_id": "tc1", "content": "BOOM", "is_error": True},
+                    ],
+                },
+            ]
+        )
         md = render_markdown(data)
         assert "<details><summary>Error</summary>" in md
 
@@ -143,7 +145,9 @@ class TestRenderJsonl:
     def test_message_lines(self):
         output = render_jsonl(_sample_data())
         lines = output.strip().split("\n")
-        message_lines = [json.loads(line) for line in lines if json.loads(line)["type"] == "message"]
+        message_lines = [
+            json.loads(line) for line in lines if json.loads(line)["type"] == "message"
+        ]
         assert len(message_lines) == 3
 
     def test_event_lines(self):
@@ -163,7 +167,9 @@ class TestRenderJsonl:
     def test_subagent_message_lines(self):
         output = render_jsonl(_sample_data())
         lines = output.strip().split("\n")
-        sa_lines = [json.loads(line) for line in lines if json.loads(line)["type"] == "subagent_message"]
+        sa_lines = [
+            json.loads(line) for line in lines if json.loads(line)["type"] == "subagent_message"
+        ]
         assert len(sa_lines) == 1
 
     def test_empty_data_returns_empty(self):
@@ -214,8 +220,13 @@ class TestRenderHtmlPaginated:
 
     def test_multiple_pages(self):
         msgs = [
-            {"role": "user", "content": f"msg {i}", "timestamp": "", "tool_calls": [],
-             "tool_results": []}
+            {
+                "role": "user",
+                "content": f"msg {i}",
+                "timestamp": "",
+                "tool_calls": [],
+                "tool_results": [],
+            }
             for i in range(10)
         ]
         data = _sample_data(messages=msgs)
@@ -224,8 +235,13 @@ class TestRenderHtmlPaginated:
 
     def test_page_filenames(self):
         msgs = [
-            {"role": "user", "content": f"msg {i}", "timestamp": "", "tool_calls": [],
-             "tool_results": []}
+            {
+                "role": "user",
+                "content": f"msg {i}",
+                "timestamp": "",
+                "tool_calls": [],
+                "tool_results": [],
+            }
             for i in range(6)
         ]
         data = _sample_data(messages=msgs)
@@ -235,8 +251,13 @@ class TestRenderHtmlPaginated:
 
     def test_tasks_only_on_first_page(self):
         msgs = [
-            {"role": "user", "content": f"msg {i}", "timestamp": "", "tool_calls": [],
-             "tool_results": []}
+            {
+                "role": "user",
+                "content": f"msg {i}",
+                "timestamp": "",
+                "tool_calls": [],
+                "tool_results": [],
+            }
             for i in range(4)
         ]
         data = _sample_data(messages=msgs)
@@ -254,8 +275,13 @@ class TestRenderHtmlPaginated:
 
     def test_page_size_one(self):
         msgs = [
-            {"role": "user", "content": f"msg {i}", "timestamp": "", "tool_calls": [],
-             "tool_results": []}
+            {
+                "role": "user",
+                "content": f"msg {i}",
+                "timestamp": "",
+                "tool_calls": [],
+                "tool_results": [],
+            }
             for i in range(3)
         ]
         data = _sample_data(messages=msgs)

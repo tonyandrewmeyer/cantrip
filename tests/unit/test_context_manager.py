@@ -163,10 +163,7 @@ class TestCompact:
         )
         provider = FakeProvider()
 
-        msgs = [
-            Message(role=Role.USER, content=f"message {i}")
-            for i in range(10)
-        ]
+        msgs = [Message(role=Role.USER, content=f"message {i}") for i in range(10)]
         result = await cm.compact(msgs, "system prompt", provider)
 
         # summary + 4 recent = 5 messages.

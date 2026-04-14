@@ -160,8 +160,7 @@ class TestGlobToolExecution:
         result = await tool.execute(pattern="**/*.py")
         assert result.success
         lines = [
-            line for line in result.output.strip().split("\n")
-            if line and not line.startswith("(")
+            line for line in result.output.strip().split("\n") if line and not line.startswith("(")
         ]
         assert lines == sorted(lines)
 

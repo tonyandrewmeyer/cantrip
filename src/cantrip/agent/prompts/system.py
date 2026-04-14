@@ -113,6 +113,7 @@ def build_system_prompt(
     Returns:
         Complete system prompt with context.
     """
+
     def _sanitise(value: str | None) -> str | None:
         """Strip characters that could be interpreted as Jinja2 template syntax."""
         if value is None:
@@ -123,8 +124,7 @@ def build_system_prompt(
     safe_decisions: list[dict] | None = None
     if recent_decisions:
         safe_decisions = [
-            {k: _JINJA_SYNTAX.sub("", str(v)) for k, v in d.items()}
-            for d in recent_decisions
+            {k: _JINJA_SYNTAX.sub("", str(v)) for k, v in d.items()} for d in recent_decisions
         ]
 
     return _get_template(compact=compact).render(

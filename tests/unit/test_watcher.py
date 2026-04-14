@@ -358,12 +358,10 @@ class TestDatabagDiffing:
         """New keys appearing in a databag are detected."""
         from cantrip.agent.watcher import DatabagSnapshot, diff_databag_snapshots
 
-        old = DatabagSnapshot(entries=(
-            ("myapp/0", "db", "postgresql", frozenset({"host"})),
-        ))
-        new = DatabagSnapshot(entries=(
-            ("myapp/0", "db", "postgresql", frozenset({"host", "port", "password"})),
-        ))
+        old = DatabagSnapshot(entries=(("myapp/0", "db", "postgresql", frozenset({"host"})),))
+        new = DatabagSnapshot(
+            entries=(("myapp/0", "db", "postgresql", frozenset({"host", "port", "password"})),)
+        )
         events = diff_databag_snapshots(old, new)
         assert len(events) == 1
         assert events[0].category == "databag_change"
@@ -374,12 +372,10 @@ class TestDatabagDiffing:
         """Removed keys are detected."""
         from cantrip.agent.watcher import DatabagSnapshot, diff_databag_snapshots
 
-        old = DatabagSnapshot(entries=(
-            ("myapp/0", "db", "postgresql", frozenset({"host", "port"})),
-        ))
-        new = DatabagSnapshot(entries=(
-            ("myapp/0", "db", "postgresql", frozenset({"host"})),
-        ))
+        old = DatabagSnapshot(
+            entries=(("myapp/0", "db", "postgresql", frozenset({"host", "port"})),)
+        )
+        new = DatabagSnapshot(entries=(("myapp/0", "db", "postgresql", frozenset({"host"})),))
         events = diff_databag_snapshots(old, new)
         assert len(events) == 1
         assert "removed" in events[0].detail
@@ -389,18 +385,16 @@ class TestDatabagDiffing:
         """Identical databag snapshots produce no events."""
         from cantrip.agent.watcher import DatabagSnapshot, diff_databag_snapshots
 
-        snap = DatabagSnapshot(entries=(
-            ("myapp/0", "db", "postgresql", frozenset({"host", "port"})),
-        ))
+        snap = DatabagSnapshot(
+            entries=(("myapp/0", "db", "postgresql", frozenset({"host", "port"})),)
+        )
         assert diff_databag_snapshots(snap, snap) == []
 
     def test_old_none_produces_no_events(self):
         """First snapshot (old is None) produces no events."""
         from cantrip.agent.watcher import DatabagSnapshot, diff_databag_snapshots
 
-        new = DatabagSnapshot(entries=(
-            ("myapp/0", "db", "postgresql", frozenset({"host"})),
-        ))
+        new = DatabagSnapshot(entries=(("myapp/0", "db", "postgresql", frozenset({"host"})),))
         assert diff_databag_snapshots(None, new) == []
 
     def test_databag_format_includes_instructions(self):

@@ -48,8 +48,7 @@ class CharmlintTool(Tool):
                 "ignore": {
                     "type": "string",
                     "description": (
-                        "Comma-separated rule IDs or categories to skip "
-                        "(e.g. 'STR002,DOC')"
+                        "Comma-separated rule IDs or categories to skip (e.g. 'STR002,DOC')"
                     ),
                 },
                 "severity": {

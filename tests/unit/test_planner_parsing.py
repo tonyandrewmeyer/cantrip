@@ -174,7 +174,9 @@ class TestPathQualification:
 
     def test_sprint_with_source_url_false(self):
         ctx = PlanningContext(
-            intent="build", charm_type="kubernetes", charm_name="myapp",
+            intent="build",
+            charm_type="kubernetes",
+            charm_name="myapp",
             source_url="https://x.com",
         )
         assert is_sprint(ctx) is False

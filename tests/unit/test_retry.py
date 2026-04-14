@@ -41,10 +41,12 @@ class TestCompleteWithRetry:
     async def test_retries_on_rate_limit(self):
         """Retries after a ProviderRateLimitError and succeeds."""
         expected = llm.Response(content="ok")
-        provider = _make_provider([
-            llm.ProviderRateLimitError("slow down"),
-            expected,
-        ])
+        provider = _make_provider(
+            [
+                llm.ProviderRateLimitError("slow down"),
+                expected,
+            ]
+        )
 
         result = await complete_with_retry(
             provider,
@@ -60,10 +62,12 @@ class TestCompleteWithRetry:
     async def test_retries_on_overloaded(self):
         """Retries after a ProviderOverloadedError and succeeds."""
         expected = llm.Response(content="ok")
-        provider = _make_provider([
-            llm.ProviderOverloadedError("busy"),
-            expected,
-        ])
+        provider = _make_provider(
+            [
+                llm.ProviderOverloadedError("busy"),
+                expected,
+            ]
+        )
 
         result = await complete_with_retry(
             provider,
@@ -78,11 +82,13 @@ class TestCompleteWithRetry:
     @pytest.mark.asyncio
     async def test_raises_after_max_retries(self):
         """Raises after exhausting all retries."""
-        provider = _make_provider([
-            llm.ProviderRateLimitError("slow down"),
-            llm.ProviderRateLimitError("slow down"),
-            llm.ProviderRateLimitError("slow down"),
-        ])
+        provider = _make_provider(
+            [
+                llm.ProviderRateLimitError("slow down"),
+                llm.ProviderRateLimitError("slow down"),
+                llm.ProviderRateLimitError("slow down"),
+            ]
+        )
 
         with pytest.raises(llm.ProviderRateLimitError):
             await complete_with_retry(
@@ -98,9 +104,11 @@ class TestCompleteWithRetry:
     @pytest.mark.asyncio
     async def test_non_transient_error_not_retried(self):
         """Non-transient ProviderError is raised immediately."""
-        provider = _make_provider([
-            llm.ProviderError("auth failed"),
-        ])
+        provider = _make_provider(
+            [
+                llm.ProviderError("auth failed"),
+            ]
+        )
 
         with pytest.raises(llm.ProviderError, match="auth failed"):
             await complete_with_retry(
@@ -116,11 +124,13 @@ class TestCompleteWithRetry:
     async def test_mixed_transient_errors(self):
         """Handles a mix of rate-limit and overloaded errors before success."""
         expected = llm.Response(content="finally")
-        provider = _make_provider([
-            llm.ProviderRateLimitError("rate"),
-            llm.ProviderOverloadedError("overloaded"),
-            expected,
-        ])
+        provider = _make_provider(
+            [
+                llm.ProviderRateLimitError("rate"),
+                llm.ProviderOverloadedError("overloaded"),
+                expected,
+            ]
+        )
 
         result = await complete_with_retry(
             provider,
@@ -143,13 +153,15 @@ class TestCompleteWithRetry:
     async def test_custom_max_retries(self):
         """Custom max_retries is respected."""
         expected = llm.Response(content="ok")
-        provider = _make_provider([
-            llm.ProviderRateLimitError("1"),
-            llm.ProviderRateLimitError("2"),
-            llm.ProviderRateLimitError("3"),
-            llm.ProviderRateLimitError("4"),
-            expected,
-        ])
+        provider = _make_provider(
+            [
+                llm.ProviderRateLimitError("1"),
+                llm.ProviderRateLimitError("2"),
+                llm.ProviderRateLimitError("3"),
+                llm.ProviderRateLimitError("4"),
+                expected,
+            ]
+        )
 
         result = await complete_with_retry(
             provider,
@@ -241,10 +253,12 @@ class TestProviderThrottle:
         """complete_with_retry integrates with the throttle."""
         throttle = ProviderThrottle()
         expected = llm.Response(content="ok")
-        provider = _make_provider([
-            llm.ProviderRateLimitError("rate"),
-            expected,
-        ])
+        provider = _make_provider(
+            [
+                llm.ProviderRateLimitError("rate"),
+                expected,
+            ]
+        )
 
         result = await complete_with_retry(
             provider,

@@ -84,31 +84,37 @@ class TestWorkQueueOrdering:
 
     def test_all_ready_returns_queue_order(self):
         queue = WorkQueue()
-        queue.add_tasks([
-            AgentTask(id="a", title="A", category=TaskCategory.BUILD),
-            AgentTask(id="b", title="B", category=TaskCategory.BUILD),
-            AgentTask(id="c", title="C", category=TaskCategory.BUILD),
-        ])
+        queue.add_tasks(
+            [
+                AgentTask(id="a", title="A", category=TaskCategory.BUILD),
+                AgentTask(id="b", title="B", category=TaskCategory.BUILD),
+                AgentTask(id="c", title="C", category=TaskCategory.BUILD),
+            ]
+        )
         ready = queue.all_ready()
         assert [t.id for t in ready] == ["a", "b", "c"]
 
     def test_all_ready_with_limit(self):
         queue = WorkQueue()
-        queue.add_tasks([
-            AgentTask(id="a", title="A", category=TaskCategory.BUILD),
-            AgentTask(id="b", title="B", category=TaskCategory.BUILD),
-        ])
+        queue.add_tasks(
+            [
+                AgentTask(id="a", title="A", category=TaskCategory.BUILD),
+                AgentTask(id="b", title="B", category=TaskCategory.BUILD),
+            ]
+        )
         ready = queue.all_ready(limit=1)
         assert len(ready) == 1
         assert ready[0].id == "a"
 
     def test_move_to_front(self):
         queue = WorkQueue()
-        queue.add_tasks([
-            AgentTask(id="a", title="A", category=TaskCategory.BUILD),
-            AgentTask(id="b", title="B", category=TaskCategory.BUILD),
-            AgentTask(id="c", title="C", category=TaskCategory.BUILD),
-        ])
+        queue.add_tasks(
+            [
+                AgentTask(id="a", title="A", category=TaskCategory.BUILD),
+                AgentTask(id="b", title="B", category=TaskCategory.BUILD),
+                AgentTask(id="c", title="C", category=TaskCategory.BUILD),
+            ]
+        )
         queue.move_to_front("c")
         ready = queue.all_ready()
         assert ready[0].id == "c"
@@ -123,10 +129,12 @@ class TestWorkQueueOrdering:
 
     def test_next_ready_skips_active(self):
         queue = WorkQueue()
-        queue.add_tasks([
-            AgentTask(id="a", title="A", category=TaskCategory.BUILD),
-            AgentTask(id="b", title="B", category=TaskCategory.BUILD),
-        ])
+        queue.add_tasks(
+            [
+                AgentTask(id="a", title="A", category=TaskCategory.BUILD),
+                AgentTask(id="b", title="B", category=TaskCategory.BUILD),
+            ]
+        )
         queue.set_active("a")
         t = queue.next_ready()
         assert t.id == "b"
@@ -138,10 +146,12 @@ class TestWorkQueueOrdering:
     def test_cancelled_dep_unblocks_downstream(self):
         """Cancelling a dependency unblocks tasks that depended on it."""
         queue = WorkQueue()
-        queue.add_tasks([
-            AgentTask(id="a", title="A", category=TaskCategory.BUILD),
-            AgentTask(id="b", title="B", category=TaskCategory.BUILD, dependencies=["a"]),
-        ])
+        queue.add_tasks(
+            [
+                AgentTask(id="a", title="A", category=TaskCategory.BUILD),
+                AgentTask(id="b", title="B", category=TaskCategory.BUILD, dependencies=["a"]),
+            ]
+        )
         queue.cancel("a")
         # b's dependency is now missing from the queue → treated as satisfied.
         t = queue.next_ready()
@@ -153,11 +163,13 @@ class TestWorkQueueCounts:
 
     def test_counts(self):
         queue = WorkQueue()
-        queue.add_tasks([
-            AgentTask(id="a", title="A", category=TaskCategory.BUILD),
-            AgentTask(id="b", title="B", category=TaskCategory.BUILD),
-            AgentTask(id="c", title="C", category=TaskCategory.BUILD),
-        ])
+        queue.add_tasks(
+            [
+                AgentTask(id="a", title="A", category=TaskCategory.BUILD),
+                AgentTask(id="b", title="B", category=TaskCategory.BUILD),
+                AgentTask(id="c", title="C", category=TaskCategory.BUILD),
+            ]
+        )
         queue.set_active("a")
         queue.set_done("b")
 
@@ -167,10 +179,12 @@ class TestWorkQueueCounts:
 
     def test_clear(self):
         queue = WorkQueue()
-        queue.add_tasks([
-            AgentTask(id="a", title="A", category=TaskCategory.BUILD),
-            AgentTask(id="b", title="B", category=TaskCategory.BUILD),
-        ])
+        queue.add_tasks(
+            [
+                AgentTask(id="a", title="A", category=TaskCategory.BUILD),
+                AgentTask(id="b", title="B", category=TaskCategory.BUILD),
+            ]
+        )
         queue.clear()
         assert len(queue.all_tasks()) == 0
 
@@ -285,14 +299,21 @@ class TestMergeTasks:
 
     def test_mixed_scenario(self):
         existing = [
-            AgentTask(id="done1", title="Done", category=TaskCategory.RESEARCH,
-                      status=TaskStatus.DONE),
-            AgentTask(id="active1", title="Active", category=TaskCategory.BUILD,
-                      status=TaskStatus.ACTIVE),
-            AgentTask(id="pending1", title="Pending", category=TaskCategory.BUILD,
-                      status=TaskStatus.PENDING),
-            AgentTask(id="failed1", title="Failed", category=TaskCategory.BUILD,
-                      status=TaskStatus.FAILED),
+            AgentTask(
+                id="done1", title="Done", category=TaskCategory.RESEARCH, status=TaskStatus.DONE
+            ),
+            AgentTask(
+                id="active1", title="Active", category=TaskCategory.BUILD, status=TaskStatus.ACTIVE
+            ),
+            AgentTask(
+                id="pending1",
+                title="Pending",
+                category=TaskCategory.BUILD,
+                status=TaskStatus.PENDING,
+            ),
+            AgentTask(
+                id="failed1", title="Failed", category=TaskCategory.BUILD, status=TaskStatus.FAILED
+            ),
         ]
         new = [
             AgentTask(id="new1", title="New 1", category=TaskCategory.BUILD),

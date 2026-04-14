@@ -232,7 +232,9 @@ def capture_databag_snapshot(model: str) -> DatabagSnapshot:
             for related in rel.get("related-units", {}).values():
                 related_data = related.get("data", {})
                 keys = frozenset(related_data.keys())
-                related_app = related.get("name", "").rsplit("/", 1)[0] if related.get("name") else ""
+                related_app = (
+                    related.get("name", "").rsplit("/", 1)[0] if related.get("name") else ""
+                )
                 entries.append((unit_name, endpoint, related_app, keys))
 
     return DatabagSnapshot(entries=tuple(sorted(entries)))

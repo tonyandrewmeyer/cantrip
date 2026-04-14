@@ -57,9 +57,7 @@ class MultiEditTool(PathAwareTool):
     async def execute(self, edits: list[dict[str, str]]) -> ToolResult:
         """Apply all edits sequentially."""
         if not edits:
-            return ToolResult(
-                success=False, output="", error="No edits provided."
-            )
+            return ToolResult(success=False, output="", error="No edits provided.")
 
         applied = 0
         results: list[str] = []

@@ -55,8 +55,7 @@ class GrepTool(PathAwareTool):
                 "glob": {
                     "type": "string",
                     "description": (
-                        "Only search files matching this glob pattern "
-                        "(e.g. '*.py', '*.yaml')."
+                        "Only search files matching this glob pattern (e.g. '*.py', '*.yaml')."
                     ),
                 },
                 "context_lines": {
@@ -93,22 +92,29 @@ class GrepTool(PathAwareTool):
             return ToolResult(success=False, output="", error=str(exc))
 
         if not resolved.exists():
-            return ToolResult(
-                success=False, output="", error=f"Path not found: {path}"
-            )
+            return ToolResult(success=False, output="", error=f"Path not found: {path}")
 
         max_results = min(max(1, max_results), _ABSOLUTE_MAX_RESULTS)
 
         rg_bin = shutil.which("rg")
         if rg_bin:
             cmd = self._build_rg_command(
-                rg_bin, pattern, resolved, glob, context_lines,
-                case_sensitive, max_results,
+                rg_bin,
+                pattern,
+                resolved,
+                glob,
+                context_lines,
+                case_sensitive,
+                max_results,
             )
         else:
             cmd = self._build_grep_command(
-                pattern, resolved, glob, context_lines,
-                case_sensitive, max_results,
+                pattern,
+                resolved,
+                glob,
+                context_lines,
+                case_sensitive,
+                max_results,
             )
 
         try:
@@ -120,9 +126,7 @@ class GrepTool(PathAwareTool):
                 cwd=str(resolved) if resolved.is_dir() else str(resolved.parent),
             )
         except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False, output="", error="Search timed out after 30 seconds."
-            )
+            return ToolResult(success=False, output="", error="Search timed out after 30 seconds.")
 
         # grep/rg return exit code 1 for "no matches" — that is not an error.
         if result.returncode > 1:

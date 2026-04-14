@@ -51,9 +51,7 @@ class Event:
 
 
 # Subscriber callback — may be sync or async.
-Subscriber = (
-    Callable[["Event"], None] | Callable[["Event"], Coroutine[Any, Any, None]]
-)
+Subscriber = Callable[["Event"], None] | Callable[["Event"], Coroutine[Any, Any, None]]
 
 
 class EventBus:

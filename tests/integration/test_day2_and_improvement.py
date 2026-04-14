@@ -391,20 +391,22 @@ class TestBuildResumeSummary:
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
         agent.state.charm_name = "redis-k8s"
 
-        agent.work_queue.add_tasks([
-            AgentTask(
-                id="t1",
-                title="Research workload",
-                category=TaskCategory.RESEARCH,
-                status=TaskStatus.DONE,
-            ),
-            AgentTask(
-                id="t2",
-                title="Write charm code",
-                category=TaskCategory.BUILD,
-                status=TaskStatus.PENDING,
-            ),
-        ])
+        agent.work_queue.add_tasks(
+            [
+                AgentTask(
+                    id="t1",
+                    title="Research workload",
+                    category=TaskCategory.RESEARCH,
+                    status=TaskStatus.DONE,
+                ),
+                AgentTask(
+                    id="t2",
+                    title="Write charm code",
+                    category=TaskCategory.BUILD,
+                    status=TaskStatus.PENDING,
+                ),
+            ]
+        )
 
         summary = agent.build_resume_summary()
 

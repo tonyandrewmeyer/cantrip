@@ -14,62 +14,66 @@ from . import Rule
 # Top-level keys recognised by charmcraft.yaml (union of modern and legacy
 # fields).  Kept deliberately broad — a warning for a genuine field is far
 # worse than missing a truly unknown one.
-_KNOWN_TOP_LEVEL: frozenset[str] = frozenset({
-    # Identity / metadata.
-    "name",
-    "type",
-    "title",
-    "display-name",
-    "summary",
-    "description",
-    "docs",
-    "issues",
-    "source",
-    "website",
-    "contact",
-    "maintainers",
-    # Build / platform.
-    "base",
-    "build-base",
-    "bases",
-    "platforms",
-    "parts",
-    "extensions",
-    # Relations.
-    "requires",
-    "provides",
-    "peers",
-    "extra-bindings",
-    # Config / actions.
-    "config",
-    "actions",
-    # Workload.
-    "containers",
-    "resources",
-    "storage",
-    "devices",
-    # Charm libraries and dependencies.
-    "charm-libs",
-    # Links block (Charmhub).
-    "links",
-    # Subordinate / assumes.
-    "subordinate",
-    "assumes",
-    "terms",
-    # Legacy (deprecated but still accepted).
-    "series",
-    "min-juju-version",
-    # Analysis / linting config inside the file.
-    "analysis",
-})
+_KNOWN_TOP_LEVEL: frozenset[str] = frozenset(
+    {
+        # Identity / metadata.
+        "name",
+        "type",
+        "title",
+        "display-name",
+        "summary",
+        "description",
+        "docs",
+        "issues",
+        "source",
+        "website",
+        "contact",
+        "maintainers",
+        # Build / platform.
+        "base",
+        "build-base",
+        "bases",
+        "platforms",
+        "parts",
+        "extensions",
+        # Relations.
+        "requires",
+        "provides",
+        "peers",
+        "extra-bindings",
+        # Config / actions.
+        "config",
+        "actions",
+        # Workload.
+        "containers",
+        "resources",
+        "storage",
+        "devices",
+        # Charm libraries and dependencies.
+        "charm-libs",
+        # Links block (Charmhub).
+        "links",
+        # Subordinate / assumes.
+        "subordinate",
+        "assumes",
+        "terms",
+        # Legacy (deprecated but still accepted).
+        "series",
+        "min-juju-version",
+        # Analysis / linting config inside the file.
+        "analysis",
+    }
+)
 
 # Keys recognised inside a ``resources.<name>`` block.
-_KNOWN_RESOURCE_FIELDS: frozenset[str] = frozenset({
-    "type",
-    "description",
-    "filename",
-    "upstream-source",
-})
+_KNOWN_RESOURCE_FIELDS: frozenset[str] = frozenset(
+    {
+        "type",
+        "description",
+        "filename",
+        "upstream-source",
+    }
+)
 
 
 class UnknownTopLevelFields(Rule):
@@ -86,8 +90,7 @@ class UnknownTopLevelFields(Rule):
             if key not in _KNOWN_TOP_LEVEL:
                 diagnostics.append(
                     self.diagnostic(
-                        f"Unrecognised top-level field '{key}' in charmcraft.yaml"
-                        " — possible typo",
+                        f"Unrecognised top-level field '{key}' in charmcraft.yaml — possible typo",
                         path="charmcraft.yaml",
                         fix_hint=_suggest_closest(key, _KNOWN_TOP_LEVEL),
                     )
@@ -116,8 +119,7 @@ class UnknownResourceFields(Rule):
                 if key not in _KNOWN_RESOURCE_FIELDS:
                     diagnostics.append(
                         self.diagnostic(
-                            f"Unrecognised field '{key}' in resource '{res_name}'"
-                            " — possible typo",
+                            f"Unrecognised field '{key}' in resource '{res_name}' — possible typo",
                             path="charmcraft.yaml",
                             fix_hint=_suggest_closest(key, _KNOWN_RESOURCE_FIELDS),
                         )

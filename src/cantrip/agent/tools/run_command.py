@@ -7,18 +7,20 @@ from typing import Any
 from cantrip.agent.tools.base import Tool, ToolResult
 
 # Default commands the agent is allowed to run.
-DEFAULT_ALLOWLIST: frozenset[str] = frozenset({
-    "make",
-    "uv",
-    "ruff",
-    "pytest",
-    "pip",
-    "charmcraft",
-    "rockcraft",
-    "juju",
-    "python",
-    "python3",
-})
+DEFAULT_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "make",
+        "uv",
+        "ruff",
+        "pytest",
+        "pip",
+        "charmcraft",
+        "rockcraft",
+        "juju",
+        "python",
+        "python3",
+    }
+)
 
 # Hard ceiling on command execution time.
 _MAX_TIMEOUT = 300
@@ -72,8 +74,7 @@ class RunCommandTool(Tool):
                 "timeout": {
                     "type": "integer",
                     "description": (
-                        f"Timeout in seconds (default {_DEFAULT_TIMEOUT}, "
-                        f"max {_MAX_TIMEOUT})."
+                        f"Timeout in seconds (default {_DEFAULT_TIMEOUT}, max {_MAX_TIMEOUT})."
                     ),
                 },
             },
@@ -89,16 +90,12 @@ class RunCommandTool(Tool):
         """Run the command if its base is on the allowlist."""
         command = command.strip()
         if not command:
-            return ToolResult(
-                success=False, output="", error="Empty command."
-            )
+            return ToolResult(success=False, output="", error="Empty command.")
 
         try:
             parts = shlex.split(command)
         except ValueError as exc:
-            return ToolResult(
-                success=False, output="", error=f"Invalid command syntax: {exc}"
-            )
+            return ToolResult(success=False, output="", error=f"Invalid command syntax: {exc}")
 
         base = parts[0]
         if base not in self._allowlist:
@@ -149,7 +146,9 @@ class RunCommandTool(Tool):
         return ToolResult(
             success=result.returncode == 0,
             output=output.strip(),
-            error=f"Command exited with code {result.returncode}" if result.returncode != 0 else "",
+            error=f"Command exited with code {result.returncode}"
+            if result.returncode != 0
+            else "",
             data={
                 "returncode": result.returncode,
                 "truncated": truncated,

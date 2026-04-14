@@ -1128,9 +1128,7 @@ class TestInjectCoverageThreshold:
         with tempfile.TemporaryDirectory() as td:
             target = Path(td)
             pyproject = target / "pyproject.toml"
-            pyproject.write_text(
-                "[tool.coverage.report]\nfail_under = 90\nshow_missing = true\n"
-            )
+            pyproject.write_text("[tool.coverage.report]\nfail_under = 90\nshow_missing = true\n")
             actions = _inject_coverage_threshold(target)
             content = pyproject.read_text()
             assert "fail_under = 90" in content

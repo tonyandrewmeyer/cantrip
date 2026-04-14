@@ -343,16 +343,16 @@ class JujuStatusWidget(Widget):
 
             for rel_name, related_apps in app.relations.items():
                 for related in related_apps:
-                    container.mount(RelationLine(
-                        f"{rel_name} → {related.related_app}",
-                        endpoint=rel_name,
-                        related_app=related.related_app,
-                    ))
+                    container.mount(
+                        RelationLine(
+                            f"{rel_name} → {related.related_app}",
+                            endpoint=rel_name,
+                            related_app=related.related_app,
+                        )
+                    )
 
         if not matched and self.filter_text:
-            container.mount(
-                Static(f"No matches for '{self.filter_text}'.", classes="no-apps")
-            )
+            container.mount(Static(f"No matches for '{self.filter_text}'.", classes="no-apps"))
 
     def update_status(self, status: statustypes.Status) -> None:
         """Update the displayed status."""

@@ -1,7 +1,5 @@
 """Tests for SessionStore edge cases: truncation, JSON safety, roundtrips."""
 
-
-
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import (
@@ -31,7 +29,7 @@ class TestSafeJsonLoad:
         assert _safe_json_load("{invalid", fallback="default") == "default"
 
     def test_valid_array(self):
-        assert _safe_json_load('[1, 2, 3]') == [1, 2, 3]
+        assert _safe_json_load("[1, 2, 3]") == [1, 2, 3]
 
 
 class TestTruncate:

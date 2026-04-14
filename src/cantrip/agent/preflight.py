@@ -380,7 +380,8 @@ class PreflightRunner:
                 return None
             if not _model_is_k8s(cos_model_name):
                 self._emit(
-                    "cos", CheckStatus.SKIPPED,
+                    "cos",
+                    CheckStatus.SKIPPED,
                     "COS model is on a non-Kubernetes cloud",
                 )
                 return None
@@ -403,7 +404,9 @@ class PreflightRunner:
                 return jubilant.Juju(model=cos_model_name)
             except jubilant.CLIError as exc:
                 self._emit(
-                    "cos", CheckStatus.FAILED, "Failed to create COS model",
+                    "cos",
+                    CheckStatus.FAILED,
+                    "Failed to create COS model",
                     detail=str(exc),
                 )
                 self.result.errors.append(f"COS model creation failed: {exc}")
@@ -413,30 +416,29 @@ class PreflightRunner:
         k8s_ctrl = await asyncio.to_thread(_find_k8s_controller)
         if not k8s_ctrl:
             self._emit(
-                "cos", CheckStatus.SKIPPED,
+                "cos",
+                CheckStatus.SKIPPED,
                 "No Kubernetes controller found — COS requires K8s",
             )
             return None
         self._emit(
-            "cos", CheckStatus.RUNNING,
+            "cos",
+            CheckStatus.RUNNING,
             f"Creating COS model on K8s controller '{k8s_ctrl}'",
         )
         self.result.cos_controller = k8s_ctrl
-        created = await asyncio.to_thread(
-            _create_model_on_controller, cos_model_name, k8s_ctrl
-        )
+        created = await asyncio.to_thread(_create_model_on_controller, cos_model_name, k8s_ctrl)
         if not created:
             self._emit(
-                "cos", CheckStatus.FAILED,
+                "cos",
+                CheckStatus.FAILED,
                 f"Failed to create COS model on controller '{k8s_ctrl}'",
             )
             self.result.errors.append(f"COS model creation on {k8s_ctrl} failed")
             return None
         return jubilant.Juju(model=cos_model_name)
 
-    async def _deploy_cos_lite(
-        self, juju: jubilant.Juju, cos_model_name: str
-    ) -> bool:
+    async def _deploy_cos_lite(self, juju: jubilant.Juju, cos_model_name: str) -> bool:
         """Deploy cos-lite into the COS model.
 
         Returns ``True`` on success, ``False`` on failure.
@@ -458,17 +460,17 @@ class PreflightRunner:
         if _current_controller_is_k8s():
             return
         self._emit("cos", CheckStatus.RUNNING, "Setting up cross-model COS offers")
-        offers = await asyncio.to_thread(
-            _setup_cos_cross_model_offers, cos_model_name
-        )
+        offers = await asyncio.to_thread(_setup_cos_cross_model_offers, cos_model_name)
         if offers:
             self._emit(
-                "cos", CheckStatus.PASSED,
+                "cos",
+                CheckStatus.PASSED,
                 f"COS offers created: {', '.join(offers)}",
             )
         else:
             self._emit(
-                "cos", CheckStatus.PASSED,
+                "cos",
+                CheckStatus.PASSED,
                 "COS deployed (offers will be configured during charm integration)",
             )
 
@@ -575,12 +577,14 @@ def list_controllers() -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for name, info in sorted(controllers.items()):
             cloud = info.get("cloud", "")
-            out.append({
-                "name": name,
-                "cloud": cloud,
-                "is_k8s": cloud in _K8S_CLOUDS,
-                "models": info.get("model-count", 0),
-            })
+            out.append(
+                {
+                    "name": name,
+                    "cloud": cloud,
+                    "is_k8s": cloud in _K8S_CLOUDS,
+                    "models": info.get("model-count", 0),
+                }
+            )
         return out
     except (subprocess.TimeoutExpired, OSError, ValueError):
         return []

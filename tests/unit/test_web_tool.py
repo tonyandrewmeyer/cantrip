@@ -247,7 +247,9 @@ class TestLlmsTxtAwareness:
     async def test_llms_txt_fallback_path(self, tool):
         """Falls back to /llms.txt if /.well-known/llms.txt is 404."""
         not_found_resp = _make_response(
-            status_code=404, text="Not Found", content_type="text/html",
+            status_code=404,
+            text="Not Found",
+            content_type="text/html",
             url="https://example.com/.well-known/llms.txt",
         )
         fallback_resp = _make_response(
@@ -284,7 +286,9 @@ class TestLlmsTxtAwareness:
     async def test_no_llms_txt_falls_through(self, tool):
         """When no llms.txt exists, normal HTML stripping applies."""
         not_found_resp = _make_response(
-            status_code=404, text="Not Found", content_type="text/html",
+            status_code=404,
+            text="Not Found",
+            content_type="text/html",
             url="https://example.com/.well-known/llms.txt",
         )
         html_resp = _make_response(

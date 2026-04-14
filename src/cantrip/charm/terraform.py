@@ -60,7 +60,11 @@ def _generate_main_tf(
 
 def _hcl_variable(name: str, description: str, hcl_type: str, default: str | None) -> str:
     """Render a single HCL ``variable`` block."""
-    lines = [f'variable "{name}" {{', f'  description = "{description}"', f"  type        = {hcl_type}"]
+    lines = [
+        f'variable "{name}" {{',
+        f'  description = "{description}"',
+        f"  type        = {hcl_type}",
+    ]
     if default is not None:
         lines.append(f"  default     = {default}")
     lines.append("}")
@@ -89,15 +93,27 @@ def _generate_variables_tf(
         ),
         ("constraints", "Juju constraints for the application.", "string", "null"),
         ("model_uuid", "UUID of the Juju model to deploy to.", "string", None),
-        ("revision", "Charm revision to deploy. Uses latest from channel if null.", "number", "null"),
+        (
+            "revision",
+            "Charm revision to deploy. Uses latest from channel if null.",
+            "number",
+            "null",
+        ),
         ("units", "Number of units to deploy.", "number", "1"),
     ]
 
     if has_resources:
-        specs.append(("resources", "Map of resource names to OCI image revisions.", "map(string)", "{}"))
+        specs.append(
+            ("resources", "Map of resource names to OCI image revisions.", "map(string)", "{}")
+        )
     if has_storage:
         specs.append(
-            ("storage_directives", "Map of storage names to directives (e.g. pool,size,count).", "map(string)", "{}")
+            (
+                "storage_directives",
+                "Map of storage names to directives (e.g. pool,size,count).",
+                "map(string)",
+                "{}",
+            )
         )
 
     # Sort alphabetically by variable name.

@@ -171,7 +171,9 @@ class ChaosTestTool(Tool):
         """Perform the disruption and return a description of what was done."""
         try:
             if disruption == "kill-unit":
-                result = juju_subprocess.run_juju(["remove-unit", f"{app}/0", "--no-prompt"], model)
+                result = juju_subprocess.run_juju(
+                    ["remove-unit", f"{app}/0", "--no-prompt"], model
+                )
                 if result.returncode != 0:
                     return f"Error: failed to remove unit: {result.stderr}"
                 return f"Removed unit {app}/0."
@@ -189,7 +191,9 @@ class ChaosTestTool(Tool):
                 result = juju_subprocess.run_juju(["scale-application", app, "0"], model)
                 if result.returncode != 0:
                     # Fall back to remove-unit for machine models.
-                    result = juju_subprocess.run_juju(["remove-unit", f"{app}/0", "--no-prompt"], model)
+                    result = juju_subprocess.run_juju(
+                        ["remove-unit", f"{app}/0", "--no-prompt"], model
+                    )
                     if result.returncode != 0:
                         return f"Error: failed to scale down: {result.stderr}"
                 # Restore to 1 unit.

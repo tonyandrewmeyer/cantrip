@@ -20,19 +20,21 @@ _DEFAULT_MAX_RESULTS = 50
 _ABSOLUTE_MAX_RESULTS = 200
 
 # Directory names to skip when collecting results.
-_SKIP_DIRS: frozenset[str] = frozenset({
-    ".git",
-    ".hg",
-    ".svn",
-    ".tox",
-    ".venv",
-    "venv",
-    "__pycache__",
-    "node_modules",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-})
+_SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".tox",
+        ".venv",
+        "venv",
+        "__pycache__",
+        "node_modules",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+    }
+)
 
 
 class GlobTool(PathAwareTool):
@@ -58,22 +60,19 @@ class GlobTool(PathAwareTool):
                 "pattern": {
                     "type": "string",
                     "description": (
-                        "Glob pattern to match (e.g. '**/*.py', 'tests/**/test_*.py', "
-                        "'*.yaml')."
+                        "Glob pattern to match (e.g. '**/*.py', 'tests/**/test_*.py', '*.yaml')."
                     ),
                 },
                 "path": {
                     "type": "string",
                     "description": (
-                        "Directory to search in "
-                        "(relative to charm directory, defaults to '.')."
+                        "Directory to search in (relative to charm directory, defaults to '.')."
                     ),
                 },
                 "max_results": {
                     "type": "integer",
                     "description": (
-                        f"Maximum number of file paths to return "
-                        f"(default {_DEFAULT_MAX_RESULTS})."
+                        f"Maximum number of file paths to return (default {_DEFAULT_MAX_RESULTS})."
                     ),
                 },
             },
@@ -93,14 +92,10 @@ class GlobTool(PathAwareTool):
             return ToolResult(success=False, output="", error=str(exc))
 
         if not resolved.exists():
-            return ToolResult(
-                success=False, output="", error=f"Path not found: {path}"
-            )
+            return ToolResult(success=False, output="", error=f"Path not found: {path}")
 
         if not resolved.is_dir():
-            return ToolResult(
-                success=False, output="", error=f"Not a directory: {path}"
-            )
+            return ToolResult(success=False, output="", error=f"Not a directory: {path}")
 
         max_results = min(max(1, max_results), _ABSOLUTE_MAX_RESULTS)
 

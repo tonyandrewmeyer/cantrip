@@ -320,9 +320,7 @@ class CharmcraftInitTool(Tool):
             # Ensure unit-test coverage has a fail_under threshold.
             coverage_actions = _inject_coverage_threshold(target_path)
 
-            post_init_summary = "\n".join(
-                tracing_actions + pre_commit_actions + coverage_actions
-            )
+            post_init_summary = "\n".join(tracing_actions + pre_commit_actions + coverage_actions)
 
             return ToolResult(
                 success=True,
@@ -549,10 +547,7 @@ class CharmValidateTool(Tool):
                     if coverage_pct >= _COVERAGE_THRESHOLD:
                         coverage_detail = f"PASSED ({coverage_pct}%)"
                     else:
-                        coverage_detail = (
-                            f"LOW ({coverage_pct}%, "
-                            f"target {_COVERAGE_THRESHOLD}%)"
-                        )
+                        coverage_detail = f"LOW ({coverage_pct}%, target {_COVERAGE_THRESHOLD}%)"
                 else:
                     coverage_detail = "not reported"
             else:

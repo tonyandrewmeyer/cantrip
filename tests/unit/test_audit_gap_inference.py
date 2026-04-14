@@ -1,6 +1,5 @@
 """Tests for _infer_gaps_from_audit and plan_improvement_fixes."""
 
-
 from cantrip.agent.core import _infer_gaps_from_audit
 from cantrip.agent.planner import PlanningContext, plan_improvement_fixes
 from cantrip.agent.queue import TaskCategory
@@ -133,10 +132,19 @@ class TestPlanImprovementFixes:
     def test_no_gaps_produces_no_tasks(self):
         """When all gaps are False, no fix tasks are generated."""
         gap_names = (
-            "cos_tracing", "cos_metrics", "cos_logging", "cos_dashboards",
-            "ops_tracing", "unit_tests", "integration_tests",
-            "deprecated_apis", "readme", "licence", "listing_metadata",
-            "type_annotations", "modern_patterns",
+            "cos_tracing",
+            "cos_metrics",
+            "cos_logging",
+            "cos_dashboards",
+            "ops_tracing",
+            "unit_tests",
+            "integration_tests",
+            "deprecated_apis",
+            "readme",
+            "licence",
+            "listing_metadata",
+            "type_annotations",
+            "modern_patterns",
         )
         gaps = dict.fromkeys(gap_names, False)
         tasks = plan_improvement_fixes(self._context(), gaps)

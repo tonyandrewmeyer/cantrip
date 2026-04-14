@@ -14,10 +14,12 @@ from cantrip.agent.tools.base import Tool, ToolResult
 log = logging.getLogger(__name__)
 
 # Hostnames that resolve to cloud metadata services.
-_METADATA_HOSTNAMES = frozenset({
-    "metadata.google.internal",
-    "instance-data.ec2.internal",
-})
+_METADATA_HOSTNAMES = frozenset(
+    {
+        "metadata.google.internal",
+        "instance-data.ec2.internal",
+    }
+)
 
 
 def _is_private_url(url: str) -> str | None:
@@ -46,6 +48,7 @@ def _is_private_url(url: str) -> str | None:
             return f"URL resolves to a private/internal address ({ip_str})"
 
     return None
+
 
 # Truncate responses beyond this to avoid blowing up LLM context.
 MAX_RESPONSE_CHARS = 100_000
@@ -241,10 +244,7 @@ class WebFetchTool(Tool):
             )
 
         if llms_content:
-            text = (
-                f"[llms.txt content from {llms_url}]\n\n"
-                f"{llms_content}"
-            )
+            text = f"[llms.txt content from {llms_url}]\n\n{llms_content}"
         elif extract_text and "text/html" in content_type:
             text = _strip_html(text)
 

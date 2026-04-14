@@ -216,8 +216,6 @@ class TestFactoryFunctions:
         assert data["data"]["task_label"] == "building"
 
     def test_preflight_updated(self):
-        event = events.preflight_updated(
-            group_index=0, item_index=2, status="passed"
-        )
+        event = events.preflight_updated(group_index=0, item_index=2, status="passed")
         data = self._assert_serialisable(event)
         assert data["data"]["group_index"] == 0

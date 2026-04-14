@@ -141,8 +141,13 @@ class TestGrepCommandBuilding:
 
     def test_rg_command_basic(self):
         cmd = GrepTool._build_rg_command(
-            "/usr/bin/rg", "pattern", Path("/tmp/test"),
-            glob=None, context_lines=0, case_sensitive=True, max_results=50,
+            "/usr/bin/rg",
+            "pattern",
+            Path("/tmp/test"),
+            glob=None,
+            context_lines=0,
+            case_sensitive=True,
+            max_results=50,
         )
         assert cmd[0] == "/usr/bin/rg"
         assert "pattern" in cmd
@@ -150,31 +155,50 @@ class TestGrepCommandBuilding:
 
     def test_rg_command_case_insensitive(self):
         cmd = GrepTool._build_rg_command(
-            "/usr/bin/rg", "pattern", Path("/tmp/test"),
-            glob=None, context_lines=0, case_sensitive=False, max_results=50,
+            "/usr/bin/rg",
+            "pattern",
+            Path("/tmp/test"),
+            glob=None,
+            context_lines=0,
+            case_sensitive=False,
+            max_results=50,
         )
         assert "--ignore-case" in cmd
 
     def test_rg_command_with_glob(self):
         cmd = GrepTool._build_rg_command(
-            "/usr/bin/rg", "pattern", Path("/tmp/test"),
-            glob="*.py", context_lines=0, case_sensitive=True, max_results=50,
+            "/usr/bin/rg",
+            "pattern",
+            Path("/tmp/test"),
+            glob="*.py",
+            context_lines=0,
+            case_sensitive=True,
+            max_results=50,
         )
         idx = cmd.index("--glob")
         assert cmd[idx + 1] == "*.py"
 
     def test_rg_command_with_context(self):
         cmd = GrepTool._build_rg_command(
-            "/usr/bin/rg", "pattern", Path("/tmp/test"),
-            glob=None, context_lines=3, case_sensitive=True, max_results=50,
+            "/usr/bin/rg",
+            "pattern",
+            Path("/tmp/test"),
+            glob=None,
+            context_lines=3,
+            case_sensitive=True,
+            max_results=50,
         )
         idx = cmd.index("--context")
         assert cmd[idx + 1] == "3"
 
     def test_grep_command_basic(self):
         cmd = GrepTool._build_grep_command(
-            "pattern", Path("/tmp/test"),
-            glob=None, context_lines=0, case_sensitive=True, max_results=50,
+            "pattern",
+            Path("/tmp/test"),
+            glob=None,
+            context_lines=0,
+            case_sensitive=True,
+            max_results=50,
         )
         assert "-rn" in cmd
         assert "pattern" in cmd
@@ -182,23 +206,35 @@ class TestGrepCommandBuilding:
 
     def test_grep_command_case_insensitive(self):
         cmd = GrepTool._build_grep_command(
-            "pattern", Path("/tmp/test"),
-            glob=None, context_lines=0, case_sensitive=False, max_results=50,
+            "pattern",
+            Path("/tmp/test"),
+            glob=None,
+            context_lines=0,
+            case_sensitive=False,
+            max_results=50,
         )
         assert "-i" in cmd
 
     def test_grep_command_with_glob(self):
         cmd = GrepTool._build_grep_command(
-            "pattern", Path("/tmp/test"),
-            glob="*.py", context_lines=0, case_sensitive=True, max_results=50,
+            "pattern",
+            Path("/tmp/test"),
+            glob="*.py",
+            context_lines=0,
+            case_sensitive=True,
+            max_results=50,
         )
         idx = cmd.index("--include")
         assert cmd[idx + 1] == "*.py"
 
     def test_grep_command_with_context(self):
         cmd = GrepTool._build_grep_command(
-            "pattern", Path("/tmp/test"),
-            glob=None, context_lines=2, case_sensitive=True, max_results=50,
+            "pattern",
+            Path("/tmp/test"),
+            glob=None,
+            context_lines=2,
+            case_sensitive=True,
+            max_results=50,
         )
         idx = cmd.index("-C")
         assert cmd[idx + 1] == "2"

@@ -56,7 +56,6 @@ _INTERFACE_PARTNERS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-
 def _load_charm_metadata(charm_dir: Path) -> dict[str, Any] | None:
     """Load and parse charmcraft.yaml from a charm directory."""
     charmcraft_yaml = charm_dir / "charmcraft.yaml"
@@ -83,7 +82,9 @@ def _verify_relation_data(
     if model:
         cmd.extend(["--model", model])
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=juju_subprocess.JUJU_SUBPROCESS_TIMEOUT)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=juju_subprocess.JUJU_SUBPROCESS_TIMEOUT
+        )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return False, "Could not read relation data"
 
@@ -511,7 +512,9 @@ class RelationSmokeTool(Tool):
 
             # Relate.
             try:
-                relate_result = juju_subprocess.run_juju(["relate", f"{app}:{ep_name}", partner], model)
+                relate_result = juju_subprocess.run_juju(
+                    ["relate", f"{app}:{ep_name}", partner], model
+                )
                 if relate_result.returncode != 0 and "already exists" not in relate_result.stderr:
                     results.append(
                         {
@@ -1026,7 +1029,9 @@ class ConfigVariationTool(Tool):
 
             # Set the config value.
             try:
-                set_result = juju_subprocess.run_juju(["config", app, f"{opt_name}={test_value}"], model)
+                set_result = juju_subprocess.run_juju(
+                    ["config", app, f"{opt_name}={test_value}"], model
+                )
                 if set_result.returncode != 0:
                     results.append(
                         {
@@ -1250,7 +1255,12 @@ class ConfigUnderLoadTool(Tool):
             cmd = ["juju", "config", app, f"{config_key}={config_value}"]
             if model:
                 cmd.extend(["--model", model])
-            subprocess.run(cmd, capture_output=True, text=True, timeout=juju_subprocess.JUJU_SUBPROCESS_TIMEOUT)
+            subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=juju_subprocess.JUJU_SUBPROCESS_TIMEOUT,
+            )
 
         # Run probes and config change concurrently.
         await asyncio.gather(_probe_loop(), _apply_config())
@@ -1260,7 +1270,12 @@ class ConfigUnderLoadTool(Tool):
         if model:
             reset_cmd.extend(["--model", model])
         with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            subprocess.run(reset_cmd, capture_output=True, text=True, timeout=juju_subprocess.JUJU_SUBPROCESS_TIMEOUT)
+            subprocess.run(
+                reset_cmd,
+                capture_output=True,
+                text=True,
+                timeout=juju_subprocess.JUJU_SUBPROCESS_TIMEOUT,
+            )
 
         verdict = "PASS" if errors == 0 else "FAIL"
         lines = [
