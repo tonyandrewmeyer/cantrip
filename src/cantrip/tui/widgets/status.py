@@ -274,7 +274,7 @@ class JujuStatusWidget(Widget):
         # Match against app status.
         if needle in app.app_status.current.lower():
             return True
-        if needle in app.app_status.message.lower():
+        if needle in (app.app_status.message or "").lower():
             return True
         # Match against unit names and statuses.
         for unit_name, unit in app.units.items():
@@ -282,7 +282,7 @@ class JujuStatusWidget(Widget):
                 return True
             if needle in unit.workload_status.current.lower():
                 return True
-            if needle in unit.workload_status.message.lower():
+            if needle in (unit.workload_status.message or "").lower():
                 return True
         # Match against relation names.
         for rel_name, related_apps in app.relations.items():

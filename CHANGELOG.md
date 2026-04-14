@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Fixed
+- **Status filter crash on None message** — `_app_matches_filter` in the TUI status widget no longer crashes with `AttributeError` when `app_status.message` or `workload_status.message` is `None`
+- **SQLite busy timeout** — added `PRAGMA busy_timeout=5000` to the session store, preventing `SQLITE_BUSY` crashes when the executor and conversation loop write concurrently
+- **Concierge status race** — `ConciergePrepareTool` no longer crashes when Juju is healthy but Concierge is not installed; the concierge status call is now wrapped in a try/except
+- **EditFileTool error message** — the "string not found" error no longer appends `...` unconditionally when the search string is shorter than 50 characters
+- **Help screen missing shortcuts** — added F5 (Watcher), F6 (Files), F7 (Model info), F8 (Integration graph), and F9 (Transcript) to the help overlay
+
+### Added
+- **Roadmap Phases 27–33** — seven new phases covering LLM provider hardening (prompt caching, extended thinking, max_tokens fix), agent core robustness (SQLite safety, executor resilience, subagent context management), TUI polish (dead features wired up, blocking subprocess fixes), tool completeness (missing Juju/git tools, shell injection fix), UX improvements (streaming, chat search, cost tracking), planning quality (compact prompt, dependency validation), and new capabilities (bundles, charm migration, multi-charm workspaces)
+
 - **Juju snap confinement (Phase 23.1)** — `JujuDeployTool` and `JujuRefreshTool` now copy `.charm` files from outside `$HOME` to `~/snap/juju/common/` before deploying, working around Juju snap strict confinement that prevented deploys from `/tmp` and other restricted paths; temp copies are cleaned up regardless of success or failure
 - **Bare `Exception` catches (Phase 25.1)** — replaced every bare `except Exception` with specific exception types across 11 locations (tools/base.py, cli.py, inference_snap.py, scorer.py, test_real_charm_build.py, test_juju_live.py, web/server.py, ui/events.py, tui/screens/logs.py), per the project style guide
 - **Shell injection in watcher (Phase 25.2)** — Loki polling via SSH now passes the URL as a `shlex.quote()`-escaped argument instead of interpolating it into a Python script string, preventing injection via crafted URLs

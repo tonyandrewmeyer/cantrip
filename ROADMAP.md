@@ -2367,6 +2367,492 @@ throughout. ✓
 
 ---
 
+## Phase 27: LLM Provider Hardening
+
+**Goal:** Fix correctness bugs, unlock cost savings, and expose missing provider
+capabilities that limit the agent's effectiveness.
+
+### 27.1 Critical — Claude Prompt Caching
+
+- [ ] Send system prompt as a content block with `cache_control: {"type": "ephemeral"}`
+  in both `complete()` and `stream()` (`claude.py`)
+- [ ] Capture `cache_creation_input_tokens` and `cache_read_input_tokens` in the
+  usage dict so cost tracking is accurate
+- [ ] Update `ModelInfoBar` to show cache hit rate when using Claude
+
+### 27.2 High — Fix `max_tokens` Hard-Coded at 4096
+
+- [ ] `ClaudeProvider.complete()` and `stream()` pass `max_tokens: 4096` unconditionally;
+  Claude supports up to 64K output tokens — long BUILD outputs are silently truncated
+- [ ] Add a `max_tokens` parameter to `LLMProvider.complete()` / `stream()` with
+  sensible per-model defaults (Gemini: 65536, Claude: 8192, snap: context-dependent)
+- [ ] Let callers (especially subagent runner) override for long-output tasks
+
+### 27.3 High — Gemini Duplicate Tool Call IDs
+
+- [ ] When Gemini returns multiple calls to the same tool in one response, all
+  `ToolCall` objects share `id=part.function_call.name`, breaking result correlation
+- [ ] Fix: append an index to the ID (`f"{name}_{i}"`) and update
+  `from_function_response` to use the stored function name, not the correlation ID
+- [ ] Add test: two parallel `read_file` calls in one response round-trip correctly
+
+### 27.4 Medium — Extended Thinking Support
+
+- [ ] Claude: add optional `thinking_budget` parameter; pass `thinking` config and
+  `betas=["interleaved-thinking-2025-05-14"]` when enabled
+- [ ] Gemini: replace `include_thoughts=False` with `thinking_budget=0` (correct
+  disable); expose budget control for heavy tasks (design, day-2 synthesis)
+- [ ] Add `thinking_budget` to `LLMProvider` abstract interface
+- [ ] Update `ModelInfoBar` thinking detection to cover Claude models, not just Gemini-3
+
+### 27.5 Medium — Model Routing Map Gaps
+
+- [ ] Add missing `gemini-3.1-pro-preview` → `gemini-3-flash-preview` to `_LIGHT_MODEL_MAP`
+- [ ] Clean up stale `gemini-2.0-flash` entry in `_CONTEXT_WINDOWS`
+- [ ] Add `claude-opus-4-6-*` to `_CONTEXT_WINDOWS` explicitly
+
+### 27.6 Low — Inference Snap Streaming Usage
+
+- [ ] Streaming path in `InferenceSnapProvider.stream()` produces zero usage data
+- [ ] Request `stream_options: {"include_usage": true}` and read the final SSE chunk
+- [ ] Add `asyncio.to_thread()` wrapper around blocking `discover_snap_endpoint` /
+  `_probe_server` calls in `__init__`
+
+### 27.7 Low — Retry Jitter
+
+- [ ] Add `random.uniform(0, base_delay * 0.25)` jitter to `complete_with_retry()`
+  to prevent thundering-herd retries from concurrent subagents
+
+**Exit criteria:** Claude caching active and verified via usage metrics. Gemini parallel
+tool calls produce unique IDs. `max_tokens` no longer truncates long outputs. Extended
+thinking available for design tasks. `make check` passes throughout.
+
+---
+
+## Phase 28: Agent Core Robustness
+
+**Goal:** Fix correctness and resilience issues in the executor, work queue, subagent
+runner, and state persistence that can cause silent failures, data loss, or deadlocks.
+
+### 28.1 Critical — SQLite Busy Timeout
+
+- [ ] Add `PRAGMA busy_timeout = 5000` after opening the database in `store.py`
+- [ ] Without this, concurrent writes from the executor and conversation loop can
+  raise `sqlite3.OperationalError` (SQLITE_BUSY) and crash the session
+- [ ] Replace delete-all/re-insert pattern in `save_tasks` with per-task upsert
+
+### 28.2 High — Hardcoded Task IDs Collide
+
+- [ ] `planner.py` uses static string IDs (`sprint-build`, `audit-charm`, etc.) — running
+  the same plan twice in a session creates duplicate IDs in the queue
+- [ ] Fix: append a short suffix (e.g. `sprint-build-{uuid4()[:8]}`) to all static IDs
+- [ ] Add duplicate-ID detection in `WorkQueue.add_task()` — reject or overwrite
+
+### 28.3 High — Executor Exception Catch Too Narrow
+
+- [ ] `executor._run_loop` catches only `(KeyError, RuntimeError, OSError)` — any other
+  exception type silently kills the autonomous work loop with no recovery
+- [ ] Widen to `Exception` with ERROR-level logging and a cooldown before retry
+- [ ] Add a health-check mechanism so the TUI can surface "executor stopped" to the user
+
+### 28.4 High — Subagent Context Window Management
+
+- [ ] Subagent `run()` grows `messages` without limit across all 8 rounds
+- [ ] Add a simple truncation strategy: if estimated tokens exceed 80% of context window,
+  summarise earlier tool results before adding new ones
+- [ ] Consider increasing `MAX_SUBAGENT_ROUNDS` from 8 to 12 for BUILD tasks
+  (complex builds with tests and fixes regularly exhaust 8 rounds)
+
+### 28.5 High — Concurrent Tool Execution in Subagents
+
+- [ ] Tool calls within each subagent round are executed sequentially (`for tc in ...`)
+- [ ] Use `asyncio.gather()` for independent tool calls in the same round
+- [ ] Significant throughput win for tasks that batch 4–6 read/grep calls at once
+
+### 28.6 Medium — `process_message_streaming` Not Actually Streaming
+
+- [ ] The method calls `_run_conversation_loop` in full before yielding, defeating
+  the purpose of token-level streaming
+- [ ] Refactor to yield chunks as they arrive from the provider's `stream()` method
+- [ ] Update TUI to render incremental text updates (currently waits for full response)
+
+### 28.7 Medium — Compaction Error Recovery
+
+- [ ] If `compact()` fails (rate limit, timeout), the entire user turn is lost
+- [ ] Wrap in try/except; on failure, keep the existing (over-full) context and log a
+  warning rather than aborting the response
+- [ ] Consider falling back to a simpler truncation (drop oldest N messages) on
+  compaction failure
+
+### 28.8 Medium — Noop Count Not Persisted
+
+- [ ] `AgentTask.noop_count` resets to 0 on restart because it is not in the SQLite schema
+- [ ] Add `noop_count INTEGER DEFAULT 0` column to the tasks table
+- [ ] Include in `save_tasks` / `load_tasks` serialisation
+
+### 28.9 Medium — Design Proposal Lost on Restart
+
+- [ ] `state.design_proposal` is transient — lost on crash/restart
+- [ ] After a user approves a design, the executor's `_build_context()` produces
+  `design_content=None` for subsequent tasks
+- [ ] Persist approved designs in the SQLite store; reload on session resume
+
+### 28.10 Low — Work Queue Thread Safety
+
+- [ ] `WorkQueue._tasks` mutations from concurrent asyncio tasks can interleave
+  across `await` points (e.g. `move_to_front` does remove + insert)
+- [ ] Add `asyncio.Lock` around all list mutations
+- [ ] Ensure `all_tasks()` returns deep copies, not shallow references to live objects
+
+### 28.11 Low — Revert Leaves Untracked Files
+
+- [ ] `_DefaultGitService.revert_to_clean` calls `git checkout .` which only
+  restores tracked files
+- [ ] Add `git clean -fd` after checkout to remove untracked files created by
+  failing BUILD subagents
+
+### 28.12 Low — Category-Specific Task Timeouts
+
+- [ ] `_TASK_TIMEOUT = 600` is a single global constant for all task categories
+- [ ] RESEARCH should fail fast (300s); BUILD+DEPLOY need more time (900s)
+- [ ] Define per-category timeouts in a dict
+
+**Exit criteria:** SQLite writes survive concurrent access. Duplicate task IDs rejected.
+Executor self-heals from unexpected exceptions. Subagent context managed. `make check`
+passes throughout.
+
+---
+
+## Phase 29: TUI Bugs and Polish
+
+**Goal:** Fix broken/dead features in the TUI, improve the help system, and wire up
+partially implemented functionality.
+
+### 29.1 High — Wire Up `RelationDetailScreen`
+
+- [ ] `RelationDetailScreen` is fully implemented but never opened — no handler for
+  `RelationLine.Selected` messages exists in `app.py`
+- [ ] Add `on_relation_line_selected` handler in `CantripApp` to push the screen
+- [ ] Export from `screens/__init__.py`
+
+### 29.2 High — Fix Blocking Subprocess Calls on Event Loop
+
+- [ ] `LogScreen._fetch_logs()` and `RelationDetailScreen._fetch_data()` call
+  `subprocess.run()` on the main Textual event loop thread, freezing the UI for
+  up to 15 seconds
+- [ ] Move to `self.run_worker()` or `asyncio.to_thread()`
+
+### 29.3 High — Fix `_app_matches_filter` Crash on None Status Message
+
+- [ ] `widgets/status.py` calls `.lower()` on `app_status.message` which can be `None`
+- [ ] Fix: `(message or "").lower()`
+
+### 29.4 Medium — Update Help Screen
+
+- [ ] Add missing F5 (Watcher), F6 (Files), F7 (Model), F8 (Graph), F9 (Transcript)
+  to the help overlay
+- [ ] Make help container scrollable for small terminals
+- [ ] Use percentage-based width instead of fixed 70-cell width
+
+### 29.5 Medium — Wire Up COS Status
+
+- [ ] `MultiModelStatusWidget.cos_status` reactive is defined but never set from `app.py`
+- [ ] Poll COS model status alongside dev model status in `_poll_juju_status`
+- [ ] Wire up COS expand/collapse click handler (`toggle_cos_expanded` is dead)
+
+### 29.6 Medium — Fix `update_progress()` No-Op
+
+- [ ] `MessageWidget.update_progress()` calls `self.refresh()` on a `Static` widget,
+  but `compose()` is only called once — progress updates are visually invisible
+- [ ] Either use `self.update()` on the inner static, or switch to a `Widget` base
+
+### 29.7 Medium — Fix Graph Screen Scrollability
+
+- [ ] `GraphScreen` uses a `Static` widget with CSS `overflow-y: auto` — but Textual's
+  `Static` does not scroll; long graphs are clipped
+- [ ] Wrap in `ScrollableContainer` or use `RichLog`
+- [ ] Make refresh actually fetch fresh Juju status instead of re-rendering stale data
+
+### 29.8 Low — Add Agent Cancellation Binding
+
+- [ ] Help screen lists "Ctrl+C — Cancel operation" but no such binding exists
+- [ ] Add `Ctrl+C` binding to cancel the `agent_response` worker
+- [ ] Add visual feedback when the cancel is in progress
+
+### 29.9 Low — Clean Up Dead CSS
+
+- [ ] Remove `.user-message`, `.agent-message`, `#status-content`, `.progress-indicator`,
+  `.success-indicator`, `.error-indicator` from `cantrip.tcss` — all dead selectors
+- [ ] Fix inconsistent `dismiss` vs `dismiss_screen` action naming across screens
+- [ ] Replace manual space-padding in modal screen titles with CSS alignment
+
+### 29.10 Low — Display Timestamps in Chat
+
+- [ ] `ChatMessage.timestamp` is stored but never rendered
+- [ ] Show timestamp in the message header (e.g. `[14:23]`)
+
+### 29.11 Low — Design Questions Back Button
+
+- [ ] `DesignQuestionsScreen` has no way to go back to the previous question
+- [ ] Add a "Previous" button or `Left`/`p` keybinding
+- [ ] Distinguish "user finished" from "user cancelled" (Escape) in the return value
+
+### 29.12 Low — File Preview on Click
+
+- [ ] `CharmTreeWidget.on_directory_tree_file_selected` silently discards the event
+- [ ] Show a read-only file preview panel or at least the file path in the status bar
+
+**Exit criteria:** All TUI screens reachable and functional. No blocking subprocess calls
+on the event loop. Dead CSS and dead features either wired up or removed. `make check`
+passes throughout.
+
+---
+
+## Phase 30: Tool Completeness
+
+**Goal:** Fill gaps in the agent's toolbox that limit autonomous workflows, improve
+existing tool robustness, and fix security issues.
+
+### 30.1 Critical — Fix Shell Injection in Observability Tools
+
+- [ ] `TempoQueryTool` and `LokiQueryTool` build Python one-liners embedded in
+  `juju.ssh(unit, f'python3 -c "{script}"')` — a double-quote in the query breaks
+  out of the shell string and allows arbitrary command execution on the Juju unit
+- [ ] Fix: base64-encode the script and decode on the remote side, or use a temp file
+
+### 30.2 High — Missing Juju Tools
+
+- [ ] `juju_remove_application` — remove a single app without destroying the whole model
+- [ ] `juju_config_set` — change config on a running application (`juju config app key=val`)
+- [ ] `juju_show_unit` — expose `juju show-unit` as a first-class tool (currently
+  only used internally in acceptance tests)
+- [ ] Add `channel` parameter to `JujuDeployTool` and `JujuRefreshTool`
+- [ ] Add `base` parameter to `JujuDeployTool` for Ubuntu version selection
+- [ ] Cap `JujuSSHTool` output length (currently unbounded — can overflow context)
+
+### 30.3 High — Missing Git Tools
+
+- [ ] `git_branch` — create and list branches
+- [ ] `git_checkout` — switch branches (essential for multi-branch workflows)
+- [ ] `git_stash` / `git_stash_pop` — stash and restore changes
+- [ ] Add `branch` and `path` filter parameters to `GitLogTool`
+- [ ] Add `draft` parameter to `GhPrCreateTool`
+- [ ] Add `gh_pr_list` and `gh_pr_view` tools
+
+### 30.4 Medium — `ReadFileTool` Line Range Support
+
+- [ ] Add `start_line` and `end_line` parameters (like `VirtualFileReadTool` already has)
+- [ ] Prevents the LLM from reading entire large files when it only needs a section
+- [ ] Add file size and symlink indicators to `ListDirectoryTool`
+
+### 30.5 Medium — Fix `GrepTool` Max Results
+
+- [ ] `rg --max-count N` is per-file, not global — a large codebase can return far
+  more lines than `max_results` intended
+- [ ] Use `--max-total-count` (rg ≥ 13) or paginate the output client-side
+
+### 30.6 Medium — Fix `EditFileTool` Error Message
+
+- [ ] Appends `...` unconditionally even when the string is shorter than 50 characters
+- [ ] Only append `...` when `len(old_string) > 50`
+
+### 30.7 Low — Validate `RunCommandTool` Working Directory
+
+- [ ] `cwd` parameter is unrestricted — the agent can run commands in `/etc/` or
+  other sensitive directories
+- [ ] Validate that `cwd` is within the charm project tree
+
+### 30.8 Low — Deduplicate `_juju_available()`
+
+- [ ] Identical one-liner defined in both `juju.py` and `observability.py`
+- [ ] Move to `juju_subprocess.py`
+
+### 30.9 Low — Fix Concierge Status Race
+
+- [ ] `environment.py` line 130: if Juju is healthy but Concierge is absent, the
+  `_is_already_provisioned()` fast-path returns True but then calls
+  `_run_concierge("status")` which crashes
+- [ ] Return immediately from the Juju fast-path without calling concierge
+
+**Exit criteria:** Shell injection fixed. Missing Juju/git tools implemented and tested.
+Existing tools hardened. `make check` passes throughout.
+
+---
+
+## Phase 31: User Experience Improvements
+
+**Goal:** Quality-of-life features that make Cantrip more pleasant and productive for
+experienced users.
+
+### 31.1 High — Chat Search and Navigation
+
+- [ ] Add `/` search binding in `ChatWidget` to search message content
+- [ ] Add `TranscriptScreen` search binding
+- [ ] Support `Ctrl+F` as alternative
+
+### 31.2 High — Streaming Responses in TUI
+
+- [ ] Currently the TUI waits for the full agent response before displaying anything
+- [ ] Implement token-level streaming: render text as it arrives from the LLM
+- [ ] Show a "typing" indicator while the response is being generated
+- [ ] Depends on Phase 28.6 (fixing `process_message_streaming`)
+
+### 31.3 Medium — Session Resume UX
+
+- [ ] On launch, if a `.cantrip` file exists with unfinished tasks, offer to resume
+  rather than starting fresh
+- [ ] Show a summary of what was in progress when the session ended
+- [ ] Let the user choose: resume, start fresh, or review transcript first
+
+### 31.4 Medium — Token Cost Dashboard
+
+- [ ] Show cumulative token usage and estimated cost in the `ModelInfoBar`
+- [ ] Break down by category (research, build, deploy, test, debug)
+- [ ] Show cache hit rate when using Claude (depends on Phase 27.1)
+
+### 31.5 Medium — Log Screen Model Selector
+
+- [ ] `LogScreen` always shows the dev model — add a dropdown or binding to switch
+  to COS model logs
+- [ ] `GraphScreen` should support filtering by app status (show only blocked/waiting)
+
+### 31.6 Medium — Trace Screen with Real URLs
+
+- [ ] `TraceScreen` has placeholder `...` URLs for Tempo/Loki — generate real
+  deep-link URLs from the COS model endpoint addresses
+- [ ] Actually check COS reachability instead of always showing "Connected"
+
+### 31.7 Low — Charm Comparison Mode
+
+- [ ] `--compare charm1/ charm2/` flag to diff two charm implementations
+- [ ] Highlight differences in structure, config, relations, tests
+- [ ] Useful for evaluating Cantrip-generated charms against hand-crafted ones
+
+### 31.8 Low — Export Running Session
+
+- [ ] Allow exporting the transcript while the session is still running (not just
+  after exit via `export-transcript` subcommand)
+- [ ] Add `F10` binding or `/export` chat command
+
+### 31.9 Low — Notification Sounds / Desktop Notifications
+
+- [ ] Long-running builds can take minutes — notify the user when a task completes
+  or needs confirmation
+- [ ] Use terminal bell (`\a`) for simple notification
+- [ ] Optional desktop notification via `notify-send` on Linux
+
+**Exit criteria:** Chat is searchable. Responses stream token-by-token. Session resume
+is smooth. Cost tracking visible in the UI.
+
+---
+
+## Phase 32: Prompt and Planning Quality
+
+**Goal:** Improve the system prompt, subagent guidance, and planning logic to produce
+higher-quality charms with fewer iterations.
+
+### 32.1 High — Compact Prompt Missing Critical Context
+
+- [ ] `system_compact.md.j2` omits `cos_model`, `environment_ready`,
+  `watcher_enabled`, `skills_index`, and `recent_decisions`
+- [ ] After compaction, the agent loses awareness of the COS model and environment
+  state, leading to incorrect tool choices
+- [ ] Add at minimum `environment_ready`, `cos_model`, and active skills to the
+  compact template
+
+### 32.2 Medium — LLM Planning Output Validation
+
+- [ ] Planner does not verify that dependency IDs in the task list refer to tasks
+  within the same plan — hallucinated dependencies cause silent deadlocks
+- [ ] Validate dependency graph is a DAG before adding tasks to the queue
+- [ ] Log a warning and strip invalid dependencies
+
+### 32.3 Medium — Watcher Event Coverage Gaps
+
+- [ ] `offer_connection_change`, `removed_offer`, and `databag_change` events are
+  silently dropped by `autodeploy.task_for_watcher_event()` — no task is created
+- [ ] Map these to DEBUG or INFRA tasks as appropriate
+- [ ] Make the Loki port configurable in `WatcherConfig` (currently hardcoded
+  to `localhost:3100`)
+
+### 32.4 Medium — Design Gap Inference Too Fragile
+
+- [ ] `_infer_gaps_from_audit` uses keyword co-occurrence at the document level
+- [ ] "Good tracing setup, no logging" incorrectly sets `cos_tracing=True`
+- [ ] Switch to sentence-level or section-level keyword scoping
+
+### 32.5 Low — CONFIRM Tasks Block Unrelated Work
+
+- [ ] `route()` returns `WAIT_FOR_CONFIRMATION` at the first CONFIRM task, blocking
+  all other ready tasks even if they have no dependency on the confirmation
+- [ ] Allow non-CONFIRM tasks to proceed in parallel with pending confirmations
+
+### 32.6 Low — Compaction Summary Truncation
+
+- [ ] `_format_history` truncates each tool result at 500 chars for the compaction
+  summary — critical failure info beyond char 500 is lost
+- [ ] Increase to 1000 chars or use a smarter truncation that preserves error messages
+- [ ] Place compaction summary as SYSTEM message, not USER message
+
+**Exit criteria:** Compact prompt retains critical context. Planning validates
+dependencies. Watcher events all route to tasks. `make check` passes throughout.
+
+---
+
+## Phase 33: New Skills and Capabilities
+
+**Goal:** Expand what Cantrip can do beyond basic charm building — charm migration,
+existing bundle management, and deeper ecosystem integration.
+
+### 33.1 Medium — Existing Bundle Management
+
+**Note:** Juju bundles are deprecated — new bundles should not be created. However,
+many existing deployments use bundles, so Cantrip should be able to work with them.
+
+- [ ] New `bundle` skill covering how to read, modify, and deploy existing bundles
+- [ ] `bundle_deploy` tool: deploy an existing `bundle.yaml` to a Juju model
+- [ ] Understand bundle overlay syntax for modifying existing bundles
+- [ ] When proposing multi-charm deployments, use individual `juju deploy` + `juju relate`
+  commands rather than generating new bundle files
+
+### 33.2 High — Charm Migration Skill
+
+- [ ] New `charm-migration` skill for migrating legacy charms to modern patterns
+- [ ] Detect and replace: reactive framework → ops, Harness → Scenario,
+  StoredState → peer relation data, fetch-libs → PyPI imports
+- [ ] Integrate with `--improve` mode: `cantrip run --improve legacy-charm/`
+
+### 33.3 Medium — Multi-Charm Workspace
+
+- [ ] Support working on multiple related charms simultaneously
+- [ ] Shared design document covering cross-charm relations and config
+- [ ] Coordinate deploy and integration testing across charms
+
+### 33.4 Medium — Charm Library Authoring
+
+- [ ] New `charm-library` skill for creating reusable charm libraries
+- [ ] Generate `lib/charms/<charm>/v0/<library>.py` with proper versioning
+- [ ] Include unit tests and documentation
+- [ ] Publish via charmcraft
+
+### 33.5 Low — Interactive Debugging Mode
+
+- [ ] `cantrip debug <charm-path>` — connect to a running deployment and
+  investigate issues interactively
+- [ ] Automatically check status, logs, relation data, config, and secrets
+- [ ] Propose fixes based on observed symptoms
+
+### 33.6 Low — Charm Benchmarking
+
+- [ ] New `benchmark` skill for measuring charm performance
+- [ ] Hook execution time profiling via `juju_dispatch` timing
+- [ ] Comparison across charm versions (before/after optimisation)
+
+**Exit criteria:** Existing bundle management working. Migration skill handles
+the three most common legacy patterns. `make check` passes throughout.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -2459,6 +2945,23 @@ throughout. ✓
 | Duplicated light provider resolution (25.6) | None | Refactor; can start any time |
 | Streaming duplication (25.7) | None | Refactor; can start any time |
 | Long function decomposition (25.8) | None | Refactor; can start any time |
+| Claude prompt caching (27.1) | None | Provider-level change; can start any time |
+| Fix max_tokens 4096 cap (27.2) | None | Provider-level change; can start any time |
+| Gemini duplicate tool call IDs (27.3) | None | Provider-level bug fix; can start any time |
+| Extended thinking support (27.4) | None | Provider-level change; can start any time |
+| SQLite busy timeout (28.1) | None | Store-level fix; can start any time |
+| Hardcoded task ID collisions (28.2) | None | Planner fix; can start any time |
+| Executor exception hardening (28.3) | None | Executor fix; can start any time |
+| Subagent context management (28.4) | Phase 4 subagent | Extends existing subagent runner |
+| Concurrent subagent tools (28.5) | Phase 4 subagent | Changes tool execution in subagent.py |
+| Streaming responses (28.6 + 31.2) | Phase 25.7 streaming dedup | Needs unified streaming path first |
+| Wire RelationDetailScreen (29.1) | Phase 20.6 TUI status | Screen exists, needs handler in app.py |
+| Shell injection fix (30.1) | None | Security fix; can start any time |
+| Missing Juju tools (30.2) | Phase 0.3 Juju integration | New tools using existing juju patterns |
+| Missing git tools (30.3) | Phase 1.5 git tools | New tools using existing git patterns |
+| Existing bundle management (33.1) | Phase 0.3 Juju integration | Read/deploy existing bundles only; new bundles are deprecated |
+| Charm migration (33.2) | Phase 10 charm improvement | Extends the improvement pipeline |
+| Multi-charm workspace (33.3) | Phase 5 design pipeline | Needs design system for multi-charm coordination |
 
 ---
 
@@ -2490,3 +2993,10 @@ throughout. ✓
 | M21: Hardened Orchestrator | 21 ✓ | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
 | M22: Multi-Controller COS | 22 ✓ | COS observability works on both single-controller (K8s) and dual-controller (LXD + K8s) environments |
 | M25: Code Health | 25 | All critical and high code-review findings resolved; `make check` green |
+| M27: Provider Quality | 27 | Claude caching active; Gemini parallel tool calls correct; extended thinking available |
+| M28: Robust Agent | 28 | SQLite concurrent writes safe; executor self-heals; subagent context managed |
+| M29: Polished TUI | 29 | All screens functional; no blocking subprocess calls; dead features wired up or removed |
+| M30: Complete Toolbox | 30 | Shell injection fixed; missing Juju/git tools available; existing tools hardened |
+| M31: Great UX | 31 | Streaming responses; chat search; session resume; cost tracking visible |
+| M32: Smart Planning | 32 | Compact prompt complete; dependency validation; watcher events all routed |
+| M33: Expanded Skills | 33 | Existing bundle management; charm migration; multi-charm workspaces |

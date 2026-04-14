@@ -127,10 +127,15 @@ class ConciergePrepareTool(Tool):
         # Skip if already provisioned — concierge prepare is not fully
         # idempotent and can break the k8s cluster if run twice.
         if await _is_already_provisioned():
-            rc, stdout, _stderr = await _run_concierge("status", timeout=30)
+            status_output = ""
+            try:
+                _rc, stdout, _stderr = await _run_concierge("status", timeout=30)
+                status_output = stdout.strip()
+            except (TimeoutError, OSError, FileNotFoundError):
+                pass
             return ToolResult(
                 success=True,
-                output="Environment already provisioned.\n" + stdout.strip(),
+                output="Environment already provisioned.\n" + status_output,
                 data={"already_provisioned": True},
             )
 

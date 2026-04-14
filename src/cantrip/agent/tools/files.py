@@ -243,10 +243,11 @@ class EditFileTool(PathAwareTool):
 
             content = resolved.read_text()
             if old_string not in content:
+                suffix = "..." if len(old_string) > 50 else ""
                 return ToolResult(
                     success=False,
                     output="",
-                    error=f"String not found in file: {old_string[:50]}...",
+                    error=f"String not found in file: {old_string[:50]}{suffix}",
                 )
 
             # Check for ambiguity
