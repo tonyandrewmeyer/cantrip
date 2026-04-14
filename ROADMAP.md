@@ -2246,8 +2246,9 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.11 Medium — TUI Reactive Boilerplate
 
-- [ ] `modelbar.py` — 12 identical `watch_*` methods
-- [ ] `statusbar.py` — 4 identical watcher methods
+- [x] `modelbar.py` — 13 identical `watch_*` methods replaced with programmatic
+  generation from attribute list
+- [x] `statusbar.py` — 4 identical watcher methods replaced the same way
 
 ### 25.12 Medium — Encapsulation Violations in `tui/app.py`
 

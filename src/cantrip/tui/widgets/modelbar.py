@@ -96,45 +96,28 @@ class ModelInfoBar(Widget):
             self.query_one("#model-info-line1", Static).update("  ".join(parts))
             self.query_one("#model-info-line2", Static).update("  ".join(ctx_parts))
 
-    # Watchers — any change triggers a refresh.
-    def watch_model_name(self) -> None:
-        self._refresh_content()
+    # Every reactive triggers the same refresh — generate watchers in a loop
+    # rather than writing 13 identical two-line methods.
 
-    def watch_light_model_name(self) -> None:
-        self._refresh_content()
 
-    def watch_provider_name(self) -> None:
-        self._refresh_content()
-
-    def watch_thinking_mode(self) -> None:
-        self._refresh_content()
-
-    def watch_context_used(self) -> None:
-        self._refresh_content()
-
-    def watch_context_window(self) -> None:
-        self._refresh_content()
-
-    def watch_compact_threshold(self) -> None:
-        self._refresh_content()
-
-    def watch_session_prompt_tokens(self) -> None:
-        self._refresh_content()
-
-    def watch_session_completion_tokens(self) -> None:
-        self._refresh_content()
-
-    def watch_session_request_count(self) -> None:
-        self._refresh_content()
-
-    def watch_alltime_prompt_tokens(self) -> None:
-        self._refresh_content()
-
-    def watch_alltime_completion_tokens(self) -> None:
-        self._refresh_content()
-
-    def watch_alltime_request_count(self) -> None:
-        self._refresh_content()
+# Textual discovers watcher methods by name (watch_<attr>).  Generate them
+# from the reactive attribute list so each change triggers _refresh_content.
+for _attr in (
+    "model_name",
+    "light_model_name",
+    "provider_name",
+    "thinking_mode",
+    "context_used",
+    "context_window",
+    "compact_threshold",
+    "session_prompt_tokens",
+    "session_completion_tokens",
+    "session_request_count",
+    "alltime_prompt_tokens",
+    "alltime_completion_tokens",
+    "alltime_request_count",
+):
+    setattr(ModelInfoBar, f"watch_{_attr}", lambda self: self._refresh_content())
 
 
 def _fmt_k(n: int) -> str:

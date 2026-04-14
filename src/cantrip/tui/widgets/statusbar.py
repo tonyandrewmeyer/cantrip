@@ -41,18 +41,8 @@ class StatusBar(Widget):
         with contextlib.suppress(NoMatches):
             self.query_one("#status-bar-content", Static).update(text)
 
-    def watch_task_label(self) -> None:
-        """React to task_label changes."""
-        self._refresh_content()
+    # Every reactive triggers the same refresh — watchers generated below.
 
-    def watch_cos_health(self) -> None:
-        """React to cos_health changes."""
-        self._refresh_content()
 
-    def watch_test_summary(self) -> None:
-        """React to test_summary changes."""
-        self._refresh_content()
-
-    def watch_watcher_status(self) -> None:
-        """React to watcher_status changes."""
-        self._refresh_content()
+for _attr in ("task_label", "cos_health", "test_summary", "watcher_status"):
+    setattr(StatusBar, f"watch_{_attr}", lambda self: self._refresh_content())
