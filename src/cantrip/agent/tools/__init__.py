@@ -58,6 +58,7 @@ from cantrip.agent.tools.github import (
     GhPrCreateTool,
     GhRepoCreateTool,
 )
+from cantrip.agent.tools.glob import GlobTool
 from cantrip.agent.tools.grep import GrepTool
 from cantrip.agent.tools.inference import ListInferenceSnapsTool
 from cantrip.agent.tools.juju import (
@@ -142,6 +143,7 @@ def build_tools(
         ListDirectoryTool(base_path=base_path),
         EditFileTool(base_path=base_path),
         GrepTool(base_path=base_path),
+        GlobTool(base_path=base_path),
         # Audit & lint
         CharmAuditTool(),
         CharmlintTool(),
@@ -277,6 +279,7 @@ __all__ = [
     "ListDirectoryTool",
     "EditFileTool",
     "GrepTool",
+    "GlobTool",
     # Charm
     "CharmcraftInitTool",
     "CharmcraftPackTool",

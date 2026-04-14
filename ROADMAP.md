@@ -2322,12 +2322,12 @@ or prevent entire workflows (PR review iteration).
 - [x] Add to BUILD, DEBUG, RESEARCH, and TEST subagent allowlists
 - [x] Unit tests (29 tests)
 
-### 26.2 High — File Pattern Matching (`glob`)
+### 26.2 High — File Pattern Matching (`glob`) ✓
 
-- [ ] New `GlobTool` (`glob`) for finding files by pattern (`**/*.py`, `src/**/*_test.go`)
-- [ ] Parameters: pattern, path (search root), max results
-- [ ] Add to all subagent allowlists that have `list_directory`
-- [ ] Unit tests
+- [x] New `GlobTool` (`glob`) for finding files by pattern (`**/*.py`, `src/**/*_test.go`)
+- [x] Parameters: pattern, path (search root), max results
+- [x] Add to all subagent allowlists that have `list_directory`
+- [x] Unit tests (20 tests)
 
 ### 26.3 High — `llms.txt` Awareness in Web Tools
 
