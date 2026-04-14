@@ -228,4 +228,5 @@ def _ensure_rules_loaded() -> None:
         status,  # noqa: F401
         structure,  # noqa: F401
         testing,  # noqa: F401
+        unknown_fields,  # noqa: F401
     )
