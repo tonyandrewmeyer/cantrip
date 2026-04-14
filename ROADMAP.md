@@ -3091,6 +3091,26 @@ passing `make check`.
 
 ---
 
+## Phase 36b: Review charming-with-claude Skills
+
+**Goal:** Review the skills in `github.com/tonyandrewmeyer/charming-with-claude`
+and adopt them for use when building Cantrip and/or incorporate them into
+Cantrip's own agent (system prompts, subagent guidance, skills).
+
+- [ ] Clone the repo and review all available skills
+- [ ] Evaluate each skill for (a) use as a Claude Code plugin when developing
+  Cantrip itself, and (b) incorporation into Cantrip's own skill system for
+  charm generation
+- [ ] Install as a Claude Code plugin if useful for development
+- [ ] For skills relevant to charm building, either adopt directly or adapt
+  into Cantrip's agentskills.io-format skills
+- [ ] Document findings: what was adopted, what was rejected (and why)
+
+**Exit criteria:** Review complete. Useful skills adopted or adapted.
+`make check` passes throughout.
+
+---
+
 ## Phase 37: Upstream Ecosystem Catch-Up
 
 **Goal:** Review recent changes (last ~3 months) in the core charm ecosystem
