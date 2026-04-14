@@ -33,9 +33,8 @@ from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import Tool, ToolResult, build_tools
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
+from cantrip.llm import base as llm
 from cantrip.llm.base import LLMProvider, Message, Response, Role
-from cantrip.llm.base import Tool as LLMTool
-from cantrip.llm.base import ToolResult as LLMToolResult
 from cantrip.ui import events as ui_events
 
 log = logging.getLogger(__name__)
@@ -276,7 +275,7 @@ class CantripAgent:
         "plan_tasks",
     }
 
-    def _tools_for_llm(self) -> list[LLMTool]:
+    def _tools_for_llm(self) -> list[llm.Tool]:
         """Convert tools to LLM format.
 
         When the provider declares a ``max_tools`` limit, only the core
@@ -288,7 +287,7 @@ class CantripAgent:
             tools = [t for t in tools if t.name in self._CORE_TOOL_NAMES][:limit]
 
         return [
-            LLMTool(
+            llm.Tool(
                 name=tool.name,
                 description=tool.description,
                 parameters=tool.parameters,
@@ -338,7 +337,7 @@ class CantripAgent:
     async def _complete_with_retry(
         self,
         messages: list[Message],
-        tools: list[LLMTool] | None,
+        tools: list[llm.Tool] | None,
         temperature: float = 0.7,
     ) -> Response:
         """Call provider.complete() with retry and linear backoff for transient errors."""
@@ -430,7 +429,7 @@ class CantripAgent:
                     f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"
                 )
                 tool_results.append(
-                    LLMToolResult(
+                    llm.ToolResult(
                         tool_call_id=tc.id,
                         content=content,
                         is_error=not result.success,

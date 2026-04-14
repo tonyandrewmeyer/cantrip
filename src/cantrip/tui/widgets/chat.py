@@ -6,7 +6,6 @@ from enum import StrEnum
 
 from textual.app import ComposeResult
 from textual.containers import ScrollableContainer, Vertical
-from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import LoadingIndicator, Static
 
@@ -164,8 +163,6 @@ class ChatWidget(Widget):
         color: $text-muted;
     }
     """
-
-    messages: reactive[list[ChatMessage]] = reactive(list, init=False)
 
     def __init__(self, **kwargs) -> None:
         """Initialise the chat widget."""

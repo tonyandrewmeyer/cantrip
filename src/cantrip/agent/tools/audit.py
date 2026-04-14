@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from cantrip.agent.tools.base import Tool, ToolResult
 from charmlint import LintConfig, lint
 from charmlint.models import Severity
@@ -250,8 +252,6 @@ class CharmAuditTool(Tool):
             )
 
         # Load charm name from metadata.
-        import yaml
-
         for meta_file in ("charmcraft.yaml", "metadata.yaml"):
             meta_path = charm_dir / meta_file
             if meta_path.exists():

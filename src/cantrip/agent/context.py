@@ -9,6 +9,7 @@ from cantrip.llm.base import (
     LLMProvider,
     Message,
     Role,
+    ToolResult,
     estimate_message_tokens,
     estimate_tokens,
 )
@@ -180,7 +181,6 @@ class ContextManager:
 
     def _virtualise_tool_message(self, message: Message) -> Message:
         """Virtualise individual tool results that exceed the threshold."""
-        from cantrip.llm.base import ToolResult
 
         new_results = []
         changed = False

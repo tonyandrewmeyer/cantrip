@@ -2232,10 +2232,10 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.9 Medium — Import Style Violations
 
-- [ ] `core.py` — imports `Tool as LLMTool` / `ToolResult as LLMToolResult` instead
-  of importing the module
-- [ ] `subagent.py`, `context.py`, `planning.py`, `audit.py` — local imports inside
-  methods; move to module top
+- [x] `core.py` — replaced `Tool as LLMTool` / `ToolResult as LLMToolResult` aliases
+  with `from cantrip.llm import base as llm` and qualified `llm.Tool`, `llm.ToolResult`
+- [x] `subagent.py`, `context.py`, `planning.py`, `audit.py` — moved local imports
+  to module top
 - [ ] `tui/app.py` — imports widget/screen objects directly instead of modules
 
 ### 25.10 Medium — Fragile String Matching
@@ -2261,8 +2261,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.14 Medium — Missing Error Handling in `terraform.py`
 
-- [ ] `generate_terraform_module()` — no try/except around `yaml.safe_load()`,
-  no validation of required keys before access.
+- [x] `generate_terraform_module()` — added try/except around `yaml.safe_load()`
+  and validation of required `name` key before access.
 
 ### 25.15 Medium — Overly Broad Exception Grouping in `executor.py`
 
@@ -2276,8 +2276,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.17 Low — Dead Code / Unused Declarations
 
-- [ ] `tui/widgets/chat.py` — reactive `messages` attribute never used
-- [ ] `core.py` — `db_path` and `old_dir` resolve to the same path
+- [x] `tui/widgets/chat.py` — removed unused reactive `messages` attribute and import
+- [ ] `core.py` — `db_path` and `old_dir` resolve to the same path (intentional — migration logic)
 
 ### 25.18 Low — Magic Strings Without Constants
 

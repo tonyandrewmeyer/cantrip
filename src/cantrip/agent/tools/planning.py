@@ -1,8 +1,10 @@
 """Task planning tool — conversation-facing wrapper for the TaskPlanner."""
 
+import json
 import logging
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from cantrip.agent.planner import PlanningContext, TaskPlanner, is_sprint
@@ -127,8 +129,6 @@ class PlanTasksTool(Tool):
                     log.info("Sprint: auto-detected dev model '%s'", detected)
             # Set charm_path to where charmcraft_init will scaffold.
             if context.charm_name and self._state.charm_path:
-                from pathlib import Path
-
                 expected_path = Path(self._state.charm_path) / context.charm_name
                 self._state.charm_path = expected_path
                 log.info("Sprint: set charm_path to '%s'", expected_path)
@@ -165,8 +165,6 @@ def _detect_current_juju_model() -> str | None:
         )
         if result.returncode != 0:
             return None
-        import json
-
         data = json.loads(result.stdout)
         current_model = data.get("current-model")
         models = data.get("models", [])

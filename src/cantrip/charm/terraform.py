@@ -194,10 +194,15 @@ def generate_terraform_module(charmcraft_path: pathlib.Path) -> dict[str, str]:
     and returns a dict mapping filenames to their content:
     ``{"main.tf": ..., "variables.tf": ..., "outputs.tf": ..., "terraform.tf": ...}``
     """
-    raw = yaml.safe_load(charmcraft_path.read_text())
+    try:
+        raw = yaml.safe_load(charmcraft_path.read_text())
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML in {charmcraft_path}: {exc}") from exc
     if not raw or not isinstance(raw, dict):
-        raise KeyError("charmcraft.yaml is empty or not a mapping")
+        raise ValueError("charmcraft.yaml is empty or not a mapping")
 
+    if "name" not in raw:
+        raise KeyError("charmcraft.yaml missing required 'name' field")
     charm_name: str = raw["name"]
     res_name = _resource_name(charm_name)
 

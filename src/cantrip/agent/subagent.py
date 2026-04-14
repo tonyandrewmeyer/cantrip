@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.retry import complete_with_retry
-from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.agent.tools.base import Tool, ToolResult, execute_tool
 from cantrip.llm import base as llm
 
 if TYPE_CHECKING:
@@ -765,6 +765,4 @@ class Subagent:
 
     async def _execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Look up and execute a tool by name."""
-        from cantrip.agent.tools.base import execute_tool
-
         return await execute_tool(self._tool_map, name, arguments)
