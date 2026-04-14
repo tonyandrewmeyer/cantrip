@@ -65,7 +65,8 @@
         <p>
           Cantrip analyses your workload &mdash; documentation, source code,
           existing charms &mdash; and proposes a design grounded in real
-          operational best practices.
+          operational best practices, including companion charms for
+          databases, caches, and ingress.
         </p>
       </div>
 
@@ -74,18 +75,20 @@
         <h3>Autonomous Building</h3>
         <p>
           A background work loop plans, scaffolds, writes charm code,
-          and packs &mdash; without waiting for instructions. You confirm
-          the design; the agent drives.
+          and packs &mdash; without waiting for instructions. Concurrent
+          subagents tackle research, build, deploy, test, and debug
+          tasks in parallel.
         </p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">&#x1F9EA;</div>
-        <h3>Red/Green Testing</h3>
+        <h3>Acceptance Testing</h3>
         <p>
           Integration tests are written <em>before</em> charm code.
-          The agent iterates until they pass, giving you a machine-verifiable
-          definition of &ldquo;done&rdquo;.
+          After red/green iteration, acceptance tests exercise every
+          action, relation, config option, and endpoint &mdash; failures
+          automatically trigger fix tasks.
         </p>
       </div>
 
@@ -95,7 +98,8 @@
         <p>
           Every charm ships with COS integration &mdash; traces, metrics,
           logs, and dashboards wired up automatically via ops-tracing,
-          Prometheus, Loki, and Grafana.
+          Prometheus, Loki, and Grafana. Multi-controller COS is
+          detected and configured automatically.
         </p>
       </div>
 
@@ -105,7 +109,7 @@
         <p>
           A watcher monitors your deployment in real time. When something
           breaks, the agent diagnoses the failure using Tempo traces and
-          Loki logs, then fixes it.
+          Loki logs, then fixes and redeploys.
         </p>
       </div>
 
@@ -113,9 +117,43 @@
         <div class="feature-icon">&#x2B06;</div>
         <h3>Improve Existing Charms</h3>
         <p>
-          Point Cantrip at an existing charm and it audits, adds tests,
-          fills COS gaps, modernises deprecated APIs, and prepares it
-          for Charmhub listing.
+          <code>cantrip --improve /path/to/charm</code> audits an
+          existing charm, adds tests, fills COS gaps, modernises
+          deprecated APIs, checks operational readiness, and prepares
+          it for Charmhub listing.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F3AF;</div>
+        <h3>Operational Readiness</h3>
+        <p>
+          Evaluates charms against Canonical&rsquo;s Operational Readiness
+          Metrics across five pillars: best practices, documentation,
+          reliability, maintainability, and security. Generates scored
+          reports and targeted fix tasks.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F6E0;</div>
+        <h3>Day-2 Operations</h3>
+        <p>
+          After initial build and deploy, the agent researches day-2
+          concerns &mdash; backup/restore, scaling, HA, upgrades, security
+          hardening &mdash; and drives additional charm features from
+          confirmed operational needs.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F4CB;</div>
+        <h3>Charm Linting</h3>
+        <p>
+          Standalone <code>charmlint</code> tool with 35 deterministic
+          lint rules across 10 categories &mdash; metadata, observability,
+          testing, deprecated APIs, libraries, actions, config quality,
+          status reporting, security, and structure.
         </p>
       </div>
 
@@ -134,28 +172,28 @@
         <div class="step-number">1</div>
         <div class="step-content">
           <h3>Describe your workload</h3>
-          <p>&ldquo;Build a charm for Redis&rdquo; &mdash; or point it at your source repo.</p>
+          <p>&ldquo;Build a charm for Redis&rdquo; &mdash; or point it at your source repo, or use <code>--improve</code> on an existing charm.</p>
         </div>
       </div>
       <div class="step">
         <div class="step-number">2</div>
         <div class="step-content">
           <h3>Review the design</h3>
-          <p>Cantrip researches the workload and proposes integrations, config, actions, and operational patterns.</p>
+          <p>Cantrip researches the workload via web search and Charmhub, then proposes integrations, config, actions, companion charms, and operational patterns.</p>
         </div>
       </div>
       <div class="step">
         <div class="step-number">3</div>
         <div class="step-content">
           <h3>Watch it build</h3>
-          <p>The agent writes integration tests, charm code, deploys, and iterates until green &mdash; all visible in a live task checklist.</p>
+          <p>Concurrent subagents write integration tests, charm code, deploy, and iterate until green &mdash; visible in a live task checklist. Acceptance tests exercise every action, relation, and config option.</p>
         </div>
       </div>
       <div class="step">
         <div class="step-number">4</div>
         <div class="step-content">
-          <h3>Ship it</h3>
-          <p>Pack, upload to Charmhub, generate a demo, and publish &mdash; with full COS observability baked in.</p>
+          <h3>Validate and ship</h3>
+          <p>Operational readiness assessment, charm linting, load testing, demo generation, and Charmhub publishing &mdash; with full COS observability baked in.</p>
         </div>
       </div>
     </div>
@@ -178,6 +216,8 @@
       <div class="eco-item"><strong>Concierge</strong><span>Setup</span></div>
       <div class="eco-item"><strong>COS</strong><span>Observability</span></div>
       <div class="eco-item"><strong>Scenario</strong><span>Unit tests</span></div>
+      <div class="eco-item"><strong>Charmlint</strong><span>Linting</span></div>
+      <div class="eco-item"><strong>Showboat</strong><span>Demos</span></div>
     </div>
   </div>
 </section>
@@ -193,13 +233,16 @@
         <span class="code-dot green"></span>
         <span class="code-title">Terminal</span>
       </div>
-      <pre><code><span class="prompt">$</span> pip install cantrip
+      <pre><code><span class="prompt">$</span> uv tool install cantrip
 <span class="prompt">$</span> export GEMINI_API_KEY=<span class="dim">"your-key"</span>
 <span class="prompt">$</span> mkdir my-charm && cd my-charm
 <span class="prompt">$</span> cantrip
 
 <span class="comment"># Or use the Web UI:</span>
 <span class="prompt">$</span> cantrip --web
+
+<span class="comment"># Or improve an existing charm:</span>
+<span class="prompt">$</span> cantrip --improve /path/to/existing-charm
 
 <span class="comment"># Or run entirely on local models:</span>
 <span class="prompt">$</span> cantrip --provider inference-snap --snap gemma3</code></pre>
@@ -214,22 +257,27 @@
 <!-- ── Interfaces ──────────────────────────────────────────────── -->
 <section class="interfaces">
   <div class="container">
-    <h2>Three ways to use it</h2>
+    <h2>Multiple ways to use it</h2>
     <div class="interface-grid">
       <div class="interface-card">
         <h3>TUI</h3>
-        <p>Rich terminal interface with task checklist, Juju status, and chat &mdash; built with Textual.</p>
+        <p>Rich terminal interface with task checklist, Juju status, integration graph, theming, and chat &mdash; built with Textual.</p>
         <code>cantrip</code>
       </div>
       <div class="interface-card">
         <h3>Web UI</h3>
-        <p>Browser-based interface with live WebSocket updates, Markdown chat, and Juju status panel.</p>
+        <p>Browser-based interface with live WebSocket updates, Markdown chat, integration graph, and Juju status panel.</p>
         <code>cantrip --web</code>
       </div>
       <div class="interface-card">
         <h3>CLI</h3>
         <p>Minimal REPL for scripting and headless environments.</p>
         <code>cantrip --no-tui</code>
+      </div>
+      <div class="interface-card">
+        <h3>Export</h3>
+        <p>Export session transcripts as HTML (with pagination), Markdown, or JSONL &mdash; filterable by task, phase, or timestamp.</p>
+        <code>cantrip export-transcript ./my-charm</code>
       </div>
     </div>
   </div>
