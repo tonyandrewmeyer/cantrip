@@ -2329,12 +2329,12 @@ or prevent entire workflows (PR review iteration).
 - [x] Add to all subagent allowlists that have `list_directory`
 - [x] Unit tests (20 tests)
 
-### 26.3 High — `llms.txt` Awareness in Web Tools
+### 26.3 High — `llms.txt` Awareness in Web Tools ✓
 
-- [ ] `web_fetch` checks for `/.well-known/llms.txt` (and `/llms.txt` fallback)
+- [x] `web_fetch` checks for `/.well-known/llms.txt` (and `/llms.txt` fallback)
   on first fetch to a domain, and prefers LLM-friendly content when available
-- [ ] Cache domain → llms.txt availability for the session to avoid repeated probes
-- [ ] Unit tests
+- [x] Cache domain → llms.txt availability for the session to avoid repeated probes
+- [x] Unit tests (8 new tests)
 
 ### 26.4 Medium — PR Review Comments (`pr_review`)
 

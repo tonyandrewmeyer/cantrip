@@ -2,6 +2,7 @@
 
 import html.parser
 import ipaddress
+import logging
 import socket
 import urllib.parse
 from typing import Any
@@ -9,6 +10,8 @@ from typing import Any
 import httpx
 
 from cantrip.agent.tools.base import Tool, ToolResult
+
+log = logging.getLogger(__name__)
 
 # Hostnames that resolve to cloud metadata services.
 _METADATA_HOSTNAMES = frozenset({
@@ -50,6 +53,12 @@ MAX_RESPONSE_CHARS = 100_000
 # Tags whose content should be discarded entirely when stripping HTML.
 _SKIP_TAGS = frozenset({"script", "style"})
 
+# Probe paths for llms.txt, tried in order.
+_LLMS_TXT_PATHS = ("/.well-known/llms.txt", "/llms.txt")
+
+# Timeout for llms.txt probes (keep it short — this is speculative).
+_LLMS_TXT_PROBE_TIMEOUT = 5.0
+
 
 class _HTMLTextExtractor(html.parser.HTMLParser):
     """HTMLParser subclass that extracts visible text from HTML."""
@@ -85,6 +94,58 @@ def _strip_html(content: str) -> str:
     return extractor.get_text()
 
 
+# Session-level cache: domain → llms.txt URL (or None if unavailable).
+# Populated lazily on first fetch to each domain.
+_llms_txt_cache: dict[str, str | None] = {}
+
+
+async def _probe_llms_txt(client: httpx.AsyncClient, url: str) -> str | None:
+    """Check whether the domain of *url* has an llms.txt file.
+
+    Probes ``/.well-known/llms.txt`` first, then ``/llms.txt``.
+    Returns the URL of the llms.txt if found, else ``None``.
+    Results are cached per domain for the session.
+    """
+    parsed = urllib.parse.urlparse(url)
+    domain = f"{parsed.scheme}://{parsed.netloc}"
+
+    if domain in _llms_txt_cache:
+        return _llms_txt_cache[domain]
+
+    for probe_path in _LLMS_TXT_PATHS:
+        probe_url = domain + probe_path
+        try:
+            resp = await client.get(probe_url, timeout=_LLMS_TXT_PROBE_TIMEOUT)
+            if resp.status_code == 200:
+                ct = resp.headers.get("content-type", "")
+                # Only accept text responses (not HTML error pages).
+                if "text/plain" in ct or "text/markdown" in ct:
+                    _llms_txt_cache[domain] = str(resp.url)
+                    log.debug("Found llms.txt at %s", resp.url)
+                    return _llms_txt_cache[domain]
+        except (httpx.RequestError, httpx.TimeoutException):
+            continue
+
+    _llms_txt_cache[domain] = None
+    return None
+
+
+async def _fetch_llms_txt(client: httpx.AsyncClient, llms_url: str) -> str | None:
+    """Fetch the content of an llms.txt file.  Returns ``None`` on failure."""
+    try:
+        resp = await client.get(llms_url)
+        if resp.status_code == 200:
+            return resp.text
+    except (httpx.RequestError, httpx.TimeoutException):
+        pass
+    return None
+
+
+def clear_llms_txt_cache() -> None:
+    """Clear the domain → llms.txt cache.  Useful for testing."""
+    _llms_txt_cache.clear()
+
+
 class WebFetchTool(Tool):
     """Tool to fetch content from a URL."""
 
@@ -97,6 +158,8 @@ class WebFetchTool(Tool):
         return (
             "Fetch content from a URL. Useful for reading documentation, source code,"
             " Charmhub pages, PyPI packages, and GitHub repositories."
+            " Automatically checks for llms.txt (LLM-friendly content) on first"
+            " visit to each domain."
         )
 
     @property
@@ -142,8 +205,21 @@ class WebFetchTool(Tool):
                 follow_redirects=True,
                 headers={"User-Agent": "Cantrip/0.1"},
             ) as client:
+                # Probe for llms.txt on first visit to this domain.
+                llms_url = await _probe_llms_txt(client, url)
+
                 response = await client.get(url)
                 response.raise_for_status()
+
+                content_type = response.headers.get("content-type", "")
+                text = response.text
+
+                # If the response is HTML and llms.txt is available, fetch it
+                # and use the LLM-friendly content instead.
+                llms_content: str | None = None
+                if llms_url and "text/html" in content_type:
+                    llms_content = await _fetch_llms_txt(client, llms_url)
+
         except httpx.TimeoutException:
             return ToolResult(
                 success=False,
@@ -164,23 +240,29 @@ class WebFetchTool(Tool):
                 error=f"Connection error fetching {url}: {exc}",
             )
 
-        content_type = response.headers.get("content-type", "")
-        text = response.text
-
-        if extract_text and "text/html" in content_type:
+        if llms_content:
+            text = (
+                f"[llms.txt content from {llms_url}]\n\n"
+                f"{llms_content}"
+            )
+        elif extract_text and "text/html" in content_type:
             text = _strip_html(text)
 
         truncated = len(text) > MAX_RESPONSE_CHARS
         if truncated:
             text = text[:MAX_RESPONSE_CHARS]
 
+        data: dict[str, Any] = {
+            "status_code": response.status_code,
+            "content_type": content_type,
+            "url": str(response.url),
+            "truncated": truncated,
+        }
+        if llms_content:
+            data["llms_txt_url"] = llms_url
+
         return ToolResult(
             success=True,
             output=text,
-            data={
-                "status_code": response.status_code,
-                "content_type": content_type,
-                "url": str(response.url),
-                "truncated": truncated,
-            },
+            data=data,
         )
