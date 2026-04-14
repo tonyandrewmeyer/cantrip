@@ -2799,9 +2799,34 @@ experienced users.
 - [ ] `/api/logs` and `/api/logs-stream` `level` parameter passed unsanitised to
   subprocess — validate against `{"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}`
 
+### 31.15 Medium — Web UI and TUI Design Quality Pass
+
+Use the impeccable.style skills (now installed as a Claude Code plugin) to
+systematically raise the design quality of both the Web UI and TUI.
+
+- [ ] Run `/impeccable teach` on the cantrip project to establish a `.impeccable.md`
+  design context (colour palette from TUI dark theme, spacing conventions, typography)
+- [ ] `/audit` the Web UI — score accessibility, anti-patterns, theming consistency,
+  and responsive behaviour; fix P0/P1 issues
+- [ ] `/critique` the Web UI against Nielsen's heuristics — the chat panel, task
+  checklist, and Juju status panel each get a heuristic review
+- [ ] `/harden` the Web UI — error states (WebSocket disconnect, API failures),
+  empty states (no tasks yet, no messages), loading states, and text overflow
+  (long charm names, long task descriptions, long log lines)
+- [ ] `/clarify` all user-facing copy in both UIs — error messages, status text,
+  empty-state messages, button labels, confirmation dialogs
+- [ ] `/distill` the Web UI layout — remove unnecessary visual complexity, ensure
+  information density matches the TUI
+- [ ] `/layout` review — ensure consistent spacing scale, visual hierarchy between
+  panels, and responsive breakpoint behaviour
+- [ ] `/polish` final pass on both UIs before any release milestone
+- [ ] Review TUI colour palette and widget spacing using impeccable's colour theory
+  and spatial design principles (adapted for terminal constraints)
+
 **Exit criteria:** Chat is searchable. Responses stream token-by-token. Session resume
 is smooth. Cost tracking visible in the UI. CLI has `/help` and `/tasks` commands.
-Web UI persists state and loads prior sessions.
+Web UI persists state and loads prior sessions. Web UI passes an `/audit` with no
+P0 issues and scores at least 14/20.
 
 ---
 
@@ -2909,6 +2934,134 @@ many existing deployments use bundles, so Cantrip should be able to work with th
 
 **Exit criteria:** Existing bundle management working. Migration skill handles
 the three most common legacy patterns. `make check` passes throughout.
+
+---
+
+## Phase 34: Code Quality Skills for Charm Generation
+
+**Goal:** Port structured review techniques from getsentry/skills into Cantrip's
+own skill system so that subagents can self-review generated charm code before
+presenting it to the user.
+
+### 34.1 Medium — Generated Charm Security Review
+
+Adapt the getsentry/skills `security-review` pattern (OWASP-based, multi-phase,
+confidence-gated reporting) into a Cantrip skill that subagents run after writing
+charm code.
+
+- [ ] New `security-review` skill (agentskills.io format) focused on charm-specific
+  risks: shell injection in event handlers, unsafe `subprocess` calls, secrets in
+  config vs Juju secrets, SSRF in relation data, path traversal in file tools
+- [ ] Python-specific reference material (the getsentry skill has good Python and
+  injection references to draw from)
+- [ ] Integrate into the BUILD subagent category guidance: run security review before
+  marking a code-writing task as done
+- [ ] Confidence gating: only surface HIGH-confidence findings to the user, fix
+  MEDIUM ones silently
+
+### 34.2 Medium — Generated Charm Bug Review
+
+Adapt the getsentry/skills `find-bugs` pattern (diff-based, attack-surface mapping,
+phased verification) for reviewing generated charm code.
+
+- [ ] New `find-bugs` skill focused on common charm bugs: missing `defer_status()`
+  calls, wrong event observation patterns, relation data serialisation errors,
+  missing `update-status` handling, incorrect Pebble layer merging
+- [ ] Run as a post-generation review step in BUILD subagents
+- [ ] Structured output: file:line, severity, evidence, fix suggestion
+
+### 34.3 Low — Iterative CI Fix Loop
+
+Adapt the getsentry/skills `iterate-pr` pattern for Cantrip's deploy-test-debug
+cycle — the autonomous loop that pushes fixes until `juju status` is healthy and
+integration tests pass.
+
+- [ ] Formalise the existing watcher-driven retry loop into a skill with explicit
+  exit conditions (max retries, ask-for-help escalation, stop if environment is
+  broken)
+- [ ] Structured feedback triage: categorise Juju status errors, Loki log errors,
+  and test failures by severity before deciding which to fix first
+- [ ] Track attempts per failure to avoid infinite loops on the same issue
+
+### 34.4 Low — Skill Authoring and Scanning
+
+Use the getsentry/skills `skill-writer` and `skill-scanner` patterns to improve
+Cantrip's own skill quality.
+
+- [ ] Adapt `skill-writer` workflow for creating new Cantrip skills: source
+  synthesis, depth gates, evaluation prompts (EVAL.md)
+- [ ] Adapt `skill-scanner` to audit Cantrip's existing skills for prompt injection
+  risks, excessive scope, and instruction drift
+- [ ] Run skill-scanner as a CI check when skills are added or modified
+
+**Exit criteria:** Security review and bug review skills exist and are wired into
+BUILD subagent guidance. At least one charm build benefits from self-review (a bug
+or security issue caught before user sees it). `make check` passes throughout.
+
+---
+
+## Phase 35: Supply-Chain Security for Generated Charms
+
+**Goal:** Apply Astral's open-source security practices (action pinning, secret
+isolation, dependency cooldowns, trusted publishing, workflow hardening) to the
+CI workflows and release processes that Cantrip generates for charms. Charms
+built by Cantrip should ship with secure-by-default CI/CD.
+
+### 35.1 High — Secure CI Workflow Templates
+
+Generate GitHub Actions workflows for charms that follow supply-chain best
+practices from day one.
+
+- [ ] Pin all actions to full commit SHAs in generated `.github/workflows/`
+  (not floating tags like `@v4`) — include a version comment for readability
+- [ ] Set workflow-level `permissions: {}` (empty) and broaden per-job only
+- [ ] Add `persist-credentials: false` to every `actions/checkout` step
+- [ ] Include a zizmor step in the generated CI so the charm's own workflows
+  are continuously audited
+- [ ] No `pull_request_target` in generated workflows — use `pull_request`
+- [ ] Generate a Dependabot or Renovate config with cooldowns for both Python
+  dependencies and GitHub Actions
+
+### 35.2 Medium — Charm Dependency Hygiene
+
+Teach Cantrip's subagents to be conservative about charm dependencies, matching
+Astral's "eliminate dependencies where practical" philosophy.
+
+- [ ] Design-phase guidance: prefer stdlib over third-party where feasible;
+  justify every new dependency in the design document
+- [ ] Avoid dependencies that pull in binary blobs or native extensions
+  unless the workload genuinely requires them
+- [ ] Pin transitive dependencies with known CVEs (Cantrip itself already
+  does this for cryptography, requests, pygments — apply the same pattern)
+- [ ] Generate `uv.lock` or `requirements.txt` with pinned hashes for
+  reproducible charm builds
+
+### 35.3 Medium — Charmhub Trusted Publishing
+
+When Cantrip generates a release workflow for publishing to Charmhub, use
+trusted publishing (OIDC) rather than long-lived credentials where supported.
+
+- [ ] Research Charmhub's current support for OIDC / trusted publishing
+  (track charmcraft roadmap for this feature)
+- [ ] If supported: generate a release workflow that uses OIDC identity from
+  GitHub Actions, with a dedicated deployment environment and manual approval
+- [ ] If not yet supported: generate a release workflow that isolates the
+  Charmhub token in a deployment environment (not repository-level secrets),
+  requires manual approval, and disables caching during the release job
+
+### 35.4 Low — Release Immutability and Tag Protection
+
+Generate GitHub repository rulesets for charm repos that prevent tag
+tampering and force-push attacks.
+
+- [ ] Include a `.github/rulesets/` or documentation recommending: immutable
+  releases, tag creation restricted to release workflow, no force-push to main
+- [ ] Generate release workflows that create tags only after deployment succeeds
+- [ ] Embed checksums for any native binaries referenced in charm metadata
+
+**Exit criteria:** A charm built by Cantrip ships with a CI workflow that
+passes zizmor with zero findings, pins all actions, isolates secrets, and
+includes dependency review. `make check` passes throughout.
 
 ---
 

@@ -31,6 +31,13 @@ uv run pytest tests/unit/test_tools.py::test_function_name -v
 - Line length: 99 characters
 - Python 3.12+
 
+### Package Execution
+
+- **Always use `uv` and `uvx`** — never `pip`, `pip install`, or `pipx`
+- Never install into system packages (`--break-system-packages` is forbidden)
+- Run one-off tools with `uvx <tool>`, not `pipx run` or `pip install`
+- All dependency management goes through `uv sync`, `uv add`, `uv run`
+
 ### Code Style (Critical)
 
 **Comments & docstrings:**
