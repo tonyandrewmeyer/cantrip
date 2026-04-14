@@ -3097,15 +3097,74 @@ passing `make check`.
 libraries and adjust Cantrip's code generation, skills, system prompts, and
 tool wrappers to stay current.
 
-### 37.1 High — ops Framework Changes
+### 37.1 High — ops Documentation Corrections (from Dec 2024–Apr 2025 commits)
 
-- [ ] Review `canonical/operator` changelog and recent commits — new event
-  types, deprecations, API changes, testing helpers, Pebble client updates
-- [ ] Update system prompt charm expertise (`src/cantrip/agent/prompts/system.py`)
-  if any patterns or best practices have changed
-- [ ] Update Scenario test generation guidance if `ops.testing` has new features
-  or changed APIs
-- [ ] Bump minimum `ops` version in generated charms if needed
+Review of `canonical/operator` docs commits identified concrete patterns that
+Cantrip's code generation, gold-standard charms, skills, and prompts need to
+adopt. Items marked with a source commit hash.
+
+**Unit test generation (ops.testing / Scenario):**
+
+- [ ] Stop passing `meta=` to `testing.Context()` — Context now reads metadata
+  automatically from `charmcraft.yaml`. Just use `testing.Context(MyCharm)`.
+  Fix gold-standard charms that still use `meta=` (`tests/eval/charms/meilisearch/`,
+  `tests/eval/charms/ntfy/`). (0d9e557)
+- [ ] Use `get_filesystem(ctx)` for testing pushed files instead of mount-based
+  testing — simpler, no mount setup needed. Update skills and prompts. (0d9e557)
+- [ ] Use `dataclasses.replace()` for modifying State between events in
+  multi-event test sequences — State objects are immutable. Update
+  `scenario-tests` skill. (6ef2b00)
+- [ ] Adopt status testing pattern: test `collect_status` via
+  `ctx.on.update_status()` with `layers=` and `service_statuses=` kwargs on
+  `testing.Container`. Use `== testing.ActiveStatus()` equality assertions,
+  not `isinstance`. (8520d82)
+- [ ] Use `pytest.mark.parametrize` for config validation tests in generated
+  charms. (8520d82)
+- [ ] Use `pebble_ready` event (not `start`) for container file operation
+  tests. (fe85d4a)
+
+**Integration test generation (Jubilant):**
+
+- [ ] Call `.resolve()` on charm paths in the `charm` fixture. (e1692c4)
+- [ ] Pass path object directly: `juju.deploy(charm)` not
+  `juju.deploy(f"./{charm}")`. (e1692c4)
+- [ ] Adopt the recommended comprehensive `juju` fixture from the migration
+  guide: `keep_models` CLI option, `wait_timeout=10*60`, debug log dump on
+  test failure. (1198db8)
+
+**Charm code generation:**
+
+- [ ] Use `self.on["storage-name"].storage_attached` bracket notation for
+  storage events (not attribute notation). Update system prompt. (6d20276)
+- [ ] Storage handling differs by charm type: K8s charms support only a single
+  instance (`cache[0]`), machine charms get a list. Update guidance. (6d20276)
+- [ ] Get K8s workload mount path from
+  `self.meta.containers["name"].mounts["storage"].location`. (6d20276)
+- [ ] Consider referencing `pathops` library for file operations in storage
+  handling. (6d20276)
+- [ ] Use `pyproject.toml` for charm dependencies, not `requirements.txt`.
+  Use `charmcraft init --profile kubernetes` as scaffolding base. (51cdf22)
+- [ ] Never pass sensitive data in CLI arguments — use environment variables
+  or config files instead. Update security guidance in prompts. (06aba0a)
+- [ ] Secret identifiers are opaque strings — do not assume Xid format or
+  20-character length. (a620797)
+- [ ] Secrets over CMR: only the offering application can grant access.
+  Update relation-data-design skill. (1424fad)
+
+**Observability:**
+
+- [ ] Loki label in Grafana dashboards: use `{charm="app-name"}` not
+  `{juju_charm="app-name"}`. Update observability skill and any dashboard
+  generation. (807be80)
+
+**Reference material:**
+
+- [ ] Note Juju/Pebble/ops version matrix for `assumes` block guidance:
+  Juju 3.6 → Pebble 1.19.2, Juju 4.0 → Pebble 1.26.0. (9392220)
+- [ ] Mention `jhack scenario snapshot` in debugging/testing skills as a way
+  to capture live relation databags for regression tests. (34f12be)
+- [ ] Reference the new debugging how-to (`ops.Framework.breakpoint()`,
+  `debugpy` setup, `juju debug-code`) in Cantrip's debugging guidance. (4bff400)
 
 ### 37.2 High — Jubilant Changes
 
@@ -3144,7 +3203,7 @@ tool wrappers to stay current.
 
 **Exit criteria:** Cantrip's generated code, skills, and prompts reflect the
 current state of the ecosystem. No deprecated APIs used in generated charms.
-`make check` passes throughout.
+Gold-standard charms updated. `make check` passes throughout.
 
 ---
 
