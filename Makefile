@@ -4,14 +4,16 @@
 format:
 	uv run ruff format src tests
 
-# Run all linting (ruff check + ty)
+# Run all linting (ruff check + ruff format check + ty)
 lint:
 	uv run ruff check src tests
+	uv run ruff format --check src tests
 	uv run ty check src
 
-# Run unit tests
+# Run unit tests (with coverage, matching CI)
 unit:
-	uv run pytest tests/unit -v
+	uv run coverage run -m pytest tests/unit -v
+	uv run coverage report
 
 # Run integration tests (real tools, no external services)
 integration:
