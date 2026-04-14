@@ -2741,8 +2741,48 @@ experienced users.
 - [ ] Use terminal bell (`\a`) for simple notification
 - [ ] Optional desktop notification via `notify-send` on Linux
 
+### 31.10 High — CLI REPL Improvements
+
+- [ ] Add `/help` or `?` command listing available REPL commands
+- [ ] Add `/tasks` command showing current task status (title, status, category)
+- [ ] Add `/status` command showing Juju model status
+- [ ] Spinner label should reflect what phase the agent is in (e.g. "Searching...",
+  "Writing files...", "Deploying...") instead of always "Thinking..."
+- [ ] Ctrl+C during `process_message` should drain the executor cleanly rather than
+  abandoning it — currently `stop_executor()` on line 172 is never reached
+
+### 31.11 High — Session Resume Must Load Conversation History
+
+- [ ] `load_state()` never calls `store.load_messages()` — the LLM has no memory of
+  the prior session after resume, despite messages being persisted to SQLite
+- [ ] Load and inject prior messages into `state.messages` on resume
+- [ ] `build_resume_summary` injects a USER message with no ASSISTANT reply, which
+  may confuse LLMs that enforce alternating roles — use a SYSTEM message instead
+- [ ] `_store_initialised` is not reset when `load_state` fails, leaving the store
+  permanently dead for the process lifetime (fixed in this commit)
+
+### 31.12 Medium — Web UI Session and State Persistence
+
+- [ ] Web server never calls `agent.load_state()` or `build_resume_summary()` —
+  every web server start is a fresh session even if a `.cantrip` database exists
+- [ ] Web server never calls `agent.save_state()` after each turn — a crash loses
+  the entire conversation history
+- [ ] Add `/api/messages` endpoint so the web UI can reconstruct conversation
+  history on page reload (currently only `/api/state` exists, with tasks only)
+- [ ] `run_web` duplicates light-provider resolution instead of using
+  `resolve_light_provider()` — should use the shared helper
+- [ ] Handle `ProviderRateLimitError` distinctly in WebSocket handler (currently
+  uses generic "Provider error" message)
+
+### 31.13 Low — Web UI Input Validation
+
+- [ ] `/api/logs` `lines` parameter has no upper bound — clamp to `max(1, min(lines, 5000))`
+- [ ] `/api/logs` and `/api/logs-stream` `level` parameter passed unsanitised to
+  subprocess — validate against `{"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}`
+
 **Exit criteria:** Chat is searchable. Responses stream token-by-token. Session resume
-is smooth. Cost tracking visible in the UI.
+is smooth. Cost tracking visible in the UI. CLI has `/help` and `/tasks` commands.
+Web UI persists state and loads prior sessions.
 
 ---
 

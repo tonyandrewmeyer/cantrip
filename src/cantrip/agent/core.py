@@ -870,6 +870,7 @@ class CantripAgent:
         except (sqlite3.Error, KeyError, ValueError, TypeError):
             log.warning("Failed to load session — .cantrip file may be corrupt")
             self._store = None
+            self._store_initialised = False
             return False
         if loaded is None:
             return False

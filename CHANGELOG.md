@@ -10,6 +10,9 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Concierge status race** — `ConciergePrepareTool` no longer crashes when Juju is healthy but Concierge is not installed; the concierge status call is now wrapped in a try/except
 - **EditFileTool error message** — the "string not found" error no longer appends `...` unconditionally when the search string is shorter than 50 characters
 - **Help screen missing shortcuts** — added F5 (Watcher), F6 (Files), F7 (Model info), F8 (Integration graph), and F9 (Transcript) to the help overlay
+- **CLI banner shows wrong path in improve mode** — banner now displays the `--improve` path instead of the default positional path argument
+- **Deprecated `asyncio.get_event_loop()` in CLI** — replaced with `asyncio.get_running_loop()` in `_drain_executor`
+- **Store not re-initialisable after corrupt session** — `_store_initialised` flag is now reset when `load_state` fails, allowing the store to be re-opened with a fresh database
 
 ### Added
 - **Roadmap Phases 27–33** — seven new phases covering LLM provider hardening (prompt caching, extended thinking, max_tokens fix), agent core robustness (SQLite safety, executor resilience, subagent context management), TUI polish (dead features wired up, blocking subprocess fixes), tool completeness (missing Juju/git tools, shell injection fix), UX improvements (streaming, chat search, cost tracking), planning quality (compact prompt, dependency validation), and new capabilities (bundles, charm migration, multi-charm workspaces)

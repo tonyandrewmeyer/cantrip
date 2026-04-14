@@ -66,7 +66,8 @@ def run_cli(args: argparse.Namespace) -> int:
         agent.state.mode = "improve"
         agent.state.charm_path = Path(improve_path).resolve()
 
-    banner = f"Cantrip CLI — provider: {args.provider}, path: {args.path}"
+    display_path = improve_path if improve_path is not None else args.path
+    banner = f"Cantrip CLI — provider: {args.provider}, path: {display_path}"
     if light_provider:
         banner += f", light model: {light_model_name}"
     print(banner)
@@ -176,7 +177,7 @@ def _on_bus_task_event(event: ui_events.Event) -> None:
     """Print a brief status line when a task changes state."""
     title = event.payload.get("title", "?")
     status = event.payload.get("status", "?")
-    print(f"\r  [task] {title} — {status}")
+    print(f"\r  [task] {title} — {status}                    ")
 
 
 async def _drain_executor(agent: CantripAgent) -> None:
@@ -189,8 +190,9 @@ async def _drain_executor(agent: CantripAgent) -> None:
     if not queue.all_tasks():
         return
     print("[executor] Waiting for tasks to complete...")
-    deadline = asyncio.get_event_loop().time() + _DRAIN_TIMEOUT_SECONDS
-    while asyncio.get_event_loop().time() < deadline:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _DRAIN_TIMEOUT_SECONDS
+    while loop.time() < deadline:
         tasks = queue.all_tasks()
         still_running = [t for t in tasks if t.status.value in ("pending", "active")]
         if not still_running:
