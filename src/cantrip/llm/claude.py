@@ -115,14 +115,14 @@ class ClaudeProvider(LLMProvider):
             for tool in tools
         ]
 
-    async def complete(
+    def _build_kwargs(
         self,
         messages: list[Message],
-        tools: list[Tool] | None = None,
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-    ) -> Response:
-        """Generate a completion."""
+        tools: list[Tool] | None,
+        temperature: float,
+        max_tokens: int | None,
+    ) -> dict:
+        """Build the shared kwargs dict for ``messages.create`` / ``messages.stream``."""
         system_prompt = self._get_system_prompt(messages)
         api_messages = self._convert_messages(messages)
         api_tools = self._convert_tools(tools)
@@ -143,6 +143,30 @@ class ClaudeProvider(LLMProvider):
             ]
         if api_tools:
             kwargs["tools"] = api_tools
+        return kwargs
+
+    @staticmethod
+    def _extract_usage(usage: object) -> dict[str, int]:
+        """Extract token counts from an Anthropic usage object."""
+        result = {
+            "prompt_tokens": usage.input_tokens,
+            "completion_tokens": usage.output_tokens,
+        }
+        if hasattr(usage, "cache_creation_input_tokens"):
+            result["cache_creation_input_tokens"] = usage.cache_creation_input_tokens or 0
+        if hasattr(usage, "cache_read_input_tokens"):
+            result["cache_read_input_tokens"] = usage.cache_read_input_tokens or 0
+        return result
+
+    async def complete(
+        self,
+        messages: list[Message],
+        tools: list[Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+    ) -> Response:
+        """Generate a completion."""
+        kwargs = self._build_kwargs(messages, tools, temperature, max_tokens)
 
         try:
             response = await self.client.messages.create(**kwargs)
@@ -172,14 +196,7 @@ class ClaudeProvider(LLMProvider):
                     )
                 )
 
-        usage = {
-            "prompt_tokens": response.usage.input_tokens,
-            "completion_tokens": response.usage.output_tokens,
-        }
-        if hasattr(response.usage, "cache_creation_input_tokens"):
-            usage["cache_creation_input_tokens"] = response.usage.cache_creation_input_tokens or 0
-        if hasattr(response.usage, "cache_read_input_tokens"):
-            usage["cache_read_input_tokens"] = response.usage.cache_read_input_tokens or 0
+        usage = self._extract_usage(response.usage)
 
         return Response(
             content="".join(text_parts),
@@ -196,26 +213,7 @@ class ClaudeProvider(LLMProvider):
         max_tokens: int | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion."""
-        system_prompt = self._get_system_prompt(messages)
-        api_messages = self._convert_messages(messages)
-        api_tools = self._convert_tools(tools)
-
-        kwargs: dict = {
-            "model": self.model_name,
-            "max_tokens": max_tokens or 8192,
-            "messages": api_messages,
-            "temperature": temperature,
-        }
-        if system_prompt:
-            kwargs["system"] = [
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ]
-        if api_tools:
-            kwargs["tools"] = api_tools
+        kwargs = self._build_kwargs(messages, tools, temperature, max_tokens)
 
         tool_calls: list[ToolCall] = []
         current_tool: dict | None = None
@@ -255,18 +253,7 @@ class ClaudeProvider(LLMProvider):
 
                 # Capture usage from the accumulated final message.
                 final_message = await stream.get_final_message()
-                usage = {
-                    "prompt_tokens": final_message.usage.input_tokens,
-                    "completion_tokens": final_message.usage.output_tokens,
-                }
-                if hasattr(final_message.usage, "cache_creation_input_tokens"):
-                    usage["cache_creation_input_tokens"] = (
-                        final_message.usage.cache_creation_input_tokens or 0
-                    )
-                if hasattr(final_message.usage, "cache_read_input_tokens"):
-                    usage["cache_read_input_tokens"] = (
-                        final_message.usage.cache_read_input_tokens or 0
-                    )
+                usage = self._extract_usage(final_message.usage)
         except anthropic.RateLimitError as e:
             raise ProviderRateLimitError(
                 "Claude API rate limit exceeded. Please wait a moment and try again."

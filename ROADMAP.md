@@ -3463,6 +3463,18 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 - [ ] Consider a shorter base delay (10-15s) for Claude specifically,
   or adaptive delay based on the retry-after header if available
 
+### 41.10 Claude streaming usage robustness
+
+- [ ] `ClaudeProvider.stream()` calls `get_final_message()` to capture
+  usage, but does not guard against `final_message.usage` being `None`
+  — if the API ever returns a response without usage data, line 259
+  raises `AttributeError`, failing the entire stream despite valid
+  chunks already having been yielded
+- [ ] Add a `None` guard around the usage extraction so a missing or
+  malformed usage block degrades to empty usage instead of crashing
+- [ ] Apply the same guard in the Gemini provider (41.1) when that is
+  implemented
+
 ---
 
 ## Dependencies and Blockers
@@ -3590,6 +3602,7 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 | Compaction monitoring (41.7) | Phase 40 compaction safety | Feeds into cycle detection |
 | Streaming chunk granularity (41.8) | Phase 28.6 streaming | Cosmetic; low priority |
 | Rate limit coordination (41.9) | None | Provider-level tuning |
+| Streaming usage robustness (41.10) | None | Defensive guard; can start any time |
 
 ---
 
