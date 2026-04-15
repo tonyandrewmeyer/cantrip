@@ -262,10 +262,10 @@ class ActionExerciserTool(Tool):
         timeout: int = 300,
     ) -> ToolResult:
         """Exercise all actions on the deployed charm."""
-        if not shutil.which("juju"):
-            return ToolResult(success=False, output="", error="juju CLI not found on PATH.")
         if not app:
             return ToolResult(success=False, output="", error="app parameter is required.")
+        if not shutil.which("juju"):
+            return ToolResult(success=False, output="", error="juju CLI not found on PATH.")
 
         charm_dir = Path(path).resolve()
         metadata = _load_charm_metadata(charm_dir)

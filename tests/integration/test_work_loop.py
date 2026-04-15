@@ -80,9 +80,9 @@ class TestPlanAndExecute:
         assert len(done_tasks) == 3
 
         # The confirm task should be blocked (handled by conversation loop).
-        confirm = queue.get_task("confirm-design")
-        assert confirm is not None
-        assert confirm.status == TaskStatus.BLOCKED
+        confirm_tasks = [t for t in queue.all_tasks() if t.id.startswith("confirm-design")]
+        assert len(confirm_tasks) == 1
+        assert confirm_tasks[0].status == TaskStatus.BLOCKED
 
     @pytest.mark.asyncio
     async def test_dependency_chain_respected(

@@ -5,6 +5,7 @@ They do NOT require an LLM API key.
 """
 
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -12,6 +13,24 @@ import pytest
 
 from cantrip.agent.tools import build_tools
 from cantrip.agent.tools.base import ToolResult
+
+
+def _juju_status_works() -> bool:
+    """Return True only if ``juju status`` succeeds against a live controller."""
+    if not shutil.which("juju"):
+        return False
+    try:
+        result = subprocess.run(
+            ["juju", "status", "--format", "json"],
+            capture_output=True,
+            timeout=15,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
+_JUJU_LIVE = _juju_status_works()
 
 # Skip the entire module if juju is not available.
 pytestmark = pytest.mark.skipif(
@@ -32,6 +51,7 @@ class TestJujuTools:
     """Test Juju tools against the real environment."""
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _JUJU_LIVE, reason="juju controller not reachable")
     async def test_juju_status(self, tool_map: dict) -> None:
         """juju_status returns the current model status."""
         tool = tool_map["juju_status"]
@@ -40,6 +60,7 @@ class TestJujuTools:
         assert "Model:" in result.output
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _JUJU_LIVE, reason="juju controller not reachable")
     async def test_juju_status_named_model(self, tool_map: dict) -> None:
         """juju_status works with an explicit model name."""
         tool = tool_map["juju_status"]
@@ -47,6 +68,7 @@ class TestJujuTools:
         assert result.success
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _JUJU_LIVE, reason="juju controller not reachable")
     async def test_juju_status_bad_model(self, tool_map: dict) -> None:
         """juju_status fails gracefully for a non-existent model."""
         tool = tool_map["juju_status"]

@@ -194,7 +194,7 @@ class GrepTool(PathAwareTool):
     ) -> list[str]:
         """Build a GNU grep command."""
         grep_bin = shutil.which("grep") or "grep"
-        cmd = [grep_bin, "-rn", "--color=never"]
+        cmd = [grep_bin, "-rn", "-E", "--color=never"]
         if not case_sensitive:
             cmd.append("-i")
         if context_lines > 0:
