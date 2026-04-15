@@ -218,6 +218,7 @@ class ClaudeProvider(LLMProvider):
 
         tool_calls: list[ToolCall] = []
         current_tool: dict | None = None
+        usage: dict[str, int] = {}
 
         try:
             stream_cm = self.client.messages.stream(**kwargs)
@@ -250,6 +251,21 @@ class ClaudeProvider(LLMProvider):
                             )
                         )
                         current_tool = None
+
+                # Capture usage from the accumulated final message.
+                final_message = await stream.get_final_message()
+                usage = {
+                    "prompt_tokens": final_message.usage.input_tokens,
+                    "completion_tokens": final_message.usage.output_tokens,
+                }
+                if hasattr(final_message.usage, "cache_creation_input_tokens"):
+                    usage["cache_creation_input_tokens"] = (
+                        final_message.usage.cache_creation_input_tokens or 0
+                    )
+                if hasattr(final_message.usage, "cache_read_input_tokens"):
+                    usage["cache_read_input_tokens"] = (
+                        final_message.usage.cache_read_input_tokens or 0
+                    )
         except anthropic.RateLimitError as e:
             raise ProviderRateLimitError(
                 "Claude API rate limit exceeded. Please wait a moment and try again."
@@ -261,6 +277,6 @@ class ClaudeProvider(LLMProvider):
         except anthropic.APIError as e:
             raise ProviderError(f"Claude API error: {e}") from e
 
-        yield Chunk(tool_calls=tool_calls, is_final=True)
+        yield Chunk(tool_calls=tool_calls, is_final=True, usage=usage)
 
     # count_tokens inherited from LLMProvider (character-based heuristic).

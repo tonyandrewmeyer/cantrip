@@ -3325,6 +3325,114 @@ to implementation.
 
 ---
 
+## Phase 40: Compaction Safety — Cycle Detection and Retry Limits
+
+**Goal:** Ensure the context compaction subsystem cannot enter an infinite loop.
+Currently, if the conversation keeps growing after compaction (e.g. the LLM
+re-expands summarised content, or a tool produces large output immediately after
+compaction), the system can repeatedly trigger `should_compact()` → `compact()` →
+`should_compact()` without making progress. Similarly, `emergency_truncate()` has
+no cap on how many times it can fire in a session. This phase adds explicit cycle
+detection and retry budgets.
+
+### 40.1 Compaction cycle detection
+
+- [ ] Track compaction events (timestamp, pre/post token count) in `ContextManager`
+- [ ] Detect a cycle: if compaction fires N times within a short window (e.g. 3
+  times in 60 seconds) without the token count dropping below the threshold for
+  at least one full conversation round, flag it as a cycle
+- [ ] When a cycle is detected, stop compacting and surface a clear warning to the
+  user via the conversation loop ("Context is growing faster than compaction can
+  shrink it — consider starting a new session or reducing output verbosity")
+- [ ] Add unit tests for cycle detection with synthetic message sequences
+
+### 40.2 Compaction retry budget
+
+- [ ] Add a per-session compaction counter (total compactions attempted,
+  total emergencies triggered)
+- [ ] Set a configurable maximum for each (e.g. 20 compactions, 5 emergencies
+  per session)
+- [ ] When the budget is exhausted, refuse further compaction attempts and warn
+  the user rather than silently retrying
+- [ ] Persist the counters in the SQLite session store so they survive restarts
+
+### 40.3 Post-compaction size validation
+
+- [ ] After `compact()` completes, verify that the resulting message list is
+  actually smaller than the input; if not, fall back to `emergency_truncate()`
+  immediately rather than waiting for the next `should_compact()` check
+- [ ] Log a warning when compaction fails to reduce size — this indicates the
+  summary prompt is not working effectively
+
+**Exit criteria:** The compaction subsystem has hard limits on how many times it
+will fire, detects and breaks out of compact–expand cycles, and validates that
+each compaction actually reduced context size. No infinite loop is possible.
+
+---
+
+## Phase 41: Claude Provider Quality and Multi-Provider Parity
+
+**Goal:** Improve Claude provider robustness and bring all providers to feature
+parity, based on findings from live testing with the Anthropic API (April 2025).
+
+### 41.1 Gemini streaming usage capture
+
+- [ ] The Gemini `stream()` method does not capture token usage from the streamed
+  response, mirroring the bug fixed in the Claude provider (which now calls
+  `stream.get_final_message()` to capture usage)
+- [ ] Investigate how to capture `usage_metadata` from the last chunk in
+  Gemini's streaming response
+- [ ] Add unit test for Gemini streaming usage capture
+
+### 41.2 Anthropic extended thinking support
+
+- [ ] Claude Sonnet 4.5 and Opus 4.6 support extended thinking (budget_tokens)
+  which can improve complex reasoning tasks like research and build planning
+- [ ] Add an `extended_thinking` parameter to `complete()` / `stream()` or
+  enable it for specific purposes (planning, complex tool use)
+- [ ] Handle the `thinking` content block type in streaming events
+- [ ] Route extended thinking for planner calls where structured reasoning
+  improves task decomposition quality
+
+### 41.3 Prompt caching awareness in system prompt
+
+- [ ] Anthropic prompt caching requires a minimum of 1024 tokens (Sonnet) or
+  2048 tokens (Opus) for the cached prefix to be eligible
+- [ ] Add a log message or metric when the system prompt is too short for
+  caching to activate, so operators know they are not benefiting from caching
+- [ ] Consider padding the system prompt to meet the minimum threshold when
+  it is close (e.g. adding the skills index or context summary)
+
+### 41.4 Claude model ID updates
+
+- [ ] The `_CONTEXT_WINDOWS` map in `claude.py` only lists two model IDs;
+  update it as new Claude models are released (Opus 4.6 is listed with its
+  dated ID, but Haiku 4.5 is missing)
+- [ ] Add Haiku 4.5 (`claude-haiku-4-5-20251001`) to the context window map
+  (context window: 200k tokens)
+- [ ] Consider a fallback that queries the API for context window metadata
+  rather than hard-coding model-specific values
+
+### 41.5 Provider-level token counting
+
+- [ ] Both Claude and Gemini providers inherit the character-based heuristic
+  from `LLMProvider.count_tokens()` (4 chars per token estimate)
+- [ ] Anthropic provides a token counting API endpoint; use it for more
+  accurate budget tracking and compaction decisions
+- [ ] Fall back to the heuristic when the API is unavailable or for
+  performance-sensitive hot paths
+
+### 41.6 Streaming chunk granularity
+
+- [ ] The Claude streaming test revealed that very short responses may arrive
+  as a single chunk rather than token-by-token streaming, which means the
+  spinner-to-streaming transition in the CLI may appear to jump
+- [ ] Consider adding a brief delay or transition indicator in the CLI/TUI
+  when switching from spinner to streamed output
+- [ ] This is cosmetic — low priority
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -3438,6 +3546,15 @@ to implementation.
 | Candidate agents survey (39.2) | Phase 39.1 | Needs protocol understanding first |
 | Integration sketch (39.3) | Phase 39.2 | Needs candidate assessment to design against |
 | ACP decision write-up (39.4) | Phase 39.3 | Needs integration sketch to make recommendation |
+| Compaction cycle detection (40.1) | Phase 28.7 compaction recovery | Extends existing compaction/emergency_truncate |
+| Compaction retry budget (40.2) | Phase 28.1 SQLite upsert | Persists counters via session store |
+| Post-compaction validation (40.3) | Phase 28.4 context window mgmt | Needs token estimation working |
+| Gemini streaming usage (41.1) | None | Provider-level fix; can start any time |
+| Extended thinking (41.2) | Phase 27.4 extended thinking | Anthropic-specific feature |
+| Caching awareness (41.3) | Phase 27.1 Claude caching | Monitoring/logging improvement |
+| Claude model ID updates (41.4) | None | Maintenance; can start any time |
+| Provider token counting (41.5) | None | Provider-level enhancement |
+| Streaming chunk granularity (41.6) | Phase 28.6 streaming | Cosmetic; low priority |
 
 ---
 
@@ -3477,3 +3594,5 @@ to implementation.
 | M32: Smart Planning | 32 | Compact prompt complete; dependency validation; watcher events all routed |
 | M33: Expanded Skills | 33 | Existing bundle management; charm migration; multi-charm workspaces |
 | M39: ACP Research | 39 | Written assessment of Agent Client Protocol as an alternative to direct LLM provider calls |
+| M40: Safe Compaction | 40 | Compaction has cycle detection, retry budgets, and size validation — no infinite loops possible |
+| M41: Provider Parity | 41 | All providers capture streaming usage; extended thinking available for Claude; accurate token counting |

@@ -262,3 +262,71 @@ class TestClaudeProviderStream:
         with pytest.raises(ProviderRateLimitError):
             async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
                 pass
+
+    @pytest.mark.asyncio
+    async def test_stream_captures_usage(self):
+        """Streaming captures token usage from the final message."""
+        provider, _ = self._make_provider()
+
+        # Build a mock usage object matching the Anthropic SDK structure.
+        mock_usage = MagicMock()
+        mock_usage.input_tokens = 42
+        mock_usage.output_tokens = 17
+        mock_usage.cache_creation_input_tokens = 5
+        mock_usage.cache_read_input_tokens = 3
+
+        mock_final_message = MagicMock()
+        mock_final_message.usage = mock_usage
+
+        events = [
+            MagicMock(
+                type="content_block_start",
+                content_block=MagicMock(type="text"),
+            ),
+            MagicMock(
+                type="content_block_delta",
+                delta=MagicMock(type="text_delta", text="hello"),
+            ),
+            MagicMock(type="content_block_stop"),
+        ]
+
+        class _MockStream:
+            """Mock stream yielding events then providing a final message."""
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def __aiter__(self):
+                return _EventIter(events)
+
+            async def get_final_message(self):
+                return mock_final_message
+
+        class _EventIter:
+            def __init__(self, items):
+                self._items = iter(items)
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._items)
+                except StopIteration:
+                    raise StopAsyncIteration from None
+
+        provider.client.messages.stream = MagicMock(return_value=_MockStream())
+
+        chunks = []
+        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
+            chunks.append(chunk)
+
+        final = chunks[-1]
+        assert final.is_final
+        assert final.usage["prompt_tokens"] == 42
+        assert final.usage["completion_tokens"] == 17
+        assert final.usage["cache_creation_input_tokens"] == 5
+        assert final.usage["cache_read_input_tokens"] == 3
