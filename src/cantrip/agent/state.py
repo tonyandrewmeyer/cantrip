@@ -76,7 +76,7 @@ class AgentState:
     watcher_enabled: bool = False
     test_results: TestResults | None = None
 
-    # Transient design proposal — not persisted, populated after synthesis.
+    # Design proposal — persisted as raw Markdown, re-parsed on load.
     design_proposal: object | None = None
 
     # Transient audit report — populated after charm_audit completes.

@@ -64,6 +64,7 @@ class Chunk:
     tool_calls: list[ToolCall] = field(default_factory=list)
     is_final: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    usage: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass

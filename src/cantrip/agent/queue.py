@@ -1,5 +1,7 @@
 """Work queue for autonomous agent task scheduling."""
 
+import asyncio
+import copy
 import datetime
 import enum
 import uuid
@@ -63,6 +65,11 @@ class WorkQueue:
 
     Holds ``AgentTask`` objects and provides status transitions, dependency
     checking, and an optional callback fired on every task mutation.
+
+    All synchronous mutation methods are atomic within asyncio's single-threaded
+    event loop (no ``await`` points mid-operation).  The ``_lock`` is provided
+    for any future ``async`` callers that need to compose multiple queue
+    operations atomically across ``await`` boundaries.
     """
 
     def __init__(
@@ -71,6 +78,7 @@ class WorkQueue:
     ) -> None:
         self._tasks: list[AgentTask] = []
         self._on_task_changed = on_task_changed
+        self._lock = asyncio.Lock()
 
     # -- Mutation helpers ----------------------------------------------------
 
@@ -219,8 +227,12 @@ class WorkQueue:
         return None
 
     def all_tasks(self) -> list[AgentTask]:
-        """Return a shallow copy of the task list."""
-        return list(self._tasks)
+        """Return a deep copy of the task list.
+
+        Callers receive independent copies so they cannot accidentally mutate
+        the live queue state.
+        """
+        return copy.deepcopy(self._tasks)
 
     # -- Introspection ------------------------------------------------------
 

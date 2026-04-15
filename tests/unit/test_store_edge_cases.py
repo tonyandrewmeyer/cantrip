@@ -1,5 +1,6 @@
 """Tests for SessionStore edge cases: truncation, JSON safety, roundtrips."""
 
+from cantrip.agent.design import DesignProposal
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import (
@@ -101,6 +102,41 @@ class TestSessionStoreRoundtrip:
 
         store.close()
 
+    def test_design_proposal_roundtrip(self, tmp_path):
+        """Design proposal survives a save/load cycle via raw Markdown."""
+        store = SessionStore(tmp_path / ".cantrip")
+        store.open()
+
+        raw_md = "# Redis\n## Substrate\nKubernetes\n## Charm path\nCustom"
+        state = AgentState()
+        state.charm_name = "redis-k8s"
+        state.design_proposal = DesignProposal(raw_design_md=raw_md)
+        store.save_session(state)
+
+        loaded = store.load_session()
+        assert loaded is not None
+        assert loaded.design_proposal is not None
+        assert loaded.design_proposal.to_design_md() == raw_md
+        assert loaded.design_proposal.workload_name == "Redis"
+        assert loaded.charm_name == "redis-k8s"
+
+        store.close()
+
+    def test_design_proposal_none_roundtrip(self, tmp_path):
+        """A session with no design proposal loads with design_proposal=None."""
+        store = SessionStore(tmp_path / ".cantrip")
+        store.open()
+
+        state = AgentState()
+        state.charm_name = "test"
+        store.save_session(state)
+
+        loaded = store.load_session()
+        assert loaded is not None
+        assert loaded.design_proposal is None
+
+        store.close()
+
     def test_save_and_load_tasks(self, tmp_path):
         """Tasks roundtrip correctly including all fields."""
         store = SessionStore(tmp_path / ".cantrip")
@@ -134,6 +170,107 @@ class TestSessionStoreRoundtrip:
         assert loaded[0].dependencies == ["dep1", "dep2"]
         assert loaded[0].model_hint == ModelHint.PRIMARY
         assert loaded[1].id == "t2"
+        assert loaded[1].noop_count == 0
+
+        store.close()
+
+    def test_noop_count_persisted(self, tmp_path):
+        """noop_count survives a save/load roundtrip."""
+        store = SessionStore(tmp_path / ".cantrip")
+        store.open()
+
+        task = AgentTask(
+            id="noop1",
+            title="Stubborn task",
+            category=TaskCategory.BUILD,
+            status=TaskStatus.ACTIVE,
+            noop_count=3,
+        )
+        store.save_tasks([task])
+
+        loaded = store.load_tasks()
+        assert len(loaded) == 1
+        assert loaded[0].noop_count == 3
+
+        store.close()
+
+    def test_save_tasks_upserts_and_removes_stale(self, tmp_path):
+        """Upsert updates existing tasks, adds new ones, and prunes removed ones."""
+        store = SessionStore(tmp_path / ".cantrip")
+        store.open()
+
+        # Seed two tasks.
+        original = [
+            AgentTask(
+                id="t1",
+                title="Research",
+                category=TaskCategory.RESEARCH,
+                status=TaskStatus.PENDING,
+            ),
+            AgentTask(
+                id="t2",
+                title="Build",
+                category=TaskCategory.BUILD,
+                status=TaskStatus.PENDING,
+            ),
+        ]
+        store.save_tasks(original)
+        assert len(store.load_tasks()) == 2
+
+        # Second save: update t1 status, drop t2, add t3.
+        updated = [
+            AgentTask(
+                id="t1",
+                title="Research",
+                category=TaskCategory.RESEARCH,
+                status=TaskStatus.DONE,
+                result="All done",
+            ),
+            AgentTask(
+                id="t3",
+                title="Deploy",
+                category=TaskCategory.DEPLOY,
+                status=TaskStatus.PENDING,
+            ),
+        ]
+        store.save_tasks(updated)
+
+        loaded = store.load_tasks()
+        ids = {t.id for t in loaded}
+        assert ids == {"t1", "t3"}, "t2 should be removed, t3 added"
+
+        t1 = next(t for t in loaded if t.id == "t1")
+        assert t1.status == TaskStatus.DONE
+        assert t1.result == "All done"
+
+        store.close()
+
+    def test_save_tasks_preserves_created_at_on_upsert(self, tmp_path):
+        """Upserting an existing task must not overwrite created_at."""
+        store = SessionStore(tmp_path / ".cantrip")
+        store.open()
+
+        task = AgentTask(
+            id="t1",
+            title="Original",
+            category=TaskCategory.RESEARCH,
+            status=TaskStatus.PENDING,
+        )
+        store.save_tasks([task])
+        original_ts = store.load_tasks()[0].created_at
+
+        # Update with a new AgentTask object (different created_at by default).
+        updated = AgentTask(
+            id="t1",
+            title="Updated",
+            category=TaskCategory.RESEARCH,
+            status=TaskStatus.DONE,
+        )
+        store.save_tasks([updated])
+        loaded_ts = store.load_tasks()[0].created_at
+
+        # ON CONFLICT ... DO UPDATE deliberately omits created_at.
+        assert loaded_ts == original_ts
 
         store.close()
 

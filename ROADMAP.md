@@ -2439,7 +2439,7 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 - [x] Add `PRAGMA busy_timeout = 5000` after opening the database in `store.py`
 - [x] Without this, concurrent writes from the executor and conversation loop can
   raise `sqlite3.OperationalError` (SQLITE_BUSY) and crash the session
-- [ ] Replace delete-all/re-insert pattern in `save_tasks` with per-task upsert
+- [x] Replace delete-all/re-insert pattern in `save_tasks` with per-task upsert
 
 ### 28.2 High — Hardcoded Task IDs Collide
 
@@ -2471,9 +2471,9 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 
 ### 28.6 Medium — `process_message_streaming` Not Actually Streaming
 
-- [ ] The method calls `_run_conversation_loop` in full before yielding, defeating
+- [x] The method calls `_run_conversation_loop` in full before yielding, defeating
   the purpose of token-level streaming
-- [ ] Refactor to yield chunks as they arrive from the provider's `stream()` method
+- [x] Refactor to yield chunks as they arrive from the provider's `stream()` method
 - [ ] Update TUI to render incremental text updates (currently waits for full response)
 
 ### 28.7 Medium — Compaction Error Recovery
@@ -2486,23 +2486,23 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 
 ### 28.8 Medium — Noop Count Not Persisted
 
-- [ ] `AgentTask.noop_count` resets to 0 on restart because it is not in the SQLite schema
-- [ ] Add `noop_count INTEGER DEFAULT 0` column to the tasks table
-- [ ] Include in `save_tasks` / `load_tasks` serialisation
+- [x] `AgentTask.noop_count` resets to 0 on restart because it is not in the SQLite schema
+- [x] Add `noop_count INTEGER DEFAULT 0` column to the tasks table
+- [x] Include in `save_tasks` / `load_tasks` serialisation
 
-### 28.9 Medium — Design Proposal Lost on Restart
+### 28.9 Medium — Design Proposal Lost on Restart ✅
 
-- [ ] `state.design_proposal` is transient — lost on crash/restart
-- [ ] After a user approves a design, the executor's `_build_context()` produces
+- [x] `state.design_proposal` is transient — lost on crash/restart
+- [x] After a user approves a design, the executor's `_build_context()` produces
   `design_content=None` for subsequent tasks
-- [ ] Persist approved designs in the SQLite store; reload on session resume
+- [x] Persist approved designs in the SQLite store; reload on session resume
 
 ### 28.10 Low — Work Queue Thread Safety
 
-- [ ] `WorkQueue._tasks` mutations from concurrent asyncio tasks can interleave
+- [x] `WorkQueue._tasks` mutations from concurrent asyncio tasks can interleave
   across `await` points (e.g. `move_to_front` does remove + insert)
-- [ ] Add `asyncio.Lock` around all list mutations
-- [ ] Ensure `all_tasks()` returns deep copies, not shallow references to live objects
+- [x] Add `asyncio.Lock` around all list mutations
+- [x] Ensure `all_tasks()` returns deep copies, not shallow references to live objects
 
 ### 28.11 Low — Revert Leaves Untracked Files
 

@@ -34,7 +34,7 @@ from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import Tool, ToolResult, build_tools
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.llm import base as llm
-from cantrip.llm.base import LLMProvider, Message, Response, Role
+from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
 from cantrip.ui import events as ui_events
 
 log = logging.getLogger(__name__)
@@ -496,19 +496,154 @@ class CantripAgent:
     async def process_message_streaming(self, user_message: str) -> AsyncIterator[str]:
         """Process a message with streaming response.
 
-        Yields text chunks as they arrive. If the model requests tool calls,
-        those are executed and the model is called again (non-streaming for
-        intermediate rounds, streaming for the final text response).
+        Yields text chunks as they arrive from the provider's ``stream()``
+        method.  When the model requests tool calls, those are executed
+        and the model is called again — streaming resumes for each
+        subsequent LLM call until a text-only response is produced.
 
         The background executor is paused while the conversation loop is
         active so that user steering takes priority over autonomous work.
         """
         self._pause_executor()
         try:
-            response = await self._run_conversation_loop(user_message)
-            yield response.content
+            async for chunk in self._run_conversation_loop_streaming(user_message):
+                yield chunk
         finally:
             self._resume_executor()
+
+    async def _run_conversation_loop_streaming(
+        self,
+        user_message: str,
+    ) -> AsyncIterator[str]:
+        """Streaming variant of the conversation loop.
+
+        Yields text chunks as they arrive from the provider.  Tool-call
+        rounds are handled internally; only text destined for the user
+        is yielded.
+        """
+        # Record session start event on first message.
+        if not self.state.messages:
+            self._ensure_store()
+            if self._store:
+                self._store.record_event(
+                    "session_start",
+                    {
+                        "provider": self.provider.name,
+                        "model": self.provider.model_name,
+                        "charm_name": self.state.charm_name,
+                    },
+                )
+
+        user_msg = Message(role=Role.USER, content=user_message)
+        user_msg = self._context_manager.virtualise_message(user_msg)
+        self.state.messages.append(user_msg)
+        self._record_message(user_msg)
+
+        messages = self._build_llm_messages(include_budget=True)
+        llm_tools = self._tools_for_llm() if self._tools else None
+
+        # Stream the first LLM call.
+        accumulated = ""
+        final_chunk = Chunk(is_final=True)
+        async for chunk in self.provider.stream(messages=messages, tools=llm_tools):
+            if chunk.content:
+                accumulated += chunk.content
+                yield chunk.content
+            if chunk.is_final:
+                final_chunk = chunk
+
+        # Build a synthetic Response for bookkeeping.
+        response = Response(
+            content=accumulated,
+            tool_calls=final_chunk.tool_calls,
+            usage=final_chunk.usage,
+            metadata=final_chunk.metadata,
+        )
+        self._record_usage(response)
+
+        rounds = 0
+        while response.tool_calls and rounds < MAX_TOOL_ROUNDS:
+            rounds += 1
+
+            # Record the assistant message with its tool calls.
+            assistant_msg = Message(
+                role=Role.ASSISTANT,
+                content=response.content,
+                tool_calls=response.tool_calls,
+                metadata=response.metadata,
+            )
+            self.state.messages.append(assistant_msg)
+            self._record_message(assistant_msg)
+
+            # Execute each tool and build TOOL result messages.
+            tool_results = []
+            for tc in response.tool_calls:
+                result = await self._execute_tool(tc.name, tc.arguments)
+                self._capture_test_results(tc.name, result)
+                content = result.output if result.success else (result.error or "Unknown error")
+                content = f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"
+                tool_results.append(
+                    llm.ToolResult(
+                        tool_call_id=tc.id,
+                        content=content,
+                        is_error=not result.success,
+                    )
+                )
+
+            tool_msg = Message(
+                role=Role.TOOL,
+                content="",
+                tool_results=tool_results,
+            )
+            tool_msg = self._context_manager.virtualise_message(tool_msg)
+            self.state.messages.append(tool_msg)
+            self._record_message(tool_msg)
+
+            # Compact if the context window is getting full.
+            if self._context_manager.should_compact(self.state.messages):
+                log.info("Compacting conversation context")
+                try:
+                    self.state.messages = await self._context_manager.compact(
+                        self.state.messages,
+                        system_prompt=self._build_system_prompt(),
+                        provider=self._get_provider("compaction"),
+                    )
+                except Exception:
+                    log.warning(
+                        "Compaction failed, falling back to emergency truncation",
+                        exc_info=True,
+                    )
+                    self.state.messages = self._context_manager.emergency_truncate(
+                        self.state.messages
+                    )
+
+            # Stream the next LLM call.
+            messages = self._build_llm_messages(include_budget=True)
+            accumulated = ""
+            final_chunk = Chunk(is_final=True)
+            async for chunk in self.provider.stream(messages=messages, tools=llm_tools):
+                if chunk.content:
+                    accumulated += chunk.content
+                    yield chunk.content
+                if chunk.is_final:
+                    final_chunk = chunk
+
+            response = Response(
+                content=accumulated,
+                tool_calls=final_chunk.tool_calls,
+                usage=final_chunk.usage,
+                metadata=final_chunk.metadata,
+            )
+            self._record_usage(response)
+
+        # Store the final assistant response.
+        final_msg = Message(
+            role=Role.ASSISTANT,
+            content=response.content,
+            metadata=response.metadata,
+        )
+        self.state.messages.append(final_msg)
+        self._record_message(final_msg)
 
     # -- Design confirmation ---------------------------------------------------
 

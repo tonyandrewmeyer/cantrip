@@ -106,6 +106,47 @@ class TestCantripAgent:
         assert "".join(chunks) == "Streamed answer"
 
     @pytest.mark.asyncio
+    async def test_streaming_yields_chunks_incrementally(self):
+        """Test that streaming yields multiple chunks, not one big blob."""
+        provider = FakeProvider([Response(content="Hello world from streaming")])
+        agent = CantripAgent(provider=provider)
+
+        chunks = []
+        async for chunk in agent.process_message_streaming("Hi"):
+            chunks.append(chunk)
+
+        # FakeProvider.stream() splits on spaces, so we expect multiple chunks.
+        assert len(chunks) > 1
+        assert "".join(chunks) == "Hello world from streaming"
+
+    @pytest.mark.asyncio
+    async def test_streaming_with_tool_calls(self):
+        """Streaming yields text from both pre- and post-tool-call rounds."""
+        tool_call = ToolCall(id="tc1", name="juju_status", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Status is active"),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(
+            return_value=type("R", (), {"success": True, "output": "active", "error": None})()
+        )
+
+        chunks = []
+        async for chunk in agent.process_message_streaming("Show status"):
+            chunks.append(chunk)
+
+        assert "".join(chunks) == "Status is active"
+        # Multiple chunks from the word-splitting in FakeProvider.stream().
+        assert len(chunks) > 1
+        agent._execute_tool.assert_awaited_once_with("juju_status", {})
+
+        # Messages: user, assistant (tool_calls), tool, assistant (final).
+        assert len(agent.state.messages) == 4
+
+    @pytest.mark.asyncio
     async def test_max_tool_rounds_enforced(self):
         """Test that the tool loop stops after MAX_TOOL_ROUNDS."""
         tool_call = ToolCall(id="loop", name="juju_status", arguments={})

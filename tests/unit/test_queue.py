@@ -1,5 +1,6 @@
 """Tests for the work queue and agent task model."""
 
+import asyncio
 import datetime
 from collections.abc import Iterator
 from pathlib import Path
@@ -308,6 +309,26 @@ class TestWorkQueue:
         result = q.all_tasks()
         result.clear()
         assert len(q.all_tasks()) == 1
+
+    def test_lock_attribute_is_asyncio_lock(self) -> None:
+        """WorkQueue exposes an asyncio.Lock for callers that need atomicity."""
+        q = WorkQueue()
+        assert isinstance(q._lock, asyncio.Lock)
+
+    def test_all_tasks_returns_deep_copies(self) -> None:
+        """Mutating returned task objects does not affect the queue."""
+        q = WorkQueue()
+        t = _task(title="Original")
+        q.add_task(t)
+
+        returned = q.all_tasks()
+        returned[0].title = "Mutated"
+        returned[0].status = TaskStatus.DONE
+
+        # The live queue should be unaffected.
+        live = q.all_tasks()
+        assert live[0].title == "Original"
+        assert live[0].status == TaskStatus.PENDING
 
     def test_count_properties(self) -> None:
         """Count properties reflect current task statuses."""

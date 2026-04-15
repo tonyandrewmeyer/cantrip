@@ -8,12 +8,13 @@ import sqlite3
 import stat
 from pathlib import Path
 
+from cantrip.agent import design as design_mod
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState, Decision
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS session (
     framework TEXT,
     dev_model TEXT,
     cos_model TEXT,
+    design_proposal TEXT,
     message_count INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -71,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     result TEXT,
     blocked_reason TEXT,
     model_hint TEXT,
+    noop_count INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -190,6 +193,20 @@ class SessionStore:
                 );
             """)
 
+        if current < 5:
+            # v5: persist noop_count on tasks.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(tasks)").fetchall()}
+            if "noop_count" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE tasks ADD COLUMN noop_count INTEGER NOT NULL DEFAULT 0"
+                )
+
+        if current < 6:
+            # v6: persist design_proposal on the session table.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(session)").fetchall()}
+            if "design_proposal" not in cols:
+                self._conn.execute("ALTER TABLE session ADD COLUMN design_proposal TEXT")
+
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
             self._conn.commit()
@@ -213,21 +230,31 @@ class SessionStore:
     def save_session(self, state: AgentState) -> None:
         """Upsert the session row and replace all decisions."""
         db = self._db
+
+        # Extract the raw Markdown from the design proposal for persistence.
+        design_md: str | None = None
+        if state.design_proposal is not None:
+            to_md = getattr(state.design_proposal, "to_design_md", None)
+            if callable(to_md):
+                design_md = to_md()
+
         db.execute(
             """\
             INSERT INTO session (id, charm_name, charm_path, charm_type,
-                                 framework, dev_model, cos_model, message_count,
+                                 framework, dev_model, cos_model,
+                                 design_proposal, message_count,
                                  updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(id) DO UPDATE SET
-                charm_name     = excluded.charm_name,
-                charm_path     = excluded.charm_path,
-                charm_type     = excluded.charm_type,
-                framework      = excluded.framework,
-                dev_model      = excluded.dev_model,
-                cos_model      = excluded.cos_model,
-                message_count  = excluded.message_count,
-                updated_at     = datetime('now')
+                charm_name       = excluded.charm_name,
+                charm_path       = excluded.charm_path,
+                charm_type       = excluded.charm_type,
+                framework        = excluded.framework,
+                dev_model        = excluded.dev_model,
+                cos_model        = excluded.cos_model,
+                design_proposal  = excluded.design_proposal,
+                message_count    = excluded.message_count,
+                updated_at       = datetime('now')
             """,
             (
                 state.charm_name,
@@ -236,6 +263,7 @@ class SessionStore:
                 state.framework,
                 state.dev_model,
                 state.cos_model,
+                design_md,
                 len(state.messages),
             ),
         )
@@ -267,6 +295,11 @@ class SessionStore:
             cos_model=row["cos_model"],
         )
 
+        # Restore the design proposal from persisted Markdown.
+        raw_design = row["design_proposal"]
+        if raw_design:
+            state.design_proposal = design_mod.parse_design_from_result(raw_design)
+
         decision_rows = self._db.execute(
             "SELECT type, choice, reason, timestamp FROM decisions ORDER BY id"
         ).fetchall()
@@ -290,16 +323,25 @@ class SessionStore:
     # ── Task persistence ────────────────────────────────────────────────
 
     def save_tasks(self, tasks: list[AgentTask]) -> None:
-        """Replace all stored tasks with *tasks*."""
+        """Persist *tasks* using per-task upsert, removing stale rows."""
         db = self._db
-        db.execute("DELETE FROM tasks")
         for t in tasks:
             db.execute(
                 """\
                 INSERT INTO tasks (id, title, status, category, description,
                                    dependencies, result, blocked_reason,
-                                   model_hint, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   model_hint, noop_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title          = excluded.title,
+                    status         = excluded.status,
+                    category       = excluded.category,
+                    description    = excluded.description,
+                    dependencies   = excluded.dependencies,
+                    result         = excluded.result,
+                    blocked_reason = excluded.blocked_reason,
+                    model_hint     = excluded.model_hint,
+                    noop_count     = excluded.noop_count
                 """,
                 (
                     t.id,
@@ -311,9 +353,20 @@ class SessionStore:
                     t.result,
                     t.blocked_reason,
                     t.model_hint.value if t.model_hint else None,
+                    t.noop_count,
                     t.created_at.isoformat(),
                 ),
             )
+        # Remove rows for tasks no longer in the queue.
+        current_ids = [t.id for t in tasks]
+        if current_ids:
+            placeholders = ",".join("?" * len(current_ids))
+            db.execute(
+                f"DELETE FROM tasks WHERE id NOT IN ({placeholders})",  # noqa: S608
+                current_ids,
+            )
+        else:
+            db.execute("DELETE FROM tasks")
         db.commit()
 
     def load_tasks(self) -> list[AgentTask]:
@@ -337,6 +390,7 @@ class SessionStore:
                         blocked_reason=r["blocked_reason"],
                         model_hint=ModelHint(raw_hint) if raw_hint else None,
                         created_at=created,
+                        noop_count=r["noop_count"],
                     )
                 )
             except (json.JSONDecodeError, ValueError, KeyError) as exc:

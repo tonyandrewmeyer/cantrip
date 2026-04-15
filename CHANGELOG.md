@@ -21,8 +21,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Unique task IDs (Phase 28.2)** — planner appends uuid suffix to all task IDs; `WorkQueue.add_task()` rejects duplicates with `ValueError`
 - **Executor resilience (Phase 28.3)** — widened exception catch to `Exception` with error logging, 5s cooldown, consecutive error tracking, and `healthy` property
 - **Revert cleans untracked files (Phase 28.11)** — `revert_to_clean` now runs `git clean -fd` after `git checkout .` to remove files created by failing BUILD subagents
+- **SQLite upsert for tasks (Phase 28.1)** — `save_tasks` now uses `INSERT ... ON CONFLICT DO UPDATE` instead of delete-all/re-insert, reducing contention under concurrent access
+- **Noop count persisted (Phase 28.8)** — `AgentTask.noop_count` is now stored in SQLite and survives session restarts
+- **Work queue deep copies (Phase 28.10)** — `all_tasks()` returns deep copies; `asyncio.Lock` exposed for callers needing atomic multi-step queue operations
 
 ### Fixed
+- **Streaming not actually streaming (Phase 28.6)** — `process_message_streaming` previously called the non-streaming conversation loop and yielded the entire response as a single chunk; it now uses `provider.stream()` directly and yields text chunks as they arrive from the LLM, enabling true token-level streaming for the conversation loop
+- **Design proposal lost on restart (Phase 28.9)** — `state.design_proposal` is now persisted to SQLite as raw Markdown and re-parsed on session resume; previously it was transient and the executor's `_build_context()` would produce `design_content=None` after a crash or restart
 - **Executor exception catch too narrow (Phase 28.3)** — `_run_loop` now catches all `Exception` subclasses (not just `KeyError`, `RuntimeError`, `OSError`), preventing unexpected errors from silently killing the autonomous work loop. Adds ERROR-level logging, a 5-second cooldown between retries, a consecutive-error counter that stops the loop after 10 failures, and a `healthy` property for monitoring
 - **Status filter crash on None message** — `_app_matches_filter` in the TUI status widget no longer crashes with `AttributeError` when `app_status.message` or `workload_status.message` is `None`
 - **SQLite busy timeout** — added `PRAGMA busy_timeout=5000` to the session store, preventing `SQLITE_BUSY` crashes when the executor and conversation loop write concurrently

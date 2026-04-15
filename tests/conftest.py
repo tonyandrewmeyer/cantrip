@@ -7,7 +7,7 @@ import pathlib
 import pytest
 
 from cantrip.agent.queue import AgentTask
-from cantrip.llm.base import LLMProvider, Message, Response, Tool
+from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Tool
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -76,7 +76,25 @@ class FakeProvider(LLMProvider):
         temperature: float = 0.7,  # noqa: ARG002
         max_tokens: int | None = None,  # noqa: ARG002
     ):
-        yield  # pragma: no cover
+        if self._call_count < len(self._responses):
+            resp = self._responses[self._call_count]
+            self._call_count += 1
+        else:
+            resp = Response(content="default response")
+
+        # Yield text content as individual word chunks to simulate streaming.
+        if resp.content:
+            words = resp.content.split(" ")
+            for i, word in enumerate(words):
+                text = word if i == 0 else " " + word
+                yield Chunk(content=text)
+
+        yield Chunk(
+            tool_calls=resp.tool_calls,
+            is_final=True,
+            usage=resp.usage,
+            metadata=resp.metadata,
+        )
 
     def count_tokens(self, messages: list[Message]) -> int:
         """Count tokens in messages (approximate)."""
