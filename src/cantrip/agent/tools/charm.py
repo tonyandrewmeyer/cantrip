@@ -591,6 +591,72 @@ class CharmValidateTool(Tool):
         )
 
 
+class QuickPackTool(Tool):
+    """Fast local charm packing for development workflows."""
+
+    @property
+    def name(self) -> str:
+        return "quick_pack"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Pack a charm into a .charm file using the fast local packer. "
+            "Much faster than charmcraft pack — skips LXD, linting, and "
+            "analysis. Only supports charms using the uv plugin. "
+            "Use this for initial deploys and upgrade testing."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the charm directory",
+                    "default": ".",
+                },
+                "output_dir": {
+                    "type": "string",
+                    "description": "Directory to write the .charm file to (default: charm dir)",
+                },
+            },
+        }
+
+    async def execute(self, path: str = ".", output_dir: str | None = None) -> ToolResult:
+        """Run quick pack."""
+        try:
+            from quickpack import pack as _pack
+
+            charm_path = Path(path).resolve()
+            kwargs: dict[str, Any] = {}
+            if output_dir is not None:
+                kwargs["output_dir"] = output_dir
+
+            result_path = _pack.quick_pack(charm_path, **kwargs)
+
+            return ToolResult(
+                success=True,
+                output=f"Packed charm successfully: {result_path.name}",
+                data={
+                    "path": str(charm_path),
+                    "charm_file": str(result_path),
+                },
+            )
+        except FileNotFoundError as e:
+            return ToolResult(success=False, output="", error=str(e))
+        except (ValueError, RuntimeError, OSError) as e:
+            return ToolResult(success=False, output="", error=str(e))
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr or ""
+            return ToolResult(
+                success=False,
+                output=e.stdout or "",
+                error=f"Command failed: {e.cmd}\n{stderr}",
+            )
+
+
 class CharmcraftFetchLibsTool(Tool):
     """Tool to fetch charm libraries."""
 

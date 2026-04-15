@@ -24,6 +24,7 @@ from cantrip.agent.tools.charm import (
     CharmcraftPackTool,
     CharmValidateTool,
     GenerateTerraformTool,
+    QuickPackTool,
     ValidateTerraformTool,
 )
 from cantrip.agent.tools.charmhub import (
@@ -155,6 +156,7 @@ def build_tools(
         # Charm operations
         CharmcraftInitTool(),
         CharmcraftPackTool(),
+        QuickPackTool(),
         CharmValidateTool(),
         CharmcraftFetchLibsTool(),
         AnalyseFrameworkTool(),
@@ -292,6 +294,7 @@ __all__ = [
     # Charm
     "CharmcraftInitTool",
     "CharmcraftPackTool",
+    "QuickPackTool",
     "CharmValidateTool",
     "CharmcraftFetchLibsTool",
     "AnalyseFrameworkTool",
