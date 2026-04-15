@@ -1,6 +1,8 @@
 """Tests for observability tools (juju_debug_log, tempo_query, loki_query)."""
 
+import base64
 import json
+import re
 from unittest import mock
 
 import jubilant
@@ -12,6 +14,13 @@ from cantrip.agent.tools.observability import (
     TempoQueryTool,
     _find_cos_unit,
 )
+
+
+def _decode_ssh_script(ssh_command: str) -> str:
+    """Extract and decode the base64-encoded Python script from an SSH command."""
+    match = re.search(r"base64\.b64decode\('([A-Za-z0-9+/=]+)'\)", ssh_command)
+    assert match, f"No base64 payload found in: {ssh_command}"
+    return base64.b64decode(match.group(1)).decode()
 
 
 def _make_fake_process(returncode: int = 0, stdout: str = "", stderr: str = ""):
@@ -334,6 +343,26 @@ class TestTempoQueryTool:
         assert result.success
         assert "no traces" in result.output.lower()
 
+    @pytest.mark.asyncio
+    async def test_shell_injection_prevented(self, tool):
+        """Queries with shell metacharacters cannot escape the base64 payload."""
+        patch, mock_juju = self._mock_find_cos_unit()
+        search_result = {"traces": []}
+        mock_juju.ssh.return_value = json.dumps(search_result)
+
+        # A malicious query containing double quotes and shell metacharacters.
+        malicious_query = '"; rm -rf / #'
+
+        with _mock_juju_available(), patch:
+            result = await tool.execute(query=malicious_query)
+
+        assert result.success
+        # The SSH command must use base64 encoding, not raw string interpolation.
+        ssh_call = mock_juju.ssh.call_args[0][1]
+        assert "base64" in ssh_call
+        # The malicious string must not appear literally in the shell command.
+        assert "rm -rf" not in ssh_call
+
 
 # ---------------------------------------------------------------------------
 # LokiQueryTool
@@ -410,9 +439,10 @@ class TestLokiQueryTool:
             result = await tool.execute(query='{juju_application="my-charm"}', hours=24)
 
         assert result.success
-        # Verify the URL contains the custom hours.
+        # Verify the URL contains the custom hours (inside the base64-encoded script).
         ssh_call = mock_juju.ssh.call_args[0][1]
-        assert "now-24h" in ssh_call
+        script = _decode_ssh_script(ssh_call)
+        assert "now-24h" in script
 
     @pytest.mark.asyncio
     async def test_loki_not_found_in_cos(self, tool):
@@ -464,3 +494,23 @@ class TestLokiQueryTool:
 
         assert result.success
         assert "no log entries" in result.output.lower()
+
+    @pytest.mark.asyncio
+    async def test_shell_injection_prevented(self, tool):
+        """Queries with shell metacharacters cannot escape the base64 payload."""
+        patch, mock_juju = self._mock_find_cos_unit()
+        loki_response = {"data": {"result": []}}
+        mock_juju.ssh.return_value = json.dumps(loki_response)
+
+        # A malicious query containing double quotes and shell metacharacters.
+        malicious_query = '{app="test"} |= "$(rm -rf /)"'
+
+        with _mock_juju_available(), patch:
+            result = await tool.execute(query=malicious_query)
+
+        assert result.success
+        # The SSH command must use base64 encoding, not raw string interpolation.
+        ssh_call = mock_juju.ssh.call_args[0][1]
+        assert "base64" in ssh_call
+        # The malicious string must not appear literally in the shell command.
+        assert "rm -rf" not in ssh_call

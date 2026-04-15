@@ -145,17 +145,25 @@ class RelationLine(Static):
     class Selected(Message):
         """Posted when the user selects a relation line."""
 
-        def __init__(self, endpoint: str, related_app: str) -> None:
+        def __init__(self, unit_name: str, endpoint: str, related_app: str) -> None:
             super().__init__()
+            self.unit_name = unit_name
             self.endpoint = endpoint
             self.related_app = related_app
 
-    def __init__(self, relation_name: str, endpoint: str = "", related_app: str = "") -> None:
+    def __init__(
+        self,
+        relation_name: str,
+        endpoint: str = "",
+        related_app: str = "",
+        unit_name: str = "",
+    ) -> None:
         """Initialise with relation name and metadata for detail lookup."""
         super().__init__()
         self.relation_name = relation_name
         self.endpoint = endpoint
         self.related_app = related_app
+        self.unit_name = unit_name
 
     def compose(self) -> ComposeResult:
         """Compose the relation line."""
@@ -164,7 +172,7 @@ class RelationLine(Static):
     def on_click(self) -> None:
         """Open the relation detail panel on click."""
         if self.endpoint:
-            self.post_message(self.Selected(self.endpoint, self.related_app))
+            self.post_message(self.Selected(self.unit_name, self.endpoint, self.related_app))
 
 
 class JujuStatusWidget(Widget):
@@ -341,6 +349,8 @@ class JujuStatusWidget(Widget):
             highlight = app_name == self.current_app
             container.mount(AppBox(app_name, app, highlight=highlight))
 
+            # Pick the first unit for relation detail lookups.
+            first_unit = next(iter(app.units), f"{app_name}/0")
             for rel_name, related_apps in app.relations.items():
                 for related in related_apps:
                     container.mount(
@@ -348,6 +358,7 @@ class JujuStatusWidget(Widget):
                             f"{rel_name} → {related.related_app}",
                             endpoint=rel_name,
                             related_app=related.related_app,
+                            unit_name=first_unit,
                         )
                     )
 

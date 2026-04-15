@@ -21,12 +21,13 @@ from cantrip.tui.screens.graph import GraphScreen
 from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.screens.logs import LogScreen
 from cantrip.tui.screens.questions import DesignQuestionsScreen
+from cantrip.tui.screens.relation import RelationDetailScreen
 from cantrip.tui.screens.traces import TraceScreen
 from cantrip.tui.screens.transcript import TranscriptScreen
 from cantrip.tui.widgets.chat import ChatWidget
 from cantrip.tui.widgets.filetree import CharmTreeWidget
 from cantrip.tui.widgets.modelbar import ModelInfoBar
-from cantrip.tui.widgets.status import MultiModelStatusWidget
+from cantrip.tui.widgets.status import MultiModelStatusWidget, RelationLine
 from cantrip.tui.widgets.statusbar import StatusBar
 from cantrip.tui.widgets.tasks import TaskChecklistWidget
 from cantrip.ui import events as ui_events
@@ -711,6 +712,18 @@ class CantripApp(App):
         """Show trace/debug screen."""
         cos_model = self._agent.state.cos_model if self._agent else None
         self.push_screen(TraceScreen(cos_model=cos_model))
+
+    def on_relation_line_selected(self, event: RelationLine.Selected) -> None:
+        """Open the relation detail screen when a relation line is clicked."""
+        dev_model = self._agent.state.dev_model if self._agent else None
+        self.push_screen(
+            RelationDetailScreen(
+                unit_name=event.unit_name,
+                endpoint=event.endpoint,
+                related_app=event.related_app,
+                model=dev_model,
+            )
+        )
 
     def on_juju_status_widget_status_available(self) -> None:
         """Show the status panel when status data first arrives."""

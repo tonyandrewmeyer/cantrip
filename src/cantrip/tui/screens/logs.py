@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import functools
 import subprocess
 
 from textual.app import ComposeResult
@@ -10,6 +11,7 @@ from textual.containers import Center, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
+from textual.worker import Worker, WorkerState
 
 # Log levels to cycle through with the 'l' key.
 _LOG_LEVELS = ("WARNING", "INFO", "DEBUG", "ERROR")
@@ -125,7 +127,7 @@ class LogScreen(ModalScreen):
     # -- Static fetch --------------------------------------------------------
 
     def _fetch_logs(self) -> None:
-        """Fetch log lines from ``juju debug-log`` and populate the RichLog."""
+        """Kick off a background worker to fetch log lines."""
         log_widget = self.query_one("#log-output", RichLog)
         log_widget.clear()
 
@@ -133,15 +135,26 @@ class LogScreen(ModalScreen):
             log_widget.write("No development model connected.")
             return
 
+        log_widget.write("[dim]Fetching logs…[/dim]")
+        self.run_worker(
+            functools.partial(self._fetch_logs_blocking, self._model, self.level),
+            name="fetch_logs",
+            exclusive=True,
+            thread=True,
+        )
+
+    @staticmethod
+    def _fetch_logs_blocking(model: str, level: str) -> str:
+        """Run ``juju debug-log`` in a thread (called via ``run_worker``)."""
         cmd = [
             "juju",
             "debug-log",
             "--model",
-            self._model,
+            model,
             "-n",
             str(_MAX_LINES),
             "--level",
-            self.level,
+            level,
             "--no-tail",
         ]
 
@@ -152,23 +165,39 @@ class LogScreen(ModalScreen):
                 text=True,
                 timeout=_SUBPROCESS_TIMEOUT,
             )
-
-            if result.returncode != 0:
-                log_widget.write(f"Error fetching logs: {result.stderr or 'unknown error'}")
-                return
-
-            output = result.stdout.strip()
-            if not output:
-                log_widget.write(f"No log entries at level {self.level}.")
-                return
-
-            for line in output.split("\n"):
-                log_widget.write(line)
-
         except FileNotFoundError:
-            log_widget.write("juju CLI not found. Is it installed?")
+            return "ERROR:juju CLI not found. Is it installed?"
         except subprocess.TimeoutExpired:
-            log_widget.write("Timed out fetching logs.")
+            return "ERROR:Timed out fetching logs."
+
+        if result.returncode != 0:
+            return f"ERROR:{result.stderr or 'unknown error'}"
+
+        output = result.stdout.strip()
+        if not output:
+            return f"EMPTY:{level}"
+
+        return output
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle the fetch_logs worker completing."""
+        if event.worker.name != "fetch_logs":
+            return
+        if event.worker.state != WorkerState.SUCCESS:
+            return
+
+        result = event.worker.result
+        log_widget = self.query_one("#log-output", RichLog)
+        log_widget.clear()
+
+        if result.startswith("ERROR:"):
+            log_widget.write(result.removeprefix("ERROR:"))
+        elif result.startswith("EMPTY:"):
+            level = result.removeprefix("EMPTY:")
+            log_widget.write(f"No log entries at level {level}.")
+        else:
+            for line in result.split("\n"):
+                log_widget.write(line)
 
         self._update_title()
 

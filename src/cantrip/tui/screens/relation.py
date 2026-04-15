@@ -1,5 +1,6 @@
 """Relation detail modal screen for Cantrip TUI."""
 
+import functools
 import json
 import subprocess
 
@@ -8,6 +9,7 @@ from textual.binding import Binding
 from textual.containers import Center, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
+from textual.worker import Worker, WorkerState
 
 # Timeout for juju show-unit subprocess (seconds).
 _SUBPROCESS_TIMEOUT = 15
@@ -93,7 +95,7 @@ class RelationDetailScreen(ModalScreen):
         self._fetch_data()
 
     def _fetch_data(self) -> None:
-        """Fetch relation databag via ``juju show-unit`` and display it."""
+        """Kick off a background worker to fetch relation databag data."""
         output = self.query_one("#relation-output", RichLog)
         output.clear()
 
@@ -101,12 +103,23 @@ class RelationDetailScreen(ModalScreen):
             output.write("No development model connected.")
             return
 
+        output.write("[dim]Fetching relation data…[/dim]")
+        self.run_worker(
+            functools.partial(self._fetch_data_blocking, self._unit_name, self._model),
+            name="fetch_relation",
+            exclusive=True,
+            thread=True,
+        )
+
+    @staticmethod
+    def _fetch_data_blocking(unit_name: str, model: str) -> str:
+        """Run ``juju show-unit`` in a thread (called via ``run_worker``)."""
         cmd = [
             "juju",
             "show-unit",
-            self._unit_name,
+            unit_name,
             "--model",
-            self._model,
+            model,
             "--format",
             "json",
         ]
@@ -118,19 +131,42 @@ class RelationDetailScreen(ModalScreen):
                 text=True,
                 timeout=_SUBPROCESS_TIMEOUT,
             )
-            if result.returncode != 0:
-                output.write(f"Error: {result.stderr or 'unknown error'}")
-                return
-            data = json.loads(result.stdout)
         except FileNotFoundError:
-            output.write("juju CLI not found. Is it installed?")
-            return
+            return json.dumps({"error": "juju CLI not found. Is it installed?"})
         except subprocess.TimeoutExpired:
-            output.write("Timed out fetching relation data.")
+            return json.dumps({"error": "Timed out fetching relation data."})
+
+        if result.returncode != 0:
+            return json.dumps({"error": result.stderr or "unknown error"})
+
+        return result.stdout
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle the fetch_relation worker completing."""
+        if event.worker.name != "fetch_relation":
             return
+        if event.worker.state != WorkerState.SUCCESS:
+            return
+
+        raw = event.worker.result
+        output = self.query_one("#relation-output", RichLog)
+        output.clear()
+
+        try:
+            data = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
             output.write("Could not parse juju show-unit output.")
             return
+
+        if "error" in data:
+            output.write(f"Error: {data['error']}")
+            return
+
+        self._render_relation_data(data)
+
+    def _render_relation_data(self, data: dict) -> None:
+        """Render parsed ``juju show-unit`` JSON into the RichLog."""
+        output = self.query_one("#relation-output", RichLog)
 
         unit_info = data.get(self._unit_name, {})
         relations = unit_info.get("relation-info", [])

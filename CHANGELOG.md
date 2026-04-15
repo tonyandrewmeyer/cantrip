@@ -28,6 +28,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Work queue deep copies (Phase 28.10)** — `all_tasks()` returns deep copies; `asyncio.Lock` exposed for callers needing atomic multi-step queue operations
 
 ### Fixed
+- **Shell injection in observability tools (Phase 30.1)** — `TempoQueryTool` and `LokiQueryTool` no longer embed Python scripts directly in shell strings via `juju.ssh()`; scripts are now base64-encoded, preventing command injection through crafted query parameters
+- **Blocking subprocess calls in TUI (Phase 29.2)** — `LogScreen._fetch_logs()` and `RelationDetailScreen._fetch_data()` now run `subprocess.run()` in a background thread via `run_worker(thread=True)` instead of blocking the Textual event loop for up to 15 seconds
+
+### Added
+- **RelationDetailScreen wired up (Phase 29.1)** — clicking a relation line in the Juju status widget now opens the `RelationDetailScreen` modal, which was previously fully implemented but unreachable; added `on_relation_line_selected` handler in `CantripApp`
+
+### Fixed
 - **Claude streaming missing usage data** — `ClaudeProvider.stream()` now calls `stream.get_final_message()` after consuming events to capture `prompt_tokens`, `completion_tokens`, and cache hit/creation counts in the final `Chunk.usage` dict; previously streaming calls reported empty usage, so token costs from streamed conversations were not tracked
 - **Subagent usage recorded under wrong model** — when the executor's subagent used the light provider (e.g. Haiku for RESEARCH tasks), token usage was incorrectly attributed to the primary model (e.g. Sonnet); the subagent now stamps the actual provider name and model into `response.metadata` and the executor reads it from there, falling back to the primary provider when metadata is absent
 - **Haiku missing from context window map** — added `claude-haiku-4-5-20251001` to `_CONTEXT_WINDOWS` in the Claude provider so that Haiku-based light providers report the correct 200k context window instead of relying on the fallback default

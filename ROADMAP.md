@@ -2528,19 +2528,19 @@ passes throughout.
 **Goal:** Fix broken/dead features in the TUI, improve the help system, and wire up
 partially implemented functionality.
 
-### 29.1 High — Wire Up `RelationDetailScreen`
+### 29.1 High — Wire Up `RelationDetailScreen` ✅
 
-- [ ] `RelationDetailScreen` is fully implemented but never opened — no handler for
+- [x] `RelationDetailScreen` is fully implemented but never opened — no handler for
   `RelationLine.Selected` messages exists in `app.py`
-- [ ] Add `on_relation_line_selected` handler in `CantripApp` to push the screen
-- [ ] Export from `screens/__init__.py`
+- [x] Add `on_relation_line_selected` handler in `CantripApp` to push the screen
+- [x] Export from `screens/__init__.py`
 
-### 29.2 High — Fix Blocking Subprocess Calls on Event Loop
+### 29.2 High — Fix Blocking Subprocess Calls on Event Loop ✅
 
-- [ ] `LogScreen._fetch_logs()` and `RelationDetailScreen._fetch_data()` call
+- [x] `LogScreen._fetch_logs()` and `RelationDetailScreen._fetch_data()` call
   `subprocess.run()` on the main Textual event loop thread, freezing the UI for
   up to 15 seconds
-- [ ] Move to `self.run_worker()` or `asyncio.to_thread()`
+- [x] Move to `self.run_worker()` or `asyncio.to_thread()`
 
 ### 29.3 High — Fix `_app_matches_filter` Crash on None Status Message
 
@@ -2613,12 +2613,12 @@ passes throughout.
 **Goal:** Fill gaps in the agent's toolbox that limit autonomous workflows, improve
 existing tool robustness, and fix security issues.
 
-### 30.1 Critical — Fix Shell Injection in Observability Tools
+### 30.1 Critical — Fix Shell Injection in Observability Tools ✅
 
-- [ ] `TempoQueryTool` and `LokiQueryTool` build Python one-liners embedded in
+- [x] `TempoQueryTool` and `LokiQueryTool` build Python one-liners embedded in
   `juju.ssh(unit, f'python3 -c "{script}"')` — a double-quote in the query breaks
   out of the shell string and allows arbitrary command execution on the Juju unit
-- [ ] Fix: base64-encode the script and decode on the remote side, or use a temp file
+- [x] Fix: base64-encode the script and decode on the remote side, or use a temp file
 
 ### 30.2 High — Missing Juju Tools
 

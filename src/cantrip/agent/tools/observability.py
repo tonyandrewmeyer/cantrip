@@ -1,6 +1,7 @@
 """Observability tools for querying debug logs, Tempo traces, and Loki logs."""
 
 import asyncio
+import base64
 import json
 import re
 import shutil
@@ -49,6 +50,27 @@ def _truncate(text: str, limit: int = _MAX_OUTPUT_CHARS) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n\n... (truncated — {len(text)} chars total)"
+
+
+def _ssh_fetch_url(juju: jubilant.Juju, unit_name: str, url: str, timeout: int) -> str:
+    """Fetch a URL from inside a Juju unit via SSH, safely.
+
+    The Python script is base64-encoded before being passed through the
+    shell, preventing injection regardless of what characters appear in
+    the URL.
+    """
+    # Percent-encode single quotes so the URL is safe inside a Python string literal.
+    safe_url = url.replace("'", "%27")
+    script = (
+        "import urllib.request, sys; "
+        f"resp = urllib.request.urlopen('{safe_url}', timeout={timeout}); "
+        "sys.stdout.write(resp.read().decode())"
+    )
+    encoded = base64.b64encode(script.encode()).decode()
+    return juju.ssh(
+        unit_name,
+        f"python3 -c \"import base64,sys;exec(base64.b64decode('{encoded}'))\"",
+    )
 
 
 class JujuDebugLogTool(Tool):
@@ -346,18 +368,8 @@ class TempoQueryTool(Tool):
                 params["q"] = "{}"
             url = f"http://localhost:3200/api/search?{urllib.parse.urlencode(params)}"
 
-        # Execute the HTTP request inside the Tempo unit via SSH.
-        # The URL is shell-escaped to prevent injection into the Python script.
-        safe_url = url.replace("'", "%27")
-        python_script = (
-            "import urllib.request, json, sys; "
-            f"req = urllib.request.Request('{safe_url}'); "
-            f"resp = urllib.request.urlopen(req, timeout={_HTTP_TIMEOUT_SECONDS}); "
-            "print(resp.read().decode())"
-        )
-
         try:
-            result = juju.ssh(unit_name, f'python3 -c "{python_script}"')
+            result = _ssh_fetch_url(juju, unit_name, url, _HTTP_TIMEOUT_SECONDS)
         except jubilant.CLIError as exc:
             return ToolResult(
                 success=False,
@@ -482,17 +494,8 @@ class LokiQueryTool(Tool):
         }
         url = f"http://localhost:3100/loki/api/v1/query_range?{urllib.parse.urlencode(params)}"
 
-        # Shell-escape single quotes to prevent injection into the Python script.
-        safe_url = url.replace("'", "%27")
-        python_script = (
-            "import urllib.request, json, sys; "
-            f"req = urllib.request.Request('{safe_url}'); "
-            f"resp = urllib.request.urlopen(req, timeout={_HTTP_TIMEOUT_SECONDS}); "
-            "print(resp.read().decode())"
-        )
-
         try:
-            result = juju.ssh(unit_name, f'python3 -c "{python_script}"')
+            result = _ssh_fetch_url(juju, unit_name, url, _HTTP_TIMEOUT_SECONDS)
         except jubilant.CLIError as exc:
             return ToolResult(
                 success=False,
