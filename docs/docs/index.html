@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentation — Cantrip</title>
+<meta name="description" content="Cantrip documentation: tutorials, how-to guides, reference, and explanations for the AI-powered Juju charm builder.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<nav class="doc-nav">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <div class="doc-nav-links">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-layout" style="max-width: var(--max-w); padding-top: 6rem;">
+  <div class="doc-content">
+    <h1>Cantrip Documentation</h1>
+    <p class="subtitle">
+      Learn how to use Cantrip to build production-quality Juju charms with AI.
+    </p>
+
+    <p>
+      This documentation follows the
+      <a href="https://diataxis.fr/">Diataxis</a> framework, organising
+      content by what you need: learning, solving problems, looking things
+      up, or understanding how the system works.
+    </p>
+
+    <div class="doc-cards">
+
+      <a href="tutorial.html" class="doc-card">
+        <span class="doc-card-label">Tutorial</span>
+        <h3>Build your first charm</h3>
+        <p>
+          A guided walkthrough from installation to a deployed, tested charm.
+          No prior Cantrip experience required.
+        </p>
+      </a>
+
+      <a href="howto-provider.html" class="doc-card">
+        <span class="doc-card-label">How-to</span>
+        <h3>Choose an LLM provider</h3>
+        <p>
+          Pick the right provider and model for your situation &mdash; cloud
+          API, local inference, or hybrid.
+        </p>
+      </a>
+
+      <a href="howto-improve.html" class="doc-card">
+        <span class="doc-card-label">How-to</span>
+        <h3>Improve an existing charm</h3>
+        <p>
+          Audit and upgrade an existing charm: add tests, fill observability
+          gaps, modernise deprecated APIs.
+        </p>
+      </a>
+
+      <a href="howto-export.html" class="doc-card">
+        <span class="doc-card-label">How-to</span>
+        <h3>Export transcripts</h3>
+        <p>
+          Export session transcripts as HTML, Markdown, or JSONL for
+          documentation or review.
+        </p>
+      </a>
+
+      <a href="howto-light-models.html" class="doc-card">
+        <span class="doc-card-label">How-to</span>
+        <h3>Configure light models</h3>
+        <p>
+          Route internal tasks to cheaper models to reduce cost without
+          sacrificing output quality.
+        </p>
+      </a>
+
+      <a href="reference-cli.html" class="doc-card">
+        <span class="doc-card-label">Reference</span>
+        <h3>CLI reference</h3>
+        <p>
+          Complete listing of all commands, flags, and environment variables.
+        </p>
+      </a>
+
+      <a href="reference-tools.html" class="doc-card">
+        <span class="doc-card-label">Reference</span>
+        <h3>Agent tools</h3>
+        <p>
+          Every tool the agent can use, grouped by category, with
+          descriptions and parameters.
+        </p>
+      </a>
+
+      <a href="explanation-architecture.html" class="doc-card">
+        <span class="doc-card-label">Explanation</span>
+        <h3>How Cantrip works</h3>
+        <p>
+          The two-loop architecture, work queue, subagents, and why
+          autonomous operation matters.
+        </p>
+      </a>
+
+      <a href="explanation-charm-paths.html" class="doc-card">
+        <span class="doc-card-label">Explanation</span>
+        <h3>The three charm paths</h3>
+        <p>
+          Why there are three approaches to charm building and how
+          the agent selects the right one.
+        </p>
+      </a>
+
+      <a href="explanation-observability.html" class="doc-card">
+        <span class="doc-card-label">Explanation</span>
+        <h3>Observability and debugging</h3>
+        <p>
+          How Cantrip uses COS, Tempo, and Loki to debug charms
+          autonomously.
+        </p>
+      </a>
+
+    </div>
+  </div>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

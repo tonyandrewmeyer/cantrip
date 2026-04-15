@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to choose an LLM provider — Cantrip</title>
+<meta name="description" content="Select the right LLM provider for Cantrip: Gemini, Claude, or local inference snaps.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<nav class="doc-nav">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <div class="doc-nav-links">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html" class="current">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+    </ul>
+  </aside>
+
+  <main class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Choose an LLM provider
+    </div>
+
+    <h1>Choose an LLM provider</h1>
+    <p class="subtitle">
+      Cantrip supports three LLM providers. This guide helps you pick the
+      right one for your situation.
+    </p>
+
+    <h2 id="overview">Provider comparison</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th>API key needed</th>
+          <th>Best for</th>
+          <th>Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Gemini</strong> (default)</td>
+          <td>Yes (<code>GEMINI_API_KEY</code>)</td>
+          <td>General use, generous free tier</td>
+          <td>Free tier available</td>
+        </tr>
+        <tr>
+          <td><strong>Claude</strong></td>
+          <td>Yes (<code>ANTHROPIC_API_KEY</code>)</td>
+          <td>Best output quality, complex charms</td>
+          <td>Paid</td>
+        </tr>
+        <tr>
+          <td><strong>Inference snap</strong></td>
+          <td>No</td>
+          <td>Air-gapped environments, privacy</td>
+          <td>Free (local GPU)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="gemini">Use Gemini (default)</h2>
+    <p>
+      Gemini is the default provider. Get an API key from
+      <a href="https://aistudio.google.com/app/apikey">Google AI Studio</a>,
+      then:
+    </p>
+    <pre><code><span class="prompt">$</span> export GEMINI_API_KEY="your-key-here"
+<span class="prompt">$</span> cantrip</code></pre>
+    <p>
+      To use a specific Gemini model:
+    </p>
+    <pre><code><span class="prompt">$</span> cantrip --model gemini-2.5-pro</code></pre>
+
+    <h2 id="claude">Use Claude</h2>
+    <p>
+      Claude often produces higher-quality charm code, especially for complex
+      infrastructure charms (Path C). Get a key from the
+      <a href="https://console.anthropic.com/">Anthropic console</a>:
+    </p>
+    <pre><code><span class="prompt">$</span> export ANTHROPIC_API_KEY="your-key-here"
+<span class="prompt">$</span> cantrip --provider claude</code></pre>
+    <p>
+      To specify a model:
+    </p>
+    <pre><code><span class="prompt">$</span> cantrip --provider claude --model claude-sonnet-4-6</code></pre>
+
+    <h2 id="inference-snap">Use local inference snaps</h2>
+    <p>
+      Ubuntu inference snaps run models locally on your GPU with no API key
+      or internet connection required. Install the snap first:
+    </p>
+    <pre><code><span class="prompt">$</span> sudo snap install gemma3
+<span class="prompt">$</span> cantrip --provider inference-snap --snap gemma3</code></pre>
+    <p>
+      Other supported snaps include <code>nemotron-3-nano</code> for lighter
+      workloads. The quality of output depends on your GPU and the model
+      size.
+    </p>
+
+    <div class="callout-warn callout">
+      <p>
+        Local models produce lower-quality output than cloud APIs,
+        particularly for complex charm paths. Consider using a cloud
+        provider for the primary model and a local model for
+        <a href="howto-light-models.html">light tasks</a>.
+      </p>
+    </div>
+
+    <h2 id="hybrid">Hybrid setups</h2>
+    <p>
+      You can combine providers &mdash; use a powerful cloud model for code
+      generation and a local model for internal tasks like research
+      summarisation and log queries:
+    </p>
+    <pre><code><span class="prompt">$</span> cantrip --provider claude \
+    --light-provider inference-snap --light-snap nemotron-3-nano</code></pre>
+    <p>
+      See <a href="howto-light-models.html">Configure light models</a> for
+      full details on cost routing.
+    </p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

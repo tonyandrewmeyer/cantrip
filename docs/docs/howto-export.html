@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to export transcripts — Cantrip</title>
+<meta name="description" content="Export Cantrip session transcripts as HTML, Markdown, or JSONL.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<nav class="doc-nav">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <div class="doc-nav-links">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html" class="current">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+    </ul>
+  </aside>
+
+  <main class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Export transcripts
+    </div>
+
+    <h1>Export transcripts</h1>
+    <p class="subtitle">
+      Export a session's conversation history and task log for
+      documentation, review, or analysis.
+    </p>
+
+    <h2 id="basic">Basic export</h2>
+    <p>
+      After a session, export the full transcript as an HTML page:
+    </p>
+    <pre><code><span class="prompt">$</span> cantrip export-transcript /path/to/my-charm</code></pre>
+    <p>
+      This creates <code>transcript.html</code> in the charm directory.
+      Open it in a browser to see the complete conversation, tool calls,
+      and task results.
+    </p>
+
+    <h2 id="formats">Choose a format</h2>
+    <p>Three output formats are available:</p>
+    <table>
+      <thead>
+        <tr><th>Format</th><th>Flag</th><th>Use case</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>HTML</td>
+          <td><code>--format html</code> (default)</td>
+          <td>Human-readable, shareable reports</td>
+        </tr>
+        <tr>
+          <td>Markdown</td>
+          <td><code>--format markdown</code></td>
+          <td>Documentation, wikis, READMEs</td>
+        </tr>
+        <tr>
+          <td>JSONL</td>
+          <td><code>--format jsonl</code></td>
+          <td>Programmatic analysis, data pipelines</td>
+        </tr>
+      </tbody>
+    </table>
+    <pre><code><span class="prompt">$</span> cantrip export-transcript /path/to/my-charm --format markdown
+<span class="prompt">$</span> cantrip export-transcript /path/to/my-charm --format jsonl</code></pre>
+
+    <h2 id="filter">Filter the transcript</h2>
+    <p>
+      For long sessions, filter the export to focus on what matters:
+    </p>
+
+    <h3>By task</h3>
+    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --task build_charm_code</code></pre>
+
+    <h3>By phase</h3>
+    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --phase research
+<span class="comment"># Options: research, build, deploy, test</span></code></pre>
+
+    <h3>By timestamp</h3>
+    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --since 2026-04-15T10:00:00Z</code></pre>
+
+    <h2 id="pagination">Paginate HTML output</h2>
+    <p>
+      For very long sessions, split the HTML output into multiple pages:
+    </p>
+    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --page-size 50</code></pre>
+    <p>
+      This creates <code>transcript_1.html</code>,
+      <code>transcript_2.html</code>, etc., each containing 50 conversation
+      messages. Navigation links connect the pages.
+    </p>
+
+    <h2 id="output-path">Custom output path</h2>
+    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --output /tmp/my-report.html</code></pre>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

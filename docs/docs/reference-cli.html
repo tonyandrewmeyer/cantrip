@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLI reference — Cantrip</title>
+<meta name="description" content="Complete reference for all Cantrip CLI commands, flags, and environment variables.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<nav class="doc-nav">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <div class="doc-nav-links">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>Reference</h4>
+    <ul>
+      <li><a href="reference-cli.html" class="current">CLI reference</a></li>
+      <li><a href="reference-tools.html">Agent tools</a></li>
+    </ul>
+    <h4>On this page</h4>
+    <ul>
+      <li><a href="#run">cantrip run</a></li>
+      <li><a href="#export-transcript">export-transcript</a></li>
+      <li><a href="#env-vars">Environment variables</a></li>
+      <li><a href="#session-file">Session file</a></li>
+    </ul>
+  </aside>
+
+  <main class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>Reference<span class="sep">/</span>CLI reference
+    </div>
+
+    <h1>CLI reference</h1>
+    <p class="subtitle">
+      All commands, flags, and environment variables.
+    </p>
+
+    <h2 id="synopsis">Synopsis</h2>
+    <pre><code>cantrip [run] [OPTIONS] [PATH]
+cantrip export-transcript PATH [OPTIONS]
+cantrip --version
+cantrip --help</code></pre>
+    <p>
+      The <code>run</code> subcommand is the default &mdash; you can omit it.
+      <code>cantrip /path/to/charm</code> is equivalent to
+      <code>cantrip run /path/to/charm</code>.
+    </p>
+
+    <h2 id="run">cantrip run</h2>
+    <p>Start the agent and build or improve a charm.</p>
+
+    <h3>Positional arguments</h3>
+    <dl>
+      <dt>PATH</dt>
+      <dd>
+        Path to the charm project directory. Defaults to the current
+        directory. The directory is created if it does not exist.
+      </dd>
+    </dl>
+
+    <h3>Provider and model</h3>
+    <dl>
+      <dt>--provider {gemini,claude,inference-snap}</dt>
+      <dd>
+        LLM provider to use. Default: <code>gemini</code>.
+      </dd>
+
+      <dt>--model MODEL</dt>
+      <dd>
+        Specific model name. Provider-dependent. When omitted, the
+        provider's default model is used.
+      </dd>
+
+      <dt>--snap SNAP_NAME</dt>
+      <dd>
+        Inference snap name when using <code>--provider inference-snap</code>.
+        Default: <code>gemma3</code>.
+      </dd>
+    </dl>
+
+    <h3>Light model (cost routing)</h3>
+    <dl>
+      <dt>--light-model MODEL</dt>
+      <dd>
+        Cheaper model for internal tasks (compaction, research summaries).
+        Auto-detected if omitted.
+      </dd>
+
+      <dt>--light-provider {gemini,claude,inference-snap}</dt>
+      <dd>
+        Use a different provider for light tasks, enabling hybrid mode.
+      </dd>
+
+      <dt>--light-snap SNAP_NAME</dt>
+      <dd>
+        Lighter inference snap for internal tasks (e.g.
+        <code>nemotron-3-nano</code>).
+      </dd>
+    </dl>
+
+    <h3>Interface</h3>
+    <dl>
+      <dt>--no-tui</dt>
+      <dd>
+        Run in CLI mode (command-line REPL) without the terminal UI.
+      </dd>
+
+      <dt>--web</dt>
+      <dd>
+        Run with a browser-based Web UI instead of the TUI.
+      </dd>
+
+      <dt>--web-port PORT</dt>
+      <dd>
+        Port for the Web UI. Default: <code>8471</code>.
+      </dd>
+
+      <dt>--theme THEME</dt>
+      <dd>
+        TUI colour theme. Options: <code>cantrip</code>,
+        <code>ubuntu</code>, <code>monokai</code>,
+        <code>solarized-dark</code>, <code>light</code>.
+      </dd>
+    </dl>
+
+    <h3>Behaviour</h3>
+    <dl>
+      <dt>--improve CHARM_PATH</dt>
+      <dd>
+        Audit and improve an existing charm at the given path instead of
+        building a new one.
+      </dd>
+
+      <dt>--watcher</dt>
+      <dd>
+        Start the event watcher on launch. The watcher monitors the dev
+        model for status changes and creates diagnostic tasks
+        automatically.
+      </dd>
+
+      <dt>--concurrency N</dt>
+      <dd>
+        Maximum number of concurrent subagent tasks. Default:
+        <code>3</code>.
+      </dd>
+    </dl>
+
+    <h2 id="export-transcript">cantrip export-transcript</h2>
+    <p>Export a session transcript from a <code>.cantrip</code> file.</p>
+
+    <h3>Positional arguments</h3>
+    <dl>
+      <dt>PATH</dt>
+      <dd>
+        Charm directory containing a <code>.cantrip</code> session file.
+        Required.
+      </dd>
+    </dl>
+
+    <h3>Options</h3>
+    <dl>
+      <dt>--format {html,markdown,jsonl}</dt>
+      <dd>
+        Output format. Default: <code>html</code>.
+      </dd>
+
+      <dt>--output FILE</dt>
+      <dd>
+        Output file path. Default:
+        <code>transcript.&lt;ext&gt;</code> in the charm directory.
+      </dd>
+
+      <dt>--task TASK_ID</dt>
+      <dd>
+        Export only a specific task and its subagent conversation.
+      </dd>
+
+      <dt>--phase {research,build,deploy,test}</dt>
+      <dd>
+        Export only tasks in the given phase.
+      </dd>
+
+      <dt>--since TIMESTAMP</dt>
+      <dd>
+        Export only messages and events at or after the given ISO
+        timestamp (e.g. <code>2026-04-15T10:00:00Z</code>).
+      </dd>
+
+      <dt>--page-size N</dt>
+      <dd>
+        Split HTML output into pages of N conversation messages each.
+        Creates numbered files (<code>transcript_1.html</code>,
+        <code>transcript_2.html</code>, etc.) with navigation links.
+      </dd>
+    </dl>
+
+    <h2 id="env-vars">Environment variables</h2>
+    <table>
+      <thead>
+        <tr><th>Variable</th><th>Required for</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>GEMINI_API_KEY</code></td>
+          <td><code>--provider gemini</code></td>
+          <td>Google Gemini API key</td>
+        </tr>
+        <tr>
+          <td><code>ANTHROPIC_API_KEY</code></td>
+          <td><code>--provider claude</code></td>
+          <td>Anthropic API key</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      The <code>inference-snap</code> provider does not require an API key
+      as it runs models locally.
+    </p>
+
+    <h2 id="session-file">Session file</h2>
+    <p>
+      Cantrip stores session state in a <code>.cantrip</code> file (SQLite
+      database) in the charm project directory. This file contains:
+    </p>
+    <ul>
+      <li>Conversation history (messages, tool calls, results)</li>
+      <li>Task queue (status, dependencies, results)</li>
+      <li>Design decisions</li>
+      <li>Token usage metrics</li>
+      <li>Virtual file cache</li>
+    </ul>
+    <p>
+      Sessions resume automatically when you run <code>cantrip</code> in a
+      directory that contains a <code>.cantrip</code> file.
+    </p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

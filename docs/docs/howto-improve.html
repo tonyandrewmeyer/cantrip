@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to improve an existing charm — Cantrip</title>
+<meta name="description" content="Use Cantrip's improve mode to audit and upgrade an existing Juju charm.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<nav class="doc-nav">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <div class="doc-nav-links">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html" class="current">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+    </ul>
+  </aside>
+
+  <main class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Improve an existing charm
+    </div>
+
+    <h1>Improve an existing charm</h1>
+    <p class="subtitle">
+      Audit and upgrade a charm you have already written, adding tests,
+      observability, and modern patterns.
+    </p>
+
+    <h2 id="when">When to use improve mode</h2>
+    <p>Use <code>--improve</code> when you have an existing charm that needs:</p>
+    <ul>
+      <li>An audit against current best practices</li>
+      <li>Missing unit or integration tests</li>
+      <li>COS integration (traces, metrics, dashboards)</li>
+      <li>Deprecated API replacements (e.g. Harness &rarr; Scenario)</li>
+      <li>Operational readiness evaluation</li>
+      <li>Preparation for Charmhub listing</li>
+    </ul>
+
+    <h2 id="run">Run the improvement</h2>
+    <p>
+      Point Cantrip at your existing charm directory:
+    </p>
+    <pre><code><span class="prompt">$</span> cantrip --improve /path/to/my-existing-charm</code></pre>
+    <p>
+      Cantrip reads the existing code and configuration, then creates a
+      plan of improvements. You will see a proposal in the chat listing
+      what the agent intends to change. Confirm or adjust the plan before
+      the agent begins work.
+    </p>
+
+    <h2 id="what-happens">What the agent does</h2>
+    <p>
+      In improve mode the agent typically follows this sequence:
+    </p>
+    <ol>
+      <li>
+        <strong>Audit</strong> &mdash; reads all charm files, runs
+        <code>charmlint</code>, checks metadata, and evaluates against
+        Operational Readiness Metrics.
+      </li>
+      <li>
+        <strong>Propose</strong> &mdash; presents a prioritised list of
+        improvements with rationale.
+      </li>
+      <li>
+        <strong>Implement</strong> &mdash; after your confirmation,
+        subagents work through the list: adding tests, wiring up
+        observability, replacing deprecated patterns.
+      </li>
+      <li>
+        <strong>Redeploy and test</strong> &mdash; packs the updated charm,
+        deploys it, and runs the new test suite.
+      </li>
+    </ol>
+
+    <h2 id="steering">Steering the improvements</h2>
+    <p>
+      You can guide the agent during the improvement process:
+    </p>
+    <ul>
+      <li>
+        "Focus on testing only" &mdash; skip other categories.
+      </li>
+      <li>
+        "Don't touch the config options" &mdash; exclude specific areas.
+      </li>
+      <li>
+        "Add backup and restore actions" &mdash; request specific
+        enhancements beyond what the audit found.
+      </li>
+    </ul>
+
+    <h2 id="git">Working with git</h2>
+    <p>
+      The agent commits at appropriate points during the improvement. Each
+      commit is a self-contained change (e.g. "add COS integration",
+      "replace Harness tests with Scenario"). You can review the commits
+      afterwards and cherry-pick or squash as needed.
+    </p>
+
+    <div class="callout">
+      <p>
+        Improve mode works on the charm directory in place. If you want to
+        preserve the original state, create a git branch or copy the
+        directory before running.
+      </p>
+    </div>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

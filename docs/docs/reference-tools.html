@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent tools reference — Cantrip</title>
+<meta name="description" content="Complete reference of all tools available to the Cantrip agent, grouped by category.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<nav class="doc-nav">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <div class="doc-nav-links">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>Reference</h4>
+    <ul>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+      <li><a href="reference-tools.html" class="current">Agent tools</a></li>
+    </ul>
+    <h4>On this page</h4>
+    <ul>
+      <li><a href="#file-ops">File operations</a></li>
+      <li><a href="#charm-dev">Charm development</a></li>
+      <li><a href="#juju-ops">Juju operations</a></li>
+      <li><a href="#testing">Testing</a></li>
+      <li><a href="#observability">Observability</a></li>
+      <li><a href="#git-github">Git and GitHub</a></li>
+      <li><a href="#web">Web and search</a></li>
+      <li><a href="#publishing">Publishing</a></li>
+      <li><a href="#rockcraft">Rockcraft and OCI</a></li>
+      <li><a href="#environment">Environment</a></li>
+      <li><a href="#internal">Internal</a></li>
+    </ul>
+  </aside>
+
+  <main class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>Reference<span class="sep">/</span>Agent tools
+    </div>
+
+    <h1>Agent tools</h1>
+    <p class="subtitle">
+      All tools available to the Cantrip agent, grouped by category. These
+      tools are used by both the main conversation loop and background
+      subagents.
+    </p>
+
+    <div class="callout">
+      <p>
+        You do not call these tools directly. The agent selects and uses
+        them autonomously based on the current task. This reference is for
+        understanding what the agent can do.
+      </p>
+    </div>
+
+    <h2 id="file-ops">File operations</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>read_file</code></td><td>Read a file's contents</td></tr>
+        <tr><td><code>write_file</code></td><td>Create or overwrite a file</td></tr>
+        <tr><td><code>edit_file</code></td><td>Replace a specific string in a file</td></tr>
+        <tr><td><code>multi_edit</code></td><td>Apply multiple edits to one or more files atomically</td></tr>
+        <tr><td><code>list_directory</code></td><td>List files and directories</td></tr>
+        <tr><td><code>grep</code></td><td>Search file contents with regex</td></tr>
+        <tr><td><code>glob</code></td><td>Find files matching a glob pattern</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="charm-dev">Charm development</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>charmcraft_init</code></td><td>Scaffold a new charm project</td></tr>
+        <tr><td><code>charmcraft_pack</code></td><td>Pack a charm into a <code>.charm</code> file</td></tr>
+        <tr><td><code>quick_pack</code></td><td>Fast packing without charmcraft's full lifecycle (no LXD)</td></tr>
+        <tr><td><code>charm_validate</code></td><td>Validate charm metadata and structure</td></tr>
+        <tr><td><code>charmcraft_fetch_libs</code></td><td>Fetch charm libraries from Charmhub</td></tr>
+        <tr><td><code>analyse_framework</code></td><td>Detect application framework and suggest charm path</td></tr>
+        <tr><td><code>charm_audit</code></td><td>Comprehensive charm quality audit</td></tr>
+        <tr><td><code>charmlint</code></td><td>Run 35+ deterministic lint rules</td></tr>
+        <tr><td><code>operational_readiness</code></td><td>Evaluate against Canonical's Operational Readiness Metrics</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="juju-ops">Juju operations</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>juju_status</code></td><td>Get current model status</td></tr>
+        <tr><td><code>juju_deploy</code></td><td>Deploy a charm</td></tr>
+        <tr><td><code>juju_refresh</code></td><td>Refresh a deployed charm to a new revision</td></tr>
+        <tr><td><code>juju_relate</code></td><td>Create a relation between applications</td></tr>
+        <tr><td><code>juju_config</code></td><td>Set application configuration</td></tr>
+        <tr><td><code>juju_get_app_config</code></td><td>Read current application configuration</td></tr>
+        <tr><td><code>juju_run_action</code></td><td>Run a charm action</td></tr>
+        <tr><td><code>juju_ssh</code></td><td>SSH into a unit</td></tr>
+        <tr><td><code>juju_wait</code></td><td>Wait for a unit to reach a target status</td></tr>
+        <tr><td><code>juju_dispatch</code></td><td>Dispatch a custom event to a unit</td></tr>
+        <tr><td><code>juju_add_model</code></td><td>Create a new Juju model</td></tr>
+        <tr><td><code>juju_destroy_model</code></td><td>Destroy a Juju model</td></tr>
+        <tr><td><code>juju_offer</code></td><td>Create a cross-model relation offer</td></tr>
+        <tr><td><code>juju_consume</code></td><td>Consume a cross-model relation offer</td></tr>
+        <tr><td><code>juju_list_offers</code></td><td>List available cross-model offers</td></tr>
+        <tr><td><code>juju_list_secrets</code></td><td>List Juju secrets</td></tr>
+        <tr><td><code>juju_show_secret</code></td><td>Show secret contents</td></tr>
+        <tr><td><code>juju_read_relation_data</code></td><td>Read relation data bags</td></tr>
+        <tr><td><code>charm_sync</code></td><td>Sync charm source to a deployed unit</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="testing">Testing</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>run_charm_tests</code></td><td>Run unit or integration tests</td></tr>
+        <tr><td><code>generate_tests</code></td><td>Generate test scaffolding</td></tr>
+        <tr><td><code>test_report</code></td><td>Generate a test results report</td></tr>
+        <tr><td><code>hook_benchmark</code></td><td>Benchmark hook execution times</td></tr>
+        <tr><td><code>fuzz_test</code></td><td>Fuzz test charm event handlers</td></tr>
+        <tr><td><code>chaos_test</code></td><td>Run chaos testing scenarios</td></tr>
+        <tr><td><code>scaling_test</code></td><td>Test scaling behaviour</td></tr>
+        <tr><td><code>upgrade_test</code></td><td>Test charm upgrade paths</td></tr>
+        <tr><td><code>generate_load_test</code></td><td>Generate load test scripts</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Acceptance testing</h3>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>action_exerciser</code></td><td>Exercise every charm action with valid inputs</td></tr>
+        <tr><td><code>relation_smoke</code></td><td>Smoke-test all relation endpoints</td></tr>
+        <tr><td><code>workload_endpoint</code></td><td>Verify workload endpoints respond</td></tr>
+        <tr><td><code>config_variation</code></td><td>Test config option variations</td></tr>
+        <tr><td><code>config_under_load</code></td><td>Test config changes under load</td></tr>
+        <tr><td><code>acceptance_report</code></td><td>Generate an acceptance test summary</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="observability">Observability</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>juju_debug_log</code></td><td>Read Juju debug log</td></tr>
+        <tr><td><code>juju_stream_logs</code></td><td>Stream Juju logs in real time</td></tr>
+        <tr><td><code>tempo_query</code></td><td>Query distributed traces from Tempo</td></tr>
+        <tr><td><code>loki_query</code></td><td>Query logs from Loki</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="git-github">Git and GitHub</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>git_clone</code></td><td>Clone a repository</td></tr>
+        <tr><td><code>git_init</code></td><td>Initialise a new git repository</td></tr>
+        <tr><td><code>git_status</code></td><td>Show working tree status</td></tr>
+        <tr><td><code>git_diff</code></td><td>Show file diffs</td></tr>
+        <tr><td><code>git_log</code></td><td>Show commit history</td></tr>
+        <tr><td><code>git_add</code></td><td>Stage files for commit</td></tr>
+        <tr><td><code>git_commit</code></td><td>Create a commit</td></tr>
+        <tr><td><code>git_push</code></td><td>Push commits to remote</td></tr>
+        <tr><td><code>gh_repo_create</code></td><td>Create a GitHub repository</td></tr>
+        <tr><td><code>gh_pr_create</code></td><td>Create a pull request</td></tr>
+        <tr><td><code>gh_issue_list</code></td><td>List GitHub issues</td></tr>
+        <tr><td><code>pr_review</code></td><td>Review a pull request</td></tr>
+        <tr><td><code>pr_review_reply</code></td><td>Reply to PR review comments</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="web">Web and search</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>web_search</code></td><td>Search the web</td></tr>
+        <tr><td><code>web_fetch</code></td><td>Fetch and extract content from a URL</td></tr>
+        <tr><td><code>charmhub_search</code></td><td>Search Charmhub for charms</td></tr>
+        <tr><td><code>charmhub_info</code></td><td>Get detailed info about a Charmhub charm</td></tr>
+        <tr><td><code>registry_search</code></td><td>Search Docker registries for images</td></tr>
+        <tr><td><code>registry_image_info</code></td><td>Get image metadata from a registry</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="publishing">Publishing</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>charmcraft_upload</code></td><td>Upload a charm to Charmhub</td></tr>
+        <tr><td><code>charmcraft_release</code></td><td>Release a charm revision to a channel</td></tr>
+        <tr><td><code>generate_readme</code></td><td>Generate a README for the charm</td></tr>
+        <tr><td><code>generate_icon</code></td><td>Generate a charm icon</td></tr>
+        <tr><td><code>generate_docs</code></td><td>Generate charm documentation</td></tr>
+        <tr><td><code>generate_diagram</code></td><td>Generate architecture or integration diagrams</td></tr>
+        <tr><td><code>generate_terraform</code></td><td>Generate Terraform module for the charm</td></tr>
+        <tr><td><code>validate_terraform</code></td><td>Validate a generated Terraform module</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="rockcraft">Rockcraft and OCI</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>rockcraft_init</code></td><td>Scaffold a rockcraft project</td></tr>
+        <tr><td><code>rockcraft_pack</code></td><td>Pack a rock (OCI image)</td></tr>
+        <tr><td><code>skopeo_registry_push</code></td><td>Push an OCI image to a registry</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="environment">Environment</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>concierge_prepare</code></td><td>Prepare the development environment (Juju, LXD, MicroK8s)</td></tr>
+        <tr><td><code>concierge_status</code></td><td>Check environment readiness</td></tr>
+        <tr><td><code>list_inference_snaps</code></td><td>List available local inference snaps</td></tr>
+        <tr><td><code>run_command</code></td><td>Run a shell command</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="internal">Internal</h2>
+    <p>
+      These tools manage the agent's own state. They are not typically
+      visible to the user but are important for how the agent operates.
+    </p>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>plan_tasks</code></td><td>Decompose an intent into a task plan using the LLM</td></tr>
+        <tr><td><code>manage_tasks</code></td><td>Inspect, cancel, or reprioritise tasks in the work queue</td></tr>
+        <tr><td><code>load_skill</code></td><td>Load a specialised skill prompt for the current task</td></tr>
+        <tr><td><code>virtual_file_read</code></td><td>Read a compressed virtual file from context</td></tr>
+        <tr><td><code>virtual_file_search</code></td><td>Search across virtual files</td></tr>
+        <tr><td><code>showboat</code></td><td>Generate a Showboat demo from the charm</td></tr>
+        <tr><td><code>rodney</code></td><td>Scaffold a Rodney demo</td></tr>
+      </tbody>
+    </table>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

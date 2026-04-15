@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to configure light models — Cantrip</title>
+<meta name="description" content="Route internal tasks to cheaper LLM models to reduce cost without sacrificing charm quality.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<nav class="doc-nav">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <div class="doc-nav-links">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html" class="current">Configure light models</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
+    </ul>
+  </aside>
+
+  <main class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Configure light models
+    </div>
+
+    <h1>Configure light models</h1>
+    <p class="subtitle">
+      Use cheaper models for internal tasks to reduce cost while keeping
+      the primary model for code generation.
+    </p>
+
+    <h2 id="how-it-works">How cost routing works</h2>
+    <p>
+      Cantrip categorises tasks by how much model capability they need:
+    </p>
+    <table>
+      <thead>
+        <tr><th>Task type</th><th>Model used</th><th>Examples</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Code generation</td>
+          <td>Primary</td>
+          <td>Writing charm code, designing integrations</td>
+        </tr>
+        <tr>
+          <td>Research</td>
+          <td>Light</td>
+          <td>Summarising docs, web search analysis</td>
+        </tr>
+        <tr>
+          <td>Test aggregation</td>
+          <td>Light</td>
+          <td>Parsing test output, deciding pass/fail</td>
+        </tr>
+        <tr>
+          <td>Log queries</td>
+          <td>Light</td>
+          <td>Analysing Loki logs, Tempo traces</td>
+        </tr>
+        <tr>
+          <td>Context compaction</td>
+          <td>Light</td>
+          <td>Summarising long conversations</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="same-provider">Light model from the same provider</h2>
+    <p>
+      The simplest setup uses a cheaper model from the same provider:
+    </p>
+    <pre><code><span class="prompt">$</span> cantrip --provider gemini --light-model gemini-2.0-flash</code></pre>
+    <p>
+      Or with Claude:
+    </p>
+    <pre><code><span class="prompt">$</span> cantrip --provider claude --light-model claude-haiku-4-5</code></pre>
+
+    <h2 id="different-provider">Light model from a different provider</h2>
+    <p>
+      For maximum cost savings, use a local inference snap for light tasks
+      while keeping a cloud model for the primary work:
+    </p>
+    <pre><code><span class="prompt">$</span> cantrip --provider claude \
+    --light-provider inference-snap \
+    --light-snap nemotron-3-nano</code></pre>
+    <p>
+      This sends code generation to Claude but runs research, compaction,
+      and log analysis locally with no API cost.
+    </p>
+
+    <h2 id="auto">Automatic detection</h2>
+    <p>
+      If you omit <code>--light-model</code>, Cantrip automatically selects
+      a lighter model from the same provider when one is available. You
+      only need to configure it explicitly when you want to override the
+      default choice or use a different provider.
+    </p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

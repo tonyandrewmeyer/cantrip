@@ -5,6 +5,8 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **User documentation** — Diataxis-structured documentation site under `docs/docs/`: a tutorial (build your first charm), four how-to guides (choose an LLM provider, improve an existing charm, export transcripts, configure light models), two reference pages (CLI reference, agent tools), and three explanation pages (architecture, charm paths, observability). Linked from the marketing site navigation.
+
 - **Quick Pack tool** — new standalone `quickpack` package (`src/quickpack/`) that produces valid `.charm` files without charmcraft's full lifecycle. Supports the `uv` plugin (plus `dump` parts), builds locally for the host architecture, and skips LXD, linting, and analysis. Available as a CLI (`quickpack`), a Python API (`quickpack.pack.quick_pack()`), and a cantrip agent tool (`quick_pack`). Includes jujuignore pattern matching, charmcraft.yaml → metadata.yaml generation, and dispatch script creation. Comparison tests verify output matches `charmcraft pack` and speed is significantly better.
 - **Claude prompt caching (Phase 27.1)** — system prompt is now sent as a content block with `cache_control: {"type": "ephemeral"}`, enabling Anthropic's prompt caching for multi-turn conversations; `cache_creation_input_tokens` and `cache_read_input_tokens` are captured in usage metrics
 
