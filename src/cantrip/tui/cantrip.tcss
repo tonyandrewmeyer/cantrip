@@ -41,10 +41,6 @@ Screen {
     height: 1fr;
 }
 
-#status-content {
-    height: 100%;
-}
-
 #chat {
     height: 1fr;
     overflow-y: auto;
@@ -74,28 +70,6 @@ Screen {
 
 .status-maintenance {
     color: $primary;
-}
-
-/* Chat messages */
-.user-message {
-    color: $text;
-    text-style: bold;
-}
-
-.agent-message {
-    color: $secondary;
-}
-
-.progress-indicator {
-    color: $primary;
-}
-
-.success-indicator {
-    color: $success;
-}
-
-.error-indicator {
-    color: $error;
 }
 
 /* Thinking indicator in chat */

@@ -4,24 +4,19 @@ import asyncio
 import base64
 import json
 import re
-import shutil
 import urllib.parse
 from typing import Any
 
 import jubilant
 
 from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.agent.tools.juju_subprocess import juju_available as _juju_available
 
 # Cap tool output to avoid overwhelming LLM context.
 _MAX_OUTPUT_CHARS = 10000
 
 # Timeout for urllib requests executed inside SSH sessions.
 _HTTP_TIMEOUT_SECONDS = 10
-
-
-def _juju_available() -> bool:
-    """Check whether the juju CLI is installed."""
-    return shutil.which("juju") is not None
 
 
 def _find_cos_unit(cos_model: str, app_hint: str) -> tuple[jubilant.Juju, str]:

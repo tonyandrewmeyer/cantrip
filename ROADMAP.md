@@ -2560,11 +2560,11 @@ partially implemented functionality.
 - [ ] Poll COS model status alongside dev model status in `_poll_juju_status`
 - [ ] Wire up COS expand/collapse click handler (`toggle_cos_expanded` is dead)
 
-### 29.6 Medium — Fix `update_progress()` No-Op
+### 29.6 Medium — Fix `update_progress()` No-Op ✅
 
-- [ ] `MessageWidget.update_progress()` calls `self.refresh()` on a `Static` widget,
+- [x] `MessageWidget.update_progress()` calls `self.refresh()` on a `Static` widget,
   but `compose()` is only called once — progress updates are visually invisible
-- [ ] Either use `self.update()` on the inner static, or switch to a `Widget` base
+- [x] Either use `self.update()` on the inner static, or switch to a `Widget` base
 
 ### 29.7 Medium — Fix Graph Screen Scrollability
 
@@ -2579,17 +2579,17 @@ partially implemented functionality.
 - [ ] Add `Ctrl+C` binding to cancel the `agent_response` worker
 - [ ] Add visual feedback when the cancel is in progress
 
-### 29.9 Low — Clean Up Dead CSS
+### 29.9 Low — Clean Up Dead CSS ✅
 
-- [ ] Remove `.user-message`, `.agent-message`, `#status-content`, `.progress-indicator`,
+- [x] Remove `.user-message`, `.agent-message`, `#status-content`, `.progress-indicator`,
   `.success-indicator`, `.error-indicator` from `cantrip.tcss` — all dead selectors
-- [ ] Fix inconsistent `dismiss` vs `dismiss_screen` action naming across screens
+- [x] Fix inconsistent `dismiss` vs `dismiss_screen` action naming across screens
 - [ ] Replace manual space-padding in modal screen titles with CSS alignment
 
-### 29.10 Low — Display Timestamps in Chat
+### 29.10 Low — Display Timestamps in Chat ✅
 
-- [ ] `ChatMessage.timestamp` is stored but never rendered
-- [ ] Show timestamp in the message header (e.g. `[14:23]`)
+- [x] `ChatMessage.timestamp` is stored but never rendered
+- [x] Show timestamp in the message header (e.g. `[14:23]`)
 
 ### 29.11 Low — Design Questions Back Button
 
@@ -2662,10 +2662,10 @@ existing tool robustness, and fix security issues.
   other sensitive directories
 - [ ] Validate that `cwd` is within the charm project tree
 
-### 30.8 Low — Deduplicate `_juju_available()`
+### 30.8 Low — Deduplicate `_juju_available()` ✅
 
-- [ ] Identical one-liner defined in both `juju.py` and `observability.py`
-- [ ] Move to `juju_subprocess.py`
+- [x] Identical one-liner defined in both `juju.py` and `observability.py`
+- [x] Move to `juju_subprocess.py`
 
 ### 30.9 Low — Fix Concierge Status Race
 
@@ -3463,14 +3463,14 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 - [ ] Consider a shorter base delay (10-15s) for Claude specifically,
   or adaptive delay based on the retry-after header if available
 
-### 41.10 Claude streaming usage robustness
+### 41.10 Claude streaming usage robustness ✅
 
-- [ ] `ClaudeProvider.stream()` calls `get_final_message()` to capture
+- [x] `ClaudeProvider.stream()` calls `get_final_message()` to capture
   usage, but does not guard against `final_message.usage` being `None`
   — if the API ever returns a response without usage data, line 259
   raises `AttributeError`, failing the entire stream despite valid
   chunks already having been yielded
-- [ ] Add a `None` guard around the usage extraction so a missing or
+- [x] Add a `None` guard around the usage extraction so a missing or
   malformed usage block degrades to empty usage instead of crashing
 - [ ] Apply the same guard in the Gemini provider (41.1) when that is
   implemented

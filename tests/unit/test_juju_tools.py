@@ -23,16 +23,16 @@ from cantrip.agent.tools.juju import (
 
 
 class TestJujuAvailable:
-    """Tests for the _juju_available helper."""
+    """Tests for the juju_available helper."""
 
     def test_available(self):
         """Returns True when juju is on PATH."""
-        with mock.patch("cantrip.agent.tools.juju.shutil.which", return_value="/usr/bin/juju"):
+        with mock.patch("shutil.which", return_value="/usr/bin/juju"):
             assert _juju_available() is True
 
     def test_not_available(self):
         """Returns False when juju is not on PATH."""
-        with mock.patch("cantrip.agent.tools.juju.shutil.which", return_value=None):
+        with mock.patch("shutil.which", return_value=None):
             assert _juju_available() is False
 
 

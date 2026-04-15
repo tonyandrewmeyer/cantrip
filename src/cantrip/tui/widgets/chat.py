@@ -107,13 +107,15 @@ class MessageWidget(Static):
 
     def compose(self) -> ComposeResult:
         """Compose the message widget."""
-        # Header with role indicator
+        # Header with role indicator and timestamp.
         role_display = {
             MessageRole.USER: "> ",
             MessageRole.ASSISTANT: "",
             MessageRole.SYSTEM: "[system] ",
         }
         header = role_display.get(self.message.role, "")
+        timestamp = self.message.timestamp.strftime("%H:%M")
+        header = f"[dim][{timestamp}][/dim] {header}"
 
         content_lines = [self.message.content]
 
@@ -123,7 +125,26 @@ class MessageWidget(Static):
             status_class = f"progress-{item.status.value.replace('_', '-')}"
             content_lines.append(f"[{status_class}]{status_char}[/{status_class}] {item.text}")
 
-        yield Static(header + "\n".join(content_lines))
+        yield Static(header + "\n".join(content_lines), id="message-body")
+
+    def _rerender(self) -> None:
+        """Re-render the message body after a progress update."""
+        role_display = {
+            MessageRole.USER: "> ",
+            MessageRole.ASSISTANT: "",
+            MessageRole.SYSTEM: "[system] ",
+        }
+        header = role_display.get(self.message.role, "")
+        timestamp = self.message.timestamp.strftime("%H:%M")
+        header = f"[dim][{timestamp}][/dim] {header}"
+
+        content_lines = [self.message.content]
+        for item in self.message.progress_items:
+            status_char = self._status_char(item.status)
+            status_class = f"progress-{item.status.value.replace('_', '-')}"
+            content_lines.append(f"[{status_class}]{status_char}[/{status_class}] {item.text}")
+
+        self.query_one("#message-body", Static).update(header + "\n".join(content_lines))
 
     def _status_char(self, status: MessageStatus) -> str:
         """Get status indicator character."""
@@ -138,7 +159,7 @@ class MessageWidget(Static):
         """Update progress item status."""
         if 0 <= index < len(self.message.progress_items):
             self.message.progress_items[index].status = status
-            self.refresh()
+            self._rerender()
 
 
 class ChatWidget(Widget):

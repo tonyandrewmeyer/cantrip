@@ -14,14 +14,10 @@ from typing import Any
 import jubilant
 
 from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.agent.tools.juju_subprocess import juju_available as _juju_available
 
 # Default timeout for Jubilant operations (seconds).
 _JUJU_TIMEOUT = 120
-
-
-def _juju_available() -> bool:
-    """Check whether the juju CLI is installed."""
-    return shutil.which("juju") is not None
 
 
 async def _run_juju(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

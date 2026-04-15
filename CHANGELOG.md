@@ -30,6 +30,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ### Fixed
 - **Shell injection in observability tools (Phase 30.1)** — `TempoQueryTool` and `LokiQueryTool` no longer embed Python scripts directly in shell strings via `juju.ssh()`; scripts are now base64-encoded, preventing command injection through crafted query parameters
 - **Blocking subprocess calls in TUI (Phase 29.2)** — `LogScreen._fetch_logs()` and `RelationDetailScreen._fetch_data()` now run `subprocess.run()` in a background thread via `run_worker(thread=True)` instead of blocking the Textual event loop for up to 15 seconds
+- **Chat timestamps (Phase 29.10)** — `ChatMessage.timestamp` is now rendered in the message header as `[HH:MM]`
+- **Progress updates invisible (Phase 29.6)** — `MessageWidget.update_progress()` now updates the inner `Static` widget's content instead of calling `self.refresh()`, which had no visible effect
+- **Dead CSS selectors (Phase 29.9)** — removed `.user-message`, `.agent-message`, `#status-content`, `.progress-indicator`, `.success-indicator`, `.error-indicator` from `cantrip.tcss`; fixed `dismiss_screen` → `dismiss` naming inconsistency in `DesignQuestionsScreen`
+- **Claude streaming usage crash (Phase 41.10)** — `ClaudeProvider.stream()` now guards against `final_message.usage` being `None`, degrading to empty usage instead of crashing with `AttributeError`
+
+### Changed
+- **Deduplicated `_juju_available()` (Phase 30.8)** — moved identical helper from `juju.py` and `observability.py` to `juju_subprocess.py`
 
 ### Added
 - **RelationDetailScreen wired up (Phase 29.1)** — clicking a relation line in the Juju status widget now opens the `RelationDetailScreen` modal, which was previously fully implemented but unreachable; added `on_relation_line_selected` handler in `CantripApp`

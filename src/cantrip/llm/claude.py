@@ -253,7 +253,8 @@ class ClaudeProvider(LLMProvider):
 
                 # Capture usage from the accumulated final message.
                 final_message = await stream.get_final_message()
-                usage = self._extract_usage(final_message.usage)
+                if final_message.usage is not None:
+                    usage = self._extract_usage(final_message.usage)
         except anthropic.RateLimitError as e:
             raise ProviderRateLimitError(
                 "Claude API rate limit exceeded. Please wait a moment and try again."

@@ -5,10 +5,16 @@ Several tool modules (acceptance, chaos, scaling, upgrade) need to invoke
 pattern is defined once.
 """
 
+import shutil
 import subprocess
 
 # Default timeout for juju subprocess calls (seconds).
 JUJU_SUBPROCESS_TIMEOUT = 60
+
+
+def juju_available() -> bool:
+    """Check whether the juju CLI is installed."""
+    return shutil.which("juju") is not None
 
 
 def run_juju(

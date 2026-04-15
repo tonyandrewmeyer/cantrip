@@ -71,7 +71,7 @@ class DesignQuestionsScreen(ModalScreen[list[DesignQuestion]]):
     """
 
     BINDINGS = [
-        Binding("escape", "dismiss_screen", "Close"),
+        Binding("escape", "dismiss", "Close"),
     ]
 
     def __init__(self, questions: list[DesignQuestion]) -> None:
@@ -148,6 +148,6 @@ class DesignQuestionsScreen(ModalScreen[list[DesignQuestion]]):
         self._current_idx += 1
         self._show_question()
 
-    def action_dismiss_screen(self) -> None:
+    def action_dismiss(self) -> None:
         """Dismiss the screen, returning whatever has been answered so far."""
         self.dismiss(self._questions)
