@@ -118,6 +118,7 @@ class ClaudeProvider(LLMProvider):
         messages: list[Message],
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> Response:
         """Generate a completion."""
         system_prompt = self._get_system_prompt(messages)
@@ -126,12 +127,18 @@ class ClaudeProvider(LLMProvider):
 
         kwargs: dict = {
             "model": self.model_name,
-            "max_tokens": 4096,
+            "max_tokens": max_tokens or 8192,
             "messages": api_messages,
             "temperature": temperature,
         }
         if system_prompt:
-            kwargs["system"] = system_prompt
+            kwargs["system"] = [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
         if api_tools:
             kwargs["tools"] = api_tools
 
@@ -163,14 +170,20 @@ class ClaudeProvider(LLMProvider):
                     )
                 )
 
+        usage = {
+            "prompt_tokens": response.usage.input_tokens,
+            "completion_tokens": response.usage.output_tokens,
+        }
+        if hasattr(response.usage, "cache_creation_input_tokens"):
+            usage["cache_creation_input_tokens"] = response.usage.cache_creation_input_tokens or 0
+        if hasattr(response.usage, "cache_read_input_tokens"):
+            usage["cache_read_input_tokens"] = response.usage.cache_read_input_tokens or 0
+
         return Response(
             content="".join(text_parts),
             tool_calls=tool_calls,
             finish_reason="tool_use" if response.stop_reason == "tool_use" else "stop",
-            usage={
-                "prompt_tokens": response.usage.input_tokens,
-                "completion_tokens": response.usage.output_tokens,
-            },
+            usage=usage,
         )
 
     async def stream(
@@ -178,6 +191,7 @@ class ClaudeProvider(LLMProvider):
         messages: list[Message],
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion."""
         system_prompt = self._get_system_prompt(messages)
@@ -186,12 +200,18 @@ class ClaudeProvider(LLMProvider):
 
         kwargs: dict = {
             "model": self.model_name,
-            "max_tokens": 4096,
+            "max_tokens": max_tokens or 8192,
             "messages": api_messages,
             "temperature": temperature,
         }
         if system_prompt:
-            kwargs["system"] = system_prompt
+            kwargs["system"] = [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
         if api_tools:
             kwargs["tools"] = api_tools
 

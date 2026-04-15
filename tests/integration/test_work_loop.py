@@ -98,6 +98,7 @@ class TestPlanAndExecute:
                 messages,
                 tools=None,  # noqa: ARG002
                 temperature=0.7,  # noqa: ARG002
+                max_tokens=None,  # noqa: ARG002
             ):
                 # Extract the task title from the system prompt to track order.
                 for msg in messages:
@@ -179,6 +180,7 @@ class TestPlanAndExecute:
                 messages,
                 tools=None,  # noqa: ARG002
                 temperature=0.7,  # noqa: ARG002
+                max_tokens=None,  # noqa: ARG002
             ):
                 self._call_count += 1
                 for msg in messages:

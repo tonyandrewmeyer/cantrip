@@ -846,7 +846,7 @@ class TestPlanFromDesign:
         recorded_messages: list = []
 
         class RecordingProvider(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7):  # noqa: ARG002
+            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
                 recorded_messages.extend(messages)
                 return Response(content="[]")
 
@@ -870,7 +870,7 @@ class TestPlanFromDesign:
         recorded_messages: list = []
 
         class RecordingProvider(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7):  # noqa: ARG002
+            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
                 recorded_messages.extend(messages)
                 return Response(content="[]")
 
@@ -1411,7 +1411,7 @@ class TestPlanFromDay2Findings:
         recorded_messages: list = []
 
         class RecordingProvider(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7):  # noqa: ARG002
+            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
                 recorded_messages.extend(messages)
                 return Response(content="[]")
 
@@ -1434,7 +1434,7 @@ class TestPlanFromDay2Findings:
         recorded_messages: list = []
 
         class RecordingProvider(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7):  # noqa: ARG002
+            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
                 recorded_messages.extend(messages)
                 return Response(content="[]")
 

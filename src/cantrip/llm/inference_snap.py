@@ -317,6 +317,7 @@ class InferenceSnapProvider(LLMProvider):
         temperature: float,
         *,
         stream: bool = False,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         """Build the JSON request body for a chat completion."""
         system_prompt, api_messages = self._convert_messages(messages)
@@ -329,6 +330,9 @@ class InferenceSnapProvider(LLMProvider):
             "temperature": temperature,
             "stream": stream,
         }
+
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
 
         # Only include tools if the backend supports function calling.
         if self._supports_tools:
@@ -364,9 +368,10 @@ class InferenceSnapProvider(LLMProvider):
         messages: list[Message],
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> Response:
         """Generate a completion via the snap's OpenAI-compatible API."""
-        body = self._build_request_body(messages, tools, temperature)
+        body = self._build_request_body(messages, tools, temperature, max_tokens=max_tokens)
 
         try:
             resp = await self.client.post("/chat/completions", json=body)
@@ -420,9 +425,16 @@ class InferenceSnapProvider(LLMProvider):
         messages: list[Message],
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion via SSE."""
-        body = self._build_request_body(messages, tools, temperature, stream=True)
+        body = self._build_request_body(
+            messages,
+            tools,
+            temperature,
+            stream=True,
+            max_tokens=max_tokens,
+        )
 
         tool_calls_acc: dict[int, dict[str, str]] = {}
 

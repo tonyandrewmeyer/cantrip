@@ -2374,27 +2374,27 @@ capabilities that limit the agent's effectiveness.
 
 ### 27.1 Critical — Claude Prompt Caching
 
-- [ ] Send system prompt as a content block with `cache_control: {"type": "ephemeral"}`
+- [x] Send system prompt as a content block with `cache_control: {"type": "ephemeral"}`
   in both `complete()` and `stream()` (`claude.py`)
-- [ ] Capture `cache_creation_input_tokens` and `cache_read_input_tokens` in the
+- [x] Capture `cache_creation_input_tokens` and `cache_read_input_tokens` in the
   usage dict so cost tracking is accurate
 - [ ] Update `ModelInfoBar` to show cache hit rate when using Claude
 
 ### 27.2 High — Fix `max_tokens` Hard-Coded at 4096
 
-- [ ] `ClaudeProvider.complete()` and `stream()` pass `max_tokens: 4096` unconditionally;
+- [x] `ClaudeProvider.complete()` and `stream()` pass `max_tokens: 4096` unconditionally;
   Claude supports up to 64K output tokens — long BUILD outputs are silently truncated
-- [ ] Add a `max_tokens` parameter to `LLMProvider.complete()` / `stream()` with
+- [x] Add a `max_tokens` parameter to `LLMProvider.complete()` / `stream()` with
   sensible per-model defaults (Gemini: 65536, Claude: 8192, snap: context-dependent)
-- [ ] Let callers (especially subagent runner) override for long-output tasks
+- [x] Let callers (especially subagent runner) override for long-output tasks
 
 ### 27.3 High — Gemini Duplicate Tool Call IDs
 
-- [ ] When Gemini returns multiple calls to the same tool in one response, all
+- [x] When Gemini returns multiple calls to the same tool in one response, all
   `ToolCall` objects share `id=part.function_call.name`, breaking result correlation
-- [ ] Fix: append an index to the ID (`f"{name}_{i}"`) and update
+- [x] Fix: append an index to the ID (`f"{name}_{i}"`) and update
   `from_function_response` to use the stored function name, not the correlation ID
-- [ ] Add test: two parallel `read_file` calls in one response round-trip correctly
+- [x] Add test: two parallel `read_file` calls in one response round-trip correctly
 
 ### 27.4 Medium — Extended Thinking Support
 

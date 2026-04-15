@@ -5,6 +5,7 @@ import binascii
 import contextlib
 import json
 import os
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -72,6 +73,7 @@ class GeminiProvider(LLMProvider):
         temperature: float,
         system_prompt: str | None,
         gemini_tools: list[genai_types.Tool] | None,
+        max_output_tokens: int | None = None,
     ) -> genai_types.GenerateContentConfig:
         """Build the generation config, applying Gemini 3 overrides when needed."""
         thinking_config = None
@@ -81,6 +83,7 @@ class GeminiProvider(LLMProvider):
 
         return genai_types.GenerateContentConfig(
             temperature=temperature,
+            max_output_tokens=max_output_tokens,
             system_instruction=system_prompt,
             tools=gemini_tools,
             automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
@@ -174,9 +177,12 @@ class GeminiProvider(LLMProvider):
                 response_data = json.loads(tr.content)
             except (json.JSONDecodeError, TypeError):
                 response_data = {"result": tr.content}
+            # Tool call IDs use "function_name_N" format; the Gemini API
+            # expects the actual function name, so strip the index suffix.
+            func_name = re.sub(r"_\d+$", "", tr.tool_call_id)
             parts.append(
                 genai_types.Part.from_function_response(
-                    name=tr.tool_call_id,
+                    name=func_name,
                     response=response_data,
                 )
             )
@@ -225,12 +231,18 @@ class GeminiProvider(LLMProvider):
         messages: list[Message],
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> Response:
         """Generate a completion."""
         system_prompt = self._get_system_prompt(messages)
         contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools)
-        config = self._build_config(temperature, system_prompt, gemini_tools)
+        config = self._build_config(
+            temperature,
+            system_prompt,
+            gemini_tools,
+            max_output_tokens=max_tokens,
+        )
 
         try:
             response = await self._client.aio.models.generate_content(
@@ -263,9 +275,12 @@ class GeminiProvider(LLMProvider):
         fc_signatures: list[dict[str, str]] = []
         for part in response_parts:
             if part.function_call and part.function_call.name:
+                # Index suffix ensures unique IDs when the same tool is called
+                # multiple times in one response.
+                call_id = f"{part.function_call.name}_{len(tool_calls)}"
                 tool_calls.append(
                     ToolCall(
-                        id=part.function_call.name,
+                        id=call_id,
                         name=part.function_call.name,
                         arguments=dict(part.function_call.args or {}),
                     )
@@ -304,6 +319,7 @@ class GeminiProvider(LLMProvider):
         messages: list[Message],
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion.
 
@@ -314,7 +330,12 @@ class GeminiProvider(LLMProvider):
         system_prompt = self._get_system_prompt(messages)
         contents = self._convert_messages(messages)
         gemini_tools = self._convert_tools(tools)
-        config = self._build_config(temperature, system_prompt, gemini_tools)
+        config = self._build_config(
+            temperature,
+            system_prompt,
+            gemini_tools,
+            max_output_tokens=max_tokens,
+        )
 
         tool_calls = []
         all_thought_parts: list[dict[str, str]] = []
@@ -334,9 +355,10 @@ class GeminiProvider(LLMProvider):
                     )
                     for part in chunk.candidates[0].content.parts:
                         if part.function_call and part.function_call.name:
+                            call_id = f"{part.function_call.name}_{len(tool_calls)}"
                             tool_calls.append(
                                 ToolCall(
-                                    id=part.function_call.name,
+                                    id=call_id,
                                     name=part.function_call.name,
                                     arguments=dict(part.function_call.args or {}),
                                 )

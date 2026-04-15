@@ -6,6 +6,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Added
 - **Quick Pack tool** — new standalone `quickpack` package (`src/quickpack/`) that produces valid `.charm` files without charmcraft's full lifecycle. Supports the `uv` plugin (plus `dump` parts), builds locally for the host architecture, and skips LXD, linting, and analysis. Available as a CLI (`quickpack`), a Python API (`quickpack.pack.quick_pack()`), and a cantrip agent tool (`quick_pack`). Includes jujuignore pattern matching, charmcraft.yaml → metadata.yaml generation, and dispatch script creation. Comparison tests verify output matches `charmcraft pack` and speed is significantly better.
+- **Claude prompt caching (Phase 27.1)** — system prompt is now sent as a content block with `cache_control: {"type": "ephemeral"}`, enabling Anthropic's prompt caching for multi-turn conversations; `cache_creation_input_tokens` and `cache_read_input_tokens` are captured in usage metrics
+
+### Changed
+- **`max_tokens` configurable (Phase 27.2)** — `LLMProvider.complete()` and `stream()` accept `max_tokens` parameter; Claude default raised from 4096 to 8192; callers (retry helper, subagent runner) can override for long-output tasks
+- **Gemini unique tool call IDs (Phase 27.3)** — when Gemini returns multiple calls to the same tool in one response, each `ToolCall` now gets a unique ID (`name_0`, `name_1`, …) instead of sharing the function name; `_convert_tool_message` strips the suffix before sending results back
 
 ### Fixed
 - **Status filter crash on None message** — `_app_matches_filter` in the TUI status widget no longer crashes with `AttributeError` when `app_status.message` or `workload_status.message` is `None`

@@ -194,6 +194,7 @@ class TestCompleteWithRetry:
             messages=messages,
             tools=tools,
             temperature=0.3,
+            max_tokens=None,
         )
 
 

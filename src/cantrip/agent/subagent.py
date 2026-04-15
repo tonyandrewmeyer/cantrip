@@ -780,6 +780,7 @@ class Subagent:
         self,
         messages: list[llm.Message],
         tools: list[llm.Tool] | None,
+        max_tokens: int | None = None,
     ) -> llm.Response:
         """Call ``provider.complete()`` with linear-backoff retry for transient errors."""
         response = await complete_with_retry(
@@ -787,6 +788,7 @@ class Subagent:
             messages,
             tools,
             temperature=_SUBAGENT_TEMPERATURE,
+            max_tokens=max_tokens,
             throttle=self._throttle,
         )
         if self._on_usage:

@@ -392,6 +392,89 @@ class TestGeminiProviderComplete:
         assert result.tool_calls[0].name == "test_tool"
         assert result.tool_calls[0].arguments == {}
 
+    @pytest.mark.asyncio
+    async def test_complete_duplicate_tool_calls_unique_ids(self):
+        """Two calls to the same tool in one response get distinct IDs."""
+        provider, _ = _make_provider()
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [
+            _make_function_call_part("read_file", {"path": "a.txt"}),
+            _make_function_call_part("read_file", {"path": "b.txt"}),
+        ]
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 10
+        mock_response.usage_metadata.candidates_token_count = 8
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        result = await provider.complete([Message(role=Role.USER, content="Read both")])
+
+        assert len(result.tool_calls) == 2
+        assert result.tool_calls[0].id == "read_file_0"
+        assert result.tool_calls[1].id == "read_file_1"
+        # Both should still carry the correct function name.
+        assert result.tool_calls[0].name == "read_file"
+        assert result.tool_calls[1].name == "read_file"
+        assert result.tool_calls[0].arguments == {"path": "a.txt"}
+        assert result.tool_calls[1].arguments == {"path": "b.txt"}
+
+
+class TestGeminiToolResultNameExtraction:
+    """Tests for stripping the index suffix from tool call IDs in tool results."""
+
+    def test_tool_result_id_mapped_to_function_name(self):
+        """Tool result with indexed ID is sent with the original function name."""
+        provider, _ = _make_provider()
+        messages = [
+            Message(
+                role=Role.TOOL,
+                content="",
+                tool_results=[
+                    LLMToolResult(
+                        tool_call_id="read_file_0",
+                        content='{"data": "hello"}',
+                    ),
+                    LLMToolResult(
+                        tool_call_id="read_file_1",
+                        content='{"data": "world"}',
+                    ),
+                ],
+            ),
+        ]
+
+        result = provider._convert_messages(messages)
+
+        assert len(result) == 1
+        parts = result[0].parts
+        assert len(parts) == 2
+        # Both parts should use the function name "read_file", not the indexed ID.
+        assert parts[0].function_response.name == "read_file"
+        assert parts[1].function_response.name == "read_file"
+
+    def test_tool_result_id_without_suffix_unchanged(self):
+        """A tool call ID with no numeric suffix is passed through unchanged."""
+        provider, _ = _make_provider()
+        messages = [
+            Message(
+                role=Role.TOOL,
+                content="",
+                tool_results=[
+                    LLMToolResult(
+                        tool_call_id="juju_status",
+                        content='{"status": "active"}',
+                    ),
+                ],
+            ),
+        ]
+
+        result = provider._convert_messages(messages)
+
+        parts = result[0].parts
+        assert parts[0].function_response.name == "juju_status"
+
 
 class TestGeminiProviderStream:
     """Tests for GeminiProvider.stream."""
@@ -730,6 +813,35 @@ class TestThoughtSignatureRoundTrip:
         with pytest.raises(ProviderRateLimitError):
             async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
                 pass
+
+    @pytest.mark.asyncio
+    async def test_stream_duplicate_tool_calls_unique_ids(self):
+        """Parallel calls to the same tool in a stream get distinct IDs."""
+        provider, _ = _make_provider()
+
+        chunk = MagicMock()
+        chunk.candidates = [MagicMock()]
+        chunk.candidates[0].content.parts = [
+            _make_function_call_part("read_file", {"path": "a.txt"}),
+            _make_function_call_part("read_file", {"path": "b.txt"}),
+        ]
+
+        async def _stream_gen():
+            yield chunk
+
+        provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
+
+        chunks = []
+        async for c in provider.stream([Message(role=Role.USER, content="Read both")]):
+            chunks.append(c)
+
+        final = chunks[-1]
+        assert final.is_final is True
+        assert len(final.tool_calls) == 2
+        assert final.tool_calls[0].id == "read_file_0"
+        assert final.tool_calls[1].id == "read_file_1"
+        assert final.tool_calls[0].name == "read_file"
+        assert final.tool_calls[1].name == "read_file"
 
     @pytest.mark.asyncio
     async def test_stream_collects_thought_parts(self):

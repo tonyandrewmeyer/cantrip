@@ -41,6 +41,7 @@ class TestExecutorPauseResume:
                 messages,  # noqa: ARG002
                 tools=None,  # noqa: ARG002
                 temperature=0.7,  # noqa: ARG002
+                max_tokens=None,  # noqa: ARG002
             ):
                 nonlocal paused_during_call
                 # Check if executor is paused when the LLM is called.

@@ -35,6 +35,7 @@ class CallbackProvider(FakeProvider):
         messages: list[llm.Message],
         tools: list[llm.Tool] | None = None,  # noqa: ARG002
         temperature: float = 0.7,  # noqa: ARG002
+        max_tokens: int | None = None,  # noqa: ARG002
     ) -> llm.Response:
         self._call_count += 1
         # Yield to the event loop so executor tests don't starve other coroutines.
@@ -65,6 +66,7 @@ class MultiRoleProvider(FakeProvider):
         messages: list[llm.Message],
         tools: list[llm.Tool] | None = None,  # noqa: ARG002
         temperature: float = 0.7,  # noqa: ARG002
+        max_tokens: int | None = None,  # noqa: ARG002
     ) -> llm.Response:
         self._call_count += 1
 

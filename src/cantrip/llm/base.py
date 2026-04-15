@@ -133,8 +133,13 @@ class LLMProvider(ABC):
         messages: list[Message],
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> Response:
-        """Generate a completion."""
+        """Generate a completion.
+
+        When *max_tokens* is ``None``, providers use their own sensible
+        default.
+        """
 
     @abstractmethod
     async def stream(
@@ -142,8 +147,13 @@ class LLMProvider(ABC):
         messages: list[Message],
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[Chunk]:
-        """Stream a completion."""
+        """Stream a completion.
+
+        When *max_tokens* is ``None``, providers use their own sensible
+        default.
+        """
 
     @property
     def max_tools(self) -> int | None:

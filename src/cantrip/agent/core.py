@@ -346,6 +346,7 @@ class CantripAgent:
         messages: list[Message],
         tools: list[llm.Tool] | None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> Response:
         """Call provider.complete() with retry and linear backoff for transient errors."""
         return await complete_with_retry(
@@ -353,6 +354,7 @@ class CantripAgent:
             messages,
             tools,
             temperature=temperature,
+            max_tokens=max_tokens,
         )
 
     def _pause_executor(self) -> None:
