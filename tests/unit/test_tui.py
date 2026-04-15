@@ -391,3 +391,60 @@ class TestTuiWidgets:
                 await pilot.pause(delay=0.7)
 
                 assert right_panel.display is True
+
+    @pytest.mark.asyncio
+    async def test_ctrl_c_cancels_agent_response(self):
+        """Ctrl+C cancels a running agent response worker."""
+        import asyncio
+
+        p1, p2, mock_agent = _patch_app()
+
+        async def _slow_response(_msg: str) -> str:
+            await asyncio.sleep(10)
+            return "never"
+
+        # Make the agent take a long time so we can cancel mid-flight.
+        mock_agent.process_message = _slow_response
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                # Submit a message to start the agent worker.
+                input_widget = pilot.app.query_one("#chat-input")
+                input_widget.value = "Hi"
+                await pilot.press("enter")
+                await pilot.pause(delay=0.3)
+
+                # Worker should be running; input disabled.
+                assert input_widget.disabled is True
+
+                # Cancel via Ctrl+C.
+                await pilot.press("ctrl+c")
+                await pilot.pause(delay=0.5)
+
+                # Input should be re-enabled after cancellation.
+                assert input_widget.disabled is False
+
+                # "Operation cancelled." system message should appear.
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                scroll = chat.query_one("#chat-scroll")
+                messages = scroll.query(MessageWidget)
+                system_msgs = [
+                    w
+                    for w in messages
+                    if w.message.role == MessageRole.SYSTEM
+                    and "cancelled" in w.message.content.lower()
+                ]
+                assert len(system_msgs) >= 1
+
+    @pytest.mark.asyncio
+    async def test_ctrl_c_no_op_without_running_worker(self):
+        """Ctrl+C does nothing when no agent worker is running."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                # Press Ctrl+C with no worker running — should not crash.
+                await pilot.press("ctrl+c")
+                await pilot.pause()
+
+                # Input should remain enabled.
+                input_widget = pilot.app.query_one("#chat-input")
+                assert input_widget.disabled is False

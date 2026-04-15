@@ -2573,11 +2573,11 @@ partially implemented functionality.
 - [x] Wrap in `ScrollableContainer` or use `RichLog`
 - [ ] Make refresh actually fetch fresh Juju status instead of re-rendering stale data
 
-### 29.8 Low — Add Agent Cancellation Binding
+### 29.8 Low — Add Agent Cancellation Binding ✅
 
-- [ ] Help screen lists "Ctrl+C — Cancel operation" but no such binding exists
-- [ ] Add `Ctrl+C` binding to cancel the `agent_response` worker
-- [ ] Add visual feedback when the cancel is in progress
+- [x] Help screen lists "Ctrl+C — Cancel operation" but no such binding exists
+- [x] Add `Ctrl+C` binding to cancel the `agent_response` worker
+- [x] Add visual feedback when the cancel is in progress
 
 ### 29.9 Low — Clean Up Dead CSS ✅
 

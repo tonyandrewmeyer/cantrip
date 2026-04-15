@@ -44,6 +44,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Help screen responsive layout (Phase 29.4)** — help container uses percentage-based width (`80%` with `max-width: 80`) instead of fixed 70-cell, and content is wrapped in a `ScrollableContainer` for small terminals
 
 ### Added
+- **Ctrl+C agent cancellation (Phase 29.8)** — pressing Ctrl+C now cancels the running agent response worker; the status bar shows "⏹ Cancelling..." during cancellation and a "Operation cancelled." system message confirms completion; input is re-enabled immediately
 - **RelationDetailScreen wired up (Phase 29.1)** — clicking a relation line in the Juju status widget now opens the `RelationDetailScreen` modal, which was previously fully implemented but unreachable; added `on_relation_line_selected` handler in `CantripApp`
 
 ### Fixed

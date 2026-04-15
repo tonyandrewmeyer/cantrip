@@ -57,6 +57,7 @@ class CantripApp(App):
         Binding("f9", "transcript", "Transcript"),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+l", "clear_chat", "Clear"),
+        Binding("ctrl+c", "cancel_agent", "Cancel", show=False),
     ]
 
     def __init__(
@@ -685,6 +686,12 @@ class CantripApp(App):
             self._update_model_info()
             self._update_test_summary()
 
+        elif event.state == WorkerState.CANCELLED:
+            chat.add_system_message("Operation cancelled.")
+            input_widget.disabled = False
+            input_widget.placeholder = "Type your message..."
+            input_widget.focus()
+
         elif event.state == WorkerState.ERROR:
             error = event.worker.error
             if isinstance(error, ProviderRateLimitError | ProviderOverloadedError):
@@ -774,3 +781,11 @@ class CantripApp(App):
         """Clear chat history."""
         chat = self.query_one("#chat", ChatWidget)
         chat.clear()
+
+    def action_cancel_agent(self) -> None:
+        """Cancel the running agent response worker."""
+        for worker in self.workers:
+            if worker.name == "agent_response" and worker.is_running:
+                worker.cancel()
+                self.query_one("#status-bar", StatusBar).task_label = "⏹ Cancelling..."
+                return
