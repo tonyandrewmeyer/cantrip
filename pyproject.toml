@@ -132,4 +132,5 @@ markers = [
     "e2e: end-to-end multi-turn conversation scenarios",
     "tui: Textual app tests",
     "live: tests requiring real external services (Juju, LLM APIs)",
+    "slow: slow tests (charmcraft comparison, real uv invocations)",
 ]

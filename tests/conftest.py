@@ -10,6 +10,26 @@ from cantrip.agent.queue import AgentTask
 from cantrip.llm.base import LLMProvider, Message, Response, Tool
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add custom CLI flags."""
+    parser.addoption(
+        "--run-slow",
+        action="store_true",
+        default=False,
+        help="Run slow tests (charmcraft comparison, real builds).",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip tests marked ``slow`` unless ``--run-slow`` is given."""
+    if config.getoption("--run-slow"):
+        return
+    skip_slow = pytest.mark.skip(reason="need --run-slow option to run")
+    for item in items:
+        if "slow" in item.keywords:
+            item.add_marker(skip_slow)
+
+
 class FakeProvider(LLMProvider):
     """A fake LLM provider for testing.
 
