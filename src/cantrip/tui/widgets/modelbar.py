@@ -46,6 +46,9 @@ class ModelInfoBar(Widget):
     alltime_completion_tokens: reactive[int] = reactive(0, init=False)
     alltime_request_count: reactive[int] = reactive(0, init=False)
 
+    cache_creation_tokens: reactive[int] = reactive(0, init=False)
+    cache_read_tokens: reactive[int] = reactive(0, init=False)
+
     def compose(self) -> ComposeResult:
         """Compose the bar layout."""
         yield Static("", id="model-info-line1", classes="model-info-row")
@@ -79,12 +82,18 @@ class ModelInfoBar(Widget):
 
         session_total = self.session_prompt_tokens + self.session_completion_tokens
         if session_total > 0:
-            ctx_parts.append(
+            session_label = (
                 f"session: {_fmt_k(session_total)} "
                 f"({_fmt_k(self.session_prompt_tokens)} in, "
                 f"{_fmt_k(self.session_completion_tokens)} out, "
                 f"{self.session_request_count} req)"
             )
+            # Show cache hit rate when Claude prompt caching is active.
+            cache_total = self.cache_creation_tokens + self.cache_read_tokens
+            if cache_total > 0:
+                hit_pct = self.cache_read_tokens / cache_total * 100
+                session_label += f"  cache: {hit_pct:.0f}% hit"
+            ctx_parts.append(session_label)
 
         alltime_total = self.alltime_prompt_tokens + self.alltime_completion_tokens
         if alltime_total > 0 and alltime_total != session_total:
@@ -116,6 +125,8 @@ for _attr in (
     "alltime_prompt_tokens",
     "alltime_completion_tokens",
     "alltime_request_count",
+    "cache_creation_tokens",
+    "cache_read_tokens",
 ):
     setattr(ModelInfoBar, f"watch_{_attr}", lambda self: self._refresh_content())
 

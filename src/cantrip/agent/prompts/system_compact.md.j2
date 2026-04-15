@@ -25,12 +25,27 @@ For new charms, use `plan_tasks` to decompose the work. Present the plan and ask
 
 ## Code Style
 - UK English, type hints, Google-style docstrings
-{% if charm_name or charm_path or dev_model %}
+{% if charm_name or charm_path or dev_model or environment_ready is not none %}
 
 ## Context
+{% if environment_ready is not none %}**Environment**: {{ "Ready" if environment_ready else "Warming up" }}{% endif %}
 {% if charm_name %}Charm: {{ charm_name }}{% endif %}
 {% if charm_path %}Path: {{ charm_path }}{% endif %}
 {% if charm_type %}Type: {{ charm_type }}{% endif %}
 {% if framework %}Framework: {{ framework }}{% endif %}
 {% if dev_model %}Dev model: {{ dev_model }}{% endif %}
+{% if cos_model %}COS model: {{ cos_model }}{% endif %}
+{% if watcher_enabled %}Event watcher: active{% endif %}
+{% endif %}
+{% if skills_index %}
+
+## Available Skills
+{{ skills_index }}
+{% endif %}
+{% if recent_decisions %}
+
+## Recent Decisions
+{% for d in recent_decisions[-5:] %}
+- **{{ d.key }}**: {{ d.value }}
+{% endfor %}
 {% endif %}

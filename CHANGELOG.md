@@ -42,6 +42,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **ListDirectoryTool shows file sizes (Phase 30.4)** — `list_directory` output now includes file sizes in bytes, trailing `/` for directories, and symlink targets
 - **Graph screen scrollable (Phase 29.7)** — `GraphScreen` body is now a `RichLog` instead of a `Static`, allowing long integration graphs to scroll
 - **Help screen responsive layout (Phase 29.4)** — help container uses percentage-based width (`80%` with `max-width: 80`) instead of fixed 70-cell, and content is wrapped in a `ScrollableContainer` for small terminals
+- **Cache hit rate in ModelInfoBar (Phase 27.1)** — when using Claude, the session token line now shows prompt cache hit rate (e.g. `cache: 85% hit`)
+- **GrepTool max results fix (Phase 30.5)** — `--max-count` is per-file in ripgrep, not global; raised per-file cap to `max_results * 5` and rely on client-side truncation for the global limit
+- **RunCommandTool cwd validation (Phase 30.7)** — `cwd` parameter is now validated against the project tree when a `base_path` is set, preventing the agent from running commands in arbitrary directories
+- **Planning dependency validation (Phase 32.2)** — LLM-generated task plans are now validated for non-existent dependency IDs (stripped with warning) and dependency cycles (broken by removing intra-cycle edges)
+- **Compact prompt retains critical context (Phase 32.1)** — `system_compact.md.j2` now includes `environment_ready`, `cos_model`, `watcher_enabled`, `skills_index`, and `recent_decisions`, preventing the agent from losing awareness after context compaction
 
 ### Added
 - **COS model status display (Phase 29.5)** — the TUI now polls the COS model for `juju status` alongside the dev model; the COS section in the status panel shows a collapsed health summary (app count + active/total) and expands to a full status view on click

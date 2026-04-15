@@ -2378,7 +2378,7 @@ capabilities that limit the agent's effectiveness.
   in both `complete()` and `stream()` (`claude.py`)
 - [x] Capture `cache_creation_input_tokens` and `cache_read_input_tokens` in the
   usage dict so cost tracking is accurate
-- [ ] Update `ModelInfoBar` to show cache hit rate when using Claude
+- [x] Update `ModelInfoBar` to show cache hit rate when using Claude
 
 ### 27.2 High — Fix `max_tokens` Hard-Coded at 4096
 
@@ -2645,22 +2645,22 @@ existing tool robustness, and fix security issues.
 - [x] Prevents the LLM from reading entire large files when it only needs a section
 - [x] Add file size and symlink indicators to `ListDirectoryTool`
 
-### 30.5 Medium — Fix `GrepTool` Max Results
+### 30.5 Medium — Fix `GrepTool` Max Results ✅
 
-- [ ] `rg --max-count N` is per-file, not global — a large codebase can return far
+- [x] `rg --max-count N` is per-file, not global — a large codebase can return far
   more lines than `max_results` intended
-- [ ] Use `--max-total-count` (rg ≥ 13) or paginate the output client-side
+- [x] Use `--max-total-count` (rg ≥ 13) or paginate the output client-side
 
 ### 30.6 Medium — Fix `EditFileTool` Error Message
 
 - [x] Appends `...` unconditionally even when the string is shorter than 50 characters
 - [x] Only append `...` when `len(old_string) > 50`
 
-### 30.7 Low — Validate `RunCommandTool` Working Directory
+### 30.7 Low — Validate `RunCommandTool` Working Directory ✅
 
-- [ ] `cwd` parameter is unrestricted — the agent can run commands in `/etc/` or
+- [x] `cwd` parameter is unrestricted — the agent can run commands in `/etc/` or
   other sensitive directories
-- [ ] Validate that `cwd` is within the charm project tree
+- [x] Validate that `cwd` is within the charm project tree
 
 ### 30.8 Low — Deduplicate `_juju_available()` ✅
 
@@ -2835,21 +2835,21 @@ P0 issues and scores at least 14/20.
 **Goal:** Improve the system prompt, subagent guidance, and planning logic to produce
 higher-quality charms with fewer iterations.
 
-### 32.1 High — Compact Prompt Missing Critical Context
+### 32.1 High — Compact Prompt Missing Critical Context ✅
 
-- [ ] `system_compact.md.j2` omits `cos_model`, `environment_ready`,
+- [x] `system_compact.md.j2` omits `cos_model`, `environment_ready`,
   `watcher_enabled`, `skills_index`, and `recent_decisions`
-- [ ] After compaction, the agent loses awareness of the COS model and environment
+- [x] After compaction, the agent loses awareness of the COS model and environment
   state, leading to incorrect tool choices
-- [ ] Add at minimum `environment_ready`, `cos_model`, and active skills to the
+- [x] Add at minimum `environment_ready`, `cos_model`, and active skills to the
   compact template
 
-### 32.2 Medium — LLM Planning Output Validation
+### 32.2 Medium — LLM Planning Output Validation ✅
 
-- [ ] Planner does not verify that dependency IDs in the task list refer to tasks
+- [x] Planner does not verify that dependency IDs in the task list refer to tasks
   within the same plan — hallucinated dependencies cause silent deadlocks
-- [ ] Validate dependency graph is a DAG before adding tasks to the queue
-- [ ] Log a warning and strip invalid dependencies
+- [x] Validate dependency graph is a DAG before adding tasks to the queue
+- [x] Log a warning and strip invalid dependencies
 
 ### 32.3 Medium — Watcher Event Coverage Gaps
 

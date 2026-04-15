@@ -177,8 +177,10 @@ class GrepTool(PathAwareTool):
             cmd.extend(["--context", str(context_lines)])
         if glob:
             cmd.extend(["--glob", glob])
-        # Fetch slightly more than max_results so we can detect truncation.
-        cmd.extend(["--max-count", str(max_results + 1)])
+        # Note: --max-count is per-file in rg, not global.  We rely on
+        # client-side truncation instead (see execute()).  A generous
+        # per-file cap prevents any single file from dominating output.
+        cmd.extend(["--max-count", str(max_results * 5)])
         cmd.append(pattern)
         cmd.append(str(path))
         return cmd

@@ -258,6 +258,10 @@ class CantripApp(App):
                     total_requests += count
             bar.alltime_request_count = total_requests
 
+        # Session-level cache stats (Claude prompt caching).
+        bar.cache_creation_tokens = self._agent.cache_creation_tokens
+        bar.cache_read_tokens = self._agent.cache_read_tokens
+
     def action_toggle_model_info(self) -> None:
         """Toggle model info bar visibility."""
         bar = self.query_one("#model-info", ModelInfoBar)

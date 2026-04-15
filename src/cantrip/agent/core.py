@@ -95,6 +95,10 @@ class CantripAgent:
         self._watcher: EventWatcher | None = None
         self._executor: BackgroundExecutor | None = None
 
+        # Session-level prompt cache accumulators (Claude-specific).
+        self.cache_creation_tokens: int = 0
+        self.cache_read_tokens: int = 0
+
         if charm_path:
             self._ensure_claude_md(charm_path)
 
@@ -186,6 +190,9 @@ class CantripAgent:
 
     def _record_usage(self, response: Response) -> int | None:
         """Record token usage from a provider response if a store is active."""
+        if response.usage:
+            self.cache_creation_tokens += response.usage.get("cache_creation_input_tokens", 0)
+            self.cache_read_tokens += response.usage.get("cache_read_input_tokens", 0)
         self._ensure_store()
         if self._store and response.usage:
             return self._store.record_usage(

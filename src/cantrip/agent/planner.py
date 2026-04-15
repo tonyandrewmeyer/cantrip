@@ -1473,7 +1473,9 @@ def _parse_task_list(content: str) -> list[AgentTask]:
     if not isinstance(data, list):
         raise ValueError("Expected a JSON array of tasks")
 
-    return [_parse_single_task(item, idx) for idx, item in enumerate(data)]
+    tasks = [_parse_single_task(item, idx) for idx, item in enumerate(data)]
+    _validate_dependencies(tasks)
+    return tasks
 
 
 def _parse_single_task(item: dict, index: int) -> AgentTask:
@@ -1501,6 +1503,62 @@ def _parse_single_task(item: dict, index: int) -> AgentTask:
         description=str(item.get("description", "")),
         dependencies=[str(d) for d in dependencies],
     )
+
+
+def _validate_dependencies(tasks: list[AgentTask]) -> None:
+    """Validate and sanitise task dependencies.
+
+    Strips references to non-existent task IDs and detects cycles.
+    Logs a warning for each invalid dependency rather than raising.
+    """
+    valid_ids = {t.id for t in tasks}
+
+    # Strip references to tasks not in this plan.
+    for task in tasks:
+        invalid = [d for d in task.dependencies if d not in valid_ids]
+        if invalid:
+            log.warning(
+                "Task %r references non-existent dependencies %s — stripping them",
+                task.id,
+                invalid,
+            )
+            task.dependencies = [d for d in task.dependencies if d in valid_ids]
+
+    # Simple cycle detection via topological sort (Kahn's algorithm).
+    in_degree: dict[str, int] = {t.id: 0 for t in tasks}
+    for task in tasks:
+        for dep in task.dependencies:
+            if dep in in_degree:
+                in_degree[dep] = in_degree[dep]  # dep exists — no-op, counted below
+
+    # Recount properly: in_degree[x] = number of tasks that depend on x.
+    # Actually, for cycle detection we need: in_degree[t] = len(t.dependencies).
+    in_degree = {t.id: len(t.dependencies) for t in tasks}
+    adjacency: dict[str, list[str]] = {t.id: [] for t in tasks}
+    for task in tasks:
+        for dep in task.dependencies:
+            adjacency[dep].append(task.id)
+
+    queue = [tid for tid, deg in in_degree.items() if deg == 0]
+    visited = 0
+    while queue:
+        node = queue.pop(0)
+        visited += 1
+        for successor in adjacency[node]:
+            in_degree[successor] -= 1
+            if in_degree[successor] == 0:
+                queue.append(successor)
+
+    if visited < len(tasks):
+        cycle_ids = [tid for tid, deg in in_degree.items() if deg > 0]
+        log.warning(
+            "Dependency cycle detected among tasks %s — stripping all dependencies in cycle",
+            cycle_ids,
+        )
+        cycle_set = set(cycle_ids)
+        for task in tasks:
+            if task.id in cycle_set:
+                task.dependencies = [d for d in task.dependencies if d not in cycle_set]
 
 
 # ---------------------------------------------------------------------------

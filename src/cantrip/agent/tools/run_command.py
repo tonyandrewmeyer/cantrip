@@ -2,6 +2,7 @@
 
 import shlex
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
@@ -39,8 +40,14 @@ class RunCommandTool(Tool):
     the allowlist.
     """
 
-    def __init__(self, *, allowlist: frozenset[str] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        allowlist: frozenset[str] | None = None,
+        base_path: Path | None = None,
+    ) -> None:
         self._allowlist = allowlist if allowlist is not None else DEFAULT_ALLOWLIST
+        self._base_path = base_path
 
     @property
     def name(self) -> str:
@@ -107,6 +114,17 @@ class RunCommandTool(Tool):
             )
 
         timeout = min(max(1, timeout), _MAX_TIMEOUT)
+
+        # Validate cwd is within the project tree when a base path is set.
+        if self._base_path is not None:
+            resolved_cwd = Path(cwd).resolve()
+            base_resolved = self._base_path.resolve()
+            if not resolved_cwd.is_relative_to(base_resolved):
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"Working directory '{cwd}' is outside the project tree.",
+                )
 
         try:
             result = subprocess.run(
