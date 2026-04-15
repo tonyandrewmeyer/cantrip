@@ -28,7 +28,7 @@ def charm_project(tmp_path: pathlib.Path) -> pathlib.Path:
         "summary": "A test charm",
         "description": "A charm for testing quick pack.",
         "base": "ubuntu@24.04",
-        "platforms": {"ubuntu@24.04:amd64": None},
+        "platforms": {"amd64": None},
         "parts": {
             "charm": {
                 "plugin": "uv",
@@ -248,7 +248,15 @@ class TestMetadata:
         assert "charmcraft-started-at" in manifest
         assert manifest["analysis"] == {"attributes": []}
 
-    def test_charm_filename(self) -> None:
+    def test_charm_filename_arch_only(self) -> None:
+        project = {"name": "myapp", "base": "ubuntu@24.04", "platforms": {"amd64": None}}
+        assert metadata.charm_filename(project, arch="amd64") == "myapp_amd64.charm"
+
+    def test_charm_filename_full_platform(self) -> None:
+        project = {"name": "myapp", "platforms": {"ubuntu@24.04:amd64": None}}
+        assert metadata.charm_filename(project, arch="amd64") == "myapp_ubuntu@24.04-amd64.charm"
+
+    def test_charm_filename_no_platforms(self) -> None:
         project = {"name": "myapp", "base": "ubuntu@24.04"}
         assert metadata.charm_filename(project, arch="amd64") == "myapp_ubuntu@24.04-amd64.charm"
 

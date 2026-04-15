@@ -152,13 +152,40 @@ def generate_manifest(
     }
 
 
-def charm_filename(project: dict[str, Any], arch: str | None = None) -> str:
-    """Return the standard charm filename, e.g. ``myapp_ubuntu-24.04-amd64.charm``."""
-    name = project["name"]
+def _resolve_platform_label(project: dict[str, Any], arch: str) -> str:
+    """Determine the platform label for the charm filename.
+
+    Charmcraft uses the platform key directly:
+    - ``platforms: {amd64: null}`` → label is ``amd64``
+    - ``platforms: {ubuntu@24.04:amd64: null}`` → label is ``ubuntu@24.04-amd64``
+      (colon replaced with hyphen)
+
+    When no platform key matches, falls back to ``{base}-{arch}``.
+    """
+    if platforms := project.get("platforms"):
+        for key in platforms:
+            key_str = str(key)
+            # Platform key that is just the arch name.
+            if key_str == arch:
+                return arch
+            # Platform key that includes the base and arch.
+            if key_str.endswith(f":{arch}") or key_str.endswith(f"-{arch}"):
+                return key_str.replace(":", "-")
+        # Use the first platform key if none matched explicitly.
+        first = str(next(iter(platforms)))
+        return first.replace(":", "-")
+
     distro, series = resolve_base(project)
+    return f"{distro}@{series}-{arch}"
+
+
+def charm_filename(project: dict[str, Any], arch: str | None = None) -> str:
+    """Return the standard charm filename, e.g. ``myapp_amd64.charm``."""
+    name = project["name"]
     if arch is None:
         arch = local_arch()
-    return f"{name}_{distro}@{series}-{arch}.charm"
+    label = _resolve_platform_label(project, arch)
+    return f"{name}_{label}.charm"
 
 
 def write_optional_yaml(

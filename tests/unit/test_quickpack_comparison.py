@@ -44,11 +44,12 @@ def _scaffold_charm(base_dir: pathlib.Path) -> pathlib.Path:
         "summary": "A test charm for comparison",
         "description": "Used to compare quickpack output with charmcraft pack.",
         "base": "ubuntu@24.04",
-        "platforms": {"ubuntu@24.04:amd64": None},
+        "platforms": {"amd64": None},
         "parts": {
             "charm": {
                 "plugin": "uv",
                 "source": ".",
+                "build-snaps": ["astral-uv"],
             },
         },
         "config": {
@@ -113,6 +114,10 @@ def _charmcraft_pack(
     output_dir: pathlib.Path | None = None,
 ) -> tuple[pathlib.Path, float]:
     """Run charmcraft pack and return (charm_path, elapsed_seconds)."""
+    # Remove any leftover .charm files from previous runs.
+    for old in charm_dir.glob("*.charm"):
+        old.unlink()
+
     cmd = ["charmcraft", "pack"]
     if destructive:
         cmd.append("--destructive-mode")
@@ -169,10 +174,10 @@ def _venv_packages(contents: dict[str, bytes]) -> set[str]:
     packages: set[str] = set()
     for name in contents:
         if name.startswith("venv/") and "/site-packages/" in name:
-            # Extract the directory immediately under site-packages.
             after_sp = name.split("/site-packages/", 1)[1]
             top = after_sp.split("/")[0]
-            if top and not top.startswith("_"):
+            # Skip private dirs, .pyc files, and dist-info metadata.
+            if top and not top.startswith("_") and not top.endswith(".dist-info"):
                 packages.add(top)
     return packages
 
@@ -198,21 +203,27 @@ class TestOutputComparison:
         cc_contents: dict[str, bytes],
     ) -> None:
         """Assert that the two charm archives contain equivalent content."""
-        qp_files = set(qp_contents.keys())
-        cc_files = set(cc_contents.keys())
+
+        # Filter out .pyc files and __pycache__ dirs — bytecode compilation
+        # may differ between quickpack and charmcraft depending on uv versions
+        # and cleanup steps.
+        def _filter(names: set[str]) -> set[str]:
+            return {n for n in names if not n.endswith(".pyc") and "/__pycache__/" not in n}
+
+        qp_files = _filter(set(qp_contents.keys()))
+        cc_files = _filter(set(cc_contents.keys()))
 
         # Files that quickpack generates differently (version/timestamp) or
         # that charmcraft may add from its own lifecycle.
         metadata_files = {"manifest.yaml"}
-        # charmcraft may include charmcraft.yaml in the archive with the
-        # charm plugin; quickpack does not.  Allow extra files from charmcraft.
+        # charmcraft may include extra files from lifecycle; allow them.
         extra_cc = cc_files - qp_files - metadata_files
-        missing_qp = cc_files - qp_files - metadata_files - extra_cc
 
         # All files in quickpack output should be in charmcraft output
         # (except manifest which differs by design).
         extra_qp = qp_files - cc_files - metadata_files
         assert not extra_qp, f"quickpack has extra files: {extra_qp}"
+        missing_qp = cc_files - qp_files - metadata_files - extra_cc
         assert not missing_qp, f"quickpack is missing files: {missing_qp}"
 
         # Compare content of key metadata files.
