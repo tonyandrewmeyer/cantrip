@@ -287,12 +287,12 @@ class TestOutputComparison:
 class TestSpeedComparison:
     """Verify quickpack is significantly faster than charmcraft."""
 
-    def test_faster_than_destructive_mode(
+    def test_3x_faster_than_destructive_mode(
         self,
         comparison_charm: pathlib.Path,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Quickpack must be faster than charmcraft --destructive-mode."""
+        """Quickpack must be at least 3x faster than charmcraft --destructive-mode."""
         qp_out = tmp_path / "qp"
         qp_out.mkdir()
         cc_out = tmp_path / "cc"
@@ -301,17 +301,17 @@ class TestSpeedComparison:
         _, qp_time = _quickpack_timed(comparison_charm, output_dir=qp_out)
         _, cc_time = _charmcraft_pack(comparison_charm, destructive=True, output_dir=cc_out)
 
-        assert qp_time < cc_time, (
-            f"quickpack ({qp_time:.1f}s) was not faster than "
+        assert qp_time * 3 <= cc_time, (
+            f"quickpack ({qp_time:.1f}s) was not 3x faster than "
             f"charmcraft --destructive-mode ({cc_time:.1f}s)"
         )
 
-    def test_twice_as_fast_as_normal_pack(
+    def test_20x_faster_than_normal_pack(
         self,
         comparison_charm: pathlib.Path,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Quickpack must be at least 2x faster than regular charmcraft pack."""
+        """Quickpack must be at least 20x faster than regular charmcraft pack."""
         qp_out = tmp_path / "qp"
         qp_out.mkdir()
         cc_out = tmp_path / "cc"
@@ -320,16 +320,16 @@ class TestSpeedComparison:
         _, qp_time = _quickpack_timed(comparison_charm, output_dir=qp_out)
         _, cc_time = _charmcraft_pack(comparison_charm, destructive=False, output_dir=cc_out)
 
-        assert qp_time * 2 <= cc_time, (
-            f"quickpack ({qp_time:.1f}s) was not 2x faster than charmcraft pack ({cc_time:.1f}s)"
+        assert qp_time * 20 <= cc_time, (
+            f"quickpack ({qp_time:.1f}s) was not 20x faster than charmcraft pack ({cc_time:.1f}s)"
         )
 
-    def test_three_times_faster_than_clean_pack(
+    def test_100x_faster_than_clean_pack(
         self,
         comparison_charm: pathlib.Path,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Quickpack must be at least 3x faster than charmcraft pack after clean."""
+        """Quickpack must be at least 100x faster than charmcraft pack after clean."""
         # Clean charmcraft's build cache first.
         subprocess.run(
             ["charmcraft", "clean"],
@@ -346,7 +346,7 @@ class TestSpeedComparison:
         _, qp_time = _quickpack_timed(comparison_charm, output_dir=qp_out)
         _, cc_time = _charmcraft_pack(comparison_charm, destructive=False, output_dir=cc_out)
 
-        assert qp_time * 3 <= cc_time, (
-            f"quickpack ({qp_time:.1f}s) was not 3x faster than "
+        assert qp_time * 100 <= cc_time, (
+            f"quickpack ({qp_time:.1f}s) was not 100x faster than "
             f"charmcraft clean + pack ({cc_time:.1f}s)"
         )
