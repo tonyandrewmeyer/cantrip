@@ -863,6 +863,11 @@ class Subagent:
             throttle=self._throttle,
         )
         if self._on_usage:
+            # Stamp the actual provider identity so the callback records
+            # the correct model — the subagent may be using the light
+            # provider, not the primary one the executor holds.
+            response.metadata["_provider_name"] = self._provider.name
+            response.metadata["_provider_model"] = self._provider.model_name
             self._on_usage(response)
         return response
 

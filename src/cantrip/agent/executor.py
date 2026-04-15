@@ -807,11 +807,18 @@ class BackgroundExecutor:
     # -- Usage tracking ------------------------------------------------------
 
     def _record_usage(self, response: llm.Response) -> None:
-        """Record token usage from a subagent LLM response."""
+        """Record token usage from a subagent LLM response.
+
+        The subagent stamps the actual provider identity into
+        ``response.metadata`` so we record the correct model even when
+        the subagent used the light provider instead of the primary one.
+        """
         if self._state_service and response.usage:
+            provider_name = response.metadata.get("_provider_name", self._provider.name)
+            model_name = response.metadata.get("_provider_model", self._provider.model_name)
             self._state_service.record_usage(
-                provider=self._provider.name,
-                model=self._provider.model_name,
+                provider=provider_name,
+                model=model_name,
                 prompt_tokens=response.usage.get("prompt_tokens", 0),
                 completion_tokens=response.usage.get("completion_tokens", 0),
             )

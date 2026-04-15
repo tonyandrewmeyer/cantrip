@@ -1917,3 +1917,56 @@ class TestRevertCleansUntrackedFiles:
         checkout_idx = next(i for i, c in enumerate(calls) if c == ["git", "checkout", "."])
         clean_idx = next(i for i, c in enumerate(calls) if c == ["git", "clean", "-fd"])
         assert clean_idx > checkout_idx
+
+
+class TestUsageRecordingProviderIdentity:
+    """Usage recording should reflect the actual provider used, not always the primary."""
+
+    def test_record_usage_uses_metadata_provider(self) -> None:
+        """When the response has _provider_name/_provider_model metadata, use those."""
+        store = MagicMock()
+        store.record_event = MagicMock()
+        store.record_usage = MagicMock()
+        store.save_tasks = MagicMock()
+
+        executor = _make_executor(store=store)
+
+        response = Response(
+            content="done",
+            usage={"prompt_tokens": 100, "completion_tokens": 20},
+            metadata={
+                "_provider_name": "claude",
+                "_provider_model": "claude-haiku-4-5-20251001",
+            },
+        )
+        executor._record_usage(response)
+
+        store.record_usage.assert_called_once_with(
+            provider="claude",
+            model="claude-haiku-4-5-20251001",
+            prompt_tokens=100,
+            completion_tokens=20,
+        )
+
+    def test_record_usage_falls_back_to_primary(self) -> None:
+        """Without metadata, falls back to the primary provider identity."""
+        store = MagicMock()
+        store.record_event = MagicMock()
+        store.record_usage = MagicMock()
+        store.save_tasks = MagicMock()
+
+        primary = FakeProvider(responses=[Response(content="done")])
+        executor = _make_executor(store=store, provider=primary)
+
+        response = Response(
+            content="done",
+            usage={"prompt_tokens": 50, "completion_tokens": 10},
+        )
+        executor._record_usage(response)
+
+        store.record_usage.assert_called_once_with(
+            provider=primary.name,
+            model=primary.model_name,
+            prompt_tokens=50,
+            completion_tokens=10,
+        )

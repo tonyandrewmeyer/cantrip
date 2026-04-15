@@ -3422,7 +3422,28 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 - [ ] Fall back to the heuristic when the API is unavailable or for
   performance-sensitive hot paths
 
-### 41.6 Streaming chunk granularity
+### 41.6 Conversation loop cost display
+
+- [ ] During live testing, multi-turn conversations with tool use consumed
+  significant tokens (350+ prompt tokens per turn, growing with history) but
+  the CLI mode provides no visibility into cumulative cost
+- [ ] Add a periodic cost summary to the CLI banner or a `/cost` command
+  that shows total tokens, estimated cost, and cache hit rate
+- [ ] The TUI model bar already shows some usage info — verify it updates
+  correctly with Claude's usage metrics including cache fields
+
+### 41.7 Compaction effectiveness monitoring
+
+- [ ] During testing, compaction with Haiku only reduced a 5-message
+  conversation from 1587 to 1518 tokens (4% reduction) when the content
+  was repetitive — the summary was nearly as long as the original
+- [ ] Add a post-compaction metric: log the compression ratio
+  (tokens_after / tokens_before) so operators can monitor effectiveness
+- [ ] If compression ratio exceeds 0.9 (less than 10% reduction), log a
+  warning suggesting the conversation may need manual reset
+- [ ] This feeds into Phase 40 (compaction safety)
+
+### 41.8 Streaming chunk granularity
 
 - [ ] The Claude streaming test revealed that very short responses may arrive
   as a single chunk rather than token-by-token streaming, which means the
@@ -3430,6 +3451,17 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 - [ ] Consider adding a brief delay or transition indicator in the CLI/TUI
   when switching from spinner to streamed output
 - [ ] This is cosmetic — low priority
+
+### 41.9 Concurrent subagent rate limit coordination
+
+- [ ] During live testing with 3 concurrent Claude subagents, one hit a
+  rate limit on the first call and retried after 37 seconds — the
+  ProviderThrottle coordinated the backoff correctly, but the 37-second
+  delay is long for a first-time hit
+- [ ] Investigate whether the initial retry delay (30s base) is too
+  aggressive for Claude's rate limits; Anthropic typically recovers faster
+- [ ] Consider a shorter base delay (10-15s) for Claude specifically,
+  or adaptive delay based on the retry-after header if available
 
 ---
 
@@ -3554,7 +3586,10 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 | Caching awareness (41.3) | Phase 27.1 Claude caching | Monitoring/logging improvement |
 | Claude model ID updates (41.4) | None | Maintenance; can start any time |
 | Provider token counting (41.5) | None | Provider-level enhancement |
-| Streaming chunk granularity (41.6) | Phase 28.6 streaming | Cosmetic; low priority |
+| Cost display (41.6) | Phase 31 UX improvements | Builds on existing usage tracking |
+| Compaction monitoring (41.7) | Phase 40 compaction safety | Feeds into cycle detection |
+| Streaming chunk granularity (41.8) | Phase 28.6 streaming | Cosmetic; low priority |
+| Rate limit coordination (41.9) | None | Provider-level tuning |
 
 ---
 
@@ -3595,4 +3630,4 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 | M33: Expanded Skills | 33 | Existing bundle management; charm migration; multi-charm workspaces |
 | M39: ACP Research | 39 | Written assessment of Agent Client Protocol as an alternative to direct LLM provider calls |
 | M40: Safe Compaction | 40 | Compaction has cycle detection, retry budgets, and size validation — no infinite loops possible |
-| M41: Provider Parity | 41 | All providers capture streaming usage; extended thinking available for Claude; accurate token counting |
+| M41: Provider Parity | 41 | All providers capture streaming usage; extended thinking available for Claude; accurate token counting; cost visibility; compaction monitoring |

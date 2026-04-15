@@ -20,6 +20,7 @@ from cantrip.llm.base import (
 )
 
 _CONTEXT_WINDOWS: dict[str, int] = {
+    "claude-haiku-4-5-20251001": 200_000,
     "claude-sonnet-4-5-20250929": 200_000,
     "claude-opus-4-6-20250917": 200_000,
 }
