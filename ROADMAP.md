@@ -2554,11 +2554,11 @@ partially implemented functionality.
 - [x] Make help container scrollable for small terminals
 - [x] Use percentage-based width instead of fixed 70-cell width
 
-### 29.5 Medium — Wire Up COS Status
+### 29.5 Medium — Wire Up COS Status ✅
 
-- [ ] `MultiModelStatusWidget.cos_status` reactive is defined but never set from `app.py`
-- [ ] Poll COS model status alongside dev model status in `_poll_juju_status`
-- [ ] Wire up COS expand/collapse click handler (`toggle_cos_expanded` is dead)
+- [x] `MultiModelStatusWidget.cos_status` reactive is defined but never set from `app.py`
+- [x] Poll COS model status alongside dev model status in `_poll_juju_status`
+- [x] Wire up COS expand/collapse click handler (`toggle_cos_expanded` is dead)
 
 ### 29.6 Medium — Fix `update_progress()` No-Op ✅
 

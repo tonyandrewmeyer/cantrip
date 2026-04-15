@@ -313,6 +313,35 @@ class TestTuiWidgets:
                 assert isinstance(widget, MultiModelStatusWidget)
 
     @pytest.mark.asyncio
+    async def test_cos_status_click_toggles_expansion(self):
+        """Clicking the COS section toggles between collapsed and expanded."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                widget = pilot.app.query_one("#juju-status", MultiModelStatusWidget)
+
+                # Set a mock COS status so the collapsed summary renders.
+                mock_app = MagicMock()
+                mock_app.app_status.current = "active"
+                mock_status = MagicMock()
+                mock_status.apps = {"grafana": mock_app}
+                widget.cos_status = mock_status
+                await pilot.pause()
+
+                # Initially collapsed.
+                assert widget.cos_expanded is False
+
+                # Toggle via the public method (simulates the click handler).
+                widget.toggle_cos_expanded()
+                await pilot.pause()
+                assert widget.cos_expanded is True
+
+                # Toggle back.
+                widget.toggle_cos_expanded()
+                await pilot.pause()
+                assert widget.cos_expanded is False
+
+    @pytest.mark.asyncio
     async def test_test_summary_shown_after_agent_response(self):
         """Test results appear in status bar after successful agent response."""
         p1, p2, mock_agent = _patch_app()

@@ -592,6 +592,7 @@ class TestLifecycle:
 
         assert watcher.running
         assert watcher._status_task is not None
+        assert watcher._cos_status_task is not None
         assert watcher._loki_task is not None
 
         await watcher.stop()
@@ -599,12 +600,13 @@ class TestLifecycle:
 
     @pytest.mark.asyncio
     async def test_start_without_cos_skips_loki(self):
-        """Without a COS model, no Loki task is created."""
+        """Without a COS model, no COS status or Loki task is created."""
         watcher = EventWatcher(dev_model="dev")
         watcher.start()
 
         assert watcher.running
         assert watcher._status_task is not None
+        assert watcher._cos_status_task is None
         assert watcher._loki_task is None
 
         await watcher.stop()
@@ -711,6 +713,38 @@ class TestStatusPolling:
         event = await watcher.dequeue()
         assert event is not None
         assert event.category == "hook_failure"
+
+
+# ---------------------------------------------------------------------------
+# COS status polling
+# ---------------------------------------------------------------------------
+
+
+class TestCosStatusPolling:
+    """Tests for the COS model status polling."""
+
+    @pytest.mark.asyncio
+    async def test_poll_cos_status_once_stores_status(self):
+        """A single COS poll stores the status snapshot."""
+        mock_status = mock.MagicMock(spec=jubilant.Status)
+        mock_status.apps = {}
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.status.return_value = mock_status
+
+        watcher = EventWatcher(dev_model="dev", cos_model="cos")
+
+        with mock.patch("cantrip.agent.watcher.jubilant.Juju", return_value=mock_juju):
+            await watcher._poll_cos_status_once()
+
+        assert watcher.latest_cos_status is mock_status
+        mock_juju.status.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cos_status_none_without_polling(self):
+        """COS status is None before any poll."""
+        watcher = EventWatcher(dev_model="dev", cos_model="cos")
+        assert watcher.latest_cos_status is None
 
 
 # ---------------------------------------------------------------------------

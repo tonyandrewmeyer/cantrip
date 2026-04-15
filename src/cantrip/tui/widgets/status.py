@@ -3,6 +3,7 @@
 from jubilant import statustypes
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.events import Click
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
@@ -469,6 +470,20 @@ class MultiModelStatusWidget(Widget):
                 )
         else:
             cos_section.mount(Static("Not deployed", classes="collapsed-summary"))
+
+    def on_click(self, event: Click) -> None:
+        """Toggle COS expansion when the COS section is clicked."""
+        cos_section = self.query_one("#cos-section", Vertical)
+        # Walk up from the clicked widget to see if it's inside #cos-section.
+        node = event.widget
+        while node is not None:
+            if node is cos_section:
+                self.toggle_cos_expanded()
+                event.stop()
+                return
+            if node is self:
+                break
+            node = node.parent
 
     def toggle_cos_expanded(self) -> None:
         """Toggle COS section expansion."""

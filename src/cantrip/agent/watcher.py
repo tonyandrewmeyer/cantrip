@@ -631,8 +631,10 @@ class EventWatcher:
         self._last_snapshot: StatusSnapshot | None = None
         self._last_databag: DatabagSnapshot | None = None
         self._latest_status: jubilant.Status | None = None
+        self._latest_cos_status: jubilant.Status | None = None
 
         self._status_task: asyncio.Task | None = None
+        self._cos_status_task: asyncio.Task | None = None
         self._loki_task: asyncio.Task | None = None
         self._running = False
 
@@ -648,6 +650,11 @@ class EventWatcher:
         """The most recent Juju status snapshot, or ``None`` if never polled."""
         return self._latest_status
 
+    @property
+    def latest_cos_status(self) -> "jubilant.Status | None":
+        """The most recent COS model status snapshot, or ``None`` if not polled."""
+        return self._latest_cos_status
+
     def start(self) -> None:
         """Start the polling loops as asyncio tasks."""
         if self._running:
@@ -655,6 +662,7 @@ class EventWatcher:
         self._running = True
         self._status_task = asyncio.create_task(self._poll_status_loop())
         if self._cos_model:
+            self._cos_status_task = asyncio.create_task(self._poll_cos_status_loop())
             self._loki_task = asyncio.create_task(self._poll_loki_loop())
         log.info(
             "Watcher started (model=%s, cos=%s)",
@@ -672,6 +680,11 @@ class EventWatcher:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._status_task
             self._status_task = None
+        if self._cos_status_task:
+            self._cos_status_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._cos_status_task
+            self._cos_status_task = None
         if self._loki_task:
             self._loki_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -761,6 +774,25 @@ class EventWatcher:
                     self._enqueue(event)
             except (OSError, ValueError) as exc:
                 log.debug("Databag snapshot failed: %s", exc)
+
+    # -- COS status polling --------------------------------------------------
+
+    async def _poll_cos_status_loop(self) -> None:
+        """Poll ``juju status`` for the COS model at the configured interval."""
+        while self._running:
+            try:
+                await self._poll_cos_status_once()
+            except asyncio.CancelledError:
+                raise
+            except (jubilant.CLIError, OSError, TimeoutError) as exc:
+                log.warning("Error polling COS status: %s", exc)
+            await asyncio.sleep(self._config.status_interval)
+
+    async def _poll_cos_status_once(self) -> None:
+        """Run a single COS status poll."""
+        loop = asyncio.get_running_loop()
+        juju = jubilant.Juju(model=self._cos_model)
+        self._latest_cos_status = await loop.run_in_executor(None, juju.status)
 
     # -- Loki polling --------------------------------------------------------
 

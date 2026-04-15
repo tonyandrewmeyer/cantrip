@@ -590,12 +590,15 @@ class CantripApp(App):
             chat = self.query_one("#chat", ChatWidget)
             chat.add_system_message(f"[Watcher] {event.payload.get('summary', '')}")
 
-            # Feed the latest status snapshot into the multi-model widget.
+            # Feed the latest status snapshots into the multi-model widget.
             if self._agent and self._agent._watcher:
+                status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
                 latest = self._agent._watcher.latest_status
                 if latest is not None:
-                    status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
                     status_widget.dev_status = latest
+                latest_cos = self._agent._watcher.latest_cos_status
+                if latest_cos is not None:
+                    status_widget.cos_status = latest_cos
 
         self.call_from_thread(_update)
 
