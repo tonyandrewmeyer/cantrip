@@ -3276,6 +3276,55 @@ deploys. Speed is at least 2x faster than `charmcraft pack`.
 
 ---
 
+## Phase 39: Agent Client Protocol (ACP) — Research
+
+**Goal:** Investigate using the [Agent Client Protocol](https://agentclientprotocol.com/)
+as an alternative to driving an LLM directly. Instead of Cantrip calling a model
+provider, it would drive an existing agent (e.g. Claude Code, or another
+ACP-compatible agent) as its backend. This could let Cantrip leverage agents that
+already have tool use, context management, and domain expertise built in.
+
+This is a **research phase** — no production code changes expected.
+
+### 39.1 Protocol familiarisation
+
+- [ ] Read the ACP specification and document the core concepts: agent discovery,
+  task lifecycle, streaming, and capability negotiation
+- [ ] Identify which ACP features map to Cantrip's existing `LLMProvider`
+  interface and which are novel
+- [ ] Document the gap between ACP's task model and Cantrip's `AgentTask` /
+  `WorkQueue` model
+
+### 39.2 Candidate agents
+
+- [ ] Survey which agents currently support ACP (Claude Code, other known
+  implementations)
+- [ ] For each candidate, document: supported ACP version, available tools/skills,
+  streaming support, authentication model
+- [ ] Assess whether driving Claude Code via ACP is feasible and what it would
+  gain over direct Anthropic API calls
+
+### 39.3 Integration sketch
+
+- [ ] Draft an `ACPProvider` design that implements `LLMProvider` (or a new
+  sibling interface) by delegating to an ACP-compatible agent
+- [ ] Identify architectural questions: how does Cantrip's tool execution interact
+  with the remote agent's own tools? How do we avoid double tool-calling?
+- [ ] Sketch how the autonomous work loop would change if subagents were
+  ACP-driven remote agents rather than isolated LLM contexts
+
+### 39.4 Decision and write-up
+
+- [ ] Write a findings document summarising feasibility, trade-offs, and
+  recommended next steps
+- [ ] If promising, outline a follow-on implementation phase with concrete tasks
+
+**Exit criteria:** A written assessment of whether ACP is a viable and valuable
+integration path for Cantrip, with enough detail to decide whether to proceed
+to implementation.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
@@ -3385,6 +3434,10 @@ deploys. Speed is at least 2x faster than `charmcraft pack`.
 | Existing bundle management (33.1) | Phase 0.3 Juju integration | Read/deploy existing bundles only; new bundles are deprecated |
 | Charm migration (33.2) | Phase 10 charm improvement | Extends the improvement pipeline |
 | Multi-charm workspace (33.3) | Phase 5 design pipeline | Needs design system for multi-charm coordination |
+| ACP protocol familiarisation (39.1) | None | Pure research; can start any time |
+| Candidate agents survey (39.2) | Phase 39.1 | Needs protocol understanding first |
+| Integration sketch (39.3) | Phase 39.2 | Needs candidate assessment to design against |
+| ACP decision write-up (39.4) | Phase 39.3 | Needs integration sketch to make recommendation |
 
 ---
 
@@ -3423,3 +3476,4 @@ deploys. Speed is at least 2x faster than `charmcraft pack`.
 | M31: Great UX | 31 | Streaming responses; chat search; session resume; cost tracking visible |
 | M32: Smart Planning | 32 | Compact prompt complete; dependency validation; watcher events all routed |
 | M33: Expanded Skills | 33 | Existing bundle management; charm migration; multi-charm workspaces |
+| M39: ACP Research | 39 | Written assessment of Agent Client Protocol as an alternative to direct LLM provider calls |
