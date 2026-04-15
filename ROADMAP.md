@@ -2547,12 +2547,12 @@ partially implemented functionality.
 - [x] `widgets/status.py` calls `.lower()` on `app_status.message` which can be `None`
 - [x] Fix: `(message or "").lower()`
 
-### 29.4 Medium — Update Help Screen
+### 29.4 Medium — Update Help Screen ✅
 
 - [x] Add missing F5 (Watcher), F6 (Files), F7 (Model), F8 (Graph), F9 (Transcript)
   to the help overlay
-- [ ] Make help container scrollable for small terminals
-- [ ] Use percentage-based width instead of fixed 70-cell width
+- [x] Make help container scrollable for small terminals
+- [x] Use percentage-based width instead of fixed 70-cell width
 
 ### 29.5 Medium — Wire Up COS Status
 
@@ -2566,11 +2566,11 @@ partially implemented functionality.
   but `compose()` is only called once — progress updates are visually invisible
 - [x] Either use `self.update()` on the inner static, or switch to a `Widget` base
 
-### 29.7 Medium — Fix Graph Screen Scrollability
+### 29.7 Medium — Fix Graph Screen Scrollability ✅
 
-- [ ] `GraphScreen` uses a `Static` widget with CSS `overflow-y: auto` — but Textual's
+- [x] `GraphScreen` uses a `Static` widget with CSS `overflow-y: auto` — but Textual's
   `Static` does not scroll; long graphs are clipped
-- [ ] Wrap in `ScrollableContainer` or use `RichLog`
+- [x] Wrap in `ScrollableContainer` or use `RichLog`
 - [ ] Make refresh actually fetch fresh Juju status instead of re-rendering stale data
 
 ### 29.8 Low — Add Agent Cancellation Binding
@@ -2639,11 +2639,11 @@ existing tool robustness, and fix security issues.
 - [ ] Add `draft` parameter to `GhPrCreateTool`
 - [ ] Add `gh_pr_list` and `gh_pr_view` tools
 
-### 30.4 Medium — `ReadFileTool` Line Range Support
+### 30.4 Medium — `ReadFileTool` Line Range Support ✅
 
-- [ ] Add `start_line` and `end_line` parameters (like `VirtualFileReadTool` already has)
-- [ ] Prevents the LLM from reading entire large files when it only needs a section
-- [ ] Add file size and symlink indicators to `ListDirectoryTool`
+- [x] Add `start_line` and `end_line` parameters (like `VirtualFileReadTool` already has)
+- [x] Prevents the LLM from reading entire large files when it only needs a section
+- [x] Add file size and symlink indicators to `ListDirectoryTool`
 
 ### 30.5 Medium — Fix `GrepTool` Max Results
 
@@ -2865,11 +2865,11 @@ higher-quality charms with fewer iterations.
 - [ ] "Good tracing setup, no logging" incorrectly sets `cos_tracing=True`
 - [ ] Switch to sentence-level or section-level keyword scoping
 
-### 32.5 Low — CONFIRM Tasks Block Unrelated Work
+### 32.5 Low — CONFIRM Tasks Block Unrelated Work ✅
 
-- [ ] `route()` returns `WAIT_FOR_CONFIRMATION` at the first CONFIRM task, blocking
+- [x] `route()` returns `WAIT_FOR_CONFIRMATION` at the first CONFIRM task, blocking
   all other ready tasks even if they have no dependency on the confirmation
-- [ ] Allow non-CONFIRM tasks to proceed in parallel with pending confirmations
+- [x] Allow non-CONFIRM tasks to proceed in parallel with pending confirmations
 
 ### 32.6 Low — Compaction Summary Truncation
 

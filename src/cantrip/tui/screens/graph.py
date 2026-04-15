@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Static
+from textual.widgets import RichLog, Static
 
 # Status indicator characters and Rich style names.
 _STATUS_STYLE: dict[str, tuple[str, str]] = {
@@ -165,7 +165,6 @@ class GraphScreen(ModalScreen):
 
     #graph-body {
         height: 1fr;
-        overflow-y: auto;
     }
 
     #graph-footer {
@@ -198,7 +197,7 @@ class GraphScreen(ModalScreen):
                 "Integration Graph                         [Esc Close]",
                 id="graph-title",
             )
-            yield Static("", id="graph-body")
+            yield RichLog(id="graph-body", wrap=True)
             yield Static(
                 "[r] Refresh  [Esc] Close",
                 id="graph-footer",
@@ -219,11 +218,12 @@ class GraphScreen(ModalScreen):
 
     def _render_graph(self) -> None:
         """Build and display the integration graph."""
-        body = self.query_one("#graph-body", Static)
+        body = self.query_one("#graph-body", RichLog)
+        body.clear()
 
         if not self._status:
-            body.update("No model connected.")
+            body.write("No model connected.")
             return
 
-        parts = build_graph(self._status, self._current_app)
-        body.update(Group(*parts))
+        for part in build_graph(self._status, self._current_app):
+            body.write(part)

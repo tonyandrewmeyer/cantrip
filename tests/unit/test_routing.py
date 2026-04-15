@@ -138,18 +138,28 @@ class TestRoute:
         decision = route(s)
         assert decision == RoutingDecision(action=RouteAction.WAIT_FOR_CONFIRMATION, task_id="c1")
 
-    def test_confirm_before_spawn(self) -> None:
-        """CONFIRM tasks are checked first in queue order."""
+    def test_non_confirm_preferred_over_confirm(self) -> None:
+        """Non-CONFIRM tasks are preferred regardless of queue order."""
         tasks = (
             _info(id="c1", category="confirm"),
             _info(id="t1", category="build"),
         )
         decision = route(_state(tasks=tasks))
+        assert decision.action == RouteAction.SPAWN_TASK
+        assert decision.task_id == "t1"
+
+    def test_confirm_only_when_no_non_confirm(self) -> None:
+        """WAIT_FOR_CONFIRMATION only when all ready tasks are CONFIRM."""
+        tasks = (
+            _info(id="c1", category="confirm"),
+            _info(id="c2", category="confirm"),
+        )
+        decision = route(_state(tasks=tasks))
         assert decision.action == RouteAction.WAIT_FOR_CONFIRMATION
         assert decision.task_id == "c1"
 
-    def test_spawn_when_confirm_is_after_build(self) -> None:
-        """Queue order matters — build before confirm means spawn."""
+    def test_spawn_with_confirm_after_build(self) -> None:
+        """Non-CONFIRM tasks are spawned even when CONFIRM is also ready."""
         tasks = (
             _info(id="t1", category="build"),
             _info(id="c1", category="confirm"),

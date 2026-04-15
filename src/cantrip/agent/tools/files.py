@@ -51,12 +51,25 @@ class ReadFileTool(PathAwareTool):
                     "type": "string",
                     "description": "Path to the file to read (relative to charm directory)",
                 },
+                "start_line": {
+                    "type": "integer",
+                    "description": "First line to read (1-based, inclusive). Omit to start from the beginning.",
+                },
+                "end_line": {
+                    "type": "integer",
+                    "description": "Last line to read (1-based, inclusive). Omit to read to the end.",
+                },
             },
             "required": ["path"],
         }
 
-    async def execute(self, path: str) -> ToolResult:
-        """Read file contents."""
+    async def execute(
+        self,
+        path: str,
+        start_line: int | None = None,
+        end_line: int | None = None,
+    ) -> ToolResult:
+        """Read file contents, optionally restricted to a line range."""
         try:
             resolved = self._resolve_path(path)
             if not resolved.exists():
@@ -73,6 +86,31 @@ class ReadFileTool(PathAwareTool):
                 )
 
             content = resolved.read_text()
+
+            if start_line is not None or end_line is not None:
+                lines = content.splitlines(keepends=True)
+                total = len(lines)
+                # Convert to 0-based indices with defaults.
+                start = max((start_line or 1) - 1, 0)
+                end = min(end_line or total, total)
+                if start >= total:
+                    return ToolResult(
+                        success=True,
+                        output="(no lines in requested range)",
+                        data={"path": str(resolved), "total_lines": total},
+                    )
+                content = "".join(lines[start:end])
+                return ToolResult(
+                    success=True,
+                    output=content,
+                    data={
+                        "path": str(resolved),
+                        "size": len(content),
+                        "lines": f"{start + 1}-{min(end, total)}",
+                        "total_lines": total,
+                    },
+                )
+
             return ToolResult(
                 success=True,
                 output=content,
@@ -181,8 +219,13 @@ class ListDirectoryTool(PathAwareTool):
 
             entries = []
             for entry in sorted(resolved.iterdir()):
-                entry_type = "dir" if entry.is_dir() else "file"
-                entries.append(f"{entry_type}: {entry.name}")
+                if entry.is_dir():
+                    label = f"dir:  {entry.name}/"
+                else:
+                    size = entry.stat().st_size
+                    suffix = " -> " + str(entry.readlink()) if entry.is_symlink() else ""
+                    label = f"file: {entry.name}  ({size} bytes){suffix}"
+                entries.append(label)
 
             output = "\n".join(entries) if entries else "(empty directory)"
             return ToolResult(

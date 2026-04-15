@@ -138,8 +138,8 @@ def route(state: WorkQueueState) -> RoutingDecision:
 
     1. If paused or draining → wait for in-flight or idle.
     2. If no free slots → wait for in-flight tasks.
-    3. Among ready tasks, CONFIRM tasks trigger ``WAIT_FOR_CONFIRMATION``.
-    4. First non-CONFIRM ready task → ``SPAWN_TASK``.
+    3. Non-CONFIRM ready tasks are preferred — spawn the first one.
+    4. If only CONFIRM tasks remain → ``WAIT_FOR_CONFIRMATION``.
     5. If tasks are in-flight but none are ready → ``WAIT_FOR_IN_FLIGHT``.
     6. Otherwise → ``IDLE`` (terminal or waiting for unblock).
     """
@@ -153,15 +153,23 @@ def route(state: WorkQueueState) -> RoutingDecision:
 
     ready = _ready_tasks(state)
 
+    # Prefer non-CONFIRM tasks so confirmations don't block unrelated work.
+    first_confirm: TaskInfo | None = None
     for task in ready:
         if task.category == "confirm":
-            return RoutingDecision(
-                action=RouteAction.WAIT_FOR_CONFIRMATION,
-                task_id=task.id,
-            )
+            if first_confirm is None:
+                first_confirm = task
+            continue
         return RoutingDecision(
             action=RouteAction.SPAWN_TASK,
             task_id=task.id,
+        )
+
+    # Only CONFIRM tasks remain.
+    if first_confirm is not None:
+        return RoutingDecision(
+            action=RouteAction.WAIT_FOR_CONFIRMATION,
+            task_id=first_confirm.id,
         )
 
     # No ready tasks — either in-flight tasks will unblock something,

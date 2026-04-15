@@ -37,6 +37,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Changed
 - **Deduplicated `_juju_available()` (Phase 30.8)** — moved identical helper from `juju.py` and `observability.py` to `juju_subprocess.py`
+- **CONFIRM tasks no longer block unrelated work (Phase 32.5)** — `route()` now prefers non-CONFIRM ready tasks, only returning `WAIT_FOR_CONFIRMATION` when all ready tasks are CONFIRM type
+- **ReadFileTool line range support (Phase 30.4)** — `read_file` tool now accepts optional `start_line` and `end_line` parameters for reading file sections without loading the entire file
+- **ListDirectoryTool shows file sizes (Phase 30.4)** — `list_directory` output now includes file sizes in bytes, trailing `/` for directories, and symlink targets
+- **Graph screen scrollable (Phase 29.7)** — `GraphScreen` body is now a `RichLog` instead of a `Static`, allowing long integration graphs to scroll
+- **Help screen responsive layout (Phase 29.4)** — help container uses percentage-based width (`80%` with `max-width: 80`) instead of fixed 70-cell, and content is wrapped in a `ScrollableContainer` for small terminals
 
 ### Added
 - **RelationDetailScreen wired up (Phase 29.1)** — clicking a relation line in the Juju status widget now opens the `RelationDetailScreen` modal, which was previously fully implemented but unreachable; added `on_relation_line_selected` handler in `CantripApp`

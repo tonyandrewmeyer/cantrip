@@ -226,7 +226,8 @@ class TestListDirectoryTool:
 
         assert result.success is True
         assert "file: file.txt" in result.output
-        assert "dir: subdir" in result.output
+        assert "bytes)" in result.output
+        assert "dir:  subdir/" in result.output
         assert result.data["count"] == 2
 
     @pytest.mark.asyncio
