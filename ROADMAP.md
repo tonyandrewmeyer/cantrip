@@ -2436,8 +2436,8 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 
 ### 28.1 Critical — SQLite Busy Timeout
 
-- [ ] Add `PRAGMA busy_timeout = 5000` after opening the database in `store.py`
-- [ ] Without this, concurrent writes from the executor and conversation loop can
+- [x] Add `PRAGMA busy_timeout = 5000` after opening the database in `store.py`
+- [x] Without this, concurrent writes from the executor and conversation loop can
   raise `sqlite3.OperationalError` (SQLITE_BUSY) and crash the session
 - [ ] Replace delete-all/re-insert pattern in `save_tasks` with per-task upsert
 
@@ -2544,12 +2544,12 @@ partially implemented functionality.
 
 ### 29.3 High — Fix `_app_matches_filter` Crash on None Status Message
 
-- [ ] `widgets/status.py` calls `.lower()` on `app_status.message` which can be `None`
-- [ ] Fix: `(message or "").lower()`
+- [x] `widgets/status.py` calls `.lower()` on `app_status.message` which can be `None`
+- [x] Fix: `(message or "").lower()`
 
 ### 29.4 Medium — Update Help Screen
 
-- [ ] Add missing F5 (Watcher), F6 (Files), F7 (Model), F8 (Graph), F9 (Transcript)
+- [x] Add missing F5 (Watcher), F6 (Files), F7 (Model), F8 (Graph), F9 (Transcript)
   to the help overlay
 - [ ] Make help container scrollable for small terminals
 - [ ] Use percentage-based width instead of fixed 70-cell width
@@ -2653,8 +2653,8 @@ existing tool robustness, and fix security issues.
 
 ### 30.6 Medium — Fix `EditFileTool` Error Message
 
-- [ ] Appends `...` unconditionally even when the string is shorter than 50 characters
-- [ ] Only append `...` when `len(old_string) > 50`
+- [x] Appends `...` unconditionally even when the string is shorter than 50 characters
+- [x] Only append `...` when `len(old_string) > 50`
 
 ### 30.7 Low — Validate `RunCommandTool` Working Directory
 
@@ -2669,10 +2669,10 @@ existing tool robustness, and fix security issues.
 
 ### 30.9 Low — Fix Concierge Status Race
 
-- [ ] `environment.py` line 130: if Juju is healthy but Concierge is absent, the
+- [x] `environment.py` line 130: if Juju is healthy but Concierge is absent, the
   `_is_already_provisioned()` fast-path returns True but then calls
   `_run_concierge("status")` which crashes
-- [ ] Return immediately from the Juju fast-path without calling concierge
+- [x] Return immediately from the Juju fast-path without calling concierge
 
 **Exit criteria:** Shell injection fixed. Missing Juju/git tools implemented and tested.
 Existing tools hardened. `make check` passes throughout.
