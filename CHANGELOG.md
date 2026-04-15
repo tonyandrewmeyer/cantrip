@@ -4,6 +4,9 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Quick Pack tool** — new standalone `quickpack` package (`src/quickpack/`) that produces valid `.charm` files without charmcraft's full lifecycle. Supports the `uv` plugin (plus `dump` parts), builds locally for the host architecture, and skips LXD, linting, and analysis. Available as a CLI (`quickpack`), a Python API (`quickpack.pack.quick_pack()`), and a cantrip agent tool (`quick_pack`). Includes jujuignore pattern matching, charmcraft.yaml → metadata.yaml generation, and dispatch script creation. Comparison tests verify output matches `charmcraft pack` and speed is significantly better.
+
 ### Fixed
 - **Status filter crash on None message** — `_app_matches_filter` in the TUI status widget no longer crashes with `AttributeError` when `app_status.message` or `workload_status.message` is `None`
 - **SQLite busy timeout** — added `PRAGMA busy_timeout=5000` to the session store, preventing `SQLITE_BUSY` crashes when the executor and conversation loop write concurrently

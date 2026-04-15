@@ -3234,6 +3234,48 @@ Gold-standard charms updated. `make check` passes throughout.
 
 ---
 
+## Phase 38: Quick Pack — Fast Local Charm Packing
+
+**Goal:** Provide a fast alternative to `charmcraft pack` for the development
+loop — initial deploys and upgrade testing when `jhack sync` is not sufficient.
+
+### 38.1 ✓ Core quick pack implementation
+
+- [x] New standalone `quickpack` package at `src/quickpack/` (alongside cantrip
+  and charmlint), usable independently via CLI or Python API
+- [x] Parse `charmcraft.yaml`, generate `metadata.yaml` (with field renaming and
+  link flattening matching charmcraft), `manifest.yaml`, `dispatch` script
+- [x] UV plugin: copy `src/` and `lib/` only, install deps via `uv sync`, clean
+  up venv (matching charmcraft's UV plugin behaviour)
+- [x] Dump plugin: copy files with organize/stage/prime fileset filters
+- [x] Jujuignore pattern matching (ported from charmcraft)
+- [x] Ensure `.jujuignore` always contains `*.charm` and `.cantrip` entries
+- [x] Cantrip agent tool wrapper (`QuickPackTool`)
+- [x] 55 unit tests, 5 comparison tests (skipped without `--run-slow`)
+
+### 38.2 Teach cantrip when to use quick pack
+
+- [ ] Update sprint deploy flow (`planner.py`) to use `quick_pack` instead of
+  `charmcraft_pack` with `destructive_mode=true`
+- [ ] Update subagent guidance to prefer `quick_pack` for dev deploys
+- [ ] Add fallback: if quick pack fails (unsupported plugin), fall back to
+  `charmcraft_pack`
+- [ ] Update system prompt with guidance on when to use each tool
+
+### 38.3 Validation and hardening
+
+- [ ] Run comparison tests against real charmcraft (requires `--run-slow`)
+- [ ] Test with a variety of real-world charms (different base versions, extras,
+  groups, dump parts)
+- [ ] Handle edge cases: missing uv.lock, charms with reactive parts (error
+  gracefully), charms with multiple bases
+
+**Exit criteria:** `quickpack` produces valid charms that deploy and function
+identically to `charmcraft pack` output. Cantrip uses it automatically for dev
+deploys. Speed is at least 2x faster than `charmcraft pack`.
+
+---
+
 ## Dependencies and Blockers
 
 | Item | Blocked By | Notes |
