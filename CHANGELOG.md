@@ -9,12 +9,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Claude prompt caching (Phase 27.1)** — system prompt is now sent as a content block with `cache_control: {"type": "ephemeral"}`, enabling Anthropic's prompt caching for multi-turn conversations; `cache_creation_input_tokens` and `cache_read_input_tokens` are captured in usage metrics
 
 - **Concurrent tool execution in subagents (Phase 28.5)** — tool calls within each subagent round now execute concurrently via `asyncio.gather()` instead of sequentially, improving throughput for rounds that batch multiple independent tool calls
+- **Subagent context window management (Phase 28.4)** — subagent messages are truncated when estimated tokens exceed 80% of the context window; older tool results are replaced with previews while recent rounds are preserved; BUILD tasks get 12 rounds (up from 8)
+- **Compaction error recovery (Phase 28.7)** — if context compaction fails (rate limit, timeout), the conversation falls back to emergency truncation instead of crashing; `emergency_truncate()` drops oldest non-system messages to fit within budget
+- **Category-specific task timeouts (Phase 28.12)** — RESEARCH tasks fail fast (300s), BUILD/DEPLOY get more time (900s), TEST/DEBUG keep the default (600s)
 
 ### Changed
 - **`max_tokens` configurable (Phase 27.2)** — `LLMProvider.complete()` and `stream()` accept `max_tokens` parameter; Claude default raised from 4096 to 8192; callers (retry helper, subagent runner) can override for long-output tasks
 - **Gemini unique tool call IDs (Phase 27.3)** — when Gemini returns multiple calls to the same tool in one response, each `ToolCall` now gets a unique ID (`name_0`, `name_1`, …) instead of sharing the function name; `_convert_tool_message` strips the suffix before sending results back
 - **Model routing map cleanup (Phase 27.5)** — removed obsolete `gemini-2.0-flash` from context window map; added `claude-opus-4-6-20250917` entry
 - **Retry jitter (Phase 27.7)** — `complete_with_retry()` now adds random jitter to the backoff delay, preventing thundering-herd retries when multiple subagents hit rate limits simultaneously
+- **Unique task IDs (Phase 28.2)** — planner appends uuid suffix to all task IDs; `WorkQueue.add_task()` rejects duplicates with `ValueError`
+- **Executor resilience (Phase 28.3)** — widened exception catch to `Exception` with error logging, 5s cooldown, consecutive error tracking, and `healthy` property
+- **Revert cleans untracked files (Phase 28.11)** — `revert_to_clean` now runs `git clean -fd` after `git checkout .` to remove files created by failing BUILD subagents
 
 ### Fixed
 - **Executor exception catch too narrow (Phase 28.3)** — `_run_loop` now catches all `Exception` subclasses (not just `KeyError`, `RuntimeError`, `OSError`), preventing unexpected errors from silently killing the autonomous work loop. Adds ERROR-level logging, a 5-second cooldown between retries, a consecutive-error counter that stops the loop after 10 failures, and a `healthy` property for monitoring

@@ -2443,10 +2443,10 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 
 ### 28.2 High — Hardcoded Task IDs Collide
 
-- [ ] `planner.py` uses static string IDs (`sprint-build`, `audit-charm`, etc.) — running
+- [x] `planner.py` uses static string IDs (`sprint-build`, `audit-charm`, etc.) — running
   the same plan twice in a session creates duplicate IDs in the queue
-- [ ] Fix: append a short suffix (e.g. `sprint-build-{uuid4()[:8]}`) to all static IDs
-- [ ] Add duplicate-ID detection in `WorkQueue.add_task()` — reject or overwrite
+- [x] Fix: append a short suffix (e.g. `sprint-build-{uuid4()[:8]}`) to all static IDs
+- [x] Add duplicate-ID detection in `WorkQueue.add_task()` — reject or overwrite
 
 ### 28.3 High — Executor Exception Catch Too Narrow ✓
 
@@ -2457,10 +2457,10 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 
 ### 28.4 High — Subagent Context Window Management
 
-- [ ] Subagent `run()` grows `messages` without limit across all 8 rounds
-- [ ] Add a simple truncation strategy: if estimated tokens exceed 80% of context window,
+- [x] Subagent `run()` grows `messages` without limit across all 8 rounds
+- [x] Add a simple truncation strategy: if estimated tokens exceed 80% of context window,
   summarise earlier tool results before adding new ones
-- [ ] Consider increasing `MAX_SUBAGENT_ROUNDS` from 8 to 12 for BUILD tasks
+- [x] Consider increasing `MAX_SUBAGENT_ROUNDS` from 8 to 12 for BUILD tasks
   (complex builds with tests and fixes regularly exhaust 8 rounds)
 
 ### 28.5 High — Concurrent Tool Execution in Subagents ✅
@@ -2478,10 +2478,10 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 
 ### 28.7 Medium — Compaction Error Recovery
 
-- [ ] If `compact()` fails (rate limit, timeout), the entire user turn is lost
-- [ ] Wrap in try/except; on failure, keep the existing (over-full) context and log a
+- [x] If `compact()` fails (rate limit, timeout), the entire user turn is lost
+- [x] Wrap in try/except; on failure, keep the existing (over-full) context and log a
   warning rather than aborting the response
-- [ ] Consider falling back to a simpler truncation (drop oldest N messages) on
+- [x] Consider falling back to a simpler truncation (drop oldest N messages) on
   compaction failure
 
 ### 28.8 Medium — Noop Count Not Persisted
@@ -2506,16 +2506,16 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 
 ### 28.11 Low — Revert Leaves Untracked Files
 
-- [ ] `_DefaultGitService.revert_to_clean` calls `git checkout .` which only
+- [x] `_DefaultGitService.revert_to_clean` calls `git checkout .` which only
   restores tracked files
-- [ ] Add `git clean -fd` after checkout to remove untracked files created by
+- [x] Add `git clean -fd` after checkout to remove untracked files created by
   failing BUILD subagents
 
 ### 28.12 Low — Category-Specific Task Timeouts
 
-- [ ] `_TASK_TIMEOUT = 600` is a single global constant for all task categories
-- [ ] RESEARCH should fail fast (300s); BUILD+DEPLOY need more time (900s)
-- [ ] Define per-category timeouts in a dict
+- [x] `_TASK_TIMEOUT = 600` is a single global constant for all task categories
+- [x] RESEARCH should fail fast (300s); BUILD+DEPLOY need more time (900s)
+- [x] Define per-category timeouts in a dict
 
 **Exit criteria:** SQLite writes survive concurrent access. Duplicate task IDs rejected.
 Executor self-heals from unexpected exceptions. Subagent context managed. `make check`

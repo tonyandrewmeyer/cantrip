@@ -21,6 +21,7 @@ from cantrip.agent.services import (
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
 from cantrip.agent.subagent import (
+    MAX_BUILD_ROUNDS,
     ExitState,
     ProviderThrottle,
     Subagent,
@@ -33,8 +34,18 @@ from cantrip.llm import base as llm
 log = logging.getLogger(__name__)
 
 _POLL_INTERVAL = 1.0  # seconds between checking for ready tasks
-_TASK_TIMEOUT = 600  # seconds — max wall-clock time per task (10 min)
 DEFAULT_MAX_CONCURRENCY = 3
+
+# Per-category wall-clock limits.  Research is cheaper so gets a shorter
+# leash; build and deploy may run charmcraft/juju and need more headroom.
+_TASK_TIMEOUTS: dict[TaskCategory, int] = {
+    TaskCategory.RESEARCH: 300,
+    TaskCategory.BUILD: 900,
+    TaskCategory.DEPLOY: 900,
+    TaskCategory.TEST: 600,
+    TaskCategory.DEBUG: 600,
+}
+_DEFAULT_TASK_TIMEOUT = 600
 
 # Maximum number of consecutive noops before escalating to the user.
 _MAX_NOOP_COUNT = 2
@@ -131,8 +142,18 @@ class _DefaultGitService:
                 timeout=10,
             )
 
+        # Remove untracked files left behind by failing subagents.
+        with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            subprocess.run(
+                ["git", "clean", "-fd"],
+                cwd=charm_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
         log.warning(
-            "Reverted tracked files in %s after failed task '%s' (snapshot %s)",
+            "Reverted working tree in %s after failed task '%s' (snapshot %s)",
             charm_dir,
             task.title,
             snapshot[:12],
@@ -680,6 +701,7 @@ class BackgroundExecutor:
         fp_before = self._fingerprint()
 
         context = self._build_context(task)
+        max_rounds = MAX_BUILD_ROUNDS if task.category == TaskCategory.BUILD else None
         subagent = Subagent(
             context,
             self._tools,
@@ -688,10 +710,12 @@ class BackgroundExecutor:
             on_usage=self._record_usage,
             throttle=self._throttle,
             store=self._store,
+            **({"max_rounds": max_rounds} if max_rounds is not None else {}),
         )
         t0 = time.monotonic()
         try:
-            result = await asyncio.wait_for(subagent.run(), timeout=_TASK_TIMEOUT)
+            timeout = _TASK_TIMEOUTS.get(task.category, _DEFAULT_TASK_TIMEOUT)
+            result = await asyncio.wait_for(subagent.run(), timeout=timeout)
             elapsed = time.monotonic() - t0
             log.info("Task '%s' %s in %.1fs", task.title, result.exit_state.value, elapsed)
             self._handle_result(task, result, fp_before)

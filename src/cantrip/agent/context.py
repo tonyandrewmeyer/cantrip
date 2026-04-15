@@ -288,6 +288,38 @@ class ContextManager:
         recent = messages[-_KEEP_RECENT:] if len(messages) > _KEEP_RECENT else messages
         return [summary_msg] + list(recent)
 
+    def emergency_truncate(self, messages: list[Message]) -> list[Message]:
+        """Drop oldest non-system messages to fit within the context budget.
+
+        Used as a last-resort fallback when LLM-based compaction fails.
+        Keeps the system message (if any) and the most recent messages
+        that fit within 80% of the context window.
+        """
+        system_msgs = [m for m in messages if m.role == Role.SYSTEM]
+        non_system = [m for m in messages if m.role != Role.SYSTEM]
+
+        budget = int(self._context_window * 0.80)
+        system_tokens = self.estimate_tokens(system_msgs)
+        remaining = budget - system_tokens
+
+        # Walk backwards through non-system messages, keeping as many as fit.
+        kept: list[Message] = []
+        for msg in reversed(non_system):
+            msg_tokens = self.estimate_tokens([msg])
+            if remaining - msg_tokens < 0 and kept:
+                # Already have at least one message; stop adding more.
+                break
+            remaining -= msg_tokens
+            kept.append(msg)
+
+        kept.reverse()
+        log.warning(
+            "Emergency truncation: kept %d of %d non-system messages",
+            len(kept),
+            len(non_system),
+        )
+        return system_msgs + kept
+
     @staticmethod
     def _format_history(messages: list[Message]) -> str:
         """Format messages into a readable text representation."""

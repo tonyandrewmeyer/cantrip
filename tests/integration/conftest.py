@@ -303,4 +303,4 @@ def fast_executor(monkeypatch: pytest.MonkeyPatch):
     import cantrip.agent.executor as executor_mod
 
     monkeypatch.setattr(executor_mod, "_POLL_INTERVAL", 0.01)
-    monkeypatch.setattr(executor_mod, "_TASK_TIMEOUT", 5)
+    monkeypatch.setattr(executor_mod, "_DEFAULT_TASK_TIMEOUT", 5)

@@ -51,7 +51,7 @@ class GitService(Protocol):
     def revert_to_clean(
         self, charm_path: str | pathlib.Path, task: AgentTask, snapshot: str
     ) -> None:
-        """Revert tracked files after a failed task, preserving diff as diagnostics."""
+        """Revert tracked and untracked files after a failed task, preserving diff."""
         ...
 
     def has_uncommitted_changes(self, charm_path: str | pathlib.Path) -> bool:

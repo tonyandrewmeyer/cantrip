@@ -456,11 +456,22 @@ class CantripAgent:
             # Compact if the context window is getting full.
             if self._context_manager.should_compact(self.state.messages):
                 log.info("Compacting conversation context")
-                self.state.messages = await self._context_manager.compact(
-                    self.state.messages,
-                    system_prompt=self._build_system_prompt(),
-                    provider=self._get_provider("compaction"),
-                )
+                try:
+                    self.state.messages = await self._context_manager.compact(
+                        self.state.messages,
+                        system_prompt=self._build_system_prompt(),
+                        provider=self._get_provider("compaction"),
+                    )
+                except Exception:
+                    # Compaction is best-effort; fall back to crude truncation
+                    # so the conversation can continue.
+                    log.warning(
+                        "Compaction failed, falling back to emergency truncation",
+                        exc_info=True,
+                    )
+                    self.state.messages = self._context_manager.emergency_truncate(
+                        self.state.messages
+                    )
 
             # Call the LLM again with the updated history.
             messages = self._build_llm_messages(include_budget=True)

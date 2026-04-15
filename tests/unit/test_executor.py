@@ -9,10 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from cantrip.agent.executor import (
+    _DEFAULT_TASK_TIMEOUT,
     _MAX_CONSECUTIVE_ERRORS,
     _MAX_NOOP_COUNT,
+    _TASK_TIMEOUTS,
     DEFAULT_MAX_CONCURRENCY,
     BackgroundExecutor,
+    _DefaultGitService,
 )
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
@@ -1226,11 +1229,14 @@ class TestRevertOnFailure:
         checkout_result = subprocess.CompletedProcess(
             args=["git", "checkout", "."], returncode=0, stdout="", stderr=""
         )
+        clean_result = subprocess.CompletedProcess(
+            args=["git", "clean", "-fd"], returncode=0, stdout="", stderr=""
+        )
 
         with (
             patch(
                 "cantrip.agent.executor.subprocess.run",
-                side_effect=[diff_result, checkout_result],
+                side_effect=[diff_result, checkout_result, clean_result],
             ),
             patch("cantrip.agent.executor.log") as mock_log,
         ):
@@ -1258,10 +1264,13 @@ class TestRevertOnFailure:
         checkout_result = subprocess.CompletedProcess(
             args=["git", "checkout", "."], returncode=0, stdout="", stderr=""
         )
+        clean_result = subprocess.CompletedProcess(
+            args=["git", "clean", "-fd"], returncode=0, stdout="", stderr=""
+        )
 
         with patch(
             "cantrip.agent.executor.subprocess.run",
-            side_effect=[diff_result, checkout_result],
+            side_effect=[diff_result, checkout_result, clean_result],
         ):
             executor._revert_on_failure("abc123def456", task)
 
@@ -1811,3 +1820,100 @@ class TestExecutorErrorResilience:
         executor._running = True
         executor._consecutive_errors = _MAX_CONSECUTIVE_ERRORS - 1
         assert executor.healthy is True
+
+
+# ===================================================================
+# TestCategorySpecificTimeouts
+# ===================================================================
+
+
+class TestCategorySpecificTimeouts:
+    """Tests for per-category task timeout values (Phase 28.12)."""
+
+    def test_research_timeout_is_300(self) -> None:
+        """RESEARCH tasks get a shorter timeout since they are lightweight."""
+        assert _TASK_TIMEOUTS[TaskCategory.RESEARCH] == 300
+
+    def test_build_timeout_is_900(self) -> None:
+        """BUILD tasks get a longer timeout for charmcraft pack."""
+        assert _TASK_TIMEOUTS[TaskCategory.BUILD] == 900
+
+    def test_deploy_timeout_is_900(self) -> None:
+        """DEPLOY tasks get a longer timeout for juju operations."""
+        assert _TASK_TIMEOUTS[TaskCategory.DEPLOY] == 900
+
+    def test_test_timeout_is_600(self) -> None:
+        """TEST tasks use the standard timeout."""
+        assert _TASK_TIMEOUTS[TaskCategory.TEST] == 600
+
+    def test_debug_timeout_is_600(self) -> None:
+        """DEBUG tasks use the standard timeout."""
+        assert _TASK_TIMEOUTS[TaskCategory.DEBUG] == 600
+
+    def test_unknown_category_uses_default(self) -> None:
+        """Categories not in the dict fall back to _DEFAULT_TASK_TIMEOUT."""
+        assert _TASK_TIMEOUTS.get(TaskCategory.INFRA) is None
+        assert _DEFAULT_TASK_TIMEOUT == 600
+
+    @pytest.mark.asyncio
+    async def test_execute_task_uses_category_timeout(self) -> None:
+        """The executor passes the category-specific timeout to wait_for."""
+        queue = WorkQueue()
+        task = AgentTask(title="Pack charm", category=TaskCategory.BUILD)
+        queue.add_task(task)
+        queue.set_active(task.id)
+
+        state = AgentState()
+        executor = _make_executor(queue=queue, state=state)
+
+        mock_result = SubagentResult(summary="ok", exit_state=ExitState.COMPLETED)
+        captured_timeout: float | None = None
+
+        async def fake_wait_for(coro, *, timeout=None):
+            nonlocal captured_timeout
+            captured_timeout = timeout
+            # Cancel the real coroutine and return a fake result.
+            coro.close()
+            return mock_result
+
+        with patch("cantrip.agent.executor.asyncio.wait_for", side_effect=fake_wait_for):
+            await executor._execute_task(task)
+
+        assert captured_timeout == 900
+
+
+# ===================================================================
+# TestRevertCleansUntrackedFiles
+# ===================================================================
+
+
+class TestRevertCleansUntrackedFiles:
+    """Tests for git clean in revert_to_clean (Phase 28.11)."""
+
+    def test_revert_runs_git_clean(self) -> None:
+        """revert_to_clean runs 'git clean -fd' after 'git checkout .'."""
+        git_service = _DefaultGitService()
+        task = AgentTask(title="Build charm", category=TaskCategory.BUILD)
+
+        calls: list[list[str]] = []
+
+        def tracking_run(cmd, **kwargs):  # noqa: ARG001
+            calls.append(list(cmd))
+            # Return a clean result for all commands.
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch("cantrip.agent.executor.subprocess.run", side_effect=tracking_run):
+            git_service.revert_to_clean("/tmp/test-charm", task, "abc123")
+
+        # Verify git checkout . was called.
+        checkout_calls = [c for c in calls if c == ["git", "checkout", "."]]
+        assert len(checkout_calls) == 1
+
+        # Verify git clean -fd was called.
+        clean_calls = [c for c in calls if c == ["git", "clean", "-fd"]]
+        assert len(clean_calls) == 1
+
+        # Verify clean runs after checkout.
+        checkout_idx = next(i for i, c in enumerate(calls) if c == ["git", "checkout", "."])
+        clean_idx = next(i for i, c in enumerate(calls) if c == ["git", "clean", "-fd"])
+        assert clean_idx > checkout_idx

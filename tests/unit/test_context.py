@@ -378,3 +378,115 @@ class TestContextManagerCompaction:
         assert len(result) == 5
         assert result[1].content == "msg_6"
         assert result[4].content == "msg_9"
+
+    @pytest.mark.asyncio
+    async def test_compact_failure_does_not_crash(self):
+        """A failed compaction should not propagate when called via the fallback path."""
+        store = VirtualFileStore()
+        cm = ContextManager(store, context_window_tokens=100_000)
+
+        messages = [
+            Message(role=Role.USER, content="first question"),
+            Message(role=Role.ASSISTANT, content="first answer"),
+            Message(role=Role.USER, content="second question"),
+            Message(role=Role.ASSISTANT, content="second answer"),
+            Message(role=Role.USER, content="third question"),
+            Message(role=Role.ASSISTANT, content="third answer"),
+        ]
+
+        provider = FakeProvider([])
+
+        # Patch the provider to raise on complete().
+        async def _exploding_complete(_msgs, **_kwargs):
+            raise RuntimeError("rate limit exceeded")
+
+        provider.complete = _exploding_complete  # type: ignore[assignment]
+
+        with pytest.raises(RuntimeError, match="rate limit"):
+            await cm.compact(messages, system_prompt="test", provider=provider)
+
+        # The caller (core.py) catches this and falls back to emergency_truncate.
+        result = cm.emergency_truncate(messages)
+        assert len(result) > 0
+        # Most recent message is preserved.
+        assert result[-1].content == "third answer"
+
+
+class TestEmergencyTruncate:
+    """Tests for ContextManager.emergency_truncate."""
+
+    def test_preserves_system_and_recent_messages(self):
+        """System message is kept and recent messages are preserved."""
+        store = VirtualFileStore()
+        # Tiny context window so truncation is forced.
+        # 50 tokens * 0.80 = 40 token budget; system="system" ~2 tokens,
+        # so ~38 tokens left for non-system messages.
+        cm = ContextManager(store, context_window_tokens=50)
+
+        messages = [
+            Message(role=Role.SYSTEM, content="system"),
+            Message(role=Role.USER, content="A" * 200),  # 50 tokens
+            Message(role=Role.ASSISTANT, content="B" * 200),  # 50 tokens
+            Message(role=Role.USER, content="C" * 40),  # 10 tokens
+            Message(role=Role.ASSISTANT, content="D" * 40),  # 10 tokens
+        ]
+
+        result = cm.emergency_truncate(messages)
+
+        # System message must be first.
+        assert result[0].role == Role.SYSTEM
+        assert result[0].content == "system"
+        # Most recent messages should be kept, oldest dropped.
+        assert result[-1].content == "D" * 40
+        assert result[-2].content == "C" * 40
+        # Old messages should be dropped (total non-system kept < original).
+        assert len(result) < len(messages)
+
+    def test_no_system_message(self):
+        """Works correctly when there is no system message."""
+        store = VirtualFileStore()
+        cm = ContextManager(store, context_window_tokens=50)
+
+        messages = [
+            Message(role=Role.USER, content="A" * 100),
+            Message(role=Role.ASSISTANT, content="B" * 100),
+            Message(role=Role.USER, content="C" * 40),
+        ]
+
+        result = cm.emergency_truncate(messages)
+
+        # Most recent message should always be kept.
+        assert result[-1].content == "C" * 40
+        assert all(m.role != Role.SYSTEM for m in result)
+
+    def test_keeps_at_least_one_message(self):
+        """Even with a very tiny budget, at least one message is kept."""
+        store = VirtualFileStore()
+        # Budget so small nothing really fits.
+        cm = ContextManager(store, context_window_tokens=1)
+
+        messages = [
+            Message(role=Role.USER, content="A" * 400),
+            Message(role=Role.ASSISTANT, content="B" * 400),
+        ]
+
+        result = cm.emergency_truncate(messages)
+
+        # Must keep at least the most recent message.
+        assert len(result) >= 1
+        assert result[-1].content == "B" * 400
+
+    def test_all_messages_fit(self):
+        """When all messages fit in the budget, none are dropped."""
+        store = VirtualFileStore()
+        cm = ContextManager(store, context_window_tokens=100_000)
+
+        messages = [
+            Message(role=Role.SYSTEM, content="system"),
+            Message(role=Role.USER, content="hello"),
+            Message(role=Role.ASSISTANT, content="hi"),
+        ]
+
+        result = cm.emergency_truncate(messages)
+
+        assert len(result) == 3

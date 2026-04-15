@@ -85,6 +85,21 @@ log = logging.getLogger(__name__)
 # Kept tight to encourage batching tool calls rather than one-per-round chains.
 MAX_SUBAGENT_ROUNDS = 8
 
+# BUILD tasks benefit from extra rounds for complex multi-step operations.
+MAX_BUILD_ROUNDS = 12
+
+# Fraction of the context window that triggers message truncation.
+_CONTEXT_WINDOW_THRESHOLD = 0.80
+
+# Tool result content longer than this is eligible for truncation.
+_TRUNCATION_CONTENT_THRESHOLD = 500
+
+# How many characters to keep in the truncation summary.
+_TRUNCATION_PREVIEW_LEN = 200
+
+# Messages in the most recent N rounds are never truncated.
+_PROTECTED_ROUNDS = 2
+
 # Action-oriented — slightly more deterministic than conversation (0.7).
 _SUBAGENT_TEMPERATURE = 0.5
 
@@ -607,6 +622,54 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Context window management
+# ---------------------------------------------------------------------------
+
+
+def _truncate_messages(
+    messages: list[llm.Message],
+    context_window_tokens: int,
+) -> None:
+    """Truncate older tool results in-place when messages approach the context limit.
+
+    Keeps the system message (index 0) and the most recent ``_PROTECTED_ROUNDS``
+    rounds of messages intact.  For older tool result messages, any content
+    longer than ``_TRUNCATION_CONTENT_THRESHOLD`` characters is replaced with
+    a short preview.
+
+    A "round" is an assistant message followed by a tool message (2 messages).
+    """
+    token_budget = int(context_window_tokens * _CONTEXT_WINDOW_THRESHOLD)
+    estimated = llm.estimate_message_tokens(messages)
+    if estimated <= token_budget:
+        return
+
+    # Work out where the protected tail begins.  Each round is an
+    # assistant + tool pair, so protect the last (2 * _PROTECTED_ROUNDS)
+    # non-system messages, plus the system message at index 0.
+    protected_tail = len(messages) - (_PROTECTED_ROUNDS * 2)
+
+    for idx in range(1, max(1, protected_tail)):
+        msg = messages[idx]
+        if msg.role != llm.Role.TOOL:
+            continue
+        for tr in msg.tool_results:
+            if len(tr.content) > _TRUNCATION_CONTENT_THRESHOLD:
+                original_len = len(tr.content)
+                preview = tr.content[:_TRUNCATION_PREVIEW_LEN]
+                tr.content = (
+                    f"[Tool result truncated — was {original_len} chars. "
+                    f"First {_TRUNCATION_PREVIEW_LEN} chars: {preview}...]"
+                )
+
+    log.debug(
+        "Truncated messages: %d → %d estimated tokens",
+        estimated,
+        llm.estimate_message_tokens(messages),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Subagent class
 # ---------------------------------------------------------------------------
 
@@ -627,6 +690,7 @@ class Subagent:
         on_usage: UsageCallback = None,
         throttle: ProviderThrottle | None = None,
         store: SessionStore | None = None,
+        max_rounds: int = MAX_SUBAGENT_ROUNDS,
     ) -> None:
         self._context = context
         self._provider = _select_provider(
@@ -641,6 +705,7 @@ class Subagent:
         self._on_usage = on_usage
         self._throttle = throttle
         self._store = store
+        self._max_rounds = max_rounds
 
     async def run(self) -> SubagentResult:
         """Execute the task and return a structured outcome."""
@@ -675,7 +740,7 @@ class Subagent:
         response = await self._complete_with_retry(messages, llm_tools)
 
         rounds = 0
-        while response.tool_calls and rounds < MAX_SUBAGENT_ROUNDS:
+        while response.tool_calls and rounds < self._max_rounds:
             rounds += 1
 
             # Record the assistant message with its tool calls.
@@ -743,6 +808,9 @@ class Subagent:
                     tool_results=tr_data,
                 )
                 msg_idx += 1
+
+            # Trim older tool results if we are approaching the context limit.
+            _truncate_messages(messages, self._provider.context_window_tokens)
 
             response = await self._complete_with_retry(messages, llm_tools)
 

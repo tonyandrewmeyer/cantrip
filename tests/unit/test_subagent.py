@@ -9,6 +9,10 @@ from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.subagent import (
     _CATEGORY_GUIDANCE,
     _CATEGORY_TOOLS,
+    _PROTECTED_ROUNDS,
+    _TRUNCATION_CONTENT_THRESHOLD,
+    _TRUNCATION_PREVIEW_LEN,
+    MAX_BUILD_ROUNDS,
     MAX_SUBAGENT_ROUNDS,
     ExitState,
     ProviderThrottle,
@@ -21,6 +25,7 @@ from cantrip.agent.subagent import (
     _select_provider,
     _task_instruction,
     _tools_for_llm,
+    _truncate_messages,
 )
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm.base import ProviderRateLimitError, Response, ToolCall
@@ -1296,3 +1301,213 @@ class TestConcurrentToolExecution:
         assert results[0].content == "result-a"
         assert results[1].tool_call_id == "tc-b"
         assert results[1].content == "result-b"
+
+
+# ===================================================================
+# TestTruncateMessages
+# ===================================================================
+
+
+class TestTruncateMessages:
+    """Tests for _truncate_messages — context window management."""
+
+    def _make_messages(
+        self,
+        *,
+        num_rounds: int = 5,
+        tool_content_len: int = 2000,
+    ) -> list:
+        """Build a message list simulating multiple tool-call rounds.
+
+        Each round produces an assistant message (with a tool call) and a
+        tool result message with content of *tool_content_len* characters.
+        """
+        from cantrip.llm import base as llm_mod
+
+        msgs: list[llm_mod.Message] = [
+            llm_mod.Message(role=llm_mod.Role.SYSTEM, content="System prompt."),
+            llm_mod.Message(role=llm_mod.Role.USER, content="Do something."),
+        ]
+        for i in range(num_rounds):
+            msgs.append(
+                llm_mod.Message(
+                    role=llm_mod.Role.ASSISTANT,
+                    content=f"Round {i}",
+                    tool_calls=[
+                        llm_mod.ToolCall(id=f"tc-{i}", name="read_file", arguments={}),
+                    ],
+                )
+            )
+            msgs.append(
+                llm_mod.Message(
+                    role=llm_mod.Role.TOOL,
+                    content="",
+                    tool_results=[
+                        llm_mod.ToolResult(
+                            tool_call_id=f"tc-{i}",
+                            content="x" * tool_content_len,
+                        ),
+                    ],
+                )
+            )
+        return msgs
+
+    def test_no_truncation_when_under_budget(self) -> None:
+        """Messages within the budget are not modified."""
+        msgs = self._make_messages(num_rounds=2, tool_content_len=100)
+        # Use a large context window so we stay well under 80%.
+        _truncate_messages(msgs, context_window_tokens=1_000_000)
+
+        for msg in msgs:
+            for tr in msg.tool_results:
+                assert tr.content == "x" * 100
+
+    def test_truncation_replaces_old_tool_results(self) -> None:
+        """When over budget, older tool results are replaced with a summary."""
+        msgs = self._make_messages(num_rounds=6, tool_content_len=5000)
+        # Use a small context window to force truncation.
+        _truncate_messages(msgs, context_window_tokens=1000)
+
+        # Older rounds (before the protected tail) should be truncated.
+        # The first tool result is at index 3 (system, user, assistant, tool).
+        early_tool_msg = msgs[3]
+        assert early_tool_msg.role.value == "tool"
+        tr = early_tool_msg.tool_results[0]
+        assert "[Tool result truncated" in tr.content
+        assert "5000 chars" in tr.content
+
+    def test_recent_messages_preserved(self) -> None:
+        """The most recent _PROTECTED_ROUNDS rounds are never truncated."""
+        msgs = self._make_messages(num_rounds=6, tool_content_len=5000)
+        _truncate_messages(msgs, context_window_tokens=1000)
+
+        # The last _PROTECTED_ROUNDS * 2 non-system messages should be intact.
+        # Each round is 2 messages (assistant + tool), so the tail is
+        # the last (_PROTECTED_ROUNDS * 2) messages.
+        protected_start = len(msgs) - (_PROTECTED_ROUNDS * 2)
+        for msg in msgs[protected_start:]:
+            for tr in msg.tool_results:
+                # Protected tool results keep their original content.
+                assert tr.content == "x" * 5000
+
+    def test_system_message_preserved(self) -> None:
+        """The system message (index 0) is never modified."""
+        msgs = self._make_messages(num_rounds=6, tool_content_len=5000)
+        original_system = msgs[0].content
+        _truncate_messages(msgs, context_window_tokens=1000)
+        assert msgs[0].content == original_system
+
+    def test_short_content_not_truncated(self) -> None:
+        """Tool results shorter than the threshold are left alone."""
+        msgs = self._make_messages(
+            num_rounds=6,
+            tool_content_len=_TRUNCATION_CONTENT_THRESHOLD - 1,
+        )
+        _truncate_messages(msgs, context_window_tokens=1000)
+
+        for msg in msgs:
+            for tr in msg.tool_results:
+                # Nothing should have been truncated.
+                assert "[Tool result truncated" not in tr.content
+
+    def test_truncation_preview_length(self) -> None:
+        """The truncation summary includes the configured preview length."""
+        msgs = self._make_messages(num_rounds=4, tool_content_len=3000)
+        _truncate_messages(msgs, context_window_tokens=500)
+
+        # Find the first truncated tool result.
+        for msg in msgs:
+            for tr in msg.tool_results:
+                if "[Tool result truncated" in tr.content:
+                    assert f"First {_TRUNCATION_PREVIEW_LEN} chars:" in tr.content
+                    return
+        pytest.fail("No truncated tool results found")
+
+
+# ===================================================================
+# TestMaxRoundsParameter
+# ===================================================================
+
+
+class TestMaxRoundsParameter:
+    """Tests for the configurable max_rounds parameter."""
+
+    @pytest.mark.asyncio
+    async def test_custom_max_rounds(self) -> None:
+        """Subagent respects a custom max_rounds value."""
+        tool = _make_tool("read_file")
+        task = AgentTask(id="t", title="Loop", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task)
+
+        custom_max = 4
+        responses = [
+            Response(
+                content=f"round {i}",
+                tool_calls=[
+                    ToolCall(id=f"tc{i}", name="read_file", arguments={}),
+                ],
+            )
+            for i in range(custom_max + 5)
+        ]
+        provider = FakeProvider(responses=responses)
+        subagent = Subagent(ctx, tools=[tool], provider=provider, max_rounds=custom_max)
+
+        await subagent.run()
+
+        # 1 initial call + custom_max rounds of tool-call loops.
+        assert provider._call_count == custom_max + 1
+
+    @pytest.mark.asyncio
+    async def test_default_max_rounds(self) -> None:
+        """Default max_rounds equals MAX_SUBAGENT_ROUNDS."""
+        tool = _make_tool("read_file")
+        task = AgentTask(id="t", title="Loop", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task)
+
+        responses = [
+            Response(
+                content=f"round {i}",
+                tool_calls=[
+                    ToolCall(id=f"tc{i}", name="read_file", arguments={}),
+                ],
+            )
+            for i in range(MAX_SUBAGENT_ROUNDS + 5)
+        ]
+        provider = FakeProvider(responses=responses)
+        subagent = Subagent(ctx, tools=[tool], provider=provider)
+
+        await subagent.run()
+
+        assert provider._call_count == MAX_SUBAGENT_ROUNDS + 1
+
+    def test_build_rounds_greater_than_default(self) -> None:
+        """MAX_BUILD_ROUNDS is larger than the default MAX_SUBAGENT_ROUNDS."""
+        assert MAX_BUILD_ROUNDS > MAX_SUBAGENT_ROUNDS
+        assert MAX_BUILD_ROUNDS == 12
+
+    @pytest.mark.asyncio
+    async def test_truncation_during_run(self) -> None:
+        """Messages are truncated during the run loop when context is tight."""
+        tool = _make_tool("read_file", ToolResult(success=True, output="x" * 5000))
+        task = AgentTask(id="t", title="Build", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task)
+
+        # 3 rounds of tool calls then a final response.
+        responses = [
+            Response(
+                content=f"round {i}",
+                tool_calls=[
+                    ToolCall(id=f"tc{i}", name="read_file", arguments={}),
+                ],
+            )
+            for i in range(3)
+        ]
+        responses.append(Response(content="Done.\n\n[EXIT: completed]"))
+
+        # Small context window to trigger truncation.
+        provider = FakeProvider(responses=responses, context_window_tokens=2000)
+        subagent = Subagent(ctx, tools=[tool], provider=provider)
+
+        result = await subagent.run()
+
+        assert result.exit_state == ExitState.COMPLETED
