@@ -6,12 +6,16 @@
 <title>Cantrip — AI-Powered Juju Charm Builder</title>
 <meta name="description" content="Cantrip is an autonomous AI agent that builds production-quality Juju charms. Describe your workload, and Cantrip researches, designs, builds, deploys, and tests it.">
 <link rel="icon" href="favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<a href="#main" class="skip-link">Skip to content</a>
+
 <!-- ── Navigation ──────────────────────────────────────────────── -->
-<nav>
+<nav aria-label="Main">
   <div class="nav-inner">
     <a href="#" class="nav-logo">
       <picture>
@@ -20,32 +24,35 @@
       </picture>
       <span>Cantrip</span>
     </a>
-    <div class="nav-links">
+    <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="nav-links" id="nav-menu">
       <a href="docs/index.html">Docs</a>
       <a href="#features">Features</a>
       <a href="#how-it-works">How It Works</a>
       <a href="#quickstart">Get Started</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" class="btn btn-sm">GitHub</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener" class="btn btn-sm">GitHub</a>
     </div>
   </div>
 </nav>
 
 <!-- ── Hero ────────────────────────────────────────────────────── -->
+<main id="main">
 <section class="hero">
-  <div class="hero-glow"></div>
   <div class="container">
     <picture>
       <source srcset="logo-dark.png" media="(prefers-color-scheme: dark)">
       <img src="logo-light.png" alt="Cantrip logo" class="hero-logo" width="96" height="96">
     </picture>
-    <h1>Build Juju charms<br><span class="gradient-text">with AI</span></h1>
+    <h1>Build Juju charms<br><em>with AI</em></h1>
     <p class="hero-subtitle">
       Describe your workload. Cantrip researches it, designs the charm,
       writes the code, deploys it, and runs the tests &mdash; autonomously.
     </p>
     <div class="hero-actions">
       <a href="#quickstart" class="btn btn-primary">Get Started</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" class="btn btn-outline">View on GitHub</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener" class="btn btn-outline">View on GitHub</a>
     </div>
     <div class="hero-badge">Free &amp; open source &middot; Apache 2.0</div>
   </div>
@@ -61,7 +68,7 @@
     <div class="feature-grid">
 
       <div class="feature-card">
-        <div class="feature-icon">&#x1F50D;</div>
+        <div class="feature-icon" aria-hidden="true">&#x1F50D;</div>
         <h3>Research-Driven Design</h3>
         <p>
           Cantrip analyses your workload &mdash; documentation, source code,
@@ -72,7 +79,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">&#x2699;</div>
+        <div class="feature-icon" aria-hidden="true">&#x2699;</div>
         <h3>Autonomous Building</h3>
         <p>
           A background work loop plans, scaffolds, writes charm code,
@@ -83,7 +90,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">&#x1F9EA;</div>
+        <div class="feature-icon" aria-hidden="true">&#x1F9EA;</div>
         <h3>Acceptance Testing</h3>
         <p>
           Integration tests are written <em>before</em> charm code.
@@ -94,7 +101,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">&#x1F4CA;</div>
+        <div class="feature-icon" aria-hidden="true">&#x1F4CA;</div>
         <h3>Full Observability</h3>
         <p>
           Every charm ships with COS integration &mdash; traces, metrics,
@@ -105,7 +112,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">&#x1F504;</div>
+        <div class="feature-icon" aria-hidden="true">&#x1F504;</div>
         <h3>Event-Driven Debugging</h3>
         <p>
           A watcher monitors your deployment in real time. When something
@@ -115,7 +122,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">&#x2B06;</div>
+        <div class="feature-icon" aria-hidden="true">&#x2B06;</div>
         <h3>Improve Existing Charms</h3>
         <p>
           <code>cantrip --improve /path/to/charm</code> audits an
@@ -126,7 +133,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">&#x1F3AF;</div>
+        <div class="feature-icon" aria-hidden="true">&#x1F3AF;</div>
         <h3>Operational Readiness</h3>
         <p>
           Evaluates charms against Canonical&rsquo;s Operational Readiness
@@ -137,7 +144,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">&#x1F6E0;</div>
+        <div class="feature-icon" aria-hidden="true">&#x1F6E0;</div>
         <h3>Day-2 Operations</h3>
         <p>
           After initial build and deploy, the agent researches day-2
@@ -148,7 +155,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">&#x1F4CB;</div>
+        <div class="feature-icon" aria-hidden="true">&#x1F4CB;</div>
         <h3>Charm Linting</h3>
         <p>
           Standalone <code>charmlint</code> tool with 35 deterministic
@@ -168,36 +175,32 @@
     <h2>How it works</h2>
     <p class="section-subtitle">Two concurrent loops. You steer; the agent drives.</p>
 
-    <div class="steps">
-      <div class="step">
-        <div class="step-number">1</div>
+    <ol class="steps">
+      <li class="step">
         <div class="step-content">
           <h3>Describe your workload</h3>
           <p>&ldquo;Build a charm for Redis&rdquo; &mdash; or point it at your source repo, or use <code>--improve</code> on an existing charm.</p>
         </div>
-      </div>
-      <div class="step">
-        <div class="step-number">2</div>
+      </li>
+      <li class="step">
         <div class="step-content">
           <h3>Review the design</h3>
           <p>Cantrip researches the workload via web search and Charmhub, then proposes integrations, config, actions, companion charms, and operational patterns.</p>
         </div>
-      </div>
-      <div class="step">
-        <div class="step-number">3</div>
+      </li>
+      <li class="step">
         <div class="step-content">
           <h3>Watch it build</h3>
           <p>Concurrent subagents write integration tests, charm code, deploy, and iterate until green &mdash; visible in a live task checklist. Acceptance tests exercise every action, relation, and config option.</p>
         </div>
-      </div>
-      <div class="step">
-        <div class="step-number">4</div>
+      </li>
+      <li class="step">
         <div class="step-content">
           <h3>Validate and ship</h3>
           <p>Operational readiness assessment, charm linting, load testing, demo generation, and Charmhub publishing &mdash; with full COS observability baked in.</p>
         </div>
-      </div>
-    </div>
+      </li>
+    </ol>
   </div>
 </section>
 
@@ -228,12 +231,7 @@
   <div class="container">
     <h2>Get started in seconds</h2>
     <div class="code-block">
-      <div class="code-header">
-        <span class="code-dot red"></span>
-        <span class="code-dot yellow"></span>
-        <span class="code-dot green"></span>
-        <span class="code-title">Terminal</span>
-      </div>
+      <div class="code-header">Terminal</div>
       <pre><code><span class="prompt">$</span> uv tool install cantrip
 <span class="prompt">$</span> export GEMINI_API_KEY=<span class="dim">"your-key"</span>
 <span class="prompt">$</span> mkdir my-charm && cd my-charm
@@ -284,6 +282,8 @@
   </div>
 </section>
 
+</main>
+
 <!-- ── Footer ──────────────────────────────────────────────────── -->
 <footer>
   <div class="container footer-inner">
@@ -297,22 +297,37 @@
       <span>Free &amp; open source</span>
     </div>
     <div class="footer-links">
-      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip/issues">Issues</a>
-      <a href="https://juju.is">Juju</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip/issues" target="_blank" rel="noopener">Issues</a>
+      <a href="https://juju.is" target="_blank" rel="noopener">Juju</a>
     </div>
   </div>
 </footer>
 
 <script>
-// Smooth scroll for anchor links.
-document.querySelectorAll('a[href^="#"]').forEach(a => {
-  a.addEventListener("click", e => {
-    e.preventDefault();
-    const target = document.querySelector(a.getAttribute("href"));
-    if (target) target.scrollIntoView({ behavior: "smooth" });
+// Mobile navigation toggle.
+(function() {
+  const toggle = document.querySelector(".nav-toggle");
+  const links = document.querySelector(".nav-links");
+  if (!toggle || !links) return;
+
+  toggle.addEventListener("click", function() {
+    const open = links.classList.toggle("open");
+    toggle.classList.toggle("open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
   });
-});
+
+  // Close menu when a nav link is tapped.
+  links.querySelectorAll("a").forEach(function(a) {
+    a.addEventListener("click", function() {
+      links.classList.remove("open");
+      toggle.classList.remove("open");
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.setAttribute("aria-label", "Open menu");
+    });
+  });
+})();
 
 // Fade-in on scroll.
 const observer = new IntersectionObserver((entries) => {

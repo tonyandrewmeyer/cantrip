@@ -6,11 +6,15 @@
 <title>How to configure light models — Cantrip</title>
 <meta name="description" content="Route internal tasks to cheaper LLM models to reduce cost without sacrificing charm quality.">
 <link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
 <link rel="stylesheet" href="docs.css">
 </head>
 <body>
 
-<nav class="doc-nav">
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
   <div class="doc-nav-inner">
     <a href="../index.html" class="doc-nav-logo">
       <picture>
@@ -19,10 +23,13 @@
       </picture>
       <span>Cantrip</span>
     </a>
-    <div class="doc-nav-links">
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
       <a href="index.html" class="current">Docs</a>
       <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
 </nav>
@@ -43,7 +50,7 @@
     </ul>
   </aside>
 
-  <main class="doc-content">
+  <main id="main" class="doc-content">
     <div class="breadcrumb">
       <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Configure light models
     </div>
@@ -128,10 +135,32 @@
   <div class="doc-footer-inner">
     <span>Cantrip &mdash; free &amp; open source</span>
     <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
 </footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
 
 </body>
 </html>

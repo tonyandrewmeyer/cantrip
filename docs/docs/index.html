@@ -6,11 +6,15 @@
 <title>Documentation — Cantrip</title>
 <meta name="description" content="Cantrip documentation: tutorials, how-to guides, reference, and explanations for the AI-powered Juju charm builder.">
 <link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
 <link rel="stylesheet" href="docs.css">
 </head>
 <body>
 
-<nav class="doc-nav">
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
   <div class="doc-nav-inner">
     <a href="../index.html" class="doc-nav-logo">
       <picture>
@@ -19,16 +23,19 @@
       </picture>
       <span>Cantrip</span>
     </a>
-    <div class="doc-nav-links">
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
       <a href="index.html" class="current">Docs</a>
       <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
 </nav>
 
 <div class="doc-layout" style="max-width: var(--max-w); padding-top: 6rem;">
-  <div class="doc-content">
+  <main id="main" class="doc-content">
     <h1>Cantrip Documentation</h1>
     <p class="subtitle">
       Learn how to use Cantrip to build production-quality Juju charms with AI.
@@ -36,7 +43,7 @@
 
     <p>
       This documentation follows the
-      <a href="https://diataxis.fr/">Diataxis</a> framework, organising
+      <a href="https://diataxis.fr/" target="_blank" rel="noopener">Diataxis</a> framework, organising
       content by what you need: learning, solving problems, looking things
       up, or understanding how the system works.
     </p>
@@ -133,17 +140,39 @@
       </a>
 
     </div>
-  </div>
+  </main>
 </div>
 
 <footer class="doc-footer">
   <div class="doc-footer-inner">
     <span>Cantrip &mdash; free &amp; open source</span>
     <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip">GitHub</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
 </footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
 
 </body>
 </html>
