@@ -26,8 +26,9 @@
   --warn-bg: rgba(251,191,36,0.1);
 }
 
+/* Dark mode: auto (system preference) */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #161210;
     --bg-subtle: #1e1914;
     --bg-card: #231d17;
@@ -45,3 +46,34 @@
     --warn-bg: rgba(251,191,36,0.08);
   }
 }
+
+/* Dark mode: forced via switcher */
+:root[data-theme="dark"] {
+  --bg: #161210;
+  --bg-subtle: #1e1914;
+  --bg-card: #231d17;
+  --border: #3a3028;
+  --text: #ede6dd;
+  --text-muted: #998c7d;
+  --accent: #e89838;
+  --accent-hover: #f0ab52;
+  --accent-bg: rgba(232,152,56,0.1);
+  --code-bg: #1e1914;
+  --code-border: #3a3028;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
+  --warn: #f59e0b;
+  --warn-bg: rgba(251,191,36,0.08);
+}
+
+/* Logo switching — auto mode uses media queries, manual overrides use data-theme */
+:root       { --logo-light: inline; --logo-dark: none; }
+:root[data-theme="dark"] { --logo-light: none; --logo-dark: inline; }
+:root[data-theme="light"] { --logo-light: inline; --logo-dark: none; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --logo-light: none; --logo-dark: inline; }
+}
+
+.logo-light { display: var(--logo-light); }
+.logo-dark  { display: var(--logo-dark); }

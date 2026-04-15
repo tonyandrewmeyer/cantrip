@@ -9,6 +9,13 @@
 <link rel="preconnect" href="https://fonts.bunny.net">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
 <link rel="stylesheet" href="style.css">
+<script>
+// Apply stored theme before first paint to prevent flash.
+(function() {
+  var t = localStorage.getItem("cantrip-theme");
+  if (t && t !== "auto") document.documentElement.setAttribute("data-theme", t);
+})();
+</script>
 </head>
 <body>
 
@@ -18,10 +25,8 @@
 <nav aria-label="Main">
   <div class="nav-inner">
     <a href="#" class="nav-logo">
-      <picture>
-        <source srcset="logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
+      <img src="logo-light.png" alt="Cantrip" width="28" height="28" class="logo-light">
+      <img src="logo-dark.png" alt="" width="28" height="28" class="logo-dark" aria-hidden="true">
       <span>Cantrip</span>
     </a>
     <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
@@ -33,6 +38,11 @@
       <a href="#how-it-works">How It Works</a>
       <a href="#quickstart">Get Started</a>
       <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener" class="btn btn-sm">GitHub</a>
+      <div class="theme-switcher" role="group" aria-label="Colour theme">
+        <button type="button" data-theme="light" aria-pressed="false">Light</button>
+        <button type="button" data-theme="auto" aria-pressed="true">Auto</button>
+        <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+      </div>
     </div>
   </div>
 </nav>
@@ -41,10 +51,8 @@
 <main id="main">
 <section class="hero">
   <div class="container">
-    <picture>
-      <source srcset="logo-dark.png" media="(prefers-color-scheme: dark)">
-      <img src="logo-light.png" alt="Cantrip logo" class="hero-logo" width="96" height="96">
-    </picture>
+    <img src="logo-light.png" alt="Cantrip logo" class="hero-logo logo-light" width="96" height="96">
+    <img src="logo-dark.png" alt="" class="hero-logo logo-dark" width="96" height="96" aria-hidden="true">
     <h1>Build Juju charms<br><em>with AI</em></h1>
     <p class="hero-subtitle">
       Describe your workload. Cantrip researches it, designs the charm,
@@ -288,10 +296,8 @@
 <footer>
   <div class="container footer-inner">
     <div class="footer-left">
-      <picture>
-        <source srcset="logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="logo-light.png" alt="Cantrip" width="24" height="24">
-      </picture>
+      <img src="logo-light.png" alt="Cantrip" width="24" height="24" class="logo-light">
+      <img src="logo-dark.png" alt="" width="24" height="24" class="logo-dark" aria-hidden="true">
       <span>Cantrip</span>
       <span class="footer-sep">&middot;</span>
       <span>Free &amp; open source</span>
@@ -307,18 +313,17 @@
 <script>
 // Mobile navigation toggle.
 (function() {
-  const toggle = document.querySelector(".nav-toggle");
-  const links = document.querySelector(".nav-links");
+  var toggle = document.querySelector(".nav-toggle");
+  var links = document.querySelector(".nav-links");
   if (!toggle || !links) return;
 
   toggle.addEventListener("click", function() {
-    const open = links.classList.toggle("open");
+    var open = links.classList.toggle("open");
     toggle.classList.toggle("open", open);
     toggle.setAttribute("aria-expanded", String(open));
     toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
   });
 
-  // Close menu when a nav link is tapped.
   links.querySelectorAll("a").forEach(function(a) {
     a.addEventListener("click", function() {
       links.classList.remove("open");
@@ -329,16 +334,43 @@
   });
 })();
 
+// Theme switcher.
+(function() {
+  var root = document.documentElement;
+  var buttons = document.querySelectorAll(".theme-switcher button");
+  var stored = localStorage.getItem("cantrip-theme") || "auto";
+
+  function apply(theme) {
+    if (theme === "auto") {
+      root.removeAttribute("data-theme");
+    } else {
+      root.setAttribute("data-theme", theme);
+    }
+    buttons.forEach(function(btn) {
+      btn.setAttribute("aria-pressed", btn.getAttribute("data-theme") === theme ? "true" : "false");
+    });
+    localStorage.setItem("cantrip-theme", theme);
+  }
+
+  buttons.forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      apply(btn.getAttribute("data-theme"));
+    });
+  });
+
+  apply(stored);
+})();
+
 // Fade-in on scroll.
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
+var observer = new IntersectionObserver(function(entries) {
+  entries.forEach(function(entry) {
     if (entry.isIntersecting) {
       entry.target.classList.add("visible");
     }
   });
 }, { threshold: 0.1 });
 
-document.querySelectorAll(".feature-card, .step, .interface-card, .eco-item").forEach(el => {
+document.querySelectorAll(".feature-card, .step, .interface-card, .eco-item").forEach(function(el) {
   el.classList.add("fade-in");
   observer.observe(el);
 });

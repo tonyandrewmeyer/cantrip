@@ -213,12 +213,55 @@ nav {
     border-bottom: 1px solid var(--border);
   }
 
-  .nav-links a:last-child { border-bottom: none; }
+  .nav-links a:last-of-type { border-bottom: none; }
 
   .nav-links .btn-sm {
     margin-top: 0.5rem;
     text-align: center;
     justify-content: center;
+  }
+}
+
+/* ── Theme Switcher ───────────────────────────────────────────── */
+.theme-switcher {
+  display: flex;
+  align-items: center;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 0;
+}
+
+.theme-switcher button {
+  background: none;
+  border: none;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+  font-family: var(--font);
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.theme-switcher button:hover {
+  color: var(--text);
+}
+
+.theme-switcher button[aria-pressed="true"] {
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 640px) {
+  .theme-switcher {
+    align-self: center;
+    margin-top: 0.5rem;
   }
 }
 
