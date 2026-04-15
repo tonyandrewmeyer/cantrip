@@ -3606,6 +3606,106 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 
 ---
 
+## Phase 42: GitHub Integration
+
+**Goal:** Close the loop between Cantrip and GitHub so that the agent can triage
+incoming issues, work on branches, open PRs, and — for new charms — bootstrap a
+repository. This is most valuable for the **charm improvement** and **ongoing
+maintenance** workflows (Phase 10+) but parts apply to initial creation too.
+
+All GitHub operations require explicit user approval and depend on `gh` being
+available and authenticated.
+
+### 42.1 High — Detect GitHub Remote
+
+- [ ] On startup (or when a charm path is set), check `git remote get-url origin`
+  for a GitHub remote
+- [ ] Parse owner/repo from HTTPS or SSH remote URLs
+- [ ] Expose `github_repo: str | None` on `AgentState` (e.g. `"canonical/grafana-k8s"`)
+- [ ] Surface the detected repo in the TUI header subtitle and model info bar
+
+### 42.2 High — Issue Triage Background Worker
+
+- [ ] When `github_repo` is set, start a background worker that calls
+  `gh issue list --json number,title,labels,body,comments` periodically
+- [ ] Agent examines open issues, filters for actionable ones (bug reports,
+  feature requests with enough detail), and ranks them by feasibility
+- [ ] Present the top candidate(s) to the user via a CONFIRM task:
+  "Issue #42 looks actionable — shall I work on it?"
+- [ ] If the user approves, create work-queue tasks from the issue
+  (research → build → test → PR)
+- [ ] Respect rate limits — poll no more than once per session or on user request
+
+### 42.3 High — Branch-Per-Change Workflow
+
+- [ ] When a GitHub remote is detected and the agent is improving an existing
+  charm, create a feature branch for each logical change instead of committing
+  directly to the current branch
+- [ ] Branch naming convention: `cantrip/<short-description>` (e.g.
+  `cantrip/add-postgresql-integration`)
+- [ ] After the change is complete and tests pass, prompt the user before
+  pushing the branch
+- [ ] If the user declines, leave the branch local for manual review
+
+### 42.4 High — Open Pull Requests
+
+- [ ] After pushing a feature branch, offer to open a PR via `gh pr create`
+- [ ] Generate PR title and body from the work-queue task context: what was
+  changed, why, test results, and link to the originating issue if applicable
+- [ ] Include a summary of what the agent did (tools called, tests run,
+  iterations needed) in a collapsible details section
+- [ ] Require explicit user confirmation before creating the PR
+- [ ] Support `--draft` flag when the user wants review before merging
+
+### 42.5 Medium — Repository Bootstrap
+
+- [ ] When no git remote is configured and `gh` is available, offer to create
+  a GitHub repository for the charm
+- [ ] Prompt the user for: public/private, organisation (or personal), and
+  description
+- [ ] Run `gh repo create`, set the remote, and push the initial commit
+- [ ] Optionally configure basic repository settings: default branch protection,
+  issue templates, CI workflow stub
+
+### 42.6 Medium — Issue-Driven Maintenance Loop
+
+- [ ] Combine 42.2–42.4 into an ongoing maintenance mode: the agent periodically
+  checks for new issues, proposes fixes, and opens PRs — with user approval at
+  each step
+- [ ] Track which issues have already been examined to avoid re-prompting
+- [ ] When an issue is resolved by a merged PR, add a comment acknowledging
+  the fix (with user permission)
+- [ ] Handle the case where the upstream branch has advanced — rebase or
+  warn the user rather than force-pushing
+
+### 42.7 Low — PR Feedback Loop
+
+- [ ] After opening a PR, monitor it for review comments via
+  `gh pr view --json reviews,comments`
+- [ ] Surface reviewer feedback to the agent so it can propose follow-up
+  commits on the same branch
+- [ ] Require user approval before pushing follow-up changes
+- [ ] Close the loop: reviewer requests change → agent proposes fix →
+  user approves → push → re-request review
+
+**Exit criteria:** When a charm directory has a GitHub remote, Cantrip
+automatically discovers open issues, works on branches, and opens PRs — all
+with explicit user approval at every externally-visible step. When there is no
+remote, Cantrip offers to create one. `make check` passes throughout.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Remote detection (42.1) | None | Can start immediately |
+| Issue triage (42.2) | 42.1 | Needs repo identity |
+| Branch workflow (42.3) | Phase 30 git tools | Needs `git_branch`, `git_checkout` |
+| Pull requests (42.4) | 42.3, Phase 30 `gh_pr_create` | Needs branch + PR tooling |
+| Repo bootstrap (42.5) | None | Independent; only needs `gh` |
+| Maintenance loop (42.6) | 42.2, 42.3, 42.4 | Combines earlier items |
+| PR feedback (42.7) | 42.4, Phase 30 `gh_pr_view` | Needs PR view tooling |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -3644,3 +3744,4 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 | M39: ACP Research | 39 | Written assessment of Agent Client Protocol as an alternative to direct LLM provider calls |
 | M40: Safe Compaction | 40 | Compaction has cycle detection, retry budgets, and size validation — no infinite loops possible |
 | M41: Provider Parity | 41 | All providers capture streaming usage; extended thinking available for Claude; accurate token counting; cost visibility; compaction monitoring |
+| M42: GitHub Native | 42 | Cantrip triages issues, works on branches, opens PRs, and bootstraps repos — all with user approval |
