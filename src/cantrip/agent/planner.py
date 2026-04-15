@@ -11,6 +11,7 @@ import logging
 import platform
 import re
 from dataclasses import dataclass, field
+from uuid import uuid4
 
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.llm import base as llm
@@ -56,6 +57,11 @@ _FAST_PATH_FRAMEWORKS = frozenset(
         "spring-boot",
     }
 )
+
+
+def _unique_id(base: str) -> str:
+    """Return *base* with a random suffix to avoid collisions across plans."""
+    return f"{base}-{uuid4().hex[:8]}"
 
 
 def is_fast_path(context: PlanningContext) -> bool:
@@ -161,9 +167,12 @@ def plan_sprint_deploy(context: PlanningContext) -> list[AgentTask]:
         profile = "kubernetes" if charm_type == "k8s" else "machine"
         design = _sprint_design_custom(workload, charm_type)
 
+    build_id = _unique_id("sprint-build")
+    deploy_id = _unique_id("sprint-deploy")
+
     return [
         AgentTask(
-            id="sprint-build",
+            id=build_id,
             title=f"{SPRINT_BUILD_PREFIX} {workload}",
             category=TaskCategory.BUILD,
             model_hint=ModelHint.PRIMARY,
@@ -196,7 +205,7 @@ def plan_sprint_deploy(context: PlanningContext) -> list[AgentTask]:
             dependencies=[],
         ),
         AgentTask(
-            id="sprint-deploy",
+            id=deploy_id,
             title=f"{SPRINT_DEPLOY_PREFIX} {workload}",
             category=TaskCategory.DEPLOY,
             description=(
@@ -206,7 +215,7 @@ def plan_sprint_deploy(context: PlanningContext) -> list[AgentTask]:
                 "3. Run juju_wait to confirm the application reaches active/idle\n"
                 "4. Report the final status"
             ),
-            dependencies=["sprint-build"],
+            dependencies=[build_id],
         ),
     ]
 
@@ -220,9 +229,12 @@ def plan_fast_path(context: PlanningContext) -> list[AgentTask]:
     workload = context.charm_name or context.framework or "the workload"
     framework = context.framework or "unknown"
 
+    design_id = _unique_id("fast-design")
+    confirm_id = _unique_id("confirm-design")
+
     return [
         AgentTask(
-            id="fast-design",
+            id=design_id,
             title=f"operational-discovery: design 12-factor charm for {workload}",
             category=TaskCategory.RESEARCH,
             description=(
@@ -235,11 +247,11 @@ def plan_fast_path(context: PlanningContext) -> list[AgentTask]:
             dependencies=[],
         ),
         AgentTask(
-            id="confirm-design",
+            id=confirm_id,
             title="Confirm design with user",
             category=TaskCategory.CONFIRM,
             description="Present the design proposal for user approval.",
-            dependencies=["fast-design"],
+            dependencies=[design_id],
         ),
     ]
 
@@ -266,7 +278,7 @@ def plan_one_shot_build(context: PlanningContext, design_content: str) -> list[A
 
     return [
         AgentTask(
-            id="one-shot-build",
+            id=_unique_id("one-shot-build"),
             title=f"Build {framework} charm for {workload}",
             category=TaskCategory.BUILD,
             model_hint=ModelHint.PRIMARY,
@@ -313,9 +325,12 @@ def plan_improvement_phase(context: PlanningContext) -> list[AgentTask]:
     charm_path = context.existing_charm_path or "."
     charm_name = context.charm_name or "the charm"
 
+    audit_id = _unique_id("audit-charm")
+    confirm_id = _unique_id("confirm-improvements")
+
     return [
         AgentTask(
-            id="audit-charm",
+            id=audit_id,
             title=f"Audit existing charm: {charm_name}",
             category=TaskCategory.RESEARCH,
             model_hint=ModelHint.PRIMARY,
@@ -332,7 +347,7 @@ def plan_improvement_phase(context: PlanningContext) -> list[AgentTask]:
             dependencies=[],
         ),
         AgentTask(
-            id="confirm-improvements",
+            id=confirm_id,
             title="Confirm improvement plan with user",
             category=TaskCategory.CONFIRM,
             description=(
@@ -340,7 +355,7 @@ def plan_improvement_phase(context: PlanningContext) -> list[AgentTask]:
                 "improvement areas to address (observability, tests, code "
                 "modernisation, listing readiness)."
             ),
-            dependencies=["audit-charm"],
+            dependencies=[audit_id],
         ),
     ]
 
@@ -348,11 +363,12 @@ def plan_improvement_phase(context: PlanningContext) -> list[AgentTask]:
 def plan_improvement_fixes(
     context: PlanningContext,
     gaps: dict[str, bool],
+    confirm_task_id: str = "confirm-improvements",
 ) -> list[AgentTask]:
     """Generate fix tasks based on audit findings.
 
     Called after the user confirms which improvements to make.  Each gap
-    area becomes a BUILD task; all depend on the confirmation task.
+    area becomes a BUILD task; all depend on *confirm_task_id*.
     A final validation task depends on all fix tasks.
     """
     charm_path = context.existing_charm_path or "."
@@ -366,9 +382,10 @@ def plan_improvement_fixes(
         if gaps.get(k)
     ]
     if cos_gaps:
+        obs_id = _unique_id("fill-observability")
         tasks.append(
             AgentTask(
-                id="fill-observability",
+                id=obs_id,
                 title="Fill observability gaps",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
@@ -392,17 +409,18 @@ def plan_improvement_fixes(
                     "(unit blocked, hook failures, resource exhaustion).\n"
                     "8. Commit changes with a descriptive message."
                 ),
-                dependencies=["confirm-improvements"],
+                dependencies=[confirm_task_id],
             )
         )
-        fix_ids.append("fill-observability")
+        fix_ids.append(obs_id)
 
     # Test gaps.
     test_gaps = [k for k in ("unit_tests", "integration_tests") if gaps.get(k)]
     if test_gaps:
+        test_id = _unique_id("fill-tests")
         tasks.append(
             AgentTask(
-                id="fill-tests",
+                id=test_id,
                 title="Fill test gaps",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
@@ -427,10 +445,10 @@ def plan_improvement_fixes(
                     "failures. Iterate until green.\n"
                     "6. Commit changes with a descriptive message."
                 ),
-                dependencies=["confirm-improvements"],
+                dependencies=[confirm_task_id],
             )
         )
-        fix_ids.append("fill-tests")
+        fix_ids.append(test_id)
 
     # Code modernisation (deprecated APIs, type annotations, modern patterns).
     needs_modernise = (
@@ -462,9 +480,10 @@ def plan_improvement_fixes(
                 "container operations with `can_connect()`."
             )
         step_text = "\n".join(steps)
+        mod_id = _unique_id("modernise-code")
         tasks.append(
             AgentTask(
-                id="modernise-code",
+                id=mod_id,
                 title="Modernise charm code",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
@@ -474,17 +493,18 @@ def plan_improvement_fixes(
                     "Run tests after each change to verify nothing breaks.\n"
                     "Commit changes with a descriptive message."
                 ),
-                dependencies=["confirm-improvements"],
+                dependencies=[confirm_task_id],
             )
         )
-        fix_ids.append("modernise-code")
+        fix_ids.append(mod_id)
 
     # Listing readiness (README, metadata, licence).
     listing_gaps = [k for k in ("readme", "licence", "icon") if gaps.get(k)]
     if listing_gaps or gaps.get("listing_metadata"):
+        listing_id = _unique_id("listing-readiness")
         tasks.append(
             AgentTask(
-                id="listing-readiness",
+                id=listing_id,
                 title="Prepare for Charmhub listing",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
@@ -502,16 +522,17 @@ def plan_improvement_fixes(
                     "reference, explanation) with the Canonical starter pack.\n"
                     "6. Commit changes with a descriptive message."
                 ),
-                dependencies=["confirm-improvements"],
+                dependencies=[confirm_task_id],
             )
         )
-        fix_ids.append("listing-readiness")
+        fix_ids.append(listing_id)
 
     # Validation task depends on all fixes.
     if fix_ids:
+        validate_id = _unique_id("validate-improvements")
         tasks.append(
             AgentTask(
-                id="validate-improvements",
+                id=validate_id,
                 title="Validate all improvements",
                 category=TaskCategory.TEST,
                 description=(
@@ -526,9 +547,10 @@ def plan_improvement_fixes(
         )
 
         # Deploy and verify the improved charm reaches active/idle.
+        deploy_id = _unique_id("deploy-verify-improvements")
         tasks.append(
             AgentTask(
-                id="deploy-verify-improvements",
+                id=deploy_id,
                 title="Deploy and verify improved charm",
                 category=TaskCategory.DEPLOY,
                 description=(
@@ -539,14 +561,14 @@ def plan_improvement_fixes(
                     "4. Run `juju_wait` to confirm active/idle.\n"
                     "5. If COS relations were added, verify they are established."
                 ),
-                dependencies=["validate-improvements"],
+                dependencies=[validate_id],
             )
         )
 
         # Diff review — summarise all changes for the user.
         tasks.append(
             AgentTask(
-                id="diff-review",
+                id=_unique_id("diff-review"),
                 title="Review improvement changes",
                 category=TaskCategory.RESEARCH,
                 model_hint=ModelHint.PRIMARY,
@@ -560,14 +582,14 @@ def plan_improvement_fixes(
                     "how many files were affected in each category.\n"
                     "5. Note any issues that were flagged but not addressed."
                 ),
-                dependencies=["deploy-verify-improvements"],
+                dependencies=[deploy_id],
             )
         )
 
         # Operability assessment — runs in parallel with diff review.
         tasks.append(
             AgentTask(
-                id="assess-operational-readiness",
+                id=_unique_id("assess-operational-readiness"),
                 title=f"{OPERABILITY_PREFIX} Assess operational readiness",
                 category=TaskCategory.RESEARCH,
                 model_hint=ModelHint.PRIMARY,
@@ -578,7 +600,7 @@ def plan_improvement_fixes(
                     "2. Review OPERATIONAL_READINESS.md.\n"
                     "3. Summarise per-pillar scores and must-fix items."
                 ),
-                dependencies=["deploy-verify-improvements"],
+                dependencies=[deploy_id],
             )
         )
 
@@ -614,9 +636,12 @@ def plan_operability_assessment(
 
     deps = [depends_on] if depends_on else []
 
+    assess_id = _unique_id("assess-operational-readiness")
+    confirm_id = _unique_id("confirm-operability")
+
     return [
         AgentTask(
-            id="assess-operational-readiness",
+            id=assess_id,
             title=f"{OPERABILITY_PREFIX} Assess operational readiness of {charm_name}",
             category=TaskCategory.RESEARCH,
             model_hint=ModelHint.PRIMARY,
@@ -630,7 +655,7 @@ def plan_operability_assessment(
             dependencies=deps,
         ),
         AgentTask(
-            id="confirm-operability",
+            id=confirm_id,
             title=f"{OPERABILITY_PREFIX} Confirm operational readiness gaps",
             category=TaskCategory.CONFIRM,
             description=(
@@ -639,7 +664,7 @@ def plan_operability_assessment(
                 "Documentation, Reliability, Maintainability, and Security "
                 "pillars. Confirm which gaps to address and which to defer."
             ),
-            dependencies=["assess-operational-readiness"],
+            dependencies=[assess_id],
         ),
     ]
 
@@ -647,12 +672,13 @@ def plan_operability_assessment(
 def plan_operability_fixes(
     context: PlanningContext,
     findings: dict[str, list[str]],
+    confirm_task_id: str = "confirm-operability",
 ) -> list[AgentTask]:
     """Generate BUILD tasks to close confirmed operability gaps.
 
     Called after the user confirms which gaps to address.  Each fix area
-    becomes a BUILD task depending on confirmation.  A re-assessment task
-    at the end verifies the score improved.
+    becomes a BUILD task depending on *confirm_task_id*.  A re-assessment
+    task at the end verifies the score improved.
     """
     charm_path = context.existing_charm_path or "."
     tasks: list[AgentTask] = []
@@ -678,7 +704,7 @@ def plan_operability_fixes(
     doc_gaps = [g for g in all_gaps if "documentation" in g.lower() or "doc" in g.lower()]
 
     if status_gaps:
-        task_id = "implement-status-reporting"
+        task_id = _unique_id("implement-status-reporting")
         tasks.append(
             AgentTask(
                 id=task_id,
@@ -694,13 +720,13 @@ def plan_operability_fixes(
                     "3. Call `_reconcile()` from every event handler.\n"
                     "4. Run tests and commit."
                 ),
-                dependencies=["confirm-operability"],
+                dependencies=[confirm_task_id],
             )
         )
         fix_ids.append(task_id)
 
     if action_gaps:
-        task_id = "implement-operational-actions"
+        task_id = _unique_id("implement-operational-actions")
         tasks.append(
             AgentTask(
                 id=task_id,
@@ -717,13 +743,13 @@ def plan_operability_fixes(
                     "and parameter schemas.\n"
                     "6. Run tests and commit."
                 ),
-                dependencies=["confirm-operability"],
+                dependencies=[confirm_task_id],
             )
         )
         fix_ids.append(task_id)
 
     if backup_gaps:
-        task_id = "implement-backup-restore"
+        task_id = _unique_id("implement-backup-restore")
         tasks.append(
             AgentTask(
                 id=task_id,
@@ -737,13 +763,13 @@ def plan_operability_fixes(
                     "actions using workload-native tools.\n"
                     "3. Run tests and commit."
                 ),
-                dependencies=["confirm-operability"],
+                dependencies=[confirm_task_id],
             )
         )
         fix_ids.append(task_id)
 
     if upgrade_gaps:
-        task_id = "implement-upgrade-procedures"
+        task_id = _unique_id("implement-upgrade-procedures")
         tasks.append(
             AgentTask(
                 id=task_id,
@@ -758,13 +784,13 @@ def plan_operability_fixes(
                     "3. Handle upgrade events gracefully.\n"
                     "4. Run tests and commit."
                 ),
-                dependencies=["confirm-operability"],
+                dependencies=[confirm_task_id],
             )
         )
         fix_ids.append(task_id)
 
     if cos_gaps:
-        task_id = "improve-observability-completeness"
+        task_id = _unique_id("improve-observability-completeness")
         tasks.append(
             AgentTask(
                 id=task_id,
@@ -779,13 +805,13 @@ def plan_operability_fixes(
                     "3. Add alert rules and dashboard panels beyond basic integration.\n"
                     "4. Run tests and commit."
                 ),
-                dependencies=["confirm-operability"],
+                dependencies=[confirm_task_id],
             )
         )
         fix_ids.append(task_id)
 
     if security_gaps:
-        task_id = "improve-security-posture"
+        task_id = _unique_id("improve-security-posture")
         tasks.append(
             AgentTask(
                 id=task_id,
@@ -800,13 +826,13 @@ def plan_operability_fixes(
                     "4. Add certificate management actions if relevant.\n"
                     "5. Run tests and commit."
                 ),
-                dependencies=["confirm-operability"],
+                dependencies=[confirm_task_id],
             )
         )
         fix_ids.append(task_id)
 
     if doc_gaps:
-        task_id = "improve-operational-docs"
+        task_id = _unique_id("improve-operational-docs")
         tasks.append(
             AgentTask(
                 id=task_id,
@@ -820,7 +846,7 @@ def plan_operability_fixes(
                     "3. Add troubleshooting, upgrade, and backup/restore docs.\n"
                     "4. Commit."
                 ),
-                dependencies=["confirm-operability"],
+                dependencies=[confirm_task_id],
             )
         )
         fix_ids.append(task_id)
@@ -829,7 +855,7 @@ def plan_operability_fixes(
     if fix_ids:
         tasks.append(
             AgentTask(
-                id="reassess-operational-readiness",
+                id=_unique_id("reassess-operational-readiness"),
                 title=f"{OPERABILITY_PREFIX} Re-assess operational readiness",
                 category=TaskCategory.RESEARCH,
                 model_hint=ModelHint.PRIMARY,
@@ -858,9 +884,10 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
     research_ids: list[str] = []
 
     if context.source_url:
+        source_id = _unique_id("source-analysis")
         tasks.append(
             AgentTask(
-                id="source-analysis",
+                id=source_id,
                 title=f"Analyse source repository for {workload}",
                 category=TaskCategory.RESEARCH,
                 description=(
@@ -871,11 +898,12 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
                 dependencies=[],
             )
         )
-        research_ids.append("source-analysis")
+        research_ids.append(source_id)
 
+    web_id = _unique_id("web-research")
     tasks.append(
         AgentTask(
-            id="web-research",
+            id=web_id,
             title=f"Research {workload} documentation and operations",
             category=TaskCategory.RESEARCH,
             description=(
@@ -885,11 +913,12 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
             dependencies=[],
         )
     )
-    research_ids.append("web-research")
+    research_ids.append(web_id)
 
+    hub_id = _unique_id("charmhub-survey")
     tasks.append(
         AgentTask(
-            id="charmhub-survey",
+            id=hub_id,
             title=f"Survey Charmhub for existing {workload} charms",
             category=TaskCategory.RESEARCH,
             description=(
@@ -899,11 +928,12 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
             dependencies=[],
         )
     )
-    research_ids.append("charmhub-survey")
+    research_ids.append(hub_id)
 
+    synthesis_id = _unique_id("operational-discovery")
     tasks.append(
         AgentTask(
-            id="operational-discovery",
+            id=synthesis_id,
             title=f"operational-discovery: synthesise design for {workload}",
             category=TaskCategory.RESEARCH,
             description=(
@@ -918,11 +948,11 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
 
     tasks.append(
         AgentTask(
-            id="confirm-design",
+            id=_unique_id("confirm-design"),
             title="Confirm design with user",
             category=TaskCategory.CONFIRM,
             description="Present the design proposal for user approval.",
-            dependencies=["operational-discovery"],
+            dependencies=[synthesis_id],
         )
     )
 
@@ -954,9 +984,13 @@ def plan_day2_ops_phase(
     """
     workload = context.charm_name or "the workload"
 
+    research_id = _unique_id("day2-research")
+    synthesis_id = _unique_id("day2-synthesis")
+    confirm_id = _unique_id("confirm-day2")
+
     return [
         AgentTask(
-            id="day2-research",
+            id=research_id,
             title=f"{DAY2_RESEARCH_PREFIX} research operations for {workload}",
             category=TaskCategory.RESEARCH,
             model_hint=ModelHint.PRIMARY,
@@ -977,7 +1011,7 @@ def plan_day2_ops_phase(
             dependencies=[depends_on],
         ),
         AgentTask(
-            id="day2-synthesis",
+            id=synthesis_id,
             title=f"{DAY2_RESEARCH_PREFIX} synthesise day-2 plan for {workload}",
             category=TaskCategory.RESEARCH,
             model_hint=ModelHint.PRIMARY,
@@ -994,10 +1028,10 @@ def plan_day2_ops_phase(
                 "focus on areas where the user's operational expertise is most "
                 "valuable — deployment topology, backup policies, security needs."
             ),
-            dependencies=["day2-research"],
+            dependencies=[research_id],
         ),
         AgentTask(
-            id="confirm-day2",
+            id=confirm_id,
             title="Discuss day-2 operations with user",
             category=TaskCategory.CONFIRM,
             description=(
@@ -1006,7 +1040,7 @@ def plan_day2_ops_phase(
                 "operational context, or indicate they are unsure (in which "
                 "case the research findings serve as the default)."
             ),
-            dependencies=["day2-synthesis"],
+            dependencies=[synthesis_id],
         ),
     ]
 

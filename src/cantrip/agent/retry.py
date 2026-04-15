@@ -7,6 +7,7 @@ module provides a single implementation used by both.
 
 import asyncio
 import logging
+import random
 
 from cantrip.llm import base as llm
 
@@ -51,7 +52,8 @@ async def complete_with_retry(
             last_error = exc
             if attempt == max_retries:
                 raise
-            delay = base_delay * attempt
+            # Jitter prevents thundering-herd retries from concurrent subagents.
+            delay = base_delay * attempt + random.uniform(0, base_delay * 0.25)
 
             # Signal the shared throttle so other callers back off.
             if throttle is not None:

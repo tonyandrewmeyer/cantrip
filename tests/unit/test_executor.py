@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from cantrip.agent.executor import (
+    _MAX_CONSECUTIVE_ERRORS,
     _MAX_NOOP_COUNT,
     DEFAULT_MAX_CONCURRENCY,
     BackgroundExecutor,
@@ -1683,3 +1684,130 @@ class TestGracefulShutdown:
         assert t1.status == TaskStatus.PENDING
         # Clean up.
         await executor.stop()
+
+
+# ===================================================================
+# TestExecutorErrorResilience
+# ===================================================================
+
+
+class TestExecutorErrorResilience:
+    """Tests for the executor's self-healing behaviour under unexpected errors."""
+
+    @pytest.mark.asyncio
+    async def test_survives_unexpected_exception(self) -> None:
+        """The executor continues running after an unexpected exception type."""
+        executor = _make_executor()
+        call_count = 0
+
+        original_route = None
+
+        async def _patched_run_loop() -> None:
+            """Simulate a loop that raises TypeError once then stops."""
+            nonlocal call_count
+            # Re-use the real _run_loop but patch `route` to raise once.
+            import cantrip.agent.executor as mod
+
+            nonlocal original_route
+            original_route = mod.route
+
+            def _bad_route(snapshot: Any) -> Any:
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise TypeError("unexpected type error")
+                # Stop the loop after surviving the error.
+                executor._running = False
+                return original_route(snapshot)
+
+            with (
+                patch.object(mod, "route", side_effect=_bad_route),
+                patch("cantrip.agent.executor._ERROR_COOLDOWN", 0),
+            ):
+                await executor._run_loop()
+
+        executor._running = True
+        await _patched_run_loop()
+
+        # The loop ran at least twice — it survived the first error.
+        assert call_count >= 2
+        assert executor._consecutive_errors == 0  # Reset on success.
+
+    @pytest.mark.asyncio
+    async def test_consecutive_errors_stops_loop(self) -> None:
+        """The executor stops after reaching the max consecutive error threshold."""
+        executor = _make_executor()
+
+        import cantrip.agent.executor as mod
+
+        def _always_fail(snapshot: Any) -> Any:  # noqa: ARG001
+            raise ValueError("persistent failure")
+
+        executor._running = True
+        with (
+            patch.object(mod, "route", side_effect=_always_fail),
+            patch("cantrip.agent.executor._ERROR_COOLDOWN", 0),
+        ):
+            await executor._run_loop()
+
+        assert executor._consecutive_errors >= _MAX_CONSECUTIVE_ERRORS
+        # The loop should have broken out; _running may still be True
+        # because the loop exited via break, not by setting _running = False.
+
+    @pytest.mark.asyncio
+    async def test_consecutive_errors_reset_on_success(self) -> None:
+        """The error counter resets to zero after a successful iteration."""
+        executor = _make_executor()
+
+        import cantrip.agent.executor as mod
+
+        call_count = 0
+
+        def _fail_then_succeed(snapshot: Any) -> Any:  # noqa: ARG001
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 3:
+                raise RuntimeError("transient error")
+            # Stop the loop on success.
+            executor._running = False
+            return mod.routing.RoutingDecision(
+                action=mod.RouteAction.IDLE,
+            )
+
+        executor._running = True
+        with (
+            patch.object(mod, "route", side_effect=_fail_then_succeed),
+            patch("cantrip.agent.executor._ERROR_COOLDOWN", 0),
+            patch("cantrip.agent.executor._POLL_INTERVAL", 0),
+        ):
+            await executor._run_loop()
+
+        # Counter was reset on the successful iteration.
+        assert executor._consecutive_errors == 0
+        assert call_count == 4
+
+    def test_healthy_property_true_when_running(self) -> None:
+        """Healthy is True when running with no errors."""
+        executor = _make_executor()
+        executor._running = True
+        executor._consecutive_errors = 0
+        assert executor.healthy is True
+
+    def test_healthy_property_false_when_not_running(self) -> None:
+        """Healthy is False when the executor is not running."""
+        executor = _make_executor()
+        assert executor.healthy is False
+
+    def test_healthy_property_false_at_error_threshold(self) -> None:
+        """Healthy is False when consecutive errors reach the threshold."""
+        executor = _make_executor()
+        executor._running = True
+        executor._consecutive_errors = _MAX_CONSECUTIVE_ERRORS
+        assert executor.healthy is False
+
+    def test_healthy_property_true_below_threshold(self) -> None:
+        """Healthy is True when errors are below the threshold."""
+        executor = _make_executor()
+        executor._running = True
+        executor._consecutive_errors = _MAX_CONSECUTIVE_ERRORS - 1
+        assert executor.healthy is True

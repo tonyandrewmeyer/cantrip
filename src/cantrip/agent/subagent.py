@@ -702,18 +702,21 @@ class Subagent:
                 )
                 msg_idx += 1
 
-            # Execute each tool call and collect results.
-            tool_results: list[llm.ToolResult] = []
-            for tc in response.tool_calls:
-                result = await self._execute_tool(tc.name, tc.arguments)
-                content = result.output if result.success else (result.error or "Unknown error")
-                tool_results.append(
-                    llm.ToolResult(
-                        tool_call_id=tc.id,
-                        content=content,
-                        is_error=not result.success,
-                    )
+            # Execute tool calls concurrently — they are independent within
+            # a single round.  asyncio.gather() preserves order.
+            raw_results = await asyncio.gather(
+                *(self._execute_tool(tc.name, tc.arguments) for tc in response.tool_calls)
+            )
+            tool_results: list[llm.ToolResult] = [
+                llm.ToolResult(
+                    tool_call_id=tc.id,
+                    content=(
+                        result.output if result.success else (result.error or "Unknown error")
+                    ),
+                    is_error=not result.success,
                 )
+                for tc, result in zip(response.tool_calls, raw_results, strict=True)
+            ]
 
             messages.append(
                 llm.Message(

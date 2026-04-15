@@ -260,8 +260,8 @@ class TestImprovementConfirmation:
 
         assert len(fix_tasks) > 0
         ids = [t.id for t in fix_tasks]
-        assert "fill-observability" in ids
-        assert "fill-tests" in ids
+        assert any(i.startswith("fill-observability-") for i in ids)
+        assert any(i.startswith("fill-tests-") for i in ids)
 
     @pytest.mark.asyncio
     async def test_improvement_stores_audit_report(self, tmp_path: Path):

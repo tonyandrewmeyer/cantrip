@@ -155,28 +155,33 @@ class TestPlanImprovementFixes:
         gaps = {"cos_tracing": True}
         tasks = plan_improvement_fixes(self._context(), gaps)
         ids = [t.id for t in tasks]
-        assert "fill-observability" in ids
+        assert any(i.startswith("fill-observability-") for i in ids)
 
     def test_test_gaps_create_fill_task(self):
         """Test gaps create a fill-tests task."""
         gaps = {"unit_tests": True}
         tasks = plan_improvement_fixes(self._context(), gaps)
         ids = [t.id for t in tasks]
-        assert "fill-tests" in ids
+        assert any(i.startswith("fill-tests-") for i in ids)
 
     def test_deprecated_apis_create_modernise_task(self):
         """Deprecated APIs trigger a modernisation task."""
         gaps = {"deprecated_apis": True}
         tasks = plan_improvement_fixes(self._context(), gaps)
         ids = [t.id for t in tasks]
-        assert "modernise-code" in ids
+        assert any(i.startswith("modernise-code-") for i in ids)
 
     def test_fix_tasks_are_build_category(self):
         """The actual fix tasks are in the BUILD category."""
         gaps = {"cos_tracing": True, "unit_tests": True, "deprecated_apis": True}
         tasks = plan_improvement_fixes(self._context(), gaps)
-        fix_ids = {"fill-observability", "fill-tests", "modernise-code", "listing-readiness"}
-        fix_tasks = [t for t in tasks if t.id in fix_ids]
+        fix_prefixes = {
+            "fill-observability-",
+            "fill-tests-",
+            "modernise-code-",
+            "listing-readiness-",
+        }
+        fix_tasks = [t for t in tasks if any(t.id.startswith(p) for p in fix_prefixes)]
         assert len(fix_tasks) > 0
         for task in fix_tasks:
             assert task.category == TaskCategory.BUILD
@@ -185,10 +190,13 @@ class TestPlanImprovementFixes:
         """A validation task is generated that depends on the fix tasks."""
         gaps = {"cos_tracing": True, "unit_tests": True}
         tasks = plan_improvement_fixes(self._context(), gaps)
-        validation = next((t for t in tasks if t.id == "validate-improvements"), None)
+        validation = next(
+            (t for t in tasks if t.id.startswith("validate-improvements-")),
+            None,
+        )
         assert validation is not None
-        assert "fill-observability" in validation.dependencies
-        assert "fill-tests" in validation.dependencies
+        assert any(d.startswith("fill-observability-") for d in validation.dependencies)
+        assert any(d.startswith("fill-tests-") for d in validation.dependencies)
 
     def test_multiple_cos_gaps_collapsed_into_one_task(self):
         """Multiple COS gaps produce a single fill-observability task."""
@@ -200,7 +208,7 @@ class TestPlanImprovementFixes:
             "ops_tracing": True,
         }
         tasks = plan_improvement_fixes(self._context(), gaps)
-        obs_tasks = [t for t in tasks if t.id == "fill-observability"]
+        obs_tasks = [t for t in tasks if t.id.startswith("fill-observability-")]
         assert len(obs_tasks) == 1
         # The description should mention all gaps.
         assert "cos_tracing" in obs_tasks[0].description

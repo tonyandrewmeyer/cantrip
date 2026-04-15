@@ -206,7 +206,7 @@ class TestPlanOneShotBuild:
         ctx = PlanningContext(intent="build", framework="Flask", charm_name="myapp")
         tasks = plan_one_shot_build(ctx, "design doc here")
         assert len(tasks) == 1
-        assert tasks[0].id == "one-shot-build"
+        assert tasks[0].id.startswith("one-shot-build-")
         assert tasks[0].category == TaskCategory.BUILD
         assert "Flask" in tasks[0].description
         assert "design doc here" in tasks[0].description

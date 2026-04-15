@@ -91,6 +91,19 @@ class TestWorkQueue:
         q.add_tasks(tasks)
         assert len(q.all_tasks()) == 2
 
+    def test_add_task_rejects_duplicate_id(self) -> None:
+        """Adding a task whose ID already exists raises ValueError."""
+        q = WorkQueue()
+        q.add_task(_task(id="dup-id"))
+        with pytest.raises(ValueError, match="Duplicate task ID"):
+            q.add_task(_task(id="dup-id", title="Another"))
+
+    def test_add_tasks_rejects_duplicate_in_batch(self) -> None:
+        """Bulk-add rejects a duplicate that collides within the batch."""
+        q = WorkQueue()
+        with pytest.raises(ValueError, match="Duplicate task ID"):
+            q.add_tasks([_task(id="same"), _task(id="same", title="Dupe")])
+
     def test_next_ready_returns_first_pending(self) -> None:
         """next_ready returns the first pending task."""
         q = WorkQueue()

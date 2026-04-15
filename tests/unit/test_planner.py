@@ -193,10 +193,10 @@ class TestTaskPlannerPlan:
 
         # 4 tasks: web-research, charmhub-survey, operational-discovery, confirm-design.
         assert len(tasks) == 4
-        assert tasks[0].id == "web-research"
-        assert tasks[1].id == "charmhub-survey"
-        assert tasks[2].id == "operational-discovery"
-        assert tasks[3].id == "confirm-design"
+        assert tasks[0].id.startswith("web-research-")
+        assert tasks[1].id.startswith("charmhub-survey-")
+        assert tasks[2].id.startswith("operational-discovery-")
+        assert tasks[3].id.startswith("confirm-design-")
 
     @pytest.mark.asyncio
     async def test_plan_includes_source_analysis_when_url_given(self) -> None:
@@ -211,7 +211,7 @@ class TestTaskPlannerPlan:
 
         # 5 tasks: source-analysis, web-research, charmhub-survey, operational-discovery, confirm.
         assert len(tasks) == 5
-        assert tasks[0].id == "source-analysis"
+        assert tasks[0].id.startswith("source-analysis-")
 
     @pytest.mark.asyncio
     async def test_plan_no_llm_call(self) -> None:
@@ -236,8 +236,8 @@ class TestTaskPlannerPlan:
         tasks = await planner.plan(context)
 
         assert len(tasks) == 2
-        assert tasks[0].id == "sprint-build"
-        assert tasks[1].id == "sprint-deploy"
+        assert tasks[0].id.startswith("sprint-build-")
+        assert tasks[1].id.startswith("sprint-deploy-")
         assert "flask" in tasks[0].description.lower()
         # No LLM call needed — sprint is deterministic.
         assert provider._call_count == 0
@@ -257,7 +257,7 @@ class TestTaskPlannerPlan:
 
         # Full research phase, not fast path.
         assert len(tasks) == 5
-        assert tasks[0].id == "source-analysis"
+        assert tasks[0].id.startswith("source-analysis-")
 
 
 # ===================================================================
@@ -318,7 +318,8 @@ class TestFastPath:
         assert len(tasks) == 2
         assert tasks[0].category == TaskCategory.RESEARCH
         assert tasks[1].category == TaskCategory.CONFIRM
-        assert tasks[1].dependencies == ["fast-design"]
+        assert len(tasks[1].dependencies) == 1
+        assert tasks[1].dependencies[0].startswith("fast-design-")
 
     def test_plan_research_phase_produces_four_tasks(self) -> None:
         ctx = PlanningContext(intent="build", charm_name="redis")
@@ -358,13 +359,13 @@ class TestSprint:
         ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
         tasks = plan_sprint_deploy(ctx)
         assert len(tasks) == 2
-        assert tasks[0].id == "sprint-build"
+        assert tasks[0].id.startswith("sprint-build-")
         assert tasks[0].title.startswith(SPRINT_BUILD_PREFIX)
         assert tasks[0].category == TaskCategory.BUILD
-        assert tasks[1].id == "sprint-deploy"
+        assert tasks[1].id.startswith("sprint-deploy-")
         assert tasks[1].title.startswith(SPRINT_DEPLOY_PREFIX)
         assert tasks[1].category == TaskCategory.DEPLOY
-        assert tasks[1].dependencies == ["sprint-build"]
+        assert tasks[1].dependencies == [tasks[0].id]
         assert "flask-framework" in tasks[0].description
 
     def test_plan_sprint_deploy_machine(self) -> None:
@@ -428,7 +429,7 @@ class TestOneShotBuild:
         ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
         tasks = plan_one_shot_build(ctx, "## Design\nA flask charm.")
         assert len(tasks) == 1
-        assert tasks[0].id == "one-shot-build"
+        assert tasks[0].id.startswith("one-shot-build-")
         assert tasks[0].category == TaskCategory.BUILD
         assert tasks[0].dependencies == []
 
@@ -701,8 +702,8 @@ class TestPlanTasksTool:
 
         assert result.success
         task_ids = [t.id for t in queue.all_tasks()]
-        assert "audit-charm" in task_ids
-        assert "confirm-improvements" in task_ids
+        assert any(tid.startswith("audit-charm-") for tid in task_ids)
+        assert any(tid.startswith("confirm-improvements-") for tid in task_ids)
         # No LLM call — improvement planning is deterministic.
         assert provider._call_count == 0
 
@@ -1025,9 +1026,9 @@ class TestImprovementPath:
         tasks = plan_improvement_phase(ctx)
 
         assert len(tasks) == 2
-        assert tasks[0].id == "audit-charm"
+        assert tasks[0].id.startswith("audit-charm-")
         assert tasks[0].category == TaskCategory.RESEARCH
-        assert tasks[1].id == "confirm-improvements"
+        assert tasks[1].id.startswith("confirm-improvements-")
         assert tasks[1].category == TaskCategory.CONFIRM
 
     def test_plan_improvement_phase_has_correct_dependencies(self) -> None:
@@ -1038,7 +1039,7 @@ class TestImprovementPath:
         tasks = plan_improvement_phase(ctx)
 
         assert tasks[0].dependencies == []
-        assert tasks[1].dependencies == ["audit-charm"]
+        assert tasks[1].dependencies == [tasks[0].id]
 
     def test_plan_improvement_phase_includes_charm_path(self) -> None:
         ctx = PlanningContext(
@@ -1062,7 +1063,7 @@ class TestImprovementPath:
 
         tasks = await planner.plan(ctx)
 
-        assert tasks[0].id == "audit-charm"
+        assert tasks[0].id.startswith("audit-charm-")
         # No LLM call for deterministic templates.
         assert provider._call_count == 0
 
@@ -1091,7 +1092,7 @@ class TestPlanImprovementFixes:
         gaps = {"cos_tracing": True, "cos_metrics": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        obs_tasks = [t for t in tasks if t.id == "fill-observability"]
+        obs_tasks = [t for t in tasks if t.id.startswith("fill-observability-")]
         assert len(obs_tasks) == 1
         assert obs_tasks[0].category == TaskCategory.BUILD
 
@@ -1099,28 +1100,28 @@ class TestPlanImprovementFixes:
         gaps = {"unit_tests": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        test_tasks = [t for t in tasks if t.id == "fill-tests"]
+        test_tasks = [t for t in tasks if t.id.startswith("fill-tests-")]
         assert len(test_tasks) == 1
 
     def test_deprecated_apis_produce_modernise_task(self) -> None:
         gaps = {"deprecated_apis": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        mod_tasks = [t for t in tasks if t.id == "modernise-code"]
+        mod_tasks = [t for t in tasks if t.id.startswith("modernise-code-")]
         assert len(mod_tasks) == 1
 
     def test_listing_gaps_produce_listing_task(self) -> None:
         gaps = {"readme": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        listing_tasks = [t for t in tasks if t.id == "listing-readiness"]
+        listing_tasks = [t for t in tasks if t.id.startswith("listing-readiness-")]
         assert len(listing_tasks) == 1
 
     def test_icon_gap_produces_listing_task(self) -> None:
         gaps = {"icon": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        listing_tasks = [t for t in tasks if t.id == "listing-readiness"]
+        listing_tasks = [t for t in tasks if t.id.startswith("listing-readiness-")]
         assert len(listing_tasks) == 1
         assert "generate_icon" in listing_tasks[0].description
 
@@ -1128,18 +1129,19 @@ class TestPlanImprovementFixes:
         gaps = {"cos_tracing": True, "unit_tests": True, "deprecated_apis": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        validate = [t for t in tasks if t.id == "validate-improvements"]
+        validate = [t for t in tasks if t.id.startswith("validate-improvements-")]
         assert len(validate) == 1
-        assert "fill-observability" in validate[0].dependencies
-        assert "fill-tests" in validate[0].dependencies
-        assert "modernise-code" in validate[0].dependencies
+        assert any(d.startswith("fill-observability-") for d in validate[0].dependencies)
+        assert any(d.startswith("fill-tests-") for d in validate[0].dependencies)
+        assert any(d.startswith("modernise-code-") for d in validate[0].dependencies)
 
     def test_fix_tasks_depend_on_confirm(self) -> None:
+        confirm_id = "confirm-improvements-abc12345"
         gaps = {"cos_tracing": True}
-        tasks = plan_improvement_fixes(self._ctx(), gaps)
+        tasks = plan_improvement_fixes(self._ctx(), gaps, confirm_task_id=confirm_id)
 
-        obs = [t for t in tasks if t.id == "fill-observability"][0]
-        assert "confirm-improvements" in obs.dependencies
+        obs = [t for t in tasks if t.id.startswith("fill-observability-")][0]
+        assert confirm_id in obs.dependencies
 
     def test_all_fix_tasks_use_primary_model(self) -> None:
         gaps = {
@@ -1157,32 +1159,34 @@ class TestPlanImprovementFixes:
         gaps = {"cos_tracing": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        deploy = [t for t in tasks if t.id == "deploy-verify-improvements"]
+        deploy = [t for t in tasks if t.id.startswith("deploy-verify-improvements-")]
         assert len(deploy) == 1
         assert deploy[0].category == TaskCategory.DEPLOY
-        assert "validate-improvements" in deploy[0].dependencies
+        validate = [t for t in tasks if t.id.startswith("validate-improvements-")]
+        assert validate[0].id in deploy[0].dependencies
 
     def test_diff_review_task_at_end(self) -> None:
         gaps = {"cos_tracing": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        review = [t for t in tasks if t.id == "diff-review"]
+        review = [t for t in tasks if t.id.startswith("diff-review-")]
         assert len(review) == 1
         assert review[0].category == TaskCategory.RESEARCH
-        assert "deploy-verify-improvements" in review[0].dependencies
+        deploy = [t for t in tasks if t.id.startswith("deploy-verify-improvements-")]
+        assert deploy[0].id in review[0].dependencies
 
     def test_no_deploy_or_review_without_fixes(self) -> None:
         gaps: dict[str, bool] = {}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        assert not any(t.id == "deploy-verify-improvements" for t in tasks)
-        assert not any(t.id == "diff-review" for t in tasks)
+        assert not any(t.id.startswith("deploy-verify-improvements-") for t in tasks)
+        assert not any(t.id.startswith("diff-review-") for t in tasks)
 
     def test_observability_description_mentions_dashboards(self) -> None:
         gaps = {"cos_tracing": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        obs = [t for t in tasks if t.id == "fill-observability"][0]
+        obs = [t for t in tasks if t.id.startswith("fill-observability-")][0]
         assert "Grafana dashboard" in obs.description
         assert "alert rules" in obs.description
 
@@ -1190,7 +1194,7 @@ class TestPlanImprovementFixes:
         gaps = {"integration_tests": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        test_task = [t for t in tasks if t.id == "fill-tests"][0]
+        test_task = [t for t in tasks if t.id.startswith("fill-tests-")][0]
         assert "Jubilant" in test_task.description
         assert "run_charm_tests" in test_task.description
 
@@ -1198,16 +1202,17 @@ class TestPlanImprovementFixes:
         gaps = {"cos_tracing": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        assess = [t for t in tasks if t.id == "assess-operational-readiness"]
+        assess = [t for t in tasks if t.id.startswith("assess-operational-readiness-")]
         assert len(assess) == 1
         assert assess[0].category == TaskCategory.RESEARCH
-        assert "deploy-verify-improvements" in assess[0].dependencies
+        deploy = [t for t in tasks if t.id.startswith("deploy-verify-improvements-")]
+        assert deploy[0].id in assess[0].dependencies
 
     def test_no_operability_without_fixes(self) -> None:
         gaps: dict[str, bool] = {}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        assert not any(t.id == "assess-operational-readiness" for t in tasks)
+        assert not any(t.id.startswith("assess-operational-readiness-") for t in tasks)
 
     def test_full_pipeline_task_count(self) -> None:
         """With all gaps: 4 fixes + validate + deploy + review + assess = 8."""
@@ -1221,14 +1226,14 @@ class TestPlanImprovementFixes:
 
         assert len(tasks) == 8
         ids = [t.id for t in tasks]
-        assert "fill-observability" in ids
-        assert "fill-tests" in ids
-        assert "modernise-code" in ids
-        assert "listing-readiness" in ids
-        assert "validate-improvements" in ids
-        assert "deploy-verify-improvements" in ids
-        assert "assess-operational-readiness" in ids
-        assert "diff-review" in ids
+        assert any(i.startswith("fill-observability-") for i in ids)
+        assert any(i.startswith("fill-tests-") for i in ids)
+        assert any(i.startswith("modernise-code-") for i in ids)
+        assert any(i.startswith("listing-readiness-") for i in ids)
+        assert any(i.startswith("validate-improvements-") for i in ids)
+        assert any(i.startswith("deploy-verify-improvements-") for i in ids)
+        assert any(i.startswith("assess-operational-readiness-") for i in ids)
+        assert any(i.startswith("diff-review-") for i in ids)
 
 
 # ===================================================================
@@ -1247,8 +1252,9 @@ class TestDay2OpsPhase:
     def test_task_ids(self) -> None:
         ctx = PlanningContext(intent="build", charm_name="redis-k8s")
         tasks = plan_day2_ops_phase(ctx, depends_on="deploy-charm")
-        ids = [t.id for t in tasks]
-        assert ids == ["day2-research", "day2-synthesis", "confirm-day2"]
+        assert tasks[0].id.startswith("day2-research-")
+        assert tasks[1].id.startswith("day2-synthesis-")
+        assert tasks[2].id.startswith("confirm-day2-")
 
     def test_categories(self) -> None:
         ctx = PlanningContext(intent="build", charm_name="redis-k8s")
@@ -1265,8 +1271,8 @@ class TestDay2OpsPhase:
     def test_dependency_chain(self) -> None:
         ctx = PlanningContext(intent="build", charm_name="redis-k8s")
         tasks = plan_day2_ops_phase(ctx, depends_on="deploy")
-        assert tasks[1].dependencies == ["day2-research"]
-        assert tasks[2].dependencies == ["day2-synthesis"]
+        assert tasks[1].dependencies == [tasks[0].id]
+        assert tasks[2].dependencies == [tasks[1].id]
 
     def test_workload_in_titles(self) -> None:
         ctx = PlanningContext(intent="build", charm_name="postgresql-k8s")
@@ -1479,7 +1485,7 @@ class TestPlanOperabilityAssessment:
 
     def test_confirm_depends_on_assessment(self) -> None:
         tasks = plan_operability_assessment(self._ctx())
-        assert tasks[1].dependencies == ["assess-operational-readiness"]
+        assert tasks[1].dependencies == [tasks[0].id]
 
     def test_depends_on_parameter(self) -> None:
         tasks = plan_operability_assessment(self._ctx(), depends_on="acceptance-1")
@@ -1571,14 +1577,19 @@ class TestPlanOperabilityFixes:
         assert tasks == []
 
     def test_fix_tasks_depend_on_confirm(self) -> None:
+        confirm_id = "confirm-operability-abc12345"
         findings = {
             "must_fix": ["[Best Practices] Sets status for missing config"],
             "should_fix": [],
         }
-        tasks = plan_operability_fixes(self._ctx(), findings)
+        tasks = plan_operability_fixes(
+            self._ctx(),
+            findings,
+            confirm_task_id=confirm_id,
+        )
         fix_tasks = [t for t in tasks if "re-assess" not in t.title.lower()]
         for t in fix_tasks:
-            assert "confirm-operability" in t.dependencies
+            assert confirm_id in t.dependencies
 
     def test_all_fix_tasks_use_primary_model(self) -> None:
         findings = {
@@ -1591,3 +1602,39 @@ class TestPlanOperabilityFixes:
         tasks = plan_operability_fixes(self._ctx(), findings)
         for t in tasks:
             assert t.model_hint == ModelHint.PRIMARY
+
+
+# ===================================================================
+# TestUniqueTaskIDs
+# ===================================================================
+
+
+class TestUniqueTaskIDs:
+    """Verify that planner functions produce unique (suffixed) task IDs."""
+
+    def test_sprint_ids_have_suffix(self) -> None:
+        """Sprint task IDs must not be bare strings — they include a random suffix."""
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="app")
+        tasks = plan_sprint_deploy(ctx)
+        for task in tasks:
+            # The suffix adds a dash and 8 hex characters after the base name.
+            assert len(task.id) > len("sprint-build")
+            assert "-" in task.id[len("sprint-") :]
+
+    def test_two_plans_produce_different_ids(self) -> None:
+        """Running the same planner function twice yields distinct IDs."""
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="app")
+        first = plan_sprint_deploy(ctx)
+        second = plan_sprint_deploy(ctx)
+        first_ids = {t.id for t in first}
+        second_ids = {t.id for t in second}
+        assert first_ids.isdisjoint(second_ids)
+
+    def test_research_ids_have_suffix(self) -> None:
+        ctx = PlanningContext(intent="build", charm_name="redis")
+        tasks = plan_research_phase(ctx)
+        for task in tasks:
+            # The last 8 characters (after the final dash) are a hex suffix.
+            suffix = task.id.rsplit("-", 1)[-1]
+            assert len(suffix) == 8
+            int(suffix, 16)  # Validates it is hex.

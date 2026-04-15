@@ -732,8 +732,8 @@ class TestHandleImprovementConfirmation:
 
         assert len(fix_tasks) > 0
         task_ids = [t.id for t in fix_tasks]
-        assert "fill-observability" in task_ids
-        assert "fill-tests" in task_ids
+        assert any(tid.startswith("fill-observability-") for tid in task_ids)
+        assert any(tid.startswith("fill-tests-") for tid in task_ids)
 
     @pytest.mark.asyncio
     async def test_no_tasks_when_confirm_not_found(self) -> None:

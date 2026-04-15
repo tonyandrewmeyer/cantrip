@@ -713,7 +713,7 @@ class CantripAgent:
             existing_charm_path=str(self.state.charm_path) if self.state.charm_path else ".",
         )
 
-        fix_tasks = plan_improvement_fixes(context, gaps)
+        fix_tasks = plan_improvement_fixes(context, gaps, confirm_task_id=confirm_task_id)
         self._work_queue.add_tasks(fix_tasks)
 
         self._ensure_store()

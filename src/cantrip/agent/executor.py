@@ -39,6 +39,12 @@ DEFAULT_MAX_CONCURRENCY = 3
 # Maximum number of consecutive noops before escalating to the user.
 _MAX_NOOP_COUNT = 2
 
+# After this many consecutive loop errors the executor gives up.
+_MAX_CONSECUTIVE_ERRORS = 10
+
+# Cooldown after an unexpected loop error to prevent tight spin.
+_ERROR_COOLDOWN = 5.0
+
 # Called when a task completes or fails, for TUI/conversation-loop coordination.
 TaskEventCallback = Callable[[AgentTask], None] | None
 
@@ -287,6 +293,8 @@ class BackgroundExecutor:
         self._semaphore: asyncio.Semaphore | None = None
         # Shared throttle so concurrent subagents coordinate on rate limits.
         self._throttle = ProviderThrottle()
+        # Consecutive loop-level errors; used to detect persistent failures.
+        self._consecutive_errors = 0
 
     # -- Lifecycle -----------------------------------------------------------
 
@@ -309,6 +317,11 @@ class BackgroundExecutor:
     def draining(self) -> bool:
         """Whether the executor is draining (finishing in-flight, no new tasks)."""
         return self._draining
+
+    @property
+    def healthy(self) -> bool:
+        """Whether the executor is running and not in a persistent error state."""
+        return self.running and self._consecutive_errors < _MAX_CONSECUTIVE_ERRORS
 
     def start(self) -> None:
         """Start the background poll-and-execute loop.
@@ -462,6 +475,7 @@ class BackgroundExecutor:
                         self._active_tasks.add(at)
                         at.add_done_callback(self._active_tasks.discard)
                         # Check for more ready tasks without sleeping.
+                        self._consecutive_errors = 0
                         continue
 
                 elif decision.action == RouteAction.WAIT_FOR_CONFIRMATION:
@@ -469,12 +483,30 @@ class BackgroundExecutor:
                     if task is not None and task.status == TaskStatus.PENDING:
                         self._handle_confirm(task)
 
+                # A successful iteration — reset the error counter.
+                self._consecutive_errors = 0
+
                 # WAIT_FOR_IN_FLIGHT and IDLE both sleep before re-checking.
                 await asyncio.sleep(_POLL_INTERVAL)
             except asyncio.CancelledError:
                 raise
-            except (KeyError, RuntimeError, OSError) as exc:
-                log.warning("Unexpected error in executor loop: %s", exc)
+            except Exception as exc:
+                self._consecutive_errors += 1
+                log.error(
+                    "Unexpected error in executor loop (%d/%d): %s",
+                    self._consecutive_errors,
+                    _MAX_CONSECUTIVE_ERRORS,
+                    exc,
+                    exc_info=True,
+                )
+                if self._consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                    log.critical(
+                        "Executor hit %d consecutive errors — stopping work loop",
+                        self._consecutive_errors,
+                    )
+                    break
+                # Cooldown to avoid a tight error spin.
+                await asyncio.sleep(_ERROR_COOLDOWN)
 
         # Wait for in-flight tasks to finish on shutdown.
         if self._active_tasks:

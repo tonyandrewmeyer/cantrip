@@ -89,15 +89,23 @@ class WorkQueue:
     # -- Adding tasks -------------------------------------------------------
 
     def add_task(self, task: AgentTask) -> None:
-        """Append a single task and fire the callback."""
+        """Append a single task and fire the callback.
+
+        Raises ``ValueError`` if a task with the same ID already exists.
+        """
+        if any(t.id == task.id for t in self._tasks):
+            raise ValueError(f"Duplicate task ID {task.id!r} — IDs must be unique within a queue")
         self._tasks.append(task)
         self._notify(task)
 
     def add_tasks(self, tasks: list[AgentTask]) -> None:
-        """Bulk-add tasks (for planner output)."""
+        """Bulk-add tasks (for planner output).
+
+        Raises ``ValueError`` if any task ID collides with an existing
+        task or with another task in the same batch.
+        """
         for task in tasks:
-            self._tasks.append(task)
-            self._notify(task)
+            self.add_task(task)
 
     # -- Scheduling ---------------------------------------------------------
 

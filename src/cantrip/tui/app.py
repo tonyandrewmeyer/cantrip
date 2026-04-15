@@ -378,7 +378,7 @@ class CantripApp(App):
                 task = self._agent.work_queue.get_task(task_id)
                 if task is None:
                     return
-                if task_id == "confirm-improvements":
+                if task_id.startswith("confirm-improvements"):
                     self._present_improvement_confirmation(task)
                 else:
                     self._present_design_questions(task)

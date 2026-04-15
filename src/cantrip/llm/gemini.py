@@ -27,7 +27,6 @@ from cantrip.llm.base import (
 )
 
 _CONTEXT_WINDOWS: dict[str, int] = {
-    "gemini-2.0-flash": 1_048_576,
     "gemini-3-flash-preview": 1_048_576,
     "gemini-3-pro-preview": 1_048_576,
     "gemini-3.1-pro-preview": 1_048_576,

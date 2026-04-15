@@ -2405,11 +2405,11 @@ capabilities that limit the agent's effectiveness.
 - [ ] Add `thinking_budget` to `LLMProvider` abstract interface
 - [ ] Update `ModelInfoBar` thinking detection to cover Claude models, not just Gemini-3
 
-### 27.5 Medium — Model Routing Map Gaps
+### 27.5 Medium — Model Routing Map Gaps ✅
 
-- [ ] Add missing `gemini-3.1-pro-preview` → `gemini-3-flash-preview` to `_LIGHT_MODEL_MAP`
-- [ ] Clean up stale `gemini-2.0-flash` entry in `_CONTEXT_WINDOWS`
-- [ ] Add `claude-opus-4-6-*` to `_CONTEXT_WINDOWS` explicitly
+- [x] Add missing `gemini-3.1-pro-preview` → `gemini-3-flash-preview` to `_LIGHT_MODEL_MAP`
+- [x] Clean up stale `gemini-2.0-flash` entry in `_CONTEXT_WINDOWS`
+- [x] Add `claude-opus-4-6-*` to `_CONTEXT_WINDOWS` explicitly
 
 ### 27.6 Low — Inference Snap Streaming Usage
 
@@ -2418,9 +2418,9 @@ capabilities that limit the agent's effectiveness.
 - [ ] Add `asyncio.to_thread()` wrapper around blocking `discover_snap_endpoint` /
   `_probe_server` calls in `__init__`
 
-### 27.7 Low — Retry Jitter
+### 27.7 Low — Retry Jitter ✅
 
-- [ ] Add `random.uniform(0, base_delay * 0.25)` jitter to `complete_with_retry()`
+- [x] Add `random.uniform(0, base_delay * 0.25)` jitter to `complete_with_retry()`
   to prevent thundering-herd retries from concurrent subagents
 
 **Exit criteria:** Claude caching active and verified via usage metrics. Gemini parallel
@@ -2448,12 +2448,12 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 - [ ] Fix: append a short suffix (e.g. `sprint-build-{uuid4()[:8]}`) to all static IDs
 - [ ] Add duplicate-ID detection in `WorkQueue.add_task()` — reject or overwrite
 
-### 28.3 High — Executor Exception Catch Too Narrow
+### 28.3 High — Executor Exception Catch Too Narrow ✓
 
-- [ ] `executor._run_loop` catches only `(KeyError, RuntimeError, OSError)` — any other
+- [x] `executor._run_loop` catches only `(KeyError, RuntimeError, OSError)` — any other
   exception type silently kills the autonomous work loop with no recovery
-- [ ] Widen to `Exception` with ERROR-level logging and a cooldown before retry
-- [ ] Add a health-check mechanism so the TUI can surface "executor stopped" to the user
+- [x] Widen to `Exception` with ERROR-level logging and a cooldown before retry
+- [x] Add a health-check mechanism so the TUI can surface "executor stopped" to the user
 
 ### 28.4 High — Subagent Context Window Management
 
@@ -2463,11 +2463,11 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 - [ ] Consider increasing `MAX_SUBAGENT_ROUNDS` from 8 to 12 for BUILD tasks
   (complex builds with tests and fixes regularly exhaust 8 rounds)
 
-### 28.5 High — Concurrent Tool Execution in Subagents
+### 28.5 High — Concurrent Tool Execution in Subagents ✅
 
-- [ ] Tool calls within each subagent round are executed sequentially (`for tc in ...`)
-- [ ] Use `asyncio.gather()` for independent tool calls in the same round
-- [ ] Significant throughput win for tasks that batch 4–6 read/grep calls at once
+- [x] Tool calls within each subagent round are executed sequentially (`for tc in ...`)
+- [x] Use `asyncio.gather()` for independent tool calls in the same round
+- [x] Significant throughput win for tasks that batch 4–6 read/grep calls at once
 
 ### 28.6 Medium — `process_message_streaming` Not Actually Streaming
 
