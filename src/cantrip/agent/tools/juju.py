@@ -163,6 +163,14 @@ class JujuDeployTool(Tool):
                     "description": "Grant the charm access to cloud credentials.",
                     "default": False,
                 },
+                "channel": {
+                    "type": "string",
+                    "description": "Charmhub channel to deploy from (e.g. 'latest/edge').",
+                },
+                "base": {
+                    "type": "string",
+                    "description": "Ubuntu base for the charm (e.g. 'ubuntu@24.04').",
+                },
             },
             "required": ["charm"],
         }
@@ -176,6 +184,8 @@ class JujuDeployTool(Tool):
         num_units: int = 1,
         resources: dict[str, str] | None = None,
         trust: bool = False,
+        channel: str | None = None,
+        base: str | None = None,
     ) -> ToolResult:
         """Deploy a charm."""
         if not _juju_available():
@@ -223,6 +233,10 @@ class JujuDeployTool(Tool):
                 deploy_args["resources"] = resources
             if trust:
                 deploy_args["trust"] = True
+            if channel:
+                deploy_args["channel"] = channel
+            if base:
+                deploy_args["base"] = base
 
             await asyncio.wait_for(
                 asyncio.to_thread(functools.partial(juju.deploy, **deploy_args)),
@@ -286,6 +300,10 @@ class JujuRefreshTool(Tool):
                         "For 12-factor charms: {'oci-image': 'localhost:32000/my-app:latest'}"
                     ),
                 },
+                "channel": {
+                    "type": "string",
+                    "description": "Charmhub channel to refresh from (e.g. 'latest/edge').",
+                },
             },
             "required": ["app_name"],
         }
@@ -296,6 +314,7 @@ class JujuRefreshTool(Tool):
         path: str | None = None,
         model: str | None = None,
         resources: dict[str, str] | None = None,
+        channel: str | None = None,
     ) -> ToolResult:
         """Refresh a charm."""
         if not _juju_available():
@@ -323,6 +342,8 @@ class JujuRefreshTool(Tool):
                 refresh_args["path"] = path
             if resources:
                 refresh_args["resources"] = resources
+            if channel:
+                refresh_args["channel"] = channel
 
             await _run_juju(juju.refresh, **refresh_args)
 
@@ -470,10 +491,17 @@ class JujuSSHTool(Tool):
             juju = jubilant.Juju(model=model)
             result = await _run_juju(juju.ssh, unit, command)
 
+            # Cap output to prevent context overflow.
+            output = result if isinstance(result, str) else str(result)
+            truncated = False
+            if len(output) > 8000:
+                output = output[:8000]
+                truncated = True
+
             return ToolResult(
                 success=True,
-                output=result,
-                data={"unit": unit, "command": command},
+                output=output + ("\n…(output truncated at 8000 chars)" if truncated else ""),
+                data={"unit": unit, "command": command, "truncated": truncated},
             )
         except TimeoutError:
             return ToolResult(
@@ -1926,3 +1954,150 @@ class JujuListOffersTool(Tool):
                 output="",
                 error=str(e),
             )
+
+
+class JujuRemoveApplicationTool(Tool):
+    """Tool to remove a single application from a model."""
+
+    @property
+    def name(self) -> str:
+        return "juju_remove_application"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Remove a single application from the current Juju model. "
+            "This does not destroy the model itself."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string",
+                    "description": "Application name to remove",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified)",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Force removal even if the application has errors.",
+                    "default": False,
+                },
+            },
+            "required": ["app_name"],
+        }
+
+    async def execute(
+        self,
+        app_name: str,
+        model: str | None = None,
+        force: bool = False,
+    ) -> ToolResult:
+        """Remove an application."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            from cantrip.agent.tools.juju_subprocess import run_juju
+
+            args = ["remove-application", app_name, "--no-prompt"]
+            if force:
+                args.append("--force")
+            result = await asyncio.to_thread(run_juju, args, model)
+
+            if result.returncode != 0:
+                return ToolResult(
+                    success=False,
+                    output=result.stdout,
+                    error=result.stderr or f"Failed to remove {app_name}",
+                )
+
+            return ToolResult(
+                success=True,
+                output=f"Removed application {app_name}.",
+                data={"app_name": app_name},
+            )
+        except (TimeoutError, OSError) as e:
+            return ToolResult(success=False, output="", error=str(e))
+
+
+class JujuShowUnitTool(Tool):
+    """Tool to show detailed information about a unit."""
+
+    @property
+    def name(self) -> str:
+        return "juju_show_unit"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Show detailed information about a Juju unit, including "
+            "relation data, opened ports, and workload status."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "unit": {
+                    "type": "string",
+                    "description": "Unit name (e.g. 'my-app/0')",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified)",
+                },
+            },
+            "required": ["unit"],
+        }
+
+    async def execute(
+        self,
+        unit: str,
+        model: str | None = None,
+    ) -> ToolResult:
+        """Run juju show-unit."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            from cantrip.agent.tools.juju_subprocess import run_juju
+
+            args = ["show-unit", unit, "--format", "json"]
+            result = await asyncio.to_thread(run_juju, args, model)
+
+            if result.returncode != 0:
+                return ToolResult(
+                    success=False,
+                    output=result.stdout,
+                    error=result.stderr or f"Failed to show unit {unit}",
+                )
+
+            # Parse and re-format for readability.
+            try:
+                data = json.loads(result.stdout)
+                output = json.dumps(data, indent=2)
+            except json.JSONDecodeError:
+                output = result.stdout
+
+            return ToolResult(
+                success=True,
+                output=output,
+                data={"unit": unit},
+            )
+        except (TimeoutError, OSError) as e:
+            return ToolResult(success=False, output="", error=str(e))

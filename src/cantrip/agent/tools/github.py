@@ -158,6 +158,11 @@ class GhPrCreateTool(Tool):
                     "description": "Path to the git repository",
                     "default": ".",
                 },
+                "draft": {
+                    "type": "boolean",
+                    "description": "Create as a draft pull request",
+                    "default": False,
+                },
             },
             "required": ["title", "body"],
         }
@@ -168,6 +173,7 @@ class GhPrCreateTool(Tool):
         body: str,
         base: str | None = None,
         path: str = ".",
+        draft: bool = False,
     ) -> ToolResult:
         """Run gh pr create."""
         if not shutil.which("gh"):
@@ -184,6 +190,8 @@ class GhPrCreateTool(Tool):
         cmd = ["gh", "pr", "create", "--title", title, "--body", body]
         if base:
             cmd.extend(["--base", base])
+        if draft:
+            cmd.append("--draft")
 
         try:
             result = subprocess.run(
@@ -308,3 +316,171 @@ class GhIssueListTool(Tool):
                 output="",
                 error="gh issue list timed out",
             )
+
+
+class GhPrListTool(Tool):
+    """Tool to list pull requests on a GitHub repository."""
+
+    @property
+    def name(self) -> str:
+        return "gh_pr_list"
+
+    @property
+    def description(self) -> str:
+        return "List pull requests on a GitHub repository using the gh CLI."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "repo": {
+                    "type": "string",
+                    "description": "Repository in OWNER/REPO format. Defaults to the current repository.",
+                },
+                "state": {
+                    "type": "string",
+                    "description": "Filter by PR state",
+                    "enum": ["open", "closed", "merged", "all"],
+                    "default": "open",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of PRs to list",
+                    "default": 10,
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to the git repository (used when repo is not specified)",
+                    "default": ".",
+                },
+            },
+        }
+
+    async def execute(
+        self,
+        repo: str | None = None,
+        state: str = "open",
+        limit: int = 10,
+        path: str = ".",
+    ) -> ToolResult:
+        """Run gh pr list."""
+        if not shutil.which("gh"):
+            return ToolResult(success=False, output="", error="gh CLI not found. Is it installed?")
+
+        auth_err = _check_gh_auth()
+        if auth_err:
+            return ToolResult(success=False, output="", error=auth_err)
+
+        cmd = ["gh", "pr", "list", "--state", state, "--limit", str(limit)]
+        if repo:
+            cmd.extend(["--repo", repo])
+
+        try:
+            result = subprocess.run(
+                cmd, cwd=path, capture_output=True, text=True, timeout=_GH_TIMEOUT
+            )
+            if result.returncode != 0:
+                return ToolResult(
+                    success=False,
+                    output=result.stdout,
+                    error=result.stderr or "gh pr list failed",
+                )
+            output = result.stdout.strip()
+            return ToolResult(success=True, output=output or "No pull requests found.")
+        except subprocess.TimeoutExpired:
+            return ToolResult(success=False, output="", error="gh pr list timed out")
+
+
+class GhPrViewTool(Tool):
+    """Tool to view details of a pull request."""
+
+    @property
+    def name(self) -> str:
+        return "gh_pr_view"
+
+    @property
+    def description(self) -> str:
+        return "View details of a GitHub pull request including status, reviews, and checks."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "pr_number": {
+                    "type": "integer",
+                    "description": "Pull request number",
+                },
+                "repo": {
+                    "type": "string",
+                    "description": "Repository in OWNER/REPO format. Defaults to the current repository.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to the git repository (used when repo is not specified)",
+                    "default": ".",
+                },
+            },
+            "required": ["pr_number"],
+        }
+
+    async def execute(
+        self,
+        pr_number: int,
+        repo: str | None = None,
+        path: str = ".",
+    ) -> ToolResult:
+        """Run gh pr view."""
+        if not shutil.which("gh"):
+            return ToolResult(success=False, output="", error="gh CLI not found. Is it installed?")
+
+        auth_err = _check_gh_auth()
+        if auth_err:
+            return ToolResult(success=False, output="", error=auth_err)
+
+        cmd = [
+            "gh",
+            "pr",
+            "view",
+            str(pr_number),
+            "--json",
+            "number,title,state,body,author,reviewDecision,url,headRefName,baseRefName",
+        ]
+        if repo:
+            cmd.extend(["--repo", repo])
+
+        try:
+            result = subprocess.run(
+                cmd, cwd=path, capture_output=True, text=True, timeout=_GH_TIMEOUT
+            )
+            if result.returncode != 0:
+                return ToolResult(
+                    success=False,
+                    output=result.stdout,
+                    error=result.stderr or "gh pr view failed",
+                )
+
+            import json
+
+            try:
+                data = json.loads(result.stdout)
+                lines = [
+                    f"**PR #{data.get('number')}** — {data.get('title', '')}",
+                    f"State: {data.get('state', 'unknown')}",
+                    f"Author: {data.get('author', {}).get('login', 'unknown')}",
+                    f"Branch: {data.get('headRefName', '')} → {data.get('baseRefName', '')}",
+                    f"Review: {data.get('reviewDecision', 'none')}",
+                    f"URL: {data.get('url', '')}",
+                ]
+                body = data.get("body", "")
+                if body:
+                    preview = body[:500]
+                    if len(body) > 500:
+                        preview += "\n…(truncated)"
+                    lines.append(f"\n{preview}")
+                return ToolResult(success=True, output="\n".join(lines), data=data)
+            except json.JSONDecodeError:
+                return ToolResult(success=True, output=result.stdout.strip())
+        except subprocess.TimeoutExpired:
+            return ToolResult(success=False, output="", error="gh pr view timed out")

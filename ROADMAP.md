@@ -2620,24 +2620,24 @@ existing tool robustness, and fix security issues.
   out of the shell string and allows arbitrary command execution on the Juju unit
 - [x] Fix: base64-encode the script and decode on the remote side, or use a temp file
 
-### 30.2 High — Missing Juju Tools
+### 30.2 High — Missing Juju Tools ✅
 
-- [ ] `juju_remove_application` — remove a single app without destroying the whole model
-- [ ] `juju_config_set` — change config on a running application (`juju config app key=val`)
-- [ ] `juju_show_unit` — expose `juju show-unit` as a first-class tool (currently
+- [x] `juju_remove_application` — remove a single app without destroying the whole model
+- [x] `juju_config_set` — already covered by existing `juju_config` tool (get/set)
+- [x] `juju_show_unit` — expose `juju show-unit` as a first-class tool (currently
   only used internally in acceptance tests)
-- [ ] Add `channel` parameter to `JujuDeployTool` and `JujuRefreshTool`
-- [ ] Add `base` parameter to `JujuDeployTool` for Ubuntu version selection
-- [ ] Cap `JujuSSHTool` output length (currently unbounded — can overflow context)
+- [x] Add `channel` parameter to `JujuDeployTool` and `JujuRefreshTool`
+- [x] Add `base` parameter to `JujuDeployTool` for Ubuntu version selection
+- [x] Cap `JujuSSHTool` output length (currently unbounded — can overflow context)
 
-### 30.3 High — Missing Git Tools
+### 30.3 High — Missing Git Tools ✅
 
-- [ ] `git_branch` — create and list branches
-- [ ] `git_checkout` — switch branches (essential for multi-branch workflows)
-- [ ] `git_stash` / `git_stash_pop` — stash and restore changes
-- [ ] Add `branch` and `path` filter parameters to `GitLogTool`
-- [ ] Add `draft` parameter to `GhPrCreateTool`
-- [ ] Add `gh_pr_list` and `gh_pr_view` tools
+- [x] `git_branch` — create and list branches
+- [x] `git_checkout` — switch branches (essential for multi-branch workflows)
+- [x] `git_stash` / `git_stash_pop` — stash and restore changes
+- [x] Add `branch` and `path` filter parameters to `GitLogTool`
+- [x] Add `draft` parameter to `GhPrCreateTool`
+- [x] Add `gh_pr_list` and `gh_pr_view` tools
 
 ### 30.4 Medium — `ReadFileTool` Line Range Support ✅
 

@@ -295,6 +295,14 @@ class GitLogTool(Tool):
                     "description": "Use one-line format for each commit",
                     "default": False,
                 },
+                "branch": {
+                    "type": "string",
+                    "description": "Branch name to show history for (defaults to current branch)",
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Show only commits touching this file path",
+                },
             },
         }
 
@@ -303,11 +311,17 @@ class GitLogTool(Tool):
         path: str = ".",
         max_count: int = 10,
         oneline: bool = False,
+        branch: str | None = None,
+        file_path: str | None = None,
     ) -> ToolResult:
         """Run git log."""
         args = ["log", f"--max-count={max_count}"]
         if oneline:
             args.append("--oneline")
+        if branch:
+            args.append(branch)
+        if file_path:
+            args.extend(["--", file_path])
 
         result = _run_git(args, cwd=path)
         if result.success and not result.output:
@@ -477,4 +491,149 @@ class GitPushTool(Tool):
             result.output = result.output or "Pushed successfully."
             result.data = {"remote": remote, "branch": branch}
 
+        return result
+
+
+class GitBranchTool(Tool):
+    """Tool to create or list git branches."""
+
+    @property
+    def name(self) -> str:
+        return "git_branch"
+
+    @property
+    def description(self) -> str:
+        return "Create a new git branch or list existing branches."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Branch name to create. Omit to list branches.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to the git repository",
+                    "default": ".",
+                },
+            },
+        }
+
+    async def execute(
+        self,
+        name: str | None = None,
+        path: str = ".",
+    ) -> ToolResult:
+        """Create or list branches."""
+        if name:
+            return _run_git(["checkout", "-b", name], cwd=path)
+        result = _run_git(["branch", "--list", "-a"], cwd=path)
+        if result.success and not result.output:
+            result.output = "No branches found."
+        return result
+
+
+class GitCheckoutTool(Tool):
+    """Tool to switch git branches."""
+
+    @property
+    def name(self) -> str:
+        return "git_checkout"
+
+    @property
+    def description(self) -> str:
+        return "Switch to an existing git branch."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "branch": {
+                    "type": "string",
+                    "description": "Branch name to switch to",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to the git repository",
+                    "default": ".",
+                },
+            },
+            "required": ["branch"],
+        }
+
+    async def execute(
+        self,
+        branch: str,
+        path: str = ".",
+    ) -> ToolResult:
+        """Switch branches."""
+        return _run_git(["checkout", branch], cwd=path)
+
+
+class GitStashTool(Tool):
+    """Tool to stash or restore uncommitted changes."""
+
+    @property
+    def name(self) -> str:
+        return "git_stash"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Stash action: 'push' to stash, 'pop' to restore, 'list' to show stashes.",
+                    "enum": ["push", "pop", "list"],
+                    "default": "push",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to the git repository",
+                    "default": ".",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Description for the stash (only used with 'push')",
+                },
+            },
+        }
+
+    @property
+    def description(self) -> str:
+        return "Stash uncommitted changes (push), restore them (pop), or list stashes."
+
+    async def execute(
+        self,
+        action: str = "push",
+        path: str = ".",
+        message: str | None = None,
+    ) -> ToolResult:
+        """Stash operations."""
+        if action == "push":
+            args = ["stash", "push"]
+            if message:
+                args.extend(["-m", message])
+        elif action == "pop":
+            args = ["stash", "pop"]
+        elif action == "list":
+            args = ["stash", "list"]
+        else:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Unknown stash action: {action}. Use 'push', 'pop', or 'list'.",
+            )
+
+        result = _run_git(args, cwd=path)
+        if result.success and not result.output:
+            if action == "push":
+                result.output = "Changes stashed."
+            elif action == "list":
+                result.output = "No stashes."
         return result

@@ -46,17 +46,22 @@ from cantrip.agent.tools.files import (
 from cantrip.agent.tools.fuzz import FuzzTestTool
 from cantrip.agent.tools.git import (
     GitAddTool,
+    GitBranchTool,
+    GitCheckoutTool,
     GitCloneTool,
     GitCommitTool,
     GitDiffTool,
     GitInitTool,
     GitLogTool,
     GitPushTool,
+    GitStashTool,
     GitStatusTool,
 )
 from cantrip.agent.tools.github import (
     GhIssueListTool,
     GhPrCreateTool,
+    GhPrListTool,
+    GhPrViewTool,
     GhRepoCreateTool,
 )
 from cantrip.agent.tools.glob import GlobTool
@@ -77,8 +82,10 @@ from cantrip.agent.tools.juju import (
     JujuReadRelationDataTool,
     JujuRefreshTool,
     JujuRelateTool,
+    JujuRemoveApplicationTool,
     JujuRunActionTool,
     JujuShowSecretTool,
+    JujuShowUnitTool,
     JujuSSHTool,
     JujuStatusTool,
     JujuWaitTool,
@@ -199,9 +206,14 @@ def build_tools(
         GitAddTool(),
         GitCommitTool(),
         GitPushTool(),
+        GitBranchTool(),
+        GitCheckoutTool(),
+        GitStashTool(),
         # GitHub operations
         GhRepoCreateTool(),
         GhPrCreateTool(),
+        GhPrListTool(),
+        GhPrViewTool(),
         GhIssueListTool(),
         PrReviewTool(),
         PrReviewReplyTool(),
@@ -225,6 +237,8 @@ def build_tools(
         JujuReadRelationDataTool(),
         JujuGetAppConfigTool(),
         JujuListOffersTool(),
+        JujuRemoveApplicationTool(),
+        JujuShowUnitTool(),
         # Observability
         JujuDebugLogTool(),
         JujuStreamLogsTool(),
@@ -332,7 +346,9 @@ __all__ = [
     "JujuListOffersTool",
     "JujuListSecretsTool",
     "JujuReadRelationDataTool",
+    "JujuRemoveApplicationTool",
     "JujuShowSecretTool",
+    "JujuShowUnitTool",
     # Git
     "GitCloneTool",
     "GitInitTool",
@@ -342,9 +358,14 @@ __all__ = [
     "GitAddTool",
     "GitCommitTool",
     "GitPushTool",
+    "GitBranchTool",
+    "GitCheckoutTool",
+    "GitStashTool",
     # GitHub
     "GhRepoCreateTool",
     "GhPrCreateTool",
+    "GhPrListTool",
+    "GhPrViewTool",
     "GhIssueListTool",
     "PrReviewTool",
     "PrReviewReplyTool",
