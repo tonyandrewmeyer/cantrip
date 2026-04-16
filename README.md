@@ -35,7 +35,7 @@ Status: active | 3 subagents working
 - **Improvement mode**: Audit existing charms, modernise deprecated APIs, add tests, fill observability gaps, check operational readiness
 - **Day-2 aware**: Researches backup/restore, scaling, HA, upgrades, and security hardening after initial build
 - **Quickpack**: Ultra-fast local charm packing — 20-100x faster than `charmcraft pack`, skipping LXD, linting, and analysis. Optional Rust backend with ~50 ms startup for tight build-test loops
-- **Charm linting**: Standalone `charmlint` tool with 35 deterministic rules across 10 categories
+- **Charm linting**: Standalone `charmlint` tool with 40+ deterministic rules across 12 categories. Optional Rust backend completes a full lint in under 30 ms
 - **Ecosystem showcase**: Juju, Charmcraft, Rockcraft, Ops, Jubilant, Concierge, Scenario, Showboat
 
 ## Installation
