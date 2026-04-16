@@ -1,0 +1,1164 @@
+summary: Charmlint (Rust) — end-to-end lint tests via compiled binary
+
+systems:
+  - ubuntu-24.04
+  - ubuntu-22.04
+
+prepare: |
+  # Install uv.
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+  # Copy project into the spread working directory.
+  cp -r "$SPREAD_PATH" "$PROJECT_PATH"
+  cd "$PROJECT_PATH"
+  uv sync --dev
+  # Build the Rust binary.
+  cd "$PROJECT_PATH/src/charmlint-rs"
+  cargo build --release
+  cp target/release/charmlint /usr/local/bin/charmlint
+  chmod +x /usr/local/bin/charmlint
+
+execute: |
+  export PATH="$HOME/.local/bin:$PATH"
+  cd "$PROJECT_PATH"
+
+  CHARM_DIR=$(mktemp -d)
+  JSON_FILE=$(mktemp)
+
+  # -------------------------------------------------------------------
+  # Helper: create a well-formed charm that passes most lint rules.
+  # -------------------------------------------------------------------
+  create_good_charm() {
+    local dir="$1"
+    rm -rf "$dir"
+    mkdir -p "$dir/src" "$dir/lib" "$dir/tests/unit" "$dir/tests/integration"
+
+    cat > "$dir/charmcraft.yaml" <<'YAML'
+  name: goodcharm
+  type: charm
+  title: Good Charm
+  summary: A well-formed charm for testing.
+  description: This charm is a model citizen.
+  base: ubuntu@24.04
+  platforms:
+    amd64: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+  requires:
+    tracing:
+      interface: tracing
+    metrics-endpoint:
+      interface: prometheus_scrape
+    logging:
+      interface: loki_push_api
+    grafana-dashboard:
+      interface: grafana_dashboard
+    database:
+      interface: mysql
+  provides:
+    website:
+      interface: http
+  links:
+    documentation: https://docs.example.com
+    contact: admin@example.com
+    issues: https://github.com/example/issues
+    website: https://example.com
+    source: https://github.com/example
+  actions:
+    get-health:
+      description: Check health of the service
+    pause:
+      description: Pause the service
+    resume:
+      description: Resume the service
+  config:
+    options:
+      port:
+        type: int
+        default: 8080
+        description: Listening port
+  YAML
+
+    cat > "$dir/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  """Main charm module."""
+  import ops
+  from ops.model import BlockedStatus, WaitingStatus
+
+  class GoodCharm(ops.CharmBase):
+      """A well-formed charm."""
+
+      def __init__(self, *args) -> None:
+          super().__init__(*args)
+          # Handle missing config.
+          if not self.config.get("port"):
+              self.unit.status = BlockedStatus("missing config: port")
+          # Handle missing relation.
+          if not self.model.get_relation("database"):
+              self.unit.status = BlockedStatus("missing relation: database")
+          # Handle invalid config.
+          port = self.config.get("port")
+          if port and port < 1:
+              self.unit.status = BlockedStatus("invalid config: port must be > 0")
+
+  if __name__ == "__main__":
+      ops.main(GoodCharm)
+  PY
+    chmod +x "$dir/src/charm.py"
+
+    cat > "$dir/dispatch" <<'SH'
+  #!/bin/sh
+  exec ./src/charm.py
+  SH
+    chmod +x "$dir/dispatch"
+
+    cat > "$dir/pyproject.toml" <<'TOML'
+  [project]
+  name = "goodcharm"
+  version = "0.1.0"
+  requires-python = ">=3.12"
+  dependencies = ["ops>=2.0", "ops-tracing"]
+  TOML
+
+    cat > "$dir/tests/unit/test_charm.py" <<'PY'
+  """Unit tests."""
+  def test_placeholder():
+      pass
+  PY
+
+    cat > "$dir/tests/integration/test_deploy.py" <<'PY'
+  """Integration tests."""
+  def test_placeholder():
+      pass
+  PY
+
+    cat > "$dir/README.md" <<'MD'
+  # Good Charm
+  ## Installation
+  Deploy with juju deploy goodcharm.
+  ## Configuration
+  Set port via juju config.
+  ## Usage
+  Use the charm.
+  ## Troubleshooting
+  Check logs.
+  MD
+
+    touch "$dir/LICENSE"
+    # Create a minimal SVG icon.
+    echo '<svg xmlns="http://www.w3.org/2000/svg"></svg>' > "$dir/icon.svg"
+  }
+
+  # -------------------------------------------------------------------
+  # Helper: create a bare-minimum charm that triggers many warnings.
+  # -------------------------------------------------------------------
+  create_bare_charm() {
+    local dir="$1"
+    rm -rf "$dir"
+    mkdir -p "$dir/src"
+
+    cat > "$dir/charmcraft.yaml" <<'YAML'
+  name: barecharm
+  type: charm
+  base: ubuntu@24.04
+  platforms:
+    amd64: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+  YAML
+
+    cat > "$dir/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  import ops
+
+  class BareCharm(ops.CharmBase):
+      pass
+
+  if __name__ == "__main__":
+      ops.main(BareCharm)
+  PY
+    chmod +x "$dir/src/charm.py"
+  }
+
+  # ===================================================================
+  # 1. CLI help
+  # ===================================================================
+  echo "=== Test: CLI help ==="
+  charmlint --help | grep -q "charmlint"
+  charmlint --help | grep -q "\-\-format"
+  charmlint --help | grep -q "\-\-select"
+  charmlint --help | grep -q "\-\-ignore"
+  charmlint --help | grep -q "\-\-severity"
+  charmlint --help | grep -q "\-\-strict"
+  charmlint --help | grep -q "\-\-no-color"
+  charmlint --help | grep -q "\-\-config"
+  echo "PASS: CLI help"
+
+  # ===================================================================
+  # 3. Missing directory
+  # ===================================================================
+  echo "=== Test: missing directory ==="
+  if charmlint /nonexistent/path 2>/dev/null; then
+    echo "FAIL: should fail for missing directory"
+    exit 1
+  fi
+  echo "PASS: missing directory"
+
+  # ===================================================================
+  # 4. Missing charmcraft.yaml — FATAL error
+  # ===================================================================
+  echo "=== Test: missing metadata ==="
+  EMPTY_DIR=$(mktemp -d)
+  OUTPUT=$(charmlint "$EMPTY_DIR" --no-color 2>&1)
+  RC=$?
+  test "$RC" -ne 0 || { echo "FAIL: should fail with exit 1"; exit 1; }
+  echo "$OUTPUT" | grep -q "FATAL" || { echo "FAIL: should show FATAL"; exit 1; }
+  echo "$OUTPUT" | grep -qi "charmcraft.yaml\|metadata.yaml" || { echo "FAIL: should mention metadata file"; exit 1; }
+  rm -rf "$EMPTY_DIR"
+  echo "PASS: missing metadata"
+
+  # ===================================================================
+  # 5. Well-formed charm — no errors
+  # ===================================================================
+  echo "=== Test: well-formed charm ==="
+  create_good_charm "$CHARM_DIR"
+  RC=0
+  charmlint "$CHARM_DIR" --no-color --severity error || RC=$?
+  test "$RC" -eq 0 || { echo "FAIL: well-formed charm should have no errors (exit $RC)"; charmlint "$CHARM_DIR" --no-color --severity error; exit 1; }
+  echo "PASS: well-formed charm"
+
+  # ===================================================================
+  # 6. JSON output format
+  # ===================================================================
+  echo "=== Test: JSON output ==="
+  create_good_charm "$CHARM_DIR"
+  charmlint "$CHARM_DIR" --format json > "$JSON_FILE"
+  python3 -c "
+  import json, sys
+  data = json.load(open(\"$JSON_FILE\"))
+  assert 'total' in data, 'Missing total field'
+  assert 'errors' in data, 'Missing errors field'
+  assert 'warnings' in data, 'Missing warnings field'
+  assert 'info' in data, 'Missing info field'
+  assert 'diagnostics' in data, 'Missing diagnostics field'
+  assert isinstance(data['diagnostics'], list)
+  for d in data['diagnostics']:
+      assert 'rule_id' in d, 'Diagnostic missing rule_id'
+      assert 'severity' in d, 'Diagnostic missing severity'
+      assert 'message' in d, 'Diagnostic missing message'
+  print(f'JSON OK: {data[\"total\"]} issues ({data[\"errors\"]} errors, {data[\"warnings\"]} warnings, {data[\"info\"]} info)')
+  "
+  echo "PASS: JSON output"
+
+  # ===================================================================
+  # 7. Metadata rules (META001–META007)
+  # ===================================================================
+  echo "=== Test: metadata rules ==="
+  create_bare_charm "$CHARM_DIR"
+
+  charmlint "$CHARM_DIR" --format json --select META > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  # Bare charm is missing display-name, summary, description, docs, issues, source.
+  for expected in ('META002', 'META003', 'META004', 'META005', 'META006', 'META007'):
+      assert expected in rule_ids, f'{expected} not triggered'
+  # META001 should NOT trigger — name is present.
+  assert 'META001' not in rule_ids, 'META001 should not trigger when name is present'
+  print(f'Metadata rules OK: {rule_ids}')
+  "
+  echo "PASS: metadata rules"
+
+  # ===================================================================
+  # 8. COS rules (COS001–COS005)
+  # ===================================================================
+  echo "=== Test: COS rules ==="
+  create_bare_charm "$CHARM_DIR"
+
+  charmlint "$CHARM_DIR" --format json --select COS > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  for expected in ('COS001', 'COS002', 'COS003', 'COS004', 'COS005'):
+      assert expected in rule_ids, f'{expected} not triggered'
+  print(f'COS rules OK: {rule_ids}')
+  "
+  echo "PASS: COS rules"
+
+  # ===================================================================
+  # 9. COS rules pass when relations present
+  # ===================================================================
+  echo "=== Test: COS rules pass ==="
+  create_good_charm "$CHARM_DIR"
+
+  charmlint "$CHARM_DIR" --format json --select COS > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  for cos_id in ('COS001', 'COS002', 'COS003', 'COS004', 'COS005'):
+      assert cos_id not in rule_ids, f'{cos_id} should not trigger with proper relations'
+  print('COS rules pass OK')
+  "
+  echo "PASS: COS rules pass"
+
+  # ===================================================================
+  # 10. Testing rules (TEST001–TEST003)
+  # ===================================================================
+  echo "=== Test: testing rules ==="
+  create_bare_charm "$CHARM_DIR"
+  # No tests directory at all.
+
+  charmlint "$CHARM_DIR" --format json --select TEST > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'TEST001' in rule_ids, 'TEST001 (no unit tests) not triggered'
+  assert 'TEST002' in rule_ids, 'TEST002 (no integration tests) not triggered'
+  print(f'Testing rules OK: {rule_ids}')
+  "
+  echo "PASS: testing rules"
+
+  # ===================================================================
+  # 11. TEST003 — Harness detection
+  # ===================================================================
+  echo "=== Test: Harness detection ==="
+  create_bare_charm "$CHARM_DIR"
+  mkdir -p "$CHARM_DIR/tests/unit"
+  cat > "$CHARM_DIR/tests/unit/test_charm.py" <<'PY'
+  from ops.testing import Harness
+  def test_with_harness():
+      h = Harness(None)
+  PY
+
+  charmlint "$CHARM_DIR" --format json --select TEST > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'TEST003' in rule_ids, 'TEST003 (uses Harness) not triggered'
+  print('Harness detection OK')
+  "
+  echo "PASS: Harness detection"
+
+  # ===================================================================
+  # 12. Deprecated API rules (DEP001–DEP003)
+  # ===================================================================
+  echo "=== Test: deprecated APIs ==="
+  create_bare_charm "$CHARM_DIR"
+  cat > "$CHARM_DIR/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  import ops
+  from ops.framework import StoredState
+
+  class MyCharm(ops.CharmBase):
+      _stored = StoredState()
+
+      def do_debug(self):
+          self.framework.breakpoint()
+
+  if __name__ == "__main__":
+      ops.main(MyCharm)
+  PY
+  chmod +x "$CHARM_DIR/src/charm.py"
+
+  charmlint "$CHARM_DIR" --format json --select DEP > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'DEP001' in rule_ids, 'DEP001 (StoredState) not triggered'
+  assert 'DEP003' in rule_ids, 'DEP003 (framework.breakpoint) not triggered'
+  # Check that line numbers are reported.
+  for d in data['diagnostics']:
+      if d['rule_id'] in ('DEP001', 'DEP003'):
+          assert d.get('line') is not None, f'{d[\"rule_id\"]} missing line number'
+  print(f'Deprecated API rules OK: {rule_ids}')
+  "
+  echo "PASS: deprecated APIs"
+
+  # ===================================================================
+  # 13. DEP rules skip lib/ directory
+  # ===================================================================
+  echo "=== Test: DEP rules skip lib ==="
+  create_bare_charm "$CHARM_DIR"
+  # Put StoredState in lib/ — should NOT trigger.
+  mkdir -p "$CHARM_DIR/lib"
+  cat > "$CHARM_DIR/lib/helper.py" <<'PY'
+  from ops.framework import StoredState
+  class LibHelper:
+      _stored = StoredState()
+  PY
+
+  charmlint "$CHARM_DIR" --format json --select DEP > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'DEP001' not in rule_ids, 'DEP001 should not trigger for lib/ files'
+  print('DEP skip lib OK')
+  "
+  echo "PASS: DEP rules skip lib"
+
+  # ===================================================================
+  # 14. Action rules (ACT001–ACT005)
+  # ===================================================================
+  echo "=== Test: action rules ==="
+  create_bare_charm "$CHARM_DIR"
+  # No actions at all — should trigger ACT001-ACT003.
+
+  charmlint "$CHARM_DIR" --format json --select ACT > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'ACT001' in rule_ids, 'ACT001 (get-health) not triggered'
+  assert 'ACT002' in rule_ids, 'ACT002 (pause) not triggered'
+  assert 'ACT003' in rule_ids, 'ACT003 (resume) not triggered'
+  print(f'Action rules OK: {rule_ids}')
+  "
+  echo "PASS: action rules"
+
+  # ===================================================================
+  # 15. Action aliases accepted
+  # ===================================================================
+  echo "=== Test: action aliases ==="
+  create_bare_charm "$CHARM_DIR"
+  cat >> "$CHARM_DIR/charmcraft.yaml" <<'YAML'
+  actions:
+    health-check:
+      description: Health check
+    stop:
+      description: Stop
+    start:
+      description: Start
+  YAML
+
+  charmlint "$CHARM_DIR" --format json --select ACT > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  # Aliases should satisfy ACT001 (health-check), ACT002 (stop), ACT003 (start).
+  assert 'ACT001' not in rule_ids, 'health-check alias should satisfy ACT001'
+  assert 'ACT002' not in rule_ids, 'stop alias should satisfy ACT002'
+  assert 'ACT003' not in rule_ids, 'start alias should satisfy ACT003'
+  print('Action aliases OK')
+  "
+  echo "PASS: action aliases"
+
+  # ===================================================================
+  # 16. ACT004 — action missing description
+  # ===================================================================
+  echo "=== Test: action missing description ==="
+  create_bare_charm "$CHARM_DIR"
+  cat >> "$CHARM_DIR/charmcraft.yaml" <<'YAML'
+  actions:
+    get-health: {}
+    pause:
+      description: Pause the service
+    resume:
+      description: Resume
+  YAML
+
+  charmlint "$CHARM_DIR" --format json --select ACT > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  act004 = [d for d in data['diagnostics'] if d['rule_id'] == 'ACT004']
+  assert len(act004) >= 1, 'ACT004 should trigger for action without description'
+  assert any('get-health' in d['message'] for d in act004), 'Should mention get-health'
+  print('ACT004 OK')
+  "
+  echo "PASS: action missing description"
+
+  # ===================================================================
+  # 17. Config quality rules (CFG001–CFG003)
+  # ===================================================================
+  echo "=== Test: config quality rules ==="
+  create_bare_charm "$CHARM_DIR"
+  cat >> "$CHARM_DIR/charmcraft.yaml" <<'YAML'
+  config:
+    options:
+      broken-opt: {}
+  YAML
+
+  charmlint "$CHARM_DIR" --format json --select CFG > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'CFG001' in rule_ids, 'CFG001 (missing type) not triggered'
+  assert 'CFG002' in rule_ids, 'CFG002 (missing default) not triggered'
+  assert 'CFG003' in rule_ids, 'CFG003 (missing description) not triggered'
+  print(f'Config quality rules OK: {rule_ids}')
+  "
+  echo "PASS: config quality rules"
+
+  # ===================================================================
+  # 18. Security rules — SEC001 (secret in plain config)
+  # ===================================================================
+  echo "=== Test: SEC001 secret in plain config ==="
+  create_bare_charm "$CHARM_DIR"
+  cat >> "$CHARM_DIR/charmcraft.yaml" <<'YAML'
+  config:
+    options:
+      db-password:
+        type: string
+        description: Database password
+  YAML
+
+  charmlint "$CHARM_DIR" --format json --select SEC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'SEC001' in rule_ids, 'SEC001 (secret in plain config) not triggered'
+  sec001 = [d for d in data['diagnostics'] if d['rule_id'] == 'SEC001']
+  assert any('db-password' in d['message'] for d in sec001), 'Should mention db-password'
+  print('SEC001 OK')
+  "
+  echo "PASS: SEC001"
+
+  # ===================================================================
+  # 19. SEC001 suppressed when Juju secrets API is used
+  # ===================================================================
+  echo "=== Test: SEC001 suppressed with secrets API ==="
+  create_bare_charm "$CHARM_DIR"
+  cat >> "$CHARM_DIR/charmcraft.yaml" <<'YAML'
+  config:
+    options:
+      api-token:
+        type: string
+        description: API token
+  YAML
+  cat > "$CHARM_DIR/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  import ops
+
+  class SecretCharm(ops.CharmBase):
+      def _on_secret_changed(self, event):
+          secret = self.model.get_juju_secret(label="my-secret")
+          pass
+
+  if __name__ == "__main__":
+      ops.main(SecretCharm)
+  PY
+  chmod +x "$CHARM_DIR/src/charm.py"
+
+  charmlint "$CHARM_DIR" --format json --select SEC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'SEC001' not in rule_ids, 'SEC001 should be suppressed when using Juju secrets'
+  print('SEC001 suppressed OK')
+  "
+  echo "PASS: SEC001 suppressed"
+
+  # ===================================================================
+  # 20. Structure rules (STR001–STR003)
+  # ===================================================================
+  echo "=== Test: structure rules ==="
+  create_bare_charm "$CHARM_DIR"
+
+  charmlint "$CHARM_DIR" --format json --select STR > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'STR001' in rule_ids, 'STR001 (no licence) not triggered'
+  assert 'STR002' in rule_ids, 'STR002 (no icon) not triggered'
+  print(f'Structure rules OK: {rule_ids}')
+  "
+  echo "PASS: structure rules"
+
+  # ===================================================================
+  # 21. STR003 — type annotations
+  # ===================================================================
+  echo "=== Test: STR003 type annotations ==="
+  create_bare_charm "$CHARM_DIR"
+  # Bare charm has no type annotations — should trigger.
+  charmlint "$CHARM_DIR" --format json --select STR > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'STR003' in rule_ids, 'STR003 should trigger when no annotations present'
+  "
+
+  # Now add type annotations — should pass.
+  cat > "$CHARM_DIR/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  import ops
+
+  class AnnotatedCharm(ops.CharmBase):
+      def get_port(self) -> int:
+          return 8080
+
+  if __name__ == "__main__":
+      ops.main(AnnotatedCharm)
+  PY
+  chmod +x "$CHARM_DIR/src/charm.py"
+
+  charmlint "$CHARM_DIR" --format json --select STR > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'STR003' not in rule_ids, 'STR003 should pass when annotations present'
+  "
+  echo "PASS: STR003 type annotations"
+
+  # ===================================================================
+  # 22. Documentation rules (DOC001–DOC005)
+  # ===================================================================
+  echo "=== Test: documentation rules ==="
+  create_bare_charm "$CHARM_DIR"
+
+  charmlint "$CHARM_DIR" --format json --select DOC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'DOC001' in rule_ids, 'DOC001 (no readme) not triggered'
+  assert 'DOC002' in rule_ids, 'DOC002 (no installation docs) not triggered'
+  assert 'DOC003' in rule_ids, 'DOC003 (no configuration docs) not triggered'
+  assert 'DOC004' in rule_ids, 'DOC004 (no usage docs) not triggered'
+  assert 'DOC005' in rule_ids, 'DOC005 (no troubleshooting docs) not triggered'
+  print(f'Documentation rules OK: {rule_ids}')
+  "
+  echo "PASS: documentation rules"
+
+  # ===================================================================
+  # 23. DOC rules pass with good README
+  # ===================================================================
+  echo "=== Test: DOC rules pass ==="
+  create_good_charm "$CHARM_DIR"
+
+  charmlint "$CHARM_DIR" --format json --select DOC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  for doc_id in ('DOC001', 'DOC002', 'DOC003', 'DOC004', 'DOC005'):
+      assert doc_id not in rule_ids, f'{doc_id} should not trigger with good README'
+  print('Documentation rules pass OK')
+  "
+  echo "PASS: DOC rules pass"
+
+  # ===================================================================
+  # 24. CC001 — deprecated series
+  # ===================================================================
+  echo "=== Test: CC001 deprecated series ==="
+  create_bare_charm "$CHARM_DIR"
+  cat >> "$CHARM_DIR/charmcraft.yaml" <<'YAML'
+  series:
+    - focal
+    - jammy
+  YAML
+
+  charmlint "$CHARM_DIR" --format json --select CC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'CC001' in rule_ids, 'CC001 (deprecated series) not triggered'
+  print('CC001 OK')
+  "
+  echo "PASS: CC001"
+
+  # ===================================================================
+  # 25. CC002 — naming conventions (underscores)
+  # ===================================================================
+  echo "=== Test: CC002 naming conventions ==="
+  create_bare_charm "$CHARM_DIR"
+  cat >> "$CHARM_DIR/charmcraft.yaml" <<'YAML'
+  config:
+    options:
+      my_option:
+        type: string
+        description: Uses underscores
+  actions:
+    my_action:
+      description: Uses underscores
+  YAML
+
+  charmlint "$CHARM_DIR" --format json --select CC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  cc002 = [d for d in data['diagnostics'] if d['rule_id'] == 'CC002']
+  assert len(cc002) >= 2, f'CC002 should trigger for both config and action, got {len(cc002)}'
+  messages = ' '.join(d['message'] for d in cc002)
+  assert 'my_option' in messages, 'Should mention my_option'
+  assert 'my_action' in messages, 'Should mention my_action'
+  print('CC002 OK')
+  "
+  echo "PASS: CC002"
+
+  # ===================================================================
+  # 26. CC003 — entrypoint checks
+  # ===================================================================
+  echo "=== Test: CC003 entrypoint ==="
+  create_bare_charm "$CHARM_DIR"
+  # Create dispatch referencing a non-existent entrypoint.
+  cat > "$CHARM_DIR/dispatch" <<'SH'
+  #!/bin/sh
+  exec ./src/missing.py
+  SH
+  chmod +x "$CHARM_DIR/dispatch"
+
+  charmlint "$CHARM_DIR" --format json --select CC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'CC003' in rule_ids, 'CC003 (missing entrypoint) not triggered'
+  print('CC003 OK')
+  "
+  echo "PASS: CC003"
+
+  # ===================================================================
+  # 27. CC003 — non-executable entrypoint
+  # ===================================================================
+  echo "=== Test: CC003 non-executable entrypoint ==="
+  create_bare_charm "$CHARM_DIR"
+  cat > "$CHARM_DIR/dispatch" <<'SH'
+  #!/bin/sh
+  exec ./src/charm.py
+  SH
+  chmod +x "$CHARM_DIR/dispatch"
+  # Make entrypoint NOT executable.
+  chmod -x "$CHARM_DIR/src/charm.py"
+
+  charmlint "$CHARM_DIR" --format json --select CC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  cc003 = [d for d in data['diagnostics'] if d['rule_id'] == 'CC003']
+  assert len(cc003) >= 1, 'CC003 should trigger for non-executable entrypoint'
+  assert any('not executable' in d['message'] for d in cc003), 'Should mention not executable'
+  print('CC003 non-executable OK')
+  "
+  echo "PASS: CC003 non-executable"
+
+  # ===================================================================
+  # 28. CC005 — unknown top-level fields (typo detection)
+  # ===================================================================
+  echo "=== Test: CC005 unknown fields ==="
+  create_bare_charm "$CHARM_DIR"
+  cat >> "$CHARM_DIR/charmcraft.yaml" <<'YAML'
+  sumary: A typo
+  descrption: Another typo
+  YAML
+
+  charmlint "$CHARM_DIR" --format json --select CC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  cc005 = [d for d in data['diagnostics'] if d['rule_id'] == 'CC005']
+  assert len(cc005) >= 2, f'CC005 should trigger for typos, got {len(cc005)}'
+  messages = ' '.join(d['message'] for d in cc005)
+  assert 'sumary' in messages, 'Should detect sumary typo'
+  assert 'descrption' in messages, 'Should detect descrption typo'
+  # Check for fix hints with suggestions.
+  hints = [d.get('fix_hint', '') for d in cc005 if d.get('fix_hint')]
+  assert len(hints) >= 1, 'Should provide Did you mean hints'
+  print('CC005 OK')
+  "
+  echo "PASS: CC005"
+
+  # ===================================================================
+  # 29. --select flag filters to specific categories
+  # ===================================================================
+  echo "=== Test: --select flag ==="
+  create_bare_charm "$CHARM_DIR"
+
+  charmlint "$CHARM_DIR" --format json --select META > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  categories = {d['rule_id'].rstrip('0123456789') for d in data['diagnostics']}
+  assert categories == {'META'}, f'--select META should only show META rules, got {categories}'
+  print('--select filter OK')
+  "
+  echo "PASS: --select flag"
+
+  # ===================================================================
+  # 30. --ignore flag skips rules
+  # ===================================================================
+  echo "=== Test: --ignore flag ==="
+  create_bare_charm "$CHARM_DIR"
+
+  # Ignore entire META category.
+  charmlint "$CHARM_DIR" --format json --ignore META > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  categories = {d['rule_id'].rstrip('0123456789') for d in data['diagnostics']}
+  assert 'META' not in categories, 'META should be excluded by --ignore'
+  print('--ignore category OK')
+  "
+
+  # Ignore specific rule.
+  charmlint "$CHARM_DIR" --format json --select META --ignore META002 > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'META002' not in rule_ids, 'META002 should be excluded by --ignore'
+  assert len(rule_ids) > 0, 'Other META rules should still run'
+  print('--ignore rule OK')
+  "
+  echo "PASS: --ignore flag"
+
+  # ===================================================================
+  # 31. --severity flag filters by minimum severity
+  # ===================================================================
+  echo "=== Test: --severity flag ==="
+  create_bare_charm "$CHARM_DIR"
+
+  # Only errors.
+  charmlint "$CHARM_DIR" --format json --severity error > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  severities = {d['severity'] for d in data['diagnostics']}
+  assert severities <= {'error'}, f'--severity error should only show errors, got {severities}'
+  print('--severity error OK')
+  "
+
+  # Errors and warnings (no info).
+  charmlint "$CHARM_DIR" --format json --severity warning > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  severities = {d['severity'] for d in data['diagnostics']}
+  assert 'info' not in severities, f'--severity warning should not show info, got {severities}'
+  print('--severity warning OK')
+  "
+  echo "PASS: --severity flag"
+
+  # ===================================================================
+  # 32. --strict flag — exit code 2 for warnings
+  # ===================================================================
+  echo "=== Test: --strict flag ==="
+  create_bare_charm "$CHARM_DIR"
+
+  # Without strict, warnings should not cause non-zero exit (if no errors).
+  RC=0
+  charmlint "$CHARM_DIR" --no-color --severity warning --ignore TEST,STS,CC || RC=$?
+  # (May still be 1 if errors exist; tested more precisely below.)
+
+  # With strict, warnings cause exit 2 (when no errors).
+  # Use a bare charm which triggers warnings (e.g. META002 missing display-name).
+  create_bare_charm "$CHARM_DIR"
+
+  RC=0
+  charmlint "$CHARM_DIR" --no-color --strict --severity warning --select META || RC=$?
+  test "$RC" -eq 2 || { echo "FAIL: --strict should exit 2 for warnings (got $RC)"; exit 1; }
+  echo "PASS: --strict flag"
+
+  # ===================================================================
+  # 33. Exit code 1 for errors
+  # ===================================================================
+  echo "=== Test: exit code 1 for errors ==="
+  create_bare_charm "$CHARM_DIR"
+  # TEST001 is an error — no unit tests.
+  RC=0
+  charmlint "$CHARM_DIR" --no-color --select TEST --severity error || RC=$?
+  test "$RC" -eq 1 || { echo "FAIL: should exit 1 for errors (got $RC)"; exit 1; }
+  echo "PASS: exit code 1"
+
+  # ===================================================================
+  # 34. Exit code 0 when no issues
+  # ===================================================================
+  echo "=== Test: exit code 0 ==="
+  create_good_charm "$CHARM_DIR"
+  RC=0
+  charmlint "$CHARM_DIR" --no-color --severity error || RC=$?
+  test "$RC" -eq 0 || { echo "FAIL: well-formed charm should exit 0 (got $RC)"; exit 1; }
+  echo "PASS: exit code 0"
+
+  # ===================================================================
+  # 35. --no-color flag suppresses ANSI codes
+  # ===================================================================
+  echo "=== Test: --no-color flag ==="
+  create_bare_charm "$CHARM_DIR"
+  OUTPUT=$(charmlint "$CHARM_DIR" --no-color --select META 2>&1)
+  if echo "$OUTPUT" | grep -qP '\033\['; then
+    echo "FAIL: --no-color should suppress ANSI escape codes"
+    exit 1
+  fi
+  echo "PASS: --no-color flag"
+
+  # ===================================================================
+  # 36. Config file (.charmlint.yaml)
+  # ===================================================================
+  echo "=== Test: config file ==="
+  create_bare_charm "$CHARM_DIR"
+  cat > "$CHARM_DIR/.charmlint.yaml" <<'YAML'
+  rules:
+    META002: "off"
+    META003: "off"
+  ignore:
+    - DOC
+    - STR
+    - COS
+    - ACT
+    - CFG
+    - SEC
+    - STS
+    - CC
+    - LIB
+    - TEST
+    - DEP
+  YAML
+
+  charmlint "$CHARM_DIR" --format json > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'META002' not in rule_ids, 'META002 should be disabled via config file'
+  assert 'META003' not in rule_ids, 'META003 should be disabled via config file'
+  # META004+ should still fire.
+  assert 'META004' in rule_ids, 'META004 should still be active'
+  print(f'Config file OK: {rule_ids}')
+  "
+  rm -f "$CHARM_DIR/.charmlint.yaml"
+  echo "PASS: config file"
+
+  # ===================================================================
+  # 37. Config file severity override
+  # ===================================================================
+  echo "=== Test: config severity override ==="
+  create_bare_charm "$CHARM_DIR"
+  cat > "$CHARM_DIR/.charmlint.yaml" <<'YAML'
+  rules:
+    META004: error
+  select:
+    - META
+  YAML
+
+  charmlint "$CHARM_DIR" --format json > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  meta004 = [d for d in data['diagnostics'] if d['rule_id'] == 'META004']
+  assert len(meta004) == 1, 'META004 should fire'
+  assert meta004[0]['severity'] == 'error', f'META004 severity should be overridden to error, got {meta004[0][\"severity\"]}'
+  print('Severity override OK')
+  "
+  rm -f "$CHARM_DIR/.charmlint.yaml"
+  echo "PASS: config severity override"
+
+  # ===================================================================
+  # 38. --config flag with external config path
+  # ===================================================================
+  echo "=== Test: --config flag ==="
+  create_bare_charm "$CHARM_DIR"
+  CUSTOM_CONFIG=$(mktemp)
+  cat > "$CUSTOM_CONFIG" <<'YAML'
+  select:
+    - META
+  ignore:
+    - META005
+    - META006
+    - META007
+  YAML
+
+  charmlint "$CHARM_DIR" --format json --config "$CUSTOM_CONFIG" > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  categories = {rid.rstrip('0123456789') for rid in rule_ids}
+  assert categories == {'META'}, f'Should only have META rules, got {categories}'
+  assert 'META005' not in rule_ids, 'META005 should be ignored'
+  assert 'META006' not in rule_ids, 'META006 should be ignored'
+  assert 'META007' not in rule_ids, 'META007 should be ignored'
+  print('--config flag OK')
+  "
+  rm -f "$CUSTOM_CONFIG"
+  echo "PASS: --config flag"
+
+  # ===================================================================
+  # 39. Library rules (LIB001) — known PyPI equivalent
+  # ===================================================================
+  echo "=== Test: LIB001 library rules ==="
+  create_bare_charm "$CHARM_DIR"
+  cat > "$CHARM_DIR/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  import ops
+  from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
+  from charms.tempo_k8s.v1.charm_tracing import trace_charm
+
+  class LibCharm(ops.CharmBase):
+      pass
+
+  if __name__ == "__main__":
+      ops.main(LibCharm)
+  PY
+  chmod +x "$CHARM_DIR/src/charm.py"
+
+  charmlint "$CHARM_DIR" --format json --select LIB > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  lib001 = [d for d in data['diagnostics'] if d['rule_id'] == 'LIB001']
+  assert len(lib001) >= 2, f'LIB001 should trigger for known libs, got {len(lib001)}'
+  messages = ' '.join(d['message'] for d in lib001)
+  assert 'grafana_k8s' in messages, 'Should detect grafana_k8s'
+  assert 'tempo_k8s' in messages, 'Should detect tempo_k8s'
+  # Should have fix hints with PyPI package names.
+  hints = ' '.join(d.get('fix_hint', '') for d in lib001)
+  assert 'grafana-k8s-lib' in hints, 'Should suggest grafana-k8s-lib'
+  print('LIB001 OK')
+  "
+  echo "PASS: LIB001"
+
+  # ===================================================================
+  # 40. Library rules (LIB002) — unknown PyPI equivalent
+  # ===================================================================
+  echo "=== Test: LIB002 unknown library ==="
+  create_bare_charm "$CHARM_DIR"
+  cat > "$CHARM_DIR/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  import ops
+  from charms.my_custom_charm.v1.custom_lib import CustomProvider
+
+  class CustomCharm(ops.CharmBase):
+      pass
+
+  if __name__ == "__main__":
+      ops.main(CustomCharm)
+  PY
+  chmod +x "$CHARM_DIR/src/charm.py"
+
+  charmlint "$CHARM_DIR" --format json --select LIB > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  lib002 = [d for d in data['diagnostics'] if d['rule_id'] == 'LIB002']
+  assert len(lib002) >= 1, 'LIB002 should trigger for unknown libs'
+  assert any('my_custom_charm' in d['message'] for d in lib002), 'Should mention my_custom_charm'
+  print('LIB002 OK')
+  "
+  echo "PASS: LIB002"
+
+  # ===================================================================
+  # 41. Text output includes summary line
+  # ===================================================================
+  echo "=== Test: text output summary ==="
+  create_bare_charm "$CHARM_DIR"
+  OUTPUT=$(charmlint "$CHARM_DIR" --no-color --select META 2>&1)
+  echo "$OUTPUT" | grep -q "Found.*issue" || { echo "FAIL: should show summary"; exit 1; }
+  echo "PASS: text output summary"
+
+  # ===================================================================
+  # 42. "No issues found" message for clean charm
+  # ===================================================================
+  echo "=== Test: no issues message ==="
+  create_good_charm "$CHARM_DIR"
+  OUTPUT=$(charmlint "$CHARM_DIR" --no-color --severity error 2>&1)
+  echo "$OUTPUT" | grep -q "No issues found" || { echo "FAIL: should show 'No issues found'"; exit 1; }
+  echo "PASS: no issues message"
+
+  # ===================================================================
+  # 43. CC006 — unknown resource fields
+  # ===================================================================
+  echo "=== Test: CC006 unknown resource fields ==="
+  create_bare_charm "$CHARM_DIR"
+  cat >> "$CHARM_DIR/charmcraft.yaml" <<'YAML'
+  resources:
+    my-image:
+      type: oci-image
+      descrption: A typo in description
+  YAML
+
+  charmlint "$CHARM_DIR" --format json --select CC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  cc006 = [d for d in data['diagnostics'] if d['rule_id'] == 'CC006']
+  assert len(cc006) >= 1, 'CC006 should trigger for unknown resource field'
+  assert any('descrption' in d['message'] for d in cc006), 'Should detect descrption typo'
+  print('CC006 OK')
+  "
+  echo "PASS: CC006"
+
+  # ===================================================================
+  # 44. Multiple categories in --select
+  # ===================================================================
+  echo "=== Test: multiple --select categories ==="
+  create_bare_charm "$CHARM_DIR"
+
+  charmlint "$CHARM_DIR" --format json --select META,DOC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  categories = {d['rule_id'].rstrip('0123456789') for d in data['diagnostics']}
+  assert categories <= {'META', 'DOC'}, f'Should only have META and DOC, got {categories}'
+  assert 'META' in categories, 'Should have META rules'
+  assert 'DOC' in categories, 'Should have DOC rules'
+  print('Multiple --select OK')
+  "
+  echo "PASS: multiple --select categories"
+
+  # ===================================================================
+  # 45. Legacy metadata.yaml fallback
+  # ===================================================================
+  echo "=== Test: legacy metadata.yaml ==="
+  LEGACY_DIR=$(mktemp -d)
+  mkdir -p "$LEGACY_DIR/src"
+  cat > "$LEGACY_DIR/metadata.yaml" <<'YAML'
+  name: legacycharm
+  summary: A legacy charm
+  description: Uses metadata.yaml instead of charmcraft.yaml.
+  display-name: Legacy Charm
+  YAML
+  cat > "$LEGACY_DIR/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  import ops
+  class LegacyCharm(ops.CharmBase):
+      pass
+  if __name__ == "__main__":
+      ops.main(LegacyCharm)
+  PY
+  chmod +x "$LEGACY_DIR/src/charm.py"
+
+  charmlint "$LEGACY_DIR" --format json --select META > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  # Should NOT get FATAL — metadata.yaml is valid.
+  assert 'FATAL' not in rule_ids, 'Should not get FATAL with valid metadata.yaml'
+  # name, summary, description, display-name present — should not trigger those.
+  assert 'META001' not in rule_ids, 'META001 should not trigger — name is present'
+  assert 'META003' not in rule_ids, 'META003 should not trigger — summary is present'
+  print(f'Legacy metadata.yaml OK: {rule_ids}')
+  "
+  rm -rf "$LEGACY_DIR"
+  echo "PASS: legacy metadata.yaml"
+
+  # ===================================================================
+  # Cleanup
+  # ===================================================================
+  rm -rf "$CHARM_DIR"
+  rm -f "$JSON_FILE"
+  echo ""
+  echo "All charmlint spread tests passed."
+
+restore: |
+  rm -f /usr/local/bin/charmlint
+  rm -rf "$PROJECT_PATH"
