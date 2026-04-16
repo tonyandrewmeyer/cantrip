@@ -1,0 +1,626 @@
+summary: Quickpack (Rust) — end-to-end packing tests via compiled binary
+
+systems:
+  - ubuntu-24.04
+  - ubuntu-22.04
+
+prepare: |
+  # Install uv (needed for charm venv creation).
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+
+  # Build the Rust binary.
+  cd "$SPREAD_PATH/src/quickpack-rs"
+  cargo build --release
+  cp target/release/quickpack /usr/local/bin/quickpack
+  chmod +x /usr/local/bin/quickpack
+
+execute: |
+  export PATH="$HOME/.local/bin:$PATH"
+
+  CHARM_DIR=$(mktemp -d)
+  OUTPUT_DIR=$(mktemp -d)
+
+  # -------------------------------------------------------------------
+  # Helper: create a minimal charm project in a given directory.
+  # -------------------------------------------------------------------
+  create_charm() {
+    local dir="$1"
+    local name="${2:-testcharm}"
+    rm -rf "$dir"
+    mkdir -p "$dir/src" "$dir/lib"
+
+    cat > "$dir/charmcraft.yaml" <<YAML
+  name: $name
+  type: charm
+  summary: A test charm
+  description: A charm for spread testing quickpack.
+  base: ubuntu@24.04
+  platforms:
+    amd64: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+  YAML
+
+    cat > "$dir/src/charm.py" <<PY
+  #!/usr/bin/env python3
+  import ops
+
+  class TestCharm(ops.CharmBase):
+      pass
+
+  if __name__ == "__main__":
+      ops.main(TestCharm)
+  PY
+
+    cat > "$dir/lib/helpers.py" <<PY
+  # Helper module.
+  PY
+
+    cat > "$dir/pyproject.toml" <<TOML
+  [project]
+  name = "$name"
+  version = "0.1.0"
+  requires-python = ">=3.12"
+  dependencies = ["ops>=2.0"]
+  TOML
+
+    # Generate a lockfile so uv sync works.
+    cd "$dir" && uv lock && cd -
+  }
+
+  # ===================================================================
+  # 1. Basic pack — happy path
+  # ===================================================================
+  echo "=== Test: basic pack ==="
+  create_charm "$CHARM_DIR"
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR"
+
+  CHARM_FILE="$OUTPUT_DIR/testcharm_amd64.charm"
+  test -f "$CHARM_FILE" || { echo "FAIL: charm file not created"; exit 1; }
+
+  # Verify it is a valid zip.
+  python3 -c "
+  import zipfile, sys
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      names = zf.namelist()
+      for expected in ('dispatch', 'metadata.yaml', 'manifest.yaml', 'src/charm.py', 'lib/helpers.py'):
+          assert expected in names, f'Missing {expected} in charm archive'
+      print('Zip contents OK:', sorted(set(p.split('/')[0] for p in names)))
+  "
+  echo "PASS: basic pack"
+
+  # ===================================================================
+  # 2. Metadata correctness
+  # ===================================================================
+  echo "=== Test: metadata correctness ==="
+  python3 -c "
+  import yaml, zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      meta = yaml.safe_load(zf.read('metadata.yaml'))
+      assert meta['name'] == 'testcharm', f'Bad name: {meta[\"name\"]}'
+      assert meta['summary'] == 'A test charm'
+
+      manifest = yaml.safe_load(zf.read('manifest.yaml'))
+      assert manifest['charmcraft-version'].startswith('quickpack-')
+      assert manifest['bases'][0]['name'] == 'ubuntu'
+      assert manifest['bases'][0]['channel'] == '24.04'
+      assert 'amd64' in manifest['bases'][0]['architectures'] or 'arm64' in manifest['bases'][0]['architectures']
+  "
+  echo "PASS: metadata correctness"
+
+  # ===================================================================
+  # 3. Dispatch script
+  # ===================================================================
+  echo "=== Test: dispatch script ==="
+  python3 -c "
+  import zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      dispatch = zf.read('dispatch').decode()
+      assert dispatch.startswith('#!/bin/sh'), 'dispatch should start with shebang'
+      assert 'src/charm.py' in dispatch, 'dispatch should reference entrypoint'
+      # Check the dispatch is executable (external attr has execute bit).
+      info = zf.getinfo('dispatch')
+      mode = (info.external_attr >> 16) & 0o777
+      assert mode & 0o100, f'dispatch not executable: {oct(mode)}'
+  "
+  echo "PASS: dispatch script"
+
+  # ===================================================================
+  # 4. Venv is present and cleaned
+  # ===================================================================
+  echo "=== Test: venv structure ==="
+  python3 -c "
+  import zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      names = zf.namelist()
+      venv_files = [n for n in names if n.startswith('venv/')]
+      assert len(venv_files) > 0, 'No venv files in charm'
+      # activate should be kept.
+      assert 'venv/bin/activate' in names, 'venv/bin/activate missing'
+      # python binary should be removed.
+      bin_files = [n for n in names if n.startswith('venv/bin/') and n != 'venv/bin/activate']
+      assert len(bin_files) == 0, f'Unexpected venv/bin files: {bin_files}'
+  "
+  echo "PASS: venv structure"
+
+  # ===================================================================
+  # 5. Quiet flag suppresses output
+  # ===================================================================
+  echo "=== Test: quiet flag ==="
+  QUIET_OUTPUT=$(quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet 2>&1)
+  if [ -n "$QUIET_OUTPUT" ]; then
+    echo "FAIL: --quiet should suppress output, got: $QUIET_OUTPUT"
+    exit 1
+  fi
+  echo "PASS: quiet flag"
+
+  # ===================================================================
+  # 6. Default output directory (charm dir)
+  # ===================================================================
+  echo "=== Test: default output dir ==="
+  rm -f "$CHARM_DIR"/*.charm
+  quickpack "$CHARM_DIR" --quiet
+  test -f "$CHARM_DIR/testcharm_amd64.charm" || { echo "FAIL: charm not in charm dir"; exit 1; }
+  rm -f "$CHARM_DIR"/*.charm
+  echo "PASS: default output dir"
+
+  # ===================================================================
+  # 7. Error: missing charm directory
+  # ===================================================================
+  echo "=== Test: missing directory ==="
+  if quickpack /nonexistent/path 2>/dev/null; then
+    echo "FAIL: should fail for missing directory"
+    exit 1
+  fi
+  quickpack /nonexistent/path 2>&1 | grep -qi "not a directory"
+  echo "PASS: missing directory"
+
+  # ===================================================================
+  # 8. Error: missing charmcraft.yaml
+  # ===================================================================
+  echo "=== Test: missing charmcraft.yaml ==="
+  EMPTY_DIR=$(mktemp -d)
+  if quickpack "$EMPTY_DIR" 2>/dev/null; then
+    echo "FAIL: should fail for missing charmcraft.yaml"
+    exit 1
+  fi
+  quickpack "$EMPTY_DIR" 2>&1 | grep -q "charmcraft.yaml"
+  rm -rf "$EMPTY_DIR"
+  echo "PASS: missing charmcraft.yaml"
+
+  # ===================================================================
+  # 9. Error: unsupported plugin
+  # ===================================================================
+  echo "=== Test: unsupported plugin ==="
+  BAD_DIR=$(mktemp -d)
+  cat > "$BAD_DIR/charmcraft.yaml" <<YAML
+  name: badcharm
+  type: charm
+  summary: bad
+  description: bad
+  parts:
+    charm:
+      plugin: poetry
+      source: .
+  YAML
+
+  if quickpack "$BAD_DIR" 2>/dev/null; then
+    echo "FAIL: should fail for unsupported plugin"
+    exit 1
+  fi
+  quickpack "$BAD_DIR" 2>&1 | grep -q "only supports"
+  rm -rf "$BAD_DIR"
+  echo "PASS: unsupported plugin"
+
+  # ===================================================================
+  # 10. Error: no parts defined
+  # ===================================================================
+  echo "=== Test: no parts ==="
+  NOPARTS_DIR=$(mktemp -d)
+  cat > "$NOPARTS_DIR/charmcraft.yaml" <<YAML
+  name: noparts
+  type: charm
+  summary: no parts
+  description: no parts
+  YAML
+
+  if quickpack "$NOPARTS_DIR" 2>/dev/null; then
+    echo "FAIL: should fail for no parts"
+    exit 1
+  fi
+  quickpack "$NOPARTS_DIR" 2>&1 | grep -q "No parts found"
+  rm -rf "$NOPARTS_DIR"
+  echo "PASS: no parts"
+
+  # ===================================================================
+  # 11. Charm with actions and config in charmcraft.yaml
+  # ===================================================================
+  echo "=== Test: actions and config from charmcraft.yaml ==="
+  create_charm "$CHARM_DIR" "actioncharm"
+  cat > "$CHARM_DIR/charmcraft.yaml" <<YAML
+  name: actioncharm
+  type: charm
+  summary: charm with actions
+  description: Testing actions and config generation.
+  base: ubuntu@24.04
+  platforms:
+    amd64: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+  actions:
+    restart:
+      description: Restart the service
+  config:
+    options:
+      port:
+        type: int
+        default: 8080
+        description: Listening port
+  YAML
+
+  rm -rf "$OUTPUT_DIR"/*
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  CHARM_FILE="$OUTPUT_DIR/actioncharm_amd64.charm"
+
+  python3 -c "
+  import yaml, zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      names = zf.namelist()
+      assert 'actions.yaml' in names, 'actions.yaml missing'
+      assert 'config.yaml' in names, 'config.yaml missing'
+      actions = yaml.safe_load(zf.read('actions.yaml'))
+      assert 'restart' in actions
+      config = yaml.safe_load(zf.read('config.yaml'))
+      assert 'port' in config['options']
+      assert config['options']['port']['default'] == 8080
+  "
+  echo "PASS: actions and config from charmcraft.yaml"
+
+  # ===================================================================
+  # 12. On-disk actions.yaml takes precedence
+  # ===================================================================
+  echo "=== Test: on-disk actions.yaml precedence ==="
+  cat > "$CHARM_DIR/actions.yaml" <<YAML
+  custom-action:
+    description: From disk
+  YAML
+
+  rm -rf "$OUTPUT_DIR"/*
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  CHARM_FILE="$OUTPUT_DIR/actioncharm_amd64.charm"
+
+  python3 -c "
+  import yaml, zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      actions = yaml.safe_load(zf.read('actions.yaml'))
+      assert 'custom-action' in actions, 'On-disk actions.yaml should take precedence'
+      assert 'restart' not in actions, 'charmcraft.yaml actions should be ignored when on-disk file exists'
+  "
+  rm -f "$CHARM_DIR/actions.yaml"
+  echo "PASS: on-disk actions.yaml precedence"
+
+  # ===================================================================
+  # 13. Charm with relations (requires/provides)
+  # ===================================================================
+  echo "=== Test: relations in metadata ==="
+  create_charm "$CHARM_DIR" "relcharm"
+  cat > "$CHARM_DIR/charmcraft.yaml" <<YAML
+  name: relcharm
+  type: charm
+  summary: charm with relations
+  description: Testing relation metadata.
+  base: ubuntu@24.04
+  platforms:
+    amd64: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+  requires:
+    database:
+      interface: mysql
+  provides:
+    website:
+      interface: http
+  peers:
+    cluster:
+      interface: cluster
+  YAML
+
+  rm -rf "$OUTPUT_DIR"/*
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  CHARM_FILE="$OUTPUT_DIR/relcharm_amd64.charm"
+
+  python3 -c "
+  import yaml, zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      meta = yaml.safe_load(zf.read('metadata.yaml'))
+      assert meta['requires']['database']['interface'] == 'mysql'
+      assert meta['provides']['website']['interface'] == 'http'
+      assert meta['peers']['cluster']['interface'] == 'cluster'
+  "
+  echo "PASS: relations in metadata"
+
+  # ===================================================================
+  # 14. Charm with links (flattened into metadata)
+  # ===================================================================
+  echo "=== Test: links flattening ==="
+  create_charm "$CHARM_DIR" "linkcharm"
+  cat > "$CHARM_DIR/charmcraft.yaml" <<YAML
+  name: linkcharm
+  type: charm
+  summary: charm with links
+  description: Testing link flattening.
+  title: My Link Charm
+  base: ubuntu@24.04
+  platforms:
+    amd64: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+  links:
+    documentation: https://docs.example.com
+    contact: admin@example.com
+    issues: https://github.com/example/issues
+    website: https://example.com
+    source: https://github.com/example
+  YAML
+
+  rm -rf "$OUTPUT_DIR"/*
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  CHARM_FILE="$OUTPUT_DIR/linkcharm_amd64.charm"
+
+  python3 -c "
+  import yaml, zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      meta = yaml.safe_load(zf.read('metadata.yaml'))
+      assert meta['docs'] == 'https://docs.example.com'
+      assert meta['maintainers'] == ['admin@example.com']
+      assert meta['issues'] == 'https://github.com/example/issues'
+      assert meta['website'] == 'https://example.com'
+      assert meta['source'] == 'https://github.com/example'
+      assert meta.get('display-name') == 'My Link Charm'
+      assert 'title' not in meta, 'title should be renamed to display-name'
+      assert 'links' not in meta, 'links should be flattened'
+  "
+  echo "PASS: links flattening"
+
+  # ===================================================================
+  # 15. Custom entrypoint
+  # ===================================================================
+  echo "=== Test: custom entrypoint ==="
+  create_charm "$CHARM_DIR" "epcharm"
+  cat > "$CHARM_DIR/charmcraft.yaml" <<YAML
+  name: epcharm
+  type: charm
+  summary: custom entrypoint charm
+  description: Testing custom entrypoint.
+  base: ubuntu@24.04
+  platforms:
+    amd64: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+      charm-entrypoint: src/app.py
+  YAML
+  cp "$CHARM_DIR/src/charm.py" "$CHARM_DIR/src/app.py"
+
+  rm -rf "$OUTPUT_DIR"/*
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  CHARM_FILE="$OUTPUT_DIR/epcharm_amd64.charm"
+
+  python3 -c "
+  import zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      dispatch = zf.read('dispatch').decode()
+      assert 'src/app.py' in dispatch, 'dispatch should use custom entrypoint'
+      assert 'src/charm.py' not in dispatch
+  "
+  echo "PASS: custom entrypoint"
+
+  # ===================================================================
+  # 16. Dump part alongside uv part
+  # ===================================================================
+  echo "=== Test: dump part ==="
+  create_charm "$CHARM_DIR" "dumpcharm"
+  mkdir -p "$CHARM_DIR/extra"
+  echo "server {}" > "$CHARM_DIR/extra/nginx.conf"
+  echo "worker: true" > "$CHARM_DIR/extra/settings.yaml"
+
+  cat > "$CHARM_DIR/charmcraft.yaml" <<YAML
+  name: dumpcharm
+  type: charm
+  summary: charm with dump part
+  description: Testing dump part.
+  base: ubuntu@24.04
+  platforms:
+    amd64: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+    static-files:
+      plugin: dump
+      source: extra
+  YAML
+
+  rm -rf "$OUTPUT_DIR"/*
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  CHARM_FILE="$OUTPUT_DIR/dumpcharm_amd64.charm"
+
+  python3 -c "
+  import zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      names = zf.namelist()
+      assert 'nginx.conf' in names, f'nginx.conf missing from dump part; got {names}'
+      assert 'settings.yaml' in names, 'settings.yaml missing from dump part'
+      # Core charm files should still be present.
+      assert 'dispatch' in names
+      assert 'src/charm.py' in names
+  "
+  echo "PASS: dump part"
+
+  # ===================================================================
+  # 17. Dump part with organize rules
+  # ===================================================================
+  echo "=== Test: dump part with organize ==="
+  create_charm "$CHARM_DIR" "orgcharm"
+  mkdir -p "$CHARM_DIR/files"
+  echo "key=val" > "$CHARM_DIR/files/app.conf"
+
+  cat > "$CHARM_DIR/charmcraft.yaml" <<YAML
+  name: orgcharm
+  type: charm
+  summary: charm with organize
+  description: Testing organize rules.
+  base: ubuntu@24.04
+  platforms:
+    amd64: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+    config-files:
+      plugin: dump
+      source: files
+      organize:
+        "app.conf": "etc/app.conf"
+  YAML
+
+  rm -rf "$OUTPUT_DIR"/*
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  CHARM_FILE="$OUTPUT_DIR/orgcharm_amd64.charm"
+
+  python3 -c "
+  import zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      names = zf.namelist()
+      assert 'etc/app.conf' in names, f'organize rule not applied; got {names}'
+      assert 'app.conf' not in names, 'original path should not be present after organize'
+  "
+  echo "PASS: dump part with organize"
+
+  # ===================================================================
+  # 18. Jujuignore is updated with required entries
+  # ===================================================================
+  echo "=== Test: jujuignore updated ==="
+  create_charm "$CHARM_DIR" "jicharm"
+  # Start with a custom jujuignore.
+  echo "*.bak" > "$CHARM_DIR/.jujuignore"
+
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+
+  grep -q '*.charm' "$CHARM_DIR/.jujuignore" || { echo "FAIL: *.charm not in .jujuignore"; exit 1; }
+  grep -q '.cantrip' "$CHARM_DIR/.jujuignore" || { echo "FAIL: .cantrip not in .jujuignore"; exit 1; }
+  grep -q '*.bak' "$CHARM_DIR/.jujuignore" || { echo "FAIL: original entries lost"; exit 1; }
+  echo "PASS: jujuignore updated"
+
+  # ===================================================================
+  # 19. Jujuignore updates are idempotent
+  # ===================================================================
+  echo "=== Test: jujuignore idempotent ==="
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  CHARM_COUNT=$(grep -c '*.charm' "$CHARM_DIR/.jujuignore" || true)
+  if [ "$CHARM_COUNT" -ne 1 ]; then
+    echo "FAIL: *.charm appears $CHARM_COUNT times (should be 1)"
+    exit 1
+  fi
+  echo "PASS: jujuignore idempotent"
+
+  # ===================================================================
+  # 20. Output directory is created if missing
+  # ===================================================================
+  echo "=== Test: output dir created ==="
+  NEW_OUTPUT="$OUTPUT_DIR/nested/deep/output"
+  rm -rf "$NEW_OUTPUT"
+  quickpack "$CHARM_DIR" --output-dir "$NEW_OUTPUT" --quiet
+  test -d "$NEW_OUTPUT" || { echo "FAIL: nested output dir not created"; exit 1; }
+  ls "$NEW_OUTPUT"/*.charm >/dev/null 2>&1 || { echo "FAIL: no charm in nested dir"; exit 1; }
+  echo "PASS: output dir created"
+
+  # ===================================================================
+  # 21. CLI help output
+  # ===================================================================
+  echo "=== Test: CLI help ==="
+  quickpack --help | grep -q "quickpack"
+  quickpack --help | grep -q "\-\-output-dir"
+  quickpack --help | grep -q "\-\-quiet"
+  echo "PASS: CLI help"
+
+  # ===================================================================
+  # 22. Charm without lib/ directory
+  # ===================================================================
+  echo "=== Test: no lib directory ==="
+  create_charm "$CHARM_DIR" "nolibcharm"
+  rm -rf "$CHARM_DIR/lib"
+
+  rm -rf "$OUTPUT_DIR"/*
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  CHARM_FILE="$OUTPUT_DIR/nolibcharm_amd64.charm"
+
+  python3 -c "
+  import zipfile
+  with zipfile.ZipFile('$CHARM_FILE') as zf:
+      names = zf.namelist()
+      assert 'src/charm.py' in names, 'src/charm.py should still be present'
+      lib_files = [n for n in names if n.startswith('lib/')]
+      assert len(lib_files) == 0, f'lib/ should not be present: {lib_files}'
+  "
+  echo "PASS: no lib directory"
+
+  # ===================================================================
+  # 23. Full-platform filename (ubuntu@24.04:amd64 style)
+  # ===================================================================
+  echo "=== Test: full platform filename ==="
+  create_charm "$CHARM_DIR" "platcharm"
+  # Determine the host arch for the expected filename.
+  HOST_ARCH=$(python3 -c "
+  import platform
+  m = {'x86_64': 'amd64', 'aarch64': 'arm64'}
+  print(m.get(platform.machine(), 'amd64'))
+  ")
+  cat > "$CHARM_DIR/charmcraft.yaml" <<YAML
+  name: platcharm
+  type: charm
+  summary: platform test
+  description: Testing full platform key in filename.
+  platforms:
+    ubuntu@24.04:$HOST_ARCH: null
+  parts:
+    charm:
+      plugin: uv
+      source: .
+  YAML
+
+  rm -rf "$OUTPUT_DIR"/*
+  quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  # The colon should become a hyphen in the filename.
+  EXPECTED="$OUTPUT_DIR/platcharm_ubuntu@24.04-${HOST_ARCH}.charm"
+  test -f "$EXPECTED" || { echo "FAIL: expected $EXPECTED"; ls "$OUTPUT_DIR"; exit 1; }
+  echo "PASS: full platform filename"
+
+  # ===================================================================
+  # 24. Verbose output (no --quiet) shows progress
+  # ===================================================================
+  echo "=== Test: verbose output ==="
+  VERBOSE_OUTPUT=$(quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" 2>&1)
+  echo "$VERBOSE_OUTPUT" | grep -q "Packing charm" || { echo "FAIL: no 'Packing charm' in output"; exit 1; }
+  echo "$VERBOSE_OUTPUT" | grep -q "Created.*\.charm" || { echo "FAIL: no 'Created' message in output"; exit 1; }
+  echo "PASS: verbose output"
+
+  # ===================================================================
+  # Cleanup
+  # ===================================================================
+  rm -rf "$CHARM_DIR" "$OUTPUT_DIR"
+  echo ""
+  echo "All quickpack-rs spread tests passed."
+
+restore: |
+  rm -f /usr/local/bin/quickpack

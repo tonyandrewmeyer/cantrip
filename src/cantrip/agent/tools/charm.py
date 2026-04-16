@@ -624,8 +624,71 @@ class QuickPackTool(Tool):
             },
         }
 
+    @staticmethod
+    def _find_rust_binary() -> str | None:
+        """Return the path to the Rust quickpack binary, or None."""
+        # Check PATH first.
+        rust_bin = shutil.which("quickpack-rs")
+        if rust_bin:
+            return rust_bin
+        # Check the in-tree build location.
+        import cantrip
+
+        pkg_dir = Path(cantrip.__file__).resolve().parent
+        candidate = pkg_dir.parent.parent / "quickpack-rs" / "target" / "release" / "quickpack"
+        if candidate.is_file():
+            return str(candidate)
+        return None
+
     async def execute(self, path: str = ".", output_dir: str | None = None) -> ToolResult:
-        """Run quick pack."""
+        """Run quick pack, preferring the Rust binary when available."""
+        rust_bin = self._find_rust_binary()
+        if rust_bin is not None:
+            return self._execute_rust(rust_bin, path, output_dir)
+        return self._execute_python(path, output_dir)
+
+    def _execute_rust(self, binary: str, path: str, output_dir: str | None) -> ToolResult:
+        """Pack using the compiled Rust binary."""
+        charm_path = Path(path).resolve()
+        cmd = [binary, str(charm_path), "--quiet"]
+        if output_dir is not None:
+            cmd.extend(["--output-dir", output_dir])
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except FileNotFoundError:
+            # Binary disappeared between check and exec — fall back.
+            return self._execute_python(path, output_dir)
+        except subprocess.TimeoutExpired:
+            return ToolResult(success=False, output="", error="quickpack timed out")
+
+        if result.returncode != 0:
+            error = (result.stderr or result.stdout or "quickpack failed").strip()
+            return ToolResult(success=False, output="", error=error)
+
+        # Locate the produced .charm file.
+        out = Path(output_dir) if output_dir else charm_path
+        charm_files = sorted(out.glob("*.charm"))
+        charm_file = charm_files[-1] if charm_files else None
+
+        return ToolResult(
+            success=True,
+            output=f"Packed charm successfully (rust): {charm_file.name if charm_file else '?'}",
+            data={
+                "path": str(charm_path),
+                "charm_file": str(charm_file) if charm_file else None,
+                "backend": "rust",
+            },
+        )
+
+    @staticmethod
+    def _execute_python(path: str, output_dir: str | None) -> ToolResult:
+        """Pack using the Python quickpack library."""
         try:
             from quickpack import pack as _pack
 
@@ -642,6 +705,7 @@ class QuickPackTool(Tool):
                 data={
                     "path": str(charm_path),
                     "charm_file": str(result_path),
+                    "backend": "python",
                 },
             )
         except FileNotFoundError as e:

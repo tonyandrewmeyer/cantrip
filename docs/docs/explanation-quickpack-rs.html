@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quickpack Rust backend — Cantrip</title>
+<meta name="description" content="Why quickpack has a Rust implementation, how Cantrip selects it, and measured performance.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>Explanation</h4>
+    <ul>
+      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
+      <li><a href="explanation-charm-paths.html">The three charm paths</a></li>
+      <li><a href="explanation-observability.html">Observability and debugging</a></li>
+      <li><a href="explanation-quickpack-rs.html" class="current">Quickpack Rust backend</a></li>
+    </ul>
+    <h4>On this page</h4>
+    <ul>
+      <li><a href="#background">Background</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#selection">How the backend is selected</a></li>
+      <li><a href="#performance">Performance</a></li>
+      <li><a href="#building">Building from source</a></li>
+      <li><a href="#testing">Running the tests</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>Explanation<span class="sep">/</span>Quickpack Rust backend
+    </div>
+
+    <h1>Quickpack Rust backend</h1>
+    <p class="subtitle">
+      A compiled alternative to the Python quickpack that reduces packing
+      overhead and startup latency.
+    </p>
+
+    <h2 id="background">Background</h2>
+    <p>
+      <strong>Quickpack</strong> is Cantrip's fast, local-only alternative to
+      <code>charmcraft pack</code>.  It skips LXD builds, linting, and
+      analysis, producing a valid <code>.charm</code> file suitable for
+      development deploys and upgrade testing.  The original implementation
+      is written in Python and lives in <code>src/quickpack/</code>.
+    </p>
+    <p>
+      Because the agent packs charms frequently during its
+      build&ndash;test&ndash;debug loop, even small latency reductions
+      compound.  The Rust implementation (<code>src/quickpack-rs/</code>)
+      eliminates the Python interpreter startup cost and handles file I/O
+      and ZIP compression natively, while producing byte-compatible output.
+    </p>
+
+    <h2 id="architecture">Architecture</h2>
+    <p>
+      The Rust binary mirrors the Python package module-for-module:
+    </p>
+    <table>
+      <thead>
+        <tr><th>Python module</th><th>Rust module</th><th>Responsibility</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>cli.py</code></td><td><code>main.rs</code></td><td>CLI argument parsing (clap)</td></tr>
+        <tr><td><code>pack.py</code></td><td><code>pack.rs</code></td><td>Orchestration, dispatch script, ZIP creation</td></tr>
+        <tr><td><code>parts.py</code></td><td><code>parts.rs</code></td><td>UV and dump plugin processing</td></tr>
+        <tr><td><code>metadata.py</code></td><td><code>metadata.rs</code></td><td>YAML parsing, metadata/manifest generation</td></tr>
+        <tr><td><code>jujuignore.py</code></td><td><code>jujuignore.rs</code></td><td>Gitignore-style pattern matching</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Both implementations share the same command-line interface:
+    </p>
+    <pre><code>quickpack [charm_dir] [--output-dir DIR] [--quiet]</code></pre>
+    <p>
+      The Rust version does <em>not</em> expose a Python importable API
+      &mdash; it is a standalone binary only.  Both versions shell out to
+      <code>uv venv</code> and <code>uv sync</code> to build the charm's
+      virtual environment; that subprocess call is identical in both cases
+      and dominates the total wall-clock time.
+    </p>
+
+    <h2 id="selection">How the backend is selected</h2>
+    <p>
+      When the agent's <code>quick_pack</code> tool is invoked, it checks
+      for the Rust binary in two locations, in order:
+    </p>
+    <ol>
+      <li>
+        <code>quickpack-rs</code> on <code>$PATH</code> &mdash; this is
+        the installed name, useful when the binary has been placed in
+        <code>/usr/local/bin</code> or similar.
+      </li>
+      <li>
+        The in-tree build artefact at
+        <code>src/quickpack-rs/target/release/quickpack</code>, relative
+        to the cantrip package directory.
+      </li>
+    </ol>
+    <p>
+      If neither is found, the tool falls back to the Python
+      <code>quickpack</code> library transparently.  The
+      <code>backend</code> field in the tool result data indicates which
+      implementation was used (<code>"rust"</code> or
+      <code>"python"</code>).
+    </p>
+
+    <h2 id="performance">Performance</h2>
+    <p>
+      Benchmarks on an Ubuntu 24.04 machine (x86_64), packing a minimal
+      charm with one <code>ops</code> dependency:
+    </p>
+    <table>
+      <thead>
+        <tr><th>Metric</th><th>Rust</th><th>Python</th><th>Speedup</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Startup (<code>--help</code>)</td>
+          <td>~43 ms</td>
+          <td>~215 ms</td>
+          <td><strong>5&times;</strong></td>
+        </tr>
+        <tr>
+          <td>Full pack (incl. <code>uv sync</code>)</td>
+          <td>~0.31 s</td>
+          <td>~0.63 s</td>
+          <td><strong>~2&times;</strong></td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      The full-pack speedup is bounded by <code>uv sync</code>, which
+      accounts for the majority of wall-clock time in both
+      implementations.  The Rust advantage is most visible in the
+      non-<code>uv</code> overhead: file copying, YAML
+      serialisation, ZIP compression, and process startup.
+    </p>
+    <p>
+      For charms with large dependency trees or slow networks, the relative
+      speedup shrinks because <code>uv sync</code> dominates further.  For
+      charms with few or no dependencies, the ~5&times; startup advantage
+      is more visible.
+    </p>
+
+    <h2 id="building">Building from source</h2>
+    <p>
+      The Rust toolchain (1.70+) is required.  From the repository root:
+    </p>
+    <pre><code>cd src/quickpack-rs
+cargo build --release</code></pre>
+    <p>
+      The binary is written to
+      <code>src/quickpack-rs/target/release/quickpack</code>.  Cantrip
+      will find it automatically at this location.  To install system-wide:
+    </p>
+    <pre><code>sudo cp src/quickpack-rs/target/release/quickpack /usr/local/bin/quickpack-rs</code></pre>
+
+    <h2 id="testing">Running the tests</h2>
+    <p>
+      The Rust implementation has its own spread test suite at
+      <code>tests/spread/quickpack-rs/task.yaml</code>.  It runs the same
+      24 functional tests as the Python version (the
+      <code>python&nbsp;-m&nbsp;quickpack</code> test is excluded as
+      Python-specific).  To run locally:
+    </p>
+    <pre><code>spread tests/spread/quickpack-rs</code></pre>
+    <p>
+      The Python test suite remains the canonical source of truth.  The
+      Rust suite verifies output compatibility: both implementations must
+      produce structurally identical <code>.charm</code> archives.
+    </p>
+
+    <p>
+      See also:
+    </p>
+    <ul>
+      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
+      <li><a href="reference-tools.html">Agent tools</a></li>
+    </ul>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

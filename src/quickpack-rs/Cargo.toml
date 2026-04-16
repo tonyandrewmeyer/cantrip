@@ -1,0 +1,19 @@
+[package]
+name = "quickpack-rs"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "quickpack"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+chrono = { version = "0.4", features = ["serde"] }
+walkdir = "2"
+glob = "0.3"
+regex = "1"
+tempfile = "3"
