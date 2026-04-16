@@ -13,6 +13,8 @@ from textual.worker import Worker, WorkerState
 from cantrip import __version__
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
+from cantrip.agent.git_branch import PUSH_CONFIRM_PREFIX
+from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.llm import LLMProvider, create_provider, resolve_light_provider
@@ -94,6 +96,10 @@ class CantripApp(App):
         self._watcher_autostart = watcher
         self._session_start = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
         self._pending_confirm_id: str | None = None
+        self._pending_pr_branch: str | None = None
+        self._pending_bootstrap: bool = False
+        self._bootstrap_offered: bool = False
+        self._pending_maintenance: dict | None = None  # {"pr_url": ..., "issue": ...}
 
         # Register bundled and user themes.
         from cantrip.tui.themes import register_themes
@@ -148,6 +154,9 @@ class CantripApp(App):
         self.set_interval(5.0, self._update_model_info)
         if self._watcher_autostart:
             self._start_watcher()
+        # Start issue triage if a GitHub remote is detected.
+        if self._agent and self._agent.state.github_repo:
+            self._agent.start_issue_triage()
 
     def _init_agent(self) -> None:
         """Initialise the LLM provider and agent."""
@@ -207,6 +216,8 @@ class CantripApp(App):
                 parts.append(f"[{state.dev_model}:{substrate}]")
             if state.cos_model:
                 parts.append(f"[{state.cos_model}:k8s]")
+            if state.github_repo:
+                parts.append(f"[gh:{state.github_repo}]")
         if self._light_model_name:
             parts.append(f"[light: {self._light_model_name}]")
         parts.append("[F1 Help]")
@@ -261,6 +272,9 @@ class CantripApp(App):
         # Session-level cache stats (Claude prompt caching).
         bar.cache_creation_tokens = self._agent.cache_creation_tokens
         bar.cache_read_tokens = self._agent.cache_read_tokens
+
+        # GitHub remote.
+        bar.github_repo = self._agent.state.github_repo or ""
 
     def action_toggle_model_info(self) -> None:
         """Toggle model info bar visibility."""
@@ -384,7 +398,11 @@ class CantripApp(App):
                 task = self._agent.work_queue.get_task(task_id)
                 if task is None:
                     return
-                if task_id.startswith("confirm-improvements"):
+                if task_id.startswith(PUSH_CONFIRM_PREFIX):
+                    self._present_push_confirmation(task)
+                elif task_id.startswith(TRIAGE_CONFIRM_PREFIX):
+                    self._present_triage_confirmation(task)
+                elif task_id.startswith("confirm-improvements"):
                     self._present_improvement_confirmation(task)
                 else:
                     self._present_design_questions(task)
@@ -492,6 +510,351 @@ class CantripApp(App):
             chat.add_system_message("No build tasks generated — check the design output.")
 
     # -- Improvement confirmation flow ----------------------------------------
+
+    def _offer_repo_bootstrap(self) -> None:
+        """Offer to create a GitHub repo if conditions are met."""
+        if self._bootstrap_offered or not self._agent:
+            return
+        if not self._agent.should_offer_bootstrap():
+            return
+
+        self._bootstrap_offered = True
+        self._pending_bootstrap = True
+        charm_name = self._agent.state.charm_name or "my-charm"
+        chat = self.query_one("#chat", ChatWidget)
+        chat.add_system_message(
+            f"No GitHub remote detected. Would you like to create a repository?\n\n"
+            f"Reply **yes** (or **public** for a public repo) to create "
+            f"**{charm_name}** on GitHub, or **skip** to continue without one.\n\n"
+            f"You can also specify: `yes org=canonical` or `yes desc=My charm`"
+        )
+
+    def _handle_bootstrap_response(self, message: str) -> bool:
+        """Handle the user's response to the repo bootstrap offer.
+
+        Returns ``True`` if the message was handled.
+        """
+        if not self._agent:
+            return False
+
+        lower = message.strip().lower()
+        chat = self.query_one("#chat", ChatWidget)
+
+        if lower in ("skip", "no", "n"):
+            self._pending_bootstrap = False
+            chat.add_system_message("Repository creation skipped.")
+            return True
+
+        # Parse options from message (e.g. "yes org=canonical desc=My charm").
+        if lower.startswith(("yes", "y", "ok", "public", "private")):
+            self._pending_bootstrap = False
+            private = "public" not in lower
+            charm_name = self._agent.state.charm_name or "my-charm"
+
+            # Extract org= and desc= from the message.
+            org = ""
+            description = ""
+            import re
+
+            org_match = re.search(r"org=(\S+)", message)
+            if org_match:
+                org = org_match.group(1)
+            desc_match = re.search(r"desc=(.+?)(?:\s+org=|$)", message)
+            if desc_match:
+                description = desc_match.group(1).strip()
+
+            chat.add_system_message(
+                f"Creating {'private' if private else 'public'} repository **{charm_name}**..."
+            )
+            result = self._agent.handle_repo_bootstrap(
+                charm_name,
+                private=private,
+                description=description,
+                org=org,
+            )
+            chat.add_system_message(result)
+
+            # Update header if repo was created.
+            if self._agent.state.github_repo:
+                self._update_header_subtitle()
+                self._update_model_info()
+            return True
+
+        return False
+
+    def _handle_pr_response(self, message: str) -> bool:
+        """Handle pr/draft/skip response after a successful push.
+
+        Returns ``True`` if the message was handled, ``False`` otherwise.
+        """
+        if not self._agent or not self._pending_pr_branch:
+            return False
+
+        lower = message.strip().lower()
+        chat = self.query_one("#chat", ChatWidget)
+        branch = self._pending_pr_branch
+
+        if lower in ("pr", "yes", "y", "ok", "draft"):
+            draft = lower == "draft"
+            self._pending_pr_branch = None
+            result = self._agent.handle_pr_creation(branch, draft=draft)
+            chat.add_system_message(result)
+            # Trigger maintenance loop: offer to comment + re-triage.
+            self._offer_maintenance_continuation(branch, result)
+            return True
+
+        if lower in ("skip", "no", "n"):
+            self._pending_pr_branch = None
+            chat.add_system_message("PR creation skipped.")
+            # Still offer re-triage even if PR was skipped.
+            self._offer_retriage()
+            return True
+
+        return False
+
+    def _offer_maintenance_continuation(self, branch: str, pr_result: str) -> None:
+        """After PR creation, offer to comment on the issue and re-triage."""
+        if not self._agent:
+            return
+
+        import re
+
+        # Extract issue number from branch name.
+        m = re.search(r"issue-(\d+)", branch)
+        issue_number = int(m.group(1)) if m else None
+
+        # Extract PR URL from result.
+        pr_url = ""
+        url_match = re.search(r"(https://github\.com/\S+/pull/\d+)", pr_result)
+        if url_match:
+            pr_url = url_match.group(1)
+
+        chat = self.query_one("#chat", ChatWidget)
+
+        # Extract PR number from URL.
+        pr_number: int | None = None
+        pr_num_match = re.search(r"/pull/(\d+)", pr_url)
+        if pr_num_match:
+            pr_number = int(pr_num_match.group(1))
+
+        if issue_number and pr_url:
+            self._pending_maintenance = {
+                "issue_number": issue_number,
+                "pr_url": pr_url,
+                "pr_number": pr_number,
+                "branch": branch,
+            }
+            chat.add_system_message(
+                f"Reply **comment** to post a note on issue #{issue_number}, "
+                f"**review** to check for PR feedback, "
+                f"**next** to check for more issues, or **done** to stop."
+            )
+        elif pr_number:
+            self._pending_maintenance = {
+                "pr_url": pr_url,
+                "pr_number": pr_number,
+                "branch": branch,
+            }
+            chat.add_system_message(
+                "Reply **review** to check for PR feedback, "
+                "**next** to check for more issues, or **done** to stop."
+            )
+        else:
+            self._offer_retriage()
+
+    def _offer_retriage(self) -> None:
+        """Offer to check for more issues."""
+        if not self._agent or not self._agent.state.github_repo:
+            return
+        # Check for upstream divergence first.
+        warning = self._agent.check_upstream()
+        chat = self.query_one("#chat", ChatWidget)
+        if warning:
+            chat.add_system_message(warning)
+        chat.add_system_message("Reply **next** to check for more issues, or **done** to stop.")
+        self._pending_maintenance = {"retriage_only": True}
+
+    def _handle_maintenance_response(self, message: str) -> bool:
+        """Handle comment/next/done response in the maintenance loop.
+
+        Returns ``True`` if the message was handled.
+        """
+        if not self._agent or not self._pending_maintenance:
+            return False
+
+        lower = message.strip().lower()
+        chat = self.query_one("#chat", ChatWidget)
+        ctx = self._pending_maintenance
+
+        if lower == "comment" and "issue_number" in ctx:
+            result = self._agent.comment_on_issue(ctx["issue_number"], ctx.get("pr_url", ""))
+            chat.add_system_message(result)
+            # After commenting, offer re-triage or review.
+            self._pending_maintenance = {k: v for k, v in ctx.items() if k != "issue_number"}
+            if "pr_number" in ctx:
+                chat.add_system_message(
+                    "Reply **review** to check for PR feedback, "
+                    "**next** for more issues, or **done** to stop."
+                )
+            else:
+                self._pending_maintenance = {"retriage_only": True}
+                chat.add_system_message(
+                    "Reply **next** to check for more issues, or **done** to stop."
+                )
+            return True
+
+        if lower == "review" and "pr_number" in ctx:
+            pr_number = ctx["pr_number"]
+            branch = ctx.get("branch", "")
+            feedback = self._agent.check_pr_feedback(pr_number)
+            if feedback is None:
+                chat.add_system_message(f"Could not fetch feedback for PR #{pr_number}.")
+            elif feedback.is_approved:
+                chat.add_system_message(f"PR #{pr_number} is **approved**. No changes needed.")
+                self._pending_maintenance = {"retriage_only": True}
+            elif feedback.needs_changes and feedback.comments:
+                chat.add_system_message(feedback.format_for_chat())
+                chat.add_system_message(
+                    "Reply **fix** to address the review feedback, or **skip** to handle it manually."
+                )
+                self._pending_maintenance = {
+                    "awaiting_fix": True,
+                    "pr_number": pr_number,
+                    "branch": branch,
+                    "feedback": feedback,
+                }
+            elif feedback.comments:
+                chat.add_system_message(feedback.format_for_chat())
+                self._pending_maintenance = {"retriage_only": True}
+            else:
+                chat.add_system_message(f"PR #{pr_number} has no review comments yet.")
+                self._pending_maintenance = {"retriage_only": True}
+            return True
+
+        if lower == "fix" and ctx.get("awaiting_fix"):
+            feedback = ctx.get("feedback")
+            branch = ctx.get("branch", "")
+            if feedback and self._agent:
+                fix_tasks = self._agent.create_pr_fix_tasks(feedback, branch)
+                if fix_tasks:
+                    titles = "\n".join(f"- {t.title}" for t in fix_tasks)
+                    chat.add_system_message(f"Addressing review feedback:\n{titles}")
+                else:
+                    chat.add_system_message("Could not create fix tasks.")
+            self._pending_maintenance = None
+            return True
+
+        if lower in ("next", "more"):
+            self._pending_maintenance = None
+            started = self._agent.retriage_issues()
+            if started:
+                chat.add_system_message("Checking for new issues...")
+            else:
+                chat.add_system_message("No new issues to check.")
+            return True
+
+        if lower in ("done", "stop", "skip", "no", "n"):
+            self._pending_maintenance = None
+            chat.add_system_message("Maintenance loop stopped.")
+            return True
+
+        return False
+
+    def _handle_push_response(self, message: str) -> bool:
+        """Handle approve/skip response for a push-confirm CONFIRM task.
+
+        Returns ``True`` if the message was handled, ``False`` otherwise.
+        """
+        if not self._agent or not self._pending_confirm_id:
+            return False
+
+        lower = message.strip().lower()
+        chat = self.query_one("#chat", ChatWidget)
+        confirm_id = self._pending_confirm_id
+
+        if lower in ("approve", "yes", "y", "push", "ok"):
+            self._pending_confirm_id = None
+            self._agent.work_queue.set_done(confirm_id, "Push approved by user")
+            result = self._agent.handle_push_confirmation(confirm_id, approved=True)
+            chat.add_system_message(result)
+            # If push succeeded, offer PR creation.
+            if "Reply **pr**" in result:
+                branch = confirm_id.removeprefix(PUSH_CONFIRM_PREFIX)
+                self._pending_pr_branch = branch
+            return True
+
+        if lower in ("skip", "no", "n", "dismiss", "local"):
+            self._pending_confirm_id = None
+            self._agent.work_queue.set_done(confirm_id, "Push declined — branch left local")
+            result = self._agent.handle_push_confirmation(confirm_id, approved=False)
+            chat.add_system_message(result)
+            return True
+
+        return False
+
+    def _present_push_confirmation(self, task: AgentTask) -> None:
+        """Show a push confirmation prompt in chat.
+
+        Called when a push-branch-* CONFIRM task becomes blocked.
+        """
+        if not self._agent:
+            return
+
+        chat = self.query_one("#chat", ChatWidget)
+        chat.add_system_message(
+            f"{task.description}\n\nReply **push** to push, or **skip** to leave the branch local."
+        )
+
+    def _handle_triage_response(self, message: str) -> bool:
+        """Handle approve/skip response for a triage CONFIRM task.
+
+        Returns ``True`` if the message was handled, ``False`` if it should
+        be passed to the LLM instead.
+        """
+        if not self._agent or not self._pending_confirm_id:
+            return False
+
+        lower = message.strip().lower()
+        chat = self.query_one("#chat", ChatWidget)
+        confirm_id = self._pending_confirm_id
+
+        if lower in ("approve", "yes", "y", "ok"):
+            self._pending_confirm_id = None
+            self._agent.work_queue.set_done(confirm_id, "Approved by user")
+            work_tasks = self._agent.handle_triage_confirmation(confirm_id)
+            if work_tasks:
+                titles = "\n".join(f"- {t.title}" for t in work_tasks)
+                chat.add_system_message(f"Working on the issue:\n{titles}")
+            else:
+                chat.add_system_message("Could not generate work tasks for this issue.")
+            return True
+
+        if lower in ("skip", "no", "n", "dismiss"):
+            self._pending_confirm_id = None
+            self._agent.work_queue.set_done(confirm_id, "Skipped by user")
+            chat.add_system_message("Issue skipped.")
+            return True
+
+        # Unrecognised response — don't consume it.
+        return False
+
+    def _present_triage_confirmation(self, task: AgentTask) -> None:
+        """Show a GitHub issue summary in chat for user approval.
+
+        Called when a triage-issue-* CONFIRM task becomes blocked.
+        Shows the issue details and asks the user to approve or skip.
+        """
+        if not self._agent:
+            return
+
+        chat = self.query_one("#chat", ChatWidget)
+        chat.add_system_message(
+            f"**Issue triage:**\n\n{task.description}\n\n"
+            f"Reply **approve** to work on this issue, or **skip** to dismiss."
+        )
+        # The confirm task stays blocked; the user's next message in
+        # _on_agent_response_done or the chat handler will match
+        # "approve"/"skip" and resolve the pending confirm.
 
     def _present_improvement_confirmation(self, task: AgentTask) -> None:
         """Show audit findings in chat and auto-approve all gaps.
@@ -642,6 +1005,28 @@ class CantripApp(App):
             chat.add_system_message("No LLM provider configured. Check your API key.")
             return
 
+        # Handle pending confirmations before sending to the LLM.
+        if self._pending_maintenance:
+            handled = self._handle_maintenance_response(message)
+            if handled:
+                return
+        if self._pending_bootstrap:
+            handled = self._handle_bootstrap_response(message)
+            if handled:
+                return
+        if self._pending_pr_branch:
+            handled = self._handle_pr_response(message)
+            if handled:
+                return
+        if self._pending_confirm_id and self._pending_confirm_id.startswith(PUSH_CONFIRM_PREFIX):
+            handled = self._handle_push_response(message)
+            if handled:
+                return
+        if self._pending_confirm_id and self._pending_confirm_id.startswith(TRIAGE_CONFIRM_PREFIX):
+            handled = self._handle_triage_response(message)
+            if handled:
+                return
+
         # Disable input and show thinking indicator while processing.
         input_widget = self.query_one("#chat-input", Input)
         input_widget.disabled = True
@@ -692,6 +1077,9 @@ class CantripApp(App):
             self._update_header_subtitle()
             self._update_model_info()
             self._update_test_summary()
+            # Offer repo bootstrap if conditions are met.
+            if not self._bootstrap_offered and self._agent.state.charm_name:
+                self._offer_repo_bootstrap()
 
         elif event.state == WorkerState.CANCELLED:
             chat.add_system_message("Operation cancelled.")
@@ -782,6 +1170,8 @@ class CantripApp(App):
                 await self._agent.stop_executor()
             if self._agent.watcher_running:
                 await self._agent.stop_watcher()
+            if self._agent.issue_triage_running:
+                await self._agent.stop_issue_triage()
         self.exit()
 
     def action_clear_chat(self) -> None:

@@ -76,6 +76,9 @@ class AgentState:
     watcher_enabled: bool = False
     test_results: TestResults | None = None
 
+    # GitHub remote — detected from git origin, e.g. "canonical/grafana-k8s".
+    github_repo: str | None = None
+
     # Design proposal — persisted as raw Markdown, re-parsed on load.
     design_proposal: object | None = None
 

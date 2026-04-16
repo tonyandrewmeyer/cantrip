@@ -49,6 +49,8 @@ class ModelInfoBar(Widget):
     cache_creation_tokens: reactive[int] = reactive(0, init=False)
     cache_read_tokens: reactive[int] = reactive(0, init=False)
 
+    github_repo: reactive[str] = reactive("", init=False)
+
     def compose(self) -> ComposeResult:
         """Compose the bar layout."""
         yield Static("", id="model-info-line1", classes="model-info-row")
@@ -67,6 +69,8 @@ class ModelInfoBar(Widget):
             parts.append(f"[{self.thinking_mode}]")
         if self.light_model_name:
             parts.append(f"light: {self.light_model_name}")
+        if self.github_repo:
+            parts.append(f"gh: {self.github_repo}")
 
         # Line 2: context usage, compaction distance, session tokens.
         ctx_parts: list[str] = []
@@ -127,6 +131,7 @@ for _attr in (
     "alltime_request_count",
     "cache_creation_tokens",
     "cache_read_tokens",
+    "github_repo",
 ):
     setattr(ModelInfoBar, f"watch_{_attr}", lambda self: self._refresh_content())
 

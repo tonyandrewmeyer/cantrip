@@ -1,7 +1,9 @@
 """Core agent logic."""
 
 import logging
+import re
 import sqlite3
+import subprocess
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
@@ -10,6 +12,24 @@ from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.executor import BackgroundExecutor
+from cantrip.agent.git_branch import (
+    PUSH_CONFIRM_PREFIX,
+    PrFeedback,
+    bootstrap_github_repo,
+    build_pr_body,
+    can_bootstrap,
+    check_upstream_diverged,
+    create_branch,
+    create_pull_request,
+    gh_issue_comment,
+    gh_pr_view,
+    push_branch,
+)
+from cantrip.agent.github_issues import (
+    TRIAGE_CONFIRM_PREFIX,
+    IssueTriage,
+    build_issue_work_tasks,
+)
 from cantrip.agent.planner import (
     PlanningContext,
     TaskPlanner,
@@ -26,7 +46,7 @@ from cantrip.agent.preflight import (
     PreflightRunner,
 )
 from cantrip.agent.prompts import build_system_prompt, claude_md
-from cantrip.agent.queue import AgentTask, TaskStatus, WorkQueue
+from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision, TestResults
@@ -51,6 +71,40 @@ _TEST_RESULT_TOOLS = frozenset({"run_charm_tests", "charm_validate"})
 # Purposes that can use the light model.
 _LIGHT_PURPOSES = frozenset({"compaction"})
 
+# Pattern for GitHub HTTPS and SSH remote URLs.
+_GITHUB_HTTPS_RE = re.compile(r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?$")
+_GITHUB_SSH_RE = re.compile(r"git@github\.com:([^/]+/[^/]+?)(?:\.git)?$")
+
+
+def detect_github_repo(charm_path: Path | None) -> str | None:
+    """Detect a GitHub owner/repo from the git remote origin URL.
+
+    Parses both HTTPS (``https://github.com/owner/repo``) and SSH
+    (``git@github.com:owner/repo``) remote URLs.  Returns a string
+    like ``"canonical/grafana-k8s"`` or *None* if the remote is not a
+    GitHub URL or git is unavailable.
+    """
+    if charm_path is None:
+        return None
+    try:
+        result = subprocess.run(  # noqa: S603, S607
+            ["git", "remote", "get-url", "origin"],
+            cwd=str(charm_path),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    url = result.stdout.strip()
+    for pattern in (_GITHUB_HTTPS_RE, _GITHUB_SSH_RE):
+        m = pattern.match(url)
+        if m:
+            return m.group(1)
+    return None
+
 
 class CantripAgent:
     """Main Cantrip agent."""
@@ -74,6 +128,9 @@ class CantripAgent:
         if charm_path is not None and not isinstance(charm_path, Path):
             charm_path = Path(charm_path)
         self.state = AgentState(charm_path=charm_path)
+        self.state.github_repo = detect_github_repo(charm_path)
+        if self.state.github_repo:
+            log.info("Detected GitHub remote: %s", self.state.github_repo)
         self._work_queue = WorkQueue()
         self._event_bus = ui_events.EventBus()
         self._preflight = PreflightRunner(self.state)
@@ -94,6 +151,7 @@ class CantripAgent:
 
         self._watcher: EventWatcher | None = None
         self._executor: BackgroundExecutor | None = None
+        self._issue_triage: IssueTriage | None = None
 
         # Session-level prompt cache accumulators (Claude-specific).
         self.cache_creation_tokens: int = 0
@@ -867,6 +925,16 @@ class CantripAgent:
         )
 
         fix_tasks = plan_improvement_fixes(context, gaps, confirm_task_id=confirm_task_id)
+
+        # Create a feature branch for improvement work.
+        charm_name = self.state.charm_name or "charm"
+        branch = self._create_feature_branch(f"improve-{charm_name}")
+
+        # Append push-confirm task if a branch was created.
+        if branch and fix_tasks:
+            last_task_id = fix_tasks[-1].id
+            fix_tasks.append(self._build_push_confirm_task(branch, last_task_id))
+
         self._work_queue.add_tasks(fix_tasks)
 
         self._ensure_store()
@@ -877,6 +945,7 @@ class CantripAgent:
                     "charm_name": self.state.charm_name,
                     "gap_count": sum(1 for v in gaps.values() if v),
                     "fix_task_count": len(fix_tasks),
+                    "branch": branch or "",
                 },
             )
 
@@ -971,6 +1040,468 @@ class CantripAgent:
         if task is not None:
             return task.title
         return None
+
+    # -- Issue triage integration -----------------------------------------------
+
+    @property
+    def issue_triage_running(self) -> bool:
+        """Whether the GitHub issue triage worker is active."""
+        return self._issue_triage is not None and self._issue_triage.running
+
+    def start_issue_triage(self) -> bool:
+        """Start the background issue triage worker.
+
+        Returns ``False`` if no ``github_repo`` is detected or triage
+        has already run this session.
+        """
+        if not self.state.github_repo:
+            return False
+        if self._issue_triage is not None:
+            return False
+
+        def _on_issues_found(confirm_tasks: list[AgentTask]) -> None:
+            for task in confirm_tasks:
+                self._work_queue.add_task(task)
+            self._event_bus.publish(
+                ui_events.chat_message(
+                    role="system",
+                    content=(
+                        f"Found {len(confirm_tasks)} actionable GitHub issue(s) "
+                        f"— check the task list to approve."
+                    ),
+                )
+            )
+            self._ensure_store()
+            if self._store:
+                self._store.record_event(
+                    "issue_triage_complete",
+                    {
+                        "repo": self.state.github_repo,
+                        "candidates": len(confirm_tasks),
+                    },
+                )
+
+        self._issue_triage = IssueTriage(
+            repo=self.state.github_repo,
+            on_issues_found=_on_issues_found,
+        )
+        self._issue_triage.start()
+        log.info("Issue triage started for %s", self.state.github_repo)
+        return True
+
+    async def stop_issue_triage(self) -> None:
+        """Stop the issue triage worker if running."""
+        if self._issue_triage:
+            await self._issue_triage.stop()
+            self._issue_triage = None
+
+    def retriage_issues(self) -> bool:
+        """Re-run issue triage to check for new issues.
+
+        Preserves the set of already-examined issues so the user is
+        not re-prompted for issues they have already seen.  Returns
+        ``False`` if triage cannot run (no repo or already running).
+        """
+        if not self.state.github_repo:
+            return False
+        if self._issue_triage and self._issue_triage.running:
+            return False
+
+        # Preserve examined set across triage runs.
+        examined: set[int] = set()
+        if self._issue_triage:
+            examined = self._issue_triage.examined_issues
+
+        def _on_issues_found(confirm_tasks: list[AgentTask]) -> None:
+            for task in confirm_tasks:
+                self._work_queue.add_task(task)
+            if confirm_tasks:
+                self._event_bus.publish(
+                    ui_events.chat_message(
+                        role="system",
+                        content=(
+                            f"Found {len(confirm_tasks)} new actionable issue(s) "
+                            f"— check the task list to approve."
+                        ),
+                    )
+                )
+
+        self._issue_triage = IssueTriage(
+            repo=self.state.github_repo,
+            on_issues_found=_on_issues_found,
+        )
+        # Transfer examined set from previous run.
+        self._issue_triage._examined = examined  # noqa: SLF001
+        self._issue_triage.start()
+        log.info("Issue re-triage started for %s", self.state.github_repo)
+        return True
+
+    def comment_on_issue(self, issue_number: int, pr_url: str) -> str:
+        """Post a comment on a resolved GitHub issue.
+
+        Returns a status message for the user.
+        """
+        repo = self.state.github_repo
+        if not repo:
+            return "No GitHub repository detected."
+
+        body = (
+            f"This issue has been addressed by {pr_url}.\n\n"
+            f"*Automated by [Cantrip](https://github.com/canonical/cantrip)*"
+        )
+        success, result = gh_issue_comment(repo, issue_number, body)
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "issue_commented" if success else "issue_comment_failed",
+                {"issue_number": issue_number, "result": result[:500]},
+            )
+
+        if success:
+            return f"Commented on issue #{issue_number}."
+        return f"Failed to comment on issue #{issue_number}: {result}"
+
+    def check_upstream(self) -> str | None:
+        """Check if the default branch has diverged from the remote.
+
+        Returns a warning message if behind, or ``None`` if up to date.
+        """
+        if not self.state.charm_path:
+            return None
+        diverged, behind = check_upstream_diverged(str(self.state.charm_path))
+        if diverged:
+            return (
+                f"**Warning:** The default branch is {behind} commit(s) behind "
+                f"origin. Consider pulling or rebasing before starting new work."
+            )
+        return None
+
+    # -- PR feedback loop (Phase 42.7) ----------------------------------------
+
+    def check_pr_feedback(self, pr_number: int) -> PrFeedback | None:
+        """Fetch review feedback for a pull request.
+
+        Returns structured feedback or ``None`` if unavailable.
+        """
+        repo = self.state.github_repo
+        if not repo:
+            return None
+        return gh_pr_view(repo, pr_number)
+
+    def create_pr_fix_tasks(
+        self,
+        feedback: PrFeedback,
+        branch_name: str,
+    ) -> list[AgentTask]:
+        """Generate BUILD tasks to address PR review feedback.
+
+        Creates one BUILD task that addresses all review comments,
+        plus a push-confirm task at the end.
+        """
+        charm_path = str(self.state.charm_path) if self.state.charm_path else "."
+
+        # Build a description from the review comments.
+        comment_text = "\n".join(
+            f"- **{c.author}**" + (f" (`{c.path}:{c.line}`)" if c.path else "") + f": {c.body}"
+            for c in feedback.comments
+            if c.body
+        )
+
+        fix_id = f"pr-fix-{feedback.pr_number}"
+        fix_task = AgentTask(
+            id=fix_id,
+            title=f"Address review feedback on PR #{feedback.pr_number}",
+            category=TaskCategory.BUILD,
+            description=(
+                f"Reviewers have requested changes on PR #{feedback.pr_number}.\n\n"
+                f"**Review comments:**\n{comment_text}\n\n"
+                f"Address each comment in `{charm_path}`. Commit with a message "
+                f"referencing the PR (e.g. 'Address review feedback on #{feedback.pr_number}')."
+            ),
+        )
+
+        tasks: list[AgentTask] = [fix_task]
+
+        # Add push-confirm after the fix.
+        tasks.append(self._build_push_confirm_task(branch_name, fix_id))
+
+        self._work_queue.add_tasks(tasks)
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "pr_fix_tasks_created",
+                {
+                    "pr_number": feedback.pr_number,
+                    "comment_count": len(feedback.comments),
+                    "task_count": len(tasks),
+                },
+            )
+
+        return tasks
+
+    def _create_feature_branch(self, description: str) -> str | None:
+        """Create a feature branch if a GitHub remote is detected.
+
+        Returns the branch name on success, or ``None`` if branching is
+        not applicable (no GitHub remote or no charm path).
+        """
+        if not self.state.github_repo or not self.state.charm_path:
+            return None
+        branch = create_branch(str(self.state.charm_path), description)
+        if branch:
+            self._ensure_store()
+            if self._store:
+                self._store.record_event(
+                    "branch_created",
+                    {"branch": branch, "repo": self.state.github_repo or ""},
+                )
+        return branch
+
+    def _build_push_confirm_task(
+        self,
+        branch_name: str,
+        last_task_id: str,
+    ) -> AgentTask:
+        """Build a CONFIRM task asking whether to push a feature branch."""
+        return AgentTask(
+            id=f"{PUSH_CONFIRM_PREFIX}{branch_name}",
+            title=f"Push branch {branch_name}?",
+            category=TaskCategory.CONFIRM,
+            description=(
+                f"All work on branch **{branch_name}** is complete and tests have passed.\n\n"
+                f"Approve to push the branch to **origin** (for PR creation).\n"
+                f"Skip to leave the branch local for manual review."
+            ),
+            dependencies=[last_task_id],
+        )
+
+    def handle_push_confirmation(self, confirm_task_id: str, *, approved: bool) -> str:
+        """Handle an approved or skipped push-confirm task.
+
+        Returns a status message for the user.
+        """
+        branch_name = confirm_task_id.removeprefix(PUSH_CONFIRM_PREFIX)
+        charm_path = str(self.state.charm_path) if self.state.charm_path else "."
+
+        if not approved:
+            return f"Branch **{branch_name}** left local for manual review."
+
+        success, output = push_branch(charm_path, branch_name)
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "branch_pushed" if success else "branch_push_failed",
+                {"branch": branch_name, "output": output[:500]},
+            )
+
+        if success:
+            return (
+                f"Pushed **{branch_name}** to origin.\n\n"
+                f"Reply **pr** to open a pull request, **draft** for a draft PR, "
+                f"or **skip** to skip."
+            )
+        return f"Push failed:\n```\n{output}\n```"
+
+    def handle_pr_creation(
+        self,
+        branch_name: str,
+        *,
+        draft: bool = False,
+    ) -> str:
+        """Create a pull request for *branch_name*.
+
+        Gathers task context from the work queue to build the PR title
+        and body.  Returns a status message for the user.
+        """
+        charm_path = str(self.state.charm_path) if self.state.charm_path else "."
+        repo = self.state.github_repo or ""
+
+        # Find work tasks associated with this branch (triage or improvement).
+        # Convention: branch name encodes issue number or charm name.
+        all_tasks = self._work_queue.all_tasks()
+        work_tasks = [
+            t
+            for t in all_tasks
+            if t.category.value not in ("confirm",) and t.id.startswith("triage-")
+        ]
+        # Fall back to all non-confirm done tasks if no triage tasks found.
+        if not work_tasks:
+            work_tasks = [t for t in all_tasks if t.category.value != "confirm" and t.result]
+
+        # Extract issue number from branch name if present.
+        issue_number: int | None = None
+        import re
+
+        m = re.search(r"issue-(\d+)", branch_name)
+        if m:
+            issue_number = int(m.group(1))
+
+        # Build PR title.
+        if issue_number:
+            # Find the issue title from the triage confirm task.
+            confirm_task = self._work_queue.get_task(f"triage-issue-{issue_number}")
+            issue_title = ""
+            if confirm_task:
+                issue_title = confirm_task.title.removeprefix(f"Work on #{issue_number}: ")
+            pr_title = (
+                f"Fix #{issue_number}: {issue_title}" if issue_title else f"Fix #{issue_number}"
+            )
+        else:
+            pr_title = branch_name.removeprefix("cantrip/").replace("-", " ").capitalize()
+
+        pr_body = build_pr_body(
+            work_tasks,
+            issue_number=issue_number,
+            repo=repo,
+        )
+
+        success, url_or_error = create_pull_request(
+            charm_path,
+            pr_title,
+            pr_body,
+            draft=draft,
+        )
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "pr_created" if success else "pr_creation_failed",
+                {
+                    "branch": branch_name,
+                    "draft": draft,
+                    "result": url_or_error[:500],
+                },
+            )
+
+        if success:
+            pr_type = "Draft PR" if draft else "PR"
+            return f"{pr_type} created: {url_or_error}"
+        return f"PR creation failed:\n```\n{url_or_error}\n```"
+
+    # -- Repository bootstrap (Phase 42.5) ------------------------------------
+
+    def should_offer_bootstrap(self) -> bool:
+        """Return ``True`` if repo bootstrap should be offered to the user.
+
+        Bootstrap is offered when a charm has been built (or is being
+        improved) but no GitHub remote is configured and ``gh`` is
+        available.
+        """
+        if self.state.github_repo:
+            return False
+        charm_path = str(self.state.charm_path) if self.state.charm_path else None
+        return can_bootstrap(charm_path)
+
+    def handle_repo_bootstrap(
+        self,
+        name: str,
+        *,
+        private: bool = True,
+        description: str = "",
+        org: str = "",
+    ) -> str:
+        """Create a GitHub repository and push the initial commit.
+
+        Updates ``state.github_repo`` on success so that subsequent
+        features (issue triage, branch workflow) activate automatically.
+        Returns a status message for the user.
+        """
+        charm_path = str(self.state.charm_path) if self.state.charm_path else "."
+
+        success, result = bootstrap_github_repo(
+            charm_path,
+            name,
+            private=private,
+            description=description,
+            org=org,
+        )
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "repo_bootstrapped" if success else "repo_bootstrap_failed",
+                {
+                    "name": name,
+                    "private": private,
+                    "org": org,
+                    "result": result[:500],
+                },
+            )
+
+        if success:
+            # Re-detect the remote now that it exists.
+            self.state.github_repo = detect_github_repo(self.state.charm_path)
+            visibility = "private" if private else "public"
+            return (
+                f"Repository created ({visibility}): {result}\n\n"
+                f"Remote set to **{self.state.github_repo or name}**."
+            )
+        return f"Repository creation failed:\n```\n{result}\n```"
+
+    def handle_triage_confirmation(
+        self,
+        confirm_task_id: str,
+    ) -> list[AgentTask]:
+        """Process an approved triage-confirm task and generate work tasks.
+
+        Extracts the issue number from the task ID, locates the original
+        CONFIRM task description, and builds research → build → test tasks.
+        When a GitHub remote is detected, creates a feature branch and
+        appends a push-confirmation task.
+        """
+        confirm_task = self._work_queue.get_task(confirm_task_id)
+        if confirm_task is None:
+            log.error("Triage confirm task %s not found", confirm_task_id)
+            return []
+
+        # Extract issue number from the task ID.
+        try:
+            issue_number = int(confirm_task_id.removeprefix(TRIAGE_CONFIRM_PREFIX))
+        except ValueError:
+            log.error("Cannot parse issue number from task ID %s", confirm_task_id)
+            return []
+
+        # Build a minimal GitHubIssue from the confirm task description.
+        from cantrip.agent.github_issues import GitHubIssue
+
+        issue = GitHubIssue(
+            number=issue_number,
+            title=confirm_task.title.removeprefix(f"Work on #{issue_number}: "),
+            body=confirm_task.description,
+        )
+
+        # Create a feature branch for the work.
+        branch = self._create_feature_branch(f"issue-{issue_number}-{issue.title}")
+
+        work_tasks = build_issue_work_tasks(
+            issue,
+            self.state.github_repo or "",
+            confirm_task_id,
+            charm_path=str(self.state.charm_path) if self.state.charm_path else ".",
+        )
+
+        # Append push-confirm task if a branch was created.
+        if branch and work_tasks:
+            last_task_id = work_tasks[-1].id
+            work_tasks.append(self._build_push_confirm_task(branch, last_task_id))
+
+        self._work_queue.add_tasks(work_tasks)
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "triage_issue_approved",
+                {
+                    "repo": self.state.github_repo,
+                    "issue_number": issue_number,
+                    "task_count": len(work_tasks),
+                    "branch": branch or "",
+                },
+            )
+
+        return work_tasks
 
     # -- Executor integration -------------------------------------------------
 

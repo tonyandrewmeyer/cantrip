@@ -3269,6 +3269,12 @@ loop — initial deploys and upgrade testing when `jhack sync` is not sufficient
   groups, dump parts)
 - [ ] Handle edge cases: missing uv.lock, charms with reactive parts (error
   gracefully), charms with multiple bases
+- [ ] Handle charms without explicit `name` field in charmcraft.yaml (Python
+  quickpack crashes with `KeyError: 'name'`; Rust handles it — infer from
+  directory name or metadata, matching charmcraft behaviour)
+- [ ] Handle `override-build` sections in parts (currently silently ignored;
+  needed for charms like traefik-k8s, tempo, loki that use `rustup` or
+  custom build steps in override-build)
 
 **Exit criteria:** `quickpack` produces valid charms that deploy and function
 identically to `charmcraft pack` output. Cantrip uses it automatically for dev
@@ -3616,76 +3622,76 @@ maintenance** workflows (Phase 10+) but parts apply to initial creation too.
 All GitHub operations require explicit user approval and depend on `gh` being
 available and authenticated.
 
-### 42.1 High — Detect GitHub Remote
+### 42.1 High — Detect GitHub Remote ✅
 
-- [ ] On startup (or when a charm path is set), check `git remote get-url origin`
+- [x] On startup (or when a charm path is set), check `git remote get-url origin`
   for a GitHub remote
-- [ ] Parse owner/repo from HTTPS or SSH remote URLs
-- [ ] Expose `github_repo: str | None` on `AgentState` (e.g. `"canonical/grafana-k8s"`)
-- [ ] Surface the detected repo in the TUI header subtitle and model info bar
+- [x] Parse owner/repo from HTTPS or SSH remote URLs
+- [x] Expose `github_repo: str | None` on `AgentState` (e.g. `"canonical/grafana-k8s"`)
+- [x] Surface the detected repo in the TUI header subtitle and model info bar
 
-### 42.2 High — Issue Triage Background Worker
+### 42.2 High — Issue Triage Background Worker ✅
 
-- [ ] When `github_repo` is set, start a background worker that calls
+- [x] When `github_repo` is set, start a background worker that calls
   `gh issue list --json number,title,labels,body,comments` periodically
-- [ ] Agent examines open issues, filters for actionable ones (bug reports,
+- [x] Agent examines open issues, filters for actionable ones (bug reports,
   feature requests with enough detail), and ranks them by feasibility
-- [ ] Present the top candidate(s) to the user via a CONFIRM task:
+- [x] Present the top candidate(s) to the user via a CONFIRM task:
   "Issue #42 looks actionable — shall I work on it?"
-- [ ] If the user approves, create work-queue tasks from the issue
+- [x] If the user approves, create work-queue tasks from the issue
   (research → build → test → PR)
-- [ ] Respect rate limits — poll no more than once per session or on user request
+- [x] Respect rate limits — poll no more than once per session or on user request
 
-### 42.3 High — Branch-Per-Change Workflow
+### 42.3 High — Branch-Per-Change Workflow ✅
 
-- [ ] When a GitHub remote is detected and the agent is improving an existing
+- [x] When a GitHub remote is detected and the agent is improving an existing
   charm, create a feature branch for each logical change instead of committing
   directly to the current branch
-- [ ] Branch naming convention: `cantrip/<short-description>` (e.g.
+- [x] Branch naming convention: `cantrip/<short-description>` (e.g.
   `cantrip/add-postgresql-integration`)
-- [ ] After the change is complete and tests pass, prompt the user before
+- [x] After the change is complete and tests pass, prompt the user before
   pushing the branch
-- [ ] If the user declines, leave the branch local for manual review
+- [x] If the user declines, leave the branch local for manual review
 
-### 42.4 High — Open Pull Requests
+### 42.4 High — Open Pull Requests ✅
 
-- [ ] After pushing a feature branch, offer to open a PR via `gh pr create`
-- [ ] Generate PR title and body from the work-queue task context: what was
+- [x] After pushing a feature branch, offer to open a PR via `gh pr create`
+- [x] Generate PR title and body from the work-queue task context: what was
   changed, why, test results, and link to the originating issue if applicable
-- [ ] Include a summary of what the agent did (tools called, tests run,
+- [x] Include a summary of what the agent did (tools called, tests run,
   iterations needed) in a collapsible details section
-- [ ] Require explicit user confirmation before creating the PR
-- [ ] Support `--draft` flag when the user wants review before merging
+- [x] Require explicit user confirmation before creating the PR
+- [x] Support `--draft` flag when the user wants review before merging
 
-### 42.5 Medium — Repository Bootstrap
+### 42.5 Medium — Repository Bootstrap ✅
 
-- [ ] When no git remote is configured and `gh` is available, offer to create
+- [x] When no git remote is configured and `gh` is available, offer to create
   a GitHub repository for the charm
-- [ ] Prompt the user for: public/private, organisation (or personal), and
+- [x] Prompt the user for: public/private, organisation (or personal), and
   description
-- [ ] Run `gh repo create`, set the remote, and push the initial commit
+- [x] Run `gh repo create`, set the remote, and push the initial commit
 - [ ] Optionally configure basic repository settings: default branch protection,
   issue templates, CI workflow stub
 
-### 42.6 Medium — Issue-Driven Maintenance Loop
+### 42.6 Medium — Issue-Driven Maintenance Loop ✅
 
-- [ ] Combine 42.2–42.4 into an ongoing maintenance mode: the agent periodically
+- [x] Combine 42.2–42.4 into an ongoing maintenance mode: the agent periodically
   checks for new issues, proposes fixes, and opens PRs — with user approval at
   each step
-- [ ] Track which issues have already been examined to avoid re-prompting
-- [ ] When an issue is resolved by a merged PR, add a comment acknowledging
+- [x] Track which issues have already been examined to avoid re-prompting
+- [x] When an issue is resolved by a merged PR, add a comment acknowledging
   the fix (with user permission)
-- [ ] Handle the case where the upstream branch has advanced — rebase or
+- [x] Handle the case where the upstream branch has advanced — rebase or
   warn the user rather than force-pushing
 
-### 42.7 Low — PR Feedback Loop
+### 42.7 Low — PR Feedback Loop ✅
 
-- [ ] After opening a PR, monitor it for review comments via
+- [x] After opening a PR, monitor it for review comments via
   `gh pr view --json reviews,comments`
-- [ ] Surface reviewer feedback to the agent so it can propose follow-up
+- [x] Surface reviewer feedback to the agent so it can propose follow-up
   commits on the same branch
-- [ ] Require user approval before pushing follow-up changes
-- [ ] Close the loop: reviewer requests change → agent proposes fix →
+- [x] Require user approval before pushing follow-up changes
+- [x] Close the loop: reviewer requests change → agent proposes fix →
   user approves → push → re-request review
 
 **Exit criteria:** When a charm directory has a GitHub remote, Cantrip

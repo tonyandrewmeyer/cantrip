@@ -70,6 +70,8 @@ def run_cli(args: argparse.Namespace) -> int:
     banner = f"Cantrip CLI — provider: {args.provider}, path: {display_path}"
     if light_provider:
         banner += f", light model: {light_model_name}"
+    if agent.state.github_repo:
+        banner += f", github: {agent.state.github_repo}"
     print(banner)
     print("Type your message (Ctrl+C to quit).\n")
 
