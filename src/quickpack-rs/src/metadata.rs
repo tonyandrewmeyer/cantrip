@@ -39,6 +39,12 @@ pub fn parse_charmcraft_yaml(charm_dir: &Path) -> Result<BTreeMap<String, Value>
                     result.insert(key, v);
                 }
             }
+            // Infer name from directory if missing (matches charmcraft behaviour).
+            if !result.contains_key("name") {
+                if let Some(dir_name) = charm_dir.file_name().and_then(|n| n.to_str()) {
+                    result.insert("name".to_string(), Value::String(dir_name.to_string()));
+                }
+            }
             Ok(result)
         }
         _ => Err("charmcraft.yaml must be a YAML mapping".to_string()),

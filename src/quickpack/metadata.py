@@ -31,7 +31,11 @@ def local_arch() -> str:
 
 
 def parse_charmcraft_yaml(charm_dir: pathlib.Path) -> dict[str, Any]:
-    """Load and return the parsed ``charmcraft.yaml``."""
+    """Load and return the parsed ``charmcraft.yaml``.
+
+    If the ``name`` field is missing, it is inferred from the directory
+    name (matching charmcraft's behaviour).
+    """
     path = charm_dir / "charmcraft.yaml"
     if not path.exists():
         raise FileNotFoundError(f"charmcraft.yaml not found in {charm_dir}")
@@ -39,6 +43,8 @@ def parse_charmcraft_yaml(charm_dir: pathlib.Path) -> dict[str, Any]:
         data = yaml.safe_load(fh)
     if not isinstance(data, dict):
         raise ValueError("charmcraft.yaml must be a YAML mapping")
+    if "name" not in data:
+        data["name"] = charm_dir.name
     return data
 
 

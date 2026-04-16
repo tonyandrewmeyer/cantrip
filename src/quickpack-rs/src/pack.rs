@@ -85,12 +85,21 @@ fn build_zip(zip_path: &Path, prime_dir: &Path) -> Result<(), String> {
     let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
 
-    for entry in WalkDir::new(prime_dir).follow_links(true) {
+    for entry in WalkDir::new(prime_dir)
+        .follow_links(true)
+        // Skip __pycache__ directories to match charmcraft behaviour.
+        .into_iter()
+        .filter_entry(|e| e.file_name() != "__pycache__")
+    {
         let entry = entry.map_err(|e| format!("Walk error: {e}"))?;
         if entry.file_type().is_dir() {
             continue;
         }
         let path = entry.path();
+        // Skip .pyc files.
+        if path.extension().is_some_and(|ext| ext == "pyc") {
+            continue;
+        }
         let arcname = path
             .strip_prefix(prime_dir)
             .map_err(|e| format!("Strip prefix: {e}"))?

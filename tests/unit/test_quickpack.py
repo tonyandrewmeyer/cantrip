@@ -145,6 +145,16 @@ class TestMetadata:
         with pytest.raises(FileNotFoundError):
             metadata.parse_charmcraft_yaml(tmp_path)
 
+    def test_parse_infers_name_from_directory(self, tmp_path: pathlib.Path) -> None:
+        """When charmcraft.yaml has no name field, infer from directory name."""
+        charm_dir = tmp_path / "saml-integrator"
+        charm_dir.mkdir()
+        (charm_dir / "charmcraft.yaml").write_text(
+            'type: "charm"\nbases:\n  - build-on:\n    - name: ubuntu\n'
+        )
+        project = metadata.parse_charmcraft_yaml(charm_dir)
+        assert project["name"] == "saml-integrator"
+
     def test_resolve_base_modern(self) -> None:
         project = {"base": "ubuntu@24.04"}
         assert metadata.resolve_base(project) == ("ubuntu", "24.04")
@@ -480,6 +490,29 @@ class TestPack:
             names = zf.namelist()
             assert "dispatch" in names
             assert "src/charm.py" in names
+
+    def test_build_zip_skips_pycache(self, tmp_path: pathlib.Path) -> None:
+        """Bytecode caches should be excluded to match charmcraft."""
+        prime = tmp_path / "prime"
+        prime.mkdir()
+        (prime / "dispatch").write_text("#!/bin/sh\n")
+        sub = prime / "src"
+        sub.mkdir()
+        (sub / "charm.py").write_text("import ops\n")
+        cache = sub / "__pycache__"
+        cache.mkdir()
+        (cache / "charm.cpython-312.pyc").write_bytes(b"\x00")
+        # Also a .pyc outside __pycache__ (shouldn't happen, but be safe).
+        (sub / "stray.pyc").write_bytes(b"\x00")
+
+        zip_path = tmp_path / "test.charm"
+        pack._build_zip(zip_path, prime)
+
+        with zipfile.ZipFile(str(zip_path)) as zf:
+            names = zf.namelist()
+            assert "src/charm.py" in names
+            assert not any(n.endswith(".pyc") for n in names)
+            assert not any("__pycache__" in n for n in names)
 
     def test_quick_pack_end_to_end(
         self, charm_project: pathlib.Path, tmp_path: pathlib.Path

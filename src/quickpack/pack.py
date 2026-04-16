@@ -58,10 +58,18 @@ def _write_dispatch(prime_dir: pathlib.Path, entrypoint: str) -> None:
 
 
 def _build_zip(zip_path: pathlib.Path, prime_dir: pathlib.Path) -> None:
-    """Create a ``.charm`` ZIP archive from the prime directory."""
+    """Create a ``.charm`` ZIP archive from the prime directory.
+
+    Skips ``__pycache__`` directories and ``.pyc`` files to match
+    charmcraft's behaviour.
+    """
     with zipfile.ZipFile(str(zip_path), "w", zipfile.ZIP_DEFLATED) as zf:
-        for dirpath_str, _dirnames, filenames in os.walk(str(prime_dir), followlinks=True):
+        for dirpath_str, dirnames, filenames in os.walk(str(prime_dir), followlinks=True):
+            # Prune __pycache__ dirs so os.walk does not descend into them.
+            dirnames[:] = [d for d in dirnames if d != "__pycache__"]
             for filename in filenames:
+                if filename.endswith(".pyc"):
+                    continue
                 file_path = pathlib.Path(dirpath_str) / filename
                 arcname = str(file_path.relative_to(prime_dir))
                 zf.write(str(file_path), arcname)

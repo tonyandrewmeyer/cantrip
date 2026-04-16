@@ -1,0 +1,40 @@
+{
+  "charm": "self-signed-certificates-operator",
+  "repo": "canonical/self-signed-certificates-operator",
+  "platform": "ubuntu@24.04:amd64",
+  "runs": 3,
+  "timestamp": "20260416-231058",
+  "charmcraft_version": "charmcraft 4.0.1",
+  "results": {
+    "rust_quickpack": {
+      "best": 1.214,
+      "median": 1.219,
+      "all": [1.219, 1.214, 1.222]
+    },
+    "python_quickpack": {
+      "best": 1.787,
+      "median": 1.923,
+      "all": [3.488, 1.787, 1.923]
+    },
+    "charmcraft_destructive_warm": {
+      "best": 3.651,
+      "median": 3.686,
+      "all": [4.587, 3.651, 3.686]
+    },
+    "charmcraft_destructive_cold": {
+      "best": 5.347,
+      "median": 5.440,
+      "all": [5.440, 5.347, 5.555]
+    },
+    "charmcraft_lxd_warm": {
+      "best": 17.907,
+      "median": 18.178,
+      "all": [17.907, 18.178, 18.265]
+    },
+    "charmcraft_lxd_clean": {
+      "best": 113.805,
+      "median": 114.555,
+      "all": [118.428, 113.805, 114.555]
+    }
+  }
+}
