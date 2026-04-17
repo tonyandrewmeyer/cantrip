@@ -6,7 +6,7 @@ from rich.panel import Panel
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Vertical
+from textual.containers import Center, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 
@@ -157,10 +157,19 @@ class GraphScreen(ModalScreen):
     }
 
     #graph-title {
-        text-style: bold;
         width: 100%;
-        content-align: center middle;
+        height: 1;
         padding-bottom: 1;
+    }
+
+    .title-text {
+        text-style: bold;
+        width: 1fr;
+    }
+
+    .title-hint {
+        color: $text-muted;
+        width: auto;
     }
 
     #graph-body {
@@ -184,19 +193,20 @@ class GraphScreen(ModalScreen):
         self,
         status: statustypes.Status | None = None,
         current_app: str | None = None,
+        model: str | None = None,
     ) -> None:
         """Initialise with current Juju status."""
         super().__init__()
         self._status = status
         self._current_app = current_app
+        self._model = model
 
     def compose(self) -> ComposeResult:
         """Compose the graph layout."""
         with Center(), Vertical(id="graph-container"):
-            yield Static(
-                "Integration Graph                         [Esc Close]",
-                id="graph-title",
-            )
+            with Horizontal(id="graph-title"):
+                yield Static("Integration Graph", classes="title-text")
+                yield Static("[Esc Close]", classes="title-hint")
             yield RichLog(id="graph-body", wrap=True)
             yield Static(
                 "[r] Refresh  [Esc] Close",
@@ -208,8 +218,24 @@ class GraphScreen(ModalScreen):
         self._render_graph()
 
     def action_refresh(self) -> None:
-        """Re-render the graph (useful after external status change)."""
-        self._render_graph()
+        """Fetch fresh Juju status and re-render the graph."""
+        if self._model:
+            self.run_worker(self._fetch_and_render, thread=True)
+        else:
+            self._render_graph()
+
+    def _fetch_and_render(self) -> None:
+        """Fetch current Juju status in a background thread and re-render."""
+        import functools
+
+        import jubilant
+
+        try:
+            juju = jubilant.Juju(model=self._model)
+            self._status = functools.partial(juju.status)()
+        except (jubilant.CLIError, OSError, TimeoutError):
+            pass
+        self.app.call_from_thread(self._render_graph)
 
     def update_status(self, status: statustypes.Status) -> None:
         """Update the status and re-render."""

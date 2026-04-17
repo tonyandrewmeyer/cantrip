@@ -1150,7 +1150,14 @@ class CantripApp(App):
         """Show integration graph screen."""
         status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
         current_app = self._agent.state.charm_name if self._agent else None
-        self.push_screen(GraphScreen(status=status_widget.dev_status, current_app=current_app))
+        dev_model = self._agent.state.dev_model if self._agent else None
+        self.push_screen(
+            GraphScreen(
+                status=status_widget.dev_status,
+                current_app=current_app,
+                model=dev_model,
+            )
+        )
 
     def action_transcript(self) -> None:
         """Show session transcript screen."""

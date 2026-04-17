@@ -2571,7 +2571,7 @@ partially implemented functionality.
 - [x] `GraphScreen` uses a `Static` widget with CSS `overflow-y: auto` — but Textual's
   `Static` does not scroll; long graphs are clipped
 - [x] Wrap in `ScrollableContainer` or use `RichLog`
-- [ ] Make refresh actually fetch fresh Juju status instead of re-rendering stale data
+- [x] Make refresh actually fetch fresh Juju status instead of re-rendering stale data
 
 ### 29.8 Low — Add Agent Cancellation Binding ✅
 
@@ -2584,7 +2584,7 @@ partially implemented functionality.
 - [x] Remove `.user-message`, `.agent-message`, `#status-content`, `.progress-indicator`,
   `.success-indicator`, `.error-indicator` from `cantrip.tcss` — all dead selectors
 - [x] Fix inconsistent `dismiss` vs `dismiss_screen` action naming across screens
-- [ ] Replace manual space-padding in modal screen titles with CSS alignment
+- [x] Replace manual space-padding in modal screen titles with CSS alignment
 
 ### 29.10 Low — Display Timestamps in Chat ✅
 

@@ -7,7 +7,7 @@ import subprocess
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Vertical
+from textual.containers import Center, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
@@ -46,10 +46,19 @@ class LogScreen(ModalScreen):
     }
 
     #log-title {
-        text-style: bold;
         width: 100%;
-        content-align: center middle;
+        height: 1;
         padding-bottom: 1;
+    }
+
+    .title-text {
+        text-style: bold;
+        width: 1fr;
+    }
+
+    .title-hint {
+        color: $text-muted;
+        width: auto;
     }
 
     #log-footer {
@@ -83,10 +92,9 @@ class LogScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         """Compose the log viewer layout."""
         with Center(), Vertical(id="log-container"):
-            yield Static(
-                "Juju Logs                                 [Esc Close]",
-                id="log-title",
-            )
+            with Horizontal(id="log-title"):
+                yield Static("Juju Logs", classes="title-text")
+                yield Static("[Esc Close]", classes="title-hint")
             yield RichLog(id="log-output", wrap=True)
             yield Static(
                 "[r] Refresh  [l] Level  [t] Stream  [Esc] Close",
@@ -252,6 +260,6 @@ class LogScreen(ModalScreen):
     def _update_title(self) -> None:
         """Update the title bar with current mode and level."""
         with contextlib.suppress(LookupError):
-            title = self.query_one("#log-title", Static)
+            title = self.query_one("#log-title .title-text", Static)
             mode = "STREAMING" if self.streaming else self.level
-            title.update(f"Juju Logs [{mode}]                      [Esc Close]")
+            title.update(f"Juju Logs [{mode}]")

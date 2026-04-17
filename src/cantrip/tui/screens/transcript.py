@@ -4,7 +4,7 @@ import pathlib
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Vertical
+from textual.containers import Center, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
@@ -33,10 +33,19 @@ class TranscriptScreen(ModalScreen):
     }
 
     #transcript-title {
-        text-style: bold;
         width: 100%;
-        content-align: center middle;
+        height: 1;
         padding-bottom: 1;
+    }
+
+    .title-text {
+        text-style: bold;
+        width: 1fr;
+    }
+
+    .title-hint {
+        color: $text-muted;
+        width: auto;
     }
 
     #transcript-footer {
@@ -67,10 +76,9 @@ class TranscriptScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         """Compose the transcript viewer layout."""
         with Center(), Vertical(id="transcript-container"):
-            yield Static(
-                "Session Transcript                        [Esc Close]",
-                id="transcript-title",
-            )
+            with Horizontal(id="transcript-title"):
+                yield Static("Session Transcript", classes="title-text")
+                yield Static("[Esc Close]", classes="title-hint")
             yield RichLog(id="transcript-output", wrap=True, markup=True)
             yield Static(
                 "[v] View  [r] Refresh  [Esc] Close",
@@ -99,7 +107,7 @@ class TranscriptScreen(ModalScreen):
         log_widget = self.query_one("#transcript-output", RichLog)
         log_widget.clear()
 
-        title = self.query_one("#transcript-title", Static)
+        title = self.query_one("#transcript-title .title-text", Static)
 
         if not self._db_path or not self._db_path.exists():
             log_widget.write("No .cantrip session file found.")
@@ -110,13 +118,13 @@ class TranscriptScreen(ModalScreen):
         data = load_transcript(self._db_path)
 
         if self.view == "conversation":
-            title.update(f"Conversation ({len(data.messages)} messages)              [Esc Close]")
+            title.update(f"Conversation ({len(data.messages)} messages)")
             self._render_conversation(log_widget, data)
         elif self.view == "tasks":
-            title.update(f"Tasks ({len(data.tasks)} tasks)                          [Esc Close]")
+            title.update(f"Tasks ({len(data.tasks)} tasks)")
             self._render_tasks(log_widget, data)
         elif self.view == "events":
-            title.update(f"Events ({len(data.events)} events)                        [Esc Close]")
+            title.update(f"Events ({len(data.events)} events)")
             self._render_events(log_widget, data)
 
     @staticmethod

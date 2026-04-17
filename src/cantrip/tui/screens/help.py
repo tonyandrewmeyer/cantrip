@@ -2,7 +2,7 @@
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, ScrollableContainer, Vertical
+from textual.containers import Center, Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
@@ -25,10 +25,19 @@ class HelpScreen(ModalScreen):
     }
 
     #help-title {
-        text-style: bold;
         width: 100%;
-        content-align: center middle;
+        height: 1;
         padding-bottom: 1;
+    }
+
+    .title-text {
+        text-style: bold;
+        width: 1fr;
+    }
+
+    .title-hint {
+        color: $text-muted;
+        width: auto;
     }
 
     #help-scroll {
@@ -52,7 +61,9 @@ class HelpScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         """Compose the help screen layout."""
         with Center(), Vertical(id="help-container"):
-            yield Static("Cantrip Help                              [Esc Close]", id="help-title")
+            with Horizontal(id="help-title"):
+                yield Static("Cantrip Help", classes="title-text")
+                yield Static("[Esc Close]", classes="title-hint")
             with ScrollableContainer(id="help-scroll"):
                 yield Static("─" * 66, classes="help-separator")
 

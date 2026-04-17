@@ -241,13 +241,15 @@ class TestGraphScreen:
         """Screen can be constructed without status data."""
         screen = GraphScreen()
         assert screen._status is None
+        assert screen._model is None
 
     def test_screen_construction_with_status(self) -> None:
         """Screen accepts status data."""
         status = _make_status({"app": _app_data()})
-        screen = GraphScreen(status=status, current_app="app")
+        screen = GraphScreen(status=status, current_app="app", model="dev")
         assert screen._status is status
         assert screen._current_app == "app"
+        assert screen._model == "dev"
 
     def test_update_status(self) -> None:
         """update_status() replaces the stored status."""
