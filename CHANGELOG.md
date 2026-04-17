@@ -32,6 +32,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Modal title CSS layout (Phase 29.9)** — replaced manual space-padding in modal screen titles with `Horizontal` layout (title left, key hint right via CSS)
 - **DesignQuestionsScreen back button (Phase 29.11)** — added "Previous" button and `Left`/`p` keybindings; Escape now returns `None` (cancelled) instead of the questions list (finished)
 - **File tree click shows path (Phase 29.12)** — clicking a file in the charm tree widget now shows the file path in a toast notification instead of silently discarding the event
+- **Inference snap streaming usage (Phase 27.6)** — `InferenceSnapProvider.stream()` now requests `stream_options: {"include_usage": true}` and captures `prompt_tokens`/`completion_tokens` from the final SSE chunk; previously streaming calls reported empty usage
 
 - **User documentation** — Diataxis-structured documentation site under `docs/docs/`: a tutorial (build your first charm), four how-to guides (choose an LLM provider, improve an existing charm, export transcripts, configure light models), two reference pages (CLI reference, agent tools), and three explanation pages (architecture, charm paths, observability). Linked from the marketing site navigation.
 

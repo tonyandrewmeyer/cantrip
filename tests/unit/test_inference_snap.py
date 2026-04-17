@@ -462,6 +462,20 @@ class TestBuildRequestBody:
         body = provider._build_request_body(messages, None, 0.7, stream=True)
         assert body["stream"] is True
 
+    def test_stream_options_include_usage(self):
+        """stream_options with include_usage is set when streaming."""
+        provider = self._make_provider()
+        messages = [Message(role=Role.USER, content="Hi")]
+        body = provider._build_request_body(messages, None, 0.7, stream=True)
+        assert body["stream_options"] == {"include_usage": True}
+
+    def test_no_stream_options_when_not_streaming(self):
+        """stream_options is absent for non-streaming requests."""
+        provider = self._make_provider()
+        messages = [Message(role=Role.USER, content="Hi")]
+        body = provider._build_request_body(messages, None, 0.7, stream=False)
+        assert "stream_options" not in body
+
 
 class TestComplete:
     """Tests for InferenceSnapProvider.complete."""
@@ -541,6 +555,80 @@ class TestComplete:
         assert response.tool_calls[0].name == "get_weather"
         assert response.tool_calls[0].arguments == {"city": "London"}
         assert response.finish_reason == "tool_calls"
+
+
+class TestStream:
+    """Tests for InferenceSnapProvider.stream."""
+
+    def _make_provider(self):
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(
+                snap_name="gemma3", model="test-model", base_url="http://test:8328/v1"
+            )
+
+    @pytest.mark.asyncio
+    async def test_stream_captures_usage(self):
+        """Usage data from the final SSE chunk is captured."""
+        provider = self._make_provider()
+
+        # Simulate SSE lines: one content chunk, then a usage chunk, then [DONE].
+        sse_lines = [
+            'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+            'data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":10,"completion_tokens":5}}',
+            "data: [DONE]",
+        ]
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.aiter_lines = MagicMock(return_value=_async_iter(sse_lines))
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        provider.client = MagicMock()
+        provider.client.stream = MagicMock(return_value=mock_resp)
+
+        chunks = []
+        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
+            chunks.append(chunk)
+
+        # Should have a content chunk and a final chunk with usage.
+        assert any(c.content == "Hello" for c in chunks)
+        final = [c for c in chunks if c.is_final]
+        assert len(final) == 1
+        assert final[0].usage == {"prompt_tokens": 10, "completion_tokens": 5}
+
+    @pytest.mark.asyncio
+    async def test_stream_empty_usage_when_not_provided(self):
+        """Usage is empty dict when the server doesn't include it."""
+        provider = self._make_provider()
+
+        sse_lines = [
+            'data: {"choices":[{"delta":{"content":"Hi"}}]}',
+            "data: [DONE]",
+        ]
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.aiter_lines = MagicMock(return_value=_async_iter(sse_lines))
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        provider.client = MagicMock()
+        provider.client.stream = MagicMock(return_value=mock_resp)
+
+        chunks = []
+        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
+            chunks.append(chunk)
+
+        final = [c for c in chunks if c.is_final]
+        assert len(final) == 1
+        assert final[0].usage == {}
+
+
+async def _async_iter(items):
+    """Helper to create an async iterator from a list."""
+    for item in items:
+        yield item
 
 
 class TestContextWindowTuning:

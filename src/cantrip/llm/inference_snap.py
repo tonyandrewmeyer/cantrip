@@ -331,6 +331,9 @@ class InferenceSnapProvider(LLMProvider):
             "stream": stream,
         }
 
+        if stream:
+            body["stream_options"] = {"include_usage": True}
+
         if max_tokens is not None:
             body["max_tokens"] = max_tokens
 
@@ -439,6 +442,7 @@ class InferenceSnapProvider(LLMProvider):
         )
 
         tool_calls_acc: dict[int, dict[str, str]] = {}
+        usage: dict[str, int] = {}
 
         try:
             async with self.client.stream("POST", "/chat/completions", json=body) as resp:
@@ -454,6 +458,14 @@ class InferenceSnapProvider(LLMProvider):
                         data = json.loads(payload)
                     except json.JSONDecodeError:
                         continue
+
+                    # Capture usage from the final SSE chunk.
+                    chunk_usage = data.get("usage")
+                    if chunk_usage:
+                        usage = {
+                            "prompt_tokens": chunk_usage.get("prompt_tokens", 0),
+                            "completion_tokens": chunk_usage.get("completion_tokens", 0),
+                        }
 
                     choice = data.get("choices", [{}])[0]
                     delta = choice.get("delta", {})
@@ -501,6 +513,6 @@ class InferenceSnapProvider(LLMProvider):
                 arguments = {}
             final_tool_calls.append(ToolCall(id=acc["id"], name=acc["name"], arguments=arguments))
 
-        yield Chunk(tool_calls=final_tool_calls, is_final=True)
+        yield Chunk(tool_calls=final_tool_calls, is_final=True, usage=usage)
 
     # count_tokens inherited from LLMProvider (character-based heuristic).

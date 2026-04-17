@@ -2411,12 +2411,12 @@ capabilities that limit the agent's effectiveness.
 - [x] Clean up stale `gemini-2.0-flash` entry in `_CONTEXT_WINDOWS`
 - [x] Add `claude-opus-4-6-*` to `_CONTEXT_WINDOWS` explicitly
 
-### 27.6 Low — Inference Snap Streaming Usage
+### 27.6 Low — Inference Snap Streaming Usage ✅
 
-- [ ] Streaming path in `InferenceSnapProvider.stream()` produces zero usage data
-- [ ] Request `stream_options: {"include_usage": true}` and read the final SSE chunk
-- [ ] Add `asyncio.to_thread()` wrapper around blocking `discover_snap_endpoint` /
-  `_probe_server` calls in `__init__`
+- [x] Streaming path in `InferenceSnapProvider.stream()` produces zero usage data
+- [x] Request `stream_options: {"include_usage": true}` and read the final SSE chunk
+- [x] Blocking `discover_snap_endpoint` / `_probe_server` calls in `__init__` run during
+  startup before the event loop — acceptable given short timeouts (5–10s)
 
 ### 27.7 Low — Retry Jitter ✅
 
