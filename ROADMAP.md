@@ -2761,17 +2761,17 @@ experienced users.
 - [x] `_store_initialised` is not reset when `load_state` fails, leaving the store
   permanently dead for the process lifetime
 
-### 31.12 Medium — Web UI Session and State Persistence
+### 31.12 Medium — Web UI Session and State Persistence ✅
 
-- [ ] Web server never calls `agent.load_state()` or `build_resume_summary()` —
+- [x] Web server never calls `agent.load_state()` or `build_resume_summary()` —
   every web server start is a fresh session even if a `.cantrip` database exists
-- [ ] Web server never calls `agent.save_state()` after each turn — a crash loses
+- [x] Web server never calls `agent.save_state()` after each turn — a crash loses
   the entire conversation history
-- [ ] Add `/api/messages` endpoint so the web UI can reconstruct conversation
+- [x] Add `/api/messages` endpoint so the web UI can reconstruct conversation
   history on page reload (currently only `/api/state` exists, with tasks only)
-- [ ] `run_web` duplicates light-provider resolution instead of using
+- [x] `run_web` duplicates light-provider resolution instead of using
   `resolve_light_provider()` — should use the shared helper
-- [ ] Handle `ProviderRateLimitError` distinctly in WebSocket handler (currently
+- [x] Handle `ProviderRateLimitError` distinctly in WebSocket handler (currently
   uses generic "Provider error" message)
 
 ### 31.13 Medium — Web UI Frontend Improvements

@@ -23,6 +23,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Fixed
 - **Session resume loads conversation history (Phase 31.11)** — `load_state()` now calls `store.load_messages()` and restores prior conversation into `state.messages`, so the LLM retains context across sessions; `build_resume_summary` uses SYSTEM role instead of USER to avoid breaking alternating-role patterns
+- **Web UI session persistence (Phase 31.12)** — web server now calls `load_state()` on startup and `save_state()` after each chat turn; added `/api/messages` endpoint for conversation history on page reload; replaced duplicated light-provider resolution with `resolve_light_provider()`; `ProviderRateLimitError` now shows a distinct "temporarily unavailable" message instead of generic error
 
 - **User documentation** — Diataxis-structured documentation site under `docs/docs/`: a tutorial (build your first charm), four how-to guides (choose an LLM provider, improve an existing charm, export transcripts, configure light models), two reference pages (CLI reference, agent tools), and three explanation pages (architecture, charm paths, observability). Linked from the marketing site navigation.
 

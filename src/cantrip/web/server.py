@@ -12,8 +12,8 @@ import aiohttp.web as web
 import jinja2
 
 from cantrip.agent.core import CantripAgent
-from cantrip.llm import create_provider, resolve_light_model
-from cantrip.llm.base import ProviderError
+from cantrip.llm import create_provider, resolve_light_provider
+from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.ui import events as ui_events
 
 log = logging.getLogger(__name__)
@@ -103,6 +103,19 @@ async def _api_state(request: web.Request) -> web.Response:
             "tasks": tasks,
         }
     )
+
+
+async def _api_messages(request: web.Request) -> web.Response:
+    """Return conversation history as JSON for page reload."""
+    agent: CantripAgent = request.app["agent"]
+
+    messages = [
+        {"role": msg.role.value, "content": msg.content}
+        for msg in agent.state.messages
+        if msg.content
+    ]
+
+    return web.json_response({"messages": messages})
 
 
 async def _api_juju_status(request: web.Request) -> web.Response:
@@ -268,6 +281,25 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                                     "content": response,
                                 },
                             )
+                            # Persist state after each turn.
+                            agent.save_state()
+                        except (
+                            ProviderRateLimitError,
+                            ProviderOverloadedError,
+                        ) as e:
+                            _broadcast(request.app, "thinking", {"active": False})
+                            _broadcast(
+                                request.app,
+                                "chat_message",
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "Provider temporarily unavailable — "
+                                        "please wait a moment and try again."
+                                    ),
+                                },
+                            )
+                            log.warning("Provider rate limited: %s", e)
                         except ProviderError as e:
                             _broadcast(request.app, "thinking", {"active": False})
                             _broadcast(
@@ -338,6 +370,7 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     # Routes.
     app.router.add_get("/", _index)
     app.router.add_get("/api/state", _api_state)
+    app.router.add_get("/api/messages", _api_messages)
     app.router.add_get("/api/juju-status", _api_juju_status)
     app.router.add_get("/api/logs", _api_logs)
     app.router.add_get("/api/logs-stream", _ws_logs_stream)
@@ -355,6 +388,12 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
 async def _run_web_async(agent: CantripAgent, port: int) -> None:
     """Start the web server and agent executor."""
     app = _create_app(agent, port)
+
+    # Load prior session state if available.
+    if agent.load_state():
+        summary = agent.build_resume_summary()
+        if summary:
+            log.info("Resumed session: %s", summary[:200])
 
     # Forward all bus events to WebSocket clients.
     agent.event_bus.bind_loop(asyncio.get_running_loop())
@@ -390,23 +429,15 @@ def run_web(args: argparse.Namespace) -> int:
         print(f"Error: {e}")
         return 1
 
-    # Resolve light provider.
-    light_provider = None
-    light_provider_name = getattr(args, "light_provider", None)
-    if light_provider_name:
-        light_snap = light_snap_name or snap_name
-        light_provider = create_provider(
-            light_provider_name,
-            args.light_model,
-            snap_name=light_snap,
-        )
-    elif light_snap_name and args.provider == "inference-snap":
-        light_provider = create_provider("inference-snap", snap_name=light_snap_name)
-    else:
-        main_model = provider.model_name
-        resolved = args.light_model or resolve_light_model(args.provider, main_model)
-        if resolved != main_model:
-            light_provider = create_provider(args.provider, resolved, snap_name=snap_name)
+    # Resolve light provider using the shared helper.
+    light_provider, _light_model_name = resolve_light_provider(
+        provider,
+        args.provider,
+        light_provider_name=getattr(args, "light_provider", None),
+        light_model_override=args.light_model,
+        snap_name=snap_name,
+        light_snap_name=light_snap_name,
+    )
 
     agent = CantripAgent(
         provider=provider,
