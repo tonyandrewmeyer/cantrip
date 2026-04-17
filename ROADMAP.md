@@ -2297,11 +2297,11 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 - [ ] GPG signing disabled unconditionally. Should be configurable or documented.
 
-### 25.20 Low — Missing Test Coverage
+### 25.20 Low — Missing Test Coverage ✅
 
-- [ ] Invalid YAML input to terraform generation
-- [ ] IPv6 handling in `web.py` private URL detection
-- [ ] Error-path tests for file operations
+- [x] Invalid YAML input to terraform generation
+- [x] IPv6 handling in `web.py` private URL detection
+- [x] Error-path tests for file operations
 
 **Exit criteria:** All critical items (25.1–25.3) resolved. High and medium
 items tracked and addressed incrementally. `make check` passes throughout.

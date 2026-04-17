@@ -2,6 +2,7 @@
 
 import pathlib
 
+import pytest
 import yaml
 
 from cantrip.charm import terraform
@@ -258,3 +259,38 @@ def test_outputs_alphabetical_order(tmp_path: pathlib.Path):
 
     output_names = re.findall(r'output "(\w+)"', outputs)
     assert output_names == sorted(output_names), f"Outputs not alphabetical: {output_names}"
+
+
+# -- Error path tests --------------------------------------------------------
+
+
+def test_invalid_yaml_raises_value_error(tmp_path: pathlib.Path):
+    """Invalid YAML input raises ValueError with a clear message."""
+    path = tmp_path / "charmcraft.yaml"
+    path.write_text("name: [unterminated")
+    with pytest.raises(ValueError, match="Invalid YAML"):
+        terraform.generate_terraform_module(path)
+
+
+def test_empty_yaml_raises_value_error(tmp_path: pathlib.Path):
+    """Empty YAML file raises ValueError."""
+    path = tmp_path / "charmcraft.yaml"
+    path.write_text("")
+    with pytest.raises(ValueError, match="empty or not a mapping"):
+        terraform.generate_terraform_module(path)
+
+
+def test_yaml_list_raises_value_error(tmp_path: pathlib.Path):
+    """YAML that parses to a list (not a dict) raises ValueError."""
+    path = tmp_path / "charmcraft.yaml"
+    path.write_text("- item1\n- item2\n")
+    with pytest.raises(ValueError, match="empty or not a mapping"):
+        terraform.generate_terraform_module(path)
+
+
+def test_missing_name_raises_key_error(tmp_path: pathlib.Path):
+    """YAML without a 'name' field raises KeyError."""
+    path = tmp_path / "charmcraft.yaml"
+    path.write_text(yaml.dump({"type": "charm"}))
+    with pytest.raises(KeyError, match="name"):
+        terraform.generate_terraform_module(path)

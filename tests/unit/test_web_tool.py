@@ -8,6 +8,7 @@ import pytest
 from cantrip.agent.tools.web import (
     MAX_RESPONSE_CHARS,
     WebFetchTool,
+    _is_private_url,
     _strip_html,
     clear_llms_txt_cache,
 )
@@ -445,3 +446,78 @@ class TestLlmsTxtAwareness:
         # Should fall through to normal HTML stripping.
         assert "Real page" in result.output
         assert "llms_txt_url" not in result.data
+
+
+class TestIsPrivateUrl:
+    """Tests for _is_private_url — IPv4, IPv6, and metadata blocking."""
+
+    def test_public_ipv4_allowed(self) -> None:
+        """A URL resolving to a public IPv4 address returns None."""
+        with patch("cantrip.agent.tools.web.socket.getaddrinfo") as mock:
+            mock.return_value = [(2, 1, 6, "", ("93.184.216.34", 0))]
+            assert _is_private_url("http://example.com") is None
+
+    def test_private_ipv4_blocked(self) -> None:
+        """A URL resolving to a private IPv4 address is blocked."""
+        with patch("cantrip.agent.tools.web.socket.getaddrinfo") as mock:
+            mock.return_value = [(2, 1, 6, "", ("192.168.1.1", 0))]
+            result = _is_private_url("http://internal.example.com")
+            assert result is not None
+            assert "192.168.1.1" in result
+
+    def test_loopback_ipv4_blocked(self) -> None:
+        """IPv4 loopback is blocked."""
+        with patch("cantrip.agent.tools.web.socket.getaddrinfo") as mock:
+            mock.return_value = [(2, 1, 6, "", ("127.0.0.1", 0))]
+            result = _is_private_url("http://localhost")
+            assert result is not None
+
+    def test_ipv6_loopback_blocked(self) -> None:
+        """IPv6 loopback (::1) is blocked."""
+        with patch("cantrip.agent.tools.web.socket.getaddrinfo") as mock:
+            mock.return_value = [(10, 1, 6, "", ("::1", 0, 0, 0))]
+            result = _is_private_url("http://localhost")
+            assert result is not None
+            assert "::1" in result
+
+    def test_ipv6_link_local_blocked(self) -> None:
+        """IPv6 link-local (fe80::) is blocked."""
+        with patch("cantrip.agent.tools.web.socket.getaddrinfo") as mock:
+            mock.return_value = [(10, 1, 6, "", ("fe80::1", 0, 0, 0))]
+            result = _is_private_url("http://link-local.example.com")
+            assert result is not None
+            assert "fe80::1" in result
+
+    def test_ipv6_private_blocked(self) -> None:
+        """IPv6 unique-local (fc00::/7) is blocked."""
+        with patch("cantrip.agent.tools.web.socket.getaddrinfo") as mock:
+            mock.return_value = [(10, 1, 6, "", ("fd12:3456::1", 0, 0, 0))]
+            result = _is_private_url("http://private-v6.example.com")
+            assert result is not None
+            assert "fd12:3456::1" in result
+
+    def test_ipv6_public_allowed(self) -> None:
+        """A public IPv6 address is allowed."""
+        with patch("cantrip.agent.tools.web.socket.getaddrinfo") as mock:
+            mock.return_value = [(10, 1, 6, "", ("2606:4700::6811:d209", 0, 0, 0))]
+            assert _is_private_url("http://cloudflare.com") is None
+
+    def test_metadata_ip_blocked(self) -> None:
+        """Cloud metadata IP (169.254.169.254) is blocked as link-local."""
+        result = _is_private_url("http://169.254.169.254/latest/meta-data/")
+        assert result is not None
+        assert "169.254.169.254" in result
+
+    def test_metadata_hostname_blocked(self) -> None:
+        """Cloud metadata hostnames are blocked before DNS resolution."""
+        result = _is_private_url("http://metadata.google.internal/computeMetadata/v1/")
+        assert result is not None
+        assert "metadata" in result.lower()
+
+    def test_dns_failure_returns_none(self) -> None:
+        """Unresolvable hostnames return None (let httpx handle later)."""
+        import socket
+
+        with patch("cantrip.agent.tools.web.socket.getaddrinfo") as mock:
+            mock.side_effect = socket.gaierror("Name or service not known")
+            assert _is_private_url("http://does-not-exist.example.com") is None

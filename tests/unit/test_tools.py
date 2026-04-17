@@ -142,6 +142,27 @@ class TestWriteFileTool:
         assert result.success
         assert existing.read_text() == "new content"
 
+    @pytest.mark.asyncio
+    async def test_write_path_traversal_rejected(self, tool):
+        """Writing outside the base path is rejected."""
+        result = await tool.execute(path="../../etc/passwd", content="hacked")
+        assert not result.success
+        assert "outside" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_write_to_read_only_directory(self, temp_dir):
+        """Writing to a read-only directory reports an OS error."""
+        read_only = temp_dir / "readonly"
+        read_only.mkdir()
+        read_only.chmod(0o444)
+        try:
+            tool = WriteFileTool(base_path=read_only)
+            result = await tool.execute(path="file.txt", content="data")
+            assert not result.success
+            assert result.error
+        finally:
+            read_only.chmod(0o755)
+
 
 class TestListDirectoryTool:
     """Tests for ListDirectoryTool."""
