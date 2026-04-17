@@ -28,6 +28,10 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Design gap inference scoped to sentences (Phase 32.4)** — `_infer_gaps_from_audit` now matches keywords within the same sentence/list-item instead of across the entire document; eliminates false positives like "Good tracing setup" + "missing" in an unrelated section; added `absent` and `not configured` as negative keywords
 - **Compaction summary preserves more context (Phase 32.6)** — tool result truncation increased from 500 to 1000 chars (2000 for errors); compaction summary placed as SYSTEM message instead of USER to avoid breaking role alternation
 - **Web UI input validation (Phase 31.14)** — `/api/logs` `lines` parameter clamped to `[1, 5000]`; `level` parameter validated against allowed log levels in both `/api/logs` and `/api/logs-stream`, preventing arbitrary strings from reaching subprocess calls
+- **GraphScreen refresh fetches live status (Phase 29.7)** — pressing `R` in the graph screen now calls `juju status` in a background thread instead of re-rendering stale data
+- **Modal title CSS layout (Phase 29.9)** — replaced manual space-padding in modal screen titles with `Horizontal` layout (title left, key hint right via CSS)
+- **DesignQuestionsScreen back button (Phase 29.11)** — added "Previous" button and `Left`/`p` keybindings; Escape now returns `None` (cancelled) instead of the questions list (finished)
+- **File tree click shows path (Phase 29.12)** — clicking a file in the charm tree widget now shows the file path in a toast notification instead of silently discarding the event
 
 - **User documentation** — Diataxis-structured documentation site under `docs/docs/`: a tutorial (build your first charm), four how-to guides (choose an LLM provider, improve an existing charm, export transcripts, configure light models), two reference pages (CLI reference, agent tools), and three explanation pages (architecture, charm paths, observability). Linked from the marketing site navigation.
 

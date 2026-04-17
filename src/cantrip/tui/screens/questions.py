@@ -9,7 +9,7 @@ from textual.widgets import Button, Input, Static
 from cantrip.agent.design import DesignQuestion
 
 
-class DesignQuestionsScreen(ModalScreen[list[DesignQuestion]]):
+class DesignQuestionsScreen(ModalScreen[list[DesignQuestion] | None]):
     """Modal screen that presents design questions one at a time.
 
     Each question is shown with its suggested answers as buttons plus a
@@ -68,10 +68,18 @@ class DesignQuestionsScreen(ModalScreen[list[DesignQuestion]]):
         width: 100%;
         color: $text-muted;
     }
+
+    #prev-btn {
+        margin-top: 1;
+        width: 100%;
+        color: $text-muted;
+    }
     """
 
     BINDINGS = [
-        Binding("escape", "dismiss", "Close"),
+        Binding("escape", "cancel", "Cancel"),
+        Binding("left", "previous", "Previous", show=False),
+        Binding("p", "previous", "Previous", show=False),
     ]
 
     def __init__(self, questions: list[DesignQuestion]) -> None:
@@ -93,6 +101,7 @@ class DesignQuestionsScreen(ModalScreen[list[DesignQuestion]]):
                 id="free-form-input",
             )
             yield Button("Skip this question", id="skip-btn", variant="default")
+            yield Button("← Previous question", id="prev-btn", variant="default")
 
     def on_mount(self) -> None:
         """Show the first question on mount."""
@@ -123,10 +132,17 @@ class DesignQuestionsScreen(ModalScreen[list[DesignQuestion]]):
         input_widget.value = ""
         input_widget.focus()
 
+        # Hide the Previous button on the first question.
+        self.query_one("#prev-btn", Button).display = self._current_idx > 0
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle suggestion button or skip button presses."""
+        """Handle suggestion, skip, and previous button presses."""
         if event.button.id == "skip-btn":
             self._advance()
+            return
+
+        if event.button.id == "prev-btn":
+            self.action_previous()
             return
 
         if event.button.id and event.button.id.startswith("suggestion-"):
@@ -148,6 +164,12 @@ class DesignQuestionsScreen(ModalScreen[list[DesignQuestion]]):
         self._current_idx += 1
         self._show_question()
 
-    def action_dismiss(self) -> None:
-        """Dismiss the screen, returning whatever has been answered so far."""
-        self.dismiss(self._questions)
+    def action_previous(self) -> None:
+        """Go back to the previous question."""
+        if self._current_idx > 0:
+            self._current_idx -= 1
+            self._show_question()
+
+    def action_cancel(self) -> None:
+        """Cancel the screen, returning ``None`` to distinguish from completion."""
+        self.dismiss(None)

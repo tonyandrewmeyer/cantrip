@@ -2591,16 +2591,16 @@ partially implemented functionality.
 - [x] `ChatMessage.timestamp` is stored but never rendered
 - [x] Show timestamp in the message header (e.g. `[14:23]`)
 
-### 29.11 Low — Design Questions Back Button
+### 29.11 Low — Design Questions Back Button ✅
 
-- [ ] `DesignQuestionsScreen` has no way to go back to the previous question
-- [ ] Add a "Previous" button or `Left`/`p` keybinding
-- [ ] Distinguish "user finished" from "user cancelled" (Escape) in the return value
+- [x] `DesignQuestionsScreen` has no way to go back to the previous question
+- [x] Add a "Previous" button or `Left`/`p` keybinding
+- [x] Distinguish "user finished" from "user cancelled" (Escape) in the return value
 
-### 29.12 Low — File Preview on Click
+### 29.12 Low — File Preview on Click ✅
 
-- [ ] `CharmTreeWidget.on_directory_tree_file_selected` silently discards the event
-- [ ] Show a read-only file preview panel or at least the file path in the status bar
+- [x] `CharmTreeWidget.on_directory_tree_file_selected` silently discards the event
+- [x] Show a read-only file preview panel or at least the file path in the status bar
 
 **Exit criteria:** All TUI screens reachable and functional. No blocking subprocess calls
 on the event loop. Dead CSS and dead features either wired up or removed. `make check`
