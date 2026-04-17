@@ -261,6 +261,23 @@ class CantripAgent:
             )
         return None
 
+    def _persist_compaction_state(self) -> None:
+        """Persist compaction counters and surface any pending safety warning.
+
+        Called after each compact/emergency_truncate so budgets survive
+        session resume and the user sees cycle/budget warnings promptly.
+        """
+        compactions, emergencies = self._context_manager.safety_state()
+        if self._store:
+            try:
+                self._store.save_compaction_counters(compactions, emergencies)
+            except sqlite3.Error:
+                log.warning("Failed to persist compaction counters", exc_info=True)
+        warning = self._context_manager.consume_safety_warning()
+        if warning:
+            self.state.messages.append(Message(role=Role.SYSTEM, content=warning))
+            log.warning("Compaction safety warning: %s", warning)
+
     def _record_message(self, msg: Message) -> None:
         """Persist a conversation message to the session store."""
         self._ensure_store()
@@ -537,6 +554,7 @@ class CantripAgent:
                     self.state.messages = self._context_manager.emergency_truncate(
                         self.state.messages
                     )
+                self._persist_compaction_state()
 
             # Call the LLM again with the updated history.
             messages = self._build_llm_messages(include_budget=True)
@@ -681,6 +699,7 @@ class CantripAgent:
                     self.state.messages = self._context_manager.emergency_truncate(
                         self.state.messages
                     )
+                self._persist_compaction_state()
 
             # Stream the next LLM call.
             messages = self._build_llm_messages(include_budget=True)
@@ -1581,6 +1600,15 @@ class CantripAgent:
         self.state.dev_model = loaded.dev_model
         self.state.cos_model = loaded.cos_model
         self.state.decisions = loaded.decisions
+
+        # Restore compaction safety counters so per-session budgets survive
+        # resume and we don't hand a fresh budget to a session that has
+        # already been compacting aggressively.
+        try:
+            compactions, emergencies = self._store.load_compaction_counters()
+            self._context_manager.restore_safety_state(compactions, emergencies)
+        except sqlite3.Error:
+            log.warning("Failed to restore compaction counters")
 
         # Restore conversation history so the LLM retains context.
         try:

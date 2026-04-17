@@ -14,7 +14,7 @@ from cantrip.agent.state import AgentState, Decision
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS session (
     cos_model TEXT,
     design_proposal TEXT,
     message_count INTEGER DEFAULT 0,
+    compactions_attempted INTEGER NOT NULL DEFAULT 0,
+    emergencies_attempted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -207,6 +209,20 @@ class SessionStore:
             if "design_proposal" not in cols:
                 self._conn.execute("ALTER TABLE session ADD COLUMN design_proposal TEXT")
 
+        if current < 7:
+            # v7: persist compaction safety counters on the session table.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(session)").fetchall()}
+            if "compactions_attempted" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE session ADD COLUMN "
+                    "compactions_attempted INTEGER NOT NULL DEFAULT 0"
+                )
+            if "emergencies_attempted" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE session ADD COLUMN "
+                    "emergencies_attempted INTEGER NOT NULL DEFAULT 0"
+                )
+
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
             self._conn.commit()
@@ -319,6 +335,39 @@ class SessionStore:
             )
 
         return state
+
+    # ── Compaction safety counters (Phase 40.2) ─────────────────────────
+
+    def save_compaction_counters(
+        self, compactions_attempted: int, emergencies_attempted: int
+    ) -> None:
+        """Persist the per-session compaction safety counters.
+
+        Called from the conversation loop after each compaction/truncate so
+        the budgets survive session resume.  Assumes a session row already
+        exists (save_session() creates it on first use).
+        """
+        self._db.execute(
+            "UPDATE session SET compactions_attempted = ?, "
+            "emergencies_attempted = ?, updated_at = datetime('now') WHERE id = 1",
+            (compactions_attempted, emergencies_attempted),
+        )
+        self._db.commit()
+
+    def load_compaction_counters(self) -> tuple[int, int]:
+        """Return (compactions_attempted, emergencies_attempted) for the session.
+
+        Returns (0, 0) when no session row exists yet.
+        """
+        row = self._db.execute(
+            "SELECT compactions_attempted, emergencies_attempted FROM session WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            return 0, 0
+        return (
+            int(row["compactions_attempted"] or 0),
+            int(row["emergencies_attempted"] or 0),
+        )
 
     # ── Task persistence ────────────────────────────────────────────────
 

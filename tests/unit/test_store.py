@@ -205,6 +205,36 @@ class TestMigration:
             store.close()
 
 
+class TestCompactionCounters:
+    """Tests for compaction safety counter persistence (Phase 40.2)."""
+
+    def test_default_counters_are_zero(self, store: SessionStore) -> None:
+        state = AgentState(charm_name="x")
+        store.save_session(state)
+        assert store.load_compaction_counters() == (0, 0)
+
+    def test_save_and_load_counters(self, store: SessionStore) -> None:
+        state = AgentState(charm_name="x")
+        store.save_session(state)
+        store.save_compaction_counters(compactions_attempted=7, emergencies_attempted=3)
+        assert store.load_compaction_counters() == (7, 3)
+
+    def test_counters_independent_of_session_save(self, store: SessionStore) -> None:
+        """save_session() must not reset counters that save_compaction_counters set."""
+        state = AgentState(charm_name="x")
+        store.save_session(state)
+        store.save_compaction_counters(5, 2)
+        # Subsequent save_session (e.g. charm_path change) should not zero
+        # the counters.
+        state.charm_name = "y"
+        store.save_session(state)
+        assert store.load_compaction_counters() == (5, 2)
+
+    def test_load_on_empty_store_returns_zero(self, store: SessionStore) -> None:
+        """No session row yet → counters default to (0, 0)."""
+        assert store.load_compaction_counters() == (0, 0)
+
+
 class TestCorruptDataResilience:
     """Tests for handling corrupt data in the database."""
 

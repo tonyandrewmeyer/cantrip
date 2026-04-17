@@ -3338,7 +3338,7 @@ to implementation.
 
 ---
 
-## Phase 40: Compaction Safety — Cycle Detection and Retry Limits
+## Phase 40: Compaction Safety — Cycle Detection and Retry Limits ✓
 
 **Goal:** Ensure the context compaction subsystem cannot enter an infinite loop.
 Currently, if the conversation keeps growing after compaction (e.g. the LLM
@@ -3348,33 +3348,33 @@ compaction), the system can repeatedly trigger `should_compact()` → `compact()
 no cap on how many times it can fire in a session. This phase adds explicit cycle
 detection and retry budgets.
 
-### 40.1 Compaction cycle detection
+### 40.1 Compaction cycle detection ✓
 
-- [ ] Track compaction events (timestamp, pre/post token count) in `ContextManager`
-- [ ] Detect a cycle: if compaction fires N times within a short window (e.g. 3
+- [x] Track compaction events (timestamp, pre/post token count) in `ContextManager`
+- [x] Detect a cycle: if compaction fires N times within a short window (e.g. 3
   times in 60 seconds) without the token count dropping below the threshold for
   at least one full conversation round, flag it as a cycle
-- [ ] When a cycle is detected, stop compacting and surface a clear warning to the
+- [x] When a cycle is detected, stop compacting and surface a clear warning to the
   user via the conversation loop ("Context is growing faster than compaction can
   shrink it — consider starting a new session or reducing output verbosity")
-- [ ] Add unit tests for cycle detection with synthetic message sequences
+- [x] Add unit tests for cycle detection with synthetic message sequences
 
-### 40.2 Compaction retry budget
+### 40.2 Compaction retry budget ✓
 
-- [ ] Add a per-session compaction counter (total compactions attempted,
+- [x] Add a per-session compaction counter (total compactions attempted,
   total emergencies triggered)
-- [ ] Set a configurable maximum for each (e.g. 20 compactions, 5 emergencies
+- [x] Set a configurable maximum for each (e.g. 20 compactions, 5 emergencies
   per session)
-- [ ] When the budget is exhausted, refuse further compaction attempts and warn
+- [x] When the budget is exhausted, refuse further compaction attempts and warn
   the user rather than silently retrying
-- [ ] Persist the counters in the SQLite session store so they survive restarts
+- [x] Persist the counters in the SQLite session store so they survive restarts
 
-### 40.3 Post-compaction size validation
+### 40.3 Post-compaction size validation ✓
 
-- [ ] After `compact()` completes, verify that the resulting message list is
+- [x] After `compact()` completes, verify that the resulting message list is
   actually smaller than the input; if not, fall back to `emergency_truncate()`
   immediately rather than waiting for the next `should_compact()` check
-- [ ] Log a warning when compaction fails to reduce size — this indicates the
+- [x] Log a warning when compaction fails to reduce size — this indicates the
   summary prompt is not working effectively
 
 **Exit criteria:** The compaction subsystem has hard limits on how many times it

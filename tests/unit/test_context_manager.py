@@ -163,7 +163,13 @@ class TestCompact:
         )
         provider = FakeProvider()
 
-        msgs = [Message(role=Role.USER, content=f"message {i}") for i in range(10)]
+        # Use realistic-size messages so that summarising them actually
+        # shrinks the context.  The post-compaction size-validation check
+        # falls back to emergency_truncate if the summary is larger than
+        # the input, which can happen with trivially-small synthetic
+        # messages.
+        filler = "conversation content that takes up several tokens " * 20
+        msgs = [Message(role=Role.USER, content=f"message {i} {filler}") for i in range(10)]
         result = await cm.compact(msgs, "system prompt", provider)
 
         # summary + 4 recent = 5 messages.
@@ -171,7 +177,7 @@ class TestCompact:
         assert "Conversation Summary" in result[0].content
         # Last 4 messages preserved.
         for i, msg in enumerate(result[1:]):
-            assert msg.content == f"message {10 - 4 + i}"
+            assert msg.content == f"message {10 - 4 + i} {filler}"
 
     @pytest.mark.asyncio
     async def test_compact_stores_full_history(self):
@@ -195,10 +201,124 @@ class TestCompact:
         cm = ContextManager(virtual_store=store, context_window_tokens=200_000)
         provider = FakeProvider()
 
-        msgs = [Message(role=Role.USER, content=f"msg {i}") for i in range(6)]
+        filler = "conversation content that takes up several tokens " * 20
+        msgs = [Message(role=Role.USER, content=f"msg {i} {filler}") for i in range(6)]
         result = await cm.compact(msgs, "prompt", provider)
 
         assert "vf_1" in result[0].content
+
+
+class TestCompactionSafety:
+    """Phase 40: cycle detection, retry budgets, post-compaction validation."""
+
+    # Realistic-size messages so compaction actually shrinks and each fire
+    # exercises the full compact() path.
+    _FILLER = "conversation content that takes up several tokens " * 20
+
+    def _messages(self, count: int) -> list[Message]:
+        return [
+            Message(role=Role.USER, content=f"message {i} {self._FILLER}") for i in range(count)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_compaction_counter_increments(self):
+        store = VirtualFileStore()
+        cm = ContextManager(virtual_store=store, context_window_tokens=200_000)
+        assert cm.compactions_attempted == 0
+        await cm.compact(self._messages(10), "prompt", FakeProvider())
+        assert cm.compactions_attempted == 1
+
+    @pytest.mark.asyncio
+    async def test_budget_exhausted_stops_compacting(self):
+        """Once the compaction budget is spent, should_compact returns False
+        and a warning is queued for the user."""
+        store = VirtualFileStore()
+        cm = ContextManager(
+            virtual_store=store,
+            context_window_tokens=200_000,
+            max_compactions=2,
+        )
+        provider = FakeProvider()
+
+        msgs = self._messages(10)
+        await cm.compact(msgs, "prompt", provider)
+        await cm.compact(msgs, "prompt", provider)
+        assert cm.compactions_attempted == 2
+
+        # Force the threshold to fire by using a tiny context window.
+        small_cm = ContextManager(
+            virtual_store=VirtualFileStore(),
+            context_window_tokens=200,
+            max_compactions=2,
+        )
+        small_cm.restore_safety_state(2, 0)
+        assert small_cm.should_compact(self._messages(10)) is False
+        assert small_cm.budget_exhausted is True
+        warning = small_cm.consume_safety_warning()
+        assert warning is not None
+        assert "budget exhausted" in warning.lower()
+        # Warning is consumed — a second call returns None.
+        assert small_cm.consume_safety_warning() is None
+
+    @pytest.mark.asyncio
+    async def test_cycle_detection_latches(self):
+        """Three compactions in quick succession with no progress should
+        trip cycle detection and queue a user-visible warning."""
+        # Tiny window so the summary response never gets us below threshold.
+        cm = ContextManager(
+            virtual_store=VirtualFileStore(),
+            context_window_tokens=200,
+        )
+        provider = FakeProvider()
+
+        msgs = self._messages(10)
+        for _ in range(3):
+            await cm.compact(msgs, "prompt", provider)
+
+        assert cm.cycle_detected is True
+        assert cm.should_compact(msgs) is False
+        warning = cm.consume_safety_warning()
+        assert warning is not None
+        assert "growing faster" in warning.lower()
+
+    @pytest.mark.asyncio
+    async def test_post_compaction_size_validation_falls_back(self):
+        """When the summary doesn't shrink the context, compact() should
+        fall back to emergency_truncate on the original messages."""
+        # Tiny window: the fixed summary overhead dwarfs any synthetic input,
+        # so post >= pre and the fallback fires.
+        cm = ContextManager(
+            virtual_store=VirtualFileStore(),
+            context_window_tokens=200,
+        )
+        msgs = [Message(role=Role.USER, content=f"msg {i}") for i in range(8)]
+        result = await cm.compact(msgs, "prompt", FakeProvider())
+        assert cm.emergencies_attempted == 1
+        # The result should not contain the summary header because emergency
+        # truncate was used instead.
+        assert not result[0].content.startswith("[Conversation Summary]")
+
+    def test_emergency_truncate_counts_and_warns_when_budget_exceeded(self):
+        cm = ContextManager(
+            virtual_store=VirtualFileStore(),
+            context_window_tokens=1000,
+            max_emergencies=1,
+        )
+        msgs = self._messages(20)
+        cm.emergency_truncate(msgs)
+        cm.emergency_truncate(msgs)
+        assert cm.emergencies_attempted == 2
+        warning = cm.consume_safety_warning()
+        assert warning is not None
+        assert "emergency" in warning.lower()
+
+    def test_restore_safety_state_round_trip(self):
+        cm = ContextManager(virtual_store=VirtualFileStore(), context_window_tokens=200_000)
+        cm.restore_safety_state(7, 2)
+        assert cm.safety_state() == (7, 2)
+        # Negative inputs are clamped to zero.
+        cm.restore_safety_state(-1, -5)
+        assert cm.safety_state() == (0, 0)
 
 
 class TestBudgetMessage:

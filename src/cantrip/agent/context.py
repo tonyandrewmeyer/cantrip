@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from dataclasses import dataclass
 
 from cantrip.llm.base import (
@@ -15,6 +16,30 @@ from cantrip.llm.base import (
 )
 
 log = logging.getLogger(__name__)
+
+
+# Compaction safety defaults — chosen to be well above normal usage while still
+# catching pathological loops.  A healthy long session compacts maybe 5–10
+# times; 20 gives plenty of headroom.  Emergency truncation is the last-ditch
+# path, so 5 is ample.
+_MAX_COMPACTIONS_PER_SESSION = 20
+_MAX_EMERGENCIES_PER_SESSION = 5
+
+# Cycle detection window: if compaction fires this many times within this
+# many seconds without ever dropping the post-compaction token count below the
+# threshold, treat it as a cycle and stop.
+_CYCLE_WINDOW_SECONDS = 60.0
+_CYCLE_FIRE_COUNT = 3
+
+
+@dataclass
+class _CompactionEvent:
+    """One compaction or emergency-truncate fire — used for cycle detection."""
+
+    timestamp: float
+    pre_tokens: int
+    post_tokens: int
+    kind: str  # "compact" or "emergency"
 
 
 @dataclass
@@ -136,12 +161,93 @@ class ContextManager:
         compaction_threshold: float = 0.80,
         virtualisation_threshold: int = 10_000,
         virtualisation_preview: int = 1_000,
+        max_compactions: int = _MAX_COMPACTIONS_PER_SESSION,
+        max_emergencies: int = _MAX_EMERGENCIES_PER_SESSION,
     ) -> None:
         self._store = virtual_store
         self._context_window = context_window_tokens
         self._compaction_threshold = compaction_threshold
         self._virtualisation_threshold = virtualisation_threshold
         self._virtualisation_preview = virtualisation_preview
+        self._max_compactions = max_compactions
+        self._max_emergencies = max_emergencies
+        # Mutable safety state.  Counters survive session resume — see
+        # restore_safety_state()/safety_state().
+        self._compactions_attempted = 0
+        self._emergencies_attempted = 0
+        self._history: list[_CompactionEvent] = []
+        # Latched flags: once set they stay set for the session so the caller
+        # can check whether compaction has been disabled.
+        self._cycle_detected = False
+        self._budget_exhausted = False
+        # Set True when a safety warning needs to be surfaced to the user.
+        # Cleared by consume_safety_warning().
+        self._pending_warning: str | None = None
+
+    @property
+    def compactions_attempted(self) -> int:
+        """Number of LLM-backed compactions fired this session."""
+        return self._compactions_attempted
+
+    @property
+    def emergencies_attempted(self) -> int:
+        """Number of emergency truncations fired this session."""
+        return self._emergencies_attempted
+
+    @property
+    def cycle_detected(self) -> bool:
+        """True once a compact/expand cycle has been detected."""
+        return self._cycle_detected
+
+    @property
+    def budget_exhausted(self) -> bool:
+        """True once the per-session compaction budget has been exhausted."""
+        return self._budget_exhausted
+
+    def safety_state(self) -> tuple[int, int]:
+        """Return (compactions_attempted, emergencies_attempted) for persistence."""
+        return self._compactions_attempted, self._emergencies_attempted
+
+    def restore_safety_state(self, compactions_attempted: int, emergencies_attempted: int) -> None:
+        """Restore counters from persisted state on session resume."""
+        self._compactions_attempted = max(0, compactions_attempted)
+        self._emergencies_attempted = max(0, emergencies_attempted)
+
+    def consume_safety_warning(self) -> str | None:
+        """Return and clear any pending safety warning for the user."""
+        warning = self._pending_warning
+        self._pending_warning = None
+        return warning
+
+    def _record_event(self, kind: str, pre_tokens: int, post_tokens: int) -> None:
+        self._history.append(
+            _CompactionEvent(
+                timestamp=time.monotonic(),
+                pre_tokens=pre_tokens,
+                post_tokens=post_tokens,
+                kind=kind,
+            )
+        )
+
+    def _is_cycle(self) -> bool:
+        """Detect a compact/expand cycle.
+
+        A cycle is ``_CYCLE_FIRE_COUNT`` events within ``_CYCLE_WINDOW_SECONDS``
+        where none of the post-compaction token counts dropped below the
+        compaction threshold.  That means compaction keeps firing without
+        making real progress — symptom of the LLM re-expanding summarised
+        content or a tool producing huge output immediately after each
+        compaction.
+        """
+        if len(self._history) < _CYCLE_FIRE_COUNT:
+            return False
+        recent = self._history[-_CYCLE_FIRE_COUNT:]
+        now = time.monotonic()
+        if now - recent[0].timestamp > _CYCLE_WINDOW_SECONDS:
+            return False
+        threshold_tokens = int(self._context_window * self._compaction_threshold)
+        # Cycle if every recent event left the post count above the threshold.
+        return all(event.post_tokens >= threshold_tokens for event in recent)
 
     @property
     def compaction_threshold(self) -> float:
@@ -244,11 +350,33 @@ class ContextManager:
         return Message(role=Role.USER, content="\n".join(parts))
 
     def should_compact(self, messages: list[Message]) -> bool:
-        """Return True if the conversation should be compacted."""
+        """Return True if the conversation should be compacted.
+
+        Returns False (with a one-off user-visible warning) when the
+        per-session budget is exhausted or a compact/expand cycle has been
+        detected — so the conversation loop can continue even if compaction
+        is no longer useful.
+        """
+        if self._cycle_detected or self._budget_exhausted:
+            return False
         if len(messages) < _KEEP_RECENT + 1:
             return False
         used = self.estimate_tokens(messages)
-        return used >= self._context_window * self._compaction_threshold
+        if used < self._context_window * self._compaction_threshold:
+            return False
+        if self._compactions_attempted >= self._max_compactions:
+            self._budget_exhausted = True
+            self._pending_warning = (
+                "Context compaction budget exhausted "
+                f"({self._max_compactions} compactions this session).  "
+                "Consider starting a new session or reducing output verbosity."
+            )
+            log.warning(
+                "Compaction budget exhausted (%d attempts); skipping further compactions",
+                self._compactions_attempted,
+            )
+            return False
+        return True
 
     async def compact(
         self,
@@ -259,8 +387,15 @@ class ContextManager:
         """Compact the conversation by summarising older messages.
 
         Saves the full history as a virtual file, asks the provider to
-        summarise it, then returns ``[summary] + last N messages``.
+        summarise it, then returns ``[summary] + last N messages``.  If the
+        resulting context is not actually smaller, falls back to
+        ``emergency_truncate()`` immediately.  Also detects compact/expand
+        cycles — if this is the Nth recent fire with no progress, disables
+        further compaction for the session.
         """
+        pre_tokens = self.estimate_tokens(messages)
+        self._compactions_attempted += 1
+
         # Save full history as a virtual file.
         history_text = self._format_history(messages)
         file_id = self._store.store(
@@ -286,15 +421,64 @@ class ContextManager:
 
         # Keep the most recent messages for continuity.
         recent = messages[-_KEEP_RECENT:] if len(messages) > _KEEP_RECENT else messages
-        return [summary_msg] + list(recent)
+        result = [summary_msg] + list(recent)
+        post_tokens = self.estimate_tokens(result)
+
+        # Post-compaction size validation: if the summary didn't actually
+        # reduce the context, fall back to emergency_truncate on the
+        # original messages rather than shipping a bloated summary.
+        if post_tokens >= pre_tokens:
+            log.warning(
+                "Compaction did not reduce context size (%d → %d tokens); "
+                "falling back to emergency truncation",
+                pre_tokens,
+                post_tokens,
+            )
+            result = self.emergency_truncate(messages)
+            post_tokens = self.estimate_tokens(result)
+
+        self._record_event("compact", pre_tokens, post_tokens)
+
+        if self._is_cycle():
+            self._cycle_detected = True
+            self._pending_warning = (
+                "Context is growing faster than compaction can shrink it.  "
+                "Consider starting a new session or reducing output verbosity."
+            )
+            log.warning(
+                "Compaction cycle detected (%d fires in %ds without progress); "
+                "disabling further compactions this session",
+                _CYCLE_FIRE_COUNT,
+                int(_CYCLE_WINDOW_SECONDS),
+            )
+
+        return result
 
     def emergency_truncate(self, messages: list[Message]) -> list[Message]:
         """Drop oldest non-system messages to fit within the context budget.
 
-        Used as a last-resort fallback when LLM-based compaction fails.
-        Keeps the system message (if any) and the most recent messages
-        that fit within 80% of the context window.
+        Used as a last-resort fallback when LLM-based compaction fails or
+        fails to reduce size.  Keeps the system message (if any) and the
+        most recent messages that fit within 80% of the context window.
+        Counts towards the per-session emergency budget — once exhausted,
+        still runs (we can't afford *not* to truncate) but sets a pending
+        warning so the caller knows.
         """
+        pre_tokens = self.estimate_tokens(messages)
+        self._emergencies_attempted += 1
+        if self._emergencies_attempted > self._max_emergencies and self._pending_warning is None:
+            self._pending_warning = (
+                "Emergency context truncation has fired "
+                f"{self._emergencies_attempted} times this session "
+                f"(budget: {self._max_emergencies}).  Consider starting a "
+                "new session — the context manager is struggling to keep up."
+            )
+            log.warning(
+                "Emergency truncation budget exceeded (%d / %d)",
+                self._emergencies_attempted,
+                self._max_emergencies,
+            )
+
         system_msgs = [m for m in messages if m.role == Role.SYSTEM]
         non_system = [m for m in messages if m.role != Role.SYSTEM]
 
@@ -313,12 +497,14 @@ class ContextManager:
             kept.append(msg)
 
         kept.reverse()
+        result = system_msgs + kept
         log.warning(
             "Emergency truncation: kept %d of %d non-system messages",
             len(kept),
             len(non_system),
         )
-        return system_msgs + kept
+        self._record_event("emergency", pre_tokens, self.estimate_tokens(result))
+        return result
 
     @staticmethod
     def _format_history(messages: list[Message]) -> str:

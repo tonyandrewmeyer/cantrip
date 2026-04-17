@@ -330,13 +330,17 @@ class TestContextManagerCompaction:
         store = VirtualFileStore()
         cm = ContextManager(store, context_window_tokens=100_000)
 
+        # Realistic-size content so compaction is a genuine shrink — the
+        # post-compaction size-validation check falls back to
+        # emergency_truncate when the summary isn't smaller than the input.
+        filler = "padding to make each message substantial " * 20
         messages = [
-            Message(role=Role.USER, content="first question"),
-            Message(role=Role.ASSISTANT, content="first answer"),
-            Message(role=Role.USER, content="second question"),
-            Message(role=Role.ASSISTANT, content="second answer"),
-            Message(role=Role.USER, content="third question"),
-            Message(role=Role.ASSISTANT, content="third answer"),
+            Message(role=Role.USER, content=f"first question {filler}"),
+            Message(role=Role.ASSISTANT, content=f"first answer {filler}"),
+            Message(role=Role.USER, content=f"second question {filler}"),
+            Message(role=Role.ASSISTANT, content=f"second answer {filler}"),
+            Message(role=Role.USER, content=f"third question {filler}"),
+            Message(role=Role.ASSISTANT, content=f"third answer {filler}"),
         ]
 
         provider = FakeProvider(
@@ -353,10 +357,10 @@ class TestContextManagerCompaction:
         assert "vf_1" in result[0].content
 
         # messages[-4:] = second question, second answer, third question, third answer.
-        assert result[1].content == "second question"
-        assert result[2].content == "second answer"
-        assert result[3].content == "third question"
-        assert result[4].content == "third answer"
+        assert result[1].content == f"second question {filler}"
+        assert result[2].content == f"second answer {filler}"
+        assert result[3].content == f"third question {filler}"
+        assert result[4].content == f"third answer {filler}"
 
         # Virtual file should exist.
         vf = store.get("vf_1")
@@ -369,15 +373,16 @@ class TestContextManagerCompaction:
         store = VirtualFileStore()
         cm = ContextManager(store, context_window_tokens=100_000)
 
-        messages = [Message(role=Role.USER, content=f"msg_{i}") for i in range(10)]
+        filler = "padding to make each message substantial " * 20
+        messages = [Message(role=Role.USER, content=f"msg_{i} {filler}") for i in range(10)]
 
         provider = FakeProvider([Response(content="summary")])
         result = await cm.compact(messages, system_prompt="test", provider=provider)
 
         # summary + last 4.
         assert len(result) == 5
-        assert result[1].content == "msg_6"
-        assert result[4].content == "msg_9"
+        assert result[1].content == f"msg_6 {filler}"
+        assert result[4].content == f"msg_9 {filler}"
 
     @pytest.mark.asyncio
     async def test_compact_failure_does_not_crash(self):
