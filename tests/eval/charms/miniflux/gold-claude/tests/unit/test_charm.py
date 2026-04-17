@@ -89,6 +89,7 @@ def test_postgresql_broken_blocks():
 # Helpers
 # -----------------------------------------------------------------
 
+
 def _meta() -> dict:
     return {
         "name": "miniflux",

@@ -63,6 +63,7 @@ def test_no_pebble_connection_waits():
 # Helpers
 # -----------------------------------------------------------------
 
+
 def _meta() -> dict:
     return {
         "name": "ntfy",

@@ -22,12 +22,8 @@ class NtfyCharm(ops.CharmBase):
         super().__init__(framework)
         self.framework.observe(self.on["ntfy"].pebble_ready, self._on_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
-        self.framework.observe(
-            self.on["ingress"].relation_changed, self._on_ingress_changed
-        )
-        self.framework.observe(
-            self.on["ingress"].relation_broken, self._on_ingress_broken
-        )
+        self.framework.observe(self.on["ingress"].relation_changed, self._on_ingress_changed)
+        self.framework.observe(self.on["ingress"].relation_broken, self._on_ingress_broken)
         self.framework.observe(self.on.add_user_action, self._on_add_user)
 
     # -----------------------------------------------------------------
@@ -88,23 +84,25 @@ class NtfyCharm(ops.CharmBase):
         config_yaml = self._render_server_yml()
         container.push(_CONFIG_PATH, config_yaml, make_dirs=True)
 
-        layer = ops.pebble.Layer({
-            "summary": "ntfy layer",
-            "services": {
-                "ntfy": {
-                    "override": "replace",
-                    "command": "ntfy serve --config /etc/ntfy/server.yml",
-                    "startup": "enabled",
+        layer = ops.pebble.Layer(
+            {
+                "summary": "ntfy layer",
+                "services": {
+                    "ntfy": {
+                        "override": "replace",
+                        "command": "ntfy serve --config /etc/ntfy/server.yml",
+                        "startup": "enabled",
+                    },
                 },
-            },
-            "checks": {
-                "ntfy-health": {
-                    "override": "replace",
-                    "level": "ready",
-                    "http": {"url": "http://localhost:80/v1/health"},
+                "checks": {
+                    "ntfy-health": {
+                        "override": "replace",
+                        "level": "ready",
+                        "http": {"url": "http://localhost:80/v1/health"},
+                    },
                 },
-            },
-        })
+            }
+        )
         container.add_layer("ntfy", layer, combine=True)
         container.autostart()
         self.unit.status = ops.ActiveStatus()
@@ -114,21 +112,21 @@ class NtfyCharm(ops.CharmBase):
         has_ingress = self.model.get_relation("ingress") is not None
 
         lines = [
-            f"base-url: \"{self.config.get('base-url', '')}\"",
-            "listen-http: \":80\"",
-            f"cache-file: \"{_DATA_MOUNT}/cache.db\"",
-            f"cache-duration: \"{self.config.get('cache-duration', '12h')}\"",
-            f"auth-file: \"{_DATA_MOUNT}/auth.db\"",
-            "auth-default-access: \"deny-all\"",
-            f"attachment-cache-dir: \"{_DATA_MOUNT}/attachments\"",
-            f"log-level: \"{self.config.get('log-level', 'info')}\"",
+            f'base-url: "{self.config.get("base-url", "")}"',
+            'listen-http: ":80"',
+            f'cache-file: "{_DATA_MOUNT}/cache.db"',
+            f'cache-duration: "{self.config.get("cache-duration", "12h")}"',
+            f'auth-file: "{_DATA_MOUNT}/auth.db"',
+            'auth-default-access: "deny-all"',
+            f'attachment-cache-dir: "{_DATA_MOUNT}/attachments"',
+            f'log-level: "{self.config.get("log-level", "info")}"',
             f"behind-proxy: {str(has_ingress).lower()}",
             "enable-metrics: true",
         ]
 
         upstream = self.config.get("upstream-base-url")
         if upstream:
-            lines.append(f"upstream-base-url: \"{upstream}\"")
+            lines.append(f'upstream-base-url: "{upstream}"')
 
         return "\n".join(lines) + "\n"
 

@@ -16,12 +16,8 @@ class MinifluxCharm(ops.CharmBase):
         super().__init__(framework)
         self.framework.observe(self.on["miniflux"].pebble_ready, self._on_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
-        self.framework.observe(
-            self.on["postgresql"].relation_changed, self._on_postgresql_changed
-        )
-        self.framework.observe(
-            self.on["postgresql"].relation_broken, self._on_postgresql_broken
-        )
+        self.framework.observe(self.on["postgresql"].relation_changed, self._on_postgresql_changed)
+        self.framework.observe(self.on["postgresql"].relation_broken, self._on_postgresql_broken)
         self.framework.observe(self.on.create_admin_action, self._on_create_admin)
 
     # -----------------------------------------------------------------
@@ -62,8 +58,12 @@ class MinifluxCharm(ops.CharmBase):
             event.fail("password is required")
             return
 
-        env = {"DATABASE_URL": db_url, "CREATE_ADMIN": "1",
-               "ADMIN_USERNAME": username, "ADMIN_PASSWORD": password}
+        env = {
+            "DATABASE_URL": db_url,
+            "CREATE_ADMIN": "1",
+            "ADMIN_USERNAME": username,
+            "ADMIN_PASSWORD": password,
+        }
         process = container.exec(["/usr/bin/miniflux", "-create-admin"], environment=env)
         try:
             stdout, _ = process.wait_output()
@@ -100,24 +100,26 @@ class MinifluxCharm(ops.CharmBase):
         if base_url:
             env["BASE_URL"] = typing.cast(str, base_url)
 
-        layer = ops.pebble.Layer({
-            "summary": "miniflux layer",
-            "services": {
-                "miniflux": {
-                    "override": "replace",
-                    "command": "/usr/bin/miniflux",
-                    "startup": "enabled",
-                    "environment": env,
+        layer = ops.pebble.Layer(
+            {
+                "summary": "miniflux layer",
+                "services": {
+                    "miniflux": {
+                        "override": "replace",
+                        "command": "/usr/bin/miniflux",
+                        "startup": "enabled",
+                        "environment": env,
+                    },
                 },
-            },
-            "checks": {
-                "miniflux-health": {
-                    "override": "replace",
-                    "level": "ready",
-                    "http": {"url": "http://localhost:8080/healthcheck"},
+                "checks": {
+                    "miniflux-health": {
+                        "override": "replace",
+                        "level": "ready",
+                        "http": {"url": "http://localhost:8080/healthcheck"},
+                    },
                 },
-            },
-        })
+            }
+        )
         container.add_layer("miniflux", layer, combine=True)
         container.autostart()
         self.unit.status = ops.ActiveStatus()

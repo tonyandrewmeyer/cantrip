@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Meilisearch full-text search engine charm."""
 
-import json
 import logging
 import typing
 
@@ -18,18 +17,14 @@ class MeilisearchCharm(ops.CharmBase):
 
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
-        self.framework.observe(
-            self.on["meilisearch"].pebble_ready, self._on_pebble_ready
-        )
+        self.framework.observe(self.on["meilisearch"].pebble_ready, self._on_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.create_snapshot_action, self._on_create_snapshot)
         self.framework.observe(self.on.create_dump_action, self._on_create_dump)
         self.framework.observe(self.on.get_keys_action, self._on_get_keys)
 
         # Relation for client charms to discover the search endpoint.
-        self.framework.observe(
-            self.on["meilisearch"].relation_joined, self._on_client_joined
-        )
+        self.framework.observe(self.on["meilisearch"].relation_joined, self._on_client_joined)
 
     # -----------------------------------------------------------------
     # Event handlers
@@ -48,11 +43,13 @@ class MeilisearchCharm(ops.CharmBase):
         if not self.unit.is_leader():
             return
         master_key = typing.cast(str, self.config.get("master-key", ""))
-        event.relation.data[self.app].update({
-            "host": self.app.name,
-            "port": "7700",
-            "master-key": master_key,
-        })
+        event.relation.data[self.app].update(
+            {
+                "host": self.app.name,
+                "port": "7700",
+                "master-key": master_key,
+            }
+        )
 
     def _on_create_snapshot(self, event: ops.ActionEvent) -> None:
         """Trigger a snapshot via the Meilisearch API."""
@@ -93,18 +90,14 @@ class MeilisearchCharm(ops.CharmBase):
         environment = typing.cast(str, self.config.get("environment", "production"))
 
         if environment == "production" and not master_key:
-            self.unit.status = ops.BlockedStatus(
-                "master-key is required in production mode"
-            )
+            self.unit.status = ops.BlockedStatus("master-key is required in production mode")
             return
 
         env = {
             "MEILI_DB_PATH": f"{_DATA_MOUNT}/data.ms",
             "MEILI_HTTP_ADDR": "0.0.0.0:7700",
             "MEILI_ENV": environment,
-            "MEILI_LOG_LEVEL": typing.cast(
-                str, self.config.get("log-level", "INFO")
-            ),
+            "MEILI_LOG_LEVEL": typing.cast(str, self.config.get("log-level", "INFO")),
             "MEILI_SNAPSHOT_DIR": f"{_DATA_MOUNT}/snapshots",
             "MEILI_DUMP_DIR": f"{_DATA_MOUNT}/dumps",
             "MEILI_NO_ANALYTICS": "true",
@@ -121,24 +114,26 @@ class MeilisearchCharm(ops.CharmBase):
         if snap_interval:
             env["MEILI_SCHEDULE_SNAPSHOT"] = str(snap_interval)
 
-        layer = ops.pebble.Layer({
-            "summary": "meilisearch layer",
-            "services": {
-                "meilisearch": {
-                    "override": "replace",
-                    "command": "/bin/meilisearch",
-                    "startup": "enabled",
-                    "environment": env,
+        layer = ops.pebble.Layer(
+            {
+                "summary": "meilisearch layer",
+                "services": {
+                    "meilisearch": {
+                        "override": "replace",
+                        "command": "/bin/meilisearch",
+                        "startup": "enabled",
+                        "environment": env,
+                    },
                 },
-            },
-            "checks": {
-                "meilisearch-health": {
-                    "override": "replace",
-                    "level": "ready",
-                    "http": {"url": "http://localhost:7700/health"},
+                "checks": {
+                    "meilisearch-health": {
+                        "override": "replace",
+                        "level": "ready",
+                        "http": {"url": "http://localhost:7700/health"},
+                    },
                 },
-            },
-        })
+            }
+        )
         container.add_layer("meilisearch", layer, combine=True)
         container.autostart()
         self.unit.status = ops.ActiveStatus()

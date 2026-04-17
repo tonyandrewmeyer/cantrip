@@ -15,9 +15,7 @@ def test_pebble_ready_blocks_without_master_key():
 
     out = ctx.run(ctx.on.pebble_ready(container), state)
 
-    assert out.unit_status == ops.BlockedStatus(
-        "master-key is required in production mode"
-    )
+    assert out.unit_status == ops.BlockedStatus("master-key is required in production mode")
 
 
 def test_pebble_ready_with_master_key_activates():
@@ -65,6 +63,7 @@ def test_no_pebble_connection_waits():
 # -----------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------
+
 
 def _meta() -> dict:
     return {
