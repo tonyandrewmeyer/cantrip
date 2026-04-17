@@ -902,6 +902,43 @@ class TestPlanFromDesign:
         user_msg = recorded_messages[-1].content
         assert "User overrides" not in user_msg
 
+    @pytest.mark.asyncio
+    async def test_passes_extended_thinking_budget(self) -> None:
+        """Planner calls include a non-zero thinking_budget for structured decomposition."""
+        recorded: dict = {}
+
+        class RecordingProvider(FakeProvider):
+            async def complete(
+                self,
+                messages,  # noqa: ARG002
+                tools=None,  # noqa: ARG002
+                temperature=0.7,  # noqa: ARG002
+                max_tokens=None,  # noqa: ARG002
+                thinking_budget=None,
+            ):
+                recorded["thinking_budget"] = thinking_budget
+                return Response(content="[]")
+
+        provider = RecordingProvider()
+        planner = TaskPlanner(provider)
+        context = PlanningContext(intent="Build")
+
+        await planner.plan_from_design(design_content="# Design", context=context)
+        assert recorded["thinking_budget"] is not None
+        assert recorded["thinking_budget"] > 0
+
+        # Same for replan and plan_from_day2_findings.
+        recorded.clear()
+        context_with_new = PlanningContext(intent="Build", new_context="updated")
+        await planner.replan(context_with_new)
+        assert recorded["thinking_budget"] is not None
+        assert recorded["thinking_budget"] > 0
+
+        recorded.clear()
+        await planner.plan_from_day2_findings(findings="# Findings", context=context)
+        assert recorded["thinking_budget"] is not None
+        assert recorded["thinking_budget"] > 0
+
 
 # ===================================================================
 # TestDesignToBuildPrompt

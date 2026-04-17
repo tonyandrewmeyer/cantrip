@@ -21,6 +21,13 @@ log = logging.getLogger(__name__)
 # Temperature used for planning calls — low to encourage structured output.
 _PLANNING_TEMPERATURE = 0.3
 
+# Extended-thinking budget for planner calls.  Task decomposition from a
+# design doc benefits from structured reasoning; 4000 tokens is enough
+# for the model to enumerate steps, dependencies, and tradeoffs without
+# bloating latency or cost.  Providers that don't support extended
+# thinking (inference-snap) ignore this parameter transparently.
+_PLANNING_THINKING_BUDGET = 4000
+
 # Valid task categories for validation.
 _VALID_CATEGORIES = {c.value for c in TaskCategory}
 
@@ -1116,6 +1123,7 @@ class TaskPlanner:
             messages=messages,
             tools=None,
             temperature=_PLANNING_TEMPERATURE,
+            thinking_budget=_PLANNING_THINKING_BUDGET,
         )
         return _parse_task_list(response.content)
 
@@ -1137,6 +1145,7 @@ class TaskPlanner:
             messages=messages,
             tools=None,
             temperature=_PLANNING_TEMPERATURE,
+            thinking_budget=_PLANNING_THINKING_BUDGET,
         )
         new_tasks = _parse_task_list(response.content)
         return _merge_tasks(context.existing_tasks, new_tasks)
@@ -1165,6 +1174,7 @@ class TaskPlanner:
             messages=messages,
             tools=None,
             temperature=_PLANNING_TEMPERATURE,
+            thinking_budget=_PLANNING_THINKING_BUDGET,
         )
         return _parse_task_list(response.content)
 
