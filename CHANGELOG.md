@@ -17,6 +17,9 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Missing Juju tools (Phase 30.2)** — new `juju_remove_application` and `juju_show_unit` tools; added `channel` param to deploy/refresh and `base` param to deploy; capped `juju_ssh` output at 8000 chars to prevent context overflow
 - **Missing git tools (Phase 30.3)** — new `git_branch` (create/list), `git_checkout`, `git_stash` (push/pop/list) tools; added `branch` and `file_path` params to `git_log`; added `draft` param to `gh_pr_create`; new `gh_pr_list` and `gh_pr_view` tools; all wired into subagent allowlists
 
+### Fixed
+- **Session resume loads conversation history (Phase 31.11)** — `load_state()` now calls `store.load_messages()` and restores prior conversation into `state.messages`, so the LLM retains context across sessions; `build_resume_summary` uses SYSTEM role instead of USER to avoid breaking alternating-role patterns
+
 - **User documentation** — Diataxis-structured documentation site under `docs/docs/`: a tutorial (build your first charm), four how-to guides (choose an LLM provider, improve an existing charm, export transcripts, configure light models), two reference pages (CLI reference, agent tools), and three explanation pages (architecture, charm paths, observability). Linked from the marketing site navigation.
 
 - **Quick Pack tool** — new standalone `quickpack` package (`src/quickpack/`) that produces valid `.charm` files without charmcraft's full lifecycle. Supports the `uv` plugin (plus `dump` parts), builds locally for the host architecture, and skips LXD, linting, and analysis. Available as a CLI (`quickpack`), a Python API (`quickpack.pack.quick_pack()`), and a cantrip agent tool (`quick_pack`). Includes jujuignore pattern matching, charmcraft.yaml → metadata.yaml generation, and dispatch script creation. Comparison tests verify output matches `charmcraft pack` and speed is significantly better.

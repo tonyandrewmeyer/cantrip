@@ -2751,15 +2751,15 @@ experienced users.
 - [ ] Ctrl+C during `process_message` should drain the executor cleanly rather than
   abandoning it — currently `stop_executor()` on line 172 is never reached
 
-### 31.11 High — Session Resume Must Load Conversation History
+### 31.11 High — Session Resume Must Load Conversation History ✅
 
-- [ ] `load_state()` never calls `store.load_messages()` — the LLM has no memory of
+- [x] `load_state()` never calls `store.load_messages()` — the LLM has no memory of
   the prior session after resume, despite messages being persisted to SQLite
-- [ ] Load and inject prior messages into `state.messages` on resume
-- [ ] `build_resume_summary` injects a USER message with no ASSISTANT reply, which
+- [x] Load and inject prior messages into `state.messages` on resume
+- [x] `build_resume_summary` injects a USER message with no ASSISTANT reply, which
   may confuse LLMs that enforce alternating roles — use a SYSTEM message instead
-- [ ] `_store_initialised` is not reset when `load_state` fails, leaving the store
-  permanently dead for the process lifetime (fixed in this commit)
+- [x] `_store_initialised` is not reset when `load_state` fails, leaving the store
+  permanently dead for the process lifetime
 
 ### 31.12 Medium — Web UI Session and State Persistence
 

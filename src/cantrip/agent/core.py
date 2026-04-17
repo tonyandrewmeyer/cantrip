@@ -1582,6 +1582,27 @@ class CantripAgent:
         self.state.cos_model = loaded.cos_model
         self.state.decisions = loaded.decisions
 
+        # Restore conversation history so the LLM retains context.
+        try:
+            raw_messages = self._store.load_messages()
+            for msg in raw_messages:
+                role_str = msg.get("role", "")
+                try:
+                    role = Role(role_str)
+                except ValueError:
+                    continue
+                content = msg.get("content", "")
+                if not content:
+                    continue
+                self.state.messages.append(Message(role=role, content=str(content)))
+            if self.state.messages:
+                log.info(
+                    "Restored %d conversation messages from prior session",
+                    len(self.state.messages),
+                )
+        except (sqlite3.Error, KeyError, ValueError):
+            log.warning("Failed to load conversation history — continuing without it")
+
         # Restore persisted tasks into the work queue, resetting any that
         # were mid-flight when the previous session ended.
         tasks = self._store.load_tasks()
@@ -1655,7 +1676,8 @@ class CantripAgent:
         summary = "\n".join(parts)
 
         # Inject into conversation history so the LLM sees prior context.
-        self.state.messages.append(Message(role=Role.USER, content=summary))
+        # Use SYSTEM role to avoid breaking alternating user/assistant patterns.
+        self.state.messages.append(Message(role=Role.SYSTEM, content=summary))
         return summary
 
     async def prepare(

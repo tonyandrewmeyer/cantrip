@@ -122,7 +122,7 @@ class TestBuildResumeSummary:
         assert "Task 0" not in result
 
     def test_injects_message_into_state(self):
-        """The summary is injected as a USER message into state.messages."""
+        """The summary is injected as a SYSTEM message into state.messages."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider)
         agent.state.charm_name = "test"
@@ -130,7 +130,7 @@ class TestBuildResumeSummary:
         agent.build_resume_summary()
 
         assert len(agent.state.messages) == 1
-        assert agent.state.messages[0].role == Role.USER
+        assert agent.state.messages[0].role == Role.SYSTEM
         assert "[Session resumed]" in agent.state.messages[0].content
 
     def test_no_message_injected_when_none(self):
