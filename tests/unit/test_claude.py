@@ -39,6 +39,72 @@ class TestClaudeProviderContextWindow:
         assert provider.context_window_tokens == 200_000
 
 
+class TestClaudeProviderAccurateTokenCount:
+    """Phase 41.5: ClaudeProvider.count_tokens_accurate via the Anthropic API."""
+
+    @pytest.mark.asyncio
+    async def test_api_returns_input_tokens(self):
+        """The API's input_tokens value is returned on success."""
+        fake_result = MagicMock()
+        fake_result.input_tokens = 1234
+
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            from cantrip.llm.claude import ClaudeProvider
+
+            provider = ClaudeProvider(api_key="test-key", model="claude-sonnet-4-6")
+
+            async def fake_count(**_kwargs):
+                return fake_result
+
+            provider.client.messages.count_tokens = fake_count
+
+            result = await provider.count_tokens_accurate(
+                [Message(role=Role.USER, content="Hello there")]
+            )
+            assert result == 1234
+
+    @pytest.mark.asyncio
+    async def test_empty_messages_uses_heuristic(self):
+        """Empty messages list should not make a doomed API call."""
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            from cantrip.llm.claude import ClaudeProvider
+
+            provider = ClaudeProvider(api_key="test-key", model="claude-sonnet-4-6")
+            called = {"count": 0}
+
+            async def fake_count(**_kwargs):
+                called["count"] += 1
+                return MagicMock(input_tokens=999)
+
+            provider.client.messages.count_tokens = fake_count
+
+            result = await provider.count_tokens_accurate([])
+            assert result == 0
+            assert called["count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_api_error_falls_back_to_heuristic(self):
+        """An APIError drops to the char/4 heuristic rather than raising."""
+        import anthropic as real_anthropic
+
+        with patch("cantrip.llm.claude.anthropic", real_anthropic):
+            from cantrip.llm.claude import ClaudeProvider
+
+            provider = ClaudeProvider(api_key="test-key", model="claude-sonnet-4-6")
+
+            async def raising(**_kwargs):
+                raise real_anthropic.APIError(message="nope", request=MagicMock(), body=None)
+
+            provider.client.messages.count_tokens = raising
+
+            msgs = [Message(role=Role.USER, content="A" * 100)]
+            result = await provider.count_tokens_accurate(msgs)
+            # Heuristic: 100 chars // 4 = 25.
+            assert result == 25
+
+
 class TestClaudeProviderCacheEligibility:
     """Phase 41.3: warn once when the system prompt is too short for caching."""
 

@@ -467,8 +467,14 @@ class ContextManager:
             result = self.emergency_truncate(messages)
             post_tokens = self.estimate_tokens(result)
 
-        self._record_event("compact", pre_tokens, post_tokens)
-        self._log_compression_ratio(pre_tokens, post_tokens)
+        # Accurate token counts for cycle detection and the effectiveness
+        # log.  Providers that lack a native count endpoint fall back to
+        # the same heuristic we used above, so this is free for them.
+        accurate_pre = await provider.count_tokens_accurate(messages)
+        accurate_post = await provider.count_tokens_accurate(result)
+
+        self._record_event("compact", accurate_pre, accurate_post)
+        self._log_compression_ratio(accurate_pre, accurate_post)
 
         if self._is_cycle():
             self._cycle_detected = True

@@ -3397,15 +3397,18 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
   Gemini's streaming response
 - [x] Add unit test for Gemini streaming usage capture
 
-### 41.2 Anthropic extended thinking support
+### 41.2 Anthropic extended thinking support ✅
 
-- [ ] Claude Sonnet 4.5 and Opus 4.6 support extended thinking (budget_tokens)
+- [x] Claude Sonnet 4.5 and Opus 4.6 support extended thinking (budget_tokens)
   which can improve complex reasoning tasks like research and build planning
-- [ ] Add an `extended_thinking` parameter to `complete()` / `stream()` or
-  enable it for specific purposes (planning, complex tool use)
-- [ ] Handle the `thinking` content block type in streaming events
-- [ ] Route extended thinking for planner calls where structured reasoning
-  improves task decomposition quality
+- [x] Add an `extended_thinking` parameter to `complete()` / `stream()` or
+  enable it for specific purposes (planning, complex tool use) — added as
+  `thinking_budget` in Phase 27.4
+- [x] Handle the `thinking` content block type in streaming events
+- [x] Route extended thinking for planner calls where structured reasoning
+  improves task decomposition quality (4000-token budget for all three
+  LLM-backed planner methods: `plan_from_design`, `replan`,
+  `plan_from_day2_findings`)
 
 ### 41.3 Prompt caching awareness in system prompt ✅
 
@@ -3429,14 +3432,20 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 - [ ] Consider a fallback that queries the API for context window metadata
   rather than hard-coding model-specific values
 
-### 41.5 Provider-level token counting
+### 41.5 Provider-level token counting ✅
 
-- [ ] Both Claude and Gemini providers inherit the character-based heuristic
+- [x] Both Claude and Gemini providers inherit the character-based heuristic
   from `LLMProvider.count_tokens()` (4 chars per token estimate)
-- [ ] Anthropic provides a token counting API endpoint; use it for more
-  accurate budget tracking and compaction decisions
-- [ ] Fall back to the heuristic when the API is unavailable or for
-  performance-sensitive hot paths
+- [x] Anthropic provides a token counting API endpoint; use it for more
+  accurate budget tracking and compaction decisions — new
+  `LLMProvider.count_tokens_accurate()` async method (default falls back
+  to the sync heuristic); `ClaudeProvider` overrides it to call
+  `client.messages.count_tokens`. Used in `ContextManager.compact()`
+  for post-compaction size tracking and cycle detection.
+- [x] Fall back to the heuristic when the API is unavailable or for
+  performance-sensitive hot paths — hot paths (`ContextManager.estimate_tokens`,
+  `should_compact`) keep using the sync heuristic; only decision-point
+  callers opt into the async accurate variant.
 
 ### 41.6 Conversation loop cost display
 

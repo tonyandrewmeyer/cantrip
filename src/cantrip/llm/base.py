@@ -180,5 +180,24 @@ class LLMProvider(ABC):
 
         The default implementation uses a character-based heuristic.
         Subclasses may override with a provider-specific tokeniser.
+        This method is synchronous and allocation-free — safe to call
+        on every budget check.
         """
         return estimate_message_tokens(messages)
+
+    async def count_tokens_accurate(self, messages: list[Message]) -> int:
+        """Accurate token count via provider API when available.
+
+        Providers that expose a native token-counting endpoint (e.g.
+        Anthropic's ``/v1/messages/count_tokens``) should override this
+        to return the exact count.  The default implementation falls
+        back to ``count_tokens()`` so callers can always ``await`` it
+        without checking provider capabilities.
+
+        Use this for decision points where accuracy matters — e.g.
+        logging compaction effectiveness, choosing whether to
+        virtualise a borderline message.  For hot paths (every turn
+        of the conversation loop), stick with ``count_tokens()`` to
+        avoid per-call API latency and quota burn.
+        """
+        return self.count_tokens(messages)

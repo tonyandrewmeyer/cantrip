@@ -331,3 +331,34 @@ class ClaudeProvider(LLMProvider):
         yield Chunk(tool_calls=tool_calls, is_final=True, usage=usage)
 
     # count_tokens inherited from LLMProvider (character-based heuristic).
+
+    async def count_tokens_accurate(self, messages: list[Message]) -> int:
+        """Count tokens via Anthropic's ``/v1/messages/count_tokens`` endpoint.
+
+        Falls back to the character-based heuristic when the API is
+        unreachable, rate-limited, or returns an unexpected shape.
+        Callers that need latency-insensitive accuracy (compaction
+        decisions, effectiveness logging) should prefer this; hot paths
+        should stick with ``count_tokens()``.
+        """
+        system_prompt = self._get_system_prompt(messages)
+        api_messages = self._convert_messages(messages)
+        # The API refuses an empty messages list; return the heuristic
+        # instead of making a doomed request.
+        if not api_messages:
+            return self.count_tokens(messages)
+        kwargs: dict = {
+            "model": self.model_name,
+            "messages": api_messages,
+        }
+        if system_prompt:
+            kwargs["system"] = system_prompt
+        try:
+            result = await self.client.messages.count_tokens(**kwargs)
+        except (anthropic.APIError, anthropic.APIConnectionError):
+            log.debug("count_tokens API failed; falling back to heuristic", exc_info=True)
+            return self.count_tokens(messages)
+        tokens = getattr(result, "input_tokens", None)
+        if tokens is None:
+            return self.count_tokens(messages)
+        return int(tokens)

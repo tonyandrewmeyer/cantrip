@@ -183,3 +183,31 @@ class TestLLMProviderInterface:
         p = StubProvider()
         msgs = [llm.Message(role=llm.Role.USER, content="a" * 100)]
         assert p.count_tokens(msgs) == llm.estimate_message_tokens(msgs)
+
+    @pytest.mark.asyncio
+    async def test_default_count_tokens_accurate_falls_back_to_heuristic(self):
+        """Providers without a native endpoint return the sync heuristic."""
+
+        class StubProvider(llm.LLMProvider):
+            @property
+            def name(self):
+                return "stub"
+
+            @property
+            def context_window_tokens(self):
+                return 100000
+
+            async def complete(
+                self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
+            ):  # noqa: ARG002
+                return llm.Response(content="ok")
+
+            async def stream(
+                self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
+            ):  # noqa: ARG002
+                yield llm.Chunk(content="ok", is_final=True)
+
+        p = StubProvider()
+        msgs = [llm.Message(role=llm.Role.USER, content="a" * 100)]
+        accurate = await p.count_tokens_accurate(msgs)
+        assert accurate == p.count_tokens(msgs)
