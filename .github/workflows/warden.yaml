@@ -1,0 +1,21 @@
+name: Warden
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  WARDEN_ANTHROPIC_API_KEY: ${{ secrets.WARDEN_ANTHROPIC_API_KEY }}
+
+jobs:
+  warden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: getsentry/warden@v0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}

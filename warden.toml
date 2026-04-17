@@ -1,0 +1,39 @@
+version = 1
+
+[defaults]
+model = "claude-sonnet-4-20250514"
+maxTurns = 30
+failOn = "high"
+reportOn = "medium"
+requestChanges = false
+failCheck = false
+ignorePaths = [
+    "**/vendor/**",
+    "**/node_modules/**",
+    "**/.cantrip",
+    "**/transcript.*",
+]
+
+[defaults.chunking]
+[defaults.chunking.coalesce]
+enabled = true
+maxGapLines = 30
+maxChunkSize = 8000
+
+[[defaults.chunking.filePatterns]]
+pattern = "**/uv.lock"
+mode = "skip"
+
+[[skills]]
+name = "security-review"
+remote = "getsentry/warden-skills"
+paths = ["src/**/*.py"]
+ignorePaths = ["**/*_test.py", "**/test_*.py"]
+failOn = "high"
+reportOn = "medium"
+
+[[skills]]
+name = "charm-review"
+paths = ["src/**/*.py"]
+ignorePaths = ["**/test_*.py"]
+reportOn = "low"
