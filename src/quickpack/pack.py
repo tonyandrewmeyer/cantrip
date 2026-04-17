@@ -1,5 +1,6 @@
 """Core packing logic — builds a ``.charm`` file from a charm project."""
 
+import compileall
 import os
 import pathlib
 import tempfile
@@ -57,19 +58,28 @@ def _write_dispatch(prime_dir: pathlib.Path, entrypoint: str) -> None:
     dispatch.chmod(0o755)
 
 
+def _compile_bytecode(prime_dir: pathlib.Path) -> None:
+    """Compile ``.py`` files to bytecode to match charmcraft's behaviour."""
+    compileall.compile_dir(
+        str(prime_dir),
+        quiet=2,
+        force=True,
+        legacy=True,  # Write .pyc next to .py (not __pycache__).
+    )
+
+
 def _build_zip(zip_path: pathlib.Path, prime_dir: pathlib.Path) -> None:
     """Create a ``.charm`` ZIP archive from the prime directory.
 
-    Skips ``__pycache__`` directories and ``.pyc`` files to match
-    charmcraft's behaviour.
+    Includes ``.pyc`` files compiled next to their ``.py`` sources
+    (legacy layout) to match charmcraft's behaviour.  Excludes
+    ``__pycache__`` directories.
     """
     with zipfile.ZipFile(str(zip_path), "w", zipfile.ZIP_DEFLATED) as zf:
         for dirpath_str, dirnames, filenames in os.walk(str(prime_dir), followlinks=True):
             # Prune __pycache__ dirs so os.walk does not descend into them.
             dirnames[:] = [d for d in dirnames if d != "__pycache__"]
             for filename in filenames:
-                if filename.endswith(".pyc"):
-                    continue
                 file_path = pathlib.Path(dirpath_str) / filename
                 arcname = str(file_path.relative_to(prime_dir))
                 zf.write(str(file_path), arcname)
@@ -127,6 +137,9 @@ def quick_pack(
         # Write optional actions.yaml and config.yaml.
         _metadata.write_optional_yaml(project, "actions", "actions.yaml", charm_dir, prime_dir)
         _metadata.write_optional_yaml(project, "config", "config.yaml", charm_dir, prime_dir)
+
+        # Compile bytecode next to source files (legacy layout).
+        _compile_bytecode(prime_dir)
 
         # Create the .charm zip.
         filename = _metadata.charm_filename(project, arch=arch)

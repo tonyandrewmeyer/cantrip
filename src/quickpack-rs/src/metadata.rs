@@ -205,10 +205,34 @@ pub fn generate_manifest(
         Value::Sequence(vec![Value::Mapping(base_entry)]),
     );
 
+    // Detect language from parts config.
+    let language = if let Some(Value::Mapping(parts)) = project.get("parts") {
+        let has_uv = parts.values().any(|v| {
+            v.as_mapping()
+                .and_then(|m| m.get(Value::String("plugin".into())))
+                .and_then(|v| v.as_str())
+                .is_some_and(|p| p == "uv" || p == "charm")
+        });
+        if has_uv { "python" } else { "unknown" }
+    } else {
+        "unknown"
+    };
+
+    let mut lang_attr = serde_yaml::Mapping::new();
+    lang_attr.insert(Value::String("name".into()), Value::String("language".into()));
+    lang_attr.insert(Value::String("result".into()), Value::String(language.into()));
+
+    let mut framework_attr = serde_yaml::Mapping::new();
+    framework_attr.insert(Value::String("name".into()), Value::String("framework".into()));
+    framework_attr.insert(Value::String("result".into()), Value::String("unknown".into()));
+
     let mut analysis = serde_yaml::Mapping::new();
     analysis.insert(
         Value::String("attributes".into()),
-        Value::Sequence(vec![]),
+        Value::Sequence(vec![
+            Value::Mapping(lang_attr),
+            Value::Mapping(framework_attr),
+        ]),
     );
     manifest.insert("analysis".to_string(), Value::Mapping(analysis));
 

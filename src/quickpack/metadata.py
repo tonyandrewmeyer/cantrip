@@ -135,6 +135,18 @@ def generate_metadata(project: dict[str, Any]) -> dict[str, Any]:
     return metadata
 
 
+def _detect_language(project: dict[str, Any]) -> str:
+    """Detect the charm's primary language from parts config.
+
+    Returns ``"python"`` when a ``uv`` or ``charm`` plugin is used,
+    ``"unknown"`` otherwise.
+    """
+    for part in (project.get("parts") or {}).values():
+        if isinstance(part, dict) and part.get("plugin") in ("uv", "charm"):
+            return "python"
+    return "unknown"
+
+
 def generate_manifest(
     project: dict[str, Any],
     arch: str | None = None,
@@ -143,6 +155,8 @@ def generate_manifest(
     distro, series = resolve_base(project)
     if arch is None:
         arch = local_arch()
+
+    language = _detect_language(project)
 
     return {
         "charmcraft-version": f"quickpack-{quickpack.__version__}",
@@ -154,7 +168,12 @@ def generate_manifest(
                 "architectures": [arch],
             },
         ],
-        "analysis": {"attributes": []},
+        "analysis": {
+            "attributes": [
+                {"name": "language", "result": language},
+                {"name": "framework", "result": "unknown"},
+            ],
+        },
     }
 
 

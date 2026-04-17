@@ -76,7 +76,33 @@ fn write_dispatch(prime_dir: &Path, entrypoint: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Compile `.py` files to bytecode (legacy layout, `.pyc` next to `.py`).
+fn compile_bytecode(prime_dir: &Path) -> Result<(), String> {
+    let status = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "compileall",
+            "-q",
+            "-f",
+            "-b",  // Legacy layout: .pyc next to .py.
+            prime_dir.to_str().unwrap(),
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|e| format!("Failed to compile bytecode: {e}"))?;
+    if !status.success() {
+        // Non-fatal: bytecode compilation failure should not block packing.
+        eprintln!("Warning: bytecode compilation returned non-zero exit code");
+    }
+    Ok(())
+}
+
 /// Create a `.charm` ZIP archive from the prime directory.
+///
+/// Includes `.pyc` files compiled next to their `.py` sources (legacy
+/// layout) to match charmcraft's behaviour.  Excludes `__pycache__`
+/// directories.
 fn build_zip(zip_path: &Path, prime_dir: &Path) -> Result<(), String> {
     let file = std::fs::File::create(zip_path)
         .map_err(|e| format!("Create zip: {e}"))?;
@@ -96,10 +122,6 @@ fn build_zip(zip_path: &Path, prime_dir: &Path) -> Result<(), String> {
             continue;
         }
         let path = entry.path();
-        // Skip .pyc files.
-        if path.extension().is_some_and(|ext| ext == "pyc") {
-            continue;
-        }
         let arcname = path
             .strip_prefix(prime_dir)
             .map_err(|e| format!("Strip prefix: {e}"))?
@@ -169,6 +191,9 @@ pub fn quick_pack(
     // Write optional actions.yaml and config.yaml.
     metadata::write_optional_yaml(&project, "actions", "actions.yaml", &charm_dir, &prime_dir)?;
     metadata::write_optional_yaml(&project, "config", "config.yaml", &charm_dir, &prime_dir)?;
+
+    // Compile bytecode next to source files (legacy layout).
+    compile_bytecode(&prime_dir)?;
 
     // Create the .charm zip.
     let filename = metadata::charm_filename(&project, &arch);

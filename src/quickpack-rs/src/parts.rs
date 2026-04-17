@@ -1,6 +1,6 @@
 //! Parts processing for quick pack.
 //!
-//! Supports `uv` and `dump` plugins only.
+//! Supports `uv`, `dump`, and `nil` plugins.
 
 use crate::jujuignore::JujuIgnore;
 use serde_yaml::Value;
@@ -288,6 +288,106 @@ fn process_dump_part(
     Ok(())
 }
 
+/// Strip comment lines from an override-build script.
+fn strip_comments(script: &str) -> String {
+    script
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Handle recognised override-build patterns.
+///
+/// Returns `Ok(())` for recognised safe patterns, `Err` for unrecognised ones.
+fn handle_override_build(
+    charm_dir: &Path,
+    prime_dir: &Path,
+    part_name: &str,
+    override_script: &str,
+) -> Result<(), String> {
+    let stripped = override_script.trim();
+
+    // Pattern 1: craftctl default + git describe --always > $CRAFT_PART_INSTALL/version
+    let git_version_re = regex::Regex::new(
+        r"(?m)^craftctl\s+default\s*\n\s*git\s+describe\s+--always\s*>\s*\$CRAFT_PART_INSTALL/version\s*$"
+    ).unwrap();
+    if git_version_re.is_match(stripped) {
+        let output = std::process::Command::new("git")
+            .args(["describe", "--always"])
+            .current_dir(charm_dir)
+            .output()
+            .map_err(|e| format!("Failed to run git describe: {e}"))?;
+        let version = if output.status.success() {
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        } else {
+            "unknown".to_string()
+        };
+        std::fs::write(prime_dir.join("version"), format!("{version}\n"))
+            .map_err(|e| format!("Write version: {e}"))?;
+        return Ok(());
+    }
+
+    // Pattern 2: rustup default stable + craftctl default
+    let rustup_re = regex::Regex::new(
+        r"(?m)^rustup\s+default\s+stable\s*\n\s*craftctl\s+default\s*$"
+    ).unwrap();
+    if rustup_re.is_match(stripped) {
+        let status = std::process::Command::new("rustc")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to check rustc: {e}"))?;
+        if !status.success() {
+            return Err(format!(
+                "Part {part_name:?} requires Rust (override-build runs \
+                 'rustup default stable') but rustc is not available."
+            ));
+        }
+        return Ok(());
+    }
+
+    // Pattern 3: just craftctl default (possibly with comments).
+    let no_comments = strip_comments(stripped);
+    let craftctl_only_re = regex::Regex::new(
+        r"(?m)^craftctl\s+default\s*$"
+    ).unwrap();
+    if craftctl_only_re.is_match(&no_comments) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Part {part_name:?} has an override-build that quick pack cannot \
+         handle safely.  Override content:\n{stripped}"
+    ))
+}
+
+/// Process a nil plugin part (no-op).
+fn process_nil_part(
+    part_name: &str,
+    part_config: &serde_yaml::Mapping,
+) -> Result<(), String> {
+    if let Some(Value::String(override_script)) =
+        part_config.get(Value::String("override-build".into()))
+    {
+        let no_comments = strip_comments(override_script.trim());
+        let craftctl_only_re = regex::Regex::new(
+            r"(?m)^craftctl\s+default\s*$"
+        ).unwrap();
+        if !no_comments.is_empty() && !craftctl_only_re.is_match(&no_comments) {
+            return Err(format!(
+                "Part {part_name:?} (nil plugin) has an override-build that \
+                 quick pack cannot handle safely.  Override content:\n{}",
+                override_script.trim()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Process all parts defined in the project.
 pub fn process_parts(
     charm_dir: &Path,
@@ -330,15 +430,24 @@ pub fn process_parts(
                 if found_uv {
                     return Err("Quick pack supports only one UV plugin part.".to_string());
                 }
+                // Handle override-build before the main UV processing.
+                if let Some(Value::String(override_script)) =
+                    part_config.get(Value::String("override-build".into()))
+                {
+                    handle_override_build(charm_dir, prime_dir, name_str, override_script)?;
+                }
                 process_uv_part(charm_dir, prime_dir, part_config)?;
                 found_uv = true;
             }
             "dump" => {
                 process_dump_part(charm_dir, prime_dir, part_config)?;
             }
+            "nil" => {
+                process_nil_part(name_str, part_config)?;
+            }
             _ => {
                 return Err(format!(
-                    "Quick pack only supports 'uv' and 'dump' plugins, \
+                    "Quick pack only supports 'uv', 'dump', and 'nil' plugins, \
                      got {plugin:?} in part {name_str:?}."
                 ));
             }

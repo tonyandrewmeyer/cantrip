@@ -1,16 +1,20 @@
 """Parts processing for quick pack.
 
-Supports ``uv`` and ``dump`` plugins only.
+Supports ``uv``, ``dump``, and ``nil`` plugins.
 """
 
 import fnmatch
+import logging
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 from typing import Any
 
 from quickpack import jujuignore
+
+logger = logging.getLogger(__name__)
 
 
 def _copy_tree(src: pathlib.Path, dest: pathlib.Path) -> None:
@@ -179,6 +183,101 @@ def process_dump_part(
             shutil.copy2(str(src_file), str(dst_file))
 
 
+# Patterns we recognise and can handle safely in override-build scripts.
+# Each is a compiled regex that matches the full override-build text
+# (after stripping and normalising whitespace).
+_OVERRIDE_GIT_VERSION = re.compile(
+    r"craftctl\s+default\s*\n"
+    r"\s*git\s+describe\s+--always\s*>\s*\$CRAFT_PART_INSTALL/version\s*$",
+    re.MULTILINE,
+)
+
+_OVERRIDE_RUSTUP_DEFAULT = re.compile(
+    r"rustup\s+default\s+stable\s*\n\s*craftctl\s+default\s*$",
+    re.MULTILINE,
+)
+
+_OVERRIDE_CRAFTCTL_ONLY = re.compile(
+    r"craftctl\s+default\s*$",
+    re.MULTILINE,
+)
+
+
+def _handle_override_build(
+    charm_dir: pathlib.Path,
+    prime_dir: pathlib.Path,
+    part_name: str,
+    override: str,
+) -> None:
+    """Handle recognised override-build patterns.
+
+    Raises ``ValueError`` for unrecognised scripts.
+    """
+    stripped = override.strip()
+
+    # Pattern 1: craftctl default + git describe --always > version
+    if _OVERRIDE_GIT_VERSION.match(stripped):
+        result = subprocess.run(
+            ["git", "describe", "--always"],
+            cwd=str(charm_dir),
+            capture_output=True,
+            text=True,
+        )
+        version = result.stdout.strip() if result.returncode == 0 else "unknown"
+        (prime_dir / "version").write_text(version + "\n")
+        return
+
+    # Pattern 2: rustup default stable + craftctl default
+    if _OVERRIDE_RUSTUP_DEFAULT.match(stripped):
+        # Just verify Rust is available; the uv sync will use it.
+        result = subprocess.run(
+            ["rustc", "--version"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise ValueError(
+                f"Part {part_name!r} requires Rust (override-build runs "
+                f"'rustup default stable') but rustc is not available."
+            )
+        return
+
+    # Pattern 3: just craftctl default (possibly with comments).
+    # Strip comment lines before matching.
+    no_comments = "\n".join(
+        line for line in stripped.splitlines() if not line.strip().startswith("#")
+    ).strip()
+    if _OVERRIDE_CRAFTCTL_ONLY.match(no_comments):
+        return
+
+    raise ValueError(
+        f"Part {part_name!r} has an override-build that quick pack cannot "
+        f"handle safely.  Override content:\n{stripped}"
+    )
+
+
+def process_nil_part(
+    part_name: str,
+    part_config: dict[str, Any],
+) -> None:
+    """Process a nil plugin part (no-op).
+
+    The nil plugin does nothing by itself.  If an ``override-build`` is
+    present and is not a recognised safe pattern, we raise an error.
+    """
+    if "override-build" in part_config:
+        stripped = part_config["override-build"].strip()
+        # Strip comment lines.
+        no_comments = "\n".join(
+            line for line in stripped.splitlines() if not line.strip().startswith("#")
+        ).strip()
+        if no_comments and not _OVERRIDE_CRAFTCTL_ONLY.match(no_comments):
+            raise ValueError(
+                f"Part {part_name!r} (nil plugin) has an override-build that "
+                f"quick pack cannot handle safely.  Override content:\n{stripped}"
+            )
+
+
 def process_parts(
     charm_dir: pathlib.Path,
     prime_dir: pathlib.Path,
@@ -200,15 +299,26 @@ def process_parts(
         if plugin == "uv":
             if found_uv:
                 raise ValueError("Quick pack supports only one UV plugin part.")
+            # Handle override-build before the main UV processing.
+            if "override-build" in part_config:
+                _handle_override_build(
+                    charm_dir,
+                    prime_dir,
+                    name,
+                    part_config["override-build"],
+                )
             process_uv_part(charm_dir, prime_dir, part_config)
             found_uv = True
 
         elif plugin == "dump":
             process_dump_part(charm_dir, prime_dir, part_config)
 
+        elif plugin == "nil":
+            process_nil_part(name, part_config)
+
         else:
             raise ValueError(
-                f"Quick pack only supports 'uv' and 'dump' plugins, "
+                f"Quick pack only supports 'uv', 'dump', and 'nil' plugins, "
                 f"got {plugin!r} in part {name!r}."
             )
 

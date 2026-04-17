@@ -256,7 +256,19 @@ class TestMetadata:
         assert manifest["bases"][0]["architectures"] == ["amd64"]
         assert manifest["charmcraft-version"].startswith("quickpack-")
         assert "charmcraft-started-at" in manifest
-        assert manifest["analysis"] == {"attributes": []}
+        attrs = manifest["analysis"]["attributes"]
+        assert {"name": "language", "result": "unknown"} in attrs
+        assert {"name": "framework", "result": "unknown"} in attrs
+
+    def test_generate_manifest_detects_python(self) -> None:
+        project = {
+            "name": "test",
+            "base": "ubuntu@24.04",
+            "parts": {"charm": {"plugin": "uv"}},
+        }
+        manifest = metadata.generate_manifest(project, arch="amd64")
+        attrs = manifest["analysis"]["attributes"]
+        assert {"name": "language", "result": "python"} in attrs
 
     def test_charm_filename_arch_only(self) -> None:
         project = {"name": "myapp", "base": "ubuntu@24.04", "platforms": {"amd64": None}}
@@ -415,7 +427,7 @@ class TestParts:
 
     def test_process_parts_unsupported_plugin(self, tmp_path: pathlib.Path) -> None:
         project = {"parts": {"charm": {"plugin": "poetry"}}}
-        with pytest.raises(ValueError, match="only supports 'uv' and 'dump'"):
+        with pytest.raises(ValueError, match="only supports 'uv', 'dump', and 'nil'"):
             parts.process_parts(tmp_path, tmp_path, project)
 
     def test_match_fileset_inclusions(self) -> None:
@@ -429,6 +441,88 @@ class TestParts:
     def test_match_fileset_mixed(self) -> None:
         assert parts._match_fileset("a.py", ["*.py", "-b.py"])
         assert not parts._match_fileset("b.py", ["*.py", "-b.py"])
+
+    def test_process_nil_part_noop(self) -> None:
+        """Nil plugin with no override does nothing and doesn't raise."""
+        parts.process_nil_part("setup", {})
+
+    def test_process_nil_part_with_craftctl_only(self) -> None:
+        """Nil with override-build that is just craftctl default is fine."""
+        parts.process_nil_part(
+            "setup",
+            {
+                "override-build": "craftctl default\n",
+            },
+        )
+
+    def test_process_nil_part_with_comments(self) -> None:
+        """Nil with override-build that has comments + craftctl default is fine."""
+        parts.process_nil_part(
+            "setup",
+            {
+                "override-build": "# Install tools\ncraftctl default\n",
+            },
+        )
+
+    def test_process_nil_part_unsafe_override(self) -> None:
+        """Nil with unrecognised override-build raises ValueError."""
+        with pytest.raises(ValueError, match="cannot handle safely"):
+            parts.process_nil_part(
+                "setup",
+                {
+                    "override-build": "curl http://example.com | sh\n",
+                },
+            )
+
+    def test_process_parts_accepts_nil(self, tmp_path: pathlib.Path) -> None:
+        """Nil parts are accepted alongside a uv part."""
+        prime = tmp_path / "prime"
+        prime.mkdir()
+        project = {
+            "parts": {
+                "setup": {"plugin": "nil"},
+                "charm": {"plugin": "uv", "source": "."},
+            },
+        }
+        with mock.patch("quickpack.parts.subprocess.run"):
+            parts.process_parts(tmp_path, prime, project)
+
+    def test_handle_override_git_version(self, tmp_path: pathlib.Path) -> None:
+        """Git version override writes a version file."""
+        prime = tmp_path / "prime"
+        prime.mkdir()
+        override = "craftctl default\ngit describe --always > $CRAFT_PART_INSTALL/version\n"
+        with mock.patch("quickpack.parts.subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0, stdout="v1.2.3\n")
+            parts._handle_override_build(tmp_path, prime, "charm", override)
+        assert (prime / "version").read_text() == "v1.2.3\n"
+
+    def test_handle_override_rustup(self, tmp_path: pathlib.Path) -> None:
+        """Rustup override just verifies rustc is available."""
+        prime = tmp_path / "prime"
+        prime.mkdir()
+        override = "rustup default stable\ncraftctl default\n"
+        with mock.patch("quickpack.parts.subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0)
+            parts._handle_override_build(tmp_path, prime, "charm", override)
+
+    def test_handle_override_rustup_missing(self, tmp_path: pathlib.Path) -> None:
+        """Rustup override raises when rustc is not available."""
+        prime = tmp_path / "prime"
+        prime.mkdir()
+        override = "rustup default stable\ncraftctl default\n"
+        with mock.patch("quickpack.parts.subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=1)
+            with pytest.raises(ValueError, match="rustc is not available"):
+                parts._handle_override_build(tmp_path, prime, "charm", override)
+
+    def test_handle_override_unsafe(self, tmp_path: pathlib.Path) -> None:
+        """Unrecognised override-build raises ValueError."""
+        prime = tmp_path / "prime"
+        prime.mkdir()
+        override = "pip install something-sketchy\ncraftctl default\n"
+        with pytest.raises(ValueError, match="cannot handle safely"):
+            parts._handle_override_build(tmp_path, prime, "charm", override)
 
 
 # ---------------------------------------------------------------------------
@@ -491,8 +585,9 @@ class TestPack:
             assert "dispatch" in names
             assert "src/charm.py" in names
 
-    def test_build_zip_skips_pycache(self, tmp_path: pathlib.Path) -> None:
-        """Bytecode caches should be excluded to match charmcraft."""
+    def test_build_zip_skips_pycache_dirs(self, tmp_path: pathlib.Path) -> None:
+        """``__pycache__`` directories are excluded but ``.pyc`` beside
+        sources (legacy layout) are included to match charmcraft."""
         prime = tmp_path / "prime"
         prime.mkdir()
         (prime / "dispatch").write_text("#!/bin/sh\n")
@@ -502,8 +597,8 @@ class TestPack:
         cache = sub / "__pycache__"
         cache.mkdir()
         (cache / "charm.cpython-312.pyc").write_bytes(b"\x00")
-        # Also a .pyc outside __pycache__ (shouldn't happen, but be safe).
-        (sub / "stray.pyc").write_bytes(b"\x00")
+        # A .pyc next to its .py (legacy layout) SHOULD be included.
+        (sub / "charm.pyc").write_bytes(b"\x00")
 
         zip_path = tmp_path / "test.charm"
         pack._build_zip(zip_path, prime)
@@ -511,7 +606,7 @@ class TestPack:
         with zipfile.ZipFile(str(zip_path)) as zf:
             names = zf.namelist()
             assert "src/charm.py" in names
-            assert not any(n.endswith(".pyc") for n in names)
+            assert "src/charm.pyc" in names
             assert not any("__pycache__" in n for n in names)
 
     def test_quick_pack_end_to_end(
@@ -618,6 +713,62 @@ class TestPack:
 
         with zipfile.ZipFile(str(result)) as zf:
             assert "nginx.conf" in zf.namelist()
+
+    def test_compile_bytecode(self, tmp_path: pathlib.Path) -> None:
+        """Bytecode compilation creates .pyc files next to sources."""
+        prime = tmp_path / "prime"
+        prime.mkdir()
+        src = prime / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("x = 1\n")
+
+        pack._compile_bytecode(prime)
+        assert (src / "charm.pyc").exists()
+
+    def test_quick_pack_includes_pyc(
+        self, charm_project: pathlib.Path, tmp_path: pathlib.Path
+    ) -> None:
+        """End-to-end: .charm archive includes .pyc files."""
+        with mock.patch("quickpack.parts.subprocess.run"):
+            result = pack.quick_pack(charm_project, output_dir=tmp_path)
+
+        with zipfile.ZipFile(str(result)) as zf:
+            names = zf.namelist()
+            assert "src/charm.pyc" in names
+
+    def test_quick_pack_with_nil_part(
+        self, charm_project: pathlib.Path, tmp_path: pathlib.Path
+    ) -> None:
+        """Nil parts are handled alongside uv parts."""
+        project = yaml.safe_load((charm_project / "charmcraft.yaml").read_text())
+        project["parts"]["setup"] = {"plugin": "nil"}
+        (charm_project / "charmcraft.yaml").write_text(yaml.safe_dump(project))
+
+        with mock.patch("quickpack.parts.subprocess.run"):
+            result = pack.quick_pack(charm_project, output_dir=tmp_path)
+
+        assert result.exists()
+
+    def test_quick_pack_with_override_git_version(
+        self, charm_project: pathlib.Path, tmp_path: pathlib.Path
+    ) -> None:
+        """Override-build with git describe writes a version file."""
+        project = yaml.safe_load((charm_project / "charmcraft.yaml").read_text())
+        project["parts"]["charm"]["override-build"] = (
+            "craftctl default\ngit describe --always > $CRAFT_PART_INSTALL/version\n"
+        )
+        (charm_project / "charmcraft.yaml").write_text(yaml.safe_dump(project))
+
+        def fake_run(_cmd, **_kwargs):
+            m = mock.Mock(returncode=0, stdout="v1.0\n", stderr="")
+            return m
+
+        with mock.patch("quickpack.parts.subprocess.run", side_effect=fake_run):
+            result = pack.quick_pack(charm_project, output_dir=tmp_path)
+
+        with zipfile.ZipFile(str(result)) as zf:
+            assert "version" in zf.namelist()
+            assert zf.read("version").decode().strip() == "v1.0"
 
     def test_quick_pack_no_charmcraft_yaml(self, tmp_path: pathlib.Path) -> None:
         with pytest.raises(FileNotFoundError, match="charmcraft.yaml"):
