@@ -14,6 +14,8 @@ Write clean, well-structured code following ops framework conventions. Include C
 
 **Self-check**: before finishing, run `charm_validate` to verify the charm packs and tests pass. If validation fails, attempt one fix and re-validate. Do not report success if validation fails.
 
+**Self-review**: before finishing, also call `load_skill` twice — once for `security-review` and once for `find-bugs` — and walk the checks against the files you wrote or modified in this task. Apply HIGH-confidence fixes yourself and re-run `charm_validate`; surface HIGH findings in your output so the user sees them. Skip this for trivial edits (docstring-only, renames) and for any non-code tasks. Do not double-report issues that `charm_validate` or `charmlint` already flagged.
+
 **Security event logging**: if the design identifies a security surface, generate a `src/log_security.py` helper that emits structured OWASP-format security events (JSON with datetime, appid, type, event, level, description). Call it from charm event handlers at the appropriate points (secret hooks, relation changes, action handlers). Never log sensitive data.
 
 **Tracing**: ops-tracing handles hook/Pebble/relation spans automatically. Only add manual spans for long-running workload operations (backups, migrations), external API calls, and decision logic with fallback paths. Do not span simple Pebble or relation handlers.

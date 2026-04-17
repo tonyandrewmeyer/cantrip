@@ -165,6 +165,41 @@ class TestSkillsIndexWithBundledSkills:
             body = index.load_skill(skill.name)
             assert len(body) > 0, f"Skill {skill.name!r} has empty body"
 
+    def test_security_review_skill_covers_charm_risks(self) -> None:
+        """The security-review skill should name charm-specific risks so the
+        subagent doesn't treat it as a generic OWASP pass."""
+        index = SkillsIndex()
+        index.discover()
+        names = {s.name for s in index.list_skills()}
+        assert "security-review" in names
+        body = index.load_skill("security-review").lower()
+        for anchor in (
+            "shell injection",
+            "juju secret",
+            "relation data",
+            "ssrf",
+            "path traversal",
+            "confidence",
+        ):
+            assert anchor in body, f"security-review missing anchor: {anchor!r}"
+
+    def test_find_bugs_skill_covers_charm_bugs(self) -> None:
+        """The find-bugs skill should cover charm-specific bug classes."""
+        index = SkillsIndex()
+        index.discover()
+        names = {s.name for s in index.list_skills()}
+        assert "find-bugs" in names
+        body = index.load_skill("find-bugs").lower()
+        for anchor in (
+            "status",
+            "pebble",
+            "relation data",
+            "is_leader",
+            "update-status",
+            "secret",
+        ):
+            assert anchor in body, f"find-bugs missing anchor: {anchor!r}"
+
 
 class TestLoadSkillTool:
     """Tests for the LoadSkillTool."""

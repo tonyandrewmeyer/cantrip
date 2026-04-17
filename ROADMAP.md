@@ -2943,32 +2943,32 @@ the three most common legacy patterns. `make check` passes throughout.
 own skill system so that subagents can self-review generated charm code before
 presenting it to the user.
 
-### 34.1 Medium — Generated Charm Security Review
+### 34.1 Medium — Generated Charm Security Review ✓
 
 Adapt the getsentry/skills `security-review` pattern (OWASP-based, multi-phase,
 confidence-gated reporting) into a Cantrip skill that subagents run after writing
 charm code.
 
-- [ ] New `security-review` skill (agentskills.io format) focused on charm-specific
+- [x] New `security-review` skill (agentskills.io format) focused on charm-specific
   risks: shell injection in event handlers, unsafe `subprocess` calls, secrets in
   config vs Juju secrets, SSRF in relation data, path traversal in file tools
-- [ ] Python-specific reference material (the getsentry skill has good Python and
+- [x] Python-specific reference material (the getsentry skill has good Python and
   injection references to draw from)
-- [ ] Integrate into the BUILD subagent category guidance: run security review before
+- [x] Integrate into the BUILD subagent category guidance: run security review before
   marking a code-writing task as done
-- [ ] Confidence gating: only surface HIGH-confidence findings to the user, fix
+- [x] Confidence gating: only surface HIGH-confidence findings to the user, fix
   MEDIUM ones silently
 
-### 34.2 Medium — Generated Charm Bug Review
+### 34.2 Medium — Generated Charm Bug Review ✓
 
 Adapt the getsentry/skills `find-bugs` pattern (diff-based, attack-surface mapping,
 phased verification) for reviewing generated charm code.
 
-- [ ] New `find-bugs` skill focused on common charm bugs: missing `defer_status()`
+- [x] New `find-bugs` skill focused on common charm bugs: missing `defer_status()`
   calls, wrong event observation patterns, relation data serialisation errors,
   missing `update-status` handling, incorrect Pebble layer merging
-- [ ] Run as a post-generation review step in BUILD subagents
-- [ ] Structured output: file:line, severity, evidence, fix suggestion
+- [x] Run as a post-generation review step in BUILD subagents
+- [x] Structured output: file:line, severity, evidence, fix suggestion
 
 ### 34.3 Low — Iterative CI Fix Loop
 
