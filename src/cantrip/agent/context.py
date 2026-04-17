@@ -282,7 +282,7 @@ class ContextManager:
             f"[Full history saved as virtual file {file_id}. "
             f"Use virtual_file_read or virtual_file_search to access.]"
         )
-        summary_msg = Message(role=Role.USER, content=summary_content)
+        summary_msg = Message(role=Role.SYSTEM, content=summary_content)
 
         # Keep the most recent messages for continuity.
         recent = messages[-_KEEP_RECENT:] if len(messages) > _KEEP_RECENT else messages
@@ -332,5 +332,11 @@ class ContextManager:
                 parts.append(f"[{role}:tool_call] {tc.name}({tc.arguments})")
             for tr in msg.tool_results:
                 status = "error" if tr.is_error else "ok"
-                parts.append(f"[TOOL:{status}] {tr.content[:500]}")
+                # Preserve more content for errors (failure info is often
+                # near the end of tracebacks).
+                limit = 2000 if tr.is_error else 1000
+                content = tr.content[:limit]
+                if len(tr.content) > limit:
+                    content += "\n…(truncated)"
+                parts.append(f"[TOOL:{status}] {content}")
         return "\n".join(parts)

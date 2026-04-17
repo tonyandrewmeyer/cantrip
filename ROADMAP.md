@@ -2871,12 +2871,12 @@ higher-quality charms with fewer iterations.
   all other ready tasks even if they have no dependency on the confirmation
 - [x] Allow non-CONFIRM tasks to proceed in parallel with pending confirmations
 
-### 32.6 Low — Compaction Summary Truncation
+### 32.6 Low — Compaction Summary Truncation ✅
 
-- [ ] `_format_history` truncates each tool result at 500 chars for the compaction
+- [x] `_format_history` truncates each tool result at 500 chars for the compaction
   summary — critical failure info beyond char 500 is lost
-- [ ] Increase to 1000 chars or use a smarter truncation that preserves error messages
-- [ ] Place compaction summary as SYSTEM message, not USER message
+- [x] Increase to 1000 chars or use a smarter truncation that preserves error messages
+- [x] Place compaction summary as SYSTEM message, not USER message
 
 **Exit criteria:** Compact prompt retains critical context. Planning validates
 dependencies. Watcher events all route to tasks. `make check` passes throughout.
