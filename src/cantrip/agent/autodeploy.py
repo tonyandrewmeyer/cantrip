@@ -30,7 +30,14 @@ _VERIFY_PREFIX = "Verify deployment:"
 _WATCHER_PREFIX = "[Watcher]"
 
 # Event categories that map to DEBUG tasks.
-_DEBUG_CATEGORIES = frozenset({"hook_failure", "status_change", "log_error"})
+_DEBUG_CATEGORIES = frozenset(
+    {
+        "hook_failure",
+        "status_change",
+        "log_error",
+        "databag_change",
+    }
+)
 
 # Event categories that map to INFRA tasks.
 _INFRA_CATEGORIES = frozenset(
@@ -40,6 +47,9 @@ _INFRA_CATEGORIES = frozenset(
         "new_relation",
         "new_unit",
         "removed_unit",
+        "new_offer",
+        "removed_offer",
+        "offer_connection_change",
     }
 )
 

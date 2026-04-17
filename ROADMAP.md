@@ -2851,12 +2851,12 @@ higher-quality charms with fewer iterations.
 - [x] Validate dependency graph is a DAG before adding tasks to the queue
 - [x] Log a warning and strip invalid dependencies
 
-### 32.3 Medium — Watcher Event Coverage Gaps
+### 32.3 Medium — Watcher Event Coverage Gaps ✅
 
-- [ ] `offer_connection_change`, `removed_offer`, and `databag_change` events are
+- [x] `offer_connection_change`, `removed_offer`, and `databag_change` events are
   silently dropped by `autodeploy.task_for_watcher_event()` — no task is created
-- [ ] Map these to DEBUG or INFRA tasks as appropriate
-- [ ] Make the Loki port configurable in `WatcherConfig` (currently hardcoded
+- [x] Map these to DEBUG or INFRA tasks as appropriate
+- [x] Make the Loki port configurable in `WatcherConfig` (currently hardcoded
   to `localhost:3100`)
 
 ### 32.4 Medium — Design Gap Inference Too Fragile

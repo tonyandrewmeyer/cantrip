@@ -115,6 +115,7 @@ class WatcherConfig:
     dedup_window: float = 300.0  # seconds to suppress duplicate events
     max_queue: int = 50  # maximum queued events before dropping
     snapshot_databags: bool = False  # opt-in relation databag diffing
+    loki_url: str = "http://localhost:3100"  # Loki base URL
 
 
 # ---------------------------------------------------------------------------
@@ -836,7 +837,8 @@ class EventWatcher:
             "start": f"now-{window_seconds}s",
             "end": "now",
         }
-        url = f"http://localhost:3100/loki/api/v1/query_range?{urllib.parse.urlencode(params)}"
+        loki_base = self._config.loki_url.rstrip("/")
+        url = f"{loki_base}/loki/api/v1/query_range?{urllib.parse.urlencode(params)}"
 
         python_script = (
             "import urllib.request, json, sys; "
