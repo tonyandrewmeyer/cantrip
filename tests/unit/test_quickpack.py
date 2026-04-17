@@ -772,26 +772,18 @@ class TestPack:
 
         assert result.exists()
 
-    def test_quick_pack_with_override_git_version(
+    def test_quick_pack_rejects_override_build(
         self, charm_project: pathlib.Path, tmp_path: pathlib.Path
     ) -> None:
-        """Override-build with git describe writes a version file."""
+        """Override-build raises so the dev loop falls back to charmcraft (Phase 38.3)."""
         project = yaml.safe_load((charm_project / "charmcraft.yaml").read_text())
         project["parts"]["charm"]["override-build"] = (
             "craftctl default\ngit describe --always > $CRAFT_PART_INSTALL/version\n"
         )
         (charm_project / "charmcraft.yaml").write_text(yaml.safe_dump(project))
 
-        def fake_run(_cmd, **_kwargs):
-            m = mock.Mock(returncode=0, stdout="v1.0\n", stderr="")
-            return m
-
-        with mock.patch("quickpack.parts.subprocess.run", side_effect=fake_run):
-            result = pack.quick_pack(charm_project, output_dir=tmp_path)
-
-        with zipfile.ZipFile(str(result)) as zf:
-            assert "version" in zf.namelist()
-            assert zf.read("version").decode().strip() == "v1.0"
+        with pytest.raises(ValueError, match="override-build"):
+            pack.quick_pack(charm_project, output_dir=tmp_path)
 
     def test_quick_pack_no_charmcraft_yaml(self, tmp_path: pathlib.Path) -> None:
         with pytest.raises(FileNotFoundError, match="charmcraft.yaml"):

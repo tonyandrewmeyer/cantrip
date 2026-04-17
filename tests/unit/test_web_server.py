@@ -291,14 +291,20 @@ class TestLogInputValidation:
         async def _run() -> None:
             async with TestClient(TestServer(app)) as client:
                 # Negative lines should be clamped to 1.
-                with patch("subprocess.run", return_value=fake_result) as mock_run:
+                with (
+                    patch("shutil.which", return_value="/usr/bin/juju"),
+                    patch("subprocess.run", return_value=fake_result) as mock_run,
+                ):
                     resp = await client.get("/api/logs?lines=-50")
                     assert resp.status == 200
                     cmd = mock_run.call_args[0][0]
                     assert cmd[cmd.index("-n") + 1] == "1"
 
                 # Excessively large lines should be clamped to _MAX_LOG_LINES.
-                with patch("subprocess.run", return_value=fake_result) as mock_run:
+                with (
+                    patch("shutil.which", return_value="/usr/bin/juju"),
+                    patch("subprocess.run", return_value=fake_result) as mock_run,
+                ):
                     resp = await client.get("/api/logs?lines=999999")
                     assert resp.status == 200
                     cmd = mock_run.call_args[0][0]
@@ -329,14 +335,20 @@ class TestLogInputValidation:
         async def _run() -> None:
             async with TestClient(TestServer(app)) as client:
                 # Malicious level should fall back to WARNING.
-                with patch("subprocess.run", return_value=fake_result) as mock_run:
+                with (
+                    patch("shutil.which", return_value="/usr/bin/juju"),
+                    patch("subprocess.run", return_value=fake_result) as mock_run,
+                ):
                     resp = await client.get("/api/logs?level=; rm -rf /")
                     assert resp.status == 200
                     cmd = mock_run.call_args[0][0]
                     assert cmd[cmd.index("--level") + 1] == "WARNING"
 
                 # Valid level (case-insensitive) should be accepted.
-                with patch("subprocess.run", return_value=fake_result) as mock_run:
+                with (
+                    patch("shutil.which", return_value="/usr/bin/juju"),
+                    patch("subprocess.run", return_value=fake_result) as mock_run,
+                ):
                     resp = await client.get("/api/logs?level=error")
                     assert resp.status == 200
                     cmd = mock_run.call_args[0][0]
