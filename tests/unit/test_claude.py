@@ -39,6 +39,67 @@ class TestClaudeProviderContextWindow:
         assert provider.context_window_tokens == 200_000
 
 
+class TestClaudeProviderCacheEligibility:
+    """Phase 41.3: warn once when the system prompt is too short for caching."""
+
+    def _make_provider(self, model: str = "claude-sonnet-4-6"):
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            from cantrip.llm.claude import ClaudeProvider
+
+            return ClaudeProvider(api_key="test-key", model=model)
+
+    def test_short_prompt_logs_warning(self, caplog):
+        """Sonnet/Haiku warn when system prompt is below 1024 tokens."""
+        import logging
+
+        provider = self._make_provider("claude-sonnet-4-6")
+        with caplog.at_level(logging.WARNING, logger="cantrip.llm.claude"):
+            provider._check_cache_eligibility("tiny prompt")
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("1024-token minimum" in m for m in warnings)
+
+    def test_short_prompt_logs_warning_opus(self, caplog):
+        """Opus warns at its higher 2048-token threshold."""
+        import logging
+
+        provider = self._make_provider("claude-opus-4-7")
+        # ~1500 tokens — fine for Sonnet but below Opus's 2048 threshold.
+        prompt = "x" * (1500 * 4)
+        with caplog.at_level(logging.WARNING, logger="cantrip.llm.claude"):
+            provider._check_cache_eligibility(prompt)
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("2048-token minimum" in m for m in warnings)
+
+    def test_long_prompt_does_not_warn(self, caplog):
+        """A prompt well over the threshold produces no warning."""
+        import logging
+
+        provider = self._make_provider("claude-sonnet-4-6")
+        # ~2000 tokens — comfortably above 1024.
+        prompt = "x" * (2000 * 4)
+        with caplog.at_level(logging.WARNING, logger="cantrip.llm.claude"):
+            provider._check_cache_eligibility(prompt)
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert not any("caching" in m.lower() for m in warnings)
+
+    def test_warning_logs_only_once(self, caplog):
+        """Repeated short-prompt calls emit the warning only once per provider."""
+        import logging
+
+        provider = self._make_provider("claude-sonnet-4-6")
+        with caplog.at_level(logging.WARNING, logger="cantrip.llm.claude"):
+            provider._check_cache_eligibility("tiny")
+            provider._check_cache_eligibility("tiny")
+            provider._check_cache_eligibility("tiny")
+
+        warnings = [r for r in caplog.records if "1024-token minimum" in r.getMessage()]
+        assert len(warnings) == 1
+
+
 class TestClaudeProviderCountTokens:
     """Tests for ClaudeProvider.count_tokens with tool data."""
 

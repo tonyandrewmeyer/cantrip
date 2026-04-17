@@ -3407,11 +3407,11 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 - [ ] Route extended thinking for planner calls where structured reasoning
   improves task decomposition quality
 
-### 41.3 Prompt caching awareness in system prompt
+### 41.3 Prompt caching awareness in system prompt ✅
 
-- [ ] Anthropic prompt caching requires a minimum of 1024 tokens (Sonnet) or
+- [x] Anthropic prompt caching requires a minimum of 1024 tokens (Sonnet) or
   2048 tokens (Opus) for the cached prefix to be eligible
-- [ ] Add a log message or metric when the system prompt is too short for
+- [x] Add a log message or metric when the system prompt is too short for
   caching to activate, so operators know they are not benefiting from caching
 - [ ] Consider padding the system prompt to meet the minimum threshold when
   it is close (e.g. adding the skills index or context summary)
@@ -3448,16 +3448,16 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 - [ ] The TUI model bar already shows some usage info — verify it updates
   correctly with Claude's usage metrics including cache fields
 
-### 41.7 Compaction effectiveness monitoring
+### 41.7 Compaction effectiveness monitoring ✅
 
-- [ ] During testing, compaction with Haiku only reduced a 5-message
+- [x] During testing, compaction with Haiku only reduced a 5-message
   conversation from 1587 to 1518 tokens (4% reduction) when the content
   was repetitive — the summary was nearly as long as the original
-- [ ] Add a post-compaction metric: log the compression ratio
+- [x] Add a post-compaction metric: log the compression ratio
   (tokens_after / tokens_before) so operators can monitor effectiveness
-- [ ] If compression ratio exceeds 0.9 (less than 10% reduction), log a
+- [x] If compression ratio exceeds 0.9 (less than 10% reduction), log a
   warning suggesting the conversation may need manual reset
-- [ ] This feeds into Phase 40 (compaction safety)
+- [x] This feeds into Phase 40 (compaction safety)
 
 ### 41.8 Streaming chunk granularity
 
@@ -3468,16 +3468,16 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
   when switching from spinner to streamed output
 - [ ] This is cosmetic — low priority
 
-### 41.9 Concurrent subagent rate limit coordination
+### 41.9 Concurrent subagent rate limit coordination ✅
 
-- [ ] During live testing with 3 concurrent Claude subagents, one hit a
+- [x] During live testing with 3 concurrent Claude subagents, one hit a
   rate limit on the first call and retried after 37 seconds — the
   ProviderThrottle coordinated the backoff correctly, but the 37-second
   delay is long for a first-time hit
-- [ ] Investigate whether the initial retry delay (30s base) is too
+- [x] Investigate whether the initial retry delay (30s base) is too
   aggressive for Claude's rate limits; Anthropic typically recovers faster
-- [ ] Consider a shorter base delay (10-15s) for Claude specifically,
-  or adaptive delay based on the retry-after header if available
+- [x] Consider a shorter base delay (10-15s) for Claude specifically,
+  or adaptive delay based on the retry-after header if available (chose 15s)
 
 ### 41.10 Claude streaming usage robustness ✅
 

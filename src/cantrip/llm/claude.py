@@ -1,6 +1,7 @@
 """Anthropic Claude LLM provider."""
 
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
 
@@ -17,7 +18,10 @@ from cantrip.llm.base import (
     Role,
     Tool,
     ToolCall,
+    estimate_tokens,
 )
+
+log = logging.getLogger(__name__)
 
 _CONTEXT_WINDOWS: dict[str, int] = {
     "claude-haiku-4-5-20251001": 200_000,
@@ -27,6 +31,12 @@ _CONTEXT_WINDOWS: dict[str, int] = {
     "claude-opus-4-7": 200_000,
 }
 _DEFAULT_CONTEXT_WINDOW = 200_000
+
+# Minimum cached-prefix size for Anthropic prompt caching to activate.
+# Sonnet and Haiku: 1024 tokens.  Opus: 2048 tokens.  Below these, the
+# `cache_control` hint is silently ignored by the API.
+_CACHE_MIN_TOKENS_OPUS = 2048
+_CACHE_MIN_TOKENS_DEFAULT = 1024
 
 
 class ClaudeProvider(LLMProvider):
@@ -54,6 +64,32 @@ class ClaudeProvider(LLMProvider):
 
         self.client = anthropic.AsyncAnthropic(api_key=self.api_key)
         self.model_name = model
+        # One-shot flag so the cache-eligibility warning only logs once per
+        # provider instance, not on every call.
+        self._cache_warning_logged = False
+
+    def _cache_min_tokens(self) -> int:
+        """Minimum system-prompt tokens required for Anthropic caching to activate."""
+        if "opus" in self.model_name:
+            return _CACHE_MIN_TOKENS_OPUS
+        return _CACHE_MIN_TOKENS_DEFAULT
+
+    def _check_cache_eligibility(self, system_prompt: str) -> None:
+        """Warn once if the system prompt is too short for caching to activate."""
+        if self._cache_warning_logged:
+            return
+        min_tokens = self._cache_min_tokens()
+        prompt_tokens = estimate_tokens(system_prompt)
+        if prompt_tokens < min_tokens:
+            log.warning(
+                "System prompt is ~%d tokens — below Anthropic's %d-token "
+                "minimum for %s prompt caching. The cache_control hint will "
+                "be ignored and every turn will re-read the full prompt.",
+                prompt_tokens,
+                min_tokens,
+                self.model_name,
+            )
+        self._cache_warning_logged = True
 
     def _convert_messages(self, messages: list[Message]) -> list[dict]:
         """Convert messages to Anthropic API format.
@@ -150,6 +186,7 @@ class ClaudeProvider(LLMProvider):
             # Extended thinking requires temperature=1.
             kwargs["temperature"] = 1
         if system_prompt:
+            self._check_cache_eligibility(system_prompt)
             kwargs["system"] = [
                 {
                     "type": "text",

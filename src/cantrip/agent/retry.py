@@ -17,6 +17,20 @@ log = logging.getLogger(__name__)
 TRANSIENT_RETRIES = 3
 TRANSIENT_BASE_DELAY = 30  # seconds
 
+# Anthropic's rate limits typically recover within 10–20 seconds, so a
+# 30-second base delay over-waits on the first retry.  Keep the generic
+# default for other providers — they recover on different schedules.
+_PROVIDER_BASE_DELAY: dict[str, int] = {
+    "claude": 15,
+}
+
+
+def _resolve_base_delay(provider: llm.LLMProvider, explicit: int | None) -> int:
+    """Pick the per-provider base delay unless the caller gave one."""
+    if explicit is not None:
+        return explicit
+    return _PROVIDER_BASE_DELAY.get(provider.name, TRANSIENT_BASE_DELAY)
+
 
 async def complete_with_retry(
     provider: llm.LLMProvider,
@@ -27,7 +41,7 @@ async def complete_with_retry(
     max_tokens: int | None = None,
     thinking_budget: int | None = None,
     max_retries: int = TRANSIENT_RETRIES,
-    base_delay: int = TRANSIENT_BASE_DELAY,
+    base_delay: int | None = None,
     throttle: object | None = None,
 ) -> llm.Response:
     """Call ``provider.complete()`` with linear-backoff retry for transient errors.
@@ -37,6 +51,7 @@ async def complete_with_retry(
     callers back off together.
     """
     last_error: llm.ProviderRateLimitError | llm.ProviderOverloadedError | None = None
+    effective_base_delay = _resolve_base_delay(provider, base_delay)
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -55,7 +70,7 @@ async def complete_with_retry(
             if attempt == max_retries:
                 raise
             # Jitter prevents thundering-herd retries from concurrent subagents.
-            delay = base_delay * attempt + random.uniform(0, base_delay * 0.25)
+            delay = effective_base_delay * attempt + random.uniform(0, effective_base_delay * 0.25)
 
             # Signal the shared throttle so other callers back off.
             if throttle is not None:

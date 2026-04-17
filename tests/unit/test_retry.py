@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from cantrip.agent.retry import TRANSIENT_BASE_DELAY, TRANSIENT_RETRIES, complete_with_retry
+from cantrip.agent.retry import (
+    TRANSIENT_BASE_DELAY,
+    TRANSIENT_RETRIES,
+    _resolve_base_delay,
+    complete_with_retry,
+)
 from cantrip.agent.subagent import ProviderThrottle
 from cantrip.llm import base as llm
 
@@ -197,6 +202,34 @@ class TestCompleteWithRetry:
             max_tokens=None,
             thinking_budget=None,
         )
+
+
+class TestResolveBaseDelay:
+    """Phase 41.9: Claude uses a shorter base delay than other providers."""
+
+    def test_claude_uses_shorter_default(self):
+        """Claude's default base delay is below the generic 30s."""
+        provider = _make_provider([])
+        provider.name = "claude"
+        assert _resolve_base_delay(provider, None) == 15
+
+    def test_unknown_provider_uses_generic_default(self):
+        """Providers with no specific override fall back to TRANSIENT_BASE_DELAY."""
+        provider = _make_provider([])
+        provider.name = "some-other-provider"
+        assert _resolve_base_delay(provider, None) == TRANSIENT_BASE_DELAY
+
+    def test_explicit_override_wins(self):
+        """An explicit base_delay argument is used regardless of provider."""
+        provider = _make_provider([])
+        provider.name = "claude"
+        assert _resolve_base_delay(provider, 42) == 42
+
+    def test_zero_override_respected(self):
+        """Passing base_delay=0 (for fast tests) is respected rather than defaulting."""
+        provider = _make_provider([])
+        provider.name = "claude"
+        assert _resolve_base_delay(provider, 0) == 0
 
 
 class TestProviderThrottle:

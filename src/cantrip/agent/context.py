@@ -31,6 +31,10 @@ _MAX_EMERGENCIES_PER_SESSION = 5
 _CYCLE_WINDOW_SECONDS = 60.0
 _CYCLE_FIRE_COUNT = 3
 
+# When post/pre ratio exceeds this, compaction barely helped — log a warning so
+# operators notice ineffective compaction before it escalates into a cycle.
+_INEFFECTIVE_COMPACTION_RATIO = 0.9
+
 
 @dataclass
 class _CompactionEvent:
@@ -218,6 +222,32 @@ class ContextManager:
         warning = self._pending_warning
         self._pending_warning = None
         return warning
+
+    def _log_compression_ratio(self, pre_tokens: int, post_tokens: int) -> None:
+        """Log how much compaction shrank the context.
+
+        Warns when the post/pre ratio exceeds ``_INEFFECTIVE_COMPACTION_RATIO``
+        so operators can see when summarisation is failing to compress
+        (e.g.  repetitive content or an over-verbose summariser).
+        """
+        if pre_tokens <= 0:
+            return
+        ratio = post_tokens / pre_tokens
+        if ratio >= _INEFFECTIVE_COMPACTION_RATIO:
+            log.warning(
+                "Compaction only reduced context to %.0f%% of prior size "
+                "(%d → %d tokens); summariser may be ineffective for this content",
+                ratio * 100,
+                pre_tokens,
+                post_tokens,
+            )
+        else:
+            log.info(
+                "Compaction reduced context to %.0f%% of prior size (%d → %d tokens)",
+                ratio * 100,
+                pre_tokens,
+                post_tokens,
+            )
 
     def _record_event(self, kind: str, pre_tokens: int, post_tokens: int) -> None:
         self._history.append(
@@ -438,6 +468,7 @@ class ContextManager:
             post_tokens = self.estimate_tokens(result)
 
         self._record_event("compact", pre_tokens, post_tokens)
+        self._log_compression_ratio(pre_tokens, post_tokens)
 
         if self._is_cycle():
             self._cycle_detected = True
