@@ -369,6 +369,7 @@ class InferenceSnapProvider(LLMProvider):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_budget: int | None = None,  # noqa: ARG002 — interface conformity
     ) -> Response:
         """Generate a completion via the snap's OpenAI-compatible API."""
         body = self._build_request_body(messages, tools, temperature, max_tokens=max_tokens)
@@ -426,6 +427,7 @@ class InferenceSnapProvider(LLMProvider):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_budget: int | None = None,  # noqa: ARG002 — interface conformity
     ) -> AsyncIterator[Chunk]:
         """Stream a completion via SSE."""
         body = self._build_request_body(

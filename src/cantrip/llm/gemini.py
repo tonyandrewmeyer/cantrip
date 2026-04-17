@@ -73,12 +73,19 @@ class GeminiProvider(LLMProvider):
         system_prompt: str | None,
         gemini_tools: list[genai_types.Tool] | None,
         max_output_tokens: int | None = None,
+        thinking_budget: int | None = None,
     ) -> genai_types.GenerateContentConfig:
         """Build the generation config, applying Gemini 3 overrides when needed."""
         thinking_config = None
         if self._is_gemini_3():
             temperature = _GEMINI_3_TEMPERATURE
-            thinking_config = genai_types.ThinkingConfig(include_thoughts=False)
+            if thinking_budget:
+                thinking_config = genai_types.ThinkingConfig(
+                    include_thoughts=True,
+                    thinking_budget=thinking_budget,
+                )
+            else:
+                thinking_config = genai_types.ThinkingConfig(include_thoughts=False)
 
         return genai_types.GenerateContentConfig(
             temperature=temperature,
@@ -231,6 +238,7 @@ class GeminiProvider(LLMProvider):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_budget: int | None = None,
     ) -> Response:
         """Generate a completion."""
         system_prompt = self._get_system_prompt(messages)
@@ -241,6 +249,7 @@ class GeminiProvider(LLMProvider):
             system_prompt,
             gemini_tools,
             max_output_tokens=max_tokens,
+            thinking_budget=thinking_budget,
         )
 
         try:
@@ -319,6 +328,7 @@ class GeminiProvider(LLMProvider):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_budget: int | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion.
 
@@ -334,6 +344,7 @@ class GeminiProvider(LLMProvider):
             system_prompt,
             gemini_tools,
             max_output_tokens=max_tokens,
+            thinking_budget=thinking_budget,
         )
 
         tool_calls = []

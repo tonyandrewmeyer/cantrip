@@ -25,6 +25,7 @@ async def complete_with_retry(
     *,
     temperature: float = 0.7,
     max_tokens: int | None = None,
+    thinking_budget: int | None = None,
     max_retries: int = TRANSIENT_RETRIES,
     base_delay: int = TRANSIENT_BASE_DELAY,
     throttle: object | None = None,
@@ -47,6 +48,7 @@ async def complete_with_retry(
                 tools=tools,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                thinking_budget=thinking_budget,
             )
         except (llm.ProviderRateLimitError, llm.ProviderOverloadedError) as exc:
             last_error = exc

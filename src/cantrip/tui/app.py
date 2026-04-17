@@ -238,8 +238,8 @@ class CantripApp(App):
         if self._light_model_name:
             bar.light_model_name = self._light_model_name
 
-        # Thinking mode — Gemini 3 models use thinking by default.
-        if provider.model_name.startswith("gemini-3"):
+        # Thinking mode — Gemini 3 and Claude models support extended thinking.
+        if provider.model_name.startswith(("gemini-3", "claude-sonnet-4", "claude-opus-4")):
             bar.thinking_mode = "thinking"
         else:
             bar.thinking_mode = ""

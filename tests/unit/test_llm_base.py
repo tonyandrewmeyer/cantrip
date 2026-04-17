@@ -145,10 +145,14 @@ class TestLLMProviderInterface:
             def context_window_tokens(self):
                 return 100000
 
-            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
+            async def complete(
+                self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
+            ):  # noqa: ARG002
                 return llm.Response(content="ok")
 
-            async def stream(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
+            async def stream(
+                self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
+            ):  # noqa: ARG002
                 yield llm.Chunk(content="ok", is_final=True)
 
         p = StubProvider()
@@ -166,10 +170,14 @@ class TestLLMProviderInterface:
             def context_window_tokens(self):
                 return 100000
 
-            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
+            async def complete(
+                self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
+            ):  # noqa: ARG002
                 return llm.Response(content="ok")
 
-            async def stream(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
+            async def stream(
+                self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
+            ):  # noqa: ARG002
                 yield llm.Chunk(content="ok", is_final=True)
 
         p = StubProvider()

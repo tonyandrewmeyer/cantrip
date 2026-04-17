@@ -2396,14 +2396,14 @@ capabilities that limit the agent's effectiveness.
   `from_function_response` to use the stored function name, not the correlation ID
 - [x] Add test: two parallel `read_file` calls in one response round-trip correctly
 
-### 27.4 Medium — Extended Thinking Support
+### 27.4 Medium — Extended Thinking Support ✅
 
-- [ ] Claude: add optional `thinking_budget` parameter; pass `thinking` config and
-  `betas=["interleaved-thinking-2025-05-14"]` when enabled
-- [ ] Gemini: replace `include_thoughts=False` with `thinking_budget=0` (correct
-  disable); expose budget control for heavy tasks (design, day-2 synthesis)
-- [ ] Add `thinking_budget` to `LLMProvider` abstract interface
-- [ ] Update `ModelInfoBar` thinking detection to cover Claude models, not just Gemini-3
+- [x] Claude: add optional `thinking_budget` parameter; pass `thinking` config
+  with `temperature=1` and expanded `max_tokens` when enabled
+- [x] Gemini: `_build_config` now accepts `thinking_budget`; sets
+  `include_thoughts=True` with `budget_tokens` when provided
+- [x] Add `thinking_budget` to `LLMProvider` abstract interface (complete/stream)
+- [x] Update `ModelInfoBar` thinking detection to cover Claude models, not just Gemini-3
 
 ### 27.5 Medium — Model Routing Map Gaps ✅
 

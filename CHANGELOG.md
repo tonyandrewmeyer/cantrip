@@ -18,6 +18,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Missing git tools (Phase 30.3)** — new `git_branch` (create/list), `git_checkout`, `git_stash` (push/pop/list) tools; added `branch` and `file_path` params to `git_log`; added `draft` param to `gh_pr_create`; new `gh_pr_list` and `gh_pr_view` tools; all wired into subagent allowlists
 
 ### Changed
+- **Extended thinking support (Phase 27.4)** — added `thinking_budget` parameter to `LLMProvider.complete()` and `stream()` across all providers; Claude passes `thinking` config with automatic `temperature=1` and expanded `max_tokens`; Gemini sets `include_thoughts=True` with budget; thinking blocks captured in response metadata; `ModelInfoBar` now shows thinking indicator for Claude Sonnet 4+ and Opus 4+ models
 - **CLI REPL improvements (Phase 31.10)** — added `/help`, `/tasks`, `/status`, and `/cost` commands; spinner label now updates dynamically based on task phase (Researching, Writing code, Deploying, Testing, etc.); Ctrl+C during agent processing now drains the executor cleanly
 
 ### Fixed

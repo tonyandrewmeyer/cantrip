@@ -121,18 +121,32 @@ class ClaudeProvider(LLMProvider):
         tools: list[Tool] | None,
         temperature: float,
         max_tokens: int | None,
+        thinking_budget: int | None = None,
     ) -> dict:
         """Build the shared kwargs dict for ``messages.create`` / ``messages.stream``."""
         system_prompt = self._get_system_prompt(messages)
         api_messages = self._convert_messages(messages)
         api_tools = self._convert_tools(tools)
 
+        effective_max = max_tokens or 8192
+        # Extended thinking requires a larger max_tokens budget that
+        # includes both thinking and output tokens.
+        if thinking_budget:
+            effective_max = max(effective_max, thinking_budget + 4096)
+
         kwargs: dict = {
             "model": self.model_name,
-            "max_tokens": max_tokens or 8192,
+            "max_tokens": effective_max,
             "messages": api_messages,
             "temperature": temperature,
         }
+        if thinking_budget:
+            kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": thinking_budget,
+            }
+            # Extended thinking requires temperature=1.
+            kwargs["temperature"] = 1
         if system_prompt:
             kwargs["system"] = [
                 {
@@ -164,9 +178,10 @@ class ClaudeProvider(LLMProvider):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_budget: int | None = None,
     ) -> Response:
         """Generate a completion."""
-        kwargs = self._build_kwargs(messages, tools, temperature, max_tokens)
+        kwargs = self._build_kwargs(messages, tools, temperature, max_tokens, thinking_budget)
 
         try:
             response = await self.client.messages.create(**kwargs)
@@ -184,9 +199,12 @@ class ClaudeProvider(LLMProvider):
         # Parse response content blocks.
         text_parts = []
         tool_calls = []
+        thinking_parts = []
         for block in response.content:
             if block.type == "text":
                 text_parts.append(block.text)
+            elif block.type == "thinking":
+                thinking_parts.append(block.thinking)
             elif block.type == "tool_use":
                 tool_calls.append(
                     ToolCall(
@@ -197,12 +215,16 @@ class ClaudeProvider(LLMProvider):
                 )
 
         usage = self._extract_usage(response.usage)
+        metadata: dict[str, object] = {}
+        if thinking_parts:
+            metadata["_thinking_content"] = "\n".join(thinking_parts)
 
         return Response(
             content="".join(text_parts),
             tool_calls=tool_calls,
             finish_reason="tool_use" if response.stop_reason == "tool_use" else "stop",
             usage=usage,
+            metadata=metadata,
         )
 
     async def stream(
@@ -211,9 +233,10 @@ class ClaudeProvider(LLMProvider):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_budget: int | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion."""
-        kwargs = self._build_kwargs(messages, tools, temperature, max_tokens)
+        kwargs = self._build_kwargs(messages, tools, temperature, max_tokens, thinking_budget)
 
         tool_calls: list[ToolCall] = []
         current_tool: dict | None = None

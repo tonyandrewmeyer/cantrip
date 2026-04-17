@@ -135,11 +135,14 @@ class LLMProvider(ABC):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_budget: int | None = None,
     ) -> Response:
         """Generate a completion.
 
         When *max_tokens* is ``None``, providers use their own sensible
-        default.
+        default.  When *thinking_budget* is set, providers that support
+        extended thinking will allocate that many tokens for internal
+        reasoning before responding.
         """
 
     @abstractmethod
@@ -149,11 +152,14 @@ class LLMProvider(ABC):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_budget: int | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion.
 
         When *max_tokens* is ``None``, providers use their own sensible
-        default.
+        default.  When *thinking_budget* is set, providers that support
+        extended thinking will allocate that many tokens for internal
+        reasoning before responding.
         """
 
     @property

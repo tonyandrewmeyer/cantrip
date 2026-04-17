@@ -537,7 +537,14 @@ class TestSubagentRun:
         recorded_temps: list[float] = []
 
         class RecordingProvider(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
+            async def complete(
+                self,
+                messages,
+                tools=None,
+                temperature=0.7,
+                max_tokens=None,
+                thinking_budget=None,  # noqa: ARG002
+            ):
                 recorded_temps.append(temperature)
                 return Response(content="done")
 
@@ -575,7 +582,14 @@ class TestSubagentRetry:
         call_count = 0
 
         class FlakeyProvider(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
+            async def complete(
+                self,
+                messages,
+                tools=None,
+                temperature=0.7,
+                max_tokens=None,
+                thinking_budget=None,  # noqa: ARG002
+            ):
                 nonlocal call_count
                 call_count += 1
                 if call_count == 1:
@@ -602,7 +616,14 @@ class TestSubagentRetry:
     @pytest.mark.asyncio
     async def test_exhausted_retries_raises(self) -> None:
         class AlwaysRateLimited(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
+            async def complete(
+                self,
+                messages,
+                tools=None,
+                temperature=0.7,
+                max_tokens=None,
+                thinking_budget=None,  # noqa: ARG002
+            ):
                 raise ProviderRateLimitError("rate limited")
 
         provider = AlwaysRateLimited()
@@ -875,7 +896,14 @@ class TestProviderThrottle:
         call_count = 0
 
         class FlakeyProvider(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
+            async def complete(
+                self,
+                messages,
+                tools=None,
+                temperature=0.7,
+                max_tokens=None,
+                thinking_budget=None,  # noqa: ARG002
+            ):
                 nonlocal call_count
                 call_count += 1
                 if call_count == 1:
@@ -1269,6 +1297,7 @@ class TestConcurrentToolExecution:
                 tools: Any = None,
                 temperature: float = 0.7,
                 max_tokens: int | None = None,
+                thinking_budget: int | None = None,  # noqa: ARG002
             ) -> Response:
                 captured_messages.append(list(messages))
                 return await super().complete(

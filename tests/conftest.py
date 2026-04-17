@@ -62,6 +62,7 @@ class FakeProvider(LLMProvider):
         tools: list[Tool] | None = None,  # noqa: ARG002
         temperature: float = 0.7,  # noqa: ARG002
         max_tokens: int | None = None,  # noqa: ARG002
+        thinking_budget: int | None = None,  # noqa: ARG002
     ) -> Response:
         if self._call_count < len(self._responses):
             resp = self._responses[self._call_count]
@@ -75,6 +76,7 @@ class FakeProvider(LLMProvider):
         tools: list[Tool] | None = None,  # noqa: ARG002
         temperature: float = 0.7,  # noqa: ARG002
         max_tokens: int | None = None,  # noqa: ARG002
+        thinking_budget: int | None = None,  # noqa: ARG002
     ):
         if self._call_count < len(self._responses):
             resp = self._responses[self._call_count]

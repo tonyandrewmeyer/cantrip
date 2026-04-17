@@ -138,7 +138,14 @@ class TestDay2Confirmation:
         received_messages: list[str] = []
 
         class CapturingProvider(FakeProvider):
-            async def complete(self, messages, tools=None, temperature=0.7, max_tokens=None):  # noqa: ARG002
+            async def complete(
+                self,
+                messages,
+                tools=None,
+                temperature=0.7,
+                max_tokens=None,
+                thinking_budget=None,  # noqa: ARG002
+            ):
                 for msg in messages:
                     if msg.role.value == "user":
                         received_messages.append(msg.content)
