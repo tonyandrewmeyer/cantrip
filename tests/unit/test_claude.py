@@ -28,6 +28,16 @@ class TestClaudeProviderContextWindow:
         provider = self._make_provider("claude-unknown-model")
         assert provider.context_window_tokens == 200_000
 
+    def test_sonnet_4_6(self):
+        """Sonnet 4.6 is recognised."""
+        provider = self._make_provider("claude-sonnet-4-6")
+        assert provider.context_window_tokens == 200_000
+
+    def test_opus_4_7(self):
+        """Opus 4.7 is recognised."""
+        provider = self._make_provider("claude-opus-4-7")
+        assert provider.context_window_tokens == 200_000
+
 
 class TestClaudeProviderCountTokens:
     """Tests for ClaudeProvider.count_tokens with tool data."""

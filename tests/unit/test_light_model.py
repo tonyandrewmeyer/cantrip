@@ -24,6 +24,16 @@ class TestResolveLightModel:
         result = resolve_light_model("claude", "claude-opus-4-6-20250917")
         assert result == "claude-sonnet-4-5-20250929"
 
+    def test_claude_sonnet_4_6_resolves_to_haiku(self):
+        """Claude Sonnet 4.6 maps to Haiku."""
+        result = resolve_light_model("claude", "claude-sonnet-4-6")
+        assert result == "claude-haiku-4-5-20251001"
+
+    def test_claude_opus_4_7_resolves_to_sonnet_4_6(self):
+        """Claude Opus 4.7 maps to Sonnet 4.6."""
+        result = resolve_light_model("claude", "claude-opus-4-7")
+        assert result == "claude-sonnet-4-6"
+
     def test_gemini_pro_resolves_to_flash(self):
         """Gemini Pro maps to Flash."""
         result = resolve_light_model("gemini", "gemini-3-pro-preview")

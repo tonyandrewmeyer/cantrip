@@ -3388,14 +3388,14 @@ each compaction actually reduced context size. No infinite loop is possible.
 **Goal:** Improve Claude provider robustness and bring all providers to feature
 parity, based on findings from live testing with the Anthropic API (April 2025).
 
-### 41.1 Gemini streaming usage capture
+### 41.1 Gemini streaming usage capture ✅
 
-- [ ] The Gemini `stream()` method does not capture token usage from the streamed
+- [x] The Gemini `stream()` method does not capture token usage from the streamed
   response, mirroring the bug fixed in the Claude provider (which now calls
   `stream.get_final_message()` to capture usage)
-- [ ] Investigate how to capture `usage_metadata` from the last chunk in
+- [x] Investigate how to capture `usage_metadata` from the last chunk in
   Gemini's streaming response
-- [ ] Add unit test for Gemini streaming usage capture
+- [x] Add unit test for Gemini streaming usage capture
 
 ### 41.2 Anthropic extended thinking support
 
@@ -3416,13 +3416,16 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 - [ ] Consider padding the system prompt to meet the minimum threshold when
   it is close (e.g. adding the skills index or context summary)
 
-### 41.4 Claude model ID updates
+### 41.4 Claude model ID updates ✅
 
-- [ ] The `_CONTEXT_WINDOWS` map in `claude.py` only lists two model IDs;
+- [x] The `_CONTEXT_WINDOWS` map in `claude.py` only lists two model IDs;
   update it as new Claude models are released (Opus 4.6 is listed with its
   dated ID, but Haiku 4.5 is missing)
-- [ ] Add Haiku 4.5 (`claude-haiku-4-5-20251001`) to the context window map
+- [x] Add Haiku 4.5 (`claude-haiku-4-5-20251001`) to the context window map
   (context window: 200k tokens)
+- [x] Add Sonnet 4.6 (`claude-sonnet-4-6`) and Opus 4.7 (`claude-opus-4-7`)
+  to the context window map and light-model routing (Sonnet 4.6 → Haiku 4.5;
+  Opus 4.7 → Sonnet 4.6)
 - [ ] Consider a fallback that queries the API for context window metadata
   rather than hard-coding model-specific values
 
@@ -3485,7 +3488,7 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
   chunks already having been yielded
 - [x] Add a `None` guard around the usage extraction so a missing or
   malformed usage block degrades to empty usage instead of crashing
-- [ ] Apply the same guard in the Gemini provider (41.1) when that is
+- [x] Apply the same guard in the Gemini provider (41.1) when that is
   implemented
 
 ---

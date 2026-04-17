@@ -537,6 +537,62 @@ class TestGeminiProviderStream:
         assert len(chunks[0].tool_calls) == 1
         assert chunks[0].tool_calls[0].name == "read_file"
 
+    @pytest.mark.asyncio
+    async def test_stream_captures_usage(self):
+        """Streaming captures token usage from the final chunk (41.1)."""
+        provider, _ = _make_provider()
+
+        # Intermediate chunk with partial usage; final chunk overwrites it
+        # with the cumulative totals.
+        chunk1 = MagicMock()
+        chunk1.candidates = [MagicMock()]
+        chunk1.candidates[0].content.parts = [_make_text_part("Hello ")]
+        chunk1.usage_metadata.prompt_token_count = 10
+        chunk1.usage_metadata.candidates_token_count = 2
+
+        chunk2 = MagicMock()
+        chunk2.candidates = [MagicMock()]
+        chunk2.candidates[0].content.parts = [_make_text_part("world")]
+        chunk2.usage_metadata.prompt_token_count = 10
+        chunk2.usage_metadata.candidates_token_count = 5
+
+        async def _stream_gen():
+            yield chunk1
+            yield chunk2
+
+        provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
+
+        chunks = []
+        async for c in provider.stream([Message(role=Role.USER, content="Hi")]):
+            chunks.append(c)
+
+        final = chunks[-1]
+        assert final.is_final
+        assert final.usage == {"prompt_tokens": 10, "completion_tokens": 5}
+
+    @pytest.mark.asyncio
+    async def test_stream_none_usage_metadata_handled(self):
+        """Streaming with ``usage_metadata=None`` degrades to empty usage (41.10)."""
+        provider, _ = _make_provider()
+
+        chunk = MagicMock()
+        chunk.candidates = [MagicMock()]
+        chunk.candidates[0].content.parts = [_make_text_part("Hi")]
+        chunk.usage_metadata = None
+
+        async def _stream_gen():
+            yield chunk
+
+        provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
+
+        chunks = []
+        async for c in provider.stream([Message(role=Role.USER, content="Hi")]):
+            chunks.append(c)
+
+        final = chunks[-1]
+        assert final.is_final
+        assert final.usage == {}
+
 
 class TestGeminiProviderContextWindow:
     """Tests for GeminiProvider.context_window_tokens."""

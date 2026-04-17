@@ -350,6 +350,7 @@ class GeminiProvider(LLMProvider):
         tool_calls = []
         all_thought_parts: list[dict[str, str]] = []
         all_fc_signatures: list[dict[str, str]] = []
+        usage: dict[str, int] = {}
         try:
             response_stream = await self._client.aio.models.generate_content_stream(
                 model=self.model_name,
@@ -357,6 +358,17 @@ class GeminiProvider(LLMProvider):
                 config=config,
             )
             async for chunk in response_stream:
+                # Gemini typically reports cumulative usage on every chunk and
+                # always on the final chunk. Overwrite so we end up with the
+                # last (most complete) values. Guard against ``None`` so a
+                # malformed response degrades to empty usage rather than
+                # crashing (mirrors the Claude streaming guard from 41.10).
+                chunk_usage = getattr(chunk, "usage_metadata", None)
+                if chunk_usage is not None:
+                    usage = {
+                        "prompt_tokens": chunk_usage.prompt_token_count or 0,
+                        "completion_tokens": chunk_usage.candidates_token_count or 0,
+                    }
                 if not chunk.candidates or not chunk.candidates[0].content:
                     continue
                 if chunk.candidates[0].content.parts:
@@ -398,6 +410,6 @@ class GeminiProvider(LLMProvider):
             metadata["_gemini_thought_parts"] = all_thought_parts
         if all_fc_signatures:
             metadata["_gemini_fc_signatures"] = all_fc_signatures
-        yield Chunk(tool_calls=tool_calls, is_final=True, metadata=metadata)
+        yield Chunk(tool_calls=tool_calls, is_final=True, metadata=metadata, usage=usage)
 
     # count_tokens inherited from LLMProvider (character-based heuristic).
