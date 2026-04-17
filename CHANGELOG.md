@@ -17,6 +17,9 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Missing Juju tools (Phase 30.2)** — new `juju_remove_application` and `juju_show_unit` tools; added `channel` param to deploy/refresh and `base` param to deploy; capped `juju_ssh` output at 8000 chars to prevent context overflow
 - **Missing git tools (Phase 30.3)** — new `git_branch` (create/list), `git_checkout`, `git_stash` (push/pop/list) tools; added `branch` and `file_path` params to `git_log`; added `draft` param to `gh_pr_create`; new `gh_pr_list` and `gh_pr_view` tools; all wired into subagent allowlists
 
+### Changed
+- **CLI REPL improvements (Phase 31.10)** — added `/help`, `/tasks`, `/status`, and `/cost` commands; spinner label now updates dynamically based on task phase (Researching, Writing code, Deploying, Testing, etc.); Ctrl+C during agent processing now drains the executor cleanly
+
 ### Fixed
 - **Session resume loads conversation history (Phase 31.11)** — `load_state()` now calls `store.load_messages()` and restores prior conversation into `state.messages`, so the LLM retains context across sessions; `build_resume_summary` uses SYSTEM role instead of USER to avoid breaking alternating-role patterns
 

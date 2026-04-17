@@ -7,6 +7,7 @@ import sys
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
+from cantrip.agent.queue import TaskStatus
 from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.ui import events as ui_events
@@ -23,6 +24,23 @@ _STATUS_ICONS = {
     CheckStatus.FAILED: "✗",
     CheckStatus.SKIPPED: "–",
 }
+
+_TASK_STATUS_ICONS = {
+    TaskStatus.PENDING: "○",
+    TaskStatus.ACTIVE: "⟳",
+    TaskStatus.DONE: "✓",
+    TaskStatus.FAILED: "✗",
+    TaskStatus.BLOCKED: "◌",
+}
+
+_HELP_TEXT = """\
+Available commands:
+  /help, ?       Show this help message
+  /tasks         Show current task status
+  /status        Show Juju model status
+  /cost          Show token usage summary
+  exit, quit     Exit Cantrip
+"""
 
 
 def _print_preflight_event(event: PreflightEvent) -> None:
@@ -73,7 +91,7 @@ def run_cli(args: argparse.Namespace) -> int:
     if agent.state.github_repo:
         banner += f", github: {agent.state.github_repo}"
     print(banner)
-    print("Type your message (Ctrl+C to quit).\n")
+    print("Type your message (Ctrl+C to quit). Type /help for commands.\n")
 
     try:
         asyncio.run(_repl(agent))
@@ -83,18 +101,24 @@ def run_cli(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _spinner(label: str = "Thinking") -> None:
-    """Show an animated spinner on the current line until cancelled."""
+async def _spinner(label: str | list[str] = "Thinking") -> None:
+    """Show an animated spinner on the current line until cancelled.
+
+    *label* can be a string or a single-element list for a mutable label
+    that updates dynamically (e.g. from task event callbacks).
+    """
     i = 0
     try:
         while True:
+            current = label[0] if isinstance(label, list) else label
             frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
-            print(f"\r{frame} {label}...", end="", flush=True)
+            # Clear the line and redraw to handle label length changes.
+            print(f"\r{frame} {current}...          ", end="", flush=True)
             await asyncio.sleep(0.1)
             i += 1
     except asyncio.CancelledError:
         # Clear the spinner line.
-        print("\r" + " " * (len(label) + 6) + "\r", end="", flush=True)
+        print("\r" + " " * 40 + "\r", end="", flush=True)
 
 
 async def _repl(agent: CantripAgent) -> None:
@@ -116,6 +140,26 @@ async def _repl(agent: CantripAgent) -> None:
     prepare_task = asyncio.create_task(_prepare_cli(agent))
     bootstrap_started = False
 
+    # Mutable label for the spinner — updated by task events.
+    spinner_label = ["Thinking"]
+
+    def _update_spinner_label(event: ui_events.Event) -> None:
+        """Update spinner label based on task activity."""
+        status = event.payload.get("status", "")
+        category = event.payload.get("category", "")
+        if status == "active":
+            labels = {
+                "research": "Researching",
+                "build": "Writing code",
+                "deploy": "Deploying",
+                "test": "Testing",
+                "debug": "Debugging",
+                "infra": "Setting up",
+            }
+            spinner_label[0] = labels.get(category, "Working")
+
+    agent.event_bus.subscribe(ui_events.EventType.TASK_UPDATED, _update_spinner_label)
+
     while True:
         try:
             # Run input() in a thread so the asyncio event loop stays free
@@ -133,7 +177,22 @@ async def _repl(agent: CantripAgent) -> None:
         if user_input.lower() in ("exit", "quit"):
             break
 
-        spinner_task = asyncio.create_task(_spinner())
+        # Handle REPL commands.
+        if user_input.lower() in ("/help", "?", "help"):
+            print(_HELP_TEXT)
+            continue
+        if user_input.lower() == "/tasks":
+            _print_tasks(agent)
+            continue
+        if user_input.lower() == "/status":
+            await _print_juju_status(agent)
+            continue
+        if user_input.lower() == "/cost":
+            _print_cost(agent)
+            continue
+
+        spinner_label[0] = "Thinking"
+        spinner_task = asyncio.create_task(_spinner(spinner_label))
         try:
             response = await agent.process_message(user_input)
             spinner_task.cancel()
@@ -157,6 +216,8 @@ async def _repl(agent: CantripAgent) -> None:
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
             print("\n[interrupted]")
+            # Drain the executor cleanly instead of abandoning it.
+            await _drain_executor(agent)
         except (ProviderRateLimitError, ProviderOverloadedError):
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
@@ -224,3 +285,95 @@ async def _bootstrap_cli(agent: CantripAgent) -> None:
         print("[preflight] Environment ready.\n")
     else:
         print("[preflight] Environment setup had errors.\n")
+
+
+def _print_tasks(agent: CantripAgent) -> None:
+    """Print current task status."""
+    tasks = agent.work_queue.all_tasks()
+    if not tasks:
+        print("No tasks.\n")
+        return
+
+    print()
+    for task in tasks:
+        icon = _TASK_STATUS_ICONS.get(task.status, "?")
+        print(f"  {icon} [{task.category.value}] {task.title}")
+        if task.blocked_reason:
+            print(f"    Blocked: {task.blocked_reason}")
+
+    # Summary line.
+    counts: dict[str, int] = {}
+    for t in tasks:
+        counts[t.status.value] = counts.get(t.status.value, 0) + 1
+    summary_parts = [f"{v} {k}" for k, v in sorted(counts.items())]
+    print(f"\n  Total: {len(tasks)} ({', '.join(summary_parts)})\n")
+
+
+async def _print_juju_status(agent: CantripAgent) -> None:
+    """Print Juju model status."""
+    if not agent.state.dev_model:
+        print("No development model is set.\n")
+        return
+
+    try:
+        import jubilant
+
+        juju = jubilant.Juju(model=agent.state.dev_model)
+        status = await asyncio.to_thread(juju.status)
+
+        print(f"\nModel: {agent.state.dev_model}")
+        for app_name, app in status.apps.items():
+            unit_count = len(app.units) if app.units else 0
+            app_status = app.status.current if app.status else "unknown"
+            print(f"  {app_name}: {app_status} ({unit_count} units)")
+            if app.units:
+                for unit_name, unit in app.units.items():
+                    unit_status = (
+                        unit.workload_status.current if unit.workload_status else "unknown"
+                    )
+                    agent_status = unit.agent_status.current if unit.agent_status else "unknown"
+                    print(f"    {unit_name}: {unit_status} ({agent_status})")
+        print()
+    except (ImportError, TimeoutError, OSError, ValueError) as e:
+        print(f"Failed to get Juju status: {e}\n")
+
+
+def _print_cost(agent: CantripAgent) -> None:
+    """Print token usage summary."""
+    store = agent.store
+    if not store:
+        print("No usage data available.\n")
+        return
+
+    total = store.get_total_usage()
+    prompt = total.get("prompt_tokens", 0)
+    completion = total.get("completion_tokens", 0)
+    total_tokens = prompt + completion
+
+    if total_tokens == 0:
+        print("No tokens used yet.\n")
+        return
+
+    print("\nToken usage:")
+    print(f"  Prompt:     {prompt:>10,}")
+    print(f"  Completion: {completion:>10,}")
+    print(f"  Total:      {total_tokens:>10,}")
+
+    # Cache stats if available (Claude).
+    if agent.cache_creation_tokens or agent.cache_read_tokens:
+        cache_total = agent.cache_creation_tokens + agent.cache_read_tokens
+        hit_pct = agent.cache_read_tokens / cache_total * 100 if cache_total else 0
+        print(f"  Cache hit:  {hit_pct:>9.0f}%")
+
+    # Per-model breakdown.
+    by_model = store.get_usage_by_model()
+    if by_model:
+        print("\n  By model:")
+        for row in by_model:
+            model = row.get("model", "unknown")
+            reqs = row.get("request_count", 0)
+            prompt_t = int(row.get("prompt_tokens", 0) or 0)
+            completion_t = int(row.get("completion_tokens", 0) or 0)
+            tokens = prompt_t + completion_t
+            print(f"    {model}: {tokens:,} tokens, {reqs} requests")
+    print()

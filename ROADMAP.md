@@ -2741,14 +2741,14 @@ experienced users.
 - [ ] Use terminal bell (`\a`) for simple notification
 - [ ] Optional desktop notification via `notify-send` on Linux
 
-### 31.10 High — CLI REPL Improvements
+### 31.10 High — CLI REPL Improvements ✅
 
-- [ ] Add `/help` or `?` command listing available REPL commands
-- [ ] Add `/tasks` command showing current task status (title, status, category)
-- [ ] Add `/status` command showing Juju model status
-- [ ] Spinner label should reflect what phase the agent is in (e.g. "Searching...",
+- [x] Add `/help` or `?` command listing available REPL commands
+- [x] Add `/tasks` command showing current task status (title, status, category)
+- [x] Add `/status` command showing Juju model status
+- [x] Spinner label should reflect what phase the agent is in (e.g. "Searching...",
   "Writing files...", "Deploying...") instead of always "Thinking..."
-- [ ] Ctrl+C during `process_message` should drain the executor cleanly rather than
+- [x] Ctrl+C during `process_message` should drain the executor cleanly rather than
   abandoning it — currently `stop_executor()` on line 172 is never reached
 
 ### 31.11 High — Session Resume Must Load Conversation History ✅
