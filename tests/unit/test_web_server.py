@@ -1,6 +1,12 @@
 """Tests for the web UI server."""
 
-from cantrip.web.server import _STATIC_DIR, _TEMPLATE_DIR, _broadcast
+from cantrip.web.server import (
+    _MAX_LOG_LINES,
+    _STATIC_DIR,
+    _TEMPLATE_DIR,
+    _VALID_LOG_LEVELS,
+    _broadcast,
+)
 
 
 class TestWebServerBasics:
@@ -248,3 +254,92 @@ class TestGraphView:
         assert ".graph-app" in css
         assert ".graph-relations" in css
         assert ".graph-relation" in css
+
+
+class TestLogInputValidation:
+    """Tests for /api/logs and /api/logs-stream input validation."""
+
+    def test_valid_log_levels_contains_standard_levels(self) -> None:
+        assert {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"} == _VALID_LOG_LEVELS
+
+    def test_max_log_lines_is_reasonable(self) -> None:
+        assert _MAX_LOG_LINES == 5000
+
+    def test_valid_log_levels_is_frozen(self) -> None:
+        assert isinstance(_VALID_LOG_LEVELS, frozenset)
+
+    def test_api_logs_clamps_lines_parameter(self) -> None:
+        """Verify lines is clamped within [1, _MAX_LOG_LINES]."""
+        import asyncio
+        import types
+        from unittest.mock import MagicMock, patch
+
+        from aiohttp import web
+        from aiohttp.test_utils import TestClient, TestServer
+
+        from cantrip.web import server
+
+        agent = MagicMock()
+        agent.state.dev_model = "test-model"
+
+        app = web.Application()
+        app["agent"] = agent
+        app.router.add_get("/api/logs", server._api_logs)
+
+        fake_result = types.SimpleNamespace(stdout="line1\nline2\n", returncode=0)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                # Negative lines should be clamped to 1.
+                with patch("subprocess.run", return_value=fake_result) as mock_run:
+                    resp = await client.get("/api/logs?lines=-50")
+                    assert resp.status == 200
+                    cmd = mock_run.call_args[0][0]
+                    assert cmd[cmd.index("-n") + 1] == "1"
+
+                # Excessively large lines should be clamped to _MAX_LOG_LINES.
+                with patch("subprocess.run", return_value=fake_result) as mock_run:
+                    resp = await client.get("/api/logs?lines=999999")
+                    assert resp.status == 200
+                    cmd = mock_run.call_args[0][0]
+                    assert cmd[cmd.index("-n") + 1] == str(_MAX_LOG_LINES)
+
+        asyncio.run(_run())
+
+    def test_api_logs_rejects_invalid_level(self) -> None:
+        """Verify invalid level falls back to WARNING."""
+        import asyncio
+        import types
+        from unittest.mock import MagicMock, patch
+
+        from aiohttp import web
+        from aiohttp.test_utils import TestClient, TestServer
+
+        from cantrip.web import server
+
+        agent = MagicMock()
+        agent.state.dev_model = "test-model"
+
+        app = web.Application()
+        app["agent"] = agent
+        app.router.add_get("/api/logs", server._api_logs)
+
+        fake_result = types.SimpleNamespace(stdout="", returncode=0)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                # Malicious level should fall back to WARNING.
+                with patch("subprocess.run", return_value=fake_result) as mock_run:
+                    resp = await client.get("/api/logs?level=; rm -rf /")
+                    assert resp.status == 200
+                    cmd = mock_run.call_args[0][0]
+                    assert cmd[cmd.index("--level") + 1] == "WARNING"
+
+                # Valid level (case-insensitive) should be accepted.
+                with patch("subprocess.run", return_value=fake_result) as mock_run:
+                    resp = await client.get("/api/logs?level=error")
+                    assert resp.status == 200
+                    cmd = mock_run.call_args[0][0]
+                    assert cmd[cmd.index("--level") + 1] == "ERROR"
+
+        asyncio.run(_run())

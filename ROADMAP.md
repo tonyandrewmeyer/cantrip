@@ -2793,10 +2793,10 @@ experienced users.
 - [ ] No preflight status shown in the web UI — the user has no visibility into
   environment preparation progress
 
-### 31.14 Low — Web UI Input Validation
+### 31.14 Low — Web UI Input Validation ✅
 
-- [ ] `/api/logs` `lines` parameter has no upper bound — clamp to `max(1, min(lines, 5000))`
-- [ ] `/api/logs` and `/api/logs-stream` `level` parameter passed unsanitised to
+- [x] `/api/logs` `lines` parameter has no upper bound — clamp to `max(1, min(lines, 5000))`
+- [x] `/api/logs` and `/api/logs-stream` `level` parameter passed unsanitised to
   subprocess — validate against `{"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}`
 
 ### 31.15 Medium — Web UI and TUI Design Quality Pass

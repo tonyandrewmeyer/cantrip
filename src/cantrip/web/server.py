@@ -22,6 +22,9 @@ _DEFAULT_PORT = 8471
 _TEMPLATE_DIR = pathlib.Path(__file__).parent / "templates"
 _STATIC_DIR = pathlib.Path(__file__).parent / "static"
 
+_VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+_MAX_LOG_LINES = 5000
+
 
 # ---------------------------------------------------------------------------
 # WebSocket broadcast
@@ -181,7 +184,10 @@ async def _api_logs(request: web.Request) -> web.Response:
         lines = int(request.query.get("lines", "100"))
     except ValueError:
         lines = 100
-    level = request.query.get("level", "WARNING")
+    lines = max(1, min(lines, _MAX_LOG_LINES))
+    level = request.query.get("level", "WARNING").upper()
+    if level not in _VALID_LOG_LEVELS:
+        level = "WARNING"
 
     if not dev_model or not shutil.which("juju"):
         return web.json_response({"lines": [], "error": "No model or juju CLI"})
@@ -217,7 +223,9 @@ async def _ws_logs_stream(request: web.Request) -> web.WebSocketResponse:
 
     agent: CantripAgent = request.app["agent"]
     dev_model = agent.state.dev_model
-    level = request.query.get("level", "WARNING")
+    level = request.query.get("level", "WARNING").upper()
+    if level not in _VALID_LOG_LEVELS:
+        level = "WARNING"
 
     if not dev_model or not juju_available():
         await ws.send_json({"error": "No model or juju CLI"})
