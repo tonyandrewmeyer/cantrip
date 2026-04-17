@@ -430,6 +430,29 @@ class TestParts:
         with pytest.raises(ValueError, match="only supports 'uv', 'dump', and 'nil'"):
             parts.process_parts(tmp_path, tmp_path, project)
 
+    def test_process_parts_rejects_override_build(self, tmp_path: pathlib.Path) -> None:
+        # Charms like traefik-k8s, tempo, loki use override-build to run
+        # custom commands (rustup, make, etc).  Quick pack can't replicate
+        # those safely — it must fail clearly so the caller falls back to
+        # charmcraft pack.
+        project = {
+            "parts": {
+                "charm": {
+                    "plugin": "uv",
+                    "source": ".",
+                    "override-build": "cargo build --release",
+                }
+            }
+        }
+        with pytest.raises(ValueError, match="override-build"):
+            parts.process_parts(tmp_path, tmp_path, project)
+
+    def test_process_parts_rejects_override_stage_prime_pull(self, tmp_path: pathlib.Path) -> None:
+        for override in ("override-stage", "override-prime", "override-pull"):
+            project = {"parts": {"charm": {"plugin": "uv", override: "true"}}}
+            with pytest.raises(ValueError, match=override):
+                parts.process_parts(tmp_path, tmp_path, project)
+
     def test_match_fileset_inclusions(self) -> None:
         assert parts._match_fileset("foo.py", ["*.py"])
         assert not parts._match_fileset("foo.txt", ["*.py"])

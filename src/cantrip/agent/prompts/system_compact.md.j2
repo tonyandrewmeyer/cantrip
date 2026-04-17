@@ -19,8 +19,9 @@ For new charms, use `plan_tasks` to decompose the work. Present the plan and ask
 - NEVER use Harness or pytest-operator
 
 ## Development Cycle
-- Fast: edit → charm_sync → juju_dispatch
-- Full: charmcraft_pack → juju_refresh → juju_wait
+- Fastest (already deployed, .py-only changes): edit → charm_sync → juju_dispatch.  Skips deploy/refresh, so wrong for initial deploy or upgrade tests.
+- Initial deploy / upgrade test: quick_pack → juju_deploy/juju_refresh --path → juju_wait
+- Fallback: charmcraft_pack (when quick_pack fails — non-uv plugin, override-build, missing uv.lock)
 - Run charm_validate before declaring done
 
 ## Code Style

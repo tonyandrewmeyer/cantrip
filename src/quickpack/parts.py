@@ -296,6 +296,21 @@ def process_parts(
     for name, part_config in parts.items():
         plugin = part_config.get("plugin", name)
 
+        # Custom build steps (override-build, override-stage, override-prime,
+        # override-pull) invoke arbitrary shell.  Quick pack can't safely
+        # replicate them — fall back to charmcraft so the custom steps run.
+        for override_key in (
+            "override-build",
+            "override-stage",
+            "override-prime",
+            "override-pull",
+        ):
+            if override_key in part_config:
+                raise ValueError(
+                    f"Quick pack does not support {override_key!r} in part {name!r}; "
+                    f"use charmcraft pack instead."
+                )
+
         if plugin == "uv":
             if found_uv:
                 raise ValueError("Quick pack supports only one UV plugin part.")

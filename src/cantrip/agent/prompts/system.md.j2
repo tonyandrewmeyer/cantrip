@@ -198,21 +198,39 @@ see a `cos_model` in the context, COS is available even on LXD controllers.
 
 ### Development Cycle
 
-**Fast path** (Python source changes only):
+**Fastest path — jhack sync** (Python source changes only, charm already running):
 ```
 Edit code locally → charm_sync to push to unit → juju_dispatch to fire event → see result
 ```
-Use `charm_sync` when you have only changed `.py` files in `src/` or `lib/`. This skips
-packing entirely. Then use `juju_dispatch` to fire an event (e.g. `update-status`) so
-the charm picks up the new code.
+Use `charm_sync` (jhack sync under the hood) when you have only changed `.py` files in
+`src/` or `lib/` and the charm is already deployed.  It skips packing **and** the
+Juju deploy/refresh cycle — the fastest feedback you can get.  Then `juju_dispatch`
+an event (e.g. `update-status`) so the charm picks up the new code.  Do **not** use
+`charm_sync` for the initial deploy or when you specifically want to exercise the
+upgrade code path — for those, pack and refresh so Juju's lifecycle runs.
 
-**Full path** (dependency, metadata, or structural changes):
+**Fast path — quick_pack** (initial deploy or upgrade testing):
 ```
-charmcraft pack → juju refresh --path → juju_wait → verify full cycle works
+quick_pack → juju_deploy / juju_refresh --path → juju_wait
 ```
-Use the full path when dependencies changed, charmcraft.yaml changed, new charm libraries
-were added, or before declaring the charm "done". Always run `charm_validate` before finishing
-to verify tests pass and the charm packs successfully.
+`quick_pack` builds a `.charm` locally without LXD, linting, or analysis — typically
+2–5× faster than `charmcraft pack`.  Requires the `uv` parts plugin and a `uv.lock`.
+Prefer it for the initial deploy and for any test that genuinely needs to exercise
+Juju's install / refresh hooks (the case where jhack sync is wrong).
+
+**Full path — charmcraft_pack** (fallback):
+```
+charmcraft_pack → juju_refresh --path → juju_wait
+```
+Fall back to `charmcraft_pack` (with `destructive_mode=true` in dev) whenever
+quick_pack can't apply: parts plugin other than `uv`/`dump`, any
+`override-build`/`override-stage`/`override-prime`/`override-pull` in parts,
+reactive charms, or when `uv.lock` is missing and you can't generate one.
+Also use `charmcraft_pack` before declaring the charm "done" so the full
+pipeline (LXD build, linting, analysis) runs at least once.
+
+Always run `charm_validate` before finishing to verify tests pass and the charm packs
+successfully.
 
 ### Completion Checklist
 

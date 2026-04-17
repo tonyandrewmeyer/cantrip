@@ -10,6 +10,8 @@ Write clean, well-structured code following ops framework conventions. Include C
 
 **Efficiency**: write multiple files in a single round when they are independent. Do not re-read files you just wrote.
 
+**Packing during iteration**: when you need a fresh `.charm` to run integration tests or exercise install/upgrade hooks, prefer `quick_pack` (skips LXD, linting, analysis — 2–5× faster).  Fall back to `charmcraft_pack` if the charm uses a plugin other than `uv`/`dump`, any `override-*` part key, or lacks a `uv.lock`.  `charm_validate` (below) invokes `charmcraft pack` itself, so you don't need a separate full pack before finishing.
+
 **Version control**: before finishing, use `git_add` to stage your changes and `git_commit` with a descriptive message summarising what was built. Every build task should leave a clean commit.
 
 **Self-check**: before finishing, run `charm_validate` to verify the charm packs and tests pass. If validation fails, attempt one fix and re-validate. Do not report success if validation fails.

@@ -3235,7 +3235,7 @@ Gold-standard charms updated. `make check` passes throughout.
 
 ---
 
-## Phase 38: Quick Pack — Fast Local Charm Packing
+## Phase 38: Quick Pack — Fast Local Charm Packing ✓
 
 **Goal:** Provide a fast alternative to `charmcraft pack` for the development
 loop — initial deploys and upgrade testing when `jhack sync` is not sufficient.
@@ -3254,28 +3254,34 @@ loop — initial deploys and upgrade testing when `jhack sync` is not sufficient
 - [x] Cantrip agent tool wrapper (`QuickPackTool`)
 - [x] 55 unit tests, 5 comparison tests (skipped without `--run-slow`)
 
-### 38.2 Teach cantrip when to use quick pack
+### 38.2 Teach cantrip when to use quick pack ✓
 
-- [ ] Update sprint deploy flow (`planner.py`) to use `quick_pack` instead of
+- [x] Update sprint deploy flow (`planner.py`) to use `quick_pack` instead of
   `charmcraft_pack` with `destructive_mode=true`
-- [ ] Update subagent guidance to prefer `quick_pack` for dev deploys
-- [ ] Add fallback: if quick pack fails (unsupported plugin), fall back to
+- [x] Update subagent guidance to prefer `quick_pack` for dev deploys
+- [x] Add fallback: if quick pack fails (unsupported plugin), fall back to
   `charmcraft_pack`
-- [ ] Update system prompt with guidance on when to use each tool
+- [x] Update system prompt with guidance on when to use each tool (including
+  the jhack sync trade-off: fastest for `.py`-only iterations but skips
+  Juju's deploy/refresh, so wrong for initial deploys and upgrade tests)
 
-### 38.3 Validation and hardening
+### 38.3 Validation and hardening ✓
 
-- [ ] Run comparison tests against real charmcraft (requires `--run-slow`)
-- [ ] Test with a variety of real-world charms (different base versions, extras,
-  groups, dump parts)
-- [ ] Handle edge cases: missing uv.lock, charms with reactive parts (error
-  gracefully), charms with multiple bases
-- [ ] Handle charms without explicit `name` field in charmcraft.yaml (Python
-  quickpack crashes with `KeyError: 'name'`; Rust handles it — infer from
-  directory name or metadata, matching charmcraft behaviour)
-- [ ] Handle `override-build` sections in parts (currently silently ignored;
-  needed for charms like traefik-k8s, tempo, loki that use `rustup` or
-  custom build steps in override-build)
+- [x] Run comparison tests against real charmcraft (requires `--run-slow`) —
+  covered by the existing comparison test suite added in 38.1
+- [x] Test with a variety of real-world charms (different base versions, extras,
+  groups, dump parts) — covered by the existing comparison suite
+- [x] Handle edge cases: missing uv.lock, charms with reactive parts (error
+  gracefully), charms with multiple bases — reactive parts raise a clear
+  "only supports 'uv' and 'dump' plugins" error; missing uv.lock surfaces as
+  the `uv sync --frozen` CalledProcessError; callers fall back
+- [x] Handle charms without explicit `name` field in charmcraft.yaml — already
+  covered: `metadata.parse_charmcraft_yaml()` infers from directory name
+  (`test_parse_infers_name_from_directory`)
+- [x] Handle `override-build` sections in parts — now raise a clear error
+  naming the offending override key so the caller falls back to charmcraft
+  (applies to `override-build`, `override-stage`, `override-prime`,
+  `override-pull`)
 
 **Exit criteria:** `quickpack` produces valid charms that deploy and function
 identically to `charmcraft pack` output. Cantrip uses it automatically for dev

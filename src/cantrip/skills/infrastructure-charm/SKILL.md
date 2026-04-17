@@ -221,7 +221,7 @@ When an existing Charmhub charm is close but needs modifications:
 2. **Clone it** — `git_clone` with `depth: 1` into the charm directory
 3. **Identify changes needed** — read the charm code, understand the architecture
 4. **Make targeted modifications** — edit `src/charm.py`, `charmcraft.yaml`, tests
-5. **Pack and deploy** — `charmcraft_pack` → `juju_deploy`
+5. **Pack and deploy** — prefer `quick_pack` (falls back to `charmcraft_pack` if the forked charm uses a non-uv plugin or has override-build steps) → `juju_deploy`
 6. **Test** — run existing tests if present, add new tests for modifications
 
 ## Scaffolding Guidance
