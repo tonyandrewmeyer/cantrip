@@ -330,7 +330,7 @@ user confirmation, then builds it — all autonomously.
 
 ---
 
-## Phase 6: Speed
+## Phase 6: Speed ✓
 
 **Goal:** Get from "build a charm for X" to a running charm in under two minutes. The
 autonomous pipeline works, but tasks run sequentially and every phase involves more LLM
@@ -587,7 +587,7 @@ Implementation complete with generator, tools, skill, and prompt integration.
 
 ---
 
-## Phase 10: Existing Charm Improvement (in progress)
+## Phase 10: Existing Charm Improvement ✓
 
 **Goal:** Use Cantrip not just to build new charms, but to bring existing charms up to
 modern standards. The user points Cantrip at an existing charm ("here's my charm, make it
@@ -1058,7 +1058,7 @@ real output and screenshots — without deploying it.
 
 ---
 
-## Phase 14: Session Transcripts and Audit Log
+## Phase 14: Session Transcripts and Audit Log ✓
 
 **Goal:** Record everything that happens during a Cantrip session — every user message,
 every LLM response, every tool call and result, every subagent conversation — and make
@@ -1187,7 +1187,7 @@ paginated, human-readable format. Nothing is lost.
 
 ---
 
-## Phase 15: Web UI (in progress)
+## Phase 15: Web UI ✓
 
 **Goal:** Provide an alternative browser-based interface that mirrors the TUI exactly —
 same three-panel layout, same task checklist, same Juju status visualisation, same chat —
@@ -1454,7 +1454,7 @@ logic. Security events are queryable via Loki and surfaced in Grafana dashboards
 
 ---
 
-## Phase 17: Acceptance Testing — Putting the Charm Through Its Paces
+## Phase 17: Acceptance Testing — Putting the Charm Through Its Paces ✓
 
 **Goal:** After building and deploying a charm, Cantrip should exercise it the way a real
 Juju operator would — running every action, relating it to real workloads, hitting the
@@ -1670,7 +1670,7 @@ Full analysis: [`design/FRAMEWORK_EVALUATION.md`](design/FRAMEWORK_EVALUATION.md
 
 ---
 
-## Phase 19: Operational Readiness Assessment
+## Phase 19: Operational Readiness Assessment ✓
 
 **Goal:** Evaluate charms against Canonical's
 [Operational Readiness Metrics](https://docs.google.com/document/d/1lStJjBGW7lyojgBhxGLUNnliUocYWjAZ1VEbbVduX54/edit?usp=sharing)
@@ -2059,7 +2059,7 @@ environments, with the agent handling the cross-model wiring automatically.
 
 ---
 
-## Phase 23: End-to-End Testing and Bug Fixes
+## Phase 23: End-to-End Testing and Bug Fixes ✓
 
 **Goal:** Exercise Cantrip against a real Juju environment and fix what breaks.
 
@@ -2090,7 +2090,7 @@ Integration tests that exercise real tools against the live Juju environment.
 
 ---
 
-## Phase 24: Charm Linter (`charmlint`)
+## Phase 24: Charm Linter (`charmlint`) ✓
 
 **Goal:** Extract the charm-quality knowledge embedded in Cantrip's audit and
 operational readiness tools into a standalone, deterministic linter that can
@@ -2308,7 +2308,7 @@ items tracked and addressed incrementally. `make check` passes throughout.
 
 ---
 
-## Phase 26: Agent Tooling Gaps
+## Phase 26: Agent Tooling Gaps ✓
 
 **Goal:** Fill gaps in the agent's toolbox that force subagents into slow,
 token-heavy workarounds (walking directory trees, reading files one-by-one)
@@ -2367,7 +2367,7 @@ throughout. ✓
 
 ---
 
-## Phase 27: LLM Provider Hardening
+## Phase 27: LLM Provider Hardening ✓
 
 **Goal:** Fix correctness bugs, unlock cost savings, and expose missing provider
 capabilities that limit the agent's effectiveness.
@@ -2523,7 +2523,7 @@ passes throughout.
 
 ---
 
-## Phase 29: TUI Bugs and Polish
+## Phase 29: TUI Bugs and Polish ✓
 
 **Goal:** Fix broken/dead features in the TUI, improve the help system, and wire up
 partially implemented functionality.
@@ -2608,7 +2608,7 @@ passes throughout.
 
 ---
 
-## Phase 30: Tool Completeness
+## Phase 30: Tool Completeness ✓
 
 **Goal:** Fill gaps in the agent's toolbox that limit autonomous workflows, improve
 existing tool robustness, and fix security issues.
@@ -2830,7 +2830,7 @@ P0 issues and scores at least 14/20.
 
 ---
 
-## Phase 32: Prompt and Planning Quality
+## Phase 32: Prompt and Planning Quality ✓
 
 **Goal:** Improve the system prompt, subagent guidance, and planning logic to produce
 higher-quality charms with fewer iterations.
@@ -3000,64 +3000,65 @@ or security issue caught before user sees it). `make check` passes throughout.
 
 ---
 
-## Phase 35: Supply-Chain Security for Generated Charms
+## Phase 35: Supply-Chain Security for Generated Charms ✓
 
 **Goal:** Apply Astral's open-source security practices (action pinning, secret
 isolation, dependency cooldowns, trusted publishing, workflow hardening) to the
 CI workflows and release processes that Cantrip generates for charms. Charms
 built by Cantrip should ship with secure-by-default CI/CD.
 
-### 35.1 High — Secure CI Workflow Templates
+### 35.1 High — Secure CI Workflow Templates ✓
 
 Generate GitHub Actions workflows for charms that follow supply-chain best
 practices from day one.
 
-- [ ] Pin all actions to full commit SHAs in generated `.github/workflows/`
+- [x] Pin all actions to full commit SHAs in generated `.github/workflows/`
   (not floating tags like `@v4`) — include a version comment for readability
-- [ ] Set workflow-level `permissions: {}` (empty) and broaden per-job only
-- [ ] Add `persist-credentials: false` to every `actions/checkout` step
-- [ ] Include a zizmor step in the generated CI so the charm's own workflows
+- [x] Set workflow-level `permissions: {}` (empty) and broaden per-job only
+- [x] Add `persist-credentials: false` to every `actions/checkout` step
+- [x] Include a zizmor step in the generated CI so the charm's own workflows
   are continuously audited
-- [ ] No `pull_request_target` in generated workflows — use `pull_request`
-- [ ] Generate a Dependabot or Renovate config with cooldowns for both Python
+- [x] No `pull_request_target` in generated workflows — use `pull_request`
+- [x] Generate a Dependabot or Renovate config with cooldowns for both Python
   dependencies and GitHub Actions
 
-### 35.2 Medium — Charm Dependency Hygiene
+### 35.2 Medium — Charm Dependency Hygiene ✓
 
 Teach Cantrip's subagents to be conservative about charm dependencies, matching
 Astral's "eliminate dependencies where practical" philosophy.
 
-- [ ] Design-phase guidance: prefer stdlib over third-party where feasible;
+- [x] Design-phase guidance: prefer stdlib over third-party where feasible;
   justify every new dependency in the design document
-- [ ] Avoid dependencies that pull in binary blobs or native extensions
+- [x] Avoid dependencies that pull in binary blobs or native extensions
   unless the workload genuinely requires them
-- [ ] Pin transitive dependencies with known CVEs (Cantrip itself already
+- [x] Pin transitive dependencies with known CVEs (Cantrip itself already
   does this for cryptography, requests, pygments — apply the same pattern)
-- [ ] Generate `uv.lock` or `requirements.txt` with pinned hashes for
+- [x] Generate `uv.lock` or `requirements.txt` with pinned hashes for
   reproducible charm builds
 
-### 35.3 Medium — Charmhub Trusted Publishing
+### 35.3 Medium — Charmhub Trusted Publishing ✓
 
 When Cantrip generates a release workflow for publishing to Charmhub, use
 trusted publishing (OIDC) rather than long-lived credentials where supported.
 
-- [ ] Research Charmhub's current support for OIDC / trusted publishing
-  (track charmcraft roadmap for this feature)
-- [ ] If supported: generate a release workflow that uses OIDC identity from
+- [x] Research Charmhub's current support for OIDC / trusted publishing
+  (track charmcraft roadmap for this feature) — **not currently supported**
+- [x] If supported: generate a release workflow that uses OIDC identity from
   GitHub Actions, with a dedicated deployment environment and manual approval
-- [ ] If not yet supported: generate a release workflow that isolates the
+  — deferred until Charmhub adds OIDC
+- [x] If not yet supported: generate a release workflow that isolates the
   Charmhub token in a deployment environment (not repository-level secrets),
   requires manual approval, and disables caching during the release job
 
-### 35.4 Low — Release Immutability and Tag Protection
+### 35.4 Low — Release Immutability and Tag Protection ✓
 
 Generate GitHub repository rulesets for charm repos that prevent tag
 tampering and force-push attacks.
 
-- [ ] Include a `.github/rulesets/` or documentation recommending: immutable
+- [x] Include a `.github/rulesets/` or documentation recommending: immutable
   releases, tag creation restricted to release workflow, no force-push to main
-- [ ] Generate release workflows that create tags only after deployment succeeds
-- [ ] Embed checksums for any native binaries referenced in charm metadata
+- [x] Generate release workflows that create tags only after deployment succeeds
+- [x] Embed checksums for any native binaries referenced in charm metadata
 
 **Exit criteria:** A charm built by Cantrip ships with a CI workflow that
 passes zizmor with zero findings, pins all actions, isolates secrets, and

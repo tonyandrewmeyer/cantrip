@@ -126,6 +126,16 @@ adequate, and the charm packs successfully. Integration tests are not included i
 - Use charmcraft.yaml + fetch-libs for Charmhub libraries
 - Always include: ops-tracing for observability
 
+### Dependencies (supply-chain hygiene)
+
+Fewer dependencies means less surface to compromise.  Apply these rules when writing `requirements.txt`, `pyproject.toml`, or the charm's `charmcraft.yaml`:
+
+- **Prefer the standard library.**  Don't pull in `requests` for a single GET, `click` for arg parsing, or `pyyaml` for trivial config parsing.  Justify every new dependency in the design document.
+- **Avoid native/binary dependencies** (cryptography rebuilds, lxml, etc.) unless the workload genuinely requires them — they enlarge the attack surface and complicate reproducibility.
+- **Pin with hashes.**  Generate `requirements.txt` with `uv pip compile --generate-hashes` (or commit `uv.lock` for uv-native workflows).  Unpinned dependencies mean every build could ship different code.
+- **Native binaries in charm metadata** (resources, extra-bins) must have checksums in the metadata so `charmcraft pack` fails if the upstream artefact is tampered with.
+- When adding a transitive dependency known to have historical CVEs, pin a specific patched version explicitly rather than relying on the resolver.
+
 ### Three Paths
 
 1. **12-Factor Apps** (Flask, Django, FastAPI, Go, Express, Spring Boot)

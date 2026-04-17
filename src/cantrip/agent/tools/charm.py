@@ -9,6 +9,7 @@ import yaml
 
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.tools.testing import RunCharmTestsTool
+from cantrip.agent.tools.workflows import inject_github_workflows
 from cantrip.charm import terraform
 
 _PAAS_PROFILES = frozenset(
@@ -320,7 +321,13 @@ class CharmcraftInitTool(Tool):
             # Ensure unit-test coverage has a fail_under threshold.
             coverage_actions = _inject_coverage_threshold(target_path)
 
-            post_init_summary = "\n".join(tracing_actions + pre_commit_actions + coverage_actions)
+            # Scaffold secure-by-default GitHub Actions workflows, Dependabot,
+            # and SECURITY.md.
+            workflow_actions = inject_github_workflows(target_path, name)
+
+            post_init_summary = "\n".join(
+                tracing_actions + pre_commit_actions + coverage_actions + workflow_actions
+            )
 
             return ToolResult(
                 success=True,
