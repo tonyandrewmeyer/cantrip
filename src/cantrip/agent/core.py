@@ -1737,24 +1737,34 @@ def _infer_gaps_from_audit(text: str) -> dict[str, bool]:
     result, but subagent task results are plain text summaries.  This
     function heuristically scans the text for keywords to reconstruct
     the boolean gaps map that ``plan_improvement_fixes`` expects.
+
+    Matching is done at the sentence level (splitting on ``.``, ``\\n``,
+    and ``*``/``-`` list markers) to avoid false positives from keywords
+    co-occurring in unrelated sections of the document.
     """
-    t = text.lower()
+    # Split into sentences / list items for scoped matching.
+    sentences = re.split(r"[.\n]|\s[-*]\s", text.lower())
+
+    def _gap(topic: str, negatives: tuple[str, ...]) -> bool:
+        """Return True if any sentence mentions *topic* with a negative."""
+        return any(topic in s and any(neg in s for neg in negatives) for s in sentences)
+
+    _missing = ("missing", "absent", "not found", "not present", "not configured")
+
     return {
-        "cos_tracing": "tracing" in t and ("missing" in t or "no tracing" in t),
-        "cos_metrics": "metrics" in t and ("missing" in t or "no metrics" in t),
-        "cos_logging": "logging" in t and ("missing" in t or "no logging" in t),
-        "cos_dashboards": "dashboard" in t and ("missing" in t or "no dashboard" in t),
-        "ops_tracing": "ops-tracing" in t and ("missing" in t or "not installed" in t),
-        "unit_tests": "unit test" in t and ("missing" in t or "no unit" in t),
-        "integration_tests": (
-            "integration test" in t and ("missing" in t or "no integration" in t)
+        "cos_tracing": _gap("tracing", (*_missing, "no tracing")),
+        "cos_metrics": _gap("metrics", (*_missing, "no metrics")),
+        "cos_logging": _gap("logging", (*_missing, "no logging")),
+        "cos_dashboards": _gap("dashboard", (*_missing, "no dashboard")),
+        "ops_tracing": _gap("ops-tracing", (*_missing, "not installed")),
+        "unit_tests": _gap("unit test", (*_missing, "no unit")),
+        "integration_tests": _gap("integration test", (*_missing, "no integration")),
+        "deprecated_apis": any(
+            kw in text.lower() for kw in ("deprecated", "storedstate", "harness", "fetch-libs")
         ),
-        "deprecated_apis": (
-            "deprecated" in t or "storedstate" in t or "harness" in t or "fetch-libs" in t
-        ),
-        "readme": "readme" in t and ("missing" in t or "no readme" in t),
-        "licence": (("licence" in t or "license" in t) and ("missing" in t or "no licen" in t)),
-        "listing_metadata": "listing" in t and ("missing" in t or "incomplete" in t),
-        "type_annotations": "type annotation" in t and ("missing" in t or "no type" in t),
-        "modern_patterns": "modern pattern" in t and ("missing" in t or "no modern" in t),
+        "readme": _gap("readme", (*_missing, "no readme")),
+        "licence": _gap("licen", (*_missing, "no licen")),
+        "listing_metadata": _gap("listing", (*_missing, "incomplete")),
+        "type_annotations": _gap("type annotation", (*_missing, "no type")),
+        "modern_patterns": _gap("modern pattern", (*_missing, "no modern")),
     }

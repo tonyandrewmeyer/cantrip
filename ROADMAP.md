@@ -2859,11 +2859,11 @@ higher-quality charms with fewer iterations.
 - [x] Make the Loki port configurable in `WatcherConfig` (currently hardcoded
   to `localhost:3100`)
 
-### 32.4 Medium — Design Gap Inference Too Fragile
+### 32.4 Medium — Design Gap Inference Too Fragile ✅
 
-- [ ] `_infer_gaps_from_audit` uses keyword co-occurrence at the document level
-- [ ] "Good tracing setup, no logging" incorrectly sets `cos_tracing=True`
-- [ ] Switch to sentence-level or section-level keyword scoping
+- [x] `_infer_gaps_from_audit` uses keyword co-occurrence at the document level
+- [x] "Good tracing setup, no logging" incorrectly sets `cos_tracing=True`
+- [x] Switch to sentence-level or section-level keyword scoping
 
 ### 32.5 Low — CONFIRM Tasks Block Unrelated Work ✅
 

@@ -118,6 +118,44 @@ class TestInferGapsFromAudit:
         assert gaps["deprecated_apis"] is True
         assert gaps["readme"] is True
 
+    def test_no_false_positive_from_unrelated_sections(self):
+        """Keywords in different sections must not trigger false positives.
+
+        'Good tracing setup' in one section and 'missing' in an unrelated
+        section should NOT set cos_tracing=True.
+        """
+        text = (
+            "## Observability\n"
+            "Good tracing setup with ops-tracing configured.\n"
+            "Metrics endpoint is present and working.\n"
+            "\n"
+            "## Testing\n"
+            "Unit tests are missing.\n"
+        )
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["cos_tracing"] is False
+        assert gaps["cos_metrics"] is False
+        assert gaps["unit_tests"] is True
+
+    def test_no_false_positive_good_tracing_no_logging(self):
+        """'Good tracing, no logging' should only flag logging, not tracing."""
+        text = "Tracing is properly configured. Logging is missing."
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["cos_tracing"] is False
+        assert gaps["cos_logging"] is True
+
+    def test_absent_keyword(self):
+        """The 'absent' negative keyword triggers gaps."""
+        text = "Metrics endpoint is absent from the charm."
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["cos_metrics"] is True
+
+    def test_not_configured_keyword(self):
+        """The 'not configured' negative keyword triggers gaps."""
+        text = "Tracing is not configured."
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["cos_tracing"] is True
+
 
 class TestPlanImprovementFixes:
     """Tests for plan_improvement_fixes task generation."""
