@@ -311,7 +311,7 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch(
                 "cantrip.agent.preflight._run_concierge",
@@ -334,7 +334,7 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch(
                 "cantrip.agent.preflight._run_concierge",
@@ -357,7 +357,7 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch(
                 "cantrip.agent.preflight._run_concierge",
@@ -468,7 +468,7 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
@@ -531,7 +531,7 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
@@ -589,7 +589,7 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
@@ -636,7 +636,7 @@ class TestBootstrap:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
@@ -781,7 +781,7 @@ class TestPrepare:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch(
                 "cantrip.agent.preflight._run_concierge",
@@ -807,7 +807,7 @@ class TestPrepare:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch(
                 "cantrip.agent.preflight._run_concierge",
@@ -832,7 +832,7 @@ class TestPrepare:
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=(False, None),
             ),
             patch(
                 "cantrip.agent.preflight._run_concierge",
@@ -849,6 +849,50 @@ class TestPrepare:
 
         assert result.controller_ready is False
         assert result.cos_ready is False
+
+    @pytest.mark.asyncio
+    async def test_mismatched_controller_skips_concierge(self):
+        """A wrong-substrate controller aborts prepare without running concierge."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        run_concierge_mock = AsyncMock(return_value=(0, "", ""))
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.preflight._concierge_already_running", return_value=False),
+            patch(
+                "cantrip.agent.preflight._is_already_provisioned",
+                new_callable=AsyncMock,
+                return_value=(False, "localhost"),
+            ),
+            patch("cantrip.agent.preflight._run_concierge", run_concierge_mock),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+        ):
+            result = await runner.prepare("k8s")
+
+        # Concierge prepare must NOT have been invoked.
+        run_concierge_mock.assert_not_awaited()
+        assert any("localhost" in e for e in result.errors)
+        assert any("does not match" in e for e in result.errors)
+        assert result.controller_ready is False
+
+    @pytest.mark.asyncio
+    async def test_running_concierge_skips_prepare(self):
+        """If a concierge process is already running, prepare bails out."""
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        run_concierge_mock = AsyncMock(return_value=(0, "", ""))
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.preflight._concierge_already_running", return_value=True),
+            patch("cantrip.agent.preflight._run_concierge", run_concierge_mock),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+        ):
+            result = await runner.prepare("k8s")
+
+        run_concierge_mock.assert_not_awaited()
+        assert any("already running" in e for e in result.errors)
 
     @pytest.mark.asyncio
     async def test_events_emitted_in_order(self):

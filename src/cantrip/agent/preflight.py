@@ -26,6 +26,7 @@ import jubilant
 
 from cantrip.agent.state import AgentState
 from cantrip.agent.tools.environment import (
+    _concierge_already_running,
     _concierge_available,
     _is_already_provisioned,
     _juju_controller_healthy,
@@ -139,6 +140,13 @@ class PreflightRunner:
         self.result.concierge_available = True
         self._emit("concierge", CheckStatus.PASSED, "Concierge found")
 
+        # Refuse to launch while another concierge process is running.
+        if _concierge_already_running():
+            msg = "Another concierge process is already running — skipping warm_up"
+            self._emit("snap_install", CheckStatus.SKIPPED, msg)
+            self._check_juju()
+            return self.result
+
         # Write temporary config and run concierge prepare.
         self._emit(
             "snap_install", CheckStatus.RUNNING, "Installing snaps (Juju, LXD, craft tools)"
@@ -198,9 +206,18 @@ class PreflightRunner:
         self.result.concierge_available = True
         self._emit("concierge", CheckStatus.PASSED, "Concierge found")
 
+        # Refuse to launch while another concierge process is running.
+        if _concierge_already_running():
+            msg = "Another concierge process is already running — skipping prepare"
+            self._emit("prepare", CheckStatus.SKIPPED, msg)
+            self.result.errors.append(msg)
+            self._check_juju()
+            return self.result
+
         # Skip if already provisioned — concierge prepare is not fully
         # idempotent and can break the k8s cluster if run twice.
-        if await _is_already_provisioned():
+        provisioned, mismatch_cloud = await _is_already_provisioned(preset)
+        if provisioned:
             self._emit("prepare", CheckStatus.PASSED, "Environment already provisioned (skipped)")
             self._check_juju()
 
@@ -218,6 +235,17 @@ class PreflightRunner:
             cos_model_name = self._state.cos_model or "cos"
             self._emit("cos", CheckStatus.RUNNING, f"Checking COS model ({cos_model_name})")
             await self._ensure_cos(cos_model_name)
+            return self.result
+
+        # Mismatched existing controller — refuse to clobber it with concierge.
+        if mismatch_cloud is not None:
+            msg = (
+                f"Healthy controller on cloud '{mismatch_cloud}' does not match "
+                f"preset '{preset}' — skipping concierge prepare"
+            )
+            self._emit("prepare", CheckStatus.SKIPPED, msg)
+            self.result.errors.append(msg)
+            self._check_juju()
             return self.result
 
         # Run the full concierge prepare with the preset.
@@ -284,9 +312,17 @@ class PreflightRunner:
         cached from phase 1 so this mostly just bootstraps), then checks
         the controller and COS model.
         """
+        # Refuse to launch while another concierge process is running.
+        if _concierge_already_running():
+            msg = "Another concierge process is already running — skipping bootstrap"
+            self._emit("bootstrap", CheckStatus.SKIPPED, msg)
+            self.result.errors.append(msg)
+            return self.result
+
         # Skip if already provisioned — concierge prepare is not fully
         # idempotent and can break the k8s cluster if run twice.
-        if await _is_already_provisioned():
+        provisioned, mismatch_cloud = await _is_already_provisioned(preset)
+        if provisioned:
             self._emit(
                 "bootstrap",
                 CheckStatus.PASSED,
@@ -306,6 +342,16 @@ class PreflightRunner:
             cos_model_name = self._state.cos_model or "cos"
             self._emit("cos", CheckStatus.RUNNING, f"Checking COS model ({cos_model_name})")
             await self._ensure_cos(cos_model_name)
+            return self.result
+
+        # Mismatched existing controller — refuse to clobber it with concierge.
+        if mismatch_cloud is not None:
+            msg = (
+                f"Healthy controller on cloud '{mismatch_cloud}' does not match "
+                f"preset '{preset}' — skipping concierge bootstrap"
+            )
+            self._emit("bootstrap", CheckStatus.SKIPPED, msg)
+            self.result.errors.append(msg)
             return self.result
 
         # Run concierge prepare with the full preset.
