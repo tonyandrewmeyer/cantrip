@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, field
 from uuid import uuid4
 
+from cantrip.agent.prompts import planning as planning_prompts
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.llm import base as llm
 
@@ -1193,154 +1194,10 @@ class TaskPlanner:
 # Prompt builders
 # ---------------------------------------------------------------------------
 
-_PLANNING_PROMPT = """\
-You are a task planner for Cantrip, an AI agent that builds Juju charms autonomously.
-
-Given the user's intent, decompose it into a concrete, ordered list of tasks. Return
-**only** a JSON array — no surrounding text or explanation.
-
-Each task object must have:
-- "id": short unique slug (e.g. "source-analysis", "scaffold-charm")
-- "title": concise imperative title (e.g. "Analyse the source repository")
-- "category": one of {categories}
-- "description": one or two sentences explaining what the task does
-- "dependencies": list of task IDs that must complete before this one starts (may be empty)
-
-### Category guide
-
-- **research** — fetch documentation, explore source code, query Charmhub/registries
-- **build** — scaffold, write charm code, write rockcraft.yaml, write tests
-- **deploy** — pack, push images, deploy with Juju, refresh
-- **test** — run unit tests, integration tests, validate the charm
-- **debug** — investigate failures, query logs/traces, fix issues
-- **infra** — set up the development environment, bootstrap controllers
-- **confirm** — present a decision to the user and wait for approval
-
-### Research-first decomposition
-
-For a typical charm build, always follow a **research → synthesis → confirm → build** \
-pattern. Do NOT generate build tasks upfront — they are created after the user approves \
-the design.
-
-**Phase 1 — Research** (multiple parallel tasks, category: research):
-
-- **source-analysis**: Clone the source repository, explore README, dependency files, \
-Dockerfiles, configuration files, and entry points. Run `analyse_framework` to detect \
-language and framework. Write findings into WORKLOAD.md.
-
-- **web-research**: Fetch external documentation, project website, PyPI/npm pages, and \
-deployment guides. Gather operational patterns: how the workload is typically deployed, \
-configured, monitored, and scaled.
-
-- **charmhub-survey**: Search Charmhub for existing charms that cover this workload. \
-Use `charmhub_search` and `charmhub_info` to evaluate candidates — check relations, \
-config, storage, containers, and maintenance status.
-
-These three tasks have no dependencies on each other and can run in parallel.
-
-**Phase 2 — Synthesis** (two tasks):
-
-- **operational-discovery** (category: research, depends on all Phase 1 tasks): \
-Synthesise the research findings into a structured design proposal. Cover: substrate \
-choice (K8s vs machine) with reasoning, charm path (12-factor / custom / infrastructure), \
-Charmhub recommendation (use existing / fork / build new), integrations, config options, \
-actions, scaling strategy, operational patterns, and open questions for the user. \
-Format the output as a DESIGN.md.
-
-- **confirm-design** (category: confirm, depends on operational-discovery): \
-Present the design proposal to the user for approval.
-
-**Phase 3 — Build** is NOT generated at this stage. Build, deploy, and test tasks are \
-created dynamically after the user confirms the design.
-
-Adapt the pattern to the specific request — skip research tasks that do not apply (e.g. \
-skip source-analysis if no source URL is given, skip charmhub-survey for a clearly novel \
-workload). Always include operational-discovery and confirm-design.
-
-### Context
-{context_block}
-
-Return a JSON array of task objects. Example:
-```json
-[
-  {{"id": "source-analysis", "title": "Analyse the source repository", "category": \
-"research", "description": "Clone the repo and explore the codebase structure, \
-dependencies, and framework.", "dependencies": []}},
-  {{"id": "web-research", "title": "Research workload documentation", "category": \
-"research", "description": "Fetch external docs, deployment guides, and operational \
-patterns.", "dependencies": []}},
-  {{"id": "charmhub-survey", "title": "Survey Charmhub for existing charms", "category": \
-"research", "description": "Search Charmhub and evaluate existing charms for this \
-workload.", "dependencies": []}},
-  {{"id": "operational-discovery", "title": "Synthesise design proposal", "category": \
-"research", "description": "Combine all research into a structured design proposal \
-(DESIGN.md).", "dependencies": ["source-analysis", "web-research", "charmhub-survey"]}},
-  {{"id": "confirm-design", "title": "Confirm design with user", "category": "confirm", \
-"description": "Present the design proposal for user approval.", "dependencies": \
-["operational-discovery"]}}
-]
-```
-"""
-
-_DESIGN_TO_BUILD_PROMPT = """\
-You are a task planner for Cantrip, an AI agent that builds Juju charms autonomously.
-
-The user has approved a design proposal. Generate the **build, deploy, and test** tasks \
-needed to implement it. Return **only** a JSON array — no surrounding text.
-
-Each task object must have:
-- "id": short unique slug (e.g. "scaffold-charm", "write-integration-tests")
-- "title": concise imperative title
-- "category": one of {categories}
-- "description": one or two sentences explaining what the task does
-- "dependencies": list of task IDs that must complete before this one starts
-
-### Typical build sequence (red/green)
-
-Follow an **integration-tests-first** approach. Write integration tests from the \
-design *before* the charm code, then iterate until they pass.
-
-1. Scaffold the charm (charmcraft init, write metadata)
-2. Write integration tests from the design — deploy, relate, actions, config \
-(these will fail initially — that is expected; this is the "red" phase)
-3. Write charm code to make the tests pass (src/charm.py, Pebble layers, \
-integrations) — this is the "green" phase
-4. Pack and deploy
-5. Run integration tests and iterate until green
-6. Write unit tests (Scenario-based) for edge cases and error paths
-7. Run full validation (unit + integration) and commit
-
-The integration tests encode the **external contract** from the approved design: \
-each relation endpoint, action, config option, and COS integration becomes a test. \
-The charm code is written to satisfy these tests, not the other way around.
-
-Adapt for the design — add rock-building steps for 12-factor charms, add integration \
-wiring for complex workloads, skip steps that do not apply. Honour any user overrides.
-
-### Companion charms
-
-If the design includes a `## Companion charms` section, generate a DEPLOY task for each \
-companion charm **before** the primary deploy + relate step. Each companion task should \
-deploy the charm from Charmhub and then relate it to the primary charm using the endpoint \
-and interface specified in the design.
-
-After all tests pass, include an **"Acceptance test: put the charm through its paces"** \
-task (category: test) that exercises the live deployment: running every action, testing \
-relations with partner charms, probing workload endpoints, varying config options, and \
-testing scaling. This task depends on the final test/validation task.
-
-After acceptance testing, include a **"Generate demo artefacts"** task (category: build) \
-that creates DEMO.md, demo.sh, TUTORIAL.md, and a demo/ directory with captured output \
-from the live deployment. This task depends on the acceptance test task.
-
-### Context
-{context_block}
-"""
-
 
 def _build_planning_prompt(context: PlanningContext) -> str:
     """Build the system prompt for a fresh planning call."""
-    return _PLANNING_PROMPT.format(
+    return planning_prompts.render_full(
         categories=", ".join(sorted(_VALID_CATEGORIES)),
         context_block=_format_context_block(context),
     )
@@ -1348,7 +1205,7 @@ def _build_planning_prompt(context: PlanningContext) -> str:
 
 def _build_design_to_build_prompt(context: PlanningContext) -> str:
     """Build the system prompt for generating build tasks from a design."""
-    return _DESIGN_TO_BUILD_PROMPT.format(
+    return planning_prompts.render_design_to_build(
         categories=", ".join(sorted(_VALID_CATEGORIES)),
         context_block=_format_context_block(context),
     )
@@ -1384,56 +1241,9 @@ def _build_replanning_prompt(context: PlanningContext) -> str:
     return base + extra
 
 
-_DAY2_TO_BUILD_PROMPT = """\
-You are a task planner for Cantrip, an AI agent that builds Juju charms autonomously.
-
-The user has approved a day-2 operations plan for an existing, deployed charm. Generate \
-the **build and test** tasks needed to implement the approved operational features. \
-Return **only** a JSON array — no surrounding text.
-
-Each task object must have:
-- "id": short unique slug (e.g. "add-backup-action", "add-ha-config")
-- "title": concise imperative title
-- "category": one of {categories}
-- "description": detailed implementation instructions
-- "dependencies": list of task IDs that must complete before this one starts
-
-### Day-2 implementation patterns
-
-For each approved operational area, generate a BUILD task that modifies the existing \
-charm. Use `edit_file` to modify `src/charm.py`, `charmcraft.yaml`, and test files — \
-do NOT rewrite from scratch.
-
-Common patterns:
-- **Backup/restore**: Add `backup` and `restore` Juju actions; add an `s3-credentials` \
-relation (via the s3-integrator interface) if off-site storage is needed; add \
-`backup-schedule` config option for automated backups.
-- **Scaling**: Add or enhance the `peer` relation for data sharing; add config options \
-for replication mode; handle `relation-joined`/`relation-departed` for cluster membership.
-- **HA**: Add leader-election handling in `_on_leader_elected`; add `promote-standby` \
-action for manual failover; ensure peer relation shares cluster state.
-- **Upgrades**: Handle `upgrade-charm` event; add rolling-restart logic if the workload \
-supports it; add a `pre-upgrade-check` action that validates readiness.
-- **Security**: Add `rotate-credentials` action; use Juju secrets for sensitive config; \
-add TLS config options and certificate relation if applicable.
-- **Monitoring**: Add custom Prometheus metrics via the `metrics-endpoint` relation; \
-create Grafana dashboard JSON in `src/grafana_dashboards/`; add alert rules in \
-`src/prometheus_alert_rules/`.
-- **Disaster recovery**: Add `export-state` and `import-state` actions; document RTO/RPO \
-in README.
-
-Each task should commit its changes with `git_add` and `git_commit`. Include a final \
-validation task (category: test) that runs `charm_validate` and `run_charm_tests` to \
-verify nothing is broken.
-
-### Context
-{context_block}
-"""
-
-
 def _build_day2_to_build_prompt(context: PlanningContext) -> str:
     """Build the system prompt for generating tasks from day-2 findings."""
-    return _DAY2_TO_BUILD_PROMPT.format(
+    return planning_prompts.render_day2_to_build(
         categories=", ".join(sorted(_VALID_CATEGORIES)),
         context_block=_format_context_block(context),
     )

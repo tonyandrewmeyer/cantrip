@@ -4,6 +4,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Planner prompts extracted to Jinja2 templates (Phase 53.1)** — the
+  three triple-quoted planner prompt constants that lived in
+  ``cantrip.agent.planner`` (``_PLANNING_PROMPT``,
+  ``_DESIGN_TO_BUILD_PROMPT``, ``_DAY2_TO_BUILD_PROMPT``, ~380 lines
+  total) now live as ``.md.j2`` files under
+  ``src/cantrip/agent/prompts/planning/``, alongside the existing
+  ``system.md.j2``.  A new snapshot test freezes the rendered output
+  against a canonical context so accidental template edits surface in
+  CI.  No behaviour change — byte-identical output for all four
+  builders (full, design→build, day2→build, replanning).
+
 ### Added
 - **PyPI attestation checks for charm dependencies** — a shared
   ``pypi_attest`` helper consults the PyPI simple-index v1 API to
