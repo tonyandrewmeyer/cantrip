@@ -69,5 +69,9 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 - `design/PLAN.md` — Architecture decisions, philosophy, detailed design
 - `design/AGENT.md` — Agent architecture (two-loop design, subagents, work queue, tools)
 - `design/UI.md` — Shared UI design (TUI + Web), event bus contract, layout, shortcuts
+- `design/TOOLS.md` — Tool abstraction, registration pattern, how to add/remove a tool
+- `design/SKILLS.md` — Skill discovery, frontmatter schema, load-on-demand flow
+- `design/PROMPTS.md` — Prompt layering, Jinja2 conventions, template-injection guard
+- `design/WEB_UI_ACCESSIBILITY_AUDIT.md` — WCAG 2.1 AA audit of the Web UI with findings and evidence (see ROADMAP Phase 60)
 - `ROADMAP.md` — Implementation phases
 - `CHANGELOG.md` — Notable changes (keep updated)

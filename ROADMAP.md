@@ -5562,6 +5562,141 @@ profile.
 
 ---
 
+## Phase 60: Web UI Accessibility
+
+**Goal:** Fix the issues surfaced by the Phase 59-era accessibility audit of
+``src/cantrip/web/`` (see ``design/WEB_UI_ACCESSIBILITY_AUDIT.md``).  The
+audit ran ``rodney`` against the live web UI and captured evidence in a
+``showboat`` document; five high-severity findings fail WCAG 2.1 AA
+outright, five medium-severity findings are one-line fixes, and four
+low-severity findings are polish.  All remediation sits in
+``src/cantrip/web/templates/index.html.j2``, ``static/style.css``, and
+``static/cantrip.js``; no Python changes are expected.
+
+Every item references the numbered finding in the audit doc so the
+evidence is one click away.
+
+### 60.1 High — Visible focus indicator for the Send button (finding 1)
+
+- [ ] Add ``#chat-form button:focus-visible`` with a 2px white ring and
+  2px outline offset so keyboard users can see the primary action is
+  focused on the accent-blue background
+- [ ] Audit every other focusable element in the page for a visible focus
+  style (header buttons, chat input, overlay-internal controls) and add
+  ``:focus-visible`` rules where the UA default is suppressed or
+  insufficient
+
+### 60.2 High — Raise Send button text contrast to ≥4.5:1 (finding 2)
+
+- [ ] Either darken ``--accent`` when used as a button background
+  (e.g. introduce ``--accent-strong: #1f6feb``) or switch the Send label
+  to ``#0d1117``.  The audit's contrast probe is the reference
+- [ ] Re-run the contrast probe from ``design/WEB_UI_ACCESSIBILITY_AUDIT.md``
+  under ``showboat verify`` and confirm no cell drops below 4.5:1 for
+  normal text
+
+### 60.3 High — Programmatic label on ``#chat-input`` (finding 3)
+
+- [ ] Add a visible ``<label for="chat-input">`` (preferred) or an
+  ``aria-label`` fallback.  Placeholder text stays as the hint, not the
+  name
+
+### 60.4 High — Live regions for dynamic content (finding 4)
+
+- [ ] ``#chat-messages`` → ``role="log" aria-live="polite"
+  aria-relevant="additions"``.  Assistant replies should be announced;
+  user's own echoed message should not generate a duplicate announcement
+- [ ] ``#thinking-indicator`` → ``role="status" aria-live="polite"``.
+  Keep it in the DOM; toggle ``aria-hidden`` (or a ``hidden`` attribute
+  pair) instead of ``display:none`` so assistive tech sees the state
+  change
+- [ ] ``#connection-status`` → ``role="status"`` with a visually-present
+  or sr-only text sibling.  Update ``_setStatus`` in ``cantrip.js`` to
+  set ``aria-label`` alongside ``title``
+
+### 60.5 High — Overlays become real dialogs (finding 5)
+
+- [ ] Mark ``#help-overlay``, ``#logs-overlay``, ``#graph-overlay`` with
+  ``role="dialog" aria-modal="true" aria-labelledby="<heading-id>"``
+- [ ] Give each overlay's ``<h2>`` a stable id to hang the label off
+- [ ] In the toggle helpers, capture ``document.activeElement`` on open
+  and ``.focus()`` it on close.  On open, focus moves to the heading
+  (``tabindex="-1"``) or first focusable child
+- [ ] Set ``inert`` on ``<header>``, ``<main>``, ``<footer>`` while an
+  overlay is open (polyfill via ``aria-hidden`` + ``tabindex="-1"`` only
+  if a target browser lacks native ``inert`` support — modern Chromium,
+  Firefox, and Safari all ship it)
+- [ ] Implement a minimal Tab/Shift-Tab wrap inside the overlay so
+  keyboard users can't escape the dialog without closing it
+
+### 60.6 Medium — Cluster of small HTML fixes (findings 6, 7, 9)
+
+- [ ] ``index.html.j2`` — add ``type="button"`` to the three header buttons
+- [ ] Add ``aria-label="Help"`` / ``aria-label="Logs"`` / ``aria-label="Graph"``
+  so screen readers don't announce "question mark, button" etc.  The
+  visible glyph stays
+- [ ] Extend ``toggleHelp/Logs/Graph`` in ``cantrip.js`` to flip
+  ``aria-expanded`` and ``aria-controls`` on the corresponding trigger
+  button
+
+### 60.7 Medium — Connection status dot is labelled, not titled (finding 8)
+
+- [ ] Drop the ``title``-only pattern in ``_setStatus``; set
+  ``aria-label`` (and ``role="status"`` once) so touch and screen-reader
+  users can perceive the state
+- [ ] Consider giving the dot a visible adjacent text sibling so the
+  label is not a hidden-only affordance
+
+### 60.8 Low — Polish (findings 11, 12, 13, 14)
+
+- [ ] Convert the Keyboard Shortcuts ``<table>`` to a ``<dl>`` (or at
+  least wrap each key in ``<kbd>`` and add a ``<caption>``)
+- [ ] Gate global single-key shortcuts behind ``Alt`` (or add a setting
+  to disable them) — WCAG 2.1.4 Character Key Shortcuts
+- [ ] Raise the muted-text tokens (``--text-muted``) to ≥7:1 if AAA
+  becomes a target.  Deferred decision
+- [ ] Give each ``<section>`` an ``aria-labelledby`` that points at its
+  ``<h2>`` so the a11y tree exposes the regions by name
+
+### 60.9 Medium — Regression test: re-run the audit in CI
+
+- [ ] Add a ``tests/integration/web/test_accessibility.py`` (or an
+  ``assets/audit.md`` the CI re-runs with ``showboat verify``) that
+  launches the web server, drives ``rodney ax-tree`` / ``rodney ax-node``
+  against the same probes the audit used, and asserts the key
+  accessible-name / role / contrast invariants.  This prevents the
+  audit from drifting silently on future UI changes
+- [ ] Alternatively, run a headless axe-core scan via rodney's ``js``
+  subcommand — cheaper than hand-crafted assertions but reports
+  different things.  Pick one; the audit doc lists both
+
+### What this phase is *not*
+
+- Not a theme rewrite.  Keep the current dark palette; only the specific
+  low-contrast pair (white on ``--accent``) needs to move
+- Not a refactor of the web stack.  Every change lives in the three
+  files mentioned above
+- Not a TUI-parity effort.  The TUI has its own accessibility concerns
+  (already covered by Textual) and is out of scope here
+
+**Exit criteria:** every finding in
+``design/WEB_UI_ACCESSIBILITY_AUDIT.md`` has either a checked box above
+or a recorded decision in the audit doc explaining why it's deferred;
+``showboat verify`` on the updated audit document exits 0; every
+interactive element has a visible ``:focus-visible`` style; no
+normal-size text falls below 4.5:1 contrast; the three overlays behave
+as modal dialogs (focus moves in, is trapped, is restored on close).
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| High-severity fixes (60.1–60.5) | none | Independent, can land in one PR |
+| Medium cluster (60.6, 60.7) | none | Pure HTML/JS, trivial |
+| Low polish (60.8) | 60.1–60.5 landed | Avoid conflict with dialog refactor |
+| CI regression (60.9) | 60.1–60.7 landed | Test must be green before locking it in |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -5617,4 +5752,5 @@ profile.
 | M57: Test Cleanup | 57 | Unit coverage ≥85%; zero test warnings; oversized unit files split; quickpack tests reorganised to match charmlint |
 | M58: Rust Tested | 58 | `cargo test` runs in CI for both Rust crates; every `.rs` file above 60% coverage; regressions surface at unit-test time, not via spread |
 | M59: Property Tested | 59 | Hypothesis-backed property tests cover the planner dependency graph, charmlint rule engine, quickpack jujuignore, and watcher status-diff |
+| M60: Accessible Web UI | 60 | Web UI passes WCAG 2.1 AA: visible focus indicators, labelled controls, live regions for chat/status, overlays behave as modal dialogs; rodney/showboat regression guard in CI |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

@@ -65,6 +65,14 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   registration mechanism; the old name was misleading.
 
 ### Added
+- **Web UI accessibility audit (design doc)** — `design/WEB_UI_ACCESSIBILITY_AUDIT.md`
+  captures a WCAG 2.1 AA audit of the browser UI (5 high-, 5 medium-,
+  4 low-severity findings) with reproducible evidence gathered via
+  ``rodney`` + ``showboat``.  Screenshots in
+  ``design/images/accessibility-audit/``.  Remediation tracked in
+  ROADMAP Phase 60 (visible focus indicators, Send-button contrast,
+  chat-input label, live regions for chat/thinking/status, overlays as
+  modal dialogs, plus medium/low polish).
 - **`harness-migration` skill** — dedicated skill for rewriting deprecated
   `ops.testing.Harness` unit tests as state-transition (Scenario) tests.
   Covers the Harness→Scenario mapping table, event-specific recipes
