@@ -15,6 +15,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   against a canonical context so accidental template edits surface in
   CI.  No behaviour change — byte-identical output for all four
   builders (full, design→build, day2→build, replanning).
+- **Sprint/fast-path task descriptions extracted to templates
+  (Phase 53.2, first batch)** — the multi-line task-description
+  f-strings in ``plan_sprint_deploy``, ``plan_fast_path``, and
+  ``plan_one_shot_build`` now render through ``.md.j2`` templates
+  under ``src/cantrip/agent/prompts/tasks/``.  Remaining generators
+  (improvement, operability, day-2, research) will follow.  Byte-
+  identical output verified for every task description moved.
 
 ### Added
 - **PyPI attestation checks for charm dependencies** — a shared

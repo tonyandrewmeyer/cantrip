@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from uuid import uuid4
 
 from cantrip.agent.prompts import planning as planning_prompts
+from cantrip.agent.prompts import tasks as task_prompts
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.llm import base as llm
 
@@ -194,35 +195,12 @@ def plan_sprint_deploy(context: PlanningContext) -> list[AgentTask]:
             title=f"{SPRINT_BUILD_PREFIX} {workload}",
             category=TaskCategory.BUILD,
             model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Build a minimal charm and pack it as fast as possible.\n\n"
-                f"**Goal:** Produce a deployable .charm file with the bare minimum.\n"
-                f"Do NOT write tests. Do NOT run charm_validate. Do NOT add "
-                f"COS/observability integrations.\n\n"
-                f"Steps:\n"
-                f"1. Run charmcraft_init with name='{workload}' and "
-                f"profile='{profile}'\n"
-                f"2. Edit charmcraft.yaml: change `base: ubuntu@22.04` to "
-                f"`base: ubuntu@{ubuntu_version}`.  Keep the scaffolded "
-                f"`parts.charm.plugin: uv` — quick_pack uses it to build "
-                f"locally without LXD.\n"
-                f"3. Edit src/charm.py: remove any `import ops_tracing` line "
-                f"and any `ops_tracing.setup(self)` call (since ops-tracing "
-                f"is not a hard dependency of the scaffold). Leave everything "
-                f"else as-is.\n"
-                f"4. Generate `uv.lock` for the frozen install quick_pack "
-                f"needs: run `run_command` with command=['uv', 'lock'] in "
-                f"the charm directory.\n"
-                f"5. **CRITICAL**: pack the charm.  Prefer `quick_pack` — "
-                f"much faster than charmcraft.  If quick_pack fails "
-                f"(unsupported plugin, override-build, missing uv.lock), "
-                f"fall back to `charmcraft_pack` with destructive_mode=true. "
-                f"The task is not done without a .charm file.\n"
-                f"6. Use git_init, git_add, and git_commit to save the work\n\n"
-                f"**Important:** Keep changes minimal. The scaffolded charm from "
-                f"charmcraft init is designed to work out of the box. "
-                f"You MUST produce a .charm file before finishing.\n\n"
-                f"Design:\n{design}"
+            description=task_prompts.render(
+                "sprint_build",
+                workload=workload,
+                profile=profile,
+                ubuntu_version=ubuntu_version,
+                design=design,
             ),
             dependencies=[],
         ),
@@ -230,13 +208,7 @@ def plan_sprint_deploy(context: PlanningContext) -> list[AgentTask]:
             id=deploy_id,
             title=f"{SPRINT_DEPLOY_PREFIX} {workload}",
             category=TaskCategory.DEPLOY,
-            description=(
-                "Deploy the freshly packed charm and verify it reaches active/idle.\n\n"
-                "1. Find the .charm file in the charm directory\n"
-                "2. Deploy with juju_deploy\n"
-                "3. Run juju_wait to confirm the application reaches active/idle\n"
-                "4. Report the final status"
-            ),
+            description=task_prompts.render("sprint_deploy"),
             dependencies=[build_id],
         ),
     ]
@@ -259,13 +231,7 @@ def plan_fast_path(context: PlanningContext) -> list[AgentTask]:
             id=design_id,
             title=f"operational-discovery: design 12-factor charm for {workload}",
             category=TaskCategory.RESEARCH,
-            description=(
-                f"Generate a design proposal for a {framework} 12-factor PaaS charm. "
-                f"This is a well-understood framework — use the paas-charm base with "
-                f"the {framework}-framework profile. Include standard integrations "
-                f"(ingress, database if applicable, COS). Search Charmhub briefly "
-                f"to check for existing charms."
-            ),
+            description=task_prompts.render("fast_path_design", framework=framework),
             dependencies=[],
         ),
         AgentTask(
@@ -304,23 +270,11 @@ def plan_one_shot_build(context: PlanningContext, design_content: str) -> list[A
             title=f"Build {framework} charm for {workload}",
             category=TaskCategory.BUILD,
             model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Build a complete {framework} 12-factor PaaS charm for {workload} in a "
-                f"single pass using a red/green cycle. Steps:\n"
-                f"1. Run charmcraft init to scaffold the charm\n"
-                f"2. Write metadata (charmcraft.yaml) with correct name, bases, containers, "
-                f"and integrations from the approved design\n"
-                f"3. Write rockcraft.yaml if needed for the {framework} workload\n"
-                f"4. Write integration tests from the design — deploy, relate, config, "
-                f"actions (these are the 'red' tests that define the external contract)\n"
-                f"5. Write src/charm.py with Pebble layer, integrations, and config "
-                f"handling to make the integration tests pass ('green')\n"
-                f"6. Write unit tests using Scenario (ops.testing) for edge cases and "
-                f"error paths\n"
-                f"7. Pack the charm with charmcraft pack\n\n"
-                f"If the design lists companion charms, include them in integration "
-                f"tests (deploy + relate each companion before asserting status).\n\n"
-                f"Approved design:\n{design_content}"
+            description=task_prompts.render(
+                "one_shot_build",
+                framework=framework,
+                workload=workload,
+                design_content=design_content,
             ),
             dependencies=[],
         ),
