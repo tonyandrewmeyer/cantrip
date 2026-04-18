@@ -26,11 +26,27 @@ pytestmark = pytest.mark.tui
 # ---------------------------------------------------------------------------
 
 
+def _streaming_reply(*chunks: str):
+    """Return a factory that produces an async generator yielding *chunks*.
+
+    The TUI calls ``agent.process_message_streaming(message)`` and iterates
+    the result — this helper builds a mock that matches that contract.
+    """
+
+    async def _gen(_msg: str):
+        for chunk in chunks:
+            yield chunk
+
+    return _gen
+
+
 def _mock_agent() -> MagicMock:
     """Return a mock CantripAgent with a no-op prepare."""
     agent = MagicMock()
     agent.prepare = AsyncMock()
     agent.process_message = AsyncMock(return_value="Test reply")
+    # Streaming path used by the TUI — default to a single-chunk reply.
+    agent.process_message_streaming = _streaming_reply("Test reply")
     agent.state = MagicMock()
     agent.state.charm_type = None
     agent.state.test_results = None
@@ -171,9 +187,9 @@ class TestTuiWidgets:
 
     @pytest.mark.asyncio
     async def test_agent_response_shown(self):
-        """Mock agent returns 'Test reply'; verify assistant message appears."""
+        """Mock agent streams 'Test reply'; verify assistant message appears."""
         p1, p2, mock_agent = _patch_app()
-        mock_agent.process_message = AsyncMock(return_value="Test reply")
+        mock_agent.process_message_streaming = _streaming_reply("Test reply")
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 await pilot.press("H", "i")
@@ -348,7 +364,7 @@ class TestTuiWidgets:
         mock_agent.state.test_results = TestResults(
             test_type="unit", passed=5, failed=0, error=0, skipped=0
         )
-        mock_agent.process_message = AsyncMock(return_value="All tests passed.")
+        mock_agent.process_message_streaming = _streaming_reply("All tests passed.")
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 await pilot.press("H", "i")
@@ -367,7 +383,7 @@ class TestTuiWidgets:
         mock_agent.state.test_results = TestResults(
             test_type="unit", passed=3, failed=2, error=0, skipped=0
         )
-        mock_agent.process_message = AsyncMock(return_value="Some tests failed.")
+        mock_agent.process_message_streaming = _streaming_reply("Some tests failed.")
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 await pilot.press("H", "i")
@@ -384,7 +400,7 @@ class TestTuiWidgets:
         """Status bar test summary stays empty when test_results is None."""
         p1, p2, mock_agent = _patch_app()
         mock_agent.state.test_results = None
-        mock_agent.process_message = AsyncMock(return_value="No tests run.")
+        mock_agent.process_message_streaming = _streaming_reply("No tests run.")
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 await pilot.press("H", "i")
@@ -428,12 +444,12 @@ class TestTuiWidgets:
 
         p1, p2, mock_agent = _patch_app()
 
-        async def _slow_response(_msg: str) -> str:
+        async def _slow_stream(_msg: str):
             await asyncio.sleep(10)
-            return "never"
+            yield "never"
 
         # Make the agent take a long time so we can cancel mid-flight.
-        mock_agent.process_message = _slow_response
+        mock_agent.process_message_streaming = _slow_stream
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 # Submit a message to start the agent worker.
@@ -477,3 +493,73 @@ class TestTuiWidgets:
                 # Input should remain enabled.
                 input_widget = pilot.app.query_one("#chat-input")
                 assert input_widget.disabled is False
+
+    @pytest.mark.asyncio
+    async def test_streaming_chunks_append_to_same_widget(self):
+        """Multi-chunk streaming response assembles into one assistant message."""
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.process_message_streaming = _streaming_reply("Hello", " ", "world", "!")
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("H", "i")
+                await pilot.press("enter")
+                await pilot.pause(delay=0.5)
+
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                scroll = chat.query_one("#chat-scroll")
+                assistant_msgs = [
+                    w
+                    for w in scroll.query(MessageWidget)
+                    if w.message.role == MessageRole.ASSISTANT
+                ]
+                # Exactly one assistant widget — chunks were appended, not
+                # rendered as separate messages.
+                assert len(assistant_msgs) == 1
+                assert assistant_msgs[0].message.content == "Hello world!"
+
+    @pytest.mark.asyncio
+    async def test_streaming_empty_response_shows_placeholder(self):
+        """Empty stream produces a '(no response)' assistant message."""
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.process_message_streaming = _streaming_reply()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("H", "i")
+                await pilot.press("enter")
+                await pilot.pause(delay=0.5)
+
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                assistant_msgs = [m for m in chat._messages if m.role == MessageRole.ASSISTANT]
+                assert len(assistant_msgs) == 1
+                assert assistant_msgs[0].content == "(no response)"
+
+    @pytest.mark.asyncio
+    async def test_streaming_flips_status_bar_after_first_chunk(self):
+        """The status bar shows 'Streaming...' once the first chunk arrives."""
+        import asyncio
+
+        first_chunk_seen = asyncio.Event()
+        keep_streaming = asyncio.Event()
+
+        async def _paced_stream(_msg: str):
+            yield "first"
+            first_chunk_seen.set()
+            await keep_streaming.wait()
+            yield " rest"
+
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.process_message_streaming = _paced_stream
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("H", "i")
+                await pilot.press("enter")
+                # Wait for the first chunk to arrive.
+                await asyncio.wait_for(first_chunk_seen.wait(), timeout=2.0)
+                await pilot.pause()
+
+                status_bar = pilot.app.query_one("#status-bar", StatusBar)
+                assert status_bar.task_label == "⟳ Streaming..."
+
+                # Unblock the stream so the worker can finish cleanly.
+                keep_streaming.set()
+                await pilot.pause(delay=0.3)

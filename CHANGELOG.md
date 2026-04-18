@@ -4,6 +4,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Token-level streaming in the TUI (Phase 31.2)** — the TUI now renders assistant
+  text as chunks arrive from the LLM instead of waiting for the full response.
+  `_process_agent_message` iterates `process_message_streaming`; a new
+  `MessageWidget.append_content` method grows the in-progress message and
+  `ChatWidget.append_streaming_chunk` keeps the scroll pinned. The status bar
+  flips from "⟳ Thinking..." to "⟳ Streaming..." on the first non-empty chunk,
+  so users see both the pre-stream wait and the ongoing activity. Cancellation
+  (`Ctrl+C`) propagates through the async generator and preserves partial
+  content. Completes 28.6 (the TUI half that was outstanding).
+
 ### Changed
 - **Phase 25 cleanup** — `tui/app.py` widget/screen imports converted to module-level
   aliases (`from cantrip.tui.widgets import chat as chat_widget`) per CLAUDE.md's

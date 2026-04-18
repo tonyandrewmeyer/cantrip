@@ -101,6 +101,7 @@ class CantripApp(App):
         self._pending_bootstrap: bool = False
         self._bootstrap_offered: bool = False
         self._pending_maintenance: dict | None = None  # {"pr_url": ..., "issue": ...}
+        self._streaming_widget: chat_widget.MessageWidget | None = None
 
         # Register bundled and user themes.
         from cantrip.tui.themes import register_themes
@@ -1038,15 +1039,32 @@ class CantripApp(App):
         self.query_one("#status-bar", statusbar_widget.StatusBar).task_label = "⟳ Thinking..."
 
         # Run agent processing in a background worker.
+        self._streaming_widget = None
         self.run_worker(
             self._process_agent_message(message),
             name="agent_response",
             exclusive=True,
         )
 
-    async def _process_agent_message(self, message: str) -> str:
-        """Process a message through the agent. Runs in a worker."""
-        return await self._agent.process_message(message)
+    async def _process_agent_message(self, message: str) -> None:
+        """Stream a message through the agent, appending chunks as they arrive.
+
+        The first non-empty chunk replaces the "⟳ Thinking..." indicator
+        with a new assistant message; subsequent chunks are appended to
+        that same widget.  The worker returns ``None`` — success is
+        observed via the chat widget, not the worker result.
+        """
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
+
+        async for chunk in self._agent.process_message_streaming(message):
+            if not chunk:
+                continue
+            if self._streaming_widget is None:
+                chat.hide_thinking()
+                self._streaming_widget = chat.add_assistant_message("")
+                status_bar.task_label = "⟳ Streaming..."
+            chat.append_streaming_chunk(self._streaming_widget, chunk)
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle worker state changes to update the UI."""
@@ -1063,14 +1081,19 @@ class CantripApp(App):
         chat = self.query_one("#chat", chat_widget.ChatWidget)
         input_widget = self.query_one("#chat-input", Input)
 
-        # Remove the thinking indicator and reset status bar.
+        # Remove the thinking indicator and reset status bar.  The
+        # indicator may still be up if the stream yielded nothing.
         chat.hide_thinking()
         self.query_one("#status-bar", statusbar_widget.StatusBar).task_label = ""
+        streamed_content = self._streaming_widget.message.content if self._streaming_widget else ""
+        self._streaming_widget = None
 
         if event.state == WorkerState.SUCCESS:
-            result = event.worker.result
-            if result:
-                chat.add_assistant_message(str(result))
+            # If the model produced no text at all (unusual, but possible
+            # when a turn ends on a tool error), show a placeholder so the
+            # user sees that the turn completed.
+            if not streamed_content:
+                chat.add_assistant_message("(no response)")
             input_widget.disabled = False
             input_widget.placeholder = "Type your message..."
             input_widget.focus()

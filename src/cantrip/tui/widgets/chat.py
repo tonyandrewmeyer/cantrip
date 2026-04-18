@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from textual.app import ComposeResult
 from textual.containers import ScrollableContainer, Vertical
+from textual.css.query import NoMatches
 from textual.widget import Widget
 from textual.widgets import LoadingIndicator, Static
 
@@ -128,7 +129,18 @@ class MessageWidget(Static):
         yield Static(header + "\n".join(content_lines), id="message-body")
 
     def _rerender(self) -> None:
-        """Re-render the message body after a progress update."""
+        """Re-render the message body after a progress update.
+
+        If the widget has been mounted but not yet composed (e.g. streaming
+        chunks arrive on the same tick the message was added), the body
+        Static won't exist yet; skip silently — the next ``compose()`` call
+        will read the current ``message.content`` and render correctly.
+        """
+        try:
+            body = self.query_one("#message-body", Static)
+        except NoMatches:
+            return
+
         role_display = {
             MessageRole.USER: "> ",
             MessageRole.ASSISTANT: "",
@@ -144,7 +156,7 @@ class MessageWidget(Static):
             status_class = f"progress-{item.status.value.replace('_', '-')}"
             content_lines.append(f"[{status_class}]{status_char}[/{status_class}] {item.text}")
 
-        self.query_one("#message-body", Static).update(header + "\n".join(content_lines))
+        body.update(header + "\n".join(content_lines))
 
     def _status_char(self, status: MessageStatus) -> str:
         """Get status indicator character."""
@@ -160,6 +172,17 @@ class MessageWidget(Static):
         if 0 <= index < len(self.message.progress_items):
             self.message.progress_items[index].status = status
             self._rerender()
+
+    def append_content(self, chunk: str) -> None:
+        """Append a text chunk to the message content and re-render.
+
+        Used by streaming responses to grow an in-progress message
+        without creating a new widget per chunk.
+        """
+        if not chunk:
+            return
+        self.message.content += chunk
+        self._rerender()
 
 
 class ChatWidget(Widget):
@@ -263,6 +286,17 @@ class ChatWidget(Widget):
                 progress_items=items,
             )
         )
+
+    def append_streaming_chunk(self, widget: MessageWidget, chunk: str) -> None:
+        """Append *chunk* to *widget* and keep the scroll pinned to the bottom.
+
+        The caller typically obtains *widget* from ``add_assistant_message("")``
+        before streaming begins, then pumps chunks in via this method as they
+        arrive from ``process_message_streaming``.
+        """
+        widget.append_content(chunk)
+        scroll = self.query_one("#chat-scroll", ScrollableContainer)
+        scroll.scroll_end(animate=False)
 
     def remove_message(self, widget: MessageWidget) -> None:
         """Remove a message widget from the chat."""

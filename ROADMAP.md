@@ -2479,7 +2479,11 @@ runner, and state persistence that can cause silent failures, data loss, or dead
 - [x] The method calls `_run_conversation_loop` in full before yielding, defeating
   the purpose of token-level streaming
 - [x] Refactor to yield chunks as they arrive from the provider's `stream()` method
-- [ ] Update TUI to render incremental text updates (currently waits for full response)
+- [x] Update TUI to render incremental text updates — `_process_agent_message`
+  now iterates `process_message_streaming`; `MessageWidget.append_content`
+  and `ChatWidget.append_streaming_chunk` grow the in-progress assistant
+  message as chunks arrive; status bar flips to "⟳ Streaming..." once
+  streaming starts
 
 ### 28.7 Medium — Compaction Error Recovery
 
@@ -2695,12 +2699,14 @@ experienced users.
 - [ ] Add `TranscriptScreen` search binding
 - [ ] Support `Ctrl+F` as alternative
 
-### 31.2 High — Streaming Responses in TUI
+### 31.2 High — Streaming Responses in TUI ✅
 
-- [ ] Currently the TUI waits for the full agent response before displaying anything
-- [ ] Implement token-level streaming: render text as it arrives from the LLM
-- [ ] Show a "typing" indicator while the response is being generated
-- [ ] Depends on Phase 28.6 (fixing `process_message_streaming`)
+- [x] TUI no longer waits for the full agent response — chunks render as they arrive
+- [x] Token-level streaming via `process_message_streaming`: `MessageWidget.append_content`
+  grows the assistant message; `ChatWidget.append_streaming_chunk` keeps scroll pinned
+- [x] Status bar flips "⟳ Thinking..." → "⟳ Streaming..." on the first chunk
+  (LoadingIndicator stays up until then, so users still see activity pre-stream)
+- [x] Depended on Phase 28.6 (now fully complete)
 
 ### 31.3 Medium — Session Resume UX
 
