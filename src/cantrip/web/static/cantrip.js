@@ -7,6 +7,7 @@ const cantrip = (() => {
   let reconnectDelay = 1000;
   let port = 8471;
   let statusPollTimer = null;
+  let historyLoaded = false;
 
   // ── DOM references ──────────────────────────────────────────────
   const chatMessages = () => document.getElementById("chat-messages");
@@ -42,6 +43,13 @@ const cantrip = (() => {
     // Keyboard shortcuts.
     document.addEventListener("keydown", _handleKeyDown);
 
+    // Click on overlay backdrop closes the overlay.
+    for (const overlay of document.querySelectorAll(".overlay")) {
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) overlay.classList.add("hidden");
+      });
+    }
+
     // Poll Juju status every 15 seconds.
     _fetchJujuStatus();
     statusPollTimer = setInterval(_fetchJujuStatus, 15000);
@@ -55,6 +63,10 @@ const cantrip = (() => {
       reconnectDelay = 1000;
       _setStatus("connected");
       _fetchState();
+      if (!historyLoaded) {
+        historyLoaded = true;
+        _fetchMessages();
+      }
     };
 
     ws.onclose = () => {
@@ -409,6 +421,19 @@ const cantrip = (() => {
       if (!resp.ok) return;
       const state = await resp.json();
       if (state.tasks) replaceAllTasks(state.tasks);
+    } catch { /* ignore */ }
+  }
+
+  async function _fetchMessages() {
+    const container = chatMessages();
+    if (!container) return;
+    try {
+      const resp = await fetch("/api/messages");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const messages = data.messages || [];
+      container.innerHTML = "";
+      for (const m of messages) appendMessage(m.role, m.content);
     } catch { /* ignore */ }
   }
 
