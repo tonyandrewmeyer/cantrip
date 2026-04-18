@@ -25,6 +25,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   (`Ctrl+C`) propagates through the async generator and preserves partial
   content. Completes 28.6 (the TUI half that was outstanding).
 
+### Fixed
+- **Context budget message echoed by smaller models** — `ContextManager.build_budget_message`
+  now wraps the "[Context Budget] … tokens used" line in a `<system_note>` tag with an
+  explicit "do not echo it in your reply" preamble. Without this, `gemini-3-flash-preview`
+  would sometimes verbatim include the budget text at the end of its response (reproduced
+  with a short prompt where the model read the budget message as part of the instruction).
+  `gemini-3-pro-preview` (the default) was unaffected; the wrapper defends the flash path
+  and any future small/fast models without altering the budget data the model sees.
+
 ### Changed
 - **Phase 25 cleanup** — `tui/app.py` widget/screen imports converted to module-level
   aliases (`from cantrip.tui.widgets import chat as chat_widget`) per CLAUDE.md's

@@ -362,7 +362,12 @@ class ContextManager:
         )
 
     def build_budget_message(self, messages: list[Message]) -> Message:
-        """Build a transient context budget message for the LLM."""
+        """Build a transient context budget message for the LLM.
+
+        The body is wrapped in ``<system_note>...</system_note>`` with a short
+        instruction so smaller models (observed with gemini-3-flash-preview)
+        don't echo the budget line verbatim in their reply.
+        """
         used = self.estimate_tokens(messages)
         available = self._context_window - used
         virtual_files = self._store.list_files()
@@ -377,7 +382,14 @@ class ContextManager:
             for vf in virtual_files:
                 parts.append(f"  - {vf.id}: {vf.name} (~{vf.token_estimate:,} tokens)")
 
-        return Message(role=Role.USER, content="\n".join(parts))
+        body = "\n".join(parts)
+        framed = (
+            "<system_note>\n"
+            "The following is metadata for your own planning — do not echo it in your reply.\n"
+            f"{body}\n"
+            "</system_note>"
+        )
+        return Message(role=Role.USER, content=framed)
 
     def should_compact(self, messages: list[Message]) -> bool:
         """Return True if the conversation should be compacted.
