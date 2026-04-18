@@ -310,16 +310,7 @@ def plan_improvement_phase(context: PlanningContext) -> list[AgentTask]:
             title=f"Audit existing charm: {charm_name}",
             category=TaskCategory.RESEARCH,
             model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Audit the existing charm at {charm_path} against best practices.\n\n"
-                "1. Run `charm_audit` to get a structured report of issues.\n"
-                "2. Read key files (`charmcraft.yaml`, `src/charm.py`, `README.md`, "
-                "tests) to understand the current state.\n"
-                "3. Produce a comprehensive AUDIT.md covering: COS integration gaps, "
-                "test coverage, deprecated APIs, metadata completeness, and listing "
-                "readiness.\n"
-                "4. Categorise findings as must-fix, should-fix, and nice-to-have."
-            ),
+            description=task_prompts.render("improvement_audit", charm_path=charm_path),
             dependencies=[],
         ),
         AgentTask(
@@ -365,25 +356,10 @@ def plan_improvement_fixes(
                 title="Fill observability gaps",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Add missing COS integration to the charm at {charm_path}.\n\n"
-                    f"Missing: {', '.join(cos_gaps)}\n\n"
-                    "1. Load the `observability` and `charm-improvement` skills.\n"
-                    "2. Add missing COS relations to charmcraft.yaml (tracing, "
-                    "metrics-endpoint, logging, grafana-dashboard).\n"
-                    "3. Add ops-tracing if missing — install dependency and add "
-                    "`ops_tracing.setup(self)` in `__init__`.\n"
-                    "4. Add a Prometheus metrics endpoint if missing — expose "
-                    "workload metrics via the `metrics-endpoint` relation.\n"
-                    "5. Add Loki log forwarding if missing — add the `logging` "
-                    "relation and ensure structured logging is used.\n"
-                    "6. Generate a basic Grafana dashboard JSON in "
-                    "`src/grafana_dashboards/` covering key operational metrics "
-                    "(unit status, hook durations, relation counts).\n"
-                    "7. Generate basic Prometheus alert rules in "
-                    "`src/prometheus_alert_rules/` for common failure conditions "
-                    "(unit blocked, hook failures, resource exhaustion).\n"
-                    "8. Commit changes with a descriptive message."
+                description=task_prompts.render(
+                    "improvement_fill_observability",
+                    charm_path=charm_path,
+                    cos_gaps=", ".join(cos_gaps),
                 ),
                 dependencies=[confirm_task_id],
             )
@@ -400,26 +376,10 @@ def plan_improvement_fixes(
                 title="Fill test gaps",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Add missing tests to the charm at {charm_path}.\n\n"
-                    f"Missing: {', '.join(test_gaps)}\n\n"
-                    "1. Load the `charm-improvement` skill for test patterns.\n"
-                    "2. Read the existing charm code to understand events, relations, "
-                    "config, and actions.\n"
-                    "3. If unit tests are missing, write Scenario-based unit tests "
-                    "in `tests/unit/test_charm.py` covering all observed events, "
-                    "happy paths, and error cases. Do NOT use the deprecated "
-                    "Harness. Cover: missing relations → BlockedStatus, invalid "
-                    "config → error handling, Pebble not ready → WaitingStatus.\n"
-                    "4. If integration tests are missing, write Jubilant integration "
-                    "tests in `tests/integration/test_charm.py` covering:\n"
-                    "   - Deploy and reach active/idle\n"
-                    "   - Each relation endpoint (deploy + relate + verify)\n"
-                    "   - Each action (run + check result)\n"
-                    "   - Config changes (set + verify)\n"
-                    "5. Run `run_charm_tests` for each test type and fix any "
-                    "failures. Iterate until green.\n"
-                    "6. Commit changes with a descriptive message."
+                description=task_prompts.render(
+                    "improvement_fill_tests",
+                    charm_path=charm_path,
+                    test_gaps=", ".join(test_gaps),
                 ),
                 dependencies=[confirm_task_id],
             )
@@ -463,11 +423,10 @@ def plan_improvement_fixes(
                 title="Modernise charm code",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Modernise the charm code at {charm_path}.\n\n"
-                    f"{step_text}\n\n"
-                    "Run tests after each change to verify nothing breaks.\n"
-                    "Commit changes with a descriptive message."
+                description=task_prompts.render(
+                    "improvement_modernise_code",
+                    charm_path=charm_path,
+                    step_text=step_text,
                 ),
                 dependencies=[confirm_task_id],
             )
@@ -484,19 +443,8 @@ def plan_improvement_fixes(
                 title="Prepare for Charmhub listing",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Prepare the charm at {charm_path} for Charmhub listing.\n\n"
-                    "1. Generate or update README.md with standard sections "
-                    "(description, deployment, configuration, integrations).\n"
-                    "2. Fill in missing charmcraft.yaml metadata fields "
-                    "(display-name, summary, description, docs, issues, source).\n"
-                    "3. Check for LICENSE file — suggest Apache-2.0 if missing.\n"
-                    "4. If icon.svg is missing, run `generate_icon` to create a "
-                    "placeholder icon (coloured circle with the charm's initial).\n"
-                    "5. If no docs/ directory exists, run `generate_docs` to "
-                    "create Diátaxis-structured documentation (tutorial, how-to, "
-                    "reference, explanation) with the Canonical starter pack.\n"
-                    "6. Commit changes with a descriptive message."
+                description=task_prompts.render(
+                    "improvement_listing_readiness", charm_path=charm_path
                 ),
                 dependencies=[confirm_task_id],
             )
@@ -511,13 +459,7 @@ def plan_improvement_fixes(
                 id=validate_id,
                 title="Validate all improvements",
                 category=TaskCategory.TEST,
-                description=(
-                    f"Validate the improved charm at {charm_path}.\n\n"
-                    "1. Run `charm_validate` to verify the charm packs cleanly.\n"
-                    "2. Run unit tests with `run_charm_tests`.\n"
-                    "3. Run integration tests with `run_charm_tests` if present.\n"
-                    "4. Report pass/fail counts for each."
-                ),
+                description=task_prompts.render("improvement_validate", charm_path=charm_path),
                 dependencies=fix_ids,
             )
         )
@@ -529,15 +471,8 @@ def plan_improvement_fixes(
                 id=deploy_id,
                 title="Deploy and verify improved charm",
                 category=TaskCategory.DEPLOY,
-                description=(
-                    f"Deploy the improved charm at {charm_path} and verify it works.\n\n"
-                    "1. Pack the charm.  Prefer `quick_pack` for speed; if it "
-                    "fails (unsupported plugin, override-build, missing "
-                    "uv.lock), fall back to `charmcraft_pack`.\n"
-                    "2. Deploy or refresh with `juju_deploy` / `juju_refresh`.\n"
-                    "3. Establish all relations.\n"
-                    "4. Run `juju_wait` to confirm active/idle.\n"
-                    "5. If COS relations were added, verify they are established."
+                description=task_prompts.render(
+                    "improvement_deploy_verify", charm_path=charm_path
                 ),
                 dependencies=[validate_id],
             )
@@ -550,16 +485,7 @@ def plan_improvement_fixes(
                 title="Review improvement changes",
                 category=TaskCategory.RESEARCH,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Summarise all changes made to the charm at {charm_path}.\n\n"
-                    "1. Run `git_log` to see all commits made during improvement.\n"
-                    "2. Run `git_diff` against the initial state to see the full diff.\n"
-                    "3. Group changes by category (observability, tests, code "
-                    "modernisation, listing readiness).\n"
-                    "4. Present a clear summary with: what was changed, why, and "
-                    "how many files were affected in each category.\n"
-                    "5. Note any issues that were flagged but not addressed."
-                ),
+                description=task_prompts.render("improvement_diff_review", charm_path=charm_path),
                 dependencies=[deploy_id],
             )
         )
@@ -571,12 +497,8 @@ def plan_improvement_fixes(
                 title=f"{OPERABILITY_PREFIX} Assess operational readiness",
                 category=TaskCategory.RESEARCH,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Evaluate the improved charm at {charm_path} against "
-                    "Canonical's Operational Readiness Metrics.\n\n"
-                    "1. Run `operational_readiness` on the charm directory.\n"
-                    "2. Review OPERATIONAL_READINESS.md.\n"
-                    "3. Summarise per-pillar scores and must-fix items."
+                description=task_prompts.render(
+                    "improvement_assess_readiness", charm_path=charm_path
                 ),
                 dependencies=[deploy_id],
             )
@@ -623,25 +545,14 @@ def plan_operability_assessment(
             title=f"{OPERABILITY_PREFIX} Assess operational readiness of {charm_name}",
             category=TaskCategory.RESEARCH,
             model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Evaluate the charm at {charm_path} against Canonical's "
-                "Operational Readiness Metrics.\n\n"
-                "1. Run `operational_readiness` tool on the charm directory.\n"
-                "2. Review the OPERATIONAL_READINESS.md report.\n"
-                "3. Summarise the per-pillar scores and must-fix items."
-            ),
+            description=task_prompts.render("operability_assess", charm_path=charm_path),
             dependencies=deps,
         ),
         AgentTask(
             id=confirm_id,
             title=f"{OPERABILITY_PREFIX} Confirm operational readiness gaps",
             category=TaskCategory.CONFIRM,
-            description=(
-                f"Present operational readiness findings for {charm_name}.\n\n"
-                "The assessment identified gaps across Best Practices, "
-                "Documentation, Reliability, Maintainability, and Security "
-                "pillars. Confirm which gaps to address and which to defer."
-            ),
+            description=task_prompts.render("operability_confirm", charm_name=charm_name),
             dependencies=[assess_id],
         ),
     ]
@@ -689,15 +600,7 @@ def plan_operability_fixes(
                 title=f"{OPERABILITY_PREFIX} Implement comprehensive status reporting",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Add comprehensive status reporting to the charm at {charm_path}.\n\n"
-                    "1. Load the `operational-readiness` skill.\n"
-                    "2. Implement a `_reconcile()` method that checks all conditions "
-                    "and sets appropriate status (BlockedStatus, WaitingStatus, "
-                    "MaintenanceStatus, ActiveStatus).\n"
-                    "3. Call `_reconcile()` from every event handler.\n"
-                    "4. Run tests and commit."
-                ),
+                description=task_prompts.render("operability_status", charm_path=charm_path),
                 dependencies=[confirm_task_id],
             )
         )
@@ -711,16 +614,7 @@ def plan_operability_fixes(
                 title=f"{OPERABILITY_PREFIX} Add operational actions",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Add operational actions to the charm at {charm_path}.\n\n"
-                    "1. Load the `operational-readiness` skill.\n"
-                    "2. Add `get-health` action with comprehensive checks.\n"
-                    "3. Add `pause` and `resume` actions for workload control.\n"
-                    "4. Add `collect-diagnostics` action for troubleshooting.\n"
-                    "5. Update actions.yaml or charmcraft.yaml with descriptions "
-                    "and parameter schemas.\n"
-                    "6. Run tests and commit."
-                ),
+                description=task_prompts.render("operability_actions", charm_path=charm_path),
                 dependencies=[confirm_task_id],
             )
         )
@@ -734,13 +628,7 @@ def plan_operability_fixes(
                 title=f"{OPERABILITY_PREFIX} Add backup and restore actions",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Add backup and restore capabilities to the charm at {charm_path}.\n\n"
-                    "1. Load the `operational-readiness` skill.\n"
-                    "2. Add `create-backup`, `list-backups`, and `restore-backup` "
-                    "actions using workload-native tools.\n"
-                    "3. Run tests and commit."
-                ),
+                description=task_prompts.render("operability_backup", charm_path=charm_path),
                 dependencies=[confirm_task_id],
             )
         )
@@ -754,14 +642,7 @@ def plan_operability_fixes(
                 title=f"{OPERABILITY_PREFIX} Add upgrade pre-flight checks",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Add upgrade support to the charm at {charm_path}.\n\n"
-                    "1. Load the `operational-readiness` skill.\n"
-                    "2. Add `pre-upgrade-check` action that validates version "
-                    "compatibility, cluster health, and backup freshness.\n"
-                    "3. Handle upgrade events gracefully.\n"
-                    "4. Run tests and commit."
-                ),
+                description=task_prompts.render("operability_upgrade", charm_path=charm_path),
                 dependencies=[confirm_task_id],
             )
         )
@@ -775,14 +656,7 @@ def plan_operability_fixes(
                 title=f"{OPERABILITY_PREFIX} Complete COS observability",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Fill remaining COS gaps in the charm at {charm_path}.\n\n"
-                    "1. Load the `observability` and `operational-readiness` skills.\n"
-                    "2. Add any missing COS relations (tracing, metrics, logging, "
-                    "grafana-dashboard).\n"
-                    "3. Add alert rules and dashboard panels beyond basic integration.\n"
-                    "4. Run tests and commit."
-                ),
+                description=task_prompts.render("operability_cos", charm_path=charm_path),
                 dependencies=[confirm_task_id],
             )
         )
@@ -796,14 +670,7 @@ def plan_operability_fixes(
                 title=f"{OPERABILITY_PREFIX} Improve security posture",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Improve the security posture of the charm at {charm_path}.\n\n"
-                    "1. Load the `operational-readiness` skill.\n"
-                    "2. Migrate any plain-text secret config to Juju secrets.\n"
-                    "3. Add TLS support if missing.\n"
-                    "4. Add certificate management actions if relevant.\n"
-                    "5. Run tests and commit."
-                ),
+                description=task_prompts.render("operability_security", charm_path=charm_path),
                 dependencies=[confirm_task_id],
             )
         )
@@ -817,13 +684,7 @@ def plan_operability_fixes(
                 title=f"{OPERABILITY_PREFIX} Improve operational documentation",
                 category=TaskCategory.BUILD,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Add missing operational documentation for the charm at {charm_path}.\n\n"
-                    "1. Add installation/setup guide if missing.\n"
-                    "2. Add configuration reference.\n"
-                    "3. Add troubleshooting, upgrade, and backup/restore docs.\n"
-                    "4. Commit."
-                ),
+                description=task_prompts.render("operability_docs", charm_path=charm_path),
                 dependencies=[confirm_task_id],
             )
         )
@@ -837,12 +698,7 @@ def plan_operability_fixes(
                 title=f"{OPERABILITY_PREFIX} Re-assess operational readiness",
                 category=TaskCategory.RESEARCH,
                 model_hint=ModelHint.PRIMARY,
-                description=(
-                    f"Re-run operational readiness assessment on {charm_path}.\n\n"
-                    "1. Run `operational_readiness` tool.\n"
-                    "2. Compare before/after scores.\n"
-                    "3. Present the improvement summary to the user."
-                ),
+                description=task_prompts.render("operability_reassess", charm_path=charm_path),
                 dependencies=fix_ids,
             )
         )
@@ -868,11 +724,7 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
                 id=source_id,
                 title=f"Analyse source repository for {workload}",
                 category=TaskCategory.RESEARCH,
-                description=(
-                    f"Clone {context.source_url}, explore README, dependency files, "
-                    "Dockerfiles, config files, and entry points. Run analyse_framework. "
-                    "Write findings into WORKLOAD.md."
-                ),
+                description=task_prompts.render("research_source", source_url=context.source_url),
                 dependencies=[],
             )
         )
@@ -884,10 +736,7 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
             id=web_id,
             title=f"Research {workload} documentation and operations",
             category=TaskCategory.RESEARCH,
-            description=(
-                f"Fetch official docs, project website, and deployment guides for {workload}. "
-                "Focus on operational patterns: deployment, configuration, monitoring, scaling."
-            ),
+            description=task_prompts.render("research_web", workload=workload),
             dependencies=[],
         )
     )
@@ -899,10 +748,7 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
             id=hub_id,
             title=f"Survey Charmhub for existing {workload} charms",
             category=TaskCategory.RESEARCH,
-            description=(
-                f"Search Charmhub for existing charms covering {workload}. "
-                "Evaluate candidates: relations, config, storage, maintenance status."
-            ),
+            description=task_prompts.render("research_charmhub", workload=workload),
             dependencies=[],
         )
     )
@@ -914,12 +760,7 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
             id=synthesis_id,
             title=f"operational-discovery: synthesise design for {workload}",
             category=TaskCategory.RESEARCH,
-            description=(
-                "Synthesise all research into a structured design proposal (DESIGN.md). "
-                "Cover: substrate, charm path, Charmhub recommendation, integrations, "
-                "config, actions, scaling, operational patterns, security surface "
-                "assessment, and open questions."
-            ),
+            description=task_prompts.render("research_synthesis"),
             dependencies=list(research_ids),
         )
     )
@@ -972,20 +813,7 @@ def plan_day2_ops_phase(
             title=f"{DAY2_RESEARCH_PREFIX} research operations for {workload}",
             category=TaskCategory.RESEARCH,
             model_hint=ModelHint.PRIMARY,
-            description=(
-                f"Research day-2 operational concerns for {workload}.\n\n"
-                "Use web_search and web_fetch to find documentation on:\n"
-                "- Backup and restore procedures\n"
-                "- Horizontal and vertical scaling\n"
-                "- High availability and clustering\n"
-                "- Upgrade and migration paths\n"
-                "- Security hardening and credential rotation\n"
-                "- Monitoring, alerting, and observability best practices\n"
-                "- Disaster recovery runbooks\n\n"
-                "Also check Charmhub for how existing charms handle these "
-                "operations (actions, config, relations).\n\n"
-                "Write findings into DAY2.md with clear headings per topic."
-            ),
+            description=task_prompts.render("day2_research", workload=workload),
             dependencies=[depends_on],
         ),
         AgentTask(
@@ -993,31 +821,14 @@ def plan_day2_ops_phase(
             title=f"{DAY2_RESEARCH_PREFIX} synthesise day-2 plan for {workload}",
             category=TaskCategory.RESEARCH,
             model_hint=ModelHint.PRIMARY,
-            description=(
-                "Synthesise day-2 research into a structured plan proposing "
-                "specific charm features for each operational area.\n\n"
-                "For each area, propose concrete charm features:\n"
-                "- Actions (backup, restore, rotate-credentials, promote-standby)\n"
-                "- Config options (backup-schedule, ha-mode, tls-enabled)\n"
-                "- Relations (s3-credentials for backup, peer for HA)\n"
-                "- Operational patterns (leader election, rolling upgrades)\n\n"
-                "Write output as DAY2-PLAN.md with structured questions using the "
-                "standard format (bold key, indented suggestions). Questions should "
-                "focus on areas where the user's operational expertise is most "
-                "valuable — deployment topology, backup policies, security needs."
-            ),
+            description=task_prompts.render("day2_synthesis"),
             dependencies=[research_id],
         ),
         AgentTask(
             id=confirm_id,
             title="Discuss day-2 operations with user",
             category=TaskCategory.CONFIRM,
-            description=(
-                "Present the day-2 operations plan for user discussion. "
-                "The user may approve areas, skip areas, provide additional "
-                "operational context, or indicate they are unsure (in which "
-                "case the research findings serve as the default)."
-            ),
+            description=task_prompts.render("day2_confirm"),
             dependencies=[synthesis_id],
         ),
     ]

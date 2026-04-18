@@ -15,13 +15,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   against a canonical context so accidental template edits surface in
   CI.  No behaviour change — byte-identical output for all four
   builders (full, design→build, day2→build, replanning).
-- **Sprint/fast-path task descriptions extracted to templates
-  (Phase 53.2, first batch)** — the multi-line task-description
-  f-strings in ``plan_sprint_deploy``, ``plan_fast_path``, and
-  ``plan_one_shot_build`` now render through ``.md.j2`` templates
-  under ``src/cantrip/agent/prompts/tasks/``.  Remaining generators
-  (improvement, operability, day-2, research) will follow.  Byte-
-  identical output verified for every task description moved.
+- **Task descriptions extracted to templates (Phase 53.2)** — every
+  multi-line ``AgentTask.description`` f-string in the deterministic
+  planner generators (``plan_sprint_deploy``, ``plan_fast_path``,
+  ``plan_one_shot_build``, ``plan_improvement_phase``,
+  ``plan_improvement_fixes``, ``plan_operability_assessment``,
+  ``plan_operability_fixes``, ``plan_research_phase``,
+  ``plan_day2_ops_phase``) now renders through ``.md.j2`` templates
+  under ``src/cantrip/agent/prompts/tasks/`` — 30 templates covering
+  every piece of charm-building guidance that used to live in
+  ``planner.py``.  ``planner.py`` drops from 1620 to 1195 lines, 425
+  lines lighter, focused on control flow.  Byte-identical output
+  verified for every description; the 2774-test unit suite is
+  unchanged.
+- **Tools registry module renamed (Phase 53.4)** —
+  ``cantrip.agent.tools.registry`` → ``cantrip.agent.tools.oci_registry``.
+  The module holds Docker Hub / OCI image-search tools, not a tool-
+  registration mechanism; the old name was misleading.
 
 ### Added
 - **`harness-migration` skill** — dedicated skill for rewriting deprecated

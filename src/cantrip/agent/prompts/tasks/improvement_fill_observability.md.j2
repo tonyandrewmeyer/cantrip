@@ -1,0 +1,12 @@
+Add missing COS integration to the charm at {{ charm_path }}.
+
+Missing: {{ cos_gaps }}
+
+1. Load the `observability` and `charm-improvement` skills.
+2. Add missing COS relations to charmcraft.yaml (tracing, metrics-endpoint, logging, grafana-dashboard).
+3. Add ops-tracing if missing — install dependency and add `ops_tracing.setup(self)` in `__init__`.
+4. Add a Prometheus metrics endpoint if missing — expose workload metrics via the `metrics-endpoint` relation.
+5. Add Loki log forwarding if missing — add the `logging` relation and ensure structured logging is used.
+6. Generate a basic Grafana dashboard JSON in `src/grafana_dashboards/` covering key operational metrics (unit status, hook durations, relation counts).
+7. Generate basic Prometheus alert rules in `src/prometheus_alert_rules/` for common failure conditions (unit blocked, hook failures, resource exhaustion).
+8. Commit changes with a descriptive message.

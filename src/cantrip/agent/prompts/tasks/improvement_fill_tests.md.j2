@@ -1,0 +1,14 @@
+Add missing tests to the charm at {{ charm_path }}.
+
+Missing: {{ test_gaps }}
+
+1. Load the `charm-improvement` skill for test patterns.
+2. Read the existing charm code to understand events, relations, config, and actions.
+3. If unit tests are missing, write Scenario-based unit tests in `tests/unit/test_charm.py` covering all observed events, happy paths, and error cases. Do NOT use the deprecated Harness. Cover: missing relations → BlockedStatus, invalid config → error handling, Pebble not ready → WaitingStatus.
+4. If integration tests are missing, write Jubilant integration tests in `tests/integration/test_charm.py` covering:
+   - Deploy and reach active/idle
+   - Each relation endpoint (deploy + relate + verify)
+   - Each action (run + check result)
+   - Config changes (set + verify)
+5. Run `run_charm_tests` for each test type and fix any failures. Iterate until green.
+6. Commit changes with a descriptive message.

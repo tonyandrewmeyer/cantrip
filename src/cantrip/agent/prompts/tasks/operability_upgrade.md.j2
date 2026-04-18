@@ -1,0 +1,6 @@
+Add upgrade support to the charm at {{ charm_path }}.
+
+1. Load the `operational-readiness` skill.
+2. Add `pre-upgrade-check` action that validates version compatibility, cluster health, and backup freshness.
+3. Handle upgrade events gracefully.
+4. Run tests and commit.

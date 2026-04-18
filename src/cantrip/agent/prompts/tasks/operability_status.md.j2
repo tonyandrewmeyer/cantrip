@@ -1,0 +1,6 @@
+Add comprehensive status reporting to the charm at {{ charm_path }}.
+
+1. Load the `operational-readiness` skill.
+2. Implement a `_reconcile()` method that checks all conditions and sets appropriate status (BlockedStatus, WaitingStatus, MaintenanceStatus, ActiveStatus).
+3. Call `_reconcile()` from every event handler.
+4. Run tests and commit.

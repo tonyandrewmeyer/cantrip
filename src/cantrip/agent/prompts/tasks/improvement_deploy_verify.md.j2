@@ -1,0 +1,7 @@
+Deploy the improved charm at {{ charm_path }} and verify it works.
+
+1. Pack the charm.  Prefer `quick_pack` for speed; if it fails (unsupported plugin, override-build, missing uv.lock), fall back to `charmcraft_pack`.
+2. Deploy or refresh with `juju_deploy` / `juju_refresh`.
+3. Establish all relations.
+4. Run `juju_wait` to confirm active/idle.
+5. If COS relations were added, verify they are established.
