@@ -10,10 +10,10 @@ lint:
 	uv run ruff format --check src tests
 	uv run ty check src
 
-# Run unit tests (with coverage, matching CI)
+# Run unit tests (with coverage, parallel across cores via pytest-xdist).
+# pytest-cov handles the coverage combine step automatically.
 unit:
-	uv run coverage run -m pytest tests/unit -v
-	uv run coverage report
+	uv run pytest tests/unit -n auto --cov=cantrip --cov-report=term-missing
 
 # Run integration tests (real tools, no external services)
 integration:
@@ -49,11 +49,9 @@ check: lint unit rust-test
 # Run everything (format + check)
 all: format check
 
-# Run unit tests with coverage report
+# Run unit tests with coverage report (parallel + HTML output)
 coverage:
-	uv run coverage run -m pytest tests/unit -v
-	uv run coverage report
-	uv run coverage html
+	uv run pytest tests/unit -n auto --cov=cantrip --cov-report=term-missing --cov-report=html
 
 # Run cargo test for each Rust crate
 rust-test:
@@ -62,7 +60,7 @@ rust-test:
 
 # Clean build artifacts
 clean:
-	rm -rf .pytest_cache .ruff_cache .ty_cache .coverage htmlcov
+	rm -rf .pytest_cache .ruff_cache .ty_cache .coverage .coverage.* htmlcov
 	rm -rf dist build *.egg-info
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true

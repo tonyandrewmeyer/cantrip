@@ -54,6 +54,8 @@ dev = [
     "ty",
     "ruff>=0.15.8",
     "zizmor>=1.24.1",
+    "pytest-xdist>=3.8.0",
+    "pytest-cov>=7.1.0",
 ]
 
 [project.scripts]
@@ -119,6 +121,11 @@ invalid-argument-type = "ignore"  # Third-party lib calls
 [tool.coverage.run]
 source = ["cantrip"]
 core = "sysmon"
+# Parallel mode + multiprocessing concurrency let pytest-cov capture each
+# xdist worker's traces in its own .coverage.<hostname>.<pid> file; the
+# plugin combines them automatically at session end.
+parallel = true
+concurrency = ["multiprocessing"]
 
 [tool.coverage.report]
 show_missing = true

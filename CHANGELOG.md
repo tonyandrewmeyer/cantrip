@@ -4,6 +4,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Parallel unit tests with pytest-xdist + pytest-cov** — ``make unit``
+  and ``make coverage`` now fan out across CPU cores via
+  ``pytest -n auto``; pytest-cov handles per-worker coverage combining
+  automatically.  The 2970-test suite drops from ~60 s serial to
+  ~25 s with coverage (~3.5–4× on the dev machine).  ``[tool.coverage.run]``
+  gains ``parallel = true`` and ``concurrency = ["multiprocessing"]``
+  so each xdist worker writes its own ``.coverage.<host>.<pid>`` which
+  pytest-cov combines at session end.  Two new dev dependencies —
+  ``pytest-xdist`` and ``pytest-cov``.  CI (``ci.yaml``) switched to
+  ``pytest -n auto --cov``; nightly and live jobs unchanged.  The suite
+  is already hermetic so no tests broke under parallel execution.
+
 ### Added
 - **Entry-point coverage (Phase 57.2)** — three modules that were at
   0% are now thoroughly tested: ``cantrip/cli.py`` (0% → 97%),
