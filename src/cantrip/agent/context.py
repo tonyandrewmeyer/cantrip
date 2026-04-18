@@ -5,6 +5,7 @@ import re
 import time
 from dataclasses import dataclass
 
+from cantrip.agent.prompts.compaction import load_compaction_prompt
 from cantrip.llm.base import (
     _CHARS_PER_TOKEN,
     LLMProvider,
@@ -139,17 +140,6 @@ class VirtualFileStore:
         """Return all stored virtual files."""
         return list(self._files.values())
 
-
-_COMPACTION_PROMPT = """\
-Summarise the following conversation history. Preserve:
-- All decisions made and their rationale
-- Current charm state (name, type, framework, path)
-- Important tool results and their outcomes
-- Any errors encountered and how they were resolved
-- The user's goals and requirements
-
-Be concise but complete. This summary will replace the conversation history.\
-"""
 
 # Number of most recent messages to keep after compaction.
 _KEEP_RECENT = 4
@@ -450,7 +440,7 @@ class ContextManager:
         # Ask the provider to summarise.
         summary_messages = [
             Message(role=Role.SYSTEM, content=system_prompt),
-            Message(role=Role.USER, content=f"{_COMPACTION_PROMPT}\n\n{history_text}"),
+            Message(role=Role.USER, content=f"{load_compaction_prompt()}\n\n{history_text}"),
         ]
         response = await provider.complete(summary_messages, temperature=0.3)
 

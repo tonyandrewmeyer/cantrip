@@ -37,6 +37,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``planner/llm.py`` (``TaskPlanner``, the three prompt builders,
   the JSON parser, ``_merge_tasks``).  ``planner/__init__.py``
   re-exports the existing public API so no caller needs to change.
+- **Compaction prompt extracted to markdown** — the conversation-
+  summarisation prompt used by ``ContextManager.compact_history()``
+  was the last hardcoded LLM prompt in the ``cantrip.agent`` tree.
+  It now lives in ``src/cantrip/agent/prompts/compaction.md``,
+  loaded lazily by ``prompts.compaction.load_compaction_prompt()``.
+  Byte-identical output; no behaviour change.  Small follow-up to
+  Phase 53 rather than a numbered sub-item.
 - **Tools registry module renamed (Phase 53.4)** —
   ``cantrip.agent.tools.registry`` → ``cantrip.agent.tools.oci_registry``.
   The module holds Docker Hub / OCI image-search tools, not a tool-
