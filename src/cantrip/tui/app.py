@@ -12,6 +12,7 @@ from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
 from cantrip import __version__
+from cantrip.agent import emotions
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.git_branch import PUSH_CONFIRM_PREFIX
@@ -1033,6 +1034,10 @@ class CantripApp(App):
             if handled:
                 return
 
+        if message.split(" ", 1)[0] == "/feelings":
+            self._handle_feelings_command(message, chat)
+            return
+
         # Disable input and show thinking indicator while processing.
         input_widget = self.query_one("#chat-input", Input)
         input_widget.disabled = True
@@ -1068,11 +1073,56 @@ class CantripApp(App):
                 status_bar.task_label = "⟳ Streaming..."
             chat.append_streaming_chunk(self._streaming_widget, chunk)
 
+    def _handle_feelings_command(self, message: str, chat: chat_widget.ChatWidget) -> None:
+        """Dispatch a parliament run from a ``/feelings [emotions...]`` message.
+
+        Experimental: runs the enabled emotion subagents in parallel and
+        posts a markdown report back to the chat. Does not touch the
+        main agent's conversation state.
+        """
+        tokens = message.split()[1:]
+        unknown = [t for t in tokens if t.lower() not in emotions.available_emotions()]
+        if unknown:
+            known = ", ".join(emotions.available_emotions())
+            chat.add_system_message(
+                f"Unknown emotion(s): {', '.join(unknown)}. Known emotions: {known}."
+            )
+            return
+
+        enabled = [t.lower() for t in tokens] or list(emotions.DEFAULT_ENABLED)
+        chat.add_system_message(f"Convening the inner parliament: {', '.join(enabled)}...")
+        self.run_worker(
+            self._run_feelings(enabled),
+            name="feelings",
+            exclusive=False,
+        )
+
+    async def _run_feelings(self, enabled: list[str]) -> str:
+        """Run the parliament and return the formatted markdown report."""
+        result = await self._agent.run_parliament(enabled)
+        return emotions.format_report(result, enabled=enabled)
+
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle worker state changes to update the UI."""
         if event.worker.name == "agent_response":
             self._on_agent_response_done(event)
+        elif event.worker.name == "feelings":
+            self._on_feelings_done(event)
         # Preflight workers don't need special handling on completion.
+
+    def _on_feelings_done(self, event: Worker.StateChanged) -> None:
+        """Post the parliament report (or an error) when the feelings worker finishes."""
+        if event.state not in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
+            return
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        if event.state == WorkerState.SUCCESS:
+            report = event.worker.result
+            if report:
+                chat.add_system_message(str(report))
+        elif event.state == WorkerState.CANCELLED:
+            chat.add_system_message("Parliament adjourned (cancelled).")
+        elif event.state == WorkerState.ERROR:
+            chat.add_system_message(f"Parliament failed: {event.worker.error}")
 
     def _on_agent_response_done(self, event: Worker.StateChanged) -> None:
         """Handle agent response worker completion."""

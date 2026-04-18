@@ -95,6 +95,16 @@ class HelpScreen(ModalScreen):
                     "q         Quit"
                 )
 
+                yield Static("Slash commands", classes="help-section-header")
+                yield Static("──────────────", classes="help-separator")
+                yield Static(
+                    "/feelings                Convene the inner parliament\n"
+                    "                         (default: joy + fear)\n"
+                    "/feelings joy fear       Run only the named emotions\n"
+                    "                         (joy | fear | anger | disgust |\n"
+                    "                         sadness)"
+                )
+
                 yield Static("Links", classes="help-section-header")
                 yield Static("─────", classes="help-separator")
                 yield Static("Grafana:  http://localhost:3000\nDocs:     https://juju.is/docs")

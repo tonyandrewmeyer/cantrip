@@ -11,6 +11,7 @@ from typing import Any
 from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.design import parse_design_from_result
+from cantrip.agent.emotions import ParliamentResult, run_parliament
 from cantrip.agent.executor import BackgroundExecutor
 from cantrip.agent.git_branch import (
     PUSH_CONFIRM_PREFIX,
@@ -448,6 +449,26 @@ class CantripAgent:
         """Resume the background executor after handling a user message."""
         if self._executor and self._executor.running:
             self._executor.resume()
+
+    async def run_parliament(self, enabled: list[str]) -> ParliamentResult:
+        """Convene the inner parliament over the current charm state.
+
+        Experimental feature: each enabled emotion (joy, fear, anger,
+        disgust, sadness) reviews the charm through its own lens and
+        emits structured suggestions. The emotions run in parallel on
+        the light model and have no tools — they react only to the
+        context assembled from ``AgentState``.
+        """
+        provider = self._light_provider or self.provider
+        return await run_parliament(
+            enabled=enabled,
+            provider=provider,
+            charm_name=self.state.charm_name,
+            charm_type=self.state.charm_type,
+            framework=self.state.framework,
+            charm_path=self.state.charm_path,
+            decisions=[decision.to_dict() for decision in self.state.decisions],
+        )
 
     async def process_message(self, user_message: str) -> str:
         """Process a user message and return the response.
