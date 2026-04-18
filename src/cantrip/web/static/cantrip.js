@@ -43,10 +43,13 @@ const cantrip = (() => {
     // Keyboard shortcuts.
     document.addEventListener("keydown", _handleKeyDown);
 
-    // Click on overlay backdrop closes the overlay.
-    for (const overlay of document.querySelectorAll(".overlay")) {
+    // Click on overlay backdrop closes the overlay via the dialog helpers
+    // so focus restoration and inert both clear correctly.
+    for (const key of Object.keys(_OVERLAYS)) {
+      const overlay = document.getElementById(_OVERLAYS[key].overlayId);
+      if (!overlay) continue;
       overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) overlay.classList.add("hidden");
+        if (e.target === overlay) _closeOverlay(key);
       });
     }
 
@@ -94,7 +97,9 @@ const cantrip = (() => {
     const dot = statusDot();
     if (!dot) return;
     dot.className = "status-dot " + state;
-    dot.title = state.charAt(0).toUpperCase() + state.slice(1);
+    const label = state.charAt(0).toUpperCase() + state.slice(1);
+    dot.title = label;
+    dot.setAttribute("aria-label", label);
   }
 
   // ── Message dispatcher ──────────────────────────────────────────
@@ -188,7 +193,7 @@ const cantrip = (() => {
   function setThinking(active) {
     const el = thinkingEl();
     if (!el) return;
-    el.classList.toggle("hidden", !active);
+    el.hidden = !active;
   }
 
   // ── Task rendering ──────────────────────────────────────────────
@@ -271,20 +276,109 @@ const cantrip = (() => {
     }
   }
 
-  // ── Overlays ────────────────────────────────────────────────────
+  // ── Overlays (dialogs with focus management) ────────────────────
 
-  function toggleHelp() {
-    const el = helpOverlay();
-    if (el) el.classList.toggle("hidden");
+  // Each overlay pairs with its trigger button and an optional onOpen hook.
+  const _OVERLAYS = {
+    help:  { overlayId: "help-overlay",  triggerId: "btn-help",  onOpen: null },
+    logs:  { overlayId: "logs-overlay",  triggerId: "btn-logs",  onOpen: () => _fetchLogs() },
+    graph: { overlayId: "graph-overlay", triggerId: "btn-graph", onOpen: () => _fetchGraph() },
+  };
+  const _savedFocus = {};
+
+  function _isOverlayOpen(key) {
+    const el = document.getElementById(_OVERLAYS[key].overlayId);
+    return !!(el && !el.classList.contains("hidden"));
   }
 
-  function toggleLogs() {
-    const el = logsOverlay();
-    if (!el) return;
-    const wasHidden = el.classList.contains("hidden");
-    el.classList.toggle("hidden");
-    if (wasHidden) _fetchLogs();
+  function _openOverlay(key) {
+    const cfg = _OVERLAYS[key];
+    const overlay = document.getElementById(cfg.overlayId);
+    const trigger = document.getElementById(cfg.triggerId);
+    if (!overlay || _isOverlayOpen(key)) return;
+
+    _savedFocus[cfg.overlayId] = document.activeElement;
+    overlay.classList.remove("hidden");
+    if (trigger) trigger.setAttribute("aria-expanded", "true");
+
+    for (const el of document.querySelectorAll("body > header, body > main, body > footer")) {
+      el.inert = true;
+    }
+
+    const heading = overlay.querySelector("h2");
+    if (heading) heading.focus();
+
+    if (cfg.onOpen) cfg.onOpen();
   }
+
+  function _closeOverlay(key) {
+    const cfg = _OVERLAYS[key];
+    const overlay = document.getElementById(cfg.overlayId);
+    const trigger = document.getElementById(cfg.triggerId);
+    if (!overlay || !_isOverlayOpen(key)) return;
+
+    overlay.classList.add("hidden");
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+
+    for (const el of document.querySelectorAll("body > header, body > main, body > footer")) {
+      el.inert = false;
+    }
+
+    const saved = _savedFocus[cfg.overlayId];
+    if (saved && typeof saved.focus === "function" && document.contains(saved)) {
+      saved.focus();
+    } else if (trigger) {
+      trigger.focus();
+    }
+    delete _savedFocus[cfg.overlayId];
+  }
+
+  function _toggleOverlay(key) {
+    if (_isOverlayOpen(key)) _closeOverlay(key);
+    else _openOverlay(key);
+  }
+
+  function _currentOpenOverlayKey() {
+    return Object.keys(_OVERLAYS).find(_isOverlayOpen) || null;
+  }
+
+  // Trap Tab/Shift-Tab inside the open overlay.
+  function _handleOverlayTab(e) {
+    if (e.key !== "Tab") return;
+    const key = _currentOpenOverlayKey();
+    if (!key) return;
+
+    const overlay = document.getElementById(_OVERLAYS[key].overlayId);
+    const focusable = Array.from(overlay.querySelectorAll(
+      'a[href], button:not([disabled]), textarea, input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter((el) => el.offsetParent !== null);
+
+    if (focusable.length === 0) {
+      e.preventDefault();
+      const heading = overlay.querySelector("h2[tabindex='-1']");
+      if (heading) heading.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    const insideOverlay = overlay.contains(active);
+
+    if (e.shiftKey) {
+      if (!insideOverlay || active === first || active === overlay.querySelector("h2")) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (!insideOverlay || active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  function toggleHelp()  { _toggleOverlay("help"); }
+  function toggleLogs()  { _toggleOverlay("logs"); }
+  function toggleGraph() { _toggleOverlay("graph"); }
 
   async function _fetchLogs() {
     const output = logsOutput();
@@ -299,14 +393,6 @@ const cantrip = (() => {
   }
 
   // ── Graph overlay ────────────────────────────────────────────────
-
-  function toggleGraph() {
-    const el = graphOverlay();
-    if (!el) return;
-    const wasHidden = el.classList.contains("hidden");
-    el.classList.toggle("hidden");
-    if (wasHidden) _fetchGraph();
-  }
 
   async function _fetchGraph() {
     const view = graphView();
@@ -382,34 +468,42 @@ const cantrip = (() => {
   }
 
   // ── Keyboard shortcuts ──────────────────────────────────────────
+  //
+  // Activation keys are gated behind Alt so they don't collide with
+  // normal typing — WCAG 2.1.4 Character Key Shortcuts.  Escape and
+  // the overlay Tab-trap run unconditionally.
 
   function _handleKeyDown(e) {
-    // Don't intercept when typing in the input.
+    if (e.key === "Escape") {
+      const openKey = _currentOpenOverlayKey();
+      if (openKey) {
+        e.preventDefault();
+        _closeOverlay(openKey);
+      }
+      return;
+    }
+
+    _handleOverlayTab(e);
+
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
 
-    if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+
+    const key = e.key.toLowerCase();
+    if (key === "h" || key === "?") {
       e.preventDefault();
       toggleHelp();
-    } else if (e.key === "l" || e.key === "L") {
+    } else if (key === "l") {
       e.preventDefault();
       toggleLogs();
-    } else if (e.key === "g" || e.key === "G") {
+    } else if (key === "g") {
       e.preventDefault();
       toggleGraph();
-    } else if (e.key === "r" || e.key === "R") {
-      // Refresh graph if it is open.
-      const gOverlay = graphOverlay();
-      if (gOverlay && !gOverlay.classList.contains("hidden")) {
+    } else if (key === "r") {
+      if (_isOverlayOpen("graph")) {
         e.preventDefault();
         _fetchGraph();
       }
-    } else if (e.key === "Escape") {
-      const help = helpOverlay();
-      const logs = logsOverlay();
-      const graph = graphOverlay();
-      if (help && !help.classList.contains("hidden")) help.classList.add("hidden");
-      else if (logs && !logs.classList.contains("hidden")) logs.classList.add("hidden");
-      else if (graph && !graph.classList.contains("hidden")) graph.classList.add("hidden");
     }
   }
 

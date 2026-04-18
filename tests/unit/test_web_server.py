@@ -1,5 +1,7 @@
 """Tests for the web UI server."""
 
+import jinja2
+
 from cantrip.web.server import (
     _MAX_LOG_LINES,
     _STATIC_DIR,
@@ -7,6 +9,14 @@ from cantrip.web.server import (
     _VALID_LOG_LEVELS,
     _broadcast,
 )
+
+
+def _render_template() -> str:
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
+        autoescape=True,
+    )
+    return env.get_template("index.html.j2").render(charm_name="", tasks=[], port=8471)
 
 
 class TestWebServerBasics:
@@ -355,3 +365,157 @@ class TestLogInputValidation:
                     assert cmd[cmd.index("--level") + 1] == "ERROR"
 
         asyncio.run(_run())
+
+
+class TestAccessibility:
+    """Invariants captured from the WCAG 2.1 AA audit (Phase 60).
+
+    These guard the remediations from ``design/WEB_UI_ACCESSIBILITY_AUDIT.md``
+    against silent regressions.  Each assertion corresponds to a numbered
+    finding in that audit.
+    """
+
+    def test_chat_input_has_programmatic_label(self) -> None:
+        # Finding 3: visible <label for="chat-input"> is preferred.
+        html = _render_template()
+        assert 'for="chat-input"' in html
+
+    def test_send_button_uses_strong_accent_background(self) -> None:
+        # Finding 2: Send button must not sit on the low-contrast --accent.
+        css = (_STATIC_DIR / "style.css").read_text()
+        assert "--accent-strong" in css
+        # The Send button background should reference the strong accent.
+        block = css.split("#chat-form button")[1].split("}")[0]
+        assert "var(--accent-strong)" in block
+
+    def test_send_button_has_focus_visible_rule(self) -> None:
+        # Finding 1: keyboard users need a visible focus indicator.
+        css = (_STATIC_DIR / "style.css").read_text()
+        assert "#chat-form button:focus-visible" in css
+
+    def test_global_focus_visible_rule_present(self) -> None:
+        css = (_STATIC_DIR / "style.css").read_text()
+        assert ":focus-visible" in css
+
+    def test_chat_messages_is_live_region(self) -> None:
+        # Finding 4: assistant replies must be announced.
+        html = _render_template()
+        assert 'id="chat-messages"' in html
+        assert 'role="log"' in html
+        assert 'aria-live="polite"' in html
+        assert 'aria-relevant="additions"' in html
+
+    def test_thinking_indicator_is_status_region(self) -> None:
+        # Finding 4: thinking indicator stays in the DOM via `hidden`, not
+        # display:none, so role=status can announce the state change.
+        html = _render_template()
+        indicator = html.split('id="thinking-indicator"')[1].split(">")[0]
+        assert 'role="status"' in indicator
+        assert 'aria-live="polite"' in indicator
+        assert "hidden" in indicator
+
+    def test_connection_status_has_role(self) -> None:
+        # Finding 8: the dot needs a real label, not just `title`.
+        html = _render_template()
+        dot = html.split('id="connection-status"')[1].split(">")[0]
+        assert 'role="status"' in dot
+        assert "aria-label=" in dot
+
+    def test_overlays_are_dialogs(self) -> None:
+        # Finding 5: every overlay must be a modal dialog.
+        html = _render_template()
+        for overlay_id in ("help-overlay", "logs-overlay", "graph-overlay"):
+            opening = html.split(f'id="{overlay_id}"')[1].split(">")[0]
+            assert 'role="dialog"' in opening, overlay_id
+            assert 'aria-modal="true"' in opening, overlay_id
+            assert "aria-labelledby=" in opening, overlay_id
+
+    def test_overlay_headings_have_stable_ids(self) -> None:
+        html = _render_template()
+        for heading_id in (
+            "help-overlay-title",
+            "logs-overlay-title",
+            "graph-overlay-title",
+        ):
+            assert f'id="{heading_id}"' in html
+
+    def test_header_buttons_have_type_button(self) -> None:
+        # Finding 6: three header buttons must not default to type=submit.
+        html = _render_template()
+        for btn_id in ("btn-help", "btn-logs", "btn-graph"):
+            frag = html.split(f'id="{btn_id}"')[1].split(">")[0]
+            assert 'type="button"' in frag, btn_id
+
+    def test_header_buttons_have_aria_labels(self) -> None:
+        # Finding 7: screen readers shouldn't announce "question mark, button".
+        html = _render_template()
+        assert 'aria-label="Help"' in html
+        assert 'aria-label="Logs"' in html
+        assert 'aria-label="Graph"' in html
+
+    def test_header_buttons_expose_aria_expanded(self) -> None:
+        # Finding 9: disclosure buttons reflect the state of what they control.
+        html = _render_template()
+        for btn_id, overlay_id in (
+            ("btn-help", "help-overlay"),
+            ("btn-logs", "logs-overlay"),
+            ("btn-graph", "graph-overlay"),
+        ):
+            frag = html.split(f'id="{btn_id}"')[1].split(">")[0]
+            assert 'aria-expanded="false"' in frag, btn_id
+            assert f'aria-controls="{overlay_id}"' in frag, btn_id
+
+    def test_sections_have_accessible_names(self) -> None:
+        # Finding 14: <section> elements need names to appear as regions.
+        html = _render_template()
+        chat = html.split('id="chat-panel"')[1].split(">")[0]
+        workspace = html.split('id="right-panels"')[1].split(">")[0]
+        assert "aria-label=" in chat
+        assert "aria-label=" in workspace
+
+    def test_shortcuts_use_description_list(self) -> None:
+        # Finding 11: shortcut pairs should be a <dl>, not a <table>.
+        html = _render_template()
+        assert "shortcuts-list" in html
+        assert "<dl" in html
+        assert "shortcuts-table" not in html
+
+    def test_shortcuts_are_alt_gated(self) -> None:
+        # Finding 12: global single-key shortcuts must require a modifier.
+        html = _render_template()
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "Alt+H" in html or "<kbd>Alt</kbd>" in html
+        # The handler bails out unless Alt is held (and only Alt).
+        assert "e.altKey" in js
+
+    def test_js_manages_inert_on_overlay_open(self) -> None:
+        # Finding 5: background must be inert while a dialog is open.
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "inert = true" in js
+        assert "inert = false" in js
+
+    def test_js_toggles_aria_expanded(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert 'setAttribute("aria-expanded", "true")' in js
+        assert 'setAttribute("aria-expanded", "false")' in js
+
+    def test_js_restores_focus_on_close(self) -> None:
+        # Finding 5: focus is captured on open and restored on close.
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "document.activeElement" in js
+        assert "_savedFocus" in js
+
+    def test_js_traps_tab_in_overlay(self) -> None:
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "_handleOverlayTab" in js
+
+    def test_js_sets_connection_status_aria_label(self) -> None:
+        # Finding 8: _setStatus must set aria-label, not only title.
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert 'setAttribute("aria-label"' in js
+
+    def test_js_uses_hidden_attribute_for_thinking(self) -> None:
+        # Finding 4: thinking indicator toggles via `hidden` so the live
+        # region is preserved in the a11y tree.
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "el.hidden = !active" in js

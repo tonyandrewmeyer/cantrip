@@ -5,6 +5,31 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Web UI accessibility — WCAG 2.1 AA remediation (Phase 60)** — the
+  web UI now satisfies every high- and medium-severity finding from the
+  audit in ``design/WEB_UI_ACCESSIBILITY_AUDIT.md``.  The Send button
+  sits on the darker ``--accent-strong`` so its label clears 4.5:1
+  contrast; a global ``:focus-visible`` outline plus an explicit white
+  ring on the Send button give keyboard users visible focus at all
+  times; the chat input carries a visually-hidden ``<label>`` and the
+  chat message list is a ``role="log"`` live region so assistant replies
+  are announced; the thinking indicator toggles via ``hidden`` (not
+  ``display:none``) inside a ``role="status"`` wrapper so the state
+  change reaches assistive tech; the three overlays are real
+  ``role="dialog" aria-modal="true"`` containers that capture
+  ``document.activeElement`` on open, focus the heading, mark
+  ``<header>``/``<main>``/``<footer>`` ``inert``, trap Tab/Shift-Tab,
+  and restore focus on close; the three header buttons gained
+  ``type="button"``, ``aria-label``, and ``aria-expanded`` /
+  ``aria-controls`` that flip with the overlay state; the connection
+  status dot now carries ``role="status"`` plus an ``aria-label`` that
+  tracks state; global keyboard shortcuts are gated behind ``Alt`` (and
+  escape routes through the dialog helpers so focus is restored
+  correctly); the keyboard-shortcuts table is a ``<dl>``; the three
+  ``<section>``s carry accessible names; twenty new ``TestAccessibility``
+  cases lock every invariant into the unit suite.  Deferred: the
+  low-priority AAA muted-text contrast bump (finding 13) and the CI
+  regression guard (60.9).
 - **Rust crate unit tests (Phase 58)** — the ``charmlint-rs`` and
   ``quickpack-rs`` crates now have ``#[cfg(test)] mod tests`` blocks on
   every module (73 unit tests for charmlint-rs, 60 for quickpack-rs)

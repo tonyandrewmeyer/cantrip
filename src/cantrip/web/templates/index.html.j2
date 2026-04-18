@@ -13,28 +13,37 @@
       {% if charm_name %}<span class="charm-name">{{ charm_name }}</span>{% endif %}
     </div>
     <div class="header-right">
-      <button id="btn-help" class="header-btn" title="Help (?)" onclick="cantrip.toggleHelp()">?</button>
-      <button id="btn-logs" class="header-btn" title="Logs (L)" onclick="cantrip.toggleLogs()">Logs</button>
-      <button id="btn-graph" class="header-btn" title="Graph (G)" onclick="cantrip.toggleGraph()">Graph</button>
-      <span id="connection-status" class="status-dot disconnected" title="Disconnected"></span>
+      <button id="btn-help" type="button" class="header-btn"
+              aria-label="Help" aria-expanded="false" aria-controls="help-overlay"
+              onclick="cantrip.toggleHelp()">?</button>
+      <button id="btn-logs" type="button" class="header-btn"
+              aria-label="Logs" aria-expanded="false" aria-controls="logs-overlay"
+              onclick="cantrip.toggleLogs()">Logs</button>
+      <button id="btn-graph" type="button" class="header-btn"
+              aria-label="Graph" aria-expanded="false" aria-controls="graph-overlay"
+              onclick="cantrip.toggleGraph()">Graph</button>
+      <span id="connection-status" class="status-dot disconnected"
+            role="status" aria-label="Disconnected"></span>
     </div>
   </header>
 
   <main>
-    <section id="chat-panel">
-      <div id="chat-messages"></div>
-      <div id="thinking-indicator" class="hidden">
+    <section id="chat-panel" aria-label="Chat">
+      <label for="chat-input" class="visually-hidden">Describe what you want to build</label>
+      <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <div id="thinking-indicator" role="status" aria-live="polite" hidden>
         <span class="dots"></span> Thinking&hellip;
       </div>
       <form id="chat-form" autocomplete="off">
-        <input type="text" id="chat-input" placeholder="Describe what you want to build&hellip;" autofocus>
+        <input type="text" id="chat-input"
+               placeholder="Describe what you want to build&hellip;" autofocus>
         <button type="submit">Send</button>
       </form>
     </section>
 
-    <section id="right-panels">
-      <div id="task-panel">
-        <h2>Tasks</h2>
+    <section id="right-panels" aria-label="Workspace">
+      <section id="task-panel" aria-labelledby="tasks-heading">
+        <h2 id="tasks-heading">Tasks</h2>
         <div id="task-list">
           {% for task in tasks %}
           <div class="task task-{{ task.status }}" id="task-{{ task.id }}" data-category="{{ task.category }}">
@@ -47,56 +56,60 @@
           <div class="task-empty">No tasks yet.</div>
           {% endif %}
         </div>
-      </div>
+      </section>
 
-      <div id="juju-panel">
-        <h2>Juju Status</h2>
+      <section id="juju-panel" aria-labelledby="juju-heading">
+        <h2 id="juju-heading">Juju Status</h2>
         <div id="juju-apps">
           <div class="juju-empty">No model connected.</div>
         </div>
-      </div>
+      </section>
     </section>
   </main>
 
   <!-- Help overlay -->
-  <div id="help-overlay" class="overlay hidden">
+  <div id="help-overlay" class="overlay hidden"
+       role="dialog" aria-modal="true" aria-labelledby="help-overlay-title">
     <div class="overlay-content">
-      <h2>Keyboard Shortcuts</h2>
-      <table class="shortcuts-table">
-        <tr><td><kbd>?</kbd></td><td>Toggle this help</td></tr>
-        <tr><td><kbd>L</kbd></td><td>Toggle log viewer</td></tr>
-        <tr><td><kbd>G</kbd></td><td>Toggle integration graph</td></tr>
-        <tr><td><kbd>Esc</kbd></td><td>Close overlay</td></tr>
-        <tr><td><kbd>Enter</kbd></td><td>Send message</td></tr>
-      </table>
+      <h2 id="help-overlay-title" tabindex="-1">Keyboard Shortcuts</h2>
+      <dl class="shortcuts-list">
+        <dt><kbd>Alt</kbd>+<kbd>H</kbd></dt><dd>Toggle this help</dd>
+        <dt><kbd>Alt</kbd>+<kbd>L</kbd></dt><dd>Toggle log viewer</dd>
+        <dt><kbd>Alt</kbd>+<kbd>G</kbd></dt><dd>Toggle integration graph</dd>
+        <dt><kbd>Alt</kbd>+<kbd>R</kbd></dt><dd>Refresh graph (when open)</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Close overlay</dd>
+        <dt><kbd>Enter</kbd></dt><dd>Send message</dd>
+      </dl>
       <p class="overlay-hint">Press Escape to close</p>
     </div>
   </div>
 
   <!-- Logs overlay -->
-  <div id="logs-overlay" class="overlay hidden">
+  <div id="logs-overlay" class="overlay hidden"
+       role="dialog" aria-modal="true" aria-labelledby="logs-overlay-title">
     <div class="overlay-content overlay-wide">
-      <h2>Juju Logs</h2>
+      <h2 id="logs-overlay-title" tabindex="-1">Juju Logs</h2>
       <pre id="logs-output" class="logs-pre">Loading...</pre>
-      <p class="overlay-hint">Press Escape or L to close</p>
+      <p class="overlay-hint">Press Escape or Alt+L to close</p>
     </div>
   </div>
 
   <!-- Graph overlay -->
-  <div id="graph-overlay" class="overlay hidden">
+  <div id="graph-overlay" class="overlay hidden"
+       role="dialog" aria-modal="true" aria-labelledby="graph-overlay-title">
     <div class="overlay-content overlay-wide">
-      <h2>Integration Graph</h2>
+      <h2 id="graph-overlay-title" tabindex="-1">Integration Graph</h2>
       <div id="graph-view" class="graph-view">
         <div class="juju-empty">Loading&hellip;</div>
       </div>
-      <p class="overlay-hint">Press Escape or G to close &middot; R to refresh</p>
+      <p class="overlay-hint">Press Escape or Alt+G to close &middot; Alt+R to refresh</p>
     </div>
   </div>
 
   <footer>
     <span id="status-label"></span>
     <span id="status-spacer"></span>
-    <span class="footer-hint">? Help &middot; L Logs &middot; G Graph</span>
+    <span class="footer-hint">Alt+H Help &middot; Alt+L Logs &middot; Alt+G Graph</span>
   </footer>
 
   <script src="/static/cantrip.js"></script>

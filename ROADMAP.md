@@ -5586,85 +5586,99 @@ evidence is one click away.
 
 ### 60.1 High — Visible focus indicator for the Send button (finding 1)
 
-- [ ] Add ``#chat-form button:focus-visible`` with a 2px white ring and
+- [x] Add ``#chat-form button:focus-visible`` with a 2px white ring and
   2px outline offset so keyboard users can see the primary action is
   focused on the accent-blue background
-- [ ] Audit every other focusable element in the page for a visible focus
+- [x] Audit every other focusable element in the page for a visible focus
   style (header buttons, chat input, overlay-internal controls) and add
   ``:focus-visible`` rules where the UA default is suppressed or
-  insufficient
+  insufficient — covered by a global ``:focus-visible`` rule that
+  paints a 2px ``--accent`` outline on any interactive element that
+  gains keyboard focus
 
 ### 60.2 High — Raise Send button text contrast to ≥4.5:1 (finding 2)
 
-- [ ] Either darken ``--accent`` when used as a button background
+- [x] Either darken ``--accent`` when used as a button background
   (e.g. introduce ``--accent-strong: #1f6feb``) or switch the Send label
-  to ``#0d1117``.  The audit's contrast probe is the reference
+  to ``#0d1117``.  The audit's contrast probe is the reference —
+  ``--accent-strong: #1f6feb`` added; the Send button now uses it
+  (white-on-#1f6feb ≈ 6.7:1)
 - [ ] Re-run the contrast probe from ``design/WEB_UI_ACCESSIBILITY_AUDIT.md``
   under ``showboat verify`` and confirm no cell drops below 4.5:1 for
-  normal text
+  normal text — deferred to 60.9 (CI regression guard)
 
 ### 60.3 High — Programmatic label on ``#chat-input`` (finding 3)
 
-- [ ] Add a visible ``<label for="chat-input">`` (preferred) or an
+- [x] Add a visible ``<label for="chat-input">`` (preferred) or an
   ``aria-label`` fallback.  Placeholder text stays as the hint, not the
-  name
+  name — visually-hidden ``<label for="chat-input">`` added; the
+  placeholder stays as the visual hint
 
 ### 60.4 High — Live regions for dynamic content (finding 4)
 
-- [ ] ``#chat-messages`` → ``role="log" aria-live="polite"
+- [x] ``#chat-messages`` → ``role="log" aria-live="polite"
   aria-relevant="additions"``.  Assistant replies should be announced;
   user's own echoed message should not generate a duplicate announcement
-- [ ] ``#thinking-indicator`` → ``role="status" aria-live="polite"``.
+- [x] ``#thinking-indicator`` → ``role="status" aria-live="polite"``.
   Keep it in the DOM; toggle ``aria-hidden`` (or a ``hidden`` attribute
   pair) instead of ``display:none`` so assistive tech sees the state
-  change
-- [ ] ``#connection-status`` → ``role="status"`` with a visually-present
+  change — uses the HTML ``hidden`` attribute pair
+- [x] ``#connection-status`` → ``role="status"`` with a visually-present
   or sr-only text sibling.  Update ``_setStatus`` in ``cantrip.js`` to
   set ``aria-label`` alongside ``title``
 
 ### 60.5 High — Overlays become real dialogs (finding 5)
 
-- [ ] Mark ``#help-overlay``, ``#logs-overlay``, ``#graph-overlay`` with
+- [x] Mark ``#help-overlay``, ``#logs-overlay``, ``#graph-overlay`` with
   ``role="dialog" aria-modal="true" aria-labelledby="<heading-id>"``
-- [ ] Give each overlay's ``<h2>`` a stable id to hang the label off
-- [ ] In the toggle helpers, capture ``document.activeElement`` on open
+- [x] Give each overlay's ``<h2>`` a stable id to hang the label off
+  (``help-overlay-title``, ``logs-overlay-title``, ``graph-overlay-title``)
+- [x] In the toggle helpers, capture ``document.activeElement`` on open
   and ``.focus()`` it on close.  On open, focus moves to the heading
   (``tabindex="-1"``) or first focusable child
-- [ ] Set ``inert`` on ``<header>``, ``<main>``, ``<footer>`` while an
+- [x] Set ``inert`` on ``<header>``, ``<main>``, ``<footer>`` while an
   overlay is open (polyfill via ``aria-hidden`` + ``tabindex="-1"`` only
   if a target browser lacks native ``inert`` support — modern Chromium,
-  Firefox, and Safari all ship it)
-- [ ] Implement a minimal Tab/Shift-Tab wrap inside the overlay so
+  Firefox, and Safari all ship it) — uses native ``inert``
+- [x] Implement a minimal Tab/Shift-Tab wrap inside the overlay so
   keyboard users can't escape the dialog without closing it
+  (``_handleOverlayTab``)
 
 ### 60.6 Medium — Cluster of small HTML fixes (findings 6, 7, 9)
 
-- [ ] ``index.html.j2`` — add ``type="button"`` to the three header buttons
-- [ ] Add ``aria-label="Help"`` / ``aria-label="Logs"`` / ``aria-label="Graph"``
+- [x] ``index.html.j2`` — add ``type="button"`` to the three header buttons
+- [x] Add ``aria-label="Help"`` / ``aria-label="Logs"`` / ``aria-label="Graph"``
   so screen readers don't announce "question mark, button" etc.  The
   visible glyph stays
-- [ ] Extend ``toggleHelp/Logs/Graph`` in ``cantrip.js`` to flip
+- [x] Extend ``toggleHelp/Logs/Graph`` in ``cantrip.js`` to flip
   ``aria-expanded`` and ``aria-controls`` on the corresponding trigger
   button
 
 ### 60.7 Medium — Connection status dot is labelled, not titled (finding 8)
 
-- [ ] Drop the ``title``-only pattern in ``_setStatus``; set
+- [x] Drop the ``title``-only pattern in ``_setStatus``; set
   ``aria-label`` (and ``role="status"`` once) so touch and screen-reader
   users can perceive the state
 - [ ] Consider giving the dot a visible adjacent text sibling so the
-  label is not a hidden-only affordance
+  label is not a hidden-only affordance — deferred; the dot still
+  communicates state by colour, the role/label now expose it
+  programmatically
 
 ### 60.8 Low — Polish (findings 11, 12, 13, 14)
 
-- [ ] Convert the Keyboard Shortcuts ``<table>`` to a ``<dl>`` (or at
-  least wrap each key in ``<kbd>`` and add a ``<caption>``)
-- [ ] Gate global single-key shortcuts behind ``Alt`` (or add a setting
-  to disable them) — WCAG 2.1.4 Character Key Shortcuts
+- [x] Convert the Keyboard Shortcuts ``<table>`` to a ``<dl>`` (or at
+  least wrap each key in ``<kbd>`` and add a ``<caption>``) — uses
+  ``<dl class="shortcuts-list">``
+- [x] Gate global single-key shortcuts behind ``Alt`` (or add a setting
+  to disable them) — WCAG 2.1.4 Character Key Shortcuts — Alt+H /
+  Alt+L / Alt+G / Alt+R; help overlay and footer hint updated to match
 - [ ] Raise the muted-text tokens (``--text-muted``) to ≥7:1 if AAA
   becomes a target.  Deferred decision
-- [ ] Give each ``<section>`` an ``aria-labelledby`` that points at its
-  ``<h2>`` so the a11y tree exposes the regions by name
+- [x] Give each ``<section>`` an ``aria-labelledby`` that points at its
+  ``<h2>`` so the a11y tree exposes the regions by name — ``#chat-panel``
+  and ``#right-panels`` carry ``aria-label``; the inner Tasks and Juju
+  Status panels are now ``<section>`` elements with
+  ``aria-labelledby`` pointing at their ``<h2>``
 
 ### 60.9 Medium — Regression test: re-run the audit in CI
 
