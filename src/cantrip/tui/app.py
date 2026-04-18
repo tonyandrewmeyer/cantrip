@@ -20,7 +20,7 @@ from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
-from cantrip.llm import LLMProvider, create_provider, resolve_light_provider
+from cantrip.llm import LLMProvider, create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.tui.screens import graph as graph_screen
 from cantrip.tui.screens import help as help_screen
@@ -42,6 +42,24 @@ _PREPARE_CHECKS = ["concierge", "prepare", "juju", "controller", "cos"]
 
 # Preflight check names shown if a re-bootstrap is needed (different preset).
 _BOOTSTRAP_CHECKS = ["bootstrap", "controller", "cos"]
+
+
+def _alltime_cost(rows: list[dict]) -> float:
+    """Sum per-model cost across all-time usage rows from the store.
+
+    Cache tokens aren't tracked separately in the store, so the all-time
+    figure uses fresh prompt/completion rates only — it slightly
+    over-counts Claude sessions that benefited from prompt caching,
+    which is acceptable for a ballpark display.
+    """
+    cost = 0.0
+    for row in rows:
+        cost += pricing.estimate_cost(
+            str(row.get("model", "")),
+            prompt_tokens=int(row.get("prompt_tokens") or 0),
+            completion_tokens=int(row.get("completion_tokens") or 0),
+        )
+    return cost
 
 
 class CantripApp(App):
@@ -274,12 +292,50 @@ class CantripApp(App):
                     total_requests += count
             bar.alltime_request_count = total_requests
 
+            # Cost estimates.  Session cost applies Claude's per-model cache
+            # rates to the session accumulators; all-time cost sums fresh
+            # prompt/completion rates per model (historical cache splits are
+            # not preserved in the store, so cache discounts are ignored
+            # for the lifetime figure).
+            bar.session_cost_usd = self._session_cost(store)
+            bar.alltime_cost_usd = _alltime_cost(by_model)
+
         # Session-level cache stats (Claude prompt caching).
         bar.cache_creation_tokens = self._agent.cache_creation_tokens
         bar.cache_read_tokens = self._agent.cache_read_tokens
 
         # GitHub remote.
         bar.github_repo = self._agent.state.github_repo or ""
+
+    def _session_cost(self, store) -> float:
+        """Estimate total USD cost for the current session.
+
+        Applies each per-model row from the store's since-filtered query
+        at that model's price, then adds Claude cache contributions from
+        the agent's session accumulators.  The cache portion is
+        attributed to the current provider's model since the agent
+        aggregates cache tokens without per-model granularity — a minor
+        inaccuracy in the rare case a user switches Claude variants
+        mid-session.
+        """
+        assert self._agent is not None
+        session_rows = store.get_usage_by_model_since(self._session_start)
+        cost = 0.0
+        for row in session_rows:
+            cost += pricing.estimate_cost(
+                str(row["model"]),
+                prompt_tokens=int(row["prompt_tokens"] or 0),
+                completion_tokens=int(row["completion_tokens"] or 0),
+            )
+        cache_read = self._agent.cache_read_tokens
+        cache_write = self._agent.cache_creation_tokens
+        if cache_read or cache_write:
+            cost += pricing.estimate_cost(
+                self._agent.provider.model_name,
+                cache_read_tokens=cache_read,
+                cache_write_tokens=cache_write,
+            )
+        return cost
 
     def action_toggle_model_info(self) -> None:
         """Toggle model info bar visibility."""

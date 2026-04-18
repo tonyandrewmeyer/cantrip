@@ -180,6 +180,7 @@ class TestPrintCost:
                 store=store,
                 cache_creation_tokens=200,
                 cache_read_tokens=800,
+                provider=SimpleNamespace(model_name="claude-opus-4"),
             )
         )
         out = capsys.readouterr().out
@@ -187,6 +188,8 @@ class TestPrintCost:
         assert "Cache hit" in out and "80%" in out
         assert "claude-opus-4" in out and "1,300 tokens" in out
         assert "gemini-3-flash" in out
+        # Cost now shown for priced models and an overall total.
+        assert "Estimated total" in out
 
 
 class TestPrintJujuStatus:

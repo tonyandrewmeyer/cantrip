@@ -2726,9 +2726,18 @@ experienced users.
 
 ### 31.4 Medium — Token Cost Dashboard
 
-- [ ] Show cumulative token usage and estimated cost in the `ModelInfoBar`
-- [ ] Break down by category (research, build, deploy, test, debug)
-- [ ] Show cache hit rate when using Claude (depends on Phase 27.1)
+- [x] Show cumulative token usage and estimated cost in the `ModelInfoBar` —
+  new `cantrip.llm.pricing` module with per-model rates (Claude 4 family,
+  Gemini 2.5/3, inference-snap free); `session_cost_usd` and
+  `alltime_cost_usd` reactives on the bar; session cost applies Claude's
+  cache-read (10%) and cache-write (125%) modifiers to the agent's session
+  accumulators; `/cost` CLI command grew a per-model cost column and an
+  overall estimated total
+- [ ] Break down by category (research, build, deploy, test, debug) —
+  deferred; requires schema migration (task_id on token_usage) and
+  plumbing task context through every `_record_usage` call site
+- [x] Show cache hit rate when using Claude — already implemented earlier
+  (Phase 27.1); confirmed still working alongside the new cost line
 
 ### 31.5 Medium — Log Screen Model Selector
 

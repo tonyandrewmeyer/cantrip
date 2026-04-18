@@ -680,6 +680,38 @@ class SessionStore:
             "request_count": row["request_count"],
         }
 
+    def get_usage_by_model_since(self, since: str) -> list[dict[str, object]]:
+        """Return per-model token usage for requests since *since* (ISO timestamp).
+
+        Same shape as :meth:`get_usage_by_model` but filtered to a time
+        window — used for session-scoped cost estimates that need to
+        apply the right price to each model individually.
+        """
+        rows = self._db.execute(
+            """\
+            SELECT provider,
+                   model,
+                   SUM(prompt_tokens)     AS prompt_tokens,
+                   SUM(completion_tokens)  AS completion_tokens,
+                   COUNT(*)                AS request_count
+            FROM token_usage
+            WHERE timestamp >= ?
+            GROUP BY provider, model
+            ORDER BY provider, model
+            """,
+            (since,),
+        ).fetchall()
+        return [
+            {
+                "provider": r["provider"],
+                "model": r["model"],
+                "prompt_tokens": r["prompt_tokens"],
+                "completion_tokens": r["completion_tokens"],
+                "request_count": r["request_count"],
+            }
+            for r in rows
+        ]
+
     # ── Migration ────────────────────────────────────────────────────────
 
     @staticmethod

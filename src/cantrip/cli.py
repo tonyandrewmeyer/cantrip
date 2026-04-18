@@ -8,7 +8,7 @@ import sys
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import TaskStatus
-from cantrip.llm import create_provider, resolve_light_provider
+from cantrip.llm import create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.ui import events as ui_events
 
@@ -339,7 +339,7 @@ async def _print_juju_status(agent: CantripAgent) -> None:
 
 
 def _print_cost(agent: CantripAgent) -> None:
-    """Print token usage summary."""
+    """Print token usage and estimated USD cost."""
     store = agent.store
     if not store:
         print("No usage data available.\n")
@@ -365,8 +365,9 @@ def _print_cost(agent: CantripAgent) -> None:
         hit_pct = agent.cache_read_tokens / cache_total * 100 if cache_total else 0
         print(f"  Cache hit:  {hit_pct:>9.0f}%")
 
-    # Per-model breakdown.
+    # Per-model breakdown with cost.
     by_model = store.get_usage_by_model()
+    total_cost = 0.0
     if by_model:
         print("\n  By model:")
         for row in by_model:
@@ -375,5 +376,25 @@ def _print_cost(agent: CantripAgent) -> None:
             prompt_t = int(row.get("prompt_tokens", 0) or 0)
             completion_t = int(row.get("completion_tokens", 0) or 0)
             tokens = prompt_t + completion_t
-            print(f"    {model}: {tokens:,} tokens, {reqs} requests")
+            cost = pricing.estimate_cost(
+                str(model),
+                prompt_tokens=prompt_t,
+                completion_tokens=completion_t,
+            )
+            total_cost += cost
+            cost_str = pricing.format_cost(cost) if cost > 0 else "free"
+            print(f"    {model}: {tokens:,} tokens, {reqs} requests, {cost_str}")
+
+    # Add Claude cache cost (read at 10% of input rate, write at 125%).
+    if agent.cache_read_tokens or agent.cache_creation_tokens:
+        cache_cost = pricing.estimate_cost(
+            agent.provider.model_name,
+            cache_read_tokens=agent.cache_read_tokens,
+            cache_write_tokens=agent.cache_creation_tokens,
+        )
+        total_cost += cache_cost
+
+    if total_cost > 0:
+        print(f"\n  Estimated total: {pricing.format_cost(total_cost)}")
+        print("  (approximate; published list prices, may drift)")
     print()

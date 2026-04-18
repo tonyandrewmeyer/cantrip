@@ -148,6 +148,27 @@ class TestTokenUsage:
         assert by_model[1]["completion_tokens"] == 75
         assert by_model[1]["request_count"] == 2
 
+    def test_usage_by_model_since(self, store: SessionStore) -> None:
+        """get_usage_by_model_since filters rows by timestamp.
+
+        The column uses SQLite's ``datetime('now')`` default (seconds
+        precision, UTC, no ``T`` separator) so the boundary string must
+        be in the same format.  A future-dated boundary must exclude
+        every row; a past-dated boundary must include them all.
+        """
+        store.record_usage("gemini", "gemini-2.0-flash", 100, 50)
+        store.record_usage("claude", "claude-sonnet-4-6", 500, 200)
+
+        # A timestamp far in the past — every row qualifies.
+        past_rows = store.get_usage_by_model_since("2000-01-01 00:00:00")
+        by_past = {(r["provider"], r["model"]): r for r in past_rows}
+        assert by_past[("gemini", "gemini-2.0-flash")]["prompt_tokens"] == 100
+        assert by_past[("claude", "claude-sonnet-4-6")]["prompt_tokens"] == 500
+
+        # A timestamp far in the future — no rows qualify.
+        future_rows = store.get_usage_by_model_since("9999-01-01 00:00:00")
+        assert future_rows == []
+
 
 class TestMigration:
     """Tests for migrating from session.json to SQLite."""

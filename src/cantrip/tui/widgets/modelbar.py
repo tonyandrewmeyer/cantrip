@@ -8,6 +8,8 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
+from cantrip.llm import pricing
+
 
 class ModelInfoBar(Widget):
     """Collapsible bar showing model, context, and token usage information.
@@ -48,6 +50,9 @@ class ModelInfoBar(Widget):
 
     cache_creation_tokens: reactive[int] = reactive(0, init=False)
     cache_read_tokens: reactive[int] = reactive(0, init=False)
+
+    session_cost_usd: reactive[float] = reactive(0.0, init=False)
+    alltime_cost_usd: reactive[float] = reactive(0.0, init=False)
 
     github_repo: reactive[str] = reactive("", init=False)
 
@@ -97,13 +102,16 @@ class ModelInfoBar(Widget):
             if cache_total > 0:
                 hit_pct = self.cache_read_tokens / cache_total * 100
                 session_label += f"  cache: {hit_pct:.0f}% hit"
+            if self.session_cost_usd > 0:
+                session_label += f"  est. {pricing.format_cost(self.session_cost_usd)}"
             ctx_parts.append(session_label)
 
         alltime_total = self.alltime_prompt_tokens + self.alltime_completion_tokens
         if alltime_total > 0 and alltime_total != session_total:
-            ctx_parts.append(
-                f"all-time: {_fmt_k(alltime_total)} ({self.alltime_request_count} req)"
-            )
+            alltime_label = f"all-time: {_fmt_k(alltime_total)} ({self.alltime_request_count} req)"
+            if self.alltime_cost_usd > 0:
+                alltime_label += f"  est. {pricing.format_cost(self.alltime_cost_usd)}"
+            ctx_parts.append(alltime_label)
 
         with contextlib.suppress(NoMatches):
             self.query_one("#model-info-line1", Static).update("  ".join(parts))
@@ -131,6 +139,8 @@ for _attr in (
     "alltime_request_count",
     "cache_creation_tokens",
     "cache_read_tokens",
+    "session_cost_usd",
+    "alltime_cost_usd",
     "github_repo",
 ):
     setattr(ModelInfoBar, f"watch_{_attr}", lambda self: self._refresh_content())

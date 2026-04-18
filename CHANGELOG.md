@@ -242,6 +242,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   active one, reverse-video for the rest); the match-finding logic is
   case-insensitive and escapes Rich markup in user/assistant text so
   highlight never collides with pre-existing bracket content.
+- **Token cost estimates (Phase 31.4 — partial)** — new `cantrip.llm.pricing`
+  module captures per-million-token rates for the Claude 4 family
+  (Opus/Sonnet/Haiku), Gemini 2.5/3 tiers, and inference-snap (free).  The
+  TUI `ModelInfoBar` now appends an "est. $X.XX" figure to the session and
+  all-time lines, pricing each model individually via a new
+  `SessionStore.get_usage_by_model_since()` helper.  Claude's cache-read
+  (10%) and cache-write (125%) modifiers are applied to the agent's
+  session-level cache counters.  The CLI `/cost` command grew a per-model
+  cost column and an overall estimated total.  Category breakdown is
+  deferred — it requires tagging each `token_usage` row with the
+  originating task, which is a larger plumbing change.
 - **Token-level streaming in the TUI (Phase 31.2)** — the TUI now renders assistant
   text as chunks arrive from the LLM instead of waiting for the full response.
   `_process_agent_message` iterates `process_message_streaming`; a new

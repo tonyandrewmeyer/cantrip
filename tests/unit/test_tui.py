@@ -534,6 +534,68 @@ class TestTuiWidgets:
                 assert assistant_msgs[0].content == "(no response)"
 
     @pytest.mark.asyncio
+    async def test_model_info_bar_shows_estimated_cost(self):
+        """ModelInfoBar displays an estimated session cost when usage exists."""
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.provider.name = "claude"
+        mock_agent.provider.model_name = "claude-sonnet-4-6"
+        mock_agent.provider.context_window_tokens = 200_000
+        mock_agent.cache_creation_tokens = 0
+        mock_agent.cache_read_tokens = 0
+
+        # Mock the store with session-scoped usage.  Sonnet 4.6 pricing:
+        # $3/M in, $15/M out → 100k in + 10k out = $0.30 + $0.15 = $0.45.
+        store = MagicMock()
+        store.get_usage_since = MagicMock(
+            return_value={
+                "prompt_tokens": 100_000,
+                "completion_tokens": 10_000,
+                "request_count": 4,
+            }
+        )
+        store.get_total_usage = MagicMock(
+            return_value={"prompt_tokens": 100_000, "completion_tokens": 10_000}
+        )
+        store.get_usage_by_model = MagicMock(
+            return_value=[
+                {
+                    "provider": "claude",
+                    "model": "claude-sonnet-4-6",
+                    "prompt_tokens": 100_000,
+                    "completion_tokens": 10_000,
+                    "request_count": 4,
+                }
+            ]
+        )
+        store.get_usage_by_model_since = MagicMock(
+            return_value=[
+                {
+                    "provider": "claude",
+                    "model": "claude-sonnet-4-6",
+                    "prompt_tokens": 100_000,
+                    "completion_tokens": 10_000,
+                    "request_count": 4,
+                }
+            ]
+        )
+        mock_agent.store = store
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.pause()
+                # Force a refresh so the cost values are populated.
+                pilot.app._update_model_info()
+                await pilot.pause()
+
+                bar = pilot.app.query_one("#model-info")
+                # $0.30 (input) + $0.15 (output) = $0.45 exactly.
+                assert bar.session_cost_usd == pytest.approx(0.45)
+                assert bar.alltime_cost_usd == pytest.approx(0.45)
+
+                line2 = pilot.app.query_one("#model-info-line2")
+                rendered = str(line2.render())
+                assert "$0.45" in rendered
+
+    @pytest.mark.asyncio
     async def test_streaming_flips_status_bar_after_first_chunk(self):
         """The status bar shows 'Streaming...' once the first chunk arrives."""
         import asyncio
