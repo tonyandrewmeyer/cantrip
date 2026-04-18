@@ -61,6 +61,9 @@ Thumbs.db
 # Cantrip session data
 .cantrip
 
+# Claude Code local worktrees (experimental branches)
+.claude/worktrees/
+
 # Charms built during development
 *.charm
 *.rock
