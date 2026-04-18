@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to convene the inner parliament — Cantrip</title>
+<meta name="description" content="Run emotion subagents over your charm to surface delight, friction, risk, taste, and empathy suggestions.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-feelings.html" class="current">Convene the inner parliament</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="explanation-emotions.html">Emotion subagents</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Convene the inner parliament
+    </div>
+
+    <h1>Convene the inner parliament</h1>
+    <p class="subtitle">
+      Run five emotion subagents over your charm to surface suggestions
+      through distinct review lenses: delight, risk, friction, taste, and
+      empathy.
+    </p>
+
+    <div class="callout-warn callout">
+      <p>
+        <strong>Experimental.</strong> The inner parliament is a
+        proof-of-concept feature. The personalities may produce generic
+        or theatrical output on some charms; treat the suggestions as
+        prompts for thought, not a finished checklist. See
+        <a href="explanation-emotions.html">Emotion subagents</a> for
+        the design rationale and known limits.
+      </p>
+    </div>
+
+    <h2 id="what-it-does">What it does</h2>
+    <p>
+      The <code>/feelings</code> command assembles a small snapshot of
+      your charm (identity, recent decisions, key files) and sends it in
+      parallel to one or more <strong>emotion subagents</strong>. Each
+      emotion reviews through its own lens and returns 1&ndash;3
+      structured suggestions. The results are merged into a single
+      markdown report posted back to the chat.
+    </p>
+    <p>
+      The emotions run on the light model, do not use tools, and do not
+      modify your charm or the work queue. The output is purely
+      advisory &mdash; you decide what (if anything) to act on.
+    </p>
+
+    <h2 id="run-it">Run it</h2>
+    <p>
+      Type the command in the chat input:
+    </p>
+    <pre><code><span class="prompt">&gt;</span> /feelings</code></pre>
+    <p>
+      With no arguments, the default pair runs: <strong>Joy</strong> and
+      <strong>Fear</strong>. These are the two most differentiated
+      lenses (delight vs risk), so they give the most signal per call.
+    </p>
+    <p>
+      A short system message announces the run; the report appears when
+      all enabled emotions have responded (usually a few seconds).
+    </p>
+
+    <h2 id="choose-emotions">Choose which emotions to run</h2>
+    <p>
+      Pass one or more emotion names as arguments to override the
+      default pair:
+    </p>
+    <pre><code><span class="prompt">&gt;</span> /feelings anger disgust
+<span class="prompt">&gt;</span> /feelings joy fear anger disgust sadness</code></pre>
+    <p>
+      The full cast is:
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Emotion</th>
+          <th>Lens</th>
+          <th>Useful when</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>joy</strong></td>
+          <td>Delight, first-run experience, nice touches</td>
+          <td>You have a working charm and want polish ideas</td>
+        </tr>
+        <tr>
+          <td><strong>fear</strong></td>
+          <td>Security holes, failure modes, hardening</td>
+          <td>Before shipping, or before a compliance review</td>
+        </tr>
+        <tr>
+          <td><strong>anger</strong></td>
+          <td>User-visible friction and papercuts</td>
+          <td>You suspect the operator experience is rough</td>
+        </tr>
+        <tr>
+          <td><strong>disgust</strong></td>
+          <td>Code taste, inconsistency, tech debt</td>
+          <td>Before a PR, or during a refactor pass</td>
+        </tr>
+        <tr>
+          <td><strong>sadness</strong></td>
+          <td>Graceful degradation, lonely error paths</td>
+          <td>When the unhappy paths feel under-tested</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      Unknown names are rejected with a message listing the valid
+      emotions &mdash; nothing runs until the input is valid.
+    </p>
+
+    <h2 id="read-the-report">Read the report</h2>
+    <p>
+      The report is grouped by emotion, in the order you requested them.
+      Each suggestion has four fields:
+    </p>
+    <ul>
+      <li>
+        <strong>Title</strong> &mdash; a short imperative headline
+        (&ldquo;Add a backup action&rdquo;).
+      </li>
+      <li>
+        <strong>Severity</strong> &mdash; <code>high</code>,
+        <code>medium</code>, or <code>low</code>, as judged by the
+        emotion. Cross-emotion severity is not directly comparable
+        (Fear&apos;s &ldquo;high&rdquo; means &ldquo;this could break
+        in production&rdquo;; Joy&apos;s &ldquo;high&rdquo; means
+        &ldquo;a large missed opportunity for delight&rdquo;).
+      </li>
+      <li>
+        <strong>Rationale</strong> &mdash; one or two sentences
+        explaining why the emotion feels this way.
+      </li>
+      <li>
+        <strong>Suggested change</strong> &mdash; a concrete,
+        actionable edit.
+      </li>
+    </ul>
+    <p>
+      If an emotion&apos;s response could not be parsed or the provider
+      errored, its name is noted at the end of the report. The other
+      emotions are unaffected &mdash; partial parliaments are fine.
+    </p>
+
+    <h2 id="apply-suggestions">Apply the suggestions</h2>
+    <p>
+      The parliament does not write to the work queue or modify files.
+      To act on a suggestion, paste it back into the chat as a normal
+      request:
+    </p>
+    <pre><code><span class="prompt">&gt;</span> add a backup action that runs `redis-cli BGSAVE`
+<span class="prompt">&gt;</span> move the admin password from config to a Juju secret</code></pre>
+    <p>
+      The agent then picks it up like any other user request &mdash;
+      planning, confirmation, and execution flow normally.
+    </p>
+
+    <h2 id="when-to-run">When to run it</h2>
+    <ul>
+      <li>
+        <strong>Before asking for a PR</strong> &mdash; run
+        <code>/feelings disgust fear</code> for a taste-and-risk pass.
+      </li>
+      <li>
+        <strong>After a design proposal is approved</strong> &mdash;
+        run <code>/feelings joy fear</code> to catch delight
+        opportunities and risks before the build starts.
+      </li>
+      <li>
+        <strong>Mid-build, when you feel stuck</strong> &mdash; the
+        personalities can surface concerns the main agent skipped.
+      </li>
+      <li>
+        <strong>Before shipping</strong> &mdash; run the full cast
+        (<code>/feelings joy fear anger disgust sadness</code>) for
+        one last pass.
+      </li>
+    </ul>
+
+    <h2 id="cost">Cost</h2>
+    <p>
+      Each enabled emotion is one LLM call on the light provider, with
+      no tool rounds. A default <code>/feelings</code> invocation costs
+      two light-model requests. Running the full cast costs five. See
+      <a href="howto-light-models.html">Configure light models</a> for
+      how to route these to a cheap or local model.
+    </p>
+
+    <h2 id="turn-off">Turn it off</h2>
+    <p>
+      The command is triggered only when you type it &mdash; there is
+      no automatic invocation. Simply do not run <code>/feelings</code>
+      and the parliament never meets.
+    </p>
+    <p>
+      If you want to keep the feature disabled project-wide, the
+      command is a single guard in the TUI (<code>src/cantrip/tui/app.py</code>);
+      removing that block disables it entirely.
+    </p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
