@@ -3902,17 +3902,23 @@ of race condition from generated-charm builds.
 
 ### 44.1 High — Worktree allocator and lifecycle
 
-- [ ] New `WorktreeAllocator` in `src/cantrip/agent/worktree.py` that creates a
-  `git worktree add` under `.cantrip/worktrees/<task-id>/`, tracks the mapping
-  `task_id → worktree_path`, and cleans up on subagent exit
-- [ ] Allocator is injected into the executor via the Phase 21.2 protocol-based
-  service pattern so it can be swapped in tests
+- [x] New `WorktreeAllocator` in `src/cantrip/agent/worktree.py` that creates a
+  `git worktree add` under `.cantrip-worktrees/<task-id>/` (the `.cantrip`
+  database is a file, not a directory, so worktrees sit alongside it), tracks
+  the mapping `task_id → WorktreeHandle`, and cleans up on release
+- [x] Allocator `Protocol` in `services.py` so it can be swapped in tests —
+  matches the Phase 21.2 service-injection pattern
 - [ ] `BackgroundExecutor` asks the allocator for a worktree at subagent spawn
   time; the subagent's `cwd` is the worktree path, not the main working tree
-- [ ] Worktrees are created from the current HEAD of the charm branch; a
-  unique ephemeral branch (`cantrip/wt/<task-id>`) prevents checkout conflicts
-- [ ] `make check` covers allocator lifecycle: create, collision on duplicate
-  task id, cleanup on success, cleanup on failure, orphan reaper on startup
+  *(deferred to 44.2, which also lands the merge-back strategy; shipping the
+  cwd switch without merge would make subagent writes invisible)*
+- [x] Worktrees are created from the current HEAD of the charm branch on a
+  unique ephemeral branch (`cantrip/wt/<task-id>`) to prevent checkout conflicts
+- [x] Non-git charm paths fall back to `None` — the allocator is always safe
+  to call; callers run in the main tree when isolation is unavailable
+- [x] `make check` covers allocator lifecycle: create, collision on duplicate
+  task id, cleanup on success, cleanup on failure, orphan reaper on startup,
+  non-git fallback, and release-after-manual-rm recovery (16 unit tests)
 
 ### 44.2 High — Merge strategy on subagent exit
 

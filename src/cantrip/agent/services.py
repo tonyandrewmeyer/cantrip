@@ -12,6 +12,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from cantrip.agent.queue import AgentTask
 from cantrip.agent.subagent import SubagentContext, SubagentResult
+from cantrip.agent.worktree import WorktreeHandle
 
 # ---------------------------------------------------------------------------
 # SubagentRunner — runs a subagent for a given task
@@ -112,4 +113,42 @@ class FollowupPlanner(Protocol):
 
     def followup_tasks(self, task: AgentTask) -> list[AgentTask]:
         """Return any follow-up tasks that should be created."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# WorktreeAllocator — per-subagent git worktree isolation
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class WorktreeAllocator(Protocol):
+    """Creates, tracks, and tears down per-subagent git worktrees."""
+
+    async def allocate(self, task_id: str, base_path: pathlib.Path | str) -> WorktreeHandle | None:
+        """Create a worktree for *task_id* off the current HEAD of *base_path*.
+
+        Returns ``None`` when the base path is not a git repository or the
+        worktree could not be created.
+        """
+        ...
+
+    async def release(self, task_id: str, *, keep_branch: bool = False) -> None:
+        """Remove the worktree for *task_id*.
+
+        With ``keep_branch=True`` the ephemeral branch is preserved so the
+        caller can merge it before deletion.
+        """
+        ...
+
+    def get(self, task_id: str) -> WorktreeHandle | None:
+        """Return the handle for *task_id* if one is allocated."""
+        ...
+
+    def all_worktrees(self) -> dict[str, WorktreeHandle]:
+        """Return a snapshot of every active ``task_id → handle`` mapping."""
+        ...
+
+    async def reap_orphans(self, active_task_ids: set[str]) -> int:
+        """Remove any worktrees not represented in *active_task_ids*."""
         ...

@@ -1,0 +1,259 @@
+"""Tests for the per-subagent git worktree allocator."""
+
+from __future__ import annotations
+
+import pathlib
+import shutil
+import subprocess
+
+import pytest
+
+from cantrip.agent.worktree import (
+    _BRANCH_PREFIX,
+    _WORKTREES_DIRNAME,
+    WorktreeHandle,
+    _DefaultWorktreeAllocator,
+)
+
+
+def _git_available() -> bool:
+    return shutil.which("git") is not None
+
+
+pytestmark = pytest.mark.skipif(
+    not _git_available(),
+    reason="git CLI not available",
+)
+
+
+def _init_repo(path: pathlib.Path) -> None:
+    """Initialise *path* as a git repo with one commit so HEAD exists."""
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
+    (path / "README.md").write_text("hello\n")
+    subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "initial"],
+        cwd=path,
+        check=True,
+        env={**_base_env(), "GIT_AUTHOR_NAME": "t", "GIT_COMMITTER_NAME": "t"},
+    )
+
+
+def _base_env() -> dict[str, str]:
+    import os
+
+    env = dict(os.environ)
+    env.setdefault("HOME", str(pathlib.Path.home()))
+    return env
+
+
+def _worktree_list(repo: pathlib.Path) -> list[str]:
+    """Return the paths git knows about via ``git worktree list``."""
+    result = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [
+        line.split(" ", 1)[1]
+        for line in result.stdout.splitlines()
+        if line.startswith("worktree ")
+    ]
+
+
+def _branch_exists(repo: pathlib.Path, branch: str) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+class TestAllocate:
+    """Allocation lifecycle."""
+
+    @pytest.mark.asyncio
+    async def test_allocate_returns_handle_for_git_repo(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+
+        handle = await alloc.allocate("task-1", tmp_path)
+
+        assert isinstance(handle, WorktreeHandle)
+        assert handle.task_id == "task-1"
+        assert handle.path == tmp_path / _WORKTREES_DIRNAME / "task-1"
+        assert handle.branch == f"{_BRANCH_PREFIX}task-1"
+        assert handle.path.is_dir()
+        assert (handle.path / "README.md").read_text() == "hello\n"
+        assert _branch_exists(tmp_path, handle.branch)
+
+    @pytest.mark.asyncio
+    async def test_allocate_returns_none_for_non_git_path(self, tmp_path: pathlib.Path) -> None:
+        alloc = _DefaultWorktreeAllocator()
+        handle = await alloc.allocate("task-1", tmp_path)
+        assert handle is None
+
+    @pytest.mark.asyncio
+    async def test_allocate_returns_none_when_no_head_commit(self, tmp_path: pathlib.Path) -> None:
+        """A freshly-``git init``-ed repo has no HEAD until the first commit."""
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+        alloc = _DefaultWorktreeAllocator()
+        assert await alloc.allocate("task-1", tmp_path) is None
+
+    @pytest.mark.asyncio
+    async def test_duplicate_task_id_rejected(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        await alloc.allocate("task-1", tmp_path)
+
+        with pytest.raises(ValueError, match="already allocated"):
+            await alloc.allocate("task-1", tmp_path)
+
+    @pytest.mark.asyncio
+    async def test_multiple_tasks_get_isolated_trees(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+
+        a = await alloc.allocate("task-a", tmp_path)
+        b = await alloc.allocate("task-b", tmp_path)
+
+        assert a is not None
+        assert b is not None
+        assert a.path != b.path
+        assert _branch_exists(tmp_path, a.branch)
+        assert _branch_exists(tmp_path, b.branch)
+
+        # Writes in one tree do not touch the other.
+        (a.path / "only-in-a.txt").write_text("a")
+        assert not (b.path / "only-in-a.txt").exists()
+
+
+class TestRelease:
+    """Release tears down the worktree and (optionally) the branch."""
+
+    @pytest.mark.asyncio
+    async def test_release_removes_worktree_and_branch(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        handle = await alloc.allocate("task-1", tmp_path)
+        assert handle is not None
+
+        await alloc.release("task-1")
+
+        assert not handle.path.exists()
+        assert handle.path.as_posix() not in _worktree_list(tmp_path)
+        assert not _branch_exists(tmp_path, handle.branch)
+        assert alloc.get("task-1") is None
+
+    @pytest.mark.asyncio
+    async def test_release_keep_branch_preserves_branch(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        handle = await alloc.allocate("task-1", tmp_path)
+        assert handle is not None
+
+        await alloc.release("task-1", keep_branch=True)
+
+        assert not handle.path.exists()
+        assert _branch_exists(tmp_path, handle.branch)
+
+    @pytest.mark.asyncio
+    async def test_release_unknown_task_is_noop(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        # Must not raise.
+        await alloc.release("never-allocated")
+
+    @pytest.mark.asyncio
+    async def test_release_after_manual_rm_falls_back_to_prune(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """``git worktree remove`` fails when the path is already gone; the
+        allocator must still clean up its bookkeeping."""
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        handle = await alloc.allocate("task-1", tmp_path)
+        assert handle is not None
+
+        shutil.rmtree(handle.path)
+        await alloc.release("task-1")
+
+        assert alloc.get("task-1") is None
+        assert handle.path.as_posix() not in _worktree_list(tmp_path)
+
+
+class TestAccessors:
+    """``get`` and ``all_worktrees`` surface allocator state for callers."""
+
+    @pytest.mark.asyncio
+    async def test_get_returns_allocated_handle(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        handle = await alloc.allocate("task-1", tmp_path)
+        assert alloc.get("task-1") is handle
+
+    @pytest.mark.asyncio
+    async def test_get_returns_none_for_unknown_task(self, tmp_path: pathlib.Path) -> None:
+        alloc = _DefaultWorktreeAllocator()
+        assert alloc.get("never-allocated") is None
+
+    @pytest.mark.asyncio
+    async def test_all_worktrees_is_a_snapshot(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        await alloc.allocate("a", tmp_path)
+        snapshot = alloc.all_worktrees()
+        await alloc.allocate("b", tmp_path)
+
+        assert set(snapshot) == {"a"}
+        assert set(alloc.all_worktrees()) == {"a", "b"}
+
+
+class TestReapOrphans:
+    """``reap_orphans`` clears worktrees whose tasks no longer exist."""
+
+    @pytest.mark.asyncio
+    async def test_reap_removes_only_inactive_tasks(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        await alloc.allocate("keep", tmp_path)
+        await alloc.allocate("drop", tmp_path)
+
+        reaped = await alloc.reap_orphans({"keep"})
+
+        assert reaped == 1
+        assert alloc.get("keep") is not None
+        assert alloc.get("drop") is None
+
+    @pytest.mark.asyncio
+    async def test_reap_with_all_active_is_noop(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        await alloc.allocate("a", tmp_path)
+        await alloc.allocate("b", tmp_path)
+
+        reaped = await alloc.reap_orphans({"a", "b"})
+
+        assert reaped == 0
+        assert set(alloc.all_worktrees()) == {"a", "b"}
+
+    @pytest.mark.asyncio
+    async def test_reap_on_empty_allocator_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        alloc = _DefaultWorktreeAllocator()
+        assert await alloc.reap_orphans(set()) == 0
+
+
+class TestProtocolCompliance:
+    """``_DefaultWorktreeAllocator`` satisfies the ``WorktreeAllocator`` Protocol."""
+
+    def test_default_impl_satisfies_protocol(self) -> None:
+        from cantrip.agent.services import WorktreeAllocator
+
+        assert isinstance(_DefaultWorktreeAllocator(), WorktreeAllocator)

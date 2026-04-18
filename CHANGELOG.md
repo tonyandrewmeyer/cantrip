@@ -18,6 +18,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **Worktree allocator primitive (Phase 44.1)** — new
+  ``src/cantrip/agent/worktree.py`` introduces ``WorktreeAllocator`` (a
+  ``Protocol`` in ``services.py``) and ``_DefaultWorktreeAllocator``, which
+  wraps ``git worktree add`` under ``.cantrip-worktrees/<task-id>/`` on an
+  ephemeral ``cantrip/wt/<task-id>`` branch taken from the current HEAD.
+  Non-git charm paths and repos without a HEAD commit fall back to ``None``
+  so the allocator is always safe to call.  ``allocate`` / ``release`` /
+  ``get`` / ``all_worktrees`` / ``reap_orphans`` cover the full lifecycle;
+  ``release`` prunes leftover git metadata when the worktree directory was
+  removed out-of-band.  16 new unit tests drive the lifecycle against a real
+  git repo (``pytest`` ``tmp_path``) and skip cleanly if ``git`` is absent.
+  No executor integration yet — the cwd switch and merge-back strategy land
+  together in Phase 44.2 to avoid shipping a worktree whose writes are never
+  merged back.
 - **Web-server WebSocket lifecycle coverage (Phase 57.4)** —
   ``src/cantrip/web/server.py`` moved from 24% to 99% line coverage
   via 44 new tests in ``tests/unit/test_web_server.py``.  Covers the
