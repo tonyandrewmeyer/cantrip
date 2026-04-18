@@ -302,3 +302,274 @@ pub fn write_optional_yaml(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn yaml_map(s: &str) -> BTreeMap<String, Value> {
+        let v: Value = serde_yaml::from_str(s).unwrap();
+        match v {
+            Value::Mapping(m) => m
+                .into_iter()
+                .filter_map(|(k, v)| match k {
+                    Value::String(s) => Some((s, v)),
+                    _ => None,
+                })
+                .collect(),
+            _ => BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn local_arch_returns_a_recognised_label() {
+        let arch = local_arch().expect("local arch must resolve on CI host");
+        assert!(
+            ["amd64", "arm64", "armhf", "ppc64el", "s390x", "riscv64"].contains(&arch.as_str()),
+            "got: {arch}",
+        );
+    }
+
+    #[test]
+    fn parse_charmcraft_yaml_errors_when_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = parse_charmcraft_yaml(tmp.path()).unwrap_err();
+        assert!(err.contains("not found"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_charmcraft_yaml_infers_name_from_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let charm = tmp.path().join("my-charm");
+        std::fs::create_dir(&charm).unwrap();
+        std::fs::write(charm.join("charmcraft.yaml"), "type: charm\n").unwrap();
+        let project = parse_charmcraft_yaml(&charm).unwrap();
+        assert_eq!(
+            project.get("name").and_then(|v| v.as_str()),
+            Some("my-charm"),
+        );
+    }
+
+    #[test]
+    fn parse_charmcraft_yaml_rejects_non_mapping() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("charmcraft.yaml"), "- not\n- a\n- mapping\n").unwrap();
+        let err = parse_charmcraft_yaml(tmp.path()).unwrap_err();
+        assert!(err.contains("mapping"), "got: {err}");
+    }
+
+    #[test]
+    fn resolve_base_parses_modern_base_field() {
+        let project = yaml_map("base: ubuntu@24.04\n");
+        assert_eq!(
+            resolve_base(&project),
+            ("ubuntu".to_string(), "24.04".to_string()),
+        );
+    }
+
+    #[test]
+    fn resolve_base_parses_platforms_label() {
+        let project = yaml_map("platforms:\n  ubuntu@22.04:amd64:\n");
+        assert_eq!(
+            resolve_base(&project),
+            ("ubuntu".to_string(), "22.04".to_string()),
+        );
+    }
+
+    #[test]
+    fn resolve_base_parses_legacy_bases_format() {
+        let project = yaml_map(
+            "bases:\n  - build-on:\n      - name: ubuntu\n        channel: \"22.04\"\n    run-on:\n      - name: ubuntu\n        channel: \"22.04\"\n",
+        );
+        assert_eq!(
+            resolve_base(&project),
+            ("ubuntu".to_string(), "22.04".to_string()),
+        );
+    }
+
+    #[test]
+    fn resolve_base_defaults_to_ubuntu_2404() {
+        let project = BTreeMap::new();
+        assert_eq!(
+            resolve_base(&project),
+            ("ubuntu".to_string(), "24.04".to_string()),
+        );
+    }
+
+    #[test]
+    fn resolve_entrypoint_reads_from_parts() {
+        let project = yaml_map(
+            "parts:\n  charm:\n    plugin: uv\n    charm-entrypoint: src/my_charm.py\n",
+        );
+        assert_eq!(resolve_entrypoint(&project), "src/my_charm.py");
+    }
+
+    #[test]
+    fn resolve_entrypoint_defaults_to_src_charm_py() {
+        let project = yaml_map("parts:\n  charm:\n    plugin: uv\n");
+        assert_eq!(resolve_entrypoint(&project), "src/charm.py");
+    }
+
+    #[test]
+    fn generate_metadata_copies_direct_fields() {
+        let project = yaml_map(
+            "name: my-charm\nsummary: hi\ndescription: body\nrequires:\n  db:\n    interface: pgsql\n",
+        );
+        let metadata = generate_metadata(&project);
+        assert_eq!(metadata.get("name").and_then(|v| v.as_str()), Some("my-charm"));
+        assert_eq!(metadata.get("summary").and_then(|v| v.as_str()), Some("hi"));
+        assert!(metadata.contains_key("requires"));
+    }
+
+    #[test]
+    fn generate_metadata_renames_title_to_display_name() {
+        let project = yaml_map("name: x\ntitle: Pretty Name\n");
+        let metadata = generate_metadata(&project);
+        assert_eq!(
+            metadata.get("display-name").and_then(|v| v.as_str()),
+            Some("Pretty Name"),
+        );
+        assert!(!metadata.contains_key("title"));
+    }
+
+    #[test]
+    fn generate_metadata_flattens_links_section() {
+        let project = yaml_map(
+            "name: x\nlinks:\n  documentation: https://docs\n  issues: https://issues\n  contact: person@example.com\n  website: https://site\n  source: https://src\n",
+        );
+        let metadata = generate_metadata(&project);
+        assert_eq!(
+            metadata.get("docs").and_then(|v| v.as_str()),
+            Some("https://docs"),
+        );
+        assert_eq!(
+            metadata.get("issues").and_then(|v| v.as_str()),
+            Some("https://issues"),
+        );
+        // Contact becomes a sequence so it matches charmcraft's maintainers shape.
+        match metadata.get("maintainers").unwrap() {
+            Value::Sequence(seq) => {
+                assert_eq!(seq[0].as_str(), Some("person@example.com"));
+            }
+            other => panic!("unexpected shape: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn generate_manifest_records_bases_and_language() {
+        let project = yaml_map(
+            "name: x\nbase: ubuntu@24.04\nparts:\n  charm:\n    plugin: uv\n",
+        );
+        let manifest = generate_manifest(&project, "amd64");
+        let bases = manifest.get("bases").unwrap();
+        match bases {
+            Value::Sequence(seq) => {
+                let first = seq[0].as_mapping().unwrap();
+                assert_eq!(
+                    first.get(Value::String("name".into())).and_then(|v| v.as_str()),
+                    Some("ubuntu"),
+                );
+                assert_eq!(
+                    first.get(Value::String("channel".into())).and_then(|v| v.as_str()),
+                    Some("24.04"),
+                );
+            }
+            other => panic!("bases shape: {other:?}"),
+        }
+        let analysis = manifest.get("analysis").unwrap().as_mapping().unwrap();
+        let attrs = analysis
+            .get(Value::String("attributes".into()))
+            .unwrap()
+            .as_sequence()
+            .unwrap();
+        let lang_attr = attrs[0].as_mapping().unwrap();
+        assert_eq!(
+            lang_attr.get(Value::String("result".into())).and_then(|v| v.as_str()),
+            Some("python"),
+        );
+    }
+
+    #[test]
+    fn generate_manifest_reports_unknown_language_without_uv() {
+        let project = yaml_map("name: x\nparts:\n  charm:\n    plugin: nil\n");
+        let manifest = generate_manifest(&project, "amd64");
+        let analysis = manifest.get("analysis").unwrap().as_mapping().unwrap();
+        let attrs = analysis
+            .get(Value::String("attributes".into()))
+            .unwrap()
+            .as_sequence()
+            .unwrap();
+        assert_eq!(
+            attrs[0]
+                .as_mapping()
+                .unwrap()
+                .get(Value::String("result".into()))
+                .and_then(|v| v.as_str()),
+            Some("unknown"),
+        );
+    }
+
+    #[test]
+    fn charm_filename_uses_name_and_arch_when_no_platform_match() {
+        let project = yaml_map("name: widget\nbase: ubuntu@24.04\n");
+        assert_eq!(
+            charm_filename(&project, "amd64"),
+            "widget_ubuntu@24.04-amd64.charm",
+        );
+    }
+
+    #[test]
+    fn charm_filename_prefers_exact_platform_key_match() {
+        let project = yaml_map("name: widget\nplatforms:\n  amd64:\n");
+        assert_eq!(charm_filename(&project, "amd64"), "widget_amd64.charm");
+    }
+
+    #[test]
+    fn charm_filename_replaces_colon_in_platform_label() {
+        let project = yaml_map("name: widget\nplatforms:\n  ubuntu@24.04:amd64:\n");
+        assert_eq!(
+            charm_filename(&project, "amd64"),
+            "widget_ubuntu@24.04-amd64.charm",
+        );
+    }
+
+    #[test]
+    fn write_optional_yaml_prefers_source_file_over_inline() {
+        let tmp = tempfile::tempdir().unwrap();
+        let charm_dir = tmp.path().join("charm");
+        let prime_dir = tmp.path().join("prime");
+        std::fs::create_dir_all(&charm_dir).unwrap();
+        std::fs::create_dir_all(&prime_dir).unwrap();
+        std::fs::write(charm_dir.join("actions.yaml"), "from-file: {}\n").unwrap();
+        let project = yaml_map("actions:\n  inline: {}\n");
+        write_optional_yaml(&project, "actions", "actions.yaml", &charm_dir, &prime_dir).unwrap();
+        let contents = std::fs::read_to_string(prime_dir.join("actions.yaml")).unwrap();
+        assert!(contents.contains("from-file"));
+        assert!(!contents.contains("inline"));
+    }
+
+    #[test]
+    fn write_optional_yaml_generates_from_project_when_no_source_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let charm_dir = tmp.path().join("charm");
+        let prime_dir = tmp.path().join("prime");
+        std::fs::create_dir_all(&charm_dir).unwrap();
+        std::fs::create_dir_all(&prime_dir).unwrap();
+        let project = yaml_map("actions:\n  inline: {}\n");
+        write_optional_yaml(&project, "actions", "actions.yaml", &charm_dir, &prime_dir).unwrap();
+        let contents = std::fs::read_to_string(prime_dir.join("actions.yaml")).unwrap();
+        assert!(contents.contains("inline"));
+    }
+
+    #[test]
+    fn write_optional_yaml_is_noop_when_project_lacks_field() {
+        let tmp = tempfile::tempdir().unwrap();
+        let charm_dir = tmp.path().join("charm");
+        let prime_dir = tmp.path().join("prime");
+        std::fs::create_dir_all(&charm_dir).unwrap();
+        std::fs::create_dir_all(&prime_dir).unwrap();
+        let project = BTreeMap::new();
+        write_optional_yaml(&project, "actions", "actions.yaml", &charm_dir, &prime_dir).unwrap();
+        assert!(!prime_dir.join("actions.yaml").exists());
+    }
+}

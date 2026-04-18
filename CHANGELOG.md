@@ -4,6 +4,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Rust crate unit tests (Phase 58)** — the ``charmlint-rs`` and
+  ``quickpack-rs`` crates now have ``#[cfg(test)] mod tests`` blocks on
+  every module (73 unit tests for charmlint-rs, 60 for quickpack-rs)
+  plus integration tests driving each compiled binary against fixture
+  charm directories (8 tests for charmlint, 5 for quickpack).  ``make
+  rust-test`` runs both crates' ``cargo test`` locally; CI runs the
+  same via a matrixed ``rust-test`` job.  Surfaced and fixed a latent
+  bug in ``quickpack-rs/src/jujuignore.rs`` where ``Matcher`` used
+  Rust regex's unanchored ``is_match`` instead of Python's anchored
+  ``re.match``, causing leading-slash patterns like ``/build/`` to
+  incorrectly ignore ``src/build`` as well.
+
 ### Changed
 - **Planner prompts extracted to Jinja2 templates (Phase 53.1)** — the
   three triple-quoted planner prompt constants that lived in

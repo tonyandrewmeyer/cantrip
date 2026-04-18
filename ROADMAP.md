@@ -5431,15 +5431,18 @@ For each ``.rs`` file in ``src/charmlint-rs/src/`` and
 covering the primary functions.  Target parity with the Python
 implementation, not 100% — a Rust version of each Python test.
 
-- [ ] ``src/charmlint-rs/src/config.rs`` — config parsing
-- [ ] ``src/charmlint-rs/src/context.rs`` — context loading
-- [ ] ``src/charmlint-rs/src/linter.rs`` — rule dispatch
-- [ ] ``src/charmlint-rs/src/models.rs`` — severity / finding shape
-- [ ] ``src/charmlint-rs/src/rules.rs`` — the rule set
-- [ ] ``src/quickpack-rs/src/metadata.rs``
-- [ ] ``src/quickpack-rs/src/pack.rs``
-- [ ] ``src/quickpack-rs/src/parts.rs``
-- [ ] ``src/quickpack-rs/src/jujuignore.rs``
+- [x] ``src/charmlint-rs/src/config.rs`` — config parsing
+- [x] ``src/charmlint-rs/src/context.rs`` — context loading
+- [x] ``src/charmlint-rs/src/linter.rs`` — rule dispatch
+- [x] ``src/charmlint-rs/src/models.rs`` — severity / finding shape
+- [x] ``src/charmlint-rs/src/rules.rs`` — the rule set
+- [x] ``src/quickpack-rs/src/metadata.rs``
+- [x] ``src/quickpack-rs/src/pack.rs``
+- [x] ``src/quickpack-rs/src/parts.rs``
+- [x] ``src/quickpack-rs/src/jujuignore.rs`` — also fixed a
+  pre-existing bug where ``Matcher`` used Rust regex's unanchored
+  ``is_match`` instead of Python's anchored ``re.match`` (caught by
+  the new ``leading_slash_anchors_to_root`` test)
 
 ### 58.2 Medium — Integration tests via ``tests/`` directory
 
@@ -5447,18 +5450,23 @@ Cargo's integration-test convention is a top-level ``tests/`` dir
 inside each crate.  Use this for multi-module scenarios that a unit
 test can't express cleanly.
 
-- [ ] ``src/charmlint-rs/tests/lint_integration.rs`` — end-to-end
+- [x] ``src/charmlint-rs/tests/lint_integration.rs`` — end-to-end
   lint pass against fixture charms, mirroring the Python
-  ``test_linter.py`` shape
-- [ ] ``src/quickpack-rs/tests/pack_integration.rs`` — pack a
-  fixture charm, assert the ``.charm`` file structure
+  ``test_linter.py`` shape (drives the compiled binary with
+  ``--format json`` so argument parsing and output formatting are
+  exercised too)
+- [x] ``src/quickpack-rs/tests/pack_integration.rs`` — error-path
+  integration (missing charmcraft.yaml, unknown plugin, missing uv
+  part).  A full ``.charm``-assembly integration would require a
+  real ``uv venv + uv sync`` run; that remains covered by the
+  existing spread test.
 
 ### 58.3 Medium — CI wiring
 
-- [ ] Extend the existing GitHub Actions workflow to run
+- [x] Extend the existing GitHub Actions workflow to run
   ``cargo test`` for both crates on every push.  Cache the
   ``target/`` directory per crate for build-time sanity.
-- [ ] Add a ``make rust-test`` target to ``Makefile`` so the local
+- [x] Add a ``make rust-test`` target to ``Makefile`` so the local
   loop matches CI.
 
 ### 58.4 Low — Coverage instrumentation

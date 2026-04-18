@@ -144,3 +144,131 @@ impl LintReport {
         format!("Found {} issue{s} ({})", self.total, parts.join(", "))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn diag(rule: &str, sev: Severity, msg: &str) -> Diagnostic {
+        Diagnostic {
+            rule_id: rule.to_string(),
+            severity: sev,
+            message: msg.to_string(),
+            path: None,
+            line: None,
+            fix_hint: None,
+        }
+    }
+
+    #[test]
+    fn severity_from_str_loose_parses_known_values() {
+        assert_eq!(Severity::from_str_loose("error"), Some(Severity::Error));
+        assert_eq!(Severity::from_str_loose("Warning"), Some(Severity::Warning));
+        assert_eq!(Severity::from_str_loose("INFO"), Some(Severity::Info));
+    }
+
+    #[test]
+    fn severity_from_str_loose_rejects_unknown() {
+        assert!(Severity::from_str_loose("critical").is_none());
+        assert!(Severity::from_str_loose("").is_none());
+    }
+
+    #[test]
+    fn severity_order_ranks_error_highest() {
+        assert!(Severity::Error.order() < Severity::Warning.order());
+        assert!(Severity::Warning.order() < Severity::Info.order());
+    }
+
+    #[test]
+    fn severity_label_matches_external_names() {
+        assert_eq!(Severity::Error.label(), "error");
+        assert_eq!(Severity::Warning.label(), "warning");
+        assert_eq!(Severity::Info.label(), "info");
+    }
+
+    #[test]
+    fn diagnostic_format_text_basic() {
+        let d = diag("COS001", Severity::Warning, "Missing tracing");
+        assert_eq!(d.format_text(None), "COS001 Missing tracing");
+    }
+
+    #[test]
+    fn diagnostic_format_text_with_path() {
+        let d = Diagnostic {
+            path: Some("src/charm.py".into()),
+            ..diag("DEP001", Severity::Error, "StoredState")
+        };
+        assert_eq!(d.format_text(None), "src/charm.py: DEP001 StoredState");
+    }
+
+    #[test]
+    fn diagnostic_format_text_with_path_and_line() {
+        let d = Diagnostic {
+            path: Some("src/charm.py".into()),
+            line: Some(42),
+            ..diag("DEP001", Severity::Error, "StoredState")
+        };
+        assert_eq!(d.format_text(None), "src/charm.py:42: DEP001 StoredState");
+    }
+
+    #[test]
+    fn diagnostic_format_text_relative_to_charm_dir() {
+        let d = Diagnostic {
+            path: Some("/home/user/charm/src/charm.py".into()),
+            ..diag("DEP001", Severity::Error, "StoredState")
+        };
+        let out = d.format_text(Some(Path::new("/home/user/charm")));
+        assert_eq!(out, "src/charm.py: DEP001 StoredState");
+    }
+
+    #[test]
+    fn diagnostic_serializes_with_omitted_optional_fields() {
+        let d = diag("X", Severity::Info, "msg");
+        let j = serde_json::to_value(&d).unwrap();
+        assert_eq!(j["rule_id"], "X");
+        assert_eq!(j["severity"], "info");
+        assert!(j.get("path").is_none() || j["path"].is_null());
+        assert!(j.get("line").is_none() || j["line"].is_null());
+    }
+
+    #[test]
+    fn lint_report_empty_summary() {
+        let report = LintReport::new(Path::new("/tmp/charm"), Vec::new());
+        assert_eq!(report.total, 0);
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 0);
+        assert_eq!(report.info, 0);
+        assert_eq!(report.summary_line(), "No issues found.");
+    }
+
+    #[test]
+    fn lint_report_counts_by_severity() {
+        let diagnostics = vec![
+            diag("E1", Severity::Error, "err1"),
+            diag("E2", Severity::Error, "err2"),
+            diag("W1", Severity::Warning, "warn1"),
+            diag("I1", Severity::Info, "info1"),
+        ];
+        let report = LintReport::new(Path::new("/tmp/charm"), diagnostics);
+        assert_eq!(report.total, 4);
+        assert_eq!(report.errors, 2);
+        assert_eq!(report.warnings, 1);
+        assert_eq!(report.info, 1);
+        let summary = report.summary_line();
+        assert!(summary.contains("4 issues"), "got: {summary}");
+        assert!(summary.contains("2 errors"), "got: {summary}");
+    }
+
+    #[test]
+    fn lint_report_summary_singularises_one_of_each() {
+        let diagnostics = vec![
+            diag("E1", Severity::Error, "err"),
+            diag("W1", Severity::Warning, "warn"),
+        ];
+        let report = LintReport::new(Path::new("/tmp/charm"), diagnostics);
+        let summary = report.summary_line();
+        assert!(summary.contains("1 error,"), "got: {summary}");
+        assert!(summary.contains("1 warning"), "got: {summary}");
+        assert!(!summary.contains("errors"));
+    }
+}

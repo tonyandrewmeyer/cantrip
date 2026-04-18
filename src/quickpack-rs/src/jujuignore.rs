@@ -134,10 +134,12 @@ struct Matcher {
 
 impl Matcher {
     fn new(invert: bool, only_dirs: bool, regex: &str) -> Self {
+        // Anchor at start to mirror Python's `re.match` semantics;
+        // the `\z` in rule_to_regex already anchors the end.
         Self {
             invert,
             only_dirs,
-            compiled: Regex::new(&format!("(?s){regex}")).unwrap(),
+            compiled: Regex::new(&format!("(?s)^{regex}")).unwrap(),
         }
     }
 
@@ -242,5 +244,111 @@ impl JujuIgnore {
             Vec::new()
         };
         Self::new(Some(&patterns))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ignore(patterns: &[&str]) -> JujuIgnore {
+        let owned: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
+        JujuIgnore::new(Some(&owned))
+    }
+
+    #[test]
+    fn default_patterns_match_git_tox_build() {
+        let ji = JujuIgnore::new(None);
+        assert!(ji.is_ignored(".git", true));
+        assert!(ji.is_ignored(".tox", true));
+        assert!(ji.is_ignored("build", true));
+        assert!(ji.is_ignored(".jujuignore", false));
+    }
+
+    #[test]
+    fn venv_is_ignored_by_default() {
+        let ji = JujuIgnore::new(None);
+        assert!(ji.is_ignored("venv", true));
+    }
+
+    #[test]
+    fn custom_glob_pattern_matches_extension() {
+        let ji = ignore(&["*.pyc"]);
+        assert!(ji.is_ignored("module.pyc", false));
+        assert!(!ji.is_ignored("module.py", false));
+    }
+
+    #[test]
+    fn negation_rescues_specific_filename() {
+        let ji = ignore(&["*.log", "!important.log"]);
+        assert!(!ji.is_ignored("important.log", false));
+        assert!(ji.is_ignored("debug.log", false));
+    }
+
+    #[test]
+    fn trailing_slash_restricts_match_to_directories() {
+        let ji = ignore(&["cache/"]);
+        assert!(ji.is_ignored("cache", true));
+        assert!(!ji.is_ignored("cache", false));
+    }
+
+    #[test]
+    fn doublestar_matches_across_directories() {
+        let ji = ignore(&["**/__pycache__"]);
+        assert!(ji.is_ignored("src/__pycache__", true));
+        assert!(ji.is_ignored("deep/nested/__pycache__", true));
+    }
+
+    #[test]
+    fn leading_slash_anchors_to_root() {
+        let ji = ignore(&["/build/"]);
+        assert!(ji.is_ignored("build", true));
+        assert!(!ji.is_ignored("src/build", true));
+    }
+
+    #[test]
+    fn blank_and_comment_lines_are_ignored() {
+        // Only the *.tmp pattern should take effect.
+        let ji = ignore(&["# comment", "", "   ", "*.tmp"]);
+        assert!(ji.is_ignored("scratch.tmp", false));
+        assert!(!ji.is_ignored("scratch.log", false));
+    }
+
+    #[test]
+    fn from_file_reads_lines_and_skips_comments() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".jujuignore");
+        std::fs::write(&path, "*.bak\n# comment\n\ntmp/\n").unwrap();
+        let ji = JujuIgnore::from_file(&path);
+        assert!(ji.is_ignored("foo.bak", false));
+        assert!(ji.is_ignored("tmp", true));
+    }
+
+    #[test]
+    fn from_file_handles_missing_path_via_defaults_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ji = JujuIgnore::from_file(&tmp.path().join(".jujuignore"));
+        assert!(ji.is_ignored(".git", true));
+        assert!(!ji.is_ignored("src", true));
+    }
+
+    #[test]
+    fn rule_to_regex_converts_single_star() {
+        let r = rule_to_regex("*.py");
+        assert!(r.contains("[^/]*"));
+        assert!(r.ends_with(r"\z"));
+    }
+
+    #[test]
+    fn rule_to_regex_converts_doublestar() {
+        let r = rule_to_regex("**/foo");
+        assert!(r.contains(".*"));
+    }
+
+    #[test]
+    fn unescape_strips_leading_whitespace_and_escapes() {
+        assert_eq!(unescape("  hello"), "hello");
+        assert_eq!(unescape(r"\!bang"), "!bang");
+        assert_eq!(unescape(r"with\ space"), "with space");
     }
 }

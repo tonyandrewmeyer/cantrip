@@ -1,4 +1,4 @@
-.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage
+.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage rust-test
 
 # Format code with ruff
 format:
@@ -43,8 +43,8 @@ live:
 test:
 	uv run pytest tests -v
 
-# Run all checks (lint + unit tests)
-check: lint unit
+# Run all checks (lint + unit tests + Rust crate tests)
+check: lint unit rust-test
 
 # Run everything (format + check)
 all: format check
@@ -54,6 +54,11 @@ coverage:
 	uv run coverage run -m pytest tests/unit -v
 	uv run coverage report
 	uv run coverage html
+
+# Run cargo test for each Rust crate
+rust-test:
+	cd src/charmlint-rs && cargo test
+	cd src/quickpack-rs && cargo test
 
 # Clean build artifacts
 clean:
@@ -82,5 +87,6 @@ help:
 	@echo "  check       - Run lint + unit tests"
 	@echo "  all         - Run format + check"
 	@echo "  coverage    - Run unit tests with coverage report"
+	@echo "  rust-test   - Run cargo test for charmlint-rs and quickpack-rs"
 	@echo "  clean       - Remove build artifacts"
 	@echo "  install     - Install dependencies"

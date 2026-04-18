@@ -991,3 +991,345 @@ fn suggest_closest(typo: &str, known: &HashSet<&str>) -> Option<String> {
     }
     best.map(|b| format!("Did you mean '{b}'?"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context;
+
+    fn write(path: &std::path::Path, content: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, content).unwrap();
+    }
+
+    /// Build a charm fixture directory with an arbitrary charmcraft.yaml body.
+    fn charm_with_yaml(yaml: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        write(&dir.path().join("charmcraft.yaml"), yaml);
+        dir
+    }
+
+    /// Populate a full charm passing most rules.
+    fn full_charm() -> tempfile::TempDir {
+        let dir = charm_with_yaml(
+            "name: test-charm\n\
+             display-name: Test Charm\n\
+             summary: A test charm\n\
+             description: A test charm for unit tests.\n\
+             docs: https://example.com/docs\n\
+             issues: https://example.com/issues\n\
+             source: https://example.com/source\n\
+             requires:\n  \
+               tracing:\n    interface: tracing\n  \
+               logging:\n    interface: loki_push_api\n  \
+               grafana-dashboard:\n    interface: grafana_dashboard\n  \
+               certificates:\n    interface: tls-certificates\n\
+             provides:\n  \
+               metrics-endpoint:\n    interface: prometheus_scrape\n\
+             config:\n  \
+               options:\n    \
+                 port:\n      type: int\n      default: 8080\n      description: HTTP port\n\
+             actions:\n  \
+               get-health:\n    description: Check health\n  \
+               pause:\n    description: Pause\n  \
+               resume:\n    description: Resume\n",
+        );
+        write(
+            &dir.path().join("src/charm.py"),
+            "import ops\n\
+             from ops import BlockedStatus, WaitingStatus\n\
+             \n\
+             def main(charm: ops.CharmBase) -> None:\n    \
+                 pass\n\
+             \n\
+             ops.main(TestCharm)\n\
+             # missing config handling\n\
+             # invalid config combination\n\
+             # missing relation handling\n",
+        );
+        write(&dir.path().join("requirements.txt"), "ops\nops-tracing\n");
+        write(
+            &dir.path().join("README.md"),
+            "# Test\n\n## Installation\n\n## Configuration\n\n## Usage\n\n## Troubleshooting\n",
+        );
+        write(&dir.path().join("LICENSE"), "Apache-2.0");
+        write(&dir.path().join("icon.svg"), "<svg/>");
+        write(&dir.path().join("tests/unit/test_charm.py"), "def test_x(): pass\n");
+        write(&dir.path().join("tests/integration/test_charm.py"), "def test_x(): pass\n");
+        dir
+    }
+
+    fn run_rules(dir: &std::path::Path) -> Vec<Diagnostic> {
+        let ctx = context::build_context(dir);
+        run_all(&ctx)
+    }
+
+    fn rule_ids(diagnostics: &[Diagnostic]) -> BTreeSet<String> {
+        diagnostics.iter().map(|d| d.rule_id.clone()).collect()
+    }
+
+    // ── META rules ──────────────────────────────────────────────
+
+    #[test]
+    fn missing_name_is_error() {
+        let dir = charm_with_yaml("display-name: X\n");
+        let diags = run_rules(dir.path());
+        let meta001: Vec<&Diagnostic> = diags.iter().filter(|d| d.rule_id == "META001").collect();
+        assert_eq!(meta001.len(), 1);
+        assert_eq!(meta001[0].severity, Severity::Error);
+    }
+
+    #[test]
+    fn full_metadata_emits_no_meta_diagnostics() {
+        let dir = full_charm();
+        let diags = run_rules(dir.path());
+        let metas: Vec<&Diagnostic> =
+            diags.iter().filter(|d| d.rule_id.starts_with("META")).collect();
+        assert!(metas.is_empty(), "got: {metas:?}");
+    }
+
+    // ── COS rules ───────────────────────────────────────────────
+
+    #[test]
+    fn missing_cos_relations_reported() {
+        let dir = charm_with_yaml("name: test\n");
+        let ids = rule_ids(&run_rules(dir.path()));
+        for wanted in ["COS001", "COS002", "COS003", "COS004", "COS005"] {
+            assert!(ids.contains(wanted), "missing {wanted}");
+        }
+    }
+
+    #[test]
+    fn full_charm_has_no_cos_diagnostics() {
+        let dir = full_charm();
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(
+            !ids.iter().any(|id| id.starts_with("COS")),
+            "got: {ids:?}",
+        );
+    }
+
+    #[test]
+    fn ops_tracing_in_requirements_suppresses_cos005() {
+        let dir = charm_with_yaml("name: test\n");
+        write(&dir.path().join("requirements.txt"), "ops\nops-tracing\n");
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(!ids.contains("COS005"));
+    }
+
+    // ── TEST rules ──────────────────────────────────────────────
+
+    #[test]
+    fn missing_tests_emit_test001_and_test002() {
+        let dir = charm_with_yaml("name: test\n");
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("TEST001"));
+        assert!(ids.contains("TEST002"));
+    }
+
+    #[test]
+    fn harness_import_flagged_as_test003() {
+        let dir = charm_with_yaml("name: test\n");
+        write(
+            &dir.path().join("tests/test_charm.py"),
+            "from ops.testing import Harness\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("TEST003"));
+    }
+
+    // ── DEP rules ───────────────────────────────────────────────
+
+    #[test]
+    fn stored_state_detected() {
+        let dir = charm_with_yaml("name: test\n");
+        write(
+            &dir.path().join("src/charm.py"),
+            "class MyCharm:\n    _stored = StoredState()\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("DEP001"));
+    }
+
+    #[test]
+    fn clean_source_emits_no_deprecated_rules() {
+        let dir = charm_with_yaml("name: test\n");
+        write(
+            &dir.path().join("src/charm.py"),
+            "import ops\n\nclass MyCharm(ops.CharmBase): pass\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(!ids.iter().any(|id| id.starts_with("DEP")));
+    }
+
+    // ── LIB rules ───────────────────────────────────────────────
+
+    #[test]
+    fn known_pypi_lib_flagged_as_lib001() {
+        let dir = charm_with_yaml("name: test\n");
+        write(
+            &dir.path().join("src/charm.py"),
+            "from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboard\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("LIB001"));
+    }
+
+    #[test]
+    fn unknown_charms_lib_flagged_as_lib002() {
+        let dir = charm_with_yaml("name: test\n");
+        write(
+            &dir.path().join("src/charm.py"),
+            "from charms.my_custom_lib.v1.module import Foo\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("LIB002"));
+    }
+
+    // ── ACT rules ───────────────────────────────────────────────
+
+    #[test]
+    fn missing_expected_actions_reported() {
+        let dir = charm_with_yaml("name: test\n");
+        let ids = rule_ids(&run_rules(dir.path()));
+        for wanted in ["ACT001", "ACT002", "ACT003"] {
+            assert!(ids.contains(wanted), "missing {wanted}");
+        }
+    }
+
+    #[test]
+    fn action_aliases_accepted() {
+        let dir = charm_with_yaml(
+            "name: test\nactions:\n  \
+             health-check:\n    description: Check\n  \
+             stop:\n    description: Stop\n  \
+             start:\n    description: Start\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(!ids.contains("ACT001"));
+        assert!(!ids.contains("ACT002"));
+        assert!(!ids.contains("ACT003"));
+    }
+
+    #[test]
+    fn action_without_description_flagged_as_act004() {
+        let dir = charm_with_yaml("name: test\nactions:\n  backup: {}\n");
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("ACT004"));
+    }
+
+    // ── CFG rules ───────────────────────────────────────────────
+
+    #[test]
+    fn config_option_missing_fields_reported() {
+        let dir = charm_with_yaml(
+            "name: test\nconfig:\n  options:\n    port: {}\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        for wanted in ["CFG001", "CFG002", "CFG003"] {
+            assert!(ids.contains(wanted), "missing {wanted}");
+        }
+    }
+
+    // ── SEC rules ───────────────────────────────────────────────
+
+    #[test]
+    fn plain_password_config_triggers_sec001() {
+        let dir = charm_with_yaml(
+            "name: test\nconfig:\n  options:\n    admin-password:\n      type: string\n      description: Admin password\n",
+        );
+        write(&dir.path().join("src/charm.py"), "import ops\n");
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("SEC001"));
+    }
+
+    #[test]
+    fn juju_secrets_suppresses_sec001() {
+        let dir = charm_with_yaml(
+            "name: test\nconfig:\n  options:\n    admin-password:\n      type: string\n      description: Password\n",
+        );
+        write(
+            &dir.path().join("src/charm.py"),
+            "import ops\n# Uses juju secret API\nSecretChanged\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(!ids.contains("SEC001"));
+    }
+
+    // ── STR rules ───────────────────────────────────────────────
+
+    #[test]
+    fn missing_structure_files_reported() {
+        let dir = charm_with_yaml("name: test\n");
+        let ids = rule_ids(&run_rules(dir.path()));
+        for wanted in ["STR001", "STR002", "STR003"] {
+            assert!(ids.contains(wanted), "missing {wanted}");
+        }
+    }
+
+    #[test]
+    fn full_charm_has_no_structure_diagnostics() {
+        let dir = full_charm();
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(!ids.iter().any(|id| id.starts_with("STR")));
+    }
+
+    // ── CC rules ────────────────────────────────────────────────
+
+    #[test]
+    fn series_field_triggers_cc001() {
+        let dir = charm_with_yaml("name: test\nseries:\n  - jammy\n");
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("CC001"));
+    }
+
+    #[test]
+    fn underscore_config_option_triggers_cc002() {
+        let dir = charm_with_yaml(
+            "name: test\nconfig:\n  options:\n    http_port:\n      type: int\n      default: 80\n      description: Port\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("CC002"));
+    }
+
+    #[test]
+    fn unknown_top_level_field_triggers_cc005_with_hint() {
+        let dir = charm_with_yaml("name: test\nsumarry: typo\n");
+        let diags = run_rules(dir.path());
+        let cc005: Vec<&Diagnostic> = diags.iter().filter(|d| d.rule_id == "CC005").collect();
+        assert_eq!(cc005.len(), 1);
+        let hint = cc005[0].fix_hint.as_deref().unwrap_or("");
+        assert!(hint.contains("summary"), "got hint: {hint}");
+    }
+
+    // ── Helper-level assertions ─────────────────────────────────
+
+    #[test]
+    fn edit_distance_short_circuits_on_length_gap() {
+        assert_eq!(edit_distance("abc", "abcdefghij", 3), 3);
+    }
+
+    #[test]
+    fn edit_distance_reports_exact_small_distance() {
+        assert_eq!(edit_distance("summary", "sumarry", 3), 2);
+        assert_eq!(edit_distance("summary", "summary", 3), 0);
+    }
+
+    #[test]
+    fn suggest_closest_returns_near_match() {
+        let set: HashSet<&str> = ["summary", "description", "name"].into_iter().collect();
+        assert_eq!(
+            suggest_closest("sumary", &set).as_deref(),
+            Some("Did you mean 'summary'?"),
+        );
+    }
+
+    #[test]
+    fn suggest_closest_returns_none_for_far_match() {
+        let set: HashSet<&str> = ["summary"].into_iter().collect();
+        assert!(suggest_closest("completely-different", &set).is_none());
+    }
+}

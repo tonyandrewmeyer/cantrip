@@ -467,3 +467,194 @@ pub fn process_parts(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn project(yaml: &str) -> BTreeMap<String, Value> {
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        match v {
+            Value::Mapping(m) => m
+                .into_iter()
+                .filter_map(|(k, v)| match k {
+                    Value::String(s) => Some((s, v)),
+                    _ => None,
+                })
+                .collect(),
+            _ => BTreeMap::new(),
+        }
+    }
+
+    // ── Pure helpers ────────────────────────────────────────────
+
+    #[test]
+    fn match_fileset_includes_match_when_no_rules() {
+        assert!(match_fileset("src/charm.py", &[]));
+    }
+
+    #[test]
+    fn match_fileset_respects_inclusions() {
+        let rules = vec!["src/*".to_string()];
+        assert!(match_fileset("src/charm.py", &rules));
+        assert!(!match_fileset("lib/foo.py", &rules));
+    }
+
+    #[test]
+    fn match_fileset_respects_exclusions() {
+        let rules = vec!["src/*".to_string(), "-src/secret.py".to_string()];
+        assert!(match_fileset("src/charm.py", &rules));
+        assert!(!match_fileset("src/secret.py", &rules));
+    }
+
+    #[test]
+    fn glob_match_handles_star_pattern() {
+        assert!(glob_match("file.py", "*.py"));
+        assert!(!glob_match("file.txt", "*.py"));
+    }
+
+    #[test]
+    fn glob_match_returns_false_on_invalid_pattern() {
+        assert!(!glob_match("anything", "["));
+    }
+
+    #[test]
+    fn strip_comments_removes_hash_lines() {
+        assert_eq!(
+            strip_comments("# header\ncraftctl default\n# trailing\n"),
+            "craftctl default",
+        );
+    }
+
+    #[test]
+    fn strip_comments_preserves_inline_hashes() {
+        // Hashes inside the line (not at the start after trimming) stay.
+        assert_eq!(
+            strip_comments("echo \"# not a comment\"\n"),
+            "echo \"# not a comment\"",
+        );
+    }
+
+    #[test]
+    fn get_str_returns_value_when_present() {
+        let map: serde_yaml::Mapping = serde_yaml::from_str("plugin: uv\n").unwrap();
+        assert_eq!(get_str(&map, "plugin"), Some("uv"));
+        assert!(get_str(&map, "missing").is_none());
+    }
+
+    #[test]
+    fn get_str_list_returns_empty_when_absent() {
+        let map: serde_yaml::Mapping = serde_yaml::from_str("other: []\n").unwrap();
+        assert!(get_str_list(&map, "missing").is_empty());
+    }
+
+    #[test]
+    fn get_str_list_returns_strings_when_sequence() {
+        let map: serde_yaml::Mapping =
+            serde_yaml::from_str("uv-extras:\n  - api\n  - web\n").unwrap();
+        assert_eq!(
+            get_str_list(&map, "uv-extras"),
+            vec!["api".to_string(), "web".to_string()],
+        );
+    }
+
+    // ── process_parts entry points ──────────────────────────────
+
+    #[test]
+    fn process_parts_errors_when_no_parts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prime = tmp.path().join("prime");
+        std::fs::create_dir_all(&prime).unwrap();
+        let proj = BTreeMap::new();
+        let err = process_parts(tmp.path(), &prime, &proj).unwrap_err();
+        assert!(err.contains("No parts"), "got: {err}");
+    }
+
+    #[test]
+    fn process_parts_errors_when_parts_empty_mapping() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prime = tmp.path().join("prime");
+        std::fs::create_dir_all(&prime).unwrap();
+        let proj = project("parts: {}\n");
+        let err = process_parts(tmp.path(), &prime, &proj).unwrap_err();
+        assert!(err.contains("No parts"), "got: {err}");
+    }
+
+    #[test]
+    fn process_parts_rejects_unknown_plugin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prime = tmp.path().join("prime");
+        std::fs::create_dir_all(&prime).unwrap();
+        let proj = project(
+            "parts:\n  charm:\n    plugin: unsupported\n",
+        );
+        let err = process_parts(tmp.path(), &prime, &proj).unwrap_err();
+        assert!(err.contains("unsupported"), "got: {err}");
+    }
+
+    #[test]
+    fn process_parts_requires_at_least_one_uv_plugin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prime = tmp.path().join("prime");
+        std::fs::create_dir_all(&prime).unwrap();
+        let proj = project(
+            "parts:\n  files:\n    plugin: dump\n    source: .\n",
+        );
+        let err = process_parts(tmp.path(), &prime, &proj).unwrap_err();
+        assert!(
+            err.contains("requires a part with plugin: uv"),
+            "got: {err}",
+        );
+    }
+
+    // ── nil plugin: override-build safety ───────────────────────
+
+    #[test]
+    fn process_nil_part_accepts_empty_override() {
+        let mut m = serde_yaml::Mapping::new();
+        m.insert(Value::String("plugin".into()), Value::String("nil".into()));
+        assert!(process_nil_part("charm", &m).is_ok());
+    }
+
+    #[test]
+    fn process_nil_part_accepts_craftctl_default_only() {
+        let mut m = serde_yaml::Mapping::new();
+        m.insert(
+            Value::String("override-build".into()),
+            Value::String("craftctl default\n".into()),
+        );
+        assert!(process_nil_part("charm", &m).is_ok());
+    }
+
+    #[test]
+    fn process_nil_part_rejects_unrecognised_override() {
+        let mut m = serde_yaml::Mapping::new();
+        m.insert(
+            Value::String("override-build".into()),
+            Value::String("rm -rf /\n".into()),
+        );
+        let err = process_nil_part("bad", &m).unwrap_err();
+        assert!(err.contains("cannot handle safely"), "got: {err}");
+    }
+
+    // ── handle_override_build recognised patterns ───────────────
+
+    #[test]
+    fn handle_override_build_rejects_unrecognised_pattern() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prime = tmp.path().join("prime");
+        std::fs::create_dir_all(&prime).unwrap();
+        let err = handle_override_build(tmp.path(), &prime, "charm", "rm -rf /\n").unwrap_err();
+        assert!(err.contains("cannot handle safely"), "got: {err}");
+    }
+
+    #[test]
+    fn handle_override_build_accepts_craftctl_default_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prime = tmp.path().join("prime");
+        std::fs::create_dir_all(&prime).unwrap();
+        assert!(
+            handle_override_build(tmp.path(), &prime, "charm", "craftctl default\n").is_ok(),
+        );
+    }
+}

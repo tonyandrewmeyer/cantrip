@@ -98,3 +98,27 @@ jobs:
 
       - name: Check package
         run: uv run python -m tarfile -l dist/*.tar.gz
+
+  rust-test:
+    name: Rust Tests (${{ matrix.crate }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [charmlint-rs, quickpack-rs]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - name: Cache cargo target
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4
+        with:
+          path: src/${{ matrix.crate }}/target
+          key: ${{ runner.os }}-cargo-${{ matrix.crate }}-${{ hashFiles(format('src/{0}/Cargo.toml', matrix.crate), format('src/{0}/Cargo.lock', matrix.crate)) }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.crate }}-
+
+      - name: cargo test
+        working-directory: src/${{ matrix.crate }}
+        run: cargo test --all-targets

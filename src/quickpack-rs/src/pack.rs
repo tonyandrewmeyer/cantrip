@@ -210,3 +210,146 @@ fn write_yaml(path: &Path, data: &BTreeMap<String, serde_yaml::Value>) -> Result
     std::fs::write(path, content).map_err(|e| format!("Write YAML: {e}"))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::io::Read;
+
+    // ── ensure_jujuignore ──────────────────────────────────────
+
+    #[test]
+    fn ensure_jujuignore_creates_file_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_jujuignore(dir.path()).unwrap();
+        let content = std::fs::read_to_string(dir.path().join(".jujuignore")).unwrap();
+        for entry in REQUIRED_IGNORES {
+            assert!(content.contains(entry), "missing {entry} in {content}");
+        }
+    }
+
+    #[test]
+    fn ensure_jujuignore_appends_missing_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".jujuignore"), "*.bak\n").unwrap();
+        ensure_jujuignore(dir.path()).unwrap();
+        let content = std::fs::read_to_string(dir.path().join(".jujuignore")).unwrap();
+        assert!(content.contains("*.bak"));
+        for entry in REQUIRED_IGNORES {
+            assert!(content.contains(entry), "missing {entry}");
+        }
+    }
+
+    #[test]
+    fn ensure_jujuignore_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_jujuignore(dir.path()).unwrap();
+        ensure_jujuignore(dir.path()).unwrap();
+        let content = std::fs::read_to_string(dir.path().join(".jujuignore")).unwrap();
+        for entry in REQUIRED_IGNORES {
+            let count = content.matches(entry).count();
+            assert_eq!(count, 1, "{entry} appears {count} times");
+        }
+    }
+
+    // ── write_dispatch ─────────────────────────────────────────
+
+    #[test]
+    fn write_dispatch_writes_executable_script() {
+        let dir = tempfile::tempdir().unwrap();
+        write_dispatch(dir.path(), "src/charm.py").unwrap();
+        let script = std::fs::read_to_string(dir.path().join("dispatch")).unwrap();
+        assert!(script.contains("src/charm.py"), "entrypoint not substituted");
+        assert!(script.starts_with("#!/bin/sh"), "missing shebang");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(dir.path().join("dispatch"))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert!(mode & 0o111 != 0, "dispatch not executable: {mode:o}");
+        }
+    }
+
+    // ── write_yaml helper ──────────────────────────────────────
+
+    #[test]
+    fn write_yaml_round_trips_through_parser() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut data = BTreeMap::new();
+        data.insert(
+            "name".to_string(),
+            serde_yaml::Value::String("my-charm".into()),
+        );
+        let path = dir.path().join("out.yaml");
+        write_yaml(&path, &data).unwrap();
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(parsed["name"].as_str(), Some("my-charm"));
+    }
+
+    // ── build_zip ──────────────────────────────────────────────
+
+    #[test]
+    fn build_zip_packs_files_and_skips_pycache() {
+        let prime = tempfile::tempdir().unwrap();
+        std::fs::write(prime.path().join("dispatch"), "#!/bin/sh\n").unwrap();
+        std::fs::create_dir(prime.path().join("src")).unwrap();
+        std::fs::write(prime.path().join("src/charm.py"), "print('hi')\n").unwrap();
+        // __pycache__ should be excluded.
+        std::fs::create_dir(prime.path().join("__pycache__")).unwrap();
+        std::fs::write(
+            prime.path().join("__pycache__/charm.cpython-312.pyc"),
+            [0u8; 4],
+        )
+        .unwrap();
+
+        let zip_dir = tempfile::tempdir().unwrap();
+        let zip_path = zip_dir.path().join("out.charm");
+        build_zip(&zip_path, prime.path()).unwrap();
+
+        let file = std::fs::File::open(&zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let entries: HashSet<String> =
+            (0..archive.len()).map(|i| archive.by_index(i).unwrap().name().to_string()).collect();
+        assert!(entries.contains("dispatch"));
+        assert!(entries.contains("src/charm.py"));
+        assert!(
+            !entries.iter().any(|n| n.contains("__pycache__")),
+            "pycache leaked: {entries:?}",
+        );
+
+        // Confirm content round-trips.
+        let mut charm_entry = archive.by_name("src/charm.py").unwrap();
+        let mut buf = String::new();
+        charm_entry.read_to_string(&mut buf).unwrap();
+        assert_eq!(buf, "print('hi')\n");
+    }
+
+    #[test]
+    fn build_zip_preserves_executable_bit_on_dispatch() {
+        let prime = tempfile::tempdir().unwrap();
+        let dispatch = prime.path().join("dispatch");
+        std::fs::write(&dispatch, "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dispatch, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let zip_dir = tempfile::tempdir().unwrap();
+        let zip_path = zip_dir.path().join("out.charm");
+        build_zip(&zip_path, prime.path()).unwrap();
+
+        #[cfg(unix)]
+        {
+            let file = std::fs::File::open(&zip_path).unwrap();
+            let mut archive = zip::ZipArchive::new(file).unwrap();
+            let entry = archive.by_name("dispatch").unwrap();
+            let mode = entry.unix_mode().expect("unix mode recorded");
+            assert!(mode & 0o111 != 0, "executable bit lost: {mode:o}");
+        }
+    }
+}
