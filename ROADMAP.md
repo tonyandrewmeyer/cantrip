@@ -2693,11 +2693,20 @@ Existing tools hardened. `make check` passes throughout.
 **Goal:** Quality-of-life features that make Cantrip more pleasant and productive for
 experienced users.
 
-### 31.1 High — Chat Search and Navigation
+### 31.1 High — Chat Search and Navigation ✅
 
-- [ ] Add `/` search binding in `ChatWidget` to search message content
-- [ ] Add `TranscriptScreen` search binding
-- [ ] Support `Ctrl+F` as alternative
+- [x] Add `/` search binding in `ChatWidget` to search message content —
+  a new `SearchBar` widget overlays the chat with an Input + match counter;
+  `ChatInput` (subclass of Textual's `Input`) intercepts a leading `/`
+  when the field is empty and posts `SearchRequested` so the app opens
+  the bar; typing a `/` mid-message still inserts it as a normal character
+- [x] Add `TranscriptScreen` search binding — `/` and `Ctrl+F` both open a
+  search bar above the RichLog; matches are highlighted and Enter jumps
+  to the next match; the hidden search input has `can_focus=False` so
+  `/` reliably triggers the binding rather than being typed
+- [x] Support `Ctrl+F` as alternative — priority app-level binding so it
+  fires regardless of where focus sits (the chat input otherwise grabs it
+  as "cursor forward word")
 
 ### 31.2 High — Streaming Responses in TUI ✅
 
@@ -3742,6 +3751,781 @@ remote, Cantrip offers to create one. `make check` passes throughout.
 
 ---
 
+## Phase 43: Memory — Charm-Specific and Global Lessons
+
+**Goal:** Give Cantrip durable memory across sessions and across charms. Today
+the agent has no learned-lesson layer: every session starts from scratch,
+every tool failure must be rediscovered, every user correction is forgotten
+after compaction. This phase adds two complementary memory scopes — per-charm
+memory stored in `.cantrip`, and global charm-building memory stored in
+`~/.config/cantrip/memory/` — with automatic capture, user-directed control,
+and export as shareable skills.
+
+Memory is strictly the **learned** layer. It complements, but does not replace,
+the rule layer (`CLAUDE.md`/`AGENTS.md`, the system prompt, Cantrip's built-in
+skills) and the decision layer (the existing `decisions` table, which records
+explicit user choices). The design adopts three patterns from 2026
+coding-agent memory research:
+
+- **Windsurf's rules-vs-memories split** — rules are human-authored,
+  versioned, always-on; memories are agent-authored, local, retrieval-filtered.
+  The layers are kept separate.
+- **Copilot Memory's citations + TTL + revalidation** — every agent-written
+  memory stores the file/line citations it was inferred from, and is
+  revalidated against current state before use. Soft expiry at 60 days unused;
+  deletion prompt at 180.
+- **Claude Skills' progressive disclosure** — only a compact index (~1k tokens)
+  loads on every prompt. Individual memories load on demand via a tool.
+
+### 43.1 High — Memory primitives and storage
+
+- [ ] Schema v8: add a `memory` table to `.cantrip` SQLite for charm-scope
+  memories with columns `id`, `title`, `kind` (fact/rule/lesson), `body`
+  (markdown), `source` (auto/manual), `citations` (JSON array of
+  `{path, line_start, line_end, sha}`), `tags` (JSON array), `created_at`,
+  `updated_at`, `last_accessed_at`, `last_validated_at`, `access_count`,
+  `status` (active/quarantined/archived)
+- [ ] Global memory directory layout at `~/.config/cantrip/memory/`:
+  - `MEMORY.md` — always-loaded index (one line per memory, capped at ~200
+    lines, truncated beyond)
+  - `<topic>.md` — individual memory files with YAML frontmatter (`title`,
+    `kind`, `source`, `created`, `updated`, `citations`, `tags`, `status`)
+  - Location overridable via `CANTRIP_MEMORY_DIR` environment variable
+- [ ] New agent tools in the `context` category:
+  - `memory_list` — list titles + kinds, filtered by scope, tags, and status
+  - `memory_read` — load a full memory by id or title
+  - `memory_search` — keyword search across memory bodies
+  - `memory_write` — create a memory (scope, kind, body, citations, tags)
+  - `memory_update` — edit an existing memory by id
+  - `memory_forget` — delete a memory by id
+- [ ] System-prompt injection via `build_system_prompt()`: append a Memory
+  Index section after recent decisions, containing the global MEMORY.md
+  contents and the charm-scope memory titles (not bodies)
+- [ ] Respect compaction: memory-index entry, like decisions, is preserved
+  across compaction; individual memory bodies are not (they are fetched
+  on demand)
+- [ ] Unit tests for each tool, storage round-trips, system-prompt size
+  bounds, and schema migration from v7 to v8
+
+### 43.2 High — Auto-writer with citations and revalidation
+
+- [ ] Auto-write triggers, implemented as a small writer subagent run
+  opportunistically by the conversation loop:
+  - After a tool failure followed by a successful retry with a different
+    approach → write a `lesson` (scope inferred: charm-specific when tied to
+    this charm's files, global when tied to a reusable technique)
+  - After the user corrects the agent's approach (detected via
+    conversation-loop heuristics and explicit user phrases) → write a `rule`
+  - After a non-trivial task completes → optionally summarise the approach
+    as a `fact`
+- [ ] Gating heuristic: the writer subagent must answer "would this save
+  ≥5 minutes of work next time?" with a concrete rationale before a memory
+  is persisted; below-threshold candidates are discarded
+- [ ] Citation capture: every auto-written memory stores the file paths, line
+  ranges, and content SHAs from the tool-call history of the triggering
+  round, so revalidation can check them later
+- [ ] Revalidation on recall:
+  - Before surfacing a memory, verify citations are still valid (file
+    exists, SHA within tolerance, or regex still matches)
+  - On mismatch, move the memory to `quarantined` status and exclude it
+    from the prompt-index rather than silently using stale guidance
+  - Expose a `memory_revalidate` tool the agent can invoke to bulk-revalidate
+    after large code changes
+- [ ] TTL policy:
+  - Soft expiry: when `last_accessed_at` and `last_validated_at` are both
+    older than 60 days, set `status = archived`
+  - Hard prompt: at 180 days archived, surface as a CONFIRM task
+    ("delete or refresh?")
+  - Defaults configurable via settings
+- [ ] Inline notices in TUI and Web when a memory is written or recalled,
+  mirroring Claude Code's pattern ("Wrote memory: …" / "Recalled memory: …")
+
+### 43.3 Medium — User controls in TUI and Web
+
+- [ ] `/memory` slash command opens a pane listing all memories across both
+  scopes, with inline edit and delete:
+  - Filter by kind, scope, tag, status, and freshness
+  - Show citation validity and last-accessed timestamps
+- [ ] `/remember <text>` writes a memory, prompting for scope (charm vs
+  global) and kind (fact/rule/lesson)
+- [ ] `/forget <match>` fuzzy-matches against titles, asks for confirmation,
+  deletes
+- [ ] Natural-language routing through the concierge: phrases such as
+  "remember that X", "forget what you know about Y", or "update the memory
+  about Z" map to the corresponding tool calls
+- [ ] Events are emitted through the existing event bus so TUI and Web
+  behaviour stays in lockstep
+
+### 43.4 Medium — Export and import
+
+- [ ] `/memory export <name>` bundles selected memories into a `SKILL.md`
+  package under a chosen path, reusing the existing skills system
+  (`src/cantrip/skills/`, `LoadSkill` tool) as the export format
+  - Sanitises charm-specific paths (placeholder substitution), strips local
+    citations, and scrubs anything matching secret patterns
+  - User reviews and approves the bundle before it is written
+- [ ] `/memory export --markdown <path>` writes a plain markdown dump (one
+  file per memory) for gist or PR-style sharing
+- [ ] `/memory import <path>` reads a SKILL.md or markdown dump and merges
+  memories into the target scope, with duplicate detection and a review step
+- [ ] Round-trip test: export, delete, re-import, verify content and metadata
+  are preserved
+
+**Exit criteria:** The agent automatically captures charm-specific and
+reusable lessons with citations; a Memory Index section appears in every
+system prompt; revalidation prevents stale memories from being silently used;
+users can list, edit, forget, export, and import memories via slash commands
+in both TUI and Web; an exported skill from one machine can be imported on
+another and used by a fresh Cantrip install. `make check` passes throughout.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Storage + tools (43.1) | Phase 25 schema machinery | Schema v8 migration |
+| Auto-writer (43.2) | 43.1, existing subagent runner | Writer runs as a subagent |
+| UI controls (43.3) | 43.1, Phase 15 Web UI, Phase 31 slash commands | Shared event bus |
+| Export/import (43.4) | 43.1, existing skills system | Reuses `LoadSkill` plumbing |
+
+---
+
+## Phase 44: Worktree Isolation for Parallel Subagents
+
+**Goal:** Give each concurrent subagent its own git worktree so the background
+executor can safely run parallel work without file-level conflicts. Today up to
+three subagents share one working tree (`src/cantrip/agent/executor.py`), which
+makes BUILD/TEST/DOC overlap racy and caps the degree of parallelism we can
+trust. Git worktrees became the cross-vendor isolation primitive in the
+Oct 2025 – Apr 2026 window (Cursor `/worktree`, Windsurf parallel Cascade,
+Gemini CLI native worktrees, Claude Code subagent isolation). Adopting the same
+primitive lets Cantrip scale parallelism beyond three and removes a real class
+of race condition from generated-charm builds.
+
+### 44.1 High — Worktree allocator and lifecycle
+
+- [ ] New `WorktreeAllocator` in `src/cantrip/agent/worktree.py` that creates a
+  `git worktree add` under `.cantrip/worktrees/<task-id>/`, tracks the mapping
+  `task_id → worktree_path`, and cleans up on subagent exit
+- [ ] Allocator is injected into the executor via the Phase 21.2 protocol-based
+  service pattern so it can be swapped in tests
+- [ ] `BackgroundExecutor` asks the allocator for a worktree at subagent spawn
+  time; the subagent's `cwd` is the worktree path, not the main working tree
+- [ ] Worktrees are created from the current HEAD of the charm branch; a
+  unique ephemeral branch (`cantrip/wt/<task-id>`) prevents checkout conflicts
+- [ ] `make check` covers allocator lifecycle: create, collision on duplicate
+  task id, cleanup on success, cleanup on failure, orphan reaper on startup
+
+### 44.2 High — Merge strategy on subagent exit
+
+- [ ] On successful subagent exit, the executor rebases or squash-merges the
+  worktree branch back into the main charm branch using the existing git
+  tooling (`src/cantrip/agent/tools/git.py`)
+- [ ] Conflict handling: if the merge fails, the executor surfaces a CONFIRM
+  task with the conflicting paths and asks the user to resolve, rather than
+  silently dropping the subagent's output
+- [ ] Preserve the subagent's commits (not just the tree delta) so transcript
+  recording (Phase 14.1) retains per-subagent history
+- [ ] Unit tests cover clean merge, conflicting merge, and multi-subagent
+  interleaved merges
+
+### 44.3 Medium — Revert path on failure
+
+- [ ] Extend Phase 11.4 git-revert-on-failure to operate inside the worktree
+  rather than on the shared tree — a failing subagent's changes are discarded
+  when its worktree is torn down without merging
+- [ ] Confirm the Phase 11.1 commit-after-build checks still apply per-worktree
+- [ ] Noop detection (Phase 21.3) uses the worktree's pre/post state, not the
+  shared tree
+
+### 44.4 Medium — Worktree visibility in TUI/Web
+
+- [ ] New column in the work-queue task widget (`src/cantrip/tui/widgets/tasks.py`)
+  showing each task's worktree path
+- [ ] `/worktrees` slash command lists active worktrees with their task ids,
+  branches, and last-activity timestamps
+- [ ] Web UI mirrors the same view via the shared event bus (Phase 15.1)
+- [ ] Clicking a worktree in the TUI opens a file-tree preview scoped to it
+
+### 44.5 Low — Configuration and limits
+
+- [ ] Setting `CANTRIP_MAX_WORKTREES` caps concurrent worktrees independently
+  of the subagent concurrency limit
+- [ ] Startup orphan reaper prunes worktrees whose task ids no longer exist in
+  the work queue
+- [ ] When disk space falls below a configurable threshold, the allocator
+  refuses new worktrees and surfaces a warning
+
+**Exit criteria:** Parallel subagents run in isolated worktrees; merge and
+revert paths are tested with clean, conflicting, and failed cases; the TUI and
+Web UI expose worktree state; concurrency can exceed three without file-level
+races. `make check` passes throughout.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Allocator and lifecycle (44.1) | Phase 21.2 service injection | Injected as a protocol service |
+| Merge strategy (44.2) | Phase 30 git tooling | Uses existing git tools for rebase/merge |
+| Revert path (44.3) | Phase 11.4 git-revert-on-failure | Extends existing revert to worktree scope |
+| TUI/Web visibility (44.4) | Phase 15.1 shared event bus | Emits worktree lifecycle events |
+| Limits and reaper (44.5) | 44.1 | Configuration layer on top of the allocator |
+
+---
+
+## Phase 45: Model Context Protocol (MCP) Client
+
+**Goal:** Add MCP client support so Cantrip can pull context and tools from
+third-party MCP servers. MCP converged as the cross-vendor tool-extension
+standard in the Oct 2025 – Apr 2026 window (Cursor Bugbot MCP, Codex MCP Apps
+with marketplaces and namespaced registration, Copilot's MCP default, Claude
+Code MCP elicitation + RFC 9728 OAuth, Windsurf MCP OAuth). Cantrip currently
+has no MCP client. High-value servers for a Juju-charm agent include Charmhub
+search/publish, Grafana query, GitHub org context, Launchpad bug search, and
+Loki/Prometheus schema-aware wrappers. This phase is complementary to
+Phase 39 (ACP drives a remote agent as Cantrip's backend; MCP injects tools
+into Cantrip).
+
+### 45.1 High — MCP client protocol implementation
+
+- [ ] Implement the MCP client wire protocol (stdio + streamable HTTP transports)
+  using the official Python MCP SDK, wrapped in `src/cantrip/mcp/`
+- [ ] Lifecycle: connect, handshake with capability negotiation, invoke, close,
+  reconnect on transient failure
+- [ ] Timeouts and backoff parity with existing tool invocation paths
+- [ ] Unit tests against a stub MCP server cover happy path, timeout, and
+  disconnect
+
+### 45.2 High — Server configuration and discovery
+
+- [ ] `cantrip.mcp.yaml` (repo-scope) and `~/.config/cantrip/mcp.yaml`
+  (user-scope) declare servers with command, env, and allowlist of exposed
+  tools
+- [ ] On startup, Cantrip enumerates configured servers, verifies each is
+  launchable, and reports unreachable servers without crashing
+- [ ] A `/mcp` slash command lists configured servers, their status, and the
+  tools each exposes
+
+### 45.3 Medium — MCP tool surfacing to subagents
+
+- [ ] Remote tools appear to the agent with a `mcp__<server>__<tool>` naming
+  convention (matching Claude Code's convention)
+- [ ] Tool schemas from the server are translated into the Cantrip tool
+  dataclass shape without losing JSONSchema fidelity
+- [ ] Respect Phase 21.6 scoped tool access — subagents see only MCP tools
+  allowed for their task category
+- [ ] Record MCP tool calls in transcripts (Phase 14.1) with the originating
+  server tagged
+
+### 45.4 Medium — OAuth and elicitation support
+
+- [ ] Implement MCP OAuth 2.1 client with RFC 9728 Protected Resource Metadata
+  discovery, matching Claude Code's support
+- [ ] Token storage uses the existing GPG opt-in pattern (Phase 25 cleanup)
+  for refresh tokens
+- [ ] Handle mid-task elicitation: a server can request structured input, the
+  request is routed to the conversation loop as a CONFIRM-like prompt, and the
+  response is returned to the server
+- [ ] Unit tests cover OAuth token refresh, elicitation round-trip, and
+  refusal cases
+
+### 45.5 Low — MCP server registry and marketplace awareness
+
+- [ ] Optional discovery against the Codex MCP marketplace format (GitHub URL,
+  local directory, or `marketplace.json`), surfaced read-only in the `/mcp`
+  command
+- [ ] Documentation for authoring Cantrip-specific MCP servers (Charmhub,
+  Launchpad) in `design/` — these may ship separately or live in the
+  `microsoft/skills`-style companion repository
+
+**Exit criteria:** Cantrip can load an MCP server from a YAML config, route
+its tools to subagents with category-scoped access, handle OAuth and
+elicitation, and surface the state in the TUI and Web UI. `make check` passes
+throughout.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Client protocol (45.1) | None | New subsystem under `src/cantrip/mcp/` |
+| Server config (45.2) | 45.1 | Builds on the client |
+| Tool surfacing (45.3) | 45.1, Phase 21.6 scoped access | Category allowlists gate remote tools |
+| OAuth and elicitation (45.4) | 45.1 | Layered on top of the base client |
+| Registry awareness (45.5) | 45.2 | Extends the config discovery path |
+
+---
+
+## Phase 46: User-Configurable Hooks
+
+**Goal:** Expose the executor's lifecycle points as user-configurable hooks so
+operators can inject domain policy (security review, custom linters, signoff,
+external approvals, notifications) without forking Cantrip. Claude Code shipped
+conditional `if:` hooks and a PreCompact hook in the review window; Windsurf
+shipped Cascade Hooks. Cantrip already has internal hooks in `planner.py` and
+the watcher — this phase formalises them and opens them up.
+
+### 46.1 High — Hook event taxonomy
+
+- [ ] Enumerate the executor lifecycle points worth hooking: `pre_tool_call`,
+  `post_tool_call`, `pre_subagent`, `post_subagent`, `pre_compact`,
+  `post_compact`, `pre_pack`, `pre_push`, `pre_pr`, `on_task_complete`,
+  `on_session_end`
+- [ ] Document the payload shape for each event (tool name, arguments, task
+  category, working directory, provider, token cost-so-far)
+- [ ] Events are emitted through the Phase 15.1 shared event bus so TUI, Web,
+  and hooks all observe the same stream
+
+### 46.2 High — Hook config format and discovery
+
+- [ ] `hooks.yaml` at `.cantrip/hooks.yaml` (repo scope) and
+  `~/.config/cantrip/hooks.yaml` (user scope), merged with repo taking
+  precedence on conflict
+- [ ] Each hook declares: `on:` event name, `run:` command or inline script,
+  `timeout:` seconds, and `continue_on_error:` bool
+- [ ] Hooks run as subprocesses with a JSON payload on stdin; stdout/stderr
+  are captured into the transcript
+
+### 46.3 Medium — Conditional filters
+
+- [ ] `if:` expression support: simple comparisons against payload fields
+  (e.g. `tool == "git_push"`, `task.category == "BUILD"`,
+  `path.matches("charm.py")`)
+- [ ] Pattern syntax mirrors Claude Code's `if:` filter
+- [ ] Unit tests cover matching, non-matching, malformed expressions, and
+  missing fields
+
+### 46.4 Medium — Hook result handling
+
+- [ ] Non-zero exit code from a hook on `pre_*` events is treated as a veto;
+  the executor reports the hook name and stderr to the conversation loop and
+  declines to proceed
+- [ ] Stdout from `pre_tool_call` hooks can mutate the pending payload (e.g.
+  redact secrets before the tool runs) via a documented JSON-patch envelope
+- [ ] Hooks on `pre_compact` can block compaction — matching Claude Code's
+  PreCompact hook behaviour — to protect pinned context
+
+### 46.5 Low — Hook telemetry and debugging
+
+- [ ] `/hooks` slash command lists configured hooks, last invocation, last
+  outcome, average duration
+- [ ] Hook invocations appear in the transcript as a dedicated event type
+- [ ] `cantrip hooks test <event-name>` CLI subcommand fires a synthetic event
+  against the configured hooks for debugging
+
+**Exit criteria:** Users can configure hooks via YAML, filter them with `if:`
+expressions, and see their invocations in the transcript and `/hooks` view;
+pre-hooks can veto actions; PreCompact hooks can block compaction. `make check`
+passes throughout.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Event taxonomy (46.1) | Phase 15.1 shared event bus | Reuses the same event plumbing |
+| Config format (46.2) | 46.1 | Declares the events to bind to |
+| Conditional filters (46.3) | 46.2 | Applied on the merged config |
+| Result handling (46.4) | 46.2, Phase 40 compaction safety | PreCompact integrates with the compaction subsystem |
+| Telemetry (46.5) | Phase 14.1 transcript recording | Hook events extend the transcript schema |
+
+---
+
+## Phase 47: Best-of-N Multi-Model Racing for High-Value Tasks
+
+**Goal:** For tasks with objective success criteria (BUILD, DESIGN,
+RED/GREEN), optionally run N models in parallel and pick the winner. Cursor
+`/best-of-n` and Windsurf Arena Mode shipped this pattern in the window, and
+charm building is an unusually good fit — success is measurable via unit tests,
+integration tests, `charmlint` output, and operational-readiness score. Gated
+by cost and off by default; opt-in per task category.
+
+### 47.1 High — Scoring rubric
+
+- [ ] Define a scoring function that combines: unit test pass count,
+  integration test pass count, `charmlint` violations (weighted by severity),
+  operational-readiness score delta, and diff size (penalising large
+  unnecessary changes)
+- [ ] Scoring runs against each candidate's worktree (depends on Phase 44)
+- [ ] Scores are comparable across candidates even when tests have different
+  counts — normalise by the maximum achieved count
+- [ ] Unit tests cover tie-breaking, empty test suites, and degenerate
+  candidates (build failure scored as worst)
+
+### 47.2 High — Parallel execution harness
+
+- [ ] A `RaceCoordinator` in `src/cantrip/agent/race.py` spawns N candidate
+  subagents against the same task, each in its own worktree and with a
+  different `provider`/`model` pairing
+- [ ] Candidates share the same system prompt, task, and scoped tool access;
+  they differ only by model
+- [ ] Cancellation: once a candidate achieves a perfect score, the coordinator
+  cancels the others (opt-in — some users want to see all results)
+
+### 47.3 Medium — Result selection and commit
+
+- [ ] After all candidates finish (or one wins early), the coordinator picks
+  the highest-scored candidate's worktree and merges it into the charm branch
+  via Phase 44.2
+- [ ] Losing candidates' worktrees are torn down via Phase 44.3
+- [ ] Transcript records all candidates' output per Phase 14.2 so reviewers
+  can see the losers too
+
+### 47.4 Medium — Cost guardrails
+
+- [ ] Configuration gates Best-of-N per category: `race.enable = ["BUILD",
+  "DESIGN"]`, `race.max_candidates = 3`, `race.budget_tokens = 500_000`
+- [ ] Pre-race cost estimate surfaced as a CONFIRM task when the estimated
+  cost exceeds a threshold
+- [ ] Budget exhaustion during the race downgrades gracefully to single-model
+
+### 47.5 Low — Blind A/B arena mode
+
+- [ ] `/arena` slash command runs two candidates blind and asks the user to
+  pick the winner for a one-off preference capture, mirroring Windsurf Arena
+- [ ] Preference outcomes feed into memory (Phase 43) as facts about which
+  models the user prefers for which task categories
+
+**Exit criteria:** Best-of-N races run for configured categories, score by
+measurable outcomes, merge the winner via the worktree merge path, and respect
+cost budgets. Blind arena mode is available behind `/arena`. `make check`
+passes throughout.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Scoring rubric (47.1) | Phase 24 charmlint, Phase 19 readiness score | Combines existing signals |
+| Parallel execution (47.2) | Phase 44 worktree isolation | Each candidate needs its own worktree |
+| Selection and commit (47.3) | 47.2, Phase 44.2 merge | Uses the worktree merge strategy |
+| Cost guardrails (47.4) | Phase 41.6 cost display | Shares the cost-accounting plumbing |
+| Arena mode (47.5) | 47.2, Phase 43 memory | Writes user preference into memory |
+
+---
+
+## Phase 48: Multimodal Observability Diagnostics
+
+**Goal:** Let the agent reason visually about the artefacts charm operators
+actually look at — Grafana panels, Tempo trace waterfalls, Juju status trees,
+workload web UIs. Today `LokiQueryTool` and `TempoQueryTool` return text only.
+Claude Code, Codex CLI, and Gemini CLI added multimodal support in the review
+window (image input, screenshots, macOS computer use), and the Anthropic and
+Gemini SDKs already support image input. This phase adds the rendering tools
+and provider-level plumbing so the agent can debug operationally, not just
+textually.
+
+### 48.1 High — Image-input support in providers
+
+- [ ] Extend `LLMProvider` with `complete_with_images()` /
+  `stream_with_images()` that accept a list of `Image(bytes, mime)` alongside
+  the prompt
+- [ ] `ClaudeProvider` and `GeminiProvider` implement the method against their
+  respective SDKs (both already support image blocks)
+- [ ] `InferenceSnapProvider` raises a clear `NotImplementedError` when images
+  are supplied, falling back to a text description if present
+- [ ] Unit tests cover happy path, oversized images (rejected with a clear
+  error), and unsupported providers
+
+### 48.2 High — Grafana screenshot tool
+
+- [ ] `GrafanaScreenshotTool` renders a panel or a dashboard as PNG via
+  Grafana's `/render` endpoint, using the existing COS configuration
+- [ ] Tool returns both the PNG bytes (for image-input) and a text caption
+  (panel title, time range, unit axes) so text-only providers still benefit
+- [ ] Works against the cross-model COS integration from Phase 22.2
+
+### 48.3 Medium — Tempo trace waterfall rendering
+
+- [ ] `TempoWaterfallTool` takes a trace id, fetches the trace from Tempo
+  (Phase 2.2), and renders a waterfall PNG using a lightweight SVG-to-PNG
+  pipeline
+- [ ] Caption includes the slowest spans and total duration in text
+
+### 48.4 Medium — Juju status tree rendering
+
+- [ ] `JujuStatusRenderTool` captures the current `juju status` output and
+  renders it as a coloured tree PNG (using `rich` offscreen rendering already
+  available in the TUI)
+- [ ] Useful for diagnosing status tables that are long enough to lose
+  structure in a text response
+
+### 48.5 Low — Headless browser integration
+
+- [ ] Optional `workload_screenshot` tool that spawns headless Chromium
+  against a workload endpoint discovered by Phase 17.3 and returns the
+  rendered page as PNG
+- [ ] Off by default; requires an explicit config flag because of the
+  dependency footprint
+
+**Exit criteria:** Providers support image input, the observability tools
+return diagnostically useful PNGs alongside text captions, and subagents can
+reason about Grafana/Tempo/Juju-status visually. `make check` passes
+throughout.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Provider image input (48.1) | None | SDK-level feature already available |
+| Grafana screenshot (48.2) | Phase 22 cross-model COS | Uses existing Grafana config |
+| Tempo waterfall (48.3) | Phase 2.2 COS integration | Reads traces from Tempo |
+| Juju status render (48.4) | Phase 0.3 Juju integration | Renders existing status output |
+| Headless browser (48.5) | Phase 17.3 endpoint testing | Optional; large dependency footprint |
+
+---
+
+## Phase 49: Subprocess Sandboxing Hardening
+
+**Goal:** Isolate subprocess execution so a hallucinated or compromised shell
+command cannot touch files or processes outside its intended scope. Today
+`RunCommandTool`, `CharmcraftPackTool`, `JujuDeployTool`, and the git tools
+run with the agent's full trust. Claude Code landed PID-namespace sandboxing
+on Linux (2.1.98) and deny-rule hardening for `env`/`sudo`/`watch` wrappers
+(2.1.113) during the review window. The recipe is well-understood and directly
+applicable to Cantrip.
+
+### 49.1 High — Linux PID and mount namespace isolation
+
+- [ ] A `SandboxedRunner` in `src/cantrip/agent/sandbox.py` wraps subprocess
+  invocations with `unshare --pid --mount --net=none` (with opt-out for tools
+  that legitimately need network, e.g. `JujuDeployTool`)
+- [ ] Separate mount namespace with read-only bind mounts for system paths,
+  read-write only for the working tree (or worktree, per Phase 44)
+- [ ] Opt-out whitelist is per-tool, not per-command, and declared in the tool
+  dataclass
+- [ ] Unit tests verify the sandboxed command cannot read files outside the
+  bind-mounted working tree
+
+### 49.2 High — Deny-rule hardening
+
+- [ ] Match `env`, `sudo`, `watch`, `nohup`, `setsid`, and similar wrappers
+  when inspecting commands, so a deny rule on `rm` is not bypassed by
+  `env rm ...`
+- [ ] Apply the same normalisation in shell-pipeline form (`x | rm ...`)
+- [ ] Tests exercise each wrapper form
+
+### 49.3 Medium — Per-tool syscall allowlists
+
+- [ ] Seccomp-bpf allowlists for tools with constrained syscall needs (e.g.
+  `CharmcraftPackTool` does not need network beyond PyPI; `git_log` does not
+  write files)
+- [ ] Allowlists are opt-in per tool and fall back to the namespace-only
+  sandbox when seccomp is unavailable
+
+### 49.4 Medium — macOS path hardening
+
+- [ ] On macOS, apply the `sandbox-exec` profile pattern Claude Code uses to
+  restrict filesystem access to the working tree and Cantrip config directory
+- [ ] Fall back to a warning (no hard enforcement) on older macOS where
+  `sandbox-exec` is deprecated
+
+### 49.5 Low — Sandbox observability
+
+- [ ] Log sandbox policy decisions (bind mounts, denied syscalls) to the
+  transcript so reviewers can audit them
+- [ ] `/sandbox status` command shows current sandbox mode and per-tool
+  overrides
+
+**Exit criteria:** Untrusted subprocess execution runs under PID/mount
+namespace isolation with a per-tool network opt-out and deny-rule hardening
+against common bypass wrappers. macOS has a best-effort equivalent via
+`sandbox-exec`. `make check` passes throughout.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| PID/mount namespaces (49.1) | Phase 25.2 shell-injection fix | Builds on cleaned-up command handling |
+| Deny-rule hardening (49.2) | 49.1 | Extends command inspection |
+| Syscall allowlists (49.3) | 49.1 | Layered on the namespace sandbox |
+| macOS hardening (49.4) | 49.1 | Parallel platform implementation |
+| Observability (49.5) | Phase 14.1 transcript | Emits sandbox events |
+
+---
+
+## Phase 50: Skills Ecosystem Interop
+
+**Goal:** Let users bring skills from the cross-vendor Skills ecosystem
+(Claude Code, `gh skill`, Cursor, Codex, Gemini CLI, Windsurf) into Cantrip,
+and export Cantrip's own skills in the same format. The Skills spec stabilised
+in the review window — Microsoft's `microsoft/skills` repository now includes
+MCP-aware Azure and cloud skills directly applicable to charm work (and to
+COS integration specifically).
+
+### 50.1 Medium — Import from standard-format Skills directories
+
+- [ ] Discover skills in `~/.config/cantrip/skills/*.md` and
+  `~/.claude/skills/` that follow the standard YAML-frontmatter + markdown
+  shape, and surface them alongside Cantrip's built-in skills
+- [ ] Translate the frontmatter (`name`, `description`, `tools`) into
+  Cantrip's internal skill dataclass
+- [ ] Imported skills can reference MCP tools from Phase 45 when the MCP
+  client exposes them
+
+### 50.2 Medium — Export Cantrip skills to the standard format
+
+- [ ] `cantrip skill export <name> <path>` emits a standard-format skill file
+  for the named Cantrip skill
+- [ ] Sanitise any charm-specific paths and placeholders (matching the
+  Phase 43.4 export rules)
+- [ ] Round-trip test: export, clear, re-import, verify content and metadata
+  are preserved
+
+### 50.3 Low — `gh skill` discovery
+
+- [ ] Detect skills installed via `gh skill install` by reading the standard
+  install location
+- [ ] Document in the README how users install skills from
+  `microsoft/skills` and use them with Cantrip
+
+### 50.4 Low — MCP-aware skills
+
+- [ ] Skills can declare MCP server dependencies in their frontmatter; the
+  loader checks the MCP client (Phase 45) has those servers configured before
+  activating the skill
+- [ ] Missing dependencies degrade gracefully with a clear warning
+
+**Exit criteria:** Users can drop a standard-format skill into
+`~/.config/cantrip/skills/` and have Cantrip use it; Cantrip skills round-trip
+through the standard format; MCP-aware skills work with the Phase 45 client.
+`make check` passes throughout.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Import (50.1) | Phase 0.4 skills infrastructure | Reuses the loader pipeline |
+| Export (50.2) | Phase 43.4 export rules | Shares sanitisation with the memory export path |
+| `gh skill` discovery (50.3) | Phase 42 GitHub integration | Builds on the existing `gh` dependency |
+| MCP-aware skills (50.4) | Phase 45 MCP client | Requires the client to resolve declared deps |
+
+---
+
+## Phase 51: Team Collaboration — Research
+
+**Goal:** Investigate what Cantrip could do to support a *team* working on a
+charm rather than an individual operator. Every assumption in the codebase
+today is single-user: one laptop, one concierge-prepared local Juju
+environment, one session, one decision log, one memory scope, one set of
+approvals. This phase is exploratory — we do not yet know whether the right
+answer is a thin shared-git-plus-PR workflow (Phase 42 already covers most of
+that), a shared Cantrip server with per-user sessions backing a common state,
+or a real-time collaborative agent with live presence. The purpose of this
+phase is to figure out which of those — if any — fits with Cantrip's design,
+and to produce a written recommendation.
+
+This is a **research phase** — no production code changes expected.
+
+### 51.1 User research
+
+- [ ] Identify concrete team archetypes: charm-authoring team of 2–5, a
+  charm-ops team operating across many charms, a charm-improvement team
+  fixing issues in other people's charms (Canonical's own workflow is the
+  closest datapoint)
+- [ ] Map each archetype's friction against Cantrip today: where does the
+  single-user assumption hurt? Candidates to probe: concurrent editing of the
+  same charm, two operators deploying to the same model, review-before-push
+  gates, sharing deploy credentials, passing a half-finished build between
+  shifts, auditing who approved what
+- [ ] Surface actual user requests — check Phase 42.2 issue-triage data and
+  CHANGELOG feedback for team-shaped requests; interview 2–3 teams building
+  charms today if possible
+
+### 51.2 Remote and shared Juju controllers
+
+- [ ] Document what changes when the target controller is not the local
+  concierge-prepared environment — authentication, credential storage,
+  controller discovery, cross-controller awareness (Phase 22.1 already
+  enumerates controllers, but assumes they are local)
+- [ ] Identify the Jubilant / Juju CLI behaviours that differ for remote
+  controllers: `juju register`, macaroon auth, connection pooling, model
+  isolation, and whether preflight checks make sense when the controller is
+  shared
+- [ ] Assess coordination hazards: two team members deploying the same charm
+  to the same model, concurrent `juju config` writes, overlapping debug-log
+  streams — which of these need Cantrip-side coordination vs Juju's existing
+  semantics?
+- [ ] Consider how charm-improvement mode (Phase 10) would behave against a
+  production controller: what would "safe" mean in that context?
+
+### 51.3 Shared interface
+
+- [ ] Today's Web UI (Phase 15) is a single-user localhost server. Sketch
+  what multi-user would look like: a shared server, per-user connections via
+  the existing event bus (Phase 15.1), presence (who is viewing / editing),
+  simple turn-taking vs true concurrent editing
+- [ ] Identify the minimum viable shared interface: is it a read-only
+  dashboard over a single author's Cantrip session, or does every user drive
+  their own agent against shared state?
+- [ ] Evaluate authentication models: SSO, GitHub OAuth (Phase 42 already
+  uses `gh`), or a lightweight shared-secret pattern — each has different
+  deployment-cost trade-offs
+
+### 51.4 Shared state, memory, and decisions
+
+- [ ] For each existing state scope, decide whether a team version makes
+  sense: decisions log (currently per-session), memory (Phase 43 — per-charm
+  and global; does per-team fit alongside those?), skills (currently local),
+  transcripts (Phase 14 — currently personal, but teams might want a shared
+  audit log)
+- [ ] Consider attribution: if two users contribute to one session, how are
+  their inputs labelled in transcripts and commits?
+- [ ] Consider memory conflict: if two users teach Cantrip contradictory
+  lessons about the same charm, who wins and how is the conflict surfaced?
+
+### 51.5 Role-based workflows and approvals
+
+- [ ] Map existing CONFIRM tasks (deploy, destructive actions, PR creation)
+  to a role model: is the user who requested the action always the approver,
+  or can approvals be delegated?
+- [ ] Assess whether the Phase 46 hooks mechanism is enough to express
+  team-specific approval policy, or whether team support needs a first-class
+  role system
+- [ ] Consider handoff: user A leaves a task mid-way (end of shift, blocked
+  on a question); user B picks it up. What state needs to travel, and does
+  session-resume (Phase 11.3 / 31.3) already cover it when the operator
+  changes?
+
+### 51.6 Candidate architectures
+
+- [ ] **Thin (shared git + PR workflow):** each user runs their own Cantrip
+  locally, coordination happens entirely through GitHub. Phase 42 already
+  delivers most of this — the research question is what small additions
+  (branch etiquette, assignee-based triage, PR-level decision sharing) would
+  close the remaining gaps
+- [ ] **Medium (shared Cantrip server):** one long-running Cantrip process
+  per team with a web-authenticated UI; per-user sessions share the memory,
+  decisions, and transcript layers. This is the Windsurf Agent Command
+  Center / Cursor self-hosted cloud-agents shape
+- [ ] **Heavy (real-time collaborative agent):** multiple users drive the
+  same session simultaneously with presence and live artefacts (Cursor
+  Canvases). Probably too ambitious without clear demand
+- [ ] For each candidate, list: estimated implementation cost, new failure
+  modes introduced, parts of the existing codebase affected, and which
+  user-research archetypes it serves
+
+### 51.7 Decision and write-up
+
+- [ ] Write a findings document summarising: whether team support is a
+  direction Cantrip should pursue at all, which archetype(s) are worth
+  optimising for, which candidate architecture fits Cantrip's
+  single-operator-biased design with the least disruption, and what the
+  explicit non-goals are
+- [ ] If any direction is promising, outline a concrete follow-on phase with
+  scoped sub-items — but be willing to conclude "not now" if the user
+  research or architecture sketch does not support it
+- [ ] Capture the written assessment in `design/` alongside the ACP research
+  output so future planning has a shared reference
+
+**Exit criteria:** A written assessment of whether Cantrip should support
+teams, which team archetypes are worth targeting, which architectural
+direction best fits Cantrip's design, and whether the next step is a concrete
+implementation phase or a deliberate decision to stay single-user. `make
+check` passes throughout (this phase should not add code beyond a findings
+document).
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| User research (51.1) | None | Pure research; can start any time |
+| Remote controllers (51.2) | Phase 22 multi-controller | Builds on existing controller awareness |
+| Shared interface (51.3) | Phase 15 Web UI | Extends the existing event bus + server |
+| Shared state (51.4) | Phase 43 memory | Memory scopes are the natural extension point |
+| Role workflows (51.5) | Phase 46 hooks (if adopted) | Hooks may obviate a bespoke role system |
+| Architecture sketches (51.6) | 51.1–51.5 | Needs the research inputs to sketch against |
+| Decision write-up (51.7) | 51.6 | Consolidates into a recommendation |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -3781,3 +4565,12 @@ remote, Cantrip offers to create one. `make check` passes throughout.
 | M40: Safe Compaction | 40 | Compaction has cycle detection, retry budgets, and size validation — no infinite loops possible |
 | M41: Provider Parity | 41 | All providers capture streaming usage; extended thinking available for Claude; accurate token counting; cost visibility; compaction monitoring |
 | M42: GitHub Native | 42 | Cantrip triages issues, works on branches, opens PRs, and bootstraps repos — all with user approval |
+| M44: Worktree Parallelism | 44 | Concurrent subagents run in isolated git worktrees with tested merge and revert paths |
+| M45: MCP Client | 45 | Cantrip can attach third-party MCP servers with OAuth, elicitation, and category-scoped tool access |
+| M46: User Hooks | 46 | Users configure pre/post lifecycle hooks with conditional filters; PreCompact can block compaction |
+| M47: Best-of-N | 47 | High-value tasks optionally race multiple models and commit the test-pass-scored winner |
+| M48: Multimodal Debug | 48 | Providers accept images; Grafana/Tempo/Juju-status rendering tools return PNGs the agent reasons about |
+| M49: Sandboxed Shell | 49 | Untrusted subprocesses run under PID/mount namespaces with deny-rule and syscall hardening |
+| M50: Skills Interop | 50 | Standard-format skills import and export round-trip; MCP-aware skills resolve dependencies at load time |
+| M51: Team Research | 51 | Written assessment of whether and how Cantrip should support teams working on a charm, with architecture sketches and a next-step recommendation |
+| M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
