@@ -4526,6 +4526,156 @@ document).
 
 ---
 
+## Phase 52: Step-Level Durable Execution for Subagent Loops
+
+**Goal:** Stop throwing away in-flight LLM work when a subagent task fails,
+rate-limits, or the user Ctrl+Cs mid-run.  Today a BUILD subagent that
+rate-limits on turn 18 restarts from turn 1 on the next run — re-burning
+every token and every tool call in between.  Cantrip already has
+task-level persistence (`.cantrip` SQLite with `tasks`,
+`subagent_messages`, transcripts); what it lacks is a *per-step*
+checkpoint layer so replay can resume from the last completed step.
+
+Inspired by Armin Ronacher's *Absurd* (Postgres-backed durable
+execution) — but Cantrip is a single-process local tool, so the queue
+and worker machinery are irrelevant.  The pattern we want is just
+"checkpoint each expensive step, replay from the store on restart,"
+adapted to SQLite.
+
+### 52.1 Medium — Checkpoint schema and storage helpers
+
+- [ ] Add a `step_checkpoints` table to the `.cantrip` SQLite schema
+  (new migration):
+  ```
+  step_checkpoints(
+    id              INTEGER PRIMARY KEY,
+    task_id         TEXT    NOT NULL,
+    step_name       TEXT    NOT NULL,
+    ordinal         INTEGER NOT NULL,      -- auto-numbered for repeats
+    input_hash      TEXT    NOT NULL,      -- sha256 over normalised inputs
+    result_blob     BLOB    NOT NULL,      -- msgpack-encoded return value
+    result_kind     TEXT    NOT NULL,      -- 'llm_response' | 'tool_result' | 'value'
+    created_at      TEXT    NOT NULL,
+    UNIQUE(task_id, step_name, ordinal)
+  );
+  CREATE INDEX ix_step_checkpoints_task ON step_checkpoints(task_id);
+  ```
+- [ ] Implement `CheckpointStore` helpers on top of the existing SQLite
+  session: `record(task_id, step_name, ordinal, input_hash, kind, value)`,
+  `get(task_id, step_name, ordinal)`, `next_ordinal(task_id, step_name)`.
+  Values serialise via msgpack (already a dep through providers) with
+  a fallback to JSON for debuggability.
+- [ ] Garbage-collect checkpoints when a task terminates successfully —
+  retain for failed/paused tasks so the next run can resume.  Config:
+  `CANTRIP_KEEP_CHECKPOINTS=1` to preserve all for debugging.
+
+### 52.2 Medium — `checkpoint()` wrapper helper
+
+- [ ] A single async helper in `cantrip.agent.durability`:
+  ```python
+  async def checkpoint(
+      ctx: CheckpointCtx,
+      step_name: str,
+      fn: Callable[[], Awaitable[T]],
+      *,
+      input_hash: str | None = None,
+      kind: str = "value",
+  ) -> T: ...
+  ```
+- [ ] Semantics mirror Absurd's `ctx.step`: compute the next ordinal for
+  this `(task_id, step_name)` pair, look up the checkpoint, return the
+  stored value if present, otherwise run `fn()` and persist the result
+  before returning.
+- [ ] On input-hash mismatch (same step name + ordinal, different
+  inputs) — invalidate the checkpoint and re-run, logging a warning.
+  This prevents a stale checkpoint from masking a code change.
+- [ ] The `CheckpointCtx` is constructed once per subagent task; it
+  closes over the `task_id` and a monotonic per-step counter so
+  repeated calls to `checkpoint(ctx, "llm_turn", …)` auto-number
+  (`llm_turn`, `llm_turn#2`, …) without the caller tracking indices.
+
+### 52.3 Medium — Wire checkpoints into the subagent loop
+
+- [ ] Wrap each LLM call in the subagent turn loop with
+  `checkpoint(ctx, "llm_turn", lambda: provider.complete(...))`.
+  Result kind = `llm_response`; input hash includes model, conversation
+  prefix hash, tools schema hash.
+- [ ] Wrap each tool-call execution with
+  `checkpoint(ctx, f"tool:{tool_name}", lambda: tool.run(args))`.
+  Result kind = `tool_result`; input hash = sha256 of canonicalised
+  `args`.  Tool failures are persisted as *negative* checkpoints so a
+  deterministic error doesn't replay forever — but the user can opt in
+  to "retry failed steps on resume" via a session flag.
+- [ ] Streaming LLM responses checkpoint *after* the full response is
+  assembled; partial streams are not persisted (they're free to
+  re-request on replay).  The existing streaming UI plumbing is
+  unaffected.
+
+### 52.4 Medium — Resume path on session start
+
+- [ ] When the executor picks up an `ACTIVE → PENDING`-reset task that
+  has step checkpoints, surface this in the task checklist: *"resuming
+  from step N"*.  Do NOT silently resume — the user sees that a
+  previous attempt was interrupted and knows why the token count
+  doesn't start at zero.
+- [ ] `cantrip session inspect <session>` (or TUI F-key) shows the
+  checkpoint count and list for the current task, so users can see
+  what's cached before deciding whether to resume or clear.
+- [ ] Resume is opt-out via `CANTRIP_NO_RESUME=1` for debugging — useful
+  when hunting a bug that might itself be cached in a stale
+  checkpoint.
+
+### 52.5 Low — Observability and debugging
+
+- [ ] Extend the transcript viewer (F9) with a "checkpoints" tab that
+  shows, per task, the recorded steps, ordinals, input hashes, and
+  timestamps.  Click-through to view the stored result blob.
+- [ ] Add a `cantrip checkpoints {list,show,delete}` CLI subcommand
+  for scripted inspection and surgical removal.
+- [ ] Emit a structured event on every checkpoint hit/miss so the
+  watcher dashboards can plot replay efficiency over a session.
+
+### 52.6 Low — Cost accounting for replayed steps
+
+- [ ] Token-usage records note whether a turn's tokens came from a
+  fresh provider call or a checkpoint replay — the model-info bar and
+  transcript show "X tokens (Y cached from checkpoint)" so the cost
+  signal isn't misleading.
+- [ ] On replay, we do not double-count tokens toward the rate-limit
+  budget tracker (which already treats cache hits correctly; this
+  extends the same treatment to checkpoint hits).
+
+### What this phase is *not*
+
+- Not a queue or worker rewrite.  Cantrip already has an in-process
+  executor; the only thing we add is a checkpoint table.
+- Not a distributed system.  No multi-process claims, no
+  `SKIP LOCKED`, no `pgmq`.  One process holds one SQLite file — the
+  existing concurrency story (Phase 28 WAL work) covers us.
+- Not deterministic replay of arbitrary Python.  Checkpoints attach at
+  LLM-call and tool-call boundaries only; non-deterministic bits
+  (`datetime.now()`, random, thinking traces) between boundaries are
+  fine because they're not what we replay.
+
+**Exit criteria:** a BUILD subagent that rate-limits on LLM turn N,
+restarts cleanly and resumes from turn N without re-issuing the first
+N-1 calls.  Checkpoint hits are visible in the TUI and transcript.
+`make check` passes; new unit tests cover the checkpoint wrapper,
+input-hash invalidation, and resume flow.  No regression in existing
+task-level persistence.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Checkpoint schema (52.1) | Phase 28 SQLite WAL work | New table + migration |
+| `checkpoint()` helper (52.2) | 52.1 | Core API everything else builds on |
+| Subagent wiring (52.3) | 52.2 | Touches the main agent loop; needs care |
+| Resume UX (52.4) | 52.3 | User-visible behaviour |
+| Observability (52.5) | 52.3 | Transcript viewer + CLI add-ons |
+| Cost accounting (52.6) | Phase 41.5 token counting | Extends existing tracking |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4573,4 +4723,5 @@ document).
 | M49: Sandboxed Shell | 49 | Untrusted subprocesses run under PID/mount namespaces with deny-rule and syscall hardening |
 | M50: Skills Interop | 50 | Standard-format skills import and export round-trip; MCP-aware skills resolve dependencies at load time |
 | M51: Team Research | 51 | Written assessment of whether and how Cantrip should support teams working on a charm, with architecture sketches and a next-step recommendation |
+| M52: Durable Subagents | 52 | Subagent LLM turns and tool calls checkpoint into SQLite; interrupted tasks resume from the last completed step instead of re-burning tokens |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
