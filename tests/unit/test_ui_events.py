@@ -44,6 +44,33 @@ class TestEventContract:
         assert "description" in data
         assert "result" in data
         assert "blocked_reason" in data
+        # Worktree visibility (Phase 44.4) — absent means no active worktree.
+        assert data["worktree_path"] is None
+
+    def test_task_updated_carries_worktree_path(self):
+        event = events.task_updated(
+            task_id="t1",
+            title="Build",
+            status="active",
+            category="build",
+            worktree_path="/tmp/charm/.cantrip-worktrees/t1",
+        )
+        data = self._round_trip(event)["data"]
+        assert data["worktree_path"] == "/tmp/charm/.cantrip-worktrees/t1"
+
+    def test_task_updated_from_task_reads_worktree_path(self):
+        class _T:
+            id = "t1"
+            title = "Build"
+            status = "active"
+            category = "build"
+            description = ""
+            result = None
+            blocked_reason = None
+            worktree_path = "/tmp/charm/.cantrip-worktrees/t1"
+
+        data = self._round_trip(events.task_updated_from_task(_T()))["data"]
+        assert data["worktree_path"] == "/tmp/charm/.cantrip-worktrees/t1"
 
     def test_task_updated_status_values_match_web_css(self):
         """The status values must match the CSS class names in style.css."""

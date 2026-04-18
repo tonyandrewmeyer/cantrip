@@ -53,6 +53,10 @@ class AgentTask:
     model_hint: ModelHint | None = None
     created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
     noop_count: int = 0
+    # Transient — set while a task owns a git worktree; cleared on release.
+    # Not persisted to SQLite because worktrees don't survive sessions; they
+    # are recreated on restart by whoever picks the task up next.
+    worktree_path: str | None = None
 
     def __post_init__(self) -> None:
         """Generate a unique ID if not provided."""
@@ -86,6 +90,15 @@ class WorkQueue:
         """Fire the callback if one is registered."""
         if self._on_task_changed is not None:
             self._on_task_changed(task)
+
+    def notify_task(self, task: AgentTask) -> None:
+        """Re-fire the change callback for *task*.
+
+        Use this after mutating a task field directly (for example, setting
+        ``worktree_path`` when a worktree is allocated) so subscribers see
+        the update even though the change did not go through a queue method.
+        """
+        self._notify(task)
 
     def _get_or_raise(self, task_id: str) -> AgentTask:
         """Return the task with *task_id* or raise ``KeyError``."""

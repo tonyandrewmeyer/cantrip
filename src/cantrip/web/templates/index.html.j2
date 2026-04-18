@@ -50,6 +50,9 @@
             <span class="task-icon"></span>
             <span class="task-title">{{ task.title }}</span>
             <span class="task-badge">{{ task.category }}</span>
+            {% if task.worktree_path %}
+            <span class="task-worktree">worktree: {{ task.worktree_path }}</span>
+            {% endif %}
           </div>
           {% endfor %}
           {% if not tasks %}

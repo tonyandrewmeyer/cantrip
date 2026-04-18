@@ -206,10 +206,24 @@ const cantrip = (() => {
     if (empty) empty.remove();
 
     let el = document.getElementById(`task-${data.id}`);
+    const wt = data.worktree_path || "";
     if (el) {
       el.className = `task task-${data.status}`;
       el.querySelector(".task-title").textContent = data.title;
       el.querySelector(".task-badge").textContent = data.category;
+      const wtEl = el.querySelector(".task-worktree");
+      if (wt) {
+        if (wtEl) {
+          wtEl.textContent = `worktree: ${wt}`;
+        } else {
+          const span = document.createElement("span");
+          span.className = "task-worktree";
+          span.textContent = `worktree: ${wt}`;
+          el.appendChild(span);
+        }
+      } else if (wtEl) {
+        wtEl.remove();
+      }
     } else {
       el = document.createElement("div");
       el.id = `task-${data.id}`;
@@ -218,7 +232,8 @@ const cantrip = (() => {
       el.innerHTML =
         '<span class="task-icon"></span>' +
         `<span class="task-title">${_esc(data.title)}</span>` +
-        `<span class="task-badge">${_esc(data.category)}</span>`;
+        `<span class="task-badge">${_esc(data.category)}</span>` +
+        (wt ? `<span class="task-worktree">worktree: ${_esc(wt)}</span>` : "");
       list.appendChild(el);
     }
   }

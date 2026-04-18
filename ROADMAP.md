@@ -3954,14 +3954,40 @@ of race condition from generated-charm builds.
 - [ ] *Future work:* surface the conflict as a proper CONFIRM task through
   the conversation loop rather than just a `BLOCKED` status line
 
-### 44.3 Medium — Revert path on failure
+### 44.3 Medium — Revert path on failure ✓
 
-- [ ] Extend Phase 11.4 git-revert-on-failure to operate inside the worktree
+- [x] Extend Phase 11.4 git-revert-on-failure to operate inside the worktree
   rather than on the shared tree — a failing subagent's changes are discarded
-  when its worktree is torn down without merging
-- [ ] Confirm the Phase 11.1 commit-after-build checks still apply per-worktree
-- [ ] Noop detection (Phase 21.3) uses the worktree's pre/post state, not the
-  shared tree
+  when its worktree is torn down without merging.  The executor's `finally`
+  block calls `release(keep_branch=False)`, which removes the worktree
+  directory and deletes the ephemeral branch, so nothing survives.  The
+  main-tree snapshot/revert path now runs only when the allocator returns
+  `None` (non-git charms)
+- [x] Phase 11.1 commit-after-build still applies per-worktree: subagents
+  commit to `cantrip/wt/<task-id>` via `GitCommitTool` as before, and
+  `_merge_worktree` auto-commits any remaining uncommitted files before
+  merging so nothing goes unrecorded
+- [x] Noop detection (Phase 21.3) fingerprints the worktree path, not the
+  shared tree — `_execute_task` passes the effective path (worktree when
+  allocated, otherwise main) through `_handle_result` for the before/after
+  comparison
+
+### 44.4 Medium — Worktree visibility in TUI/Web
+
+- [x] TUI task widget detail panel includes the worktree path when the task
+  owns one (`tui/widgets/tasks.py:_format_detail`).  Collapsed rows keep
+  their previous layout; the path appears on expand only
+- [x] Web task list renders `worktree: <path>` as a small monospace line
+  beneath each active task (both in the server-rendered initial HTML and
+  live WebSocket updates); styled via a new `.task-worktree` CSS class
+- [x] `TASK_UPDATED` bus events carry a `worktree_path` field
+  (`ui/events.py:task_updated`) so subscribers pick it up without new
+  event types; `AgentTask` gained a transient `worktree_path` attribute
+  the executor toggles on allocate/release
+- [ ] `/worktrees` slash command listing active worktrees with task ids and
+  branches — deferred; the per-task display above covers the common case
+- [ ] File-tree preview on worktree click — deferred; out of scope for the
+  initial visibility pass
 
 ### 44.4 Medium — Worktree visibility in TUI/Web
 

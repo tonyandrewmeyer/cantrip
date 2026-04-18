@@ -311,6 +311,17 @@ main {
   text-transform: uppercase;
 }
 
+.task-worktree {
+  flex-basis: 100%;
+  font-size: 10px;
+  font-family: monospace;
+  color: var(--text-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .task-empty, .juju-empty {
   color: var(--text-muted);
   font-size: 13px;

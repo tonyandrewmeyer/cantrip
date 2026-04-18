@@ -919,6 +919,7 @@ def _fake_task(
     category: str = "build",
     description: str = "",
     result: str | None = None,
+    worktree_path: str | None = None,
 ) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         id=id_,
@@ -927,6 +928,7 @@ def _fake_task(
         category=types.SimpleNamespace(value=category),
         description=description,
         result=result,
+        worktree_path=worktree_path,
     )
 
 
@@ -1003,6 +1005,7 @@ class TestApiState:
                         "category": "deploy",
                         "description": "ship it",
                         "result": "ok",
+                        "worktree_path": None,
                     }
                 ]
 
@@ -1020,6 +1023,31 @@ class TestApiState:
                 resp = await client.get("/api/state")
                 data = await resp.json()
                 assert data == {"charm_name": "mycharm", "tasks": []}
+
+        asyncio.run(_run())
+
+    def test_api_state_includes_worktree_path(self) -> None:
+        """Phase 44.4: ``/api/state`` must surface each task's worktree path."""
+        from cantrip.web import server
+
+        agent = _make_agent()
+        agent._work_queue = _work_queue_with(
+            [
+                _fake_task(
+                    "t1",
+                    "Build",
+                    worktree_path="/tmp/charm/.cantrip-worktrees/t1",
+                )
+            ]
+        )
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/state", server._api_state)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/state")
+                data = await resp.json()
+                assert data["tasks"][0]["worktree_path"] == "/tmp/charm/.cantrip-worktrees/t1"
 
         asyncio.run(_run())
 

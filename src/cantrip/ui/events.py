@@ -144,6 +144,7 @@ def task_updated(
     description: str = "",
     result: str | None = None,
     blocked_reason: str | None = None,
+    worktree_path: str | None = None,
 ) -> Event:
     """Build a ``TASK_UPDATED`` event."""
     return Event(
@@ -156,6 +157,7 @@ def task_updated(
             "description": description,
             "result": result,
             "blocked_reason": blocked_reason,
+            "worktree_path": worktree_path,
         },
     )
 
@@ -174,6 +176,7 @@ def task_updated_from_task(task: Any) -> Event:
         description=task.description,
         result=task.result,
         blocked_reason=task.blocked_reason,
+        worktree_path=getattr(task, "worktree_path", None),
     )
 
 

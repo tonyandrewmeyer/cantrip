@@ -115,6 +115,18 @@ class TestFormatDetail:
         detail = _format_detail(task)
         assert "Waiting for user" in detail
 
+    def test_includes_worktree_path_when_set(self):
+        task = _make_task()
+        task.worktree_path = "/tmp/charm/.cantrip-worktrees/t1"
+        detail = _format_detail(task)
+        assert "Worktree:" in detail
+        assert "/tmp/charm/.cantrip-worktrees/t1" in detail
+
+    def test_omits_worktree_row_when_not_set(self):
+        task = _make_task()
+        detail = _format_detail(task)
+        assert "Worktree" not in detail
+
 
 class _ChecklistApp:
     """Tiny Textual app that hosts a single TaskChecklistWidget."""

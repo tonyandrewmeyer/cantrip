@@ -18,6 +18,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **Worktree visibility in TUI and Web (Phase 44.3/44.4)** — each task now
+  surfaces its active worktree path in the UI while the subagent is
+  running and clears it on release.  ``AgentTask`` grew a transient
+  ``worktree_path`` field (not persisted — worktrees don't survive
+  sessions); the executor sets it on allocate, clears it on release, and
+  re-fires the queue's change callback via a new ``WorkQueue.notify_task``
+  helper so both UIs stay in sync.  ``task_updated`` events carry a new
+  ``worktree_path`` field, the TUI task detail panel renders a
+  ``Worktree:`` line, and the web UI appends a small monospace
+  ``worktree: <path>`` beneath the task title (server-rendered on first
+  load and live-updated via the WebSocket).  Revert-on-failure (Phase
+  11.4) now runs only in the non-git fallback path — worktree'd failures
+  are cleaned up by dropping the worktree, which discards every
+  partial write at once.  Phase 11.1 commit-after-build still applies
+  per-worktree; the merge pass auto-commits anything a subagent forgot
+  to commit.  6 new unit tests cover the executor bookkeeping, the TUI
+  detail panel, the ``task_updated`` payload, and the ``/api/state`` JSON
+  shape.
 - **Worktree-isolated subagents (Phase 44.2)** — the ``BackgroundExecutor``
   now allocates a per-task git worktree at subagent spawn time, passes the
   worktree path as the subagent's ``charm_path``, and ``git merge --no-ff``

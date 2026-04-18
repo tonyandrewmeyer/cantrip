@@ -225,6 +225,38 @@ class TestAllocateAndRelease:
         assert context.charm_path == str(expected)
 
     @pytest.mark.asyncio
+    async def test_task_worktree_path_is_set_and_cleared(self) -> None:
+        """The task's ``worktree_path`` reflects the live allocation state."""
+        allocator = FakeAllocator(handle_factory=_handle_for)
+        task = AgentTask(id="t1", title="Research", category=TaskCategory.RESEARCH)
+        executor = _make_executor(allocator)
+        executor._queue.add_task(task)
+        executor._queue.set_active(task.id)
+
+        observed: list[str | None] = []
+
+        def _record(changed: AgentTask) -> None:
+            if changed.id == task.id:
+                observed.append(changed.worktree_path)
+
+        executor._queue._on_task_changed = _record
+
+        with (
+            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch.object(executor, "_merge_worktree", new=AsyncMock(return_value=None)),
+        ):
+            mock_cls.return_value.run = AsyncMock(
+                return_value=SubagentResult(ExitState.COMPLETED, "done")
+            )
+            await executor._execute_task(task)
+
+        # At least one notification saw the worktree set and one saw it cleared.
+        expected_path = str(pathlib.Path("/tmp/charm/.cantrip-worktrees/t1"))
+        assert expected_path in observed
+        assert observed[-1] is None
+        assert task.worktree_path is None
+
+    @pytest.mark.asyncio
     async def test_success_merges_and_releases_without_keeping_branch(self) -> None:
         allocator = FakeAllocator(handle_factory=_handle_for)
         task = AgentTask(id="t1", title="Research", category=TaskCategory.RESEARCH)

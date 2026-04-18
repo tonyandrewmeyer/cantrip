@@ -79,6 +79,7 @@ async def _index(request: web.Request) -> web.Response:
                 "title": t.title,
                 "status": t.status.value,
                 "category": t.category.value,
+                "worktree_path": t.worktree_path,
             }
             for t in agent._work_queue.all_tasks()
         ]
@@ -105,6 +106,7 @@ async def _api_state(request: web.Request) -> web.Response:
                 "category": t.category.value,
                 "description": t.description,
                 "result": t.result,
+                "worktree_path": t.worktree_path,
             }
             for t in agent._work_queue.all_tasks()
         ]

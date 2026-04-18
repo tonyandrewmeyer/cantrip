@@ -747,6 +747,11 @@ class BackgroundExecutor:
         effective_path: str | pathlib.Path | None = (
             handle.path if handle is not None else self._state.charm_path
         )
+        # Reflect the allocated worktree on the task so the TUI and Web
+        # task widgets can display it.
+        if handle is not None:
+            task.worktree_path = str(handle.path)
+            self._queue.notify_task(task)
 
         # Snapshot/revert only applies when the subagent writes to the main
         # tree directly — worktree failures are cleaned up by dropping the
@@ -812,6 +817,8 @@ class BackgroundExecutor:
                     await self._worktrees.release(task.id, keep_branch=keep_branch)
                 except (OSError, RuntimeError) as exc:
                     log.warning("Worktree release failed for task %s: %s", task.id, exc)
+                task.worktree_path = None
+                self._queue.notify_task(task)
             self._create_followups(task)
             self._persist()
 

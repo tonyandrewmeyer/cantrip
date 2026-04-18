@@ -60,6 +60,8 @@ def _format_detail(task: AgentTask) -> str:
     lines: list[str] = []
     lines.append(f"  Category: {task.category.value}")
     lines.append(f"  Status: {task.status.value}")
+    if task.worktree_path:
+        lines.append(f"  Worktree: {task.worktree_path}")
     if task.blocked_reason:
         lines.append(f"  Blocked: {task.blocked_reason}")
     if task.result:
