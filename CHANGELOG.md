@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Entry-point coverage (Phase 57.2)** — three modules that were at
+  0% are now thoroughly tested: ``cantrip/cli.py`` (0% → 97%),
+  ``cantrip/main.py`` (0% → 99%), and ``cantrip/juju/log_stream.py``
+  (0% → 100%).  85 new tests across
+  ``tests/unit/test_{cli,main,log_stream}.py``.  The CLI-mode REPL is
+  driven by a canned ``asyncio.to_thread(input, ...)`` side-effect
+  queue so every command (``/help`` / ``/tasks`` / ``/status`` /
+  ``/cost`` / ``exit``) and error branch (``ProviderRateLimitError``,
+  ``ProviderOverloadedError``, ``ProviderError``, ``ValueError``,
+  ``KeyboardInterrupt``) is exercised without launching an agent.
+  ``main.py`` tests cover every ``parse_args`` path (including the
+  "bare path" / "bare flag" shortcuts), every dispatch branch in
+  ``_run``, and every transcript format in ``_export_transcript``
+  (including paginated HTML).  ``log_stream`` tests use AsyncMock
+  processes to cover EOF, ``max_lines``, timeout, ``ProcessLookupError``
+  cleanup, and invalid-UTF-8 replacement.  Full suite:
+  ``2970 passed, 5 skipped`` in 58 s.
 - **Tool ``execute()`` coverage (Phase 57.3)** — four subprocess-wrapping
   tools moved from the 20–28% range to ≥97%: ``scaling.py`` (20% →
   100%), ``upgrade.py`` (21% → 99%), ``charmlint_tool.py`` (24% →

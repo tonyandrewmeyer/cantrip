@@ -1,0 +1,483 @@
+"""Tests for the ``cantrip`` CLI entry point.
+
+The module dispatches to ``run`` or ``export-transcript`` subcommands
+after argparse resolution.  The tests stub the heavyweight
+implementations (``run_web``, ``run_cli``, ``CantripApp``, transcript
+renderers) so we can verify the dispatch and validation logic without
+launching any actual mode.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+import pytest
+
+from cantrip import main as cantrip_main
+
+
+def _set_argv(monkeypatch: pytest.MonkeyPatch, *argv: str) -> None:
+    monkeypatch.setattr("sys.argv", ["cantrip", *argv])
+
+
+class TestParseArgs:
+    """``parse_args`` has a bit of bespoke behaviour beyond argparse."""
+
+    def test_defaults_to_run_when_no_subcommand(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_argv(monkeypatch)
+        args = cantrip_main.parse_args()
+        assert args.command == "run"
+        assert args.provider == "gemini"
+        assert args.no_tui is False
+        assert args.web is False
+        assert args.path == Path.cwd()
+
+    def test_bare_path_is_treated_as_run(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _set_argv(monkeypatch, str(tmp_path))
+        args = cantrip_main.parse_args()
+        assert args.command == "run"
+        assert args.path == tmp_path
+
+    def test_flag_only_invocation_becomes_run(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_argv(monkeypatch, "--no-tui")
+        args = cantrip_main.parse_args()
+        assert args.command == "run"
+        assert args.no_tui is True
+
+    def test_run_subcommand_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_argv(
+            monkeypatch,
+            "run",
+            "--provider",
+            "claude",
+            "--model",
+            "opus-4",
+            "--no-tui",
+            "--watcher",
+            "--concurrency",
+            "5",
+            "--theme",
+            "ubuntu",
+        )
+        args = cantrip_main.parse_args()
+        assert args.provider == "claude"
+        assert args.model == "opus-4"
+        assert args.no_tui is True
+        assert args.watcher is True
+        assert args.concurrency == 5
+        assert args.theme == "ubuntu"
+
+    def test_web_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_argv(monkeypatch, "--web", "--web-port", "9090")
+        args = cantrip_main.parse_args()
+        assert args.web is True
+        assert args.web_port == 9090
+
+    def test_improve_flag_takes_a_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        target = tmp_path / "existing-charm"
+        target.mkdir()
+        _set_argv(monkeypatch, "--improve", str(target))
+        args = cantrip_main.parse_args()
+        assert args.improve == target
+
+    def test_light_provider_choices_enforced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_argv(monkeypatch, "--light-provider", "nope")
+        with pytest.raises(SystemExit):
+            cantrip_main.parse_args()
+
+    def test_export_transcript_subcommand(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _set_argv(
+            monkeypatch,
+            "export-transcript",
+            str(tmp_path),
+            "--format",
+            "markdown",
+            "--task",
+            "build-1",
+            "--phase",
+            "build",
+            "--since",
+            "2026-01-01T00:00:00",
+            "--output",
+            str(tmp_path / "out.md"),
+        )
+        args = cantrip_main.parse_args()
+        assert args.command == "export-transcript"
+        assert args.path == tmp_path
+        assert args.fmt == "markdown"
+        assert args.filter_task == "build-1"
+        assert args.filter_phase == "build"
+        assert args.filter_since == "2026-01-01T00:00:00"
+        assert args.output == tmp_path / "out.md"
+
+
+class TestInstallUnraisableHook:
+    def test_hook_swallows_event_loop_closed_runtime_errors(self) -> None:
+        cantrip_main._install_unraisable_hook()
+        # The hook must swallow the exact "Event loop is closed" RuntimeError
+        # and still delegate for unrelated ones.  Build a fake unraisable
+        # carrying each exception in turn.
+        swallowed = SimpleNamespace(exc_value=RuntimeError("Event loop is closed"))
+        passthrough = SimpleNamespace(exc_value=RuntimeError("something else"))
+
+        import sys
+
+        calls: list[object] = []
+        sys.unraisablehook = lambda obj: calls.append(obj)
+        cantrip_main._install_unraisable_hook()
+
+        sys.unraisablehook(swallowed)
+        sys.unraisablehook(passthrough)
+
+        assert swallowed not in calls
+        assert passthrough in calls
+
+
+class TestIsCantripSourceTree:
+    def test_returns_false_without_pyproject(self, tmp_path: Path) -> None:
+        assert cantrip_main._is_cantrip_source_tree(tmp_path) is False
+
+    def test_returns_true_for_cantrip_pyproject(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "cantrip"\n\n[project.scripts]\ncantrip = "cantrip.main:main"\n'
+        )
+        assert cantrip_main._is_cantrip_source_tree(tmp_path) is True
+
+    def test_returns_false_for_other_pyproject(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "some-charm"\n')
+        assert cantrip_main._is_cantrip_source_tree(tmp_path) is False
+
+    def test_returns_false_on_unreadable_pyproject(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("ignored")
+        with mock.patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):
+            assert cantrip_main._is_cantrip_source_tree(tmp_path) is False
+
+
+def _run_args(tmp_path: Path, **overrides: object) -> SimpleNamespace:
+    """Build a namespace mirroring the ``run`` sub-parser defaults."""
+    base = {
+        "command": "run",
+        "provider": "gemini",
+        "model": None,
+        "snap": "gemma3",
+        "light_model": None,
+        "light_snap": None,
+        "light_provider": None,
+        "no_tui": False,
+        "web": False,
+        "web_port": 8471,
+        "watcher": False,
+        "concurrency": None,
+        "improve": None,
+        "theme": None,
+        "path": tmp_path,
+    }
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+class TestRun:
+    """``_run`` validates the target path then dispatches."""
+
+    def test_refuses_cantrip_source_tree(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "cantrip"\n\n[project.scripts]\ncantrip = "cantrip.main:main"\n'
+        )
+        monkeypatch.setenv("GEMINI_API_KEY", "test")
+        rc = cantrip_main._run(_run_args(tmp_path))
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "refusing to use the cantrip source tree" in out
+
+    def test_improve_requires_directory(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        missing = tmp_path / "not-a-dir"
+        rc = cantrip_main._run(_run_args(tmp_path, improve=missing))
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "is not a directory" in out
+
+    def test_missing_gemini_api_key(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        rc = cantrip_main._run(_run_args(tmp_path))
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "GEMINI_API_KEY" in out
+
+    def test_missing_anthropic_api_key(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        rc = cantrip_main._run(_run_args(tmp_path, provider="claude"))
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "ANTHROPIC_API_KEY" in out
+
+    def test_inference_snap_needs_no_key(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        with (
+            mock.patch("cantrip.cli.run_cli", return_value=0) as run_cli,
+            mock.patch("cantrip.main._install_unraisable_hook"),
+        ):
+            rc = cantrip_main._run(_run_args(tmp_path, provider="inference-snap", no_tui=True))
+        assert rc == 0
+        run_cli.assert_called_once()
+
+    def test_web_mode_dispatches_to_run_web(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GEMINI_API_KEY", "test")
+        with (
+            mock.patch("cantrip.web.server.run_web", return_value=0) as run_web,
+            mock.patch("cantrip.main._install_unraisable_hook"),
+        ):
+            rc = cantrip_main._run(_run_args(tmp_path, web=True))
+        assert rc == 0
+        run_web.assert_called_once()
+
+    def test_no_tui_dispatches_to_run_cli(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GEMINI_API_KEY", "test")
+        with (
+            mock.patch("cantrip.cli.run_cli", return_value=0) as run_cli,
+            mock.patch("cantrip.main._install_unraisable_hook"),
+        ):
+            rc = cantrip_main._run(_run_args(tmp_path, no_tui=True))
+        assert rc == 0
+        run_cli.assert_called_once()
+
+    def test_tui_mode_launches_cantrip_app(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GEMINI_API_KEY", "test")
+        fake_app = mock.MagicMock()
+        with (
+            mock.patch("cantrip.tui.app.CantripApp", return_value=fake_app) as cls,
+            mock.patch("cantrip.main._install_unraisable_hook"),
+        ):
+            rc = cantrip_main._run(_run_args(tmp_path))
+        assert rc == 0
+        cls.assert_called_once()
+        fake_app.run.assert_called_once()
+
+    def test_improve_overrides_positional_path(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        improve_dir = tmp_path / "existing-charm"
+        improve_dir.mkdir()
+        fake_app = mock.MagicMock()
+        monkeypatch.setenv("GEMINI_API_KEY", "test")
+        with (
+            mock.patch("cantrip.tui.app.CantripApp", return_value=fake_app) as cls,
+            mock.patch("cantrip.main._install_unraisable_hook"),
+        ):
+            cantrip_main._run(_run_args(tmp_path / "other", improve=improve_dir))
+        kwargs = cls.call_args.kwargs
+        assert kwargs["improve_path"] == improve_dir
+        assert kwargs["charm_path"] == improve_dir
+
+
+class TestExportTranscript:
+    def test_error_when_no_cantrip_file(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        args = SimpleNamespace(path=tmp_path, fmt="html", output=None)
+        rc = cantrip_main._export_transcript(args)
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "no .cantrip file" in out
+
+    def test_unknown_format_errors(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (tmp_path / ".cantrip").write_text("")
+        args = SimpleNamespace(path=tmp_path, fmt="xml", output=None)
+        with mock.patch(
+            "cantrip.transcript.export.load_transcript",
+            return_value=SimpleNamespace(messages=[], tasks=[]),
+        ):
+            rc = cantrip_main._export_transcript(args)
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "unknown format" in out
+
+    @pytest.mark.parametrize(
+        "fmt, expected_suffix, renderer",
+        [
+            ("html", ".html", "cantrip.transcript.html.render_html"),
+            ("jsonl", ".jsonl", "cantrip.transcript.jsonl.render_jsonl"),
+            ("markdown", ".md", "cantrip.transcript.markdown.render_markdown"),
+        ],
+    )
+    def test_writes_output_in_selected_format(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        fmt: str,
+        expected_suffix: str,
+        renderer: str,
+    ) -> None:
+        (tmp_path / ".cantrip").write_text("")
+        args = SimpleNamespace(path=tmp_path, fmt=fmt, output=None)
+        with (
+            mock.patch(
+                "cantrip.transcript.export.load_transcript",
+                return_value=SimpleNamespace(messages=[], tasks=[]),
+            ),
+            mock.patch(renderer, return_value=f"CONTENT-{fmt}"),
+        ):
+            rc = cantrip_main._export_transcript(args)
+        assert rc == 0
+        out_file = tmp_path / f"transcript{expected_suffix}"
+        assert out_file.exists()
+        assert out_file.read_text() == f"CONTENT-{fmt}"
+        assert "exported to" in capsys.readouterr().out
+
+    def test_explicit_output_path_is_respected(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (tmp_path / ".cantrip").write_text("")
+        target = tmp_path / "custom.md"
+        args = SimpleNamespace(path=tmp_path, fmt="markdown", output=target)
+        with (
+            mock.patch(
+                "cantrip.transcript.export.load_transcript",
+                return_value=SimpleNamespace(messages=[], tasks=[]),
+            ),
+            mock.patch("cantrip.transcript.markdown.render_markdown", return_value="hi"),
+        ):
+            cantrip_main._export_transcript(args)
+        assert target.read_text() == "hi"
+
+    def test_paginated_html(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        (tmp_path / ".cantrip").write_text("")
+        args = SimpleNamespace(
+            path=tmp_path,
+            fmt="html",
+            output=None,
+            page_size=5,
+            filter_task=None,
+            filter_phase=None,
+            filter_since=None,
+        )
+        pages = [
+            ("transcript-1.html", "<html>page1</html>"),
+            ("transcript-2.html", "<html>page2</html>"),
+        ]
+        with (
+            mock.patch(
+                "cantrip.transcript.export.load_transcript",
+                return_value=SimpleNamespace(messages=[], tasks=[]),
+            ),
+            mock.patch(
+                "cantrip.transcript.html.render_html_paginated",
+                return_value=pages,
+            ),
+        ):
+            rc = cantrip_main._export_transcript(args)
+        assert rc == 0
+        assert (tmp_path / "transcript-1.html").read_text() == "<html>page1</html>"
+        assert (tmp_path / "transcript-2.html").read_text() == "<html>page2</html>"
+        assert "2 pages" in capsys.readouterr().out
+
+    def test_paginated_html_respects_output_file_stem(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """``--output page.html`` with ``--page-size`` uses page's stem."""
+        (tmp_path / ".cantrip").write_text("")
+        output = tmp_path / "out" / "my-session.html"
+        output.parent.mkdir()
+        args = SimpleNamespace(
+            path=tmp_path,
+            fmt="html",
+            output=output,
+            page_size=2,
+            filter_task=None,
+            filter_phase=None,
+            filter_since=None,
+        )
+
+        captured: dict[str, object] = {}
+
+        def _fake_paginated(_data: object, page_size: int, stem: str):
+            captured["stem"] = stem
+            captured["page_size"] = page_size
+            return [(f"{stem}-1.html", "<html>hi</html>")]
+
+        with (
+            mock.patch(
+                "cantrip.transcript.export.load_transcript",
+                return_value=SimpleNamespace(messages=[], tasks=[]),
+            ),
+            mock.patch(
+                "cantrip.transcript.html.render_html_paginated",
+                side_effect=_fake_paginated,
+            ),
+        ):
+            cantrip_main._export_transcript(args)
+
+        assert captured["stem"] == "my-session"
+        assert captured["page_size"] == 2
+
+
+class TestMain:
+    def test_dispatches_export_transcript(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        args = SimpleNamespace(command="export-transcript", path=tmp_path)
+        with (
+            mock.patch.object(cantrip_main, "parse_args", return_value=args),
+            mock.patch.object(cantrip_main, "_export_transcript", return_value=42) as exp,
+        ):
+            rc = cantrip_main.main()
+        assert rc == 42
+        exp.assert_called_once_with(args)
+
+    def test_dispatches_run(self, tmp_path: Path) -> None:
+        args = SimpleNamespace(command="run", path=tmp_path)
+        with (
+            mock.patch.object(cantrip_main, "parse_args", return_value=args),
+            mock.patch.object(cantrip_main, "_run", return_value=7) as run_fn,
+        ):
+            rc = cantrip_main.main()
+        assert rc == 7
+        run_fn.assert_called_once_with(args)

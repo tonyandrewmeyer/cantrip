@@ -5308,16 +5308,26 @@ categories, three distinct fixes:
   issues than needed.  Replaced with a single narrow filter for the
   pytest-asyncio event-loop leak described above
 
-### 57.2 High — Zero-coverage entry-point modules
+### 57.2 High — Zero-coverage entry-point modules ✓
 
-- [ ] ``src/cantrip/cli.py`` (0% → target 70%) — argparse-level unit
+- [x] ``src/cantrip/cli.py`` (0% → 97%) — argparse-level unit
   tests for every subcommand flag, plus a smoke test that exercises
-  the import path.  Mock the agent factory and provider.
-- [ ] ``src/cantrip/main.py`` (0% → target 70%) — the cli / tui / web
+  the import path.  Mock the agent factory and provider.  43 tests
+  drive the REPL via a canned ``asyncio.to_thread(input, ...)``
+  side-effect queue, cover every ``/help`` / ``/tasks`` / ``/status``
+  / ``/cost`` / ``exit`` command, the keyboard-interrupt and
+  provider-error branches, and the re-bootstrap path
+- [x] ``src/cantrip/main.py`` (0% → 99%) — the cli / tui / web
   dispatch layer.  Unit-test the routing decisions without actually
-  launching any mode.
-- [ ] ``src/cantrip/juju/log_stream.py`` (0% → target 50%) — fixture-
-  based stream parsing tests; the live end stays live-only.
+  launching any mode.  32 tests cover ``parse_args`` (including the
+  "bare path becomes run" and "bare flag becomes run" shortcuts),
+  ``_install_unraisable_hook``, ``_is_cantrip_source_tree``, every
+  ``_run`` dispatch branch (web/TUI/CLI and missing-API-key guards),
+  and ``_export_transcript`` for every format plus paginated HTML
+- [x] ``src/cantrip/juju/log_stream.py`` (0% → 100%) — fixture-
+  based stream parsing tests; the live end stays live-only.  10
+  tests, including UTF-8 replacement decoding and
+  ``ProcessLookupError`` cleanup
 
 ### 57.3 High — Tool ``execute()`` coverage ✓
 
