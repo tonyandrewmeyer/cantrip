@@ -4,6 +4,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Tool ``execute()`` coverage (Phase 57.3)** — four subprocess-wrapping
+  tools moved from the 20–28% range to ≥97%: ``scaling.py`` (20% →
+  100%), ``upgrade.py`` (21% → 99%), ``charmlint_tool.py`` (24% →
+  99%), ``chaos.py`` (28% → 97%).  65 new tests across the four
+  ``tests/unit/test_{scaling,upgrade,charmlint,chaos}_tool.py`` files,
+  each following the established pattern from ``test_git_tools.py``:
+  stub ``juju_subprocess.run_juju`` / ``wait_for_app`` (or
+  ``subprocess.run`` for charmlint) to cover the happy path, the
+  non-zero-exit branch, stderr-only output, timeouts (via
+  ``subprocess.TimeoutExpired``), and each disruption / fallback
+  switch (IAAS-vs-CAAS scale fallback, Rust-vs-Python charmlint
+  backend).  No production-code change; ``2885 passed, 5 skipped``.
+
 ### Changed
 - **Zero pytest warnings (Phase 57.1)** — ``make check`` now runs
   cleanly.  Three fixes: (1) ``_make_fake_process`` helpers in

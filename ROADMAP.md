@@ -5319,20 +5319,23 @@ categories, three distinct fixes:
 - [ ] ``src/cantrip/juju/log_stream.py`` (0% → target 50%) — fixture-
   based stream parsing tests; the live end stays live-only.
 
-### 57.3 High — Tool ``execute()`` coverage
+### 57.3 High — Tool ``execute()`` coverage ✓
 
 Four tools with 20–28% coverage all follow the same pattern: a thin
 ``Tool`` subclass wrapping a subprocess invocation, only the
 parameter-validation paths tested.
 
-- [ ] ``tools/scaling.py`` (20%)
-- [ ] ``tools/upgrade.py`` (21%)
-- [ ] ``tools/charmlint_tool.py`` (24%)
-- [ ] ``tools/chaos.py`` (28%)
+- [x] ``tools/scaling.py`` (20% → 100%)
+- [x] ``tools/upgrade.py`` (21% → 99%)
+- [x] ``tools/charmlint_tool.py`` (24% → 99%)
+- [x] ``tools/chaos.py`` (28% → 97%)
 
 Target each to ≥70% via subprocess-mocked ``execute()`` tests.
 Use ``tests/unit/test_git_tools.py`` as the pattern — success,
-non-zero exit, stderr-only output, timeout.
+non-zero exit, stderr-only output, timeout.  All four landed; 65 new
+tests across four files.  Each test fakes ``juju_subprocess.run_juju``
+(or ``subprocess.run`` for charmlint) and ``wait_for_app`` so no real
+Juju invocation is needed.
 
 ### 57.4 Medium — Web-server WebSocket lifecycle
 
