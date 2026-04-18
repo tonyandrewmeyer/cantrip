@@ -13,6 +13,20 @@ _GIT_TIMEOUT = 30
 # Timeout for network git operations (seconds).
 _GIT_NETWORK_TIMEOUT = 120
 
+# Environment variable that opts in to GPG signing of commits.  By default
+# Cantrip passes ``--no-gpg-sign`` so automated commits never hang on a
+# passphrase prompt or fail on a missing key; setting ``CANTRIP_GPG_SIGN``
+# to a truthy value ("1", "true", "yes", "on", case-insensitive) lets the
+# user's git config (``commit.gpgsign``) take effect instead.
+_GPG_SIGN_ENV = "CANTRIP_GPG_SIGN"
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def _gpg_sign_enabled() -> bool:
+    """Return whether the user has opted in to GPG signing via env var."""
+    return os.environ.get(_GPG_SIGN_ENV, "").strip().lower() in _TRUTHY
+
+
 # Patterns in stderr that indicate an authentication or permission failure.
 _AUTH_PATTERNS = (
     "Authentication failed",
@@ -404,7 +418,10 @@ class GitCommitTool(Tool):
 
     async def execute(self, message: str, path: str = ".") -> ToolResult:
         """Run git commit."""
-        return _run_git(["commit", "--no-gpg-sign", "-m", message], cwd=path)
+        args = ["commit", "-m", message]
+        if not _gpg_sign_enabled():
+            args.insert(1, "--no-gpg-sign")
+        return _run_git(args, cwd=path)
 
 
 class GitPushTool(Tool):

@@ -66,6 +66,16 @@ _FAST_PATH_FRAMEWORKS = frozenset(
 )
 
 
+# Base task IDs for CONFIRM tasks.  ``_unique_id`` appends a random
+# suffix in normal planning flows, but the bare value is also used as a
+# stable fallback (e.g. default ``confirm_task_id`` arguments and tests).
+# ``task_id.startswith(BASE)`` matches both forms.
+DESIGN_CONFIRM_BASE = "confirm-design"
+DAY2_CONFIRM_BASE = "confirm-day2"
+IMPROVEMENT_CONFIRM_BASE = "confirm-improvements"
+OPERABILITY_CONFIRM_BASE = "confirm-operability"
+
+
 def _unique_id(base: str) -> str:
     """Return *base* with a random suffix to avoid collisions across plans."""
     return f"{base}-{uuid4().hex[:8]}"
@@ -241,7 +251,7 @@ def plan_fast_path(context: PlanningContext) -> list[AgentTask]:
     framework = context.framework or "unknown"
 
     design_id = _unique_id("fast-design")
-    confirm_id = _unique_id("confirm-design")
+    confirm_id = _unique_id(DESIGN_CONFIRM_BASE)
 
     return [
         AgentTask(
@@ -337,7 +347,7 @@ def plan_improvement_phase(context: PlanningContext) -> list[AgentTask]:
     charm_name = context.charm_name or "the charm"
 
     audit_id = _unique_id("audit-charm")
-    confirm_id = _unique_id("confirm-improvements")
+    confirm_id = _unique_id(IMPROVEMENT_CONFIRM_BASE)
 
     return [
         AgentTask(
@@ -374,7 +384,7 @@ def plan_improvement_phase(context: PlanningContext) -> list[AgentTask]:
 def plan_improvement_fixes(
     context: PlanningContext,
     gaps: dict[str, bool],
-    confirm_task_id: str = "confirm-improvements",
+    confirm_task_id: str = IMPROVEMENT_CONFIRM_BASE,
 ) -> list[AgentTask]:
     """Generate fix tasks based on audit findings.
 
@@ -650,7 +660,7 @@ def plan_operability_assessment(
     deps = [depends_on] if depends_on else []
 
     assess_id = _unique_id("assess-operational-readiness")
-    confirm_id = _unique_id("confirm-operability")
+    confirm_id = _unique_id(OPERABILITY_CONFIRM_BASE)
 
     return [
         AgentTask(
@@ -685,7 +695,7 @@ def plan_operability_assessment(
 def plan_operability_fixes(
     context: PlanningContext,
     findings: dict[str, list[str]],
-    confirm_task_id: str = "confirm-operability",
+    confirm_task_id: str = OPERABILITY_CONFIRM_BASE,
 ) -> list[AgentTask]:
     """Generate BUILD tasks to close confirmed operability gaps.
 
@@ -961,7 +971,7 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
 
     tasks.append(
         AgentTask(
-            id=_unique_id("confirm-design"),
+            id=_unique_id(DESIGN_CONFIRM_BASE),
             title="Confirm design with user",
             category=TaskCategory.CONFIRM,
             description="Present the design proposal for user approval.",
@@ -999,7 +1009,7 @@ def plan_day2_ops_phase(
 
     research_id = _unique_id("day2-research")
     synthesis_id = _unique_id("day2-synthesis")
-    confirm_id = _unique_id("confirm-day2")
+    confirm_id = _unique_id(DAY2_CONFIRM_BASE)
 
     return [
         AgentTask(

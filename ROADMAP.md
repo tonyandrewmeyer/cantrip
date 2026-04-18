@@ -2242,7 +2242,8 @@ project style guide ("Never catch bare `Exception`"). Locations:
   with `from cantrip.llm import base as llm` and qualified `llm.Tool`, `llm.ToolResult`
 - [x] `subagent.py`, `context.py`, `planning.py`, `audit.py` — moved local imports
   to module top
-- [ ] `tui/app.py` — imports widget/screen objects directly instead of modules
+- [x] `tui/app.py` — imports widget/screen modules (`from cantrip.tui.widgets
+  import chat as chat_widget`) instead of class names directly
 
 ### 25.10 Medium — Fragile String Matching
 
@@ -2289,13 +2290,17 @@ project style guide ("Never catch bare `Exception`"). Locations:
 
 ### 25.18 Low — Magic Strings Without Constants
 
-- [ ] `tui/app.py` — `"confirm-improvements"` hardcoded
+- [x] `tui/app.py` — `"confirm-improvements"` replaced with
+  `IMPROVEMENT_CONFIRM_BASE` constant; `planner.py` defines matching
+  `DESIGN_CONFIRM_BASE`, `DAY2_CONFIRM_BASE`, `OPERABILITY_CONFIRM_BASE`
 - [ ] `main.py` — magic string checks for project identity
 - [ ] Status indicators, CSS classes, log levels scattered throughout TUI widgets
 
 ### 25.19 Low — `git.py` Hardcodes `--no-gpg-sign`
 
-- [ ] GPG signing disabled unconditionally. Should be configurable or documented.
+- [x] `GitCommitTool` now respects `CANTRIP_GPG_SIGN=1` (truthy values:
+  `1`/`true`/`yes`/`on`) to opt in to signing; default remains `--no-gpg-sign`
+  so automated commits don't hang on passphrase prompts.
 
 ### 25.20 Low — Missing Test Coverage ✅
 

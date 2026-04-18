@@ -15,23 +15,24 @@ from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.git_branch import PUSH_CONFIRM_PREFIX
 from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
+from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.llm import LLMProvider, create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
-from cantrip.tui.screens.graph import GraphScreen
-from cantrip.tui.screens.help import HelpScreen
-from cantrip.tui.screens.logs import LogScreen
-from cantrip.tui.screens.questions import DesignQuestionsScreen
-from cantrip.tui.screens.relation import RelationDetailScreen
-from cantrip.tui.screens.traces import TraceScreen
-from cantrip.tui.screens.transcript import TranscriptScreen
-from cantrip.tui.widgets.chat import ChatWidget
-from cantrip.tui.widgets.filetree import CharmTreeWidget
-from cantrip.tui.widgets.modelbar import ModelInfoBar
-from cantrip.tui.widgets.status import MultiModelStatusWidget, RelationLine
-from cantrip.tui.widgets.statusbar import StatusBar
-from cantrip.tui.widgets.tasks import TaskChecklistWidget
+from cantrip.tui.screens import graph as graph_screen
+from cantrip.tui.screens import help as help_screen
+from cantrip.tui.screens import logs as logs_screen
+from cantrip.tui.screens import questions as questions_screen
+from cantrip.tui.screens import relation as relation_screen
+from cantrip.tui.screens import traces as traces_screen
+from cantrip.tui.screens import transcript as transcript_screen
+from cantrip.tui.widgets import chat as chat_widget
+from cantrip.tui.widgets import filetree as filetree_widget
+from cantrip.tui.widgets import modelbar as modelbar_widget
+from cantrip.tui.widgets import status as status_widgets
+from cantrip.tui.widgets import statusbar as statusbar_widget
+from cantrip.tui.widgets import tasks as tasks_widget
 from cantrip.ui import events as ui_events
 
 # Preflight check names shown during the eager prepare (full bootstrap).
@@ -124,20 +125,20 @@ class CantripApp(App):
         yield Header()
         yield Horizontal(
             Vertical(
-                ModelInfoBar(id="model-info"),
-                ChatWidget(id="chat"),
+                modelbar_widget.ModelInfoBar(id="model-info"),
+                chat_widget.ChatWidget(id="chat"),
                 Input(placeholder="Type your message...", id="chat-input"),
                 id="left-panel",
             ),
             Vertical(
-                TaskChecklistWidget(id="task-checklist"),
-                CharmTreeWidget(self.charm_path, id="charm-files"),
-                MultiModelStatusWidget(id="juju-status"),
+                tasks_widget.TaskChecklistWidget(id="task-checklist"),
+                filetree_widget.CharmTreeWidget(self.charm_path, id="charm-files"),
+                status_widgets.MultiModelStatusWidget(id="juju-status"),
                 id="right-panel",
             ),
             id="main-container",
         )
-        yield StatusBar(id="status-bar")
+        yield statusbar_widget.StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
         """Handle app mount."""
@@ -179,7 +180,7 @@ class CantripApp(App):
                 self._agent.state.mode = "improve"
                 self._agent.state.charm_path = self._improve_path
         except (ValueError, ProviderError) as e:
-            chat = self.query_one("#chat", ChatWidget)
+            chat = self.query_one("#chat", chat_widget.ChatWidget)
             chat.add_system_message(f"Failed to initialise provider: {e}")
 
     def _resume_session(self) -> None:
@@ -189,7 +190,7 @@ class CantripApp(App):
         if self._agent.load_state():
             summary = self._agent.build_resume_summary()
             if summary:
-                chat = self.query_one("#chat", ChatWidget)
+                chat = self.query_one("#chat", chat_widget.ChatWidget)
                 chat.add_system_message(summary)
 
     def _resolve_light_provider(self, main_provider: LLMProvider) -> LLMProvider | None:
@@ -225,7 +226,7 @@ class CantripApp(App):
 
     def _update_model_info(self) -> None:
         """Refresh the model info bar from current agent state."""
-        bar = self.query_one("#model-info", ModelInfoBar)
+        bar = self.query_one("#model-info", modelbar_widget.ModelInfoBar)
         if not self._agent:
             return
 
@@ -278,7 +279,7 @@ class CantripApp(App):
 
     def action_toggle_model_info(self) -> None:
         """Toggle model info bar visibility."""
-        bar = self.query_one("#model-info", ModelInfoBar)
+        bar = self.query_one("#model-info", modelbar_widget.ModelInfoBar)
         bar.display = not bar.display
 
     # -- Preflight integration ------------------------------------------------
@@ -291,7 +292,7 @@ class CantripApp(App):
         """
         if not self._agent:
             return
-        checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+        checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
         self._prepare_group_idx = checklist.add_preflight_group(
             "Preparing environment",
             ["Concierge", "Environment", "Juju CLI", "Controller", "COS"],
@@ -311,10 +312,10 @@ class CantripApp(App):
             return
         if event.check_name in _PREPARE_CHECKS:
             idx = _PREPARE_CHECKS.index(event.check_name)
-            checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+            checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
             checklist.update_preflight(self._prepare_group_idx, idx, event.status)
         if event.check_name == "cos" and event.status == CheckStatus.PASSED:
-            status_bar = self.query_one("#status-bar", StatusBar)
+            status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
             status_bar.cos_health = "● COS healthy"
             self._update_header_subtitle()
 
@@ -334,7 +335,7 @@ class CantripApp(App):
             self._bootstrap_started = True
             return
         self._bootstrap_started = True
-        checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+        checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
         self._bootstrap_group_idx = checklist.add_preflight_group(
             f"Re-bootstrapping ({preset})",
             ["Controller", "Controller check", "COS"],
@@ -354,7 +355,7 @@ class CantripApp(App):
             return
         if event.check_name in _BOOTSTRAP_CHECKS:
             idx = _BOOTSTRAP_CHECKS.index(event.check_name)
-            checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+            checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
             checklist.update_preflight(self._bootstrap_group_idx, idx, event.status)
 
     # -- Executor integration -------------------------------------------------
@@ -372,7 +373,7 @@ class CantripApp(App):
         self._agent.start_executor(max_concurrency=self._max_concurrency)
 
         # Prime the display with any tasks restored from a previous session.
-        checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+        checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
         existing = self._agent.work_queue.all_tasks()
         if existing:
             checklist.notify_changed(existing)
@@ -383,7 +384,7 @@ class CantripApp(App):
             return
 
         def _update() -> None:
-            checklist = self.query_one("#task-checklist", TaskChecklistWidget)
+            checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
             checklist.notify_changed(self._agent.work_queue.all_tasks())
 
             # Detect when a confirm task becomes blocked.
@@ -402,7 +403,7 @@ class CantripApp(App):
                     self._present_push_confirmation(task)
                 elif task_id.startswith(TRIAGE_CONFIRM_PREFIX):
                     self._present_triage_confirmation(task)
-                elif task_id.startswith("confirm-improvements"):
+                elif task_id.startswith(IMPROVEMENT_CONFIRM_BASE):
                     self._present_improvement_confirmation(task)
                 else:
                     self._present_design_questions(task)
@@ -449,12 +450,12 @@ class CantripApp(App):
             return
 
         # Show the design summary in chat (without questions).
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.add_system_message(proposal.format_for_chat())
 
         # Push the interactive questions screen.
         self.push_screen(
-            DesignQuestionsScreen(questions),
+            questions_screen.DesignQuestionsScreen(questions),
             callback=self._on_questions_answered,
         )
 
@@ -475,7 +476,7 @@ class CantripApp(App):
             overrides = None
 
         # Show answers in chat.
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         if answered:
             answer_text = "\n".join(f"**{q.key}**: {q.answer}" for q in answered)
             chat.add_user_message(answer_text)
@@ -502,7 +503,7 @@ class CantripApp(App):
             overrides=overrides,
         )
 
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         if build_tasks:
             titles = "\n".join(f"- {t.title}" for t in build_tasks)
             chat.add_system_message(f"Build plan created:\n{titles}")
@@ -521,7 +522,7 @@ class CantripApp(App):
         self._bootstrap_offered = True
         self._pending_bootstrap = True
         charm_name = self._agent.state.charm_name or "my-charm"
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.add_system_message(
             f"No GitHub remote detected. Would you like to create a repository?\n\n"
             f"Reply **yes** (or **public** for a public repo) to create "
@@ -538,7 +539,7 @@ class CantripApp(App):
             return False
 
         lower = message.strip().lower()
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
 
         if lower in ("skip", "no", "n"):
             self._pending_bootstrap = False
@@ -591,7 +592,7 @@ class CantripApp(App):
             return False
 
         lower = message.strip().lower()
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         branch = self._pending_pr_branch
 
         if lower in ("pr", "yes", "y", "ok", "draft"):
@@ -629,7 +630,7 @@ class CantripApp(App):
         if url_match:
             pr_url = url_match.group(1)
 
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
 
         # Extract PR number from URL.
         pr_number: int | None = None
@@ -668,7 +669,7 @@ class CantripApp(App):
             return
         # Check for upstream divergence first.
         warning = self._agent.check_upstream()
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         if warning:
             chat.add_system_message(warning)
         chat.add_system_message("Reply **next** to check for more issues, or **done** to stop.")
@@ -683,7 +684,7 @@ class CantripApp(App):
             return False
 
         lower = message.strip().lower()
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         ctx = self._pending_maintenance
 
         if lower == "comment" and "issue_number" in ctx:
@@ -769,7 +770,7 @@ class CantripApp(App):
             return False
 
         lower = message.strip().lower()
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         confirm_id = self._pending_confirm_id
 
         if lower in ("approve", "yes", "y", "push", "ok"):
@@ -800,7 +801,7 @@ class CantripApp(App):
         if not self._agent:
             return
 
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.add_system_message(
             f"{task.description}\n\nReply **push** to push, or **skip** to leave the branch local."
         )
@@ -815,7 +816,7 @@ class CantripApp(App):
             return False
 
         lower = message.strip().lower()
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         confirm_id = self._pending_confirm_id
 
         if lower in ("approve", "yes", "y", "ok"):
@@ -847,7 +848,7 @@ class CantripApp(App):
         if not self._agent:
             return
 
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.add_system_message(
             f"**Issue triage:**\n\n{task.description}\n\n"
             f"Reply **approve** to work on this issue, or **skip** to dismiss."
@@ -877,7 +878,7 @@ class CantripApp(App):
                 # the audit report heuristically, or approve all.
                 break
 
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         if audit_report:
             # Truncate long reports for the chat display.
             preview = audit_report[:2000]
@@ -903,7 +904,7 @@ class CantripApp(App):
 
         fix_tasks = await self._agent.handle_improvement_confirmation(confirm_id)
 
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         if fix_tasks:
             titles = "\n".join(f"- {t.title}" for t in fix_tasks)
             chat.add_system_message(f"Improvement plan created:\n{titles}")
@@ -923,7 +924,7 @@ class CantripApp(App):
         """
         if not self._agent:
             return
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         if not self._agent.state.dev_model:
             chat.add_system_message(
                 "Cannot start watcher: no development model is set. "
@@ -954,12 +955,14 @@ class CantripApp(App):
         """Handle a watcher event from the bus."""
 
         def _update() -> None:
-            chat = self.query_one("#chat", ChatWidget)
+            chat = self.query_one("#chat", chat_widget.ChatWidget)
             chat.add_system_message(f"[Watcher] {event.payload.get('summary', '')}")
 
             # Feed the latest status snapshots into the multi-model widget.
             if self._agent and self._agent._watcher:
-                status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
+                status_widget = self.query_one(
+                    "#juju-status", status_widgets.MultiModelStatusWidget
+                )
                 latest = self._agent._watcher.latest_status
                 if latest is not None:
                     status_widget.dev_status = latest
@@ -971,7 +974,7 @@ class CantripApp(App):
 
     def _update_status_bar_watcher(self) -> None:
         """Update the status bar watcher indicator."""
-        status_bar = self.query_one("#status-bar", StatusBar)
+        status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
         if self._agent and self._agent.watcher_running:
             status_bar.watcher_status = "👁 Watching"
         else:
@@ -983,7 +986,7 @@ class CantripApp(App):
             return
         if self._agent.watcher_running:
             self.run_worker(self._stop_watcher(), name="stop_watcher", exclusive=False)
-            chat = self.query_one("#chat", ChatWidget)
+            chat = self.query_one("#chat", chat_widget.ChatWidget)
             chat.add_system_message("Watcher stopped.")
         else:
             self._start_watcher()
@@ -998,7 +1001,7 @@ class CantripApp(App):
 
         event.input.value = ""
 
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.add_user_message(message)
 
         if not self._agent:
@@ -1032,7 +1035,7 @@ class CantripApp(App):
         input_widget.disabled = True
         input_widget.placeholder = "Waiting for response..."
         chat.show_thinking()
-        self.query_one("#status-bar", StatusBar).task_label = "⟳ Thinking..."
+        self.query_one("#status-bar", statusbar_widget.StatusBar).task_label = "⟳ Thinking..."
 
         # Run agent processing in a background worker.
         self.run_worker(
@@ -1057,12 +1060,12 @@ class CantripApp(App):
         if event.state not in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
             return
 
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         input_widget = self.query_one("#chat-input", Input)
 
         # Remove the thinking indicator and reset status bar.
         chat.hide_thinking()
-        self.query_one("#status-bar", StatusBar).task_label = ""
+        self.query_one("#status-bar", statusbar_widget.StatusBar).task_label = ""
 
         if event.state == WorkerState.SUCCESS:
             result = event.worker.result
@@ -1103,23 +1106,23 @@ class CantripApp(App):
         """Update the status bar test summary from agent state."""
         if not self._agent or not self._agent.state.test_results:
             return
-        status_bar = self.query_one("#status-bar", StatusBar)
+        status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
         status_bar.test_summary = self._agent.state.test_results.format_summary()
 
     def action_help(self) -> None:
         """Show help screen."""
-        self.push_screen(HelpScreen())
+        self.push_screen(help_screen.HelpScreen())
 
     def action_debug(self) -> None:
         """Show trace/debug screen."""
         cos_model = self._agent.state.cos_model if self._agent else None
-        self.push_screen(TraceScreen(cos_model=cos_model))
+        self.push_screen(traces_screen.TraceScreen(cos_model=cos_model))
 
-    def on_relation_line_selected(self, event: RelationLine.Selected) -> None:
+    def on_relation_line_selected(self, event: status_widgets.RelationLine.Selected) -> None:
         """Open the relation detail screen when a relation line is clicked."""
         dev_model = self._agent.state.dev_model if self._agent else None
         self.push_screen(
-            RelationDetailScreen(
+            relation_screen.RelationDetailScreen(
                 unit_name=event.unit_name,
                 endpoint=event.endpoint,
                 related_app=event.related_app,
@@ -1138,21 +1141,21 @@ class CantripApp(App):
 
     def action_toggle_files(self) -> None:
         """Toggle charm file tree visibility."""
-        tree = self.query_one("#charm-files", CharmTreeWidget)
+        tree = self.query_one("#charm-files", filetree_widget.CharmTreeWidget)
         tree.display = not tree.display
 
     def action_logs(self) -> None:
         """Show log viewer screen."""
         dev_model = self._agent.state.dev_model if self._agent else None
-        self.push_screen(LogScreen(model=dev_model))
+        self.push_screen(logs_screen.LogScreen(model=dev_model))
 
     def action_graph(self) -> None:
         """Show integration graph screen."""
-        status_widget = self.query_one("#juju-status", MultiModelStatusWidget)
+        status_widget = self.query_one("#juju-status", status_widgets.MultiModelStatusWidget)
         current_app = self._agent.state.charm_name if self._agent else None
         dev_model = self._agent.state.dev_model if self._agent else None
         self.push_screen(
-            GraphScreen(
+            graph_screen.GraphScreen(
                 status=status_widget.dev_status,
                 current_app=current_app,
                 model=dev_model,
@@ -1168,7 +1171,7 @@ class CantripApp(App):
             candidate = self._agent.state.charm_path / ".cantrip"
             if candidate.exists():
                 db_path = candidate
-        self.push_screen(TranscriptScreen(db_path=db_path))
+        self.push_screen(transcript_screen.TranscriptScreen(db_path=db_path))
 
     async def action_quit(self) -> None:
         """Stop background services and quit."""
@@ -1183,7 +1186,7 @@ class CantripApp(App):
 
     def action_clear_chat(self) -> None:
         """Clear chat history."""
-        chat = self.query_one("#chat", ChatWidget)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.clear()
 
     def action_cancel_agent(self) -> None:
@@ -1191,5 +1194,7 @@ class CantripApp(App):
         for worker in self.workers:
             if worker.name == "agent_response" and worker.is_running:
                 worker.cancel()
-                self.query_one("#status-bar", StatusBar).task_label = "⏹ Cancelling..."
+                self.query_one(
+                    "#status-bar", statusbar_widget.StatusBar
+                ).task_label = "⏹ Cancelling..."
                 return

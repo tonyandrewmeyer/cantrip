@@ -4,6 +4,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Phase 25 cleanup** — `tui/app.py` widget/screen imports converted to module-level
+  aliases (`from cantrip.tui.widgets import chat as chat_widget`) per CLAUDE.md's
+  "import modules, not names" rule. `"confirm-improvements"` / `"confirm-design"` /
+  `"confirm-day2"` / `"confirm-operability"` magic strings extracted to
+  `*_CONFIRM_BASE` constants in `planner.py`. `GitCommitTool` GPG signing is now
+  opt-in via the `CANTRIP_GPG_SIGN` environment variable (truthy values: `1`,
+  `true`, `yes`, `on`); default behaviour is unchanged (`--no-gpg-sign`).
+
 ### Added
 - **Quickpack Rust backend** — alternative Rust implementation of quickpack (`src/quickpack-rs/`) with ~5x faster startup (43 ms vs 215 ms) and ~2x faster end-to-end packing. The `quick_pack` agent tool automatically uses the Rust binary when available, falling back to the Python library transparently. Includes spread test suite and explanation documentation.
 - **Charmlint Rust backend** — alternative Rust implementation of charmlint (`src/charmlint-rs/`) with all 40+ rules across 12 categories. ~7x faster than the Python version (27 ms vs 181 ms full lint run). The `charmlint` agent tool automatically uses the Rust binary when available, falling back to the Python library transparently. Includes spread test suite (43 tests) and explanation documentation.

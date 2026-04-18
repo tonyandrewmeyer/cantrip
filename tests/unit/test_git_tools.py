@@ -841,8 +841,9 @@ class TestGitCommitTool:
         assert "git not found" in result.error
 
     @pytest.mark.asyncio
-    async def test_commit_success(self, tool):
-        """Creates a commit without GPG signing."""
+    async def test_commit_success(self, tool, monkeypatch):
+        """Creates a commit without GPG signing by default."""
+        monkeypatch.delenv("CANTRIP_GPG_SIGN", raising=False)
         mock_result = mock.MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "[main abc1234] Initial commit\n 1 file changed, 10 insertions(+)\n"
@@ -864,6 +865,32 @@ class TestGitCommitTool:
         assert "Initial commit" in result.output
         call_args = mock_run.call_args[0][0]
         assert call_args == ["git", "commit", "--no-gpg-sign", "-m", "Initial commit"]
+
+    @pytest.mark.asyncio
+    async def test_commit_gpg_sign_opt_in(self, tool, monkeypatch):
+        """Setting CANTRIP_GPG_SIGN=1 omits --no-gpg-sign so git config applies."""
+        monkeypatch.setenv("CANTRIP_GPG_SIGN", "1")
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "[main abc1234] Signed commit\n"
+        mock_result.stderr = ""
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.git.shutil.which",
+                return_value="/usr/bin/git",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.git.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            result = await tool.execute(message="Signed commit")
+
+        assert result.success
+        call_args = mock_run.call_args[0][0]
+        assert "--no-gpg-sign" not in call_args
+        assert call_args == ["git", "commit", "-m", "Signed commit"]
 
     @pytest.mark.asyncio
     async def test_commit_empty_staging(self, tool):
