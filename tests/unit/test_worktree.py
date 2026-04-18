@@ -189,6 +189,52 @@ class TestRelease:
         assert handle.path.as_posix() not in _worktree_list(tmp_path)
 
 
+class TestNestedExclude:
+    """Allocator writes the worktree dir into ``.git/info/exclude``.
+
+    Without this, the main repo's ``git status`` sees the nested worktree as
+    untracked, which blocks merge-back.
+    """
+
+    @pytest.mark.asyncio
+    async def test_exclude_file_gets_worktrees_entry(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        await alloc.allocate("task-1", tmp_path)
+
+        exclude_contents = (tmp_path / ".git" / "info" / "exclude").read_text()
+        assert "/.cantrip-worktrees/" in exclude_contents
+
+    @pytest.mark.asyncio
+    async def test_exclude_entry_is_idempotent(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        await alloc.allocate("task-1", tmp_path)
+        await alloc.allocate("task-2", tmp_path)
+
+        exclude_contents = (tmp_path / ".git" / "info" / "exclude").read_text()
+        assert exclude_contents.count("/.cantrip-worktrees/") == 1
+
+    @pytest.mark.asyncio
+    async def test_main_status_is_clean_after_worktree_write(self, tmp_path: pathlib.Path) -> None:
+        """A file written in the worktree must not pollute main's status."""
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        handle = await alloc.allocate("task-1", tmp_path)
+        assert handle is not None
+
+        (handle.path / "new.py").write_text("x = 1\n")
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert status.stdout.strip() == ""
+
+
 class TestAccessors:
     """``get`` and ``all_worktrees`` surface allocator state for callers."""
 

@@ -1446,7 +1446,7 @@ class TestNoopDetection:
 
         call_count = 0
 
-        def _changing_fingerprint() -> str:
+        def _changing_fingerprint(_path: object = None) -> str:
             nonlocal call_count
             call_count += 1
             return f"hash-{call_count}"

@@ -17,6 +17,7 @@ from cantrip.agent.services import (
     FollowupPlanner,
     GitService,
     StateService,
+    WorktreeAllocator,
 )
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
@@ -29,6 +30,8 @@ from cantrip.agent.subagent import (
     SubagentResult,
 )
 from cantrip.agent.tools.base import Tool
+from cantrip.agent.tools.git import _gpg_sign_enabled
+from cantrip.agent.worktree import WorktreeHandle, _DefaultWorktreeAllocator
 from cantrip.llm import base as llm
 
 log = logging.getLogger(__name__)
@@ -58,6 +61,32 @@ _ERROR_COOLDOWN = 5.0
 
 # Called when a task completes or fails, for TUI/conversation-loop coordination.
 TaskEventCallback = Callable[[AgentTask], None] | None
+
+
+# ---------------------------------------------------------------------------
+# Async helpers
+# ---------------------------------------------------------------------------
+
+
+async def _run_git_async(
+    args: list[str],
+    *,
+    cwd: str | pathlib.Path,
+    timeout: float = 30.0,
+) -> subprocess.CompletedProcess[str]:
+    """Run a git subcommand off the event loop without blocking other tasks."""
+
+    def _run() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
+    return await asyncio.to_thread(_run)
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +313,7 @@ class BackgroundExecutor:
         env_checker: EnvironmentChecker | None = None,
         state_service: StateService | None = None,
         followup_planner: FollowupPlanner | None = None,
+        worktree_allocator: WorktreeAllocator | None = None,
     ) -> None:
         self._queue = queue
         self._tools = tools
@@ -304,6 +334,10 @@ class BackgroundExecutor:
         self._followup_planner: FollowupPlanner = followup_planner or _DefaultFollowupPlanner(
             state
         )
+        self._worktrees: WorktreeAllocator = worktree_allocator or _DefaultWorktreeAllocator()
+        # Serialises worktree-to-main merges so concurrent subagents do not
+        # race on the main tree.
+        self._merge_lock = asyncio.Lock()
 
         self._running = False
         self._paused = False
@@ -592,9 +626,15 @@ class BackgroundExecutor:
 
     # -- Noop detection -------------------------------------------------------
 
-    def _fingerprint(self) -> str:
-        """Capture a lightweight fingerprint of the charm directory."""
-        return self._git.fingerprint(self._state.charm_path)
+    def _fingerprint(self, path: str | pathlib.Path | None = None) -> str:
+        """Capture a lightweight fingerprint of *path*.
+
+        Defaults to the main charm directory.  When a subagent runs inside a
+        worktree, pass the worktree path so the before/after comparison sees
+        changes the subagent actually made.
+        """
+        target = path if path is not None else self._state.charm_path
+        return self._git.fingerprint(target)
 
     def _is_noop(self, before: str, after: str) -> bool:
         """Return True if the fingerprints are identical (no observable change)."""
@@ -626,8 +666,14 @@ class BackgroundExecutor:
         task: AgentTask,
         result: SubagentResult,
         fp_before: str,
+        effective_path: str | pathlib.Path | None = None,
     ) -> None:
-        """Process a subagent result: handle exit states, noop detection, success."""
+        """Process a subagent result: handle exit states, noop detection, success.
+
+        *effective_path* is the directory the subagent wrote to — the main
+        charm path, or a per-task worktree if one was allocated.  The noop
+        fingerprint comparison must target the same directory as *fp_before*.
+        """
         if result.exit_state == ExitState.BLOCKED:
             self._queue.set_blocked(task.id, result.summary)
             self._record_status_change(task, "blocked", error=result.summary)
@@ -644,7 +690,7 @@ class BackgroundExecutor:
 
         # Noop detection: check both the exit state signal and
         # the filesystem fingerprint for observable changes.
-        fp_after = self._fingerprint()
+        fp_after = self._fingerprint(effective_path)
         is_noop = result.exit_state == ExitState.NOOP or self._is_noop(fp_before, fp_after)
         if is_noop:
             task.noop_count += 1
@@ -680,9 +726,12 @@ class BackgroundExecutor:
         The caller is responsible for setting the task to ACTIVE before
         calling this method.
 
-        For BUILD and DEBUG tasks, a git snapshot is taken before execution
-        so that the working tree can be reverted if the subagent fails,
-        avoiding broken partial writes.
+        When possible the subagent runs in a dedicated ``git worktree``
+        allocated from the current HEAD.  Successful tasks are merged back
+        into the main charm branch; failed tasks drop the worktree without
+        touching main.  For non-git charm paths the allocator returns
+        ``None`` and the subagent falls back to the main tree, in which case
+        BUILD/DEBUG failures use the older snapshot/revert path.
         """
         error = self._pre_check_environment(task)
         if error is not None:
@@ -694,13 +743,21 @@ class BackgroundExecutor:
             self._persist()
             return
 
+        handle = await self._try_allocate_worktree(task)
+        effective_path: str | pathlib.Path | None = (
+            handle.path if handle is not None else self._state.charm_path
+        )
+
+        # Snapshot/revert only applies when the subagent writes to the main
+        # tree directly — worktree failures are cleaned up by dropping the
+        # worktree in the ``finally`` block below.
         snapshot: str | None = None
-        if task.category in self._SNAPSHOT_CATEGORIES:
+        if handle is None and task.category in self._SNAPSHOT_CATEGORIES:
             snapshot = self._snapshot_head()
 
-        fp_before = self._fingerprint()
+        fp_before = self._fingerprint(effective_path)
 
-        context = self._build_context(task)
+        context = self._build_context(task, effective_path)
         max_rounds = MAX_BUILD_ROUNDS if task.category == TaskCategory.BUILD else None
         subagent = Subagent(
             context,
@@ -713,12 +770,24 @@ class BackgroundExecutor:
             **({"max_rounds": max_rounds} if max_rounds is not None else {}),
         )
         t0 = time.monotonic()
+        merge_error: str | None = None
         try:
             timeout = _TASK_TIMEOUTS.get(task.category, _DEFAULT_TASK_TIMEOUT)
             result = await asyncio.wait_for(subagent.run(), timeout=timeout)
             elapsed = time.monotonic() - t0
             log.info("Task '%s' %s in %.1fs", task.title, result.exit_state.value, elapsed)
-            self._handle_result(task, result, fp_before)
+            self._handle_result(task, result, fp_before, effective_path)
+            # On a successful task with a worktree, merge the ephemeral branch
+            # back into main.  Block the task if the merge cannot proceed.
+            if handle is not None:
+                current = self._queue.get_task(task.id)
+                if current is not None and current.status == TaskStatus.DONE:
+                    merge_error = await self._merge_worktree(handle, task)
+                    if merge_error is not None:
+                        self._queue.set_blocked(task.id, merge_error)
+                        self._record_status_change(task, "blocked", error=merge_error)
+                        if self._on_task_failed:
+                            self._on_task_failed(task)
         except TimeoutError as exc:
             log.warning("Task '%s' timed out after %.1fs", task.title, time.monotonic() - t0)
             self._fail_task(task, "Task timed out", exc, snapshot)
@@ -734,8 +803,86 @@ class BackgroundExecutor:
             log.warning("Task '%s' failed after %.1fs: %s", task.title, time.monotonic() - t0, exc)
             self._fail_task(task, str(exc), exc, snapshot)
         finally:
+            if handle is not None:
+                # Preserve the branch when a merge could not complete so the
+                # user can inspect it; otherwise remove it alongside the
+                # worktree directory.
+                keep_branch = merge_error is not None
+                try:
+                    await self._worktrees.release(task.id, keep_branch=keep_branch)
+                except (OSError, RuntimeError) as exc:
+                    log.warning("Worktree release failed for task %s: %s", task.id, exc)
             self._create_followups(task)
             self._persist()
+
+    async def _try_allocate_worktree(self, task: AgentTask) -> WorktreeHandle | None:
+        """Attempt to allocate a worktree for *task*, returning None on failure.
+
+        The allocator itself handles the "not a git repo" fallback.  This
+        wrapper additionally suppresses unexpected ``ValueError`` (duplicate
+        task id) and ``OSError`` so a broken allocator never blocks the
+        executor — the worst-case behaviour is running in the main tree.
+        """
+        if self._state.charm_path is None:
+            return None
+        try:
+            return await self._worktrees.allocate(task.id, self._state.charm_path)
+        except (ValueError, OSError, RuntimeError) as exc:
+            log.warning("Worktree allocation failed for '%s': %s", task.title, exc)
+            return None
+
+    async def _merge_worktree(self, handle: WorktreeHandle, task: AgentTask) -> str | None:
+        """Merge the worktree branch back into the main charm branch.
+
+        Returns ``None`` on clean merge, or an error message describing why
+        the merge could not complete (main tree dirty, or merge conflict).
+        When an error is returned the ephemeral branch is preserved so the
+        user can resolve it manually.
+        """
+        main = self._state.charm_path
+        if main is None:
+            return None
+
+        async with self._merge_lock:
+            # 1. Auto-commit any uncommitted changes in the worktree so the
+            #    subsequent ``git merge`` sees them.  Subagents that call
+            #    ``GitCommitTool`` already committed on ``handle.branch``;
+            #    this catches the common case of bare file writes.
+            add_result = await _run_git_async(["add", "-A"], cwd=handle.path)
+            if add_result.returncode == 0:
+                staged = await _run_git_async(["diff", "--cached", "--quiet"], cwd=handle.path)
+                # ``--quiet`` exits with 1 when there are staged changes.
+                if staged.returncode == 1:
+                    commit_args = ["commit", "-m", f"cantrip: {task.title[:72]}"]
+                    if not _gpg_sign_enabled():
+                        commit_args.append("--no-gpg-sign")
+                    await _run_git_async(commit_args, cwd=handle.path)
+
+            # 2. Skip the merge if main has uncommitted work — overwriting it
+            #    would silently lose the user's state.
+            status = await _run_git_async(["status", "--porcelain"], cwd=main)
+            if status.returncode == 0 and status.stdout.strip():
+                return (
+                    f"Main tree has uncommitted changes; worktree branch "
+                    f"{handle.branch!r} kept for manual merge"
+                )
+
+            # 3. ``--no-ff`` preserves the subagent's commits on the main
+            #    branch as a merge commit rather than collapsing them.
+            merge_args = ["merge", "--no-ff", "--no-edit", handle.branch]
+            if not _gpg_sign_enabled():
+                merge_args.append("--no-gpg-sign")
+            merge = await _run_git_async(merge_args, cwd=main)
+            if merge.returncode != 0:
+                # Return the main tree to its pre-merge state so the next
+                # task starts from a clean slate.
+                await _run_git_async(["merge", "--abort"], cwd=main)
+                return (
+                    f"Merge conflict with worktree branch {handle.branch!r}; "
+                    "main tree reset and branch preserved for manual merge"
+                )
+
+            return None
 
     # -- Git snapshot / revert -----------------------------------------------
 
@@ -776,8 +923,17 @@ class BackgroundExecutor:
 
     # -- Context building ----------------------------------------------------
 
-    def _build_context(self, task: AgentTask) -> SubagentContext:
-        """Construct a ``SubagentContext`` from the current agent state."""
+    def _build_context(
+        self,
+        task: AgentTask,
+        charm_path: str | pathlib.Path | None = None,
+    ) -> SubagentContext:
+        """Construct a ``SubagentContext`` from the current agent state.
+
+        *charm_path* overrides the main ``AgentState.charm_path`` so a
+        subagent can be pointed at a per-task worktree.  Defaults to the main
+        charm path when no override is supplied.
+        """
         prior_results: dict[str, str] = {}
         for dep_id in task.dependencies:
             dep = self._queue.get_task(dep_id)
@@ -791,10 +947,11 @@ class BackgroundExecutor:
             if callable(design_md):
                 design_content = design_md()
 
+        effective = charm_path if charm_path is not None else self._state.charm_path
         return SubagentContext(
             task=task,
             charm_name=self._state.charm_name,
-            charm_path=str(self._state.charm_path) if self._state.charm_path else None,
+            charm_path=str(effective) if effective else None,
             charm_type=self._state.charm_type,
             framework=self._state.framework,
             dev_model=self._state.dev_model,

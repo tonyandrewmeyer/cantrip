@@ -3909,7 +3909,7 @@ Gemini CLI native worktrees, Claude Code subagent isolation). Adopting the same
 primitive lets Cantrip scale parallelism beyond three and removes a real class
 of race condition from generated-charm builds.
 
-### 44.1 High — Worktree allocator and lifecycle
+### 44.1 High — Worktree allocator and lifecycle ✓
 
 - [x] New `WorktreeAllocator` in `src/cantrip/agent/worktree.py` that creates a
   `git worktree add` under `.cantrip-worktrees/<task-id>/` (the `.cantrip`
@@ -3917,30 +3917,42 @@ of race condition from generated-charm builds.
   the mapping `task_id → WorktreeHandle`, and cleans up on release
 - [x] Allocator `Protocol` in `services.py` so it can be swapped in tests —
   matches the Phase 21.2 service-injection pattern
-- [ ] `BackgroundExecutor` asks the allocator for a worktree at subagent spawn
-  time; the subagent's `cwd` is the worktree path, not the main working tree
-  *(deferred to 44.2, which also lands the merge-back strategy; shipping the
-  cwd switch without merge would make subagent writes invisible)*
+- [x] `BackgroundExecutor` asks the allocator for a worktree at subagent spawn
+  time; ``SubagentContext.charm_path`` becomes the worktree path, and noop
+  fingerprints target the worktree rather than the main tree
 - [x] Worktrees are created from the current HEAD of the charm branch on a
   unique ephemeral branch (`cantrip/wt/<task-id>`) to prevent checkout conflicts
+- [x] Allocator writes the worktree directory to `.git/info/exclude` so a
+  nested worktree doesn't appear as untracked work in the main tree's
+  `git status` (otherwise merge-back would always see "dirty main")
 - [x] Non-git charm paths fall back to `None` — the allocator is always safe
   to call; callers run in the main tree when isolation is unavailable
 - [x] `make check` covers allocator lifecycle: create, collision on duplicate
   task id, cleanup on success, cleanup on failure, orphan reaper on startup,
-  non-git fallback, and release-after-manual-rm recovery (16 unit tests)
+  non-git fallback, release-after-manual-rm recovery, idempotent exclude
+  append, and main-tree-clean-after-worktree-write (19 unit tests)
 
-### 44.2 High — Merge strategy on subagent exit
+### 44.2 High — Merge strategy on subagent exit ✓
 
-- [ ] On successful subagent exit, the executor rebases or squash-merges the
-  worktree branch back into the main charm branch using the existing git
-  tooling (`src/cantrip/agent/tools/git.py`)
-- [ ] Conflict handling: if the merge fails, the executor surfaces a CONFIRM
-  task with the conflicting paths and asks the user to resolve, rather than
-  silently dropping the subagent's output
-- [ ] Preserve the subagent's commits (not just the tree delta) so transcript
-  recording (Phase 14.1) retains per-subagent history
-- [ ] Unit tests cover clean merge, conflicting merge, and multi-subagent
-  interleaved merges
+- [x] On successful subagent exit the executor `git merge --no-ff` merges the
+  worktree branch back into the main charm branch so the subagent's commits
+  survive on the main graph rather than being collapsed
+- [x] Auto-commit any uncommitted changes on the worktree branch before
+  merging so subagents that wrote files but never called `GitCommitTool`
+  still contribute their work
+- [x] Conflict handling: the executor runs `git merge --abort`, marks the
+  task `BLOCKED` with a descriptive message, and preserves the ephemeral
+  branch (release with `keep_branch=True`) so the user can resolve manually
+- [x] Merge skipped when main has uncommitted work; branch retained, task
+  marked `BLOCKED` — preserves the user's in-progress state
+- [x] Merges serialised behind an `asyncio.Lock` on the executor so multiple
+  concurrent subagents can't race on the main tree
+- [x] Unit tests cover clean merge, `--no-ff` commit preservation, conflict
+  rollback, and main-dirty skip (4 end-to-end tests against a real git repo
+  via `tmp_path`), plus in-memory fakes that exercise the block/release
+  bookkeeping (9 tests)
+- [ ] *Future work:* surface the conflict as a proper CONFIRM task through
+  the conversation loop rather than just a `BLOCKED` status line
 
 ### 44.3 Medium — Revert path on failure
 

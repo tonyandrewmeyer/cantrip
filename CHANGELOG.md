@@ -18,6 +18,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **Worktree-isolated subagents (Phase 44.2)** — the ``BackgroundExecutor``
+  now allocates a per-task git worktree at subagent spawn time, passes the
+  worktree path as the subagent's ``charm_path``, and ``git merge --no-ff``
+  merges the ephemeral branch back into the main charm branch on success.
+  ``--no-ff`` preserves the subagent's commits on the main graph;
+  uncommitted worktree files are auto-committed before merging so bare file
+  writes still propagate.  Merges are serialised behind an
+  ``asyncio.Lock`` so concurrent subagents cannot race on the main tree.
+  Conflicts trigger ``git merge --abort``, mark the task ``BLOCKED``, and
+  preserve the branch (``keep_branch=True``) for manual resolution; an
+  uncommitted main tree similarly skips the merge and retains the branch so
+  the user's in-progress work is never stomped.  Failures and timeouts drop
+  the worktree without touching main — the pre-existing snapshot/revert
+  path still handles BUILD/DEBUG failures when the allocator falls back to
+  the main tree (non-git charms).  The allocator additionally writes
+  ``/.cantrip-worktrees/`` to ``.git/info/exclude`` so the nested worktree
+  doesn't appear as untracked work in the main repo's ``git status``.
 - **Worktree allocator primitive (Phase 44.1)** — new
   ``src/cantrip/agent/worktree.py`` introduces ``WorktreeAllocator`` (a
   ``Protocol`` in ``services.py``) and ``_DefaultWorktreeAllocator``, which
@@ -27,11 +44,9 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   so the allocator is always safe to call.  ``allocate`` / ``release`` /
   ``get`` / ``all_worktrees`` / ``reap_orphans`` cover the full lifecycle;
   ``release`` prunes leftover git metadata when the worktree directory was
-  removed out-of-band.  16 new unit tests drive the lifecycle against a real
+  removed out-of-band.  19 unit tests drive the lifecycle against a real
   git repo (``pytest`` ``tmp_path``) and skip cleanly if ``git`` is absent.
-  No executor integration yet — the cwd switch and merge-back strategy land
-  together in Phase 44.2 to avoid shipping a worktree whose writes are never
-  merged back.
+  Phase 44.2 layers the executor wiring on top of this primitive.
 - **Web-server WebSocket lifecycle coverage (Phase 57.4)** —
   ``src/cantrip/web/server.py`` moved from 24% to 99% line coverage
   via 44 new tests in ``tests/unit/test_web_server.py``.  Covers the

@@ -134,6 +134,33 @@ async def _head_sha(path: pathlib.Path) -> str | None:
     return sha or None
 
 
+async def _ensure_worktrees_excluded(base: pathlib.Path) -> None:
+    """Add ``.cantrip-worktrees/`` to ``.git/info/exclude`` if not already there.
+
+    Nested worktrees aren't automatically excluded by git, which means the
+    main tree's ``git status`` would report the per-task worktree directory
+    as untracked and block merge-back.  A single idempotent append to the
+    repo-local exclude file keeps the main tree clean without polluting the
+    user's tracked ``.gitignore``.
+    """
+    try:
+        common = await _run_git(["rev-parse", "--git-common-dir"], cwd=base)
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return
+    if common.returncode != 0:
+        return
+    git_dir = pathlib.Path(common.stdout.strip())
+    if not git_dir.is_absolute():
+        git_dir = (base / git_dir).resolve()
+    exclude_file = git_dir / "info" / "exclude"
+    exclude_file.parent.mkdir(parents=True, exist_ok=True)
+    entry = f"/{_WORKTREES_DIRNAME}/\n"
+    if exclude_file.exists() and entry.strip() in exclude_file.read_text().splitlines():
+        return
+    with exclude_file.open("a", encoding="utf-8") as fh:
+        fh.write(entry)
+
+
 class _DefaultWorktreeAllocator:
     """Subprocess-driven worktree allocator backed by ``git worktree``."""
 
@@ -161,6 +188,11 @@ class _DefaultWorktreeAllocator:
             if head is None:
                 log.debug("Worktree skipped: %s has no HEAD commit", base)
                 return None
+
+            # Ensure the nested ``.cantrip-worktrees/`` directory is excluded
+            # from the main tree's ``git status`` output; otherwise merge-back
+            # would always see "uncommitted changes" and refuse to run.
+            await _ensure_worktrees_excluded(base)
 
             worktree_path = base / _WORKTREES_DIRNAME / task_id
             branch = _branch_name(task_id)
