@@ -44,6 +44,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   loaded lazily by ``prompts.compaction.load_compaction_prompt()``.
   Byte-identical output; no behaviour change.  Small follow-up to
   Phase 53 rather than a numbered sub-item.
+- **Dev design docs for tools, skills, and prompts (Phase 53.5)** —
+  three new `design/` documents make the previously-implicit
+  contracts explicit:
+  - `design/TOOLS.md` — the `Tool` ABC, `build_tools()` factory
+    pattern, how to add or remove a tool, naming conventions, error-
+    handling contract.
+  - `design/SKILLS.md` — `SkillsIndex` discovery, frontmatter
+    schema, lazy load-on-demand flow, system-prompt injection, how
+    to add or remove a skill.
+  - `design/PROMPTS.md` — prompt layering across system / subagent
+    / planning / tasks / compaction / skills, Jinja2 conventions
+    (`StrictUndefined`, trailing-newline policy, lazy caching), the
+    `_JINJA_SYNTAX` sanitisation guard and why it exists.
+  Cross-linked from `CLAUDE.md` "Reference Documents" and from
+  `design/AGENT.md`.
 - **Tools registry module renamed (Phase 53.4)** —
   ``cantrip.agent.tools.registry`` → ``cantrip.agent.tools.oci_registry``.
   The module holds Docker Hub / OCI image-search tools, not a tool-

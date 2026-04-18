@@ -1,5 +1,10 @@
 # Cantrip Agent Architecture
 
+*Companion docs:*
+[TOOLS.md](TOOLS.md) *(tool abstraction),*
+[SKILLS.md](SKILLS.md) *(skill discovery & loading),*
+[PROMPTS.md](PROMPTS.md) *(prompt layering & templates).*
+
 ## Overview
 
 Two-loop autonomous architecture: a **conversation loop** handles user interaction
