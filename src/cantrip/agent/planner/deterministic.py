@@ -1,59 +1,22 @@
-"""Task planner — LLM-powered decomposition of user intent into agent tasks.
+"""Deterministic task generators — no LLM call required.
 
-For the common "build a charm for X" flow, the research phase (Phase 1 + 2)
-uses deterministic task templates — no LLM call needed.  LLM planning is
-reserved for replanning (scope changes) and the build phase (which depends
-on the approved design).
+For the common "build a charm for X" flow, path classifiers
+(``is_fast_path``, ``is_sprint``, ``is_one_shot_build``,
+``is_improvement``) decide which deterministic template applies, and a
+matching ``plan_*`` function returns the task list.  All guidance text
+lives in ``.md.j2`` templates under ``cantrip.agent.prompts.tasks`` —
+this module contains only the control flow that threads runtime context
+(workload, charm_path, gap sets) into those templates.
 """
 
-import json
-import logging
+from __future__ import annotations
+
 import platform
-import re
-from dataclasses import dataclass, field
 from uuid import uuid4
 
-from cantrip.agent.prompts import planning as planning_prompts
+from cantrip.agent.planner.context import PlanningContext
 from cantrip.agent.prompts import tasks as task_prompts
-from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
-from cantrip.llm import base as llm
-
-log = logging.getLogger(__name__)
-
-# Temperature used for planning calls — low to encourage structured output.
-_PLANNING_TEMPERATURE = 0.3
-
-# Extended-thinking budget for planner calls.  Task decomposition from a
-# design doc benefits from structured reasoning; 4000 tokens is enough
-# for the model to enumerate steps, dependencies, and tradeoffs without
-# bloating latency or cost.  Providers that don't support extended
-# thinking (inference-snap) ignore this parameter transparently.
-_PLANNING_THINKING_BUDGET = 4000
-
-# Valid task categories for validation.
-_VALID_CATEGORIES = {c.value for c in TaskCategory}
-
-
-@dataclass
-class PlanningContext:
-    """Bundles context for a planning or replanning call."""
-
-    intent: str
-    charm_name: str | None = None
-    charm_type: str | None = None
-    framework: str | None = None
-    dev_model: str | None = None
-    cos_model: str | None = None
-    environment_ready: bool = False
-    existing_tasks: list[AgentTask] = field(default_factory=list)
-    new_context: str | None = None
-    source_url: str | None = None
-    existing_charm_path: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Deterministic task templates
-# ---------------------------------------------------------------------------
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 
 # Frameworks with well-understood 12-factor PaaS charm paths — skip research.
 _FAST_PATH_FRAMEWORKS = frozenset(
@@ -78,9 +41,29 @@ IMPROVEMENT_CONFIRM_BASE = "confirm-improvements"
 OPERABILITY_CONFIRM_BASE = "confirm-operability"
 
 
+# Title prefixes used to identify sprint tasks in follow-up logic.
+SPRINT_BUILD_PREFIX = "Sprint build:"
+SPRINT_DEPLOY_PREFIX = "Sprint deploy:"
+
+
+# Prefix for operability assessment tasks — used to identify them in
+# the autodeploy follow-up logic and prevent duplicate assessments.
+OPERABILITY_PREFIX = "[Operability]"
+
+
+# Title prefix for day-2 tasks — used by the subagent prompt builder
+# to overlay day-2 guidance.
+DAY2_RESEARCH_PREFIX = "Day 2:"
+
+
 def _unique_id(base: str) -> str:
     """Return *base* with a random suffix to avoid collisions across plans."""
     return f"{base}-{uuid4().hex[:8]}"
+
+
+# ---------------------------------------------------------------------------
+# Path classifiers
+# ---------------------------------------------------------------------------
 
 
 def is_fast_path(context: PlanningContext) -> bool:
@@ -112,9 +95,28 @@ def is_sprint(context: PlanningContext) -> bool:
     return bool(context.charm_type and context.charm_name)
 
 
-# Title prefixes used to identify sprint tasks in follow-up logic.
-SPRINT_BUILD_PREFIX = "Sprint build:"
-SPRINT_DEPLOY_PREFIX = "Sprint deploy:"
+def is_one_shot_build(context: PlanningContext) -> bool:
+    """Return whether the build phase can be collapsed into a single task.
+
+    One-shot build applies when the framework is a known 12-factor type —
+    the scaffold + write + pack sequence is predictable enough for one
+    subagent invocation.
+    """
+    return context.framework is not None and context.framework.lower() in _FAST_PATH_FRAMEWORKS
+
+
+def is_improvement(context: PlanningContext) -> bool:
+    """Return whether the context describes an improvement request.
+
+    An improvement request targets an existing charm directory rather than
+    building a new charm from scratch.
+    """
+    return context.existing_charm_path is not None
+
+
+# ---------------------------------------------------------------------------
+# Sprint path helpers
+# ---------------------------------------------------------------------------
 
 
 def _host_ubuntu_version() -> str:
@@ -162,6 +164,11 @@ def _sprint_design_custom(workload: str, charm_type: str) -> str:
         f"Sprint deploy — the scaffolded charm from `charmcraft init` is "
         f"almost sufficient. Make only minimal adjustments to get deployed."
     )
+
+
+# ---------------------------------------------------------------------------
+# Plan generators
+# ---------------------------------------------------------------------------
 
 
 def plan_sprint_deploy(context: PlanningContext) -> list[AgentTask]:
@@ -244,16 +251,6 @@ def plan_fast_path(context: PlanningContext) -> list[AgentTask]:
     ]
 
 
-def is_one_shot_build(context: PlanningContext) -> bool:
-    """Return whether the build phase can be collapsed into a single task.
-
-    One-shot build applies when the framework is a known 12-factor type —
-    the scaffold + write + pack sequence is predictable enough for one
-    subagent invocation.
-    """
-    return context.framework is not None and context.framework.lower() in _FAST_PATH_FRAMEWORKS
-
-
 def plan_one_shot_build(context: PlanningContext, design_content: str) -> list[AgentTask]:
     """Generate a single BUILD task that scaffolds, writes, and packs.
 
@@ -279,15 +276,6 @@ def plan_one_shot_build(context: PlanningContext, design_content: str) -> list[A
             dependencies=[],
         ),
     ]
-
-
-def is_improvement(context: PlanningContext) -> bool:
-    """Return whether the context describes an improvement request.
-
-    An improvement request targets an existing charm directory rather than
-    building a new charm from scratch.
-    """
-    return context.existing_charm_path is not None
 
 
 def plan_improvement_phase(context: PlanningContext) -> list[AgentTask]:
@@ -505,15 +493,6 @@ def plan_improvement_fixes(
         )
 
     return tasks
-
-
-# ---------------------------------------------------------------------------
-# Operational Readiness (Phase 19)
-# ---------------------------------------------------------------------------
-
-# Prefix for operability assessment tasks — used to identify them in
-# the autodeploy follow-up logic and prevent duplicate assessments.
-OPERABILITY_PREFIX = "[Operability]"
 
 
 def plan_operability_assessment(
@@ -778,15 +757,6 @@ def plan_research_phase(context: PlanningContext) -> list[AgentTask]:
     return tasks
 
 
-# ---------------------------------------------------------------------------
-# Day-2 operations research phase
-# ---------------------------------------------------------------------------
-
-# Title prefix for day-2 tasks — used by the subagent prompt builder
-# to overlay day-2 guidance.
-DAY2_RESEARCH_PREFIX = "Day 2:"
-
-
 def plan_day2_ops_phase(
     context: PlanningContext,
     depends_on: str,
@@ -847,349 +817,3 @@ def find_day2_anchor(tasks: list[AgentTask]) -> str | None:
             return task.id
     # Fallback to the very last task.
     return tasks[-1].id if tasks else None
-
-
-class TaskPlanner:
-    """Stateless planner that decomposes intent into ordered agent tasks.
-
-    For fresh "build a charm" requests, uses deterministic templates for
-    the research phase (no LLM call).  Falls back to the LLM for
-    replanning and for generating build-phase tasks from an approved design.
-    """
-
-    def __init__(self, provider: llm.LLMProvider) -> None:
-        self._provider = provider
-
-    async def plan(self, context: PlanningContext) -> list[AgentTask]:
-        """Decompose *context.intent* into an ordered list of tasks.
-
-        Uses deterministic templates — no LLM call.  For well-known
-        12-factor frameworks or explicit charm types, the sprint path
-        goes straight to build + deploy.  For improvement requests,
-        generates the audit → confirm flow.
-        """
-        if is_improvement(context):
-            return plan_improvement_phase(context)
-        if is_sprint(context):
-            return plan_sprint_deploy(context)
-        if is_fast_path(context):
-            return plan_fast_path(context)
-        return plan_research_phase(context)
-
-    async def plan_from_design(
-        self,
-        design_content: str,
-        context: PlanningContext,
-        overrides: str | None = None,
-    ) -> list[AgentTask]:
-        """Generate build/deploy/test tasks from an approved design.
-
-        Called after the user confirms the design proposal.  Uses a
-        dedicated prompt that focuses on the implementation phase.
-        """
-        prompt = _build_design_to_build_prompt(context)
-        user_msg = f"## Approved design\n\n{design_content}"
-        if overrides:
-            user_msg += f"\n\n## User overrides\n\n{overrides}"
-        messages = [
-            llm.Message(role=llm.Role.SYSTEM, content=prompt),
-            llm.Message(role=llm.Role.USER, content=user_msg),
-        ]
-        response = await self._provider.complete(
-            messages=messages,
-            tools=None,
-            temperature=_PLANNING_TEMPERATURE,
-            thinking_budget=_PLANNING_THINKING_BUDGET,
-        )
-        return _parse_task_list(response.content)
-
-    async def replan(self, context: PlanningContext) -> list[AgentTask]:
-        """Adapt existing tasks given new context or changed scope.
-
-        Completed and active tasks are preserved; pending tasks are
-        replaced by the new plan.
-        """
-        prompt = _build_replanning_prompt(context)
-        messages = [
-            llm.Message(role=llm.Role.SYSTEM, content=prompt),
-            llm.Message(
-                role=llm.Role.USER,
-                content=context.new_context or context.intent,
-            ),
-        ]
-        response = await self._provider.complete(
-            messages=messages,
-            tools=None,
-            temperature=_PLANNING_TEMPERATURE,
-            thinking_budget=_PLANNING_THINKING_BUDGET,
-        )
-        new_tasks = _parse_task_list(response.content)
-        return _merge_tasks(context.existing_tasks, new_tasks)
-
-    async def plan_from_day2_findings(
-        self,
-        findings: str,
-        context: PlanningContext,
-        overrides: str | None = None,
-    ) -> list[AgentTask]:
-        """Generate implementation tasks from confirmed day-2 findings.
-
-        Called after the user discusses and approves the day-2 operations
-        plan.  Uses a dedicated prompt focused on adding operational
-        features to an existing charm.
-        """
-        prompt = _build_day2_to_build_prompt(context)
-        user_msg = f"## Approved day-2 operations plan\n\n{findings}"
-        if overrides:
-            user_msg += f"\n\n## User overrides\n\n{overrides}"
-        messages = [
-            llm.Message(role=llm.Role.SYSTEM, content=prompt),
-            llm.Message(role=llm.Role.USER, content=user_msg),
-        ]
-        response = await self._provider.complete(
-            messages=messages,
-            tools=None,
-            temperature=_PLANNING_TEMPERATURE,
-            thinking_budget=_PLANNING_THINKING_BUDGET,
-        )
-        return _parse_task_list(response.content)
-
-
-# ---------------------------------------------------------------------------
-# Prompt builders
-# ---------------------------------------------------------------------------
-
-
-def _build_planning_prompt(context: PlanningContext) -> str:
-    """Build the system prompt for a fresh planning call."""
-    return planning_prompts.render_full(
-        categories=", ".join(sorted(_VALID_CATEGORIES)),
-        context_block=_format_context_block(context),
-    )
-
-
-def _build_design_to_build_prompt(context: PlanningContext) -> str:
-    """Build the system prompt for generating build tasks from a design."""
-    return planning_prompts.render_design_to_build(
-        categories=", ".join(sorted(_VALID_CATEGORIES)),
-        context_block=_format_context_block(context),
-    )
-
-
-def _build_replanning_prompt(context: PlanningContext) -> str:
-    """Build the system prompt for a replanning call.
-
-    Includes the existing task list so the LLM can see what has already
-    been completed and what is still pending.
-    """
-    existing_json = json.dumps(
-        [
-            {
-                "id": t.id,
-                "title": t.title,
-                "category": t.category.value,
-                "status": t.status.value,
-                "description": t.description,
-            }
-            for t in context.existing_tasks
-        ],
-        indent=2,
-    )
-    extra = (
-        "\n\n### Existing tasks\n\n"
-        "The following tasks already exist. Tasks with status 'done' or 'active' must "
-        "NOT be replaced — only produce new tasks for work that is still pending. "
-        "You may drop, reorder, or add pending tasks as needed.\n\n"
-        f"```json\n{existing_json}\n```"
-    )
-    base = _build_planning_prompt(context)
-    return base + extra
-
-
-def _build_day2_to_build_prompt(context: PlanningContext) -> str:
-    """Build the system prompt for generating tasks from day-2 findings."""
-    return planning_prompts.render_day2_to_build(
-        categories=", ".join(sorted(_VALID_CATEGORIES)),
-        context_block=_format_context_block(context),
-    )
-
-
-def _format_context_block(context: PlanningContext) -> str:
-    """Format the context variables section of the planning prompt."""
-    lines: list[str] = []
-    if context.charm_name:
-        lines.append(f"- Charm name: {context.charm_name}")
-    if context.charm_type:
-        lines.append(f"- Charm type: {context.charm_type}")
-    if context.framework:
-        lines.append(f"- Framework: {context.framework}")
-    if context.dev_model:
-        lines.append(f"- Dev model: {context.dev_model}")
-    if context.cos_model:
-        lines.append(f"- COS model: {context.cos_model}")
-    if context.source_url:
-        lines.append(f"- Source URL: {context.source_url}")
-    if context.environment_ready:
-        lines.append("- Environment: ready")
-    else:
-        lines.append("- Environment: not yet provisioned")
-    return "\n".join(lines) if lines else "No additional context."
-
-
-# ---------------------------------------------------------------------------
-# JSON parsing
-# ---------------------------------------------------------------------------
-
-
-def _extract_json(content: str) -> str:
-    """Strip markdown code fences from LLM output."""
-    # Match ```json ... ``` or ``` ... ``` blocks.
-    match = re.search(r"```(?:json)?\s*\n?(.*?)```", content, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return content.strip()
-
-
-def _parse_task_list(content: str) -> list[AgentTask]:
-    """Parse the LLM response into a list of ``AgentTask`` objects.
-
-    Handles:
-    - Raw JSON arrays
-    - JSON wrapped in markdown code fences
-    - ``{"tasks": [...]}`` wrapper objects
-    """
-    raw = _extract_json(content)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Failed to parse task list JSON: {exc}") from exc
-
-    # Unwrap {"tasks": [...]} if present.
-    if isinstance(data, dict):
-        if "tasks" in data and isinstance(data["tasks"], list):
-            data = data["tasks"]
-        else:
-            raise ValueError('Expected a JSON array of tasks or {"tasks": [...]}')
-
-    if not isinstance(data, list):
-        raise ValueError("Expected a JSON array of tasks")
-
-    tasks = [_parse_single_task(item, idx) for idx, item in enumerate(data)]
-    _validate_dependencies(tasks)
-    return tasks
-
-
-def _parse_single_task(item: dict, index: int) -> AgentTask:
-    """Validate and construct a single ``AgentTask`` from parsed JSON."""
-    if not isinstance(item, dict):
-        raise ValueError(f"Task at index {index} is not an object")
-
-    title = item.get("title")
-    if not title:
-        raise ValueError(f"Task at index {index} is missing a title")
-
-    raw_category = str(item.get("category", "build")).lower()
-    if raw_category not in _VALID_CATEGORIES:
-        log.warning("Unknown category %r in task %r — defaulting to 'build'", raw_category, title)
-        raw_category = "build"
-
-    dependencies = item.get("dependencies", [])
-    if not isinstance(dependencies, list):
-        dependencies = []
-
-    return AgentTask(
-        id=str(item.get("id", "")),
-        title=title,
-        category=TaskCategory(raw_category),
-        description=str(item.get("description", "")),
-        dependencies=[str(d) for d in dependencies],
-    )
-
-
-def _validate_dependencies(tasks: list[AgentTask]) -> None:
-    """Validate and sanitise task dependencies.
-
-    Strips references to non-existent task IDs and detects cycles.
-    Logs a warning for each invalid dependency rather than raising.
-    """
-    valid_ids = {t.id for t in tasks}
-
-    # Strip references to tasks not in this plan.
-    for task in tasks:
-        invalid = [d for d in task.dependencies if d not in valid_ids]
-        if invalid:
-            log.warning(
-                "Task %r references non-existent dependencies %s — stripping them",
-                task.id,
-                invalid,
-            )
-            task.dependencies = [d for d in task.dependencies if d in valid_ids]
-
-    # Simple cycle detection via topological sort (Kahn's algorithm).
-    in_degree: dict[str, int] = {t.id: 0 for t in tasks}
-    for task in tasks:
-        for dep in task.dependencies:
-            if dep in in_degree:
-                in_degree[dep] = in_degree[dep]  # dep exists — no-op, counted below
-
-    # Recount properly: in_degree[x] = number of tasks that depend on x.
-    # Actually, for cycle detection we need: in_degree[t] = len(t.dependencies).
-    in_degree = {t.id: len(t.dependencies) for t in tasks}
-    adjacency: dict[str, list[str]] = {t.id: [] for t in tasks}
-    for task in tasks:
-        for dep in task.dependencies:
-            adjacency[dep].append(task.id)
-
-    queue = [tid for tid, deg in in_degree.items() if deg == 0]
-    visited = 0
-    while queue:
-        node = queue.pop(0)
-        visited += 1
-        for successor in adjacency[node]:
-            in_degree[successor] -= 1
-            if in_degree[successor] == 0:
-                queue.append(successor)
-
-    if visited < len(tasks):
-        cycle_ids = [tid for tid, deg in in_degree.items() if deg > 0]
-        log.warning(
-            "Dependency cycle detected among tasks %s — stripping all dependencies in cycle",
-            cycle_ids,
-        )
-        cycle_set = set(cycle_ids)
-        for task in tasks:
-            if task.id in cycle_set:
-                task.dependencies = [d for d in task.dependencies if d not in cycle_set]
-
-
-# ---------------------------------------------------------------------------
-# Task merging (for replanning)
-# ---------------------------------------------------------------------------
-
-
-def _merge_tasks(
-    existing: list[AgentTask],
-    new: list[AgentTask],
-) -> list[AgentTask]:
-    """Merge new planned tasks with existing ones.
-
-    - Completed and active tasks are preserved (appear first).
-    - Pending tasks from the existing list are dropped.
-    - New tasks are appended after preserved tasks.
-    - If a new task ID collides with a completed/active task, the
-      completed/active task wins and the duplicate is discarded.
-    """
-    preserved: list[AgentTask] = []
-    preserved_ids: set[str] = set()
-
-    for task in existing:
-        if task.status in (TaskStatus.DONE, TaskStatus.ACTIVE):
-            preserved.append(task)
-            preserved_ids.add(task.id)
-
-    merged = list(preserved)
-    for task in new:
-        if task.id not in preserved_ids:
-            merged.append(task)
-
-    return merged

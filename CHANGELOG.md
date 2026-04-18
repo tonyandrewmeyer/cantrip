@@ -28,6 +28,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   lines lighter, focused on control flow.  Byte-identical output
   verified for every description; the 2774-test unit suite is
   unchanged.
+- **``planner.py`` split into a package (Phase 53.3)** — the now-
+  1195-line ``cantrip.agent.planner`` module is now a package with
+  the natural deterministic / LLM seam surfaced as modules:
+  ``planner/context.py`` (the shared ``PlanningContext`` dataclass),
+  ``planner/deterministic.py`` (the nine ``plan_*`` generators plus
+  path classifiers and task-prefix constants), and
+  ``planner/llm.py`` (``TaskPlanner``, the three prompt builders,
+  the JSON parser, ``_merge_tasks``).  ``planner/__init__.py``
+  re-exports the existing public API so no caller needs to change.
 - **Tools registry module renamed (Phase 53.4)** —
   ``cantrip.agent.tools.registry`` → ``cantrip.agent.tools.oci_registry``.
   The module holds Docker Hub / OCI image-search tools, not a tool-
