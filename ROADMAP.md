@@ -4894,6 +4894,371 @@ rules.  No authored HTML remains in the docs tree.
 
 ---
 
+## Phase 55: Patterns from awesome-copilot — Investigation
+
+**Goal:** A survey of the `awesome-copilot` repository (read locally
+from `../awesome-copilot` during the survey) surfaced a handful of
+patterns that neighbouring agent projects use heavily.  Some overlap
+with work Cantrip has already done (durable state, prompt templating);
+others are net new.  This phase commits to *investigating* each one
+end-to-end: read the reference implementation, decide whether it fits
+Cantrip's architecture, and either write up the decision or land a
+minimal prototype.  No item here is a commitment to adopt — the exit
+criterion is a written recommendation per idea, not new production
+code.  Any adoption work that falls out of the investigation is
+proposed as its own follow-up phase.  A second-pass review of the
+repo's Cantrip-specific list (`ralph_loop.py`, the agent-governance
+skill, the ospo workflow, the acquire-codebase-knowledge scan script,
+the Copilot agent-frontmatter spec) refined several items below and
+added two new ones (55.7, 55.8).
+
+### 55.1 Medium — Skill-as-folder convention
+
+- [ ] Read a representative sample of awesome-copilot skills
+  (`skills/acquire-codebase-knowledge/`, `skills/agent-governance/`,
+  `skills/pytest-coverage/`) and document the folder shape:
+  `SKILL.md` + `assets/templates/` + `scripts/` + `references/`
+- [ ] Compare against Cantrip's current skill layout under
+  `src/cantrip/agent/skills/` — what lives alongside `SKILL.md`
+  today, and what would naturally move in (charm scaffolds, Scenario
+  test fixtures, Jubilant fixtures, rockcraft / charmcraft templates)
+- [ ] Prototype one skill (candidate: `harness-migration` from commit
+  8621c49) converted to the full folder layout and report what broke
+  or improved
+- [ ] Record the decision as a section in `design/SKILLS.md` once Phase
+  53.5 lands that file; do not create a parallel design doc
+
+### 55.2 Medium — Frontmatter metadata on subagents and prompts
+
+- [ ] Audit what Cantrip currently knows about each subagent at
+  invocation time (allowed tools, model hint, which loop should
+  dispatch it) and where that knowledge lives (hardcoded registry?
+  constructor args? config?)
+- [ ] Sample awesome-copilot's agent frontmatter shape in
+  `instructions/agents.instructions.md` (fields: `description`, `name`,
+  `tools`, `model`, `target`, `user-invocable`,
+  `disable-model-invocation`, `handoffs`) and two to three files under
+  `agents/`
+- [ ] Decide whether a YAML frontmatter block on each subagent prompt
+  (`applyTo:`, `tools:`, `model:`) would let the planner mechanically
+  filter subagents — or whether the current Python-side registry is
+  already better because subagent metadata needs to be executable,
+  not just descriptive
+- [ ] Evaluate the Copilot `handoffs:` concept as a way to make the
+  planner's task-chaining data-driven: today the "build → deploy →
+  verify" chain is hardcoded in `plan_sprint_deploy` etc.; a
+  `handoffs: [deploy, verify]` field on a task template would push the
+  routing into data.  Sketch one concrete task and diff the two shapes
+- [ ] Adopt an explicit, named auto-approve sentinel in the subagent
+  dispatcher (mirrors Copilot's `PermissionHandler.approve_all`).
+  Today "approve everything the parent approved" is implicit;
+  naming the mode makes the autonomous loop's permission model
+  inspectable
+- [ ] Output: a short section in `design/PROMPTS.md` (landing in 53.5)
+  either proposing the schema or recording why it was rejected;
+  handoffs evaluated separately and either folded in or filed as a
+  follow-up phase
+
+### 55.3 Medium — Ralph-loop / disk-as-state comparison and per-goal budget
+
+- [ ] Read `../awesome-copilot/cookbook/copilot-sdk/python/recipe/ralph_loop.py`
+  end-to-end and diagram its control flow
+- [ ] Diff the pattern against Cantrip's two-loop architecture in
+  `design/AGENT.md` and the Phase 52 step-level durable-execution
+  design
+- [ ] Call out any primitive the ralph pattern has that Cantrip does
+  not (fresh context per iteration? on-disk plan file convention?
+  recovery semantics?) — the overlap is large, so the interesting
+  output is the delta, not the similarity
+- [ ] The one ralph primitive Cantrip is missing is a **hard
+  per-goal iteration and token budget** with a circuit breaker.
+  Today the autonomous loop runs until the planner declares done,
+  which is a long way from safe.  Scope a small addition: a per-goal
+  `max_iterations` and `max_tokens` counter in the executor, with a
+  clean shutdown path (save checkpoint, surface a `BudgetExceeded`
+  event to the UI) when tripped.  Pairs with 55.4's rate-limit work
+- [ ] Output: a paragraph in `design/AGENT.md` pointing at the ralph
+  loop as prior art; a concrete implementation sketch for the
+  per-goal budget (not necessarily built in this phase — the
+  investigation ends at "scoped and sized")
+
+### 55.4 High — Policy composition for tool access
+
+This item stays firmly in the investigation bucket: the scope below
+expanded after a closer read of the agent-governance skill, but
+nothing here is a commitment.  The phase output is a recommendation,
+possibly with a small prototype, not a delivered refactor.
+
+- [ ] Read `../awesome-copilot/skills/agent-governance/SKILL.md` in
+  full (six patterns: `GovernancePolicy`, `compose_policies()`,
+  intent classification, `@govern` decorator, trust scoring, audit
+  trail) and any referenced scripts
+- [ ] Map current Cantrip tool-gating: today `_filter_tools(tools,
+  category)` in `src/cantrip/agent/subagent.py:466` is a single-level
+  category allowlist.  Document where "this subagent may not run
+  `juju destroy-model`" *would* need to get enforced to be sound
+  (likely: inside `src/cantrip/agent/tools/juju.py` and
+  `run_command.py`, not as a category filter)
+- [ ] Evaluate each governance primitive against Cantrip's needs and
+  file a keep / defer / reject recommendation:
+  - **`compose_policies()` (stacked allowlists, most-restrictive-wins)** —
+    likely keep; replaces the single-level category filter with global
+    + per-task-type + per-charm layers
+  - **Per-goal rate limits (`max_calls_per_request`)** — likely keep;
+    pairs with 55.3's iteration budget as a cost safety valve
+  - **JSONL audit trail** — likely keep; emits machine-readable tool
+    events alongside the existing SQLite session state for post-hoc
+    analysis and compliance export
+  - **Juju-aware destructive-command gate inside the executor** —
+    likely keep; the Phase 55.5 / Copilot `tool-guardian` hook
+    protects user-initiated shell calls but autonomous-loop invocations
+    through `tools/juju.py` bypass any external shell hook entirely, so
+    the gate must live inside Cantrip's own code paths
+  - **Trust scoring with temporal decay** — likely reject; Cantrip
+    does not have multi-party delegation between untrusted agents
+  - **Intent classification / threat regexes** — defer; most of the
+    signal in a charm-building context comes from the tool surface
+    (`juju destroy-*`), not the prompt content
+- [ ] Explain how this relates to Phase 46 (user hooks) and Phase 49
+  (sandboxed shell): user hooks fire at lifecycle events; sandboxing
+  isolates subprocess execution; policy composition gates which tools
+  the LLM is allowed to *request* in the first place — all three
+  layers are complementary
+- [ ] Output: a written recommendation filed as a new phase proposal
+  (likely "Phase 57: Stacked Tool-Access Policies") or a
+  "rejected — here's why" entry appended to this roadmap.  A tiny
+  prototype of `compose_policies()` against one existing task type is
+  welcome but not required
+
+### 55.5 Low — Markdown workflows versus Python orchestration
+
+- [ ] Read two or three files under `../awesome-copilot/workflows/`
+  (especially `ospo-release-compliance-checker.md`) to see how
+  agentic workflows get expressed as plain markdown with frontmatter
+  instead of YAML DSLs or Python glue
+- [ ] Identify one Cantrip flow currently expressed as Python
+  orchestration (candidate: the deterministic `plan_sprint_deploy`
+  chain) and sketch what it would look like as a markdown workflow
+  file loaded through the same Jinja2 path as prompts
+- [ ] Decide: is the deterministic planner's Python code clearer, or
+  would markdown-with-frontmatter be a better authoring surface for
+  the sprint / fast-path / one-shot recipes?
+- [ ] Regardless of the main verdict, lift two micro-patterns from
+  the ospo workflow that are worth adopting on their own:
+  - **`safe-outputs` cap** — a declarative limit on how many side
+    effects a task can produce (e.g. "at most 1 PR", "at most 3
+    `juju deploy` calls").  Lands as a field on task templates and
+    composes with 55.4's rate-limit work
+  - **Explicit trigger guard as step 1** of every task template —
+    the workflow's first section reads the event and bails early if
+    preconditions fail.  Cantrip task templates currently launch
+    straight into instructions; a "first, check X/Y/Z — stop if not"
+    header would catch misrouted tasks before they burn tokens
+- [ ] Output: a short note — likely rejecting the main format, since
+  the deterministic planner has strong reasons to stay in Python —
+  but capturing the reasoning and the two lifted micro-patterns so
+  they are not re-litigated later
+
+### 55.6 Medium — Runnable cookbook
+
+- [ ] Review `../awesome-copilot/cookbook/copilot-sdk/python/recipe/`
+  (`ralph_loop.py`, `multiple_sessions.py`, `managing_local_files.py`,
+  `error_handling.py`) as a model for runnable-example cookbooks
+- [ ] Enumerate four to six candidate recipes Cantrip could publish as
+  end-to-end executable Python scripts: "build a stateful charm",
+  "deploy to Juju with COS", "add ops-tracing to an existing charm",
+  "migrate a Harness test to Scenario", "run charm tests end-to-end",
+  "generate a Terraform module"
+- [ ] Pick one and build it: `cookbook/build-a-stateful-charm/` that
+  drives Cantrip through the full loop and captures the transcript
+- [ ] Wire at least one recipe into CI so it runs on every PR —
+  doubles as onboarding documentation and a regression fixture
+- [ ] Cross-link the cookbook from `CONTRIBUTING.md` and the docs site
+- [ ] Micro-improvement out of the `pytest-coverage` skill review:
+  add `--cov-report=annotate:cov_annotate` to `make coverage` so
+  subagents can read annotated source files directly (lines prefixed
+  `!` are uncovered).  One-line change, no new skill needed
+
+### 55.7 Medium — Deterministic pre-scan for Path B custom apps
+
+- [ ] Read `../awesome-copilot/skills/acquire-codebase-knowledge/scripts/scan.py`
+  (~500 lines: manifest detection for 25+ languages, CI/CD platform
+  detection, container and orchestration detection, code metrics,
+  security-config detection, recent-commit churn)
+- [ ] Map the pieces onto Cantrip's Path B (custom apps) discovery
+  phase: today the LLM alone figures out "this is a Flask app / Go
+  service / Node.js server" from chat context.  A deterministic
+  manifest-and-CI scan seeded into the planner's first turn would
+  save round-trips and improve reliability
+- [ ] Decide: vendor the script (MIT-licensed), port its logic into a
+  Cantrip-native `src/cantrip/agent/tools/scan.py`, or invoke it as
+  a subprocess.  Porting is probably right — the script has Cantrip-
+  specific needs (rockcraft / charmcraft manifest awareness) that an
+  upstream version does not cover
+- [ ] Output: a recommendation with a concrete file-layout proposal,
+  and a stub implementation if the call is "port"
+
+### 55.8 Low — Charm-design spec template
+
+- [ ] Read `../awesome-copilot/skills/create-github-action-workflow-specification/SKILL.md`
+  for its output shape: mermaid diagrams, job-dependency tables,
+  trigger matrices, implementation-agnostic prose with strict
+  frontmatter
+- [ ] Cantrip does not reverse-engineer workflows, so skip the skill
+  itself.  Evaluate whether Cantrip's planner should emit a *charm-
+  design spec* in a similar shape before Path B or Path C builds:
+  mermaid diagram of relation integrations, config-option table,
+  container/resource table, actions list, implementation-agnostic
+  description.  Today that design lives half in chat messages and
+  half in the task description
+- [ ] Prototype one spec by hand for an existing generated charm and
+  decide whether making it a required pre-build artefact would improve
+  the user-confirmation step or add friction
+- [ ] Output: either a template committed to
+  `src/cantrip/agent/prompts/design/charm_spec.md.j2` wired into the
+  planner, or a rejection note explaining why chat-based design
+  confirmation is already sufficient
+
+### What this phase is *not*
+
+- Not a commitment to adopt every pattern.  Several items plausibly
+  end in "rejected, with reasoning recorded" — that is still a
+  successful outcome.  55.4 in particular is expected to need more
+  investigation than one pass can deliver; the phase closes when the
+  recommendation is written, not when the refactor lands.
+- Not a rebuild of the skills or planner subsystems.  Any net-new
+  production work gets proposed as its own phase; this phase ends at
+  the recommendation.
+- Not a duplicate of Phase 52 (durable execution) or Phase 50 (skills
+  interop).  Where those phases already cover the ground, the output
+  here is a single paragraph crediting them and pointing readers at
+  the reference implementation in awesome-copilot.
+- Not Phase 56.  Publishing Cantrip's Juju knowledge as reusable
+  Copilot / Claude Code assets is tracked separately so it is not
+  held up behind the investigation items here.
+
+**Exit criteria:** Each of 55.1 through 55.8 has a written decision or
+prototype committed to the repo — as a section in an existing
+`design/` doc, a follow-up phase proposal, or a working cookbook
+recipe.  The survey notes from `../awesome-copilot` are captured in a
+single `design/AWESOME_COPILOT_SURVEY.md` alongside the per-item
+decisions, so a future maintainer can re-evaluate without re-reading
+the upstream repo.  55.4 explicitly exits at "recommendation filed,"
+not at "refactor complete."
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Skill-as-folder (55.1) | Phase 53.5 (`design/SKILLS.md`) | Extends the doc; can run in parallel, lands after |
+| Subagent frontmatter (55.2) | Phase 53.5 (`design/PROMPTS.md`) | Same |
+| Ralph-loop + per-goal budget (55.3) | Phase 52 | Needs the step-level durable design to diff against |
+| Policy composition (55.4) | Phase 46, Phase 49, 55.3, 55.5 | Recommendation must place this relative to adjacent work and the micro-patterns from 55.3/55.5 |
+| Markdown workflows (55.5) | Phase 53 | Reuses the planner split and template loader |
+| Cookbook (55.6) | none | Independent; can land first |
+| Pre-scan (55.7) | none | Independent; feeds into Path B discovery |
+| Charm-design spec (55.8) | Phase 53 | Template lives under `prompts/design/` |
+
+---
+
+## Phase 56: Publish Juju Copilot / Claude Code Assets
+
+**Goal:** The awesome-copilot survey turned up zero Juju-specific
+content across 307 skills, 177 instructions, and 204 agents — every
+charm author using Copilot or Claude Code today gets generic
+Python/YAML advice.  Cantrip already embeds the right knowledge in
+its system prompt and skills bundle; lifting a subset into standalone
+reusable assets (`*.instructions.md` scoped via `applyTo:`, plus
+skill folders) is cheap and unlocks ecosystem-wide value independent
+of Cantrip's own adoption curve.
+
+The target publishing destination is **`canonical/copilot-collections`**
+(not `awesome-copilot` upstream) — Canonical owns the narrative and
+versioning, and the assets can reference each other without waiting
+on upstream review cycles.
+
+### 56.1 High — Scope the initial asset bundle
+
+- [ ] Enumerate the slices of Cantrip's system prompt and skills most
+  valuable as standalone assets: `charmcraft.yaml` authoring,
+  `src/charm.py` patterns, Scenario testing (not Harness), Jubilant
+  integration tests (not pytest-operator), ops-tracing integration,
+  COS integration, relation-data design, the 12-factor / custom /
+  infrastructure path split
+- [ ] Decide per-slice whether it ships as an `.instructions.md`
+  (applies to files matching a glob) or a skill folder (triggers on
+  an explicit user ask): instructions for style/lint-adjacent rules,
+  skills for multi-step processes like "migrate Harness to Scenario"
+- [ ] Draft a manifest file (`README.md` + index) listing the
+  bundle's contents, compatibility matrix, and versioning policy
+
+### 56.2 High — Extract and repackage from Cantrip's system prompt
+
+- [ ] For each instruction asset, extract the relevant block from
+  `src/cantrip/agent/prompts/system.md.j2` (plus the skills under
+  `src/cantrip/agent/skills/`) and rewrite for the standalone
+  audience.  The Cantrip prompt assumes the autonomous-loop
+  context; the published assets are read by humans and other agents
+- [ ] Add YAML frontmatter matching awesome-copilot's conventions
+  (`description`, `applyTo`, etc.) so the assets drop cleanly into
+  any existing Copilot / Claude Code setup
+- [ ] Keep a one-way-mirror convention: Cantrip's system prompt is
+  the source of truth; the published assets are derived.  Document
+  how they stay in sync (ideally a `make` target that regenerates
+  the published bundle from the Jinja2 sources)
+
+### 56.3 Medium — Publish to `canonical/copilot-collections`
+
+- [ ] Create the repo structure under `canonical/copilot-collections`
+  (or the existing bundle if it already exists; check before
+  creating) — likely a `juju/` subdirectory to leave room for other
+  Canonical domains (`lxd/`, `rockcraft/`, etc.)
+- [ ] Land the initial asset bundle with a `README.md` explaining
+  how to install into VS Code, JetBrains, and Claude Code
+- [ ] Add a minimal CI job that validates frontmatter and glob syntax
+  so broken assets don't ship
+- [ ] Announce internally (Cantrip updates, charm-dev channels) so
+  charm authors know the bundle exists
+
+### 56.4 Low — Keep the bundle current
+
+- [ ] Add a GitHub Action that opens a PR when Cantrip's system
+  prompt or skill content changes in a way that affects the
+  published bundle (a simple diff-on-push is probably enough)
+- [ ] Periodic review cadence (quarterly?) to prune stale rules and
+  add newly discovered charm idioms
+- [ ] Track downstream reception: stars, forks, issues, PRs against
+  the bundle — feeds back into Cantrip's own prompt quality
+
+### What this phase is *not*
+
+- Not a fork or rewrite of Cantrip's prompts.  The published bundle
+  is a derivative, regenerated from Cantrip's source, not a parallel
+  knowledge base to maintain.
+- Not a commitment to upstream to `awesome-copilot` itself.  Canonical
+  maintains control via `canonical/copilot-collections`; upstreaming
+  to awesome-copilot is a possible future step, not part of this
+  phase.
+- Not Juju-specific IDE plugins or VS Code extensions.  Assets only —
+  the installation story leans on existing Copilot / Claude Code
+  mechanisms.
+
+**Exit criteria:** `canonical/copilot-collections/juju/` (or the
+agreed-on path) exists with at least six instruction / skill assets
+covering the slices from 56.1.  A regeneration mechanism (ideally a
+`make` target in Cantrip) keeps the bundle in sync with Cantrip's
+own system prompt.  CI validates frontmatter on every PR.  The bundle
+is announced to at least one charm-developer channel.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Scope (56.1) | none | Inventory pass; independent |
+| Extract (56.2) | 56.1 | Needs the scope decided first |
+| Publish (56.3) | 56.2 | Needs the content to publish |
+| Maintain (56.4) | 56.3 | Only meaningful once the bundle exists |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4944,4 +5309,6 @@ rules.  No authored HTML remains in the docs tree.
 | M52: Durable Subagents | 52 | Subagent LLM turns and tool calls checkpoint into SQLite; interrupted tasks resume from the last completed step instead of re-burning tokens |
 | M53: Knowledge-in-Markdown | 53 | Planner prompts and task descriptions live in Jinja2 templates; `planner.py` split along the deterministic / LLM seam; dev design docs cover tools, skills, and prompts |
 | M54: Authored Docs | 54 | `docs/docs/` site rebuilds from committed markdown sources through `make docs`; no hand-authored HTML remains in the docs tree |
+| M55: Awesome-Copilot Survey | 55 | Eight awesome-copilot patterns investigated end-to-end; each has a committed decision, prototype, or recommendation |
+| M56: Juju Copilot Bundle | 56 | `canonical/copilot-collections` hosts a Juju-specific instruction/skill bundle derived from Cantrip's system prompt, with CI validation and a regeneration path |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
