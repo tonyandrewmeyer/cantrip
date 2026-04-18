@@ -18,6 +18,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **Web-server WebSocket lifecycle coverage (Phase 57.4)** —
+  ``src/cantrip/web/server.py`` moved from 24% to 99% line coverage
+  via 44 new tests in ``tests/unit/test_web_server.py``.  Covers the
+  full ``_websocket_handler`` lifecycle (connect, disconnect,
+  ``chat_input`` round-trip with broadcast fan-out, invalid JSON,
+  empty-content guard, and every exception branch —
+  ``ProviderRateLimitError``, ``ProviderOverloadedError``,
+  ``ProviderError``, and the generic ``OSError``/``ValueError``/
+  ``RuntimeError`` path), the ``/api/logs-stream`` tailer
+  (no-model / no-CLI, happy-path streaming, invalid-level
+  normalisation, mid-stream OSError), every branch of the REST
+  handlers, and ``_create_app`` / ``run_web`` dispatch.  Uses
+  ``aiohttp.test_utils.TestClient`` with ``ws_connect``, per the
+  roadmap's suggested pattern.  Small production change: migrated
+  ``chat_lock`` / ``jinja_env`` / ``port`` from string keys to typed
+  ``web.AppKey`` instances (``CHAT_LOCK_KEY``, ``JINJA_ENV_KEY``,
+  ``PORT_KEY``), silencing ``NotAppKeyWarning`` and matching the
+  existing ``AGENT_KEY`` / ``WS_CLIENTS_KEY`` style.
 - **Entry-point coverage (Phase 57.2)** — three modules that were at
   0% are now thoroughly tested: ``cantrip/cli.py`` (0% → 97%),
   ``cantrip/main.py`` (0% → 99%), and ``cantrip/juju/log_stream.py``

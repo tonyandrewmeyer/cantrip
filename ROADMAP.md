@@ -5347,14 +5347,31 @@ tests across four files.  Each test fakes ``juju_subprocess.run_juju``
 (or ``subprocess.run`` for charmlint) and ``wait_for_app`` so no real
 Juju invocation is needed.
 
-### 57.4 Medium — Web-server WebSocket lifecycle
+### 57.4 Medium — Web-server WebSocket lifecycle ✓
 
-``src/cantrip/web/server.py`` is at 24%.  The REST endpoints are
-covered; the WebSocket code is not.
+``src/cantrip/web/server.py`` was at 24%.  The REST endpoints were
+covered; the WebSocket code was not.
 
-- [ ] Add tests for connect / disconnect / reconnect flows, message
-  broadcast fan-out to multiple clients, and graceful shutdown
-- [ ] Use ``aiohttp.test_utils.TestClient`` with ``ws_connect``
+- [x] Tests for connect / disconnect flows, chat_input round-trip,
+  broadcast fan-out to multiple clients, stale-client pruning, and
+  each exception branch in ``_websocket_handler`` (rate-limited,
+  overloaded, provider error, OSError/ValueError/RuntimeError)
+- [x] Covered the ``/api/logs-stream`` WebSocket — no-model/no-CLI
+  branches, happy-path streaming, invalid-level normalisation, and
+  OSError mid-stream
+- [x] Covered ``/api/logs`` edge cases (missing CLI, non-integer
+  ``lines=`` falls back, ``TimeoutExpired`` swallowed)
+- [x] Covered the REST handlers (``_index``, ``_api_state``,
+  ``_api_messages``, ``_api_juju_status`` for each branch) plus
+  ``_make_bus_forwarder``, ``_create_app``, and ``run_web`` dispatch
+- [x] Used ``aiohttp.test_utils.TestClient`` with ``ws_connect``
+  as prescribed
+- [x] Migrated remaining string keys in ``server.py`` to typed
+  ``web.AppKey`` (``CHAT_LOCK_KEY``, ``JINJA_ENV_KEY``, ``PORT_KEY``)
+  to keep the zero-warning exit criterion
+
+Result: ``src/cantrip/web/server.py`` moved from 24% to 99% line
+coverage.  44 new tests added.
 
 ### 57.5 Medium — TUI screen Pilot tests
 

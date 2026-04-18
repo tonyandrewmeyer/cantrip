@@ -1,6 +1,13 @@
 """Tests for the web UI server."""
 
+import asyncio
+import types
+import weakref
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import aiohttp.web as web
 import jinja2
+from aiohttp.test_utils import TestClient, TestServer
 
 from cantrip.web.server import (
     _MAX_LOG_LINES,
@@ -8,6 +15,9 @@ from cantrip.web.server import (
     _TEMPLATE_DIR,
     _VALID_LOG_LEVELS,
     AGENT_KEY,
+    CHAT_LOCK_KEY,
+    JINJA_ENV_KEY,
+    PORT_KEY,
     WS_CLIENTS_KEY,
     _broadcast,
 )
@@ -19,6 +29,38 @@ def _render_template() -> str:
         autoescape=True,
     )
     return env.get_template("index.html.j2").render(charm_name="", tasks=[], port=8471)
+
+
+class _StubWs:
+    """Minimal stand-in for a ``WebSocketResponse`` that accepts weakrefs."""
+
+    __slots__ = ("closed", "__weakref__")
+
+    def __init__(self, *, closed: bool = False) -> None:
+        self.closed = closed
+
+
+def _build_ws_app(agent: MagicMock) -> web.Application:
+    """Build a minimal ``web.Application`` wired for the websocket tests.
+
+    Registers the real ``_websocket_handler`` and ``_index`` route plus the
+    keys the handler looks up (``AGENT_KEY``, ``WS_CLIENTS_KEY``,
+    ``chat_lock``, ``jinja_env`` and ``port``).  Mirrors what
+    ``_create_app`` builds, minus the routes we don't drive.
+    """
+    from cantrip.web import server
+
+    app = web.Application()
+    app[AGENT_KEY] = agent
+    app[WS_CLIENTS_KEY] = weakref.WeakSet()
+    app[CHAT_LOCK_KEY] = asyncio.Lock()
+    app[JINJA_ENV_KEY] = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
+        autoescape=True,
+    )
+    app[PORT_KEY] = 8471
+    app.router.add_get("/ws", server._websocket_handler)
+    return app
 
 
 class TestWebServerBasics:
@@ -521,3 +563,1020 @@ class TestAccessibility:
         # region is preserved in the a11y tree.
         js = (_STATIC_DIR / "cantrip.js").read_text()
         assert "el.hidden = !active" in js
+
+
+class TestSafeWsSend:
+    """Tests for _safe_ws_send error-swallowing behaviour."""
+
+    def test_forwards_payload_to_open_ws(self) -> None:
+        from cantrip.web import server
+
+        ws = AsyncMock()
+        ws.send_str = AsyncMock()
+        asyncio.run(server._safe_ws_send(ws, "hello"))
+        ws.send_str.assert_awaited_once_with("hello")
+
+    def test_silences_connection_reset(self) -> None:
+        from cantrip.web import server
+
+        ws = AsyncMock()
+        ws.send_str = AsyncMock(side_effect=ConnectionResetError())
+        # Must not raise.
+        asyncio.run(server._safe_ws_send(ws, "x"))
+
+    def test_silences_os_error(self) -> None:
+        from cantrip.web import server
+
+        ws = AsyncMock()
+        ws.send_str = AsyncMock(side_effect=OSError("broken pipe"))
+        asyncio.run(server._safe_ws_send(ws, "x"))
+
+
+class TestBroadcastFanOut:
+    """Exercise _broadcast's fan-out and stale-client pruning."""
+
+    def test_fan_out_sends_to_every_open_client(self) -> None:
+        from cantrip.web import server
+
+        sent: list[tuple[object, str]] = []
+
+        async def _fake_send(ws: web.WebSocketResponse, payload: str) -> None:
+            sent.append((ws, payload))
+
+        async def _run() -> None:
+            app = web.Application()
+            clients: weakref.WeakSet = weakref.WeakSet()
+            # Use simple namespaces rather than real WebSocketResponses; the
+            # broadcast code only reads ``.closed`` and passes the object to
+            # ``_safe_ws_send``, which we patch.
+            ws_open_a = _StubWs(closed=False)
+            ws_open_b = _StubWs(closed=False)
+            clients.add(ws_open_a)
+            clients.add(ws_open_b)
+            app[WS_CLIENTS_KEY] = clients
+
+            with patch.object(server, "_safe_ws_send", _fake_send):
+                server._broadcast(app, "task_updated", {"id": "t1"})
+                # Yield so ensure_future()-scheduled coroutines run.
+                await asyncio.sleep(0)
+
+            payloads = {payload for _, payload in sent}
+            assert len(sent) == 2
+            assert payloads == {'{"type": "task_updated", "data": {"id": "t1"}}'}
+
+        asyncio.run(_run())
+
+    def test_stale_clients_are_pruned(self) -> None:
+        from cantrip.web import server
+
+        async def _noop(_ws: web.WebSocketResponse, _payload: str) -> None:
+            raise AssertionError("closed clients must not be sent to")
+
+        async def _run() -> None:
+            app = web.Application()
+            clients: weakref.WeakSet = weakref.WeakSet()
+            closed = _StubWs(closed=True)
+            clients.add(closed)
+            app[WS_CLIENTS_KEY] = clients
+
+            with patch.object(server, "_safe_ws_send", _noop):
+                server._broadcast(app, "thinking", {"active": False})
+                await asyncio.sleep(0)
+
+            assert closed not in clients
+
+        asyncio.run(_run())
+
+    def test_payload_shape_is_type_and_data(self) -> None:
+        """The wire format is ``{"type": str, "data": dict}``."""
+        from cantrip.web import server
+
+        captured: list[str] = []
+
+        async def _capture(_ws: web.WebSocketResponse, payload: str) -> None:
+            captured.append(payload)
+
+        async def _run() -> None:
+            app = web.Application()
+            clients: weakref.WeakSet = weakref.WeakSet()
+            ws = _StubWs(closed=False)
+            clients.add(ws)
+            app[WS_CLIENTS_KEY] = clients
+
+            with patch.object(server, "_safe_ws_send", _capture):
+                server._broadcast(app, "chat_message", {"role": "assistant"})
+                await asyncio.sleep(0)
+
+            import json
+
+            assert len(captured) == 1
+            assert json.loads(captured[0]) == {
+                "type": "chat_message",
+                "data": {"role": "assistant"},
+            }
+
+        asyncio.run(_run())
+
+
+class TestMakeBusForwarder:
+    """_make_bus_forwarder returns a subscriber that forwards to _broadcast."""
+
+    def test_forwards_event_to_broadcast(self) -> None:
+        from cantrip.ui import events as ui_events
+        from cantrip.web import server
+
+        async def _run() -> None:
+            app = web.Application()
+            app[WS_CLIENTS_KEY] = weakref.WeakSet()
+            captured: list[tuple[str, dict]] = []
+
+            with patch.object(
+                server,
+                "_broadcast",
+                lambda _app, evt_type, data: captured.append((evt_type, data)),
+            ):
+                forwarder = server._make_bus_forwarder(app)
+                forwarder(
+                    ui_events.Event(
+                        type=ui_events.EventType.TASK_UPDATED,
+                        payload={"id": "t1", "status": "done"},
+                    )
+                )
+
+            assert captured == [("task_updated", {"id": "t1", "status": "done"})]
+
+        asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# _websocket_handler lifecycle
+# ---------------------------------------------------------------------------
+
+
+def _make_agent(response: str = "ok") -> MagicMock:
+    """Return a MagicMock agent shaped for the websocket handler."""
+    agent = MagicMock()
+    agent.state.charm_name = "mycharm"
+    agent.state.dev_model = "dev"
+    agent.state.messages = []
+    agent._work_queue = None
+    agent.process_message = AsyncMock(return_value=response)
+    agent.save_state = MagicMock()
+    return agent
+
+
+class TestWebSocketHandler:
+    """End-to-end tests for ``_websocket_handler``."""
+
+    def test_connect_registers_client_and_disconnect_prunes(self) -> None:
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await asyncio.sleep(0)  # let handler start
+                assert len(app[WS_CLIENTS_KEY]) == 1
+                await ws.close()
+                # Wait for the handler's ``finally`` to run.
+                for _ in range(50):
+                    if len(app[WS_CLIENTS_KEY]) == 0:
+                        break
+                    await asyncio.sleep(0.01)
+                assert len(app[WS_CLIENTS_KEY]) == 0
+
+        asyncio.run(_run())
+
+    def test_chat_input_happy_path(self) -> None:
+        agent = _make_agent(response="assistant-reply")
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await ws.send_json({"type": "chat_input", "data": {"content": "hi"}})
+
+                frames = []
+                for _ in range(3):
+                    msg = await ws.receive(timeout=2.0)
+                    frames.append(msg.json())
+
+                types_seen = [f["type"] for f in frames]
+                assert types_seen == ["thinking", "thinking", "chat_message"]
+                assert frames[0]["data"] == {"active": True}
+                assert frames[1]["data"] == {"active": False}
+                assert frames[2]["data"] == {
+                    "role": "assistant",
+                    "content": "assistant-reply",
+                }
+                agent.process_message.assert_awaited_once_with("hi")
+                agent.save_state.assert_called_once()
+                await ws.close()
+
+        asyncio.run(_run())
+
+    def test_invalid_json_is_ignored(self) -> None:
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await ws.send_str("not json{")
+                # Follow with a real chat_input to prove the loop recovered.
+                await ws.send_json({"type": "chat_input", "data": {"content": "hi"}})
+                msg = await ws.receive(timeout=2.0)
+                assert msg.json()["type"] == "thinking"
+                await ws.close()
+
+        asyncio.run(_run())
+
+    def test_empty_content_is_ignored(self) -> None:
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await ws.send_json({"type": "chat_input", "data": {"content": "   "}})
+                # The handler must not call process_message; send another
+                # real message and prove only one round of frames arrives.
+                await ws.send_json({"type": "chat_input", "data": {"content": "real"}})
+                msg = await ws.receive(timeout=2.0)
+                assert msg.json() == {"type": "thinking", "data": {"active": True}}
+                agent.process_message.assert_awaited_once_with("real")
+                await ws.close()
+
+        asyncio.run(_run())
+
+    def test_unknown_message_type_is_ignored(self) -> None:
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await ws.send_json({"type": "something_else"})
+                await ws.send_json({"type": "chat_input", "data": {"content": "hi"}})
+                msg = await ws.receive(timeout=2.0)
+                assert msg.json()["type"] == "thinking"
+                await ws.close()
+
+        asyncio.run(_run())
+
+    def _run_with_process_exc(self, exc: Exception) -> list[dict]:
+        agent = _make_agent()
+        agent.process_message = AsyncMock(side_effect=exc)
+        app = _build_ws_app(agent)
+
+        async def _run() -> list[dict]:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await ws.send_json({"type": "chat_input", "data": {"content": "hi"}})
+                out: list[dict] = []
+                for _ in range(3):
+                    msg = await ws.receive(timeout=2.0)
+                    out.append(msg.json())
+                await ws.close()
+                return out
+
+        return asyncio.run(_run())
+
+    def test_rate_limit_error_surfaces_friendly_system_message(self) -> None:
+        from cantrip.llm.base import ProviderRateLimitError
+
+        frames = self._run_with_process_exc(ProviderRateLimitError("slow down"))
+        assert [f["type"] for f in frames] == ["thinking", "thinking", "chat_message"]
+        assert frames[-1]["data"]["role"] == "system"
+        assert "temporarily unavailable" in frames[-1]["data"]["content"]
+
+    def test_overloaded_error_surfaces_friendly_system_message(self) -> None:
+        from cantrip.llm.base import ProviderOverloadedError
+
+        frames = self._run_with_process_exc(ProviderOverloadedError("busy"))
+        assert frames[-1]["data"]["role"] == "system"
+        assert "temporarily unavailable" in frames[-1]["data"]["content"]
+
+    def test_provider_error_surfaces_the_error_string(self) -> None:
+        from cantrip.llm.base import ProviderError
+
+        frames = self._run_with_process_exc(ProviderError("bad key"))
+        assert frames[-1]["data"]["role"] == "system"
+        assert "Provider error: bad key" in frames[-1]["data"]["content"]
+
+    def test_runtime_errors_surface_as_generic_error(self) -> None:
+        frames = self._run_with_process_exc(RuntimeError("boom"))
+        assert frames[-1]["data"]["role"] == "system"
+        assert "Error: boom" in frames[-1]["data"]["content"]
+
+    def test_os_errors_surface_as_generic_error(self) -> None:
+        frames = self._run_with_process_exc(OSError("nope"))
+        assert frames[-1]["data"]["role"] == "system"
+        assert "Error: nope" in frames[-1]["data"]["content"]
+
+    def test_value_errors_surface_as_generic_error(self) -> None:
+        frames = self._run_with_process_exc(ValueError("no good"))
+        assert frames[-1]["data"]["role"] == "system"
+        assert "Error: no good" in frames[-1]["data"]["content"]
+
+    def test_client_close_breaks_loop_cleanly(self) -> None:
+        """When the client sends CLOSE, the handler exits the loop via
+        the explicit ``break`` branch, not just the StopAsyncIteration that
+        aiohttp raises once the underlying websocket is gone."""
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await ws.close()
+                # Drain pending messages; the handler should prune the
+                # client from WS_CLIENTS_KEY once it exits.
+                for _ in range(50):
+                    if len(app[WS_CLIENTS_KEY]) == 0:
+                        break
+                    await asyncio.sleep(0.01)
+                assert len(app[WS_CLIENTS_KEY]) == 0
+
+        asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# REST handlers
+# ---------------------------------------------------------------------------
+
+
+def _work_queue_with(tasks: list[object]) -> object:
+    queue = MagicMock()
+    queue.all_tasks.return_value = tasks
+    return queue
+
+
+def _fake_task(
+    id_: str,
+    title: str,
+    status: str = "pending",
+    category: str = "build",
+    description: str = "",
+    result: str | None = None,
+) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        id=id_,
+        title=title,
+        status=types.SimpleNamespace(value=status),
+        category=types.SimpleNamespace(value=category),
+        description=description,
+        result=result,
+    )
+
+
+class TestIndexHandler:
+    """_index serves the Jinja template with initial state."""
+
+    def test_renders_with_charm_name_and_no_tasks(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/", server._index)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/")
+                assert resp.status == 200
+                body = await resp.text()
+                assert "<!DOCTYPE html>" in body
+                assert "mycharm" in body
+
+        asyncio.run(_run())
+
+    def test_renders_tasks_from_work_queue(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        agent._work_queue = _work_queue_with([_fake_task("t1", "Scaffold", status="active")])
+        app = _build_ws_app(agent)
+        app.router.add_get("/", server._index)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/")
+                body = await resp.text()
+                assert "Scaffold" in body
+                assert "task-active" in body
+
+        asyncio.run(_run())
+
+
+class TestApiState:
+    """/api/state returns charm_name and the task list."""
+
+    def test_returns_charm_name_and_tasks(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        agent._work_queue = _work_queue_with(
+            [
+                _fake_task(
+                    "t1",
+                    "Deploy",
+                    status="done",
+                    category="deploy",
+                    description="ship it",
+                    result="ok",
+                )
+            ]
+        )
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/state", server._api_state)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/state")
+                data = await resp.json()
+                assert data["charm_name"] == "mycharm"
+                assert data["tasks"] == [
+                    {
+                        "id": "t1",
+                        "title": "Deploy",
+                        "status": "done",
+                        "category": "deploy",
+                        "description": "ship it",
+                        "result": "ok",
+                    }
+                ]
+
+        asyncio.run(_run())
+
+    def test_empty_tasks_when_no_queue(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/state", server._api_state)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/state")
+                data = await resp.json()
+                assert data == {"charm_name": "mycharm", "tasks": []}
+
+        asyncio.run(_run())
+
+
+class TestApiMessages:
+    """/api/messages returns conversation history filtered by content."""
+
+    def test_returns_messages_excluding_empty_content(self) -> None:
+        from cantrip.llm.base import Message, Role
+        from cantrip.web import server
+
+        agent = _make_agent()
+        agent.state.messages = [
+            Message(role=Role.USER, content="hello"),
+            Message(role=Role.ASSISTANT, content=""),
+            Message(role=Role.ASSISTANT, content="world"),
+        ]
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/messages", server._api_messages)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/messages")
+                data = await resp.json()
+                assert data == {
+                    "messages": [
+                        {"role": "user", "content": "hello"},
+                        {"role": "assistant", "content": "world"},
+                    ]
+                }
+
+        asyncio.run(_run())
+
+
+class TestApiJujuStatus:
+    """/api/juju-status covers the three branches."""
+
+    def test_returns_empty_when_no_dev_model(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        agent.state.dev_model = None
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/juju-status", server._api_juju_status)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/juju-status")
+                data = await resp.json()
+                assert data == {"apps": {}, "relations": []}
+
+        asyncio.run(_run())
+
+    def test_returns_apps_and_relations(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/juju-status", server._api_juju_status)
+
+        unit_status = types.SimpleNamespace(
+            workload_status=types.SimpleNamespace(current="active", message="ready"),
+            address="10.0.0.1",
+        )
+        app_status = types.SimpleNamespace(
+            app_status=types.SimpleNamespace(current="active", message="healthy"),
+            charm="my-charm",
+            units={"my-app/0": unit_status},
+        )
+        relation = types.SimpleNamespace(
+            provider="prometheus:metrics-endpoint",
+            requirer="my-app:metrics",
+            interface="prometheus_scrape",
+        )
+        status = types.SimpleNamespace(
+            apps={"my-app": app_status},
+            relations=[relation, relation],  # duplicate — must be deduped
+        )
+
+        fake_juju = MagicMock()
+        fake_juju.status.return_value = status
+        with (
+            patch("jubilant.Juju", return_value=fake_juju),
+            patch("jubilant.CLIError", RuntimeError),
+        ):
+
+            async def _run() -> None:
+                async with TestClient(TestServer(app)) as client:
+                    resp = await client.get("/api/juju-status")
+                    data = await resp.json()
+
+                    assert "my-app" in data["apps"]
+                    app_entry = data["apps"]["my-app"]
+                    assert app_entry["status"] == "active"
+                    assert app_entry["message"] == "healthy"
+                    assert app_entry["charm"] == "my-charm"
+                    assert app_entry["units"]["my-app/0"] == {
+                        "status": "active",
+                        "message": "ready",
+                        "address": "10.0.0.1",
+                    }
+                    # Relations deduped to a single entry.
+                    assert len(data["relations"]) == 1
+                    assert data["relations"][0]["interface"] == "prometheus_scrape"
+
+            asyncio.run(_run())
+
+    def test_returns_empty_on_cli_error(self) -> None:
+        import jubilant
+
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/juju-status", server._api_juju_status)
+
+        fake_juju = MagicMock()
+        fake_juju.status.side_effect = jubilant.CLIError(0, ["juju", "status"], "", "")
+        with patch("jubilant.Juju", return_value=fake_juju):
+
+            async def _run() -> None:
+                async with TestClient(TestServer(app)) as client:
+                    resp = await client.get("/api/juju-status")
+                    data = await resp.json()
+                    assert data == {"apps": {}, "relations": []}
+
+            asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# _create_app and _ws_logs_stream
+# ---------------------------------------------------------------------------
+
+
+class TestCreateApp:
+    """_create_app wires keys and routes correctly."""
+
+    def test_registers_expected_routes(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = server._create_app(agent, port=1234)
+
+        paths = {route.resource.canonical for route in app.router.routes()}
+        assert "/" in paths
+        assert "/api/state" in paths
+        assert "/api/messages" in paths
+        assert "/api/juju-status" in paths
+        assert "/api/logs" in paths
+        assert "/api/logs-stream" in paths
+        assert "/ws" in paths
+        # Static route is registered under /static.
+        assert any(p.startswith("/static") for p in paths)
+
+    def test_stores_agent_port_and_clients(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = server._create_app(agent, port=9999)
+        assert app[AGENT_KEY] is agent
+        assert app[PORT_KEY] == 9999
+        assert isinstance(app[WS_CLIENTS_KEY], weakref.WeakSet)
+        assert isinstance(app[CHAT_LOCK_KEY], asyncio.Lock)
+        assert isinstance(app[JINJA_ENV_KEY], jinja2.Environment)
+
+
+class TestApiLogsEdgeCases:
+    """/api/logs branches not exercised by TestLogInputValidation."""
+
+    def test_returns_empty_when_no_dev_model(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        agent.state.dev_model = None
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/logs", server._api_logs)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/logs")
+                data = await resp.json()
+                assert data == {"lines": [], "error": "No model or juju CLI"}
+
+        asyncio.run(_run())
+
+    def test_returns_empty_when_juju_cli_missing(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/logs", server._api_logs)
+
+        async def _run() -> None:
+            with patch("shutil.which", return_value=None):
+                async with TestClient(TestServer(app)) as client:
+                    resp = await client.get("/api/logs")
+                    data = await resp.json()
+                    assert data["error"] == "No model or juju CLI"
+
+        asyncio.run(_run())
+
+    def test_non_integer_lines_falls_back_to_default(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/logs", server._api_logs)
+
+        fake_result = types.SimpleNamespace(stdout="one\ntwo", returncode=0)
+
+        async def _run() -> None:
+            with (
+                patch("shutil.which", return_value="/usr/bin/juju"),
+                patch("subprocess.run", return_value=fake_result) as run_mock,
+            ):
+                async with TestClient(TestServer(app)) as client:
+                    resp = await client.get("/api/logs?lines=not-an-int")
+                    data = await resp.json()
+                    assert resp.status == 200
+                    assert data["lines"] == ["one", "two"]
+                    # Default was used: "-n 100".
+                    cmd = run_mock.call_args[0][0]
+                    assert cmd[cmd.index("-n") + 1] == "100"
+
+        asyncio.run(_run())
+
+    def test_timeout_returns_empty_lines(self) -> None:
+        import subprocess
+
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/logs", server._api_logs)
+
+        async def _run() -> None:
+            with (
+                patch("shutil.which", return_value="/usr/bin/juju"),
+                patch(
+                    "subprocess.run",
+                    side_effect=subprocess.TimeoutExpired(cmd=["juju"], timeout=15),
+                ),
+            ):
+                async with TestClient(TestServer(app)) as client:
+                    resp = await client.get("/api/logs")
+                    data = await resp.json()
+                    assert data == {"lines": []}
+
+        asyncio.run(_run())
+
+
+class TestWsLogsStream:
+    """/api/logs-stream — WebSocket that tails juju debug-log."""
+
+    def test_sends_error_when_no_model(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        agent.state.dev_model = None
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/logs-stream", server._ws_logs_stream)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/api/logs-stream")
+                msg = await ws.receive(timeout=2.0)
+                assert msg.json() == {"error": "No model or juju CLI"}
+                # Server closes the socket; the next receive returns CLOSE.
+                close = await ws.receive(timeout=2.0)
+                assert close.type in (
+                    web.WSMsgType.CLOSE,
+                    web.WSMsgType.CLOSED,
+                    web.WSMsgType.CLOSING,
+                )
+
+        asyncio.run(_run())
+
+    def test_sends_error_when_juju_not_available(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/logs-stream", server._ws_logs_stream)
+
+        async def _run() -> None:
+            with patch("cantrip.juju.log_stream.juju_available", return_value=False):
+                async with TestClient(TestServer(app)) as client:
+                    ws = await client.ws_connect("/api/logs-stream")
+                    msg = await ws.receive(timeout=2.0)
+                    assert msg.json() == {"error": "No model or juju CLI"}
+
+        asyncio.run(_run())
+
+    def test_streams_lines_from_juju(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/logs-stream", server._ws_logs_stream)
+
+        async def _fake_stream(*_args, **_kwargs):
+            for line in ("unit-0: started", "unit-0: ready"):
+                yield line
+
+        async def _run() -> None:
+            with (
+                patch("cantrip.juju.log_stream.juju_available", return_value=True),
+                patch("cantrip.juju.log_stream.stream_lines", _fake_stream),
+            ):
+                async with TestClient(TestServer(app)) as client:
+                    ws = await client.ws_connect("/api/logs-stream")
+                    first = await ws.receive(timeout=2.0)
+                    second = await ws.receive(timeout=2.0)
+                    assert first.json() == {"line": "unit-0: started"}
+                    assert second.json() == {"line": "unit-0: ready"}
+
+        asyncio.run(_run())
+
+    def test_os_error_from_stream_is_silenced(self) -> None:
+        """An OSError mid-stream must be caught; the handler then closes the
+        socket in its ``finally`` block."""
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/logs-stream", server._ws_logs_stream)
+
+        async def _fake_stream(*_args, **_kwargs):
+            yield "first line"
+            raise OSError("pipe broke")
+
+        async def _run() -> None:
+            with (
+                patch("cantrip.juju.log_stream.juju_available", return_value=True),
+                patch("cantrip.juju.log_stream.stream_lines", _fake_stream),
+            ):
+                async with TestClient(TestServer(app)) as client:
+                    ws = await client.ws_connect("/api/logs-stream")
+                    first = await ws.receive(timeout=2.0)
+                    assert first.json() == {"line": "first line"}
+                    # Server closes the socket after the OSError.
+                    close = await ws.receive(timeout=2.0)
+                    assert close.type in (
+                        web.WSMsgType.CLOSE,
+                        web.WSMsgType.CLOSED,
+                        web.WSMsgType.CLOSING,
+                    )
+
+        asyncio.run(_run())
+
+    def test_normalises_invalid_level_to_warning(self) -> None:
+        """Malicious query string must fall back to WARNING."""
+        from cantrip.web import server
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/logs-stream", server._ws_logs_stream)
+
+        captured: dict = {}
+
+        async def _fake_stream(model: str, **kwargs):
+            captured["model"] = model
+            captured.update(kwargs)
+            if False:
+                yield  # pragma: no cover — make this a generator
+
+        async def _run() -> None:
+            with (
+                patch("cantrip.juju.log_stream.juju_available", return_value=True),
+                patch("cantrip.juju.log_stream.stream_lines", _fake_stream),
+            ):
+                async with TestClient(TestServer(app)) as client:
+                    ws = await client.ws_connect("/api/logs-stream?level=; rm")
+                    # Drain close frame.
+                    await ws.receive(timeout=2.0)
+
+            assert captured["level"] == "WARNING"
+
+        asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# run_web entry point
+# ---------------------------------------------------------------------------
+
+
+class TestRunWebEntryPoint:
+    """run_web's top-level argument handling."""
+
+    def test_returns_1_on_provider_error(self) -> None:
+        from cantrip.llm.base import ProviderError
+        from cantrip.web import server
+
+        args = types.SimpleNamespace(
+            provider="claude",
+            model=None,
+            snap="gemma3",
+            light_snap=None,
+            light_provider=None,
+            light_model=None,
+            path=None,
+            web_port=9999,
+        )
+
+        with patch.object(server, "create_provider", side_effect=ProviderError("no key")):
+            assert server.run_web(args) == 1
+
+    def test_returns_1_on_value_error(self) -> None:
+        from cantrip.web import server
+
+        args = types.SimpleNamespace(
+            provider="unknown",
+            model=None,
+            snap="gemma3",
+            light_snap=None,
+            light_provider=None,
+            light_model=None,
+            path=None,
+            web_port=9999,
+        )
+
+        with patch.object(server, "create_provider", side_effect=ValueError("no such provider")):
+            assert server.run_web(args) == 1
+
+    def test_happy_path_dispatches_to_async_runner(self) -> None:
+        """``run_web`` must construct an agent and hand off to asyncio.run."""
+        from cantrip.web import server
+
+        args = types.SimpleNamespace(
+            provider="claude",
+            model=None,
+            snap="gemma3",
+            light_snap=None,
+            light_provider=None,
+            light_model=None,
+            path=None,
+            web_port=1234,
+        )
+
+        fake_agent = MagicMock()
+
+        def _close_and_return(coro, *_a, **_kw):
+            coro.close()
+            return None
+
+        with (
+            patch.object(server, "create_provider", return_value=MagicMock(model_name="m")),
+            patch.object(server, "resolve_light_provider", return_value=(None, None)),
+            patch.object(server, "CantripAgent", return_value=fake_agent) as agent_ctor,
+            patch.object(server.asyncio, "run", side_effect=_close_and_return) as run_mock,
+        ):
+            rc = server.run_web(args)
+
+        assert rc == 0
+        agent_ctor.assert_called_once()
+        run_mock.assert_called_once()
+
+    def test_keyboard_interrupt_is_swallowed(self) -> None:
+        from cantrip.web import server
+
+        args = types.SimpleNamespace(
+            provider="claude",
+            model=None,
+            snap="gemma3",
+            light_snap=None,
+            light_provider=None,
+            light_model=None,
+            path=None,
+            web_port=1234,
+        )
+
+        def _close_and_raise(coro, *_a, **_kw):
+            coro.close()
+            raise KeyboardInterrupt
+
+        with (
+            patch.object(server, "create_provider", return_value=MagicMock(model_name="m")),
+            patch.object(server, "resolve_light_provider", return_value=(None, None)),
+            patch.object(server, "CantripAgent", return_value=MagicMock()),
+            patch.object(server.asyncio, "run", side_effect=_close_and_raise),
+        ):
+            assert server.run_web(args) == 0
+
+
+class TestRunWebAsync:
+    """_run_web_async wires up the event bus and runs until cancelled."""
+
+    def test_starts_site_and_stops_on_cancel(self) -> None:
+        from cantrip.web import server
+
+        agent = MagicMock()
+        agent.load_state.return_value = False
+        agent.build_resume_summary.return_value = ""
+        agent.state.charm_name = "c"
+        agent._work_queue = None
+        agent.event_bus = MagicMock()
+        agent.start_executor = MagicMock()
+        agent.stop_executor = AsyncMock()
+
+        fake_runner = MagicMock()
+        fake_runner.setup = AsyncMock()
+        fake_runner.cleanup = AsyncMock()
+        fake_site = MagicMock()
+        fake_site.start = AsyncMock()
+
+        async def _runner() -> None:
+            task = asyncio.create_task(server._run_web_async(agent, 1234))
+            # Give it a moment to reach asyncio.Event().wait().
+            await asyncio.sleep(0.05)
+            task.cancel()
+            # ``_run_web_async`` swallows CancelledError and returns None
+            # after running the finally-block cleanup.
+            assert await task is None
+
+        with (
+            patch.object(server.web, "AppRunner", return_value=fake_runner),
+            patch.object(server.web, "TCPSite", return_value=fake_site),
+        ):
+            asyncio.run(_runner())
+
+        fake_runner.setup.assert_awaited_once()
+        fake_site.start.assert_awaited_once()
+        agent.start_executor.assert_called_once()
+        agent.stop_executor.assert_awaited_once()
+        fake_runner.cleanup.assert_awaited_once()
+        agent.event_bus.bind_loop.assert_called_once()
+        agent.event_bus.subscribe.assert_called_once()
+
+    def test_logs_resume_summary_when_state_loaded(self) -> None:
+        """When load_state returns True, the resume summary is logged."""
+        from cantrip.web import server
+
+        agent = MagicMock()
+        agent.load_state.return_value = True
+        agent.build_resume_summary.return_value = "resumed"
+        agent.state.charm_name = "c"
+        agent._work_queue = None
+        agent.event_bus = MagicMock()
+        agent.start_executor = MagicMock()
+        agent.stop_executor = AsyncMock()
+
+        fake_runner = MagicMock()
+        fake_runner.setup = AsyncMock()
+        fake_runner.cleanup = AsyncMock()
+        fake_site = MagicMock()
+        fake_site.start = AsyncMock()
+
+        async def _runner() -> None:
+            task = asyncio.create_task(server._run_web_async(agent, 1234))
+            await asyncio.sleep(0.05)
+            task.cancel()
+            assert await task is None
+
+        with (
+            patch.object(server.web, "AppRunner", return_value=fake_runner),
+            patch.object(server.web, "TCPSite", return_value=fake_site),
+        ):
+            asyncio.run(_runner())
+
+        agent.build_resume_summary.assert_called_once()

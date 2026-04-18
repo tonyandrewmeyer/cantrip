@@ -30,6 +30,9 @@ _MAX_LOG_LINES = 5000
 # ergonomics with static typing and no warning.
 AGENT_KEY: web.AppKey[CantripAgent] = web.AppKey("agent", CantripAgent)
 WS_CLIENTS_KEY: web.AppKey[weakref.WeakSet] = web.AppKey("ws_clients", weakref.WeakSet)
+CHAT_LOCK_KEY: web.AppKey[asyncio.Lock] = web.AppKey("chat_lock", asyncio.Lock)
+JINJA_ENV_KEY: web.AppKey[jinja2.Environment] = web.AppKey("jinja_env", jinja2.Environment)
+PORT_KEY: web.AppKey[int] = web.AppKey("port", int)
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +67,7 @@ def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
 
 async def _index(request: web.Request) -> web.Response:
     """Serve the main page with initial state baked in."""
-    env: jinja2.Environment = request.app["jinja_env"]
+    env = request.app[JINJA_ENV_KEY]
     agent: CantripAgent = request.app[AGENT_KEY]
     template = env.get_template("index.html.j2")
 
@@ -83,7 +86,7 @@ async def _index(request: web.Request) -> web.Response:
     html = template.render(
         charm_name=agent.state.charm_name or "",
         tasks=tasks,
-        port=request.app["port"],
+        port=request.app[PORT_KEY],
     )
     return web.Response(text=html, content_type="text/html")
 
@@ -280,7 +283,7 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         continue
 
                     # Serialise chat messages to prevent concurrent state mutation.
-                    chat_lock: asyncio.Lock = request.app["chat_lock"]
+                    chat_lock = request.app[CHAT_LOCK_KEY]
                     async with chat_lock:
                         _broadcast(request.app, "thinking", {"active": True})
 
@@ -371,12 +374,12 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     """Build the aiohttp application."""
     app = web.Application()
     app[AGENT_KEY] = agent
-    app["port"] = port
+    app[PORT_KEY] = port
     app[WS_CLIENTS_KEY] = weakref.WeakSet()
-    app["chat_lock"] = asyncio.Lock()
+    app[CHAT_LOCK_KEY] = asyncio.Lock()
 
     # Jinja2 environment for server-side rendering.
-    app["jinja_env"] = jinja2.Environment(
+    app[JINJA_ENV_KEY] = jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
         autoescape=True,
     )
