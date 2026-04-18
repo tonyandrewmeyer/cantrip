@@ -5259,6 +5259,309 @@ is announced to at least one charm-developer channel.
 
 ---
 
+## Phase 57: Test-Suite Cleanup — Organisation, Coverage, Warnings
+
+**Goal:** Close the gaps surfaced by the Phase 53 review's follow-on
+test audit.  Unit coverage sits at 77% with two kinds of holes: entry
+points at 0% (``cli.py``, ``main.py``, ``juju/log_stream.py``), and
+subprocess-heavy tools where only the parameter-validation paths are
+exercised (``chaos``, ``scaling``, ``upgrade``, ``charmlint_tool``,
+each 20–28%).  TUI screens and the web server are also thin.
+Alongside coverage, the audit surfaced a handful of structural and
+hygiene issues — oversized test files, an asymmetry between
+``charmlint`` and ``quickpack`` test layout, and eight test warnings
+pytest currently swallows.
+
+Every item in this phase is "add tests to code that already works"
+or "move tests around".  No production code change expected.
+
+### 57.1 High — Fix the lingering test warnings
+
+Pytest reports 8 warnings (grouped as 5 in the summary).  Three
+categories, three distinct fixes:
+
+- [ ] **Unclosed event loop in ``test_gemini.py``** — a fixture
+  creates an asyncio loop but never closes it.  Add a teardown that
+  closes the loop, or switch to the built-in ``event_loop`` fixture.
+- [ ] **Unawaited coroutine from mocked ``proc.kill()``** in
+  ``test_observability_tools.py`` and ``test_tools.py`` (concierge
+  tests).  Production code (``observability.py:143``,
+  ``environment.py:65``) calls ``proc.kill()`` — a sync method on
+  ``asyncio.subprocess.Process``.  The tests use ``AsyncMock`` which
+  makes every attribute async, producing an unawaited coroutine.
+  Fix in the tests: explicitly set ``proc.kill = MagicMock()`` so the
+  mocked attribute is sync.
+- [ ] **``NotAppKeyWarning`` in ``test_web_server.py``** — aiohttp's
+  newer API prefers ``web.AppKey[T]`` over string keys.  Define
+  module-level ``AGENT_KEY``, ``WS_CLIENTS_KEY`` etc. and migrate the
+  three call sites.
+- [ ] Tighten the ``filterwarnings`` allowlist in ``pyproject.toml``
+  after the fixes — the current
+  ``"ignore::RuntimeWarning:unittest.mock"`` entry masks broader
+  issues than needed.
+
+### 57.2 High — Zero-coverage entry-point modules
+
+- [ ] ``src/cantrip/cli.py`` (0% → target 70%) — argparse-level unit
+  tests for every subcommand flag, plus a smoke test that exercises
+  the import path.  Mock the agent factory and provider.
+- [ ] ``src/cantrip/main.py`` (0% → target 70%) — the cli / tui / web
+  dispatch layer.  Unit-test the routing decisions without actually
+  launching any mode.
+- [ ] ``src/cantrip/juju/log_stream.py`` (0% → target 50%) — fixture-
+  based stream parsing tests; the live end stays live-only.
+
+### 57.3 High — Tool ``execute()`` coverage
+
+Four tools with 20–28% coverage all follow the same pattern: a thin
+``Tool`` subclass wrapping a subprocess invocation, only the
+parameter-validation paths tested.
+
+- [ ] ``tools/scaling.py`` (20%)
+- [ ] ``tools/upgrade.py`` (21%)
+- [ ] ``tools/charmlint_tool.py`` (24%)
+- [ ] ``tools/chaos.py`` (28%)
+
+Target each to ≥70% via subprocess-mocked ``execute()`` tests.
+Use ``tests/unit/test_git_tools.py`` as the pattern — success,
+non-zero exit, stderr-only output, timeout.
+
+### 57.4 Medium — Web-server WebSocket lifecycle
+
+``src/cantrip/web/server.py`` is at 24%.  The REST endpoints are
+covered; the WebSocket code is not.
+
+- [ ] Add tests for connect / disconnect / reconnect flows, message
+  broadcast fan-out to multiple clients, and graceful shutdown
+- [ ] Use ``aiohttp.test_utils.TestClient`` with ``ws_connect``
+
+### 57.5 Medium — TUI screen Pilot tests
+
+Textual's ``Pilot`` lets tests drive an app programmatically.  Three
+screens are under 40%:
+
+- [ ] ``tui/screens/relation.py`` (21%)
+- [ ] ``tui/screens/questions.py`` (30%)
+- [ ] ``tui/app.py`` (40%) — targeted branches, not full coverage
+
+One Pilot interaction test per screen — open, do the key action,
+assert the rendered state — raises each to ≥60%.
+
+### 57.6 Medium — Core-agent branch coverage
+
+``src/cantrip/agent/core.py`` is at 62% (287 uncovered of 752
+statements).  Hot zones: the GitHub PR/issue triage helpers
+(lines ~1076–1460), streaming-response branches, some watcher
+integration paths.
+
+- [ ] Targeted unit tests with ``FakeProvider`` streaming responses
+- [ ] Mocked ``gh`` tool results for the triage helpers
+- [ ] Target 80% on this one file
+
+### 57.7 Medium — Split oversized unit-test files
+
+Four unit-test files top 1500 lines:
+
+- [ ] ``tests/unit/test_executor.py`` (1972 lines) — split by
+  ``TestClass`` into ``test_executor_*.py``
+- [ ] ``tests/unit/test_planner.py`` (1705 lines) — split by
+  concern (parsing, routing, deterministic paths, LLM paths)
+- [ ] ``tests/unit/test_subagent.py`` (1542 lines)
+- [ ] ``tests/unit/test_tools.py`` (1514 lines) — already a grab-bag;
+  fold tests into per-tool files where one exists
+
+Each target file ≤600 lines.
+
+### 57.8 Low — Reorganise quickpack unit tests
+
+- [ ] Move ``tests/unit/test_quickpack.py`` (977 lines, 83 tests)
+  and ``tests/unit/test_quickpack_comparison.py`` into
+  ``tests/unit/quickpack/`` matching the ``tests/unit/charmlint/``
+  layout.  Split the flat file into ``test_metadata.py``,
+  ``test_pack.py``, ``test_parts.py``, ``test_jujuignore.py``
+  matching the ``src/quickpack/`` module boundaries.
+
+### What this phase is *not*
+
+- Not chasing 100% coverage.  Targets above are pragmatic (70–80%
+  per file) — branches that exist to guard against "this shouldn't
+  happen" in production are fine to leave uncovered.
+- Not about Rust tests — those have their own phase.
+- Not about property-based testing — same.
+
+**Exit criteria:** ``make coverage`` reports ≥85% total line
+coverage (up from 77%).  No file under ``src/cantrip/`` below 50%
+except the ``tui/`` screens that require a display environment.
+``pytest tests/unit`` reports zero warnings.  Unit-test files
+organised to match source-file boundaries.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Warnings (57.1) | none | Independent; can land first |
+| Entry points (57.2) | none | Independent |
+| Tool execute (57.3) | none | Copy-pattern from existing tool tests |
+| WebSocket (57.4) | none | Uses existing ``aiohttp.test_utils`` |
+| TUI Pilot (57.5) | none | Textual already a dep |
+| Core branches (57.6) | none | Uses existing ``FakeProvider`` |
+| File splits (57.7) | none | Mechanical move; do last to avoid churn |
+| Quickpack reorg (57.8) | 57.7 | Same mechanical-move nature |
+
+---
+
+## Phase 58: Rust Crate Unit Tests
+
+**Goal:** Close the coverage cliff on the two Rust reimplementations.
+The Python ``charmlint`` has a full ``tests/unit/charmlint/`` suite
+(config, linter, models, rules, unknown fields, CLI, attestations,
+charmcraft compat); its Rust twin in ``src/charmlint-rs/`` contains
+**zero** ``#[test]`` blocks.  Same story for ``src/quickpack-rs/``.
+The only validation for either Rust crate is the spread test that
+runs the compiled binary against a fixture charm — good e2e signal
+but leaves every internal function unchecked.  A regression in
+``jujuignore.rs`` or ``linter.rs`` surfaces only when it happens to
+break an end-to-end scenario.
+
+This is the single largest testing gap in the codebase.
+
+### 58.1 High — Seed unit tests for each Rust module
+
+For each ``.rs`` file in ``src/charmlint-rs/src/`` and
+``src/quickpack-rs/src/``, add a ``#[cfg(test)] mod tests`` block
+covering the primary functions.  Target parity with the Python
+implementation, not 100% — a Rust version of each Python test.
+
+- [ ] ``src/charmlint-rs/src/config.rs`` — config parsing
+- [ ] ``src/charmlint-rs/src/context.rs`` — context loading
+- [ ] ``src/charmlint-rs/src/linter.rs`` — rule dispatch
+- [ ] ``src/charmlint-rs/src/models.rs`` — severity / finding shape
+- [ ] ``src/charmlint-rs/src/rules.rs`` — the rule set
+- [ ] ``src/quickpack-rs/src/metadata.rs``
+- [ ] ``src/quickpack-rs/src/pack.rs``
+- [ ] ``src/quickpack-rs/src/parts.rs``
+- [ ] ``src/quickpack-rs/src/jujuignore.rs``
+
+### 58.2 Medium — Integration tests via ``tests/`` directory
+
+Cargo's integration-test convention is a top-level ``tests/`` dir
+inside each crate.  Use this for multi-module scenarios that a unit
+test can't express cleanly.
+
+- [ ] ``src/charmlint-rs/tests/lint_integration.rs`` — end-to-end
+  lint pass against fixture charms, mirroring the Python
+  ``test_linter.py`` shape
+- [ ] ``src/quickpack-rs/tests/pack_integration.rs`` — pack a
+  fixture charm, assert the ``.charm`` file structure
+
+### 58.3 Medium — CI wiring
+
+- [ ] Extend the existing GitHub Actions workflow to run
+  ``cargo test`` for both crates on every push.  Cache the
+  ``target/`` directory per crate for build-time sanity.
+- [ ] Add a ``make rust-test`` target to ``Makefile`` so the local
+  loop matches CI.
+
+### 58.4 Low — Coverage instrumentation
+
+- [ ] Wire ``cargo-llvm-cov`` into the CI job — emits the same
+  format as the Python coverage report, plots next to it
+- [ ] Set an advisory threshold (not blocking): warn if any Rust
+  file drops below 60%
+
+### What this phase is *not*
+
+- Not a rewrite of either Rust crate.  The implementations are
+  current; this phase only adds test scaffolding around them.
+- Not an attempt to match Python test count 1:1.  Idiomatic Rust
+  tests group differently (doctests on small pure functions, unit
+  tests inline, integration tests in ``tests/``); the audit is
+  coverage, not line count.
+
+**Exit criteria:** ``cargo test`` passes in both crates; CI runs it
+on every push; ``cargo-llvm-cov`` reports each ``.rs`` file above
+60% line coverage.  A bug in ``linter.rs`` or ``pack.rs`` now
+surfaces at unit-test time, not via a spread failure.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Seed unit tests (58.1) | none | Per-file work; can parallelise |
+| Integration (58.2) | 58.1 | Reuses unit fixtures |
+| CI wiring (58.3) | 58.1 | Needs tests to actually run |
+| Coverage (58.4) | 58.3 | Measures what CI runs |
+
+---
+
+## Phase 59: Property-Based Testing with Hypothesis
+
+**Goal:** Add property-based tests to the handful of pure functions
+where exhaustive example-based testing misses edge cases.  The
+audit surfaced four clean candidates: the planner's
+``_validate_dependencies`` (cycle detection over arbitrary graphs),
+charmlint's rule engine (any ``charmcraft.yaml`` shape), quickpack's
+``jujuignore`` parsing (any path tree / pattern combo), and the
+watcher's status-diff logic (any pair of Juju status dicts).  Small
+surface, disproportionate confidence lift.
+
+Introducing ``hypothesis`` as a dev-dependency is the main cost;
+after that, each property test is a handful of lines.
+
+### 59.1 Medium — Add hypothesis to dev-dependencies
+
+- [ ] Pin ``hypothesis`` in ``pyproject.toml``'s dev-dep list
+- [ ] Configure a ``tests/unit/conftest.py`` profile so CI runs with
+  a higher ``max_examples`` (e.g. 500) and dev runs with the
+  default (100) for fast feedback
+
+### 59.2 Medium — Planner dependency-graph properties
+
+- [ ] ``tests/unit/test_planner_properties.py`` —
+  ``_validate_dependencies`` should leave acyclic graphs unchanged,
+  and break every cycle it detects (no dependency in the result
+  participates in a cycle).  Use ``hypothesis.strategies`` for
+  arbitrary DAGs and arbitrary cyclic graphs.
+
+### 59.3 Medium — Charmlint rule-engine properties
+
+- [ ] ``tests/unit/charmlint/test_properties.py`` — for any
+  structurally valid ``charmcraft.yaml``, the lint pass terminates
+  and never raises; findings always reference existing fields
+
+### 59.4 Low — Quickpack ``.jujuignore`` properties
+
+- [ ] ``tests/unit/quickpack/test_jujuignore_properties.py`` —
+  pattern matching is deterministic, ``.jujuignore`` with no
+  patterns matches nothing, negation rules compose correctly
+
+### 59.5 Low — Watcher status-diff properties
+
+- [ ] ``tests/unit/test_watcher_properties.py`` — diffing any status
+  against itself is empty; diffing A→B then B→A produces inverse
+  change sets where applicable
+
+### What this phase is *not*
+
+- Not an attempt to replace example-based tests.  Property tests
+  complement them; keep the existing named-scenario tests as
+  documentation.
+- Not a framework migration.  No existing tests change shape.
+
+**Exit criteria:** ``hypothesis`` on the dev-deps list; at least one
+property test per candidate area; CI runs the property tests in
+each normal unit-test cycle with ``max_examples=500`` in the CI
+profile.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Hypothesis setup (59.1) | none | One-time dep change |
+| Planner properties (59.2) | 59.1 | Pure function, easy target |
+| Charmlint properties (59.3) | 59.1 | Reuses charmlint fixtures |
+| Quickpack properties (59.4) | 59.1, Phase 57.8 | Slots into the quickpack folder reorg |
+| Watcher properties (59.5) | 59.1 | Pure function, easy target |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -5311,4 +5614,7 @@ is announced to at least one charm-developer channel.
 | M54: Authored Docs | 54 | `docs/docs/` site rebuilds from committed markdown sources through `make docs`; no hand-authored HTML remains in the docs tree |
 | M55: Awesome-Copilot Survey | 55 | Eight awesome-copilot patterns investigated end-to-end; each has a committed decision, prototype, or recommendation |
 | M56: Juju Copilot Bundle | 56 | `canonical/copilot-collections` hosts a Juju-specific instruction/skill bundle derived from Cantrip's system prompt, with CI validation and a regeneration path |
+| M57: Test Cleanup | 57 | Unit coverage ≥85%; zero test warnings; oversized unit files split; quickpack tests reorganised to match charmlint |
+| M58: Rust Tested | 58 | `cargo test` runs in CI for both Rust crates; every `.rs` file above 60% coverage; regressions surface at unit-test time, not via spread |
+| M59: Property Tested | 59 | Hypothesis-backed property tests cover the planner dependency graph, charmlint rule engine, quickpack jujuignore, and watcher status-diff |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
