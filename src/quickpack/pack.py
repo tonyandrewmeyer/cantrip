@@ -89,6 +89,7 @@ def quick_pack(
     charm_dir: str | pathlib.Path,
     *,
     output_dir: str | pathlib.Path | None = None,
+    verify_attestations: bool = False,
 ) -> pathlib.Path:
     """Pack a charm directory into a ``.charm`` file.
 
@@ -101,6 +102,10 @@ def quick_pack(
         charm_dir: Path to the charm project directory.
         output_dir: Where to write the ``.charm`` file.  Defaults to
             *charm_dir*.
+        verify_attestations: When True, every installed dependency must
+            have a PEP 740 attestation on PyPI; otherwise only the
+            must-have packages (ops, ops-scenario, ops-tracing, jubilant,
+            charmlibs-\\*) are enforced.
 
     Returns:
         Path to the created ``.charm`` file.
@@ -119,7 +124,12 @@ def quick_pack(
         prime_dir.mkdir()
 
         # Process parts (uv deps + dump file copies).
-        _parts.process_parts(charm_dir, prime_dir, project)
+        _parts.process_parts(
+            charm_dir,
+            prime_dir,
+            project,
+            verify_attestations=verify_attestations,
+        )
 
         # Generate dispatch script.
         _write_dispatch(prime_dir, entrypoint)

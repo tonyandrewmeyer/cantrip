@@ -10,11 +10,17 @@ import pathlib
 import re
 import shutil
 import subprocess
+from email.parser import Parser as _EmailParser
 from typing import Any
 
+import pypi_attest
 from quickpack import jujuignore
 
 logger = logging.getLogger(__name__)
+
+
+class AttestationError(RuntimeError):
+    """Raised when attestation verification rejects a dependency."""
 
 
 def _copy_tree(src: pathlib.Path, dest: pathlib.Path) -> None:
@@ -45,15 +51,106 @@ def _match_fileset(path: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(path, inc) for inc in inclusions)
 
 
+def _iter_installed_distributions(
+    venv_dir: pathlib.Path,
+) -> list[tuple[str, str]]:
+    """Return ``(name, version)`` for every distribution installed in *venv_dir*.
+
+    Reads ``*.dist-info/METADATA`` files directly so we do not depend on
+    running Python inside the charm's venv.  Unparseable files are
+    skipped — attestation checking is best-effort, and the caller
+    decides severity.
+    """
+    site_packages_roots = list(venv_dir.glob("lib/python*/site-packages"))
+    dists: list[tuple[str, str]] = []
+    parser = _EmailParser()
+    for root in site_packages_roots:
+        for dist_info in sorted(root.glob("*.dist-info")):
+            metadata_path = dist_info / "METADATA"
+            if not metadata_path.is_file():
+                continue
+            try:
+                text = metadata_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            headers = parser.parsestr(text)
+            name = headers.get("Name")
+            version = headers.get("Version")
+            if name and version:
+                dists.append((name, version))
+    return dists
+
+
+def _verify_installed_attestations(
+    venv_dir: pathlib.Path,
+    *,
+    strict: bool,
+) -> None:
+    """Check PyPI attestations for every installed distribution.
+
+    Must-have packages are always enforced.  When ``strict`` is True
+    (``--verify-attestations``), every package missing a PEP 740
+    attestation is a build failure; otherwise non-must-have packages
+    are only warned about.  ``UNKNOWN`` results (network/PyPI errors)
+    are logged but never fail the build so we degrade gracefully when
+    the builder is offline.
+    """
+    missing_required: list[str] = []
+    missing_optional: list[str] = []
+    for name, version in _iter_installed_distributions(venv_dir):
+        result = pypi_attest.check_provenance(name, version)
+        if result.status is pypi_attest.ProvenanceStatus.UNATTESTED:
+            entry = f"{name}=={version}"
+            if pypi_attest.is_must_have(name):
+                missing_required.append(entry)
+            else:
+                missing_optional.append(entry)
+        elif result.status is pypi_attest.ProvenanceStatus.UNKNOWN:
+            logger.warning(
+                "Could not check PyPI attestations for %s==%s: %s",
+                name,
+                version,
+                result.detail,
+            )
+
+    if missing_required:
+        raise AttestationError(
+            "PyPI attestations missing for required packages: "
+            + ", ".join(sorted(missing_required))
+            + ". These packages are expected to be published via a trusted "
+            "publisher — refusing to pack an unsigned build."
+        )
+
+    if missing_optional:
+        if strict:
+            raise AttestationError(
+                "PyPI attestations missing for: "
+                + ", ".join(sorted(missing_optional))
+                + " (strict mode via --verify-attestations)."
+            )
+        for entry in missing_optional:
+            logger.warning(
+                "No PyPI attestation for %s; run with --verify-attestations to enforce.",
+                entry,
+            )
+
+
 def process_uv_part(
     charm_dir: pathlib.Path,
     prime_dir: pathlib.Path,
     part_config: dict[str, Any],
+    *,
+    verify_attestations: bool = False,
 ) -> None:
     """Process a UV plugin part: copy src/lib and install deps.
 
     The UV plugin only copies ``src/`` and ``lib/`` from the project
     (not the full tree), then installs Python dependencies into ``venv/``.
+
+    When attestation checking runs (always for must-have packages, and
+    for every package when ``verify_attestations`` is True) PyPI is
+    queried over the network; failures fall back to warnings except for
+    must-haves, which are hard failures.
     """
     source = part_config.get("source", ".")
     source_dir = (charm_dir / source).resolve()
@@ -129,6 +226,11 @@ def process_uv_part(
     venv_lib64 = venv_dir / "lib64"
     if venv_lib64.is_symlink():
         venv_lib64.unlink()
+
+    # The bin/lib64 cleanup above does not touch ``site-packages``, so the
+    # ``*.dist-info`` metadata attestation verification reads is still
+    # intact when this runs.
+    _verify_installed_attestations(venv_dir, strict=verify_attestations)
 
 
 def process_dump_part(
@@ -282,6 +384,8 @@ def process_parts(
     charm_dir: pathlib.Path,
     prime_dir: pathlib.Path,
     project: dict[str, Any],
+    *,
+    verify_attestations: bool = False,
 ) -> None:
     """Process all parts defined in the project."""
     parts = project.get("parts", {})
@@ -322,7 +426,12 @@ def process_parts(
                     name,
                     part_config["override-build"],
                 )
-            process_uv_part(charm_dir, prime_dir, part_config)
+            process_uv_part(
+                charm_dir,
+                prime_dir,
+                part_config,
+                verify_attestations=verify_attestations,
+            )
             found_uv = True
 
         elif plugin == "dump":

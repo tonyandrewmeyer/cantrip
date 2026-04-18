@@ -6,6 +6,7 @@ import sys
 import time
 
 from quickpack import pack as _pack
+from quickpack import parts as _parts
 
 
 def main() -> None:
@@ -33,6 +34,15 @@ def main() -> None:
         action="store_true",
         help="Suppress progress output.",
     )
+    parser.add_argument(
+        "--verify-attestations",
+        action="store_true",
+        help=(
+            "Require a PEP 740 PyPI attestation for every installed dependency. "
+            "Must-have packages (ops, ops-scenario, ops-tracing, jubilant, "
+            "charmlibs-*) are always enforced even without this flag."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -53,7 +63,14 @@ def main() -> None:
 
     start = time.monotonic()
     try:
-        charm_path = _pack.quick_pack(charm_dir, output_dir=output_dir)
+        charm_path = _pack.quick_pack(
+            charm_dir,
+            output_dir=output_dir,
+            verify_attestations=args.verify_attestations,
+        )
+    except _parts.AttestationError as exc:
+        print(f"Attestation error: {exc}", file=sys.stderr)
+        sys.exit(2)
     except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)

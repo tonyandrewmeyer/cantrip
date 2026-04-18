@@ -5,6 +5,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **PyPI attestation checks for charm dependencies** — a shared
+  ``pypi_attest`` helper consults the PyPI simple-index v1 API to
+  determine whether a release carries a PEP 740 attestation uploaded
+  via a trusted publisher.
+  - **Charmlint** gains two new rules: ``ATT001`` (must-have package
+    missing a PyPI attestation — *error*) and ``ATT002`` (any other
+    dependency missing one — *info*).  Must-have packages are ``ops``,
+    ``ops-scenario``, ``ops-tracing``, ``jubilant`` and ``charmlibs-*``.
+    Dependencies are read from ``pyproject.toml``'s
+    ``[project].dependencies`` and from ``requirements.txt``.
+  - **Quickpack** gains a ``--verify-attestations`` flag.  Must-have
+    packages are always enforced (pack fails with exit 2 when unsigned);
+    the flag extends the enforcement to every installed dependency.
+  Network or PyPI errors fail open (warnings only) so offline builds and
+  linters remain usable.  Unit tests mock the PyPI responses; new spread
+  tests exercise the behaviour end-to-end against real PyPI.
 - **Chat search and navigation (Phase 31.1)** — the TUI chat and the
   transcript viewer are now searchable. In the chat, `/` (when the input is
   empty) or `Ctrl+F` opens a search bar above the history; typing filters

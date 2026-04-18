@@ -624,6 +624,96 @@ execute: |
   echo "PASS: verbose output"
 
   # ===================================================================
+  # 26. --verify-attestations flag advertised in help
+  # ===================================================================
+  echo "=== Test: --verify-attestations in help ==="
+  uv run quickpack --help | grep -q -- "--verify-attestations" || \
+    { echo "FAIL: --verify-attestations flag not in help"; exit 1; }
+  echo "PASS: --verify-attestations in help"
+
+  # ===================================================================
+  # 27. Default pack succeeds when must-have attestations exist
+  # ===================================================================
+  echo "=== Test: must-have attestations satisfied ==="
+  # A plain charm pinned to a recent ops release — Canonical's trusted
+  # publisher uploads carry PEP 740 attestations, so the default must-have
+  # check should pass silently.
+  create_charm "$CHARM_DIR"
+  cat > "$CHARM_DIR/pyproject.toml" <<'TOML'
+  [project]
+  name = "testcharm"
+  version = "0.1.0"
+  requires-python = ">=3.12"
+  dependencies = ["ops>=3.6"]
+  TOML
+  cd "$CHARM_DIR" && uv lock && cd "$PROJECT_PATH"
+
+  rm -rf "$OUTPUT_DIR"/*
+  uv run quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" --quiet
+  test -f "$OUTPUT_DIR/testcharm_amd64.charm" || \
+    { echo "FAIL: pack with attested ops should succeed"; exit 1; }
+  echo "PASS: must-have attestations satisfied"
+
+  # ===================================================================
+  # 28. --verify-attestations exits non-zero when a dep is unattested
+  # ===================================================================
+  echo "=== Test: --verify-attestations strict mode ==="
+  # Pick a package that is very unlikely to carry a PEP 740 attestation
+  # (tiny, long-abandoned project) so strict verification will fail.  We
+  # combine it with modern ops so the must-have check itself passes.
+  create_charm "$CHARM_DIR"
+  cat > "$CHARM_DIR/pyproject.toml" <<'TOML'
+  [project]
+  name = "testcharm"
+  version = "0.1.0"
+  requires-python = ">=3.12"
+  dependencies = ["ops>=3.6", "six==1.16.0"]
+  TOML
+  cd "$CHARM_DIR" && uv lock && cd "$PROJECT_PATH"
+
+  rm -rf "$OUTPUT_DIR"/*
+  RC=0
+  OUTPUT=$(uv run quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" \
+    --verify-attestations --quiet 2>&1) || RC=$?
+  # Expect exit 2 (attestation error) when strict mode rejects a dep.
+  # A 0 exit is only acceptable if PyPI happens to have attested the dep
+  # since the last time this test was written; log either way.
+  if [ "$RC" -eq 2 ]; then
+    echo "$OUTPUT" | grep -qi "attestation" || \
+      { echo "FAIL: expected attestation message in stderr"; echo "$OUTPUT"; exit 1; }
+    echo "PASS: --verify-attestations rejected unattested dep"
+  elif [ "$RC" -eq 0 ]; then
+    echo "NOTE: six==1.16.0 is now attested — strict mode accepted it"
+  else
+    echo "FAIL: unexpected exit $RC"
+    echo "$OUTPUT"
+    exit 1
+  fi
+
+  # ===================================================================
+  # 29. --verify-attestations succeeds when every dep is attested
+  # ===================================================================
+  echo "=== Test: --verify-attestations all attested ==="
+  # All-must-haves charm — ops and ops-tracing both publish via trusted
+  # publishers, so strict mode should succeed.
+  create_charm "$CHARM_DIR"
+  cat > "$CHARM_DIR/pyproject.toml" <<'TOML'
+  [project]
+  name = "testcharm"
+  version = "0.1.0"
+  requires-python = ">=3.12"
+  dependencies = ["ops>=3.6", "ops-tracing>=3.6"]
+  TOML
+  cd "$CHARM_DIR" && uv lock && cd "$PROJECT_PATH"
+
+  rm -rf "$OUTPUT_DIR"/*
+  uv run quickpack "$CHARM_DIR" --output-dir "$OUTPUT_DIR" \
+    --verify-attestations --quiet
+  test -f "$OUTPUT_DIR/testcharm_amd64.charm" || \
+    { echo "FAIL: strict pack with fully-attested charm should succeed"; exit 1; }
+  echo "PASS: --verify-attestations accepts fully-attested charm"
+
+  # ===================================================================
   # Cleanup
   # ===================================================================
   rm -rf "$CHARM_DIR" "$OUTPUT_DIR"

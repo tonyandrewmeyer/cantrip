@@ -9,6 +9,7 @@ from unittest import mock
 import pytest
 import yaml
 
+import pypi_attest
 from quickpack import jujuignore, metadata, pack, parts
 
 # ---------------------------------------------------------------------------
@@ -832,3 +833,145 @@ class TestCli:
         )
         assert result.returncode != 0
         assert "charmcraft.yaml" in result.stderr
+
+    def test_cli_help_mentions_verify_attestations(self) -> None:
+        result = subprocess.run(
+            ["uv", "run", "quickpack", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "--verify-attestations" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Attestation-verification tests
+# ---------------------------------------------------------------------------
+
+
+def _write_dist_info(
+    site_packages: pathlib.Path,
+    name: str,
+    version: str,
+) -> None:
+    """Create a minimal ``<name>-<version>.dist-info`` with a METADATA file."""
+    dist_info = site_packages / f"{name}-{version}.dist-info"
+    dist_info.mkdir(parents=True)
+    (dist_info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"
+    )
+
+
+class TestAttestations:
+    """Tests for quickpack's attestation-verification path."""
+
+    def _make_venv_with(
+        self,
+        tmp_path: pathlib.Path,
+        dists: list[tuple[str, str]],
+    ) -> pathlib.Path:
+        venv = tmp_path / "venv"
+        site = venv / "lib" / "python3.12" / "site-packages"
+        site.mkdir(parents=True)
+        for name, version in dists:
+            _write_dist_info(site, name, version)
+        return venv
+
+    def test_iter_installed_distributions_reads_dist_info(self, tmp_path: pathlib.Path) -> None:
+        venv = self._make_venv_with(tmp_path, [("ops", "3.7.0"), ("requests", "2.33.0")])
+        result = parts._iter_installed_distributions(venv)
+        assert sorted(result) == [("ops", "3.7.0"), ("requests", "2.33.0")]
+
+    def test_iter_ignores_incomplete_dist_info(self, tmp_path: pathlib.Path) -> None:
+        venv = tmp_path / "venv"
+        site = venv / "lib" / "python3.12" / "site-packages"
+        site.mkdir(parents=True)
+        # dist-info with no METADATA file.
+        (site / "bogus-1.0.dist-info").mkdir()
+        assert parts._iter_installed_distributions(venv) == []
+
+    def test_must_have_unattested_raises(self, tmp_path: pathlib.Path) -> None:
+        venv = self._make_venv_with(tmp_path, [("ops", "3.7.0")])
+        stub = mock.MagicMock(
+            return_value=pypi_attest.ProvenanceResult(
+                name="ops",
+                status=pypi_attest.ProvenanceStatus.UNATTESTED,
+                version="3.7.0",
+            )
+        )
+        with (
+            mock.patch("pypi_attest.check_provenance", stub),
+            pytest.raises(parts.AttestationError, match="required packages"),
+        ):
+            parts._verify_installed_attestations(venv, strict=False)
+
+    def test_non_must_have_is_warning_in_default_mode(
+        self, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        venv = self._make_venv_with(tmp_path, [("requests", "2.33.0")])
+
+        def _impl(name: str, _version: str | None = None, **_kw: object):
+            return pypi_attest.ProvenanceResult(
+                name=name,
+                status=pypi_attest.ProvenanceStatus.UNATTESTED,
+                version=_version,
+            )
+
+        with (
+            mock.patch("pypi_attest.check_provenance", side_effect=_impl),
+            caplog.at_level("WARNING", logger="quickpack.parts"),
+        ):
+            parts._verify_installed_attestations(venv, strict=False)
+
+        assert any("requests" in rec.message for rec in caplog.records)
+
+    def test_non_must_have_raises_in_strict_mode(self, tmp_path: pathlib.Path) -> None:
+        venv = self._make_venv_with(tmp_path, [("requests", "2.33.0")])
+
+        def _impl(name: str, _version: str | None = None, **_kw: object):
+            return pypi_attest.ProvenanceResult(
+                name=name,
+                status=pypi_attest.ProvenanceStatus.UNATTESTED,
+                version=_version,
+            )
+
+        with (
+            mock.patch("pypi_attest.check_provenance", side_effect=_impl),
+            pytest.raises(parts.AttestationError, match="strict mode"),
+        ):
+            parts._verify_installed_attestations(venv, strict=True)
+
+    def test_unknown_status_does_not_fail(
+        self, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Network errors should degrade to warnings, not fail the pack."""
+        venv = self._make_venv_with(tmp_path, [("ops", "3.7.0")])
+
+        def _impl(name: str, _version: str | None = None, **_kw: object):
+            return pypi_attest.ProvenanceResult(
+                name=name,
+                status=pypi_attest.ProvenanceStatus.UNKNOWN,
+                version=_version,
+                detail="offline",
+            )
+
+        with (
+            mock.patch("pypi_attest.check_provenance", side_effect=_impl),
+            caplog.at_level("WARNING", logger="quickpack.parts"),
+        ):
+            parts._verify_installed_attestations(venv, strict=True)
+
+        assert any("offline" in rec.message for rec in caplog.records)
+
+    def test_all_attested_is_silent(self, tmp_path: pathlib.Path) -> None:
+        venv = self._make_venv_with(tmp_path, [("ops", "3.7.0")])
+
+        def _impl(name: str, _version: str | None = None, **_kw: object):
+            return pypi_attest.ProvenanceResult(
+                name=name,
+                status=pypi_attest.ProvenanceStatus.ATTESTED,
+                version=_version,
+            )
+
+        with mock.patch("pypi_attest.check_provenance", side_effect=_impl):
+            parts._verify_installed_attestations(venv, strict=True)

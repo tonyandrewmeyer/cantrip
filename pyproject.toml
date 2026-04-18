@@ -72,7 +72,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cantrip", "src/charmlint", "src/quickpack"]
+packages = ["src/cantrip", "src/charmlint", "src/quickpack", "src/pypi_attest"]
 
 [tool.ruff]
 line-length = 99
@@ -100,7 +100,7 @@ ignore = [
 "tests/**" = ["ARG002"]  # Test fakes have unused params by design.
 
 [tool.ruff.lint.isort]
-known-first-party = ["cantrip", "charmlint", "quickpack"]
+known-first-party = ["cantrip", "charmlint", "quickpack", "pypi_attest"]
 
 [tool.ty.environment]
 python-version = "3.12"

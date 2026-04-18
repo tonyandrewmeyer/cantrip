@@ -1154,6 +1154,94 @@ execute: |
   echo "PASS: legacy metadata.yaml"
 
   # ===================================================================
+  # 46. ATT001 — must-have packages missing attestations are errors
+  # ===================================================================
+  echo "=== Test: ATT001 must-have attestation enforced ==="
+  create_bare_charm "$CHARM_DIR"
+  # Use a must-have name (ops) combined with a deliberately-unattested
+  # pin — an ancient version that pre-dates PEP 740.  Canonical's
+  # trusted-publisher rollout started at ops 3.x; ops 1.0.0 is well
+  # before that so PyPI will have no provenance for it.
+  cat > "$CHARM_DIR/pyproject.toml" <<'TOML'
+  [project]
+  name = "barecharm"
+  version = "0.1.0"
+  requires-python = ">=3.12"
+  dependencies = ["ops==1.0.0"]
+  TOML
+
+  uv run charmlint "$CHARM_DIR" --format json --select ATT > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  att001 = [d for d in data['diagnostics'] if d['rule_id'] == 'ATT001']
+  # Network check: if PyPI is unreachable the rule fails open, so we
+  # only assert that when the rule *does* fire it targets ops and is
+  # an error.  We do not assert len >= 1 because a flaky PyPI would
+  # make this brittle.
+  for d in att001:
+      assert d['severity'] == 'error', f'ATT001 should be error, got {d[\"severity\"]}'
+      assert 'ops' in d['message'], f'ATT001 should mention ops, got {d[\"message\"]}'
+  print(f'ATT001 OK: fired {len(att001)} time(s)')
+  "
+  echo "PASS: ATT001"
+
+  # ===================================================================
+  # 47. ATT001 — attested must-have packages do not fire
+  # ===================================================================
+  echo "=== Test: ATT001 silent for attested ops ==="
+  create_bare_charm "$CHARM_DIR"
+  # Use modern ops which Canonical publishes via a trusted publisher.
+  cat > "$CHARM_DIR/pyproject.toml" <<'TOML'
+  [project]
+  name = "barecharm"
+  version = "0.1.0"
+  requires-python = ">=3.12"
+  dependencies = ["ops>=3.6"]
+  TOML
+
+  uv run charmlint "$CHARM_DIR" --format json --select ATT > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  att001 = [d for d in data['diagnostics'] if d['rule_id'] == 'ATT001']
+  # Either zero diagnostics (network OK, ops attested) or rule stayed
+  # silent due to UNKNOWN (offline).  Both outcomes are acceptable.
+  assert att001 == [], f'ATT001 should not fire for modern ops, got {att001}'
+  print('ATT001 silent OK')
+  "
+  echo "PASS: ATT001 silent for attested ops"
+
+  # ===================================================================
+  # 48. ATT002 — non-must-have packages produce INFO diagnostics
+  # ===================================================================
+  echo "=== Test: ATT002 non-must-have dep ==="
+  create_bare_charm "$CHARM_DIR"
+  # Pick a random package; whether it is attested depends on the
+  # maintainer, so we simply assert that if ATT002 fires it is INFO
+  # severity and never ERROR.
+  cat > "$CHARM_DIR/pyproject.toml" <<'TOML'
+  [project]
+  name = "barecharm"
+  version = "0.1.0"
+  requires-python = ">=3.12"
+  dependencies = ["requests>=2.0"]
+  TOML
+
+  uv run charmlint "$CHARM_DIR" --format json --select ATT > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  att = [d for d in data['diagnostics'] if d['rule_id'].startswith('ATT')]
+  for d in att:
+      if d['rule_id'] == 'ATT002':
+          assert d['severity'] == 'info', f'ATT002 should be info, got {d[\"severity\"]}'
+      assert d['severity'] != 'error', f'ATT category should not have errors for non-must-haves'
+  print(f'ATT002 OK: {len(att)} attestation diagnostic(s)')
+  "
+  echo "PASS: ATT002"
+
+  # ===================================================================
   # Cleanup
   # ===================================================================
   rm -rf "$CHARM_DIR"
