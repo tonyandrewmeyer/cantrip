@@ -128,8 +128,12 @@ skip_empty = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = [
-    # AsyncMock GC emits unawaited coroutine warnings — CPython mock internals, not our code.
-    "ignore::RuntimeWarning:unittest.mock",
+    # pytest-asyncio 1.3.0 in auto mode captures an "old_loop" via
+    # ``asyncio.get_event_loop()`` for each sync test and never closes
+    # it, so GC eventually emits ``ResourceWarning: unclosed event
+    # loop``.  The leak is inside pytest-asyncio, not our code — filter
+    # it narrowly so legitimate resource warnings still surface.
+    "ignore:unclosed event loop:ResourceWarning",
 ]
 markers = [
     "integration: tests with real tool execution (no external services)",

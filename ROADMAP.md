@@ -5275,30 +5275,38 @@ pytest currently swallows.
 Every item in this phase is "add tests to code that already works"
 or "move tests around".  No production code change expected.
 
-### 57.1 High — Fix the lingering test warnings
+### 57.1 High — Fix the lingering test warnings ✓
 
 Pytest reports 8 warnings (grouped as 5 in the summary).  Three
 categories, three distinct fixes:
 
-- [ ] **Unclosed event loop in ``test_gemini.py``** — a fixture
-  creates an asyncio loop but never closes it.  Add a teardown that
-  closes the loop, or switch to the built-in ``event_loop`` fixture.
-- [ ] **Unawaited coroutine from mocked ``proc.kill()``** in
+- [x] **Unclosed event loop in ``test_gemini.py``** — the leak is
+  actually inside ``pytest-asyncio`` 1.3.0's ``_temporary_event_loop_policy``
+  context manager: in auto mode it calls ``asyncio.get_event_loop()``
+  for every sync test, which allocates a fresh loop that never gets
+  closed.  Since the leak is third-party, the fix is a narrow
+  ``filterwarnings`` entry instead of a code change
+- [x] **Unawaited coroutine from mocked ``proc.kill()``** in
   ``test_observability_tools.py`` and ``test_tools.py`` (concierge
   tests).  Production code (``observability.py:143``,
   ``environment.py:65``) calls ``proc.kill()`` — a sync method on
   ``asyncio.subprocess.Process``.  The tests use ``AsyncMock`` which
   makes every attribute async, producing an unawaited coroutine.
   Fix in the tests: explicitly set ``proc.kill = MagicMock()`` so the
-  mocked attribute is sync.
-- [ ] **``NotAppKeyWarning`` in ``test_web_server.py``** — aiohttp's
+  mocked attribute is sync.  Also surfaced a related leak: mocking
+  ``asyncio.wait_for`` with ``side_effect=TimeoutError`` raises before
+  awaiting the first argument, so ``proc.communicate()`` returns an
+  unawaited coroutine.  New ``_raise_timeout`` helper closes the
+  coroutine before raising
+- [x] **``NotAppKeyWarning`` in ``test_web_server.py``** — aiohttp's
   newer API prefers ``web.AppKey[T]`` over string keys.  Define
   module-level ``AGENT_KEY``, ``WS_CLIENTS_KEY`` etc. and migrate the
-  three call sites.
-- [ ] Tighten the ``filterwarnings`` allowlist in ``pyproject.toml``
+  three call sites.  Production code and tests both migrated
+- [x] Tighten the ``filterwarnings`` allowlist in ``pyproject.toml``
   after the fixes — the current
   ``"ignore::RuntimeWarning:unittest.mock"`` entry masks broader
-  issues than needed.
+  issues than needed.  Replaced with a single narrow filter for the
+  pytest-asyncio event-loop leak described above
 
 ### 57.2 High — Zero-coverage entry-point modules
 

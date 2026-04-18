@@ -7,6 +7,8 @@ from cantrip.web.server import (
     _STATIC_DIR,
     _TEMPLATE_DIR,
     _VALID_LOG_LEVELS,
+    AGENT_KEY,
+    WS_CLIENTS_KEY,
     _broadcast,
 )
 
@@ -48,7 +50,7 @@ class TestBroadcast:
         import aiohttp.web as web
 
         app = web.Application()
-        app["ws_clients"] = weakref.WeakSet()
+        app[WS_CLIENTS_KEY] = weakref.WeakSet()
         # Should not raise.
         _broadcast(app, "test_event", {"key": "value"})
 
@@ -293,7 +295,7 @@ class TestLogInputValidation:
         agent.state.dev_model = "test-model"
 
         app = web.Application()
-        app["agent"] = agent
+        app[AGENT_KEY] = agent
         app.router.add_get("/api/logs", server._api_logs)
 
         fake_result = types.SimpleNamespace(stdout="line1\nline2\n", returncode=0)
@@ -337,7 +339,7 @@ class TestLogInputValidation:
         agent.state.dev_model = "test-model"
 
         app = web.Application()
-        app["agent"] = agent
+        app[AGENT_KEY] = agent
         app.router.add_get("/api/logs", server._api_logs)
 
         fake_result = types.SimpleNamespace(stdout="", returncode=0)

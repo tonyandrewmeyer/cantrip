@@ -280,6 +280,14 @@ def _make_fake_process(returncode: int = 0, stdout: str = "", stderr: str = ""):
     return proc
 
 
+def _raise_timeout(coro, *_args, **_kwargs):
+    """Side-effect replacement for ``asyncio.wait_for`` that closes the
+    pending coroutine before raising, so mocked timeout tests don't
+    emit unawaited-coroutine warnings."""
+    coro.close()
+    raise TimeoutError
+
+
 class TestConciergeAvailable:
     """Tests for the _concierge_available helper."""
 
@@ -645,10 +653,13 @@ class TestConciergePrepareTool:
             call_count += 1
             if call_count == 1:
                 return status_proc
-            # Second call (prepare) will time out.
+            # Second call (prepare) will time out.  ``kill`` is sync on
+            # the real Process, so override the AsyncMock's inferred
+            # async behaviour.
             proc = mock.AsyncMock()
             proc.communicate.side_effect = TimeoutError
             proc.returncode = None
+            proc.kill = mock.MagicMock()
             return proc
 
         with (
@@ -660,7 +671,7 @@ class TestConciergePrepareTool:
                 "cantrip.agent.tools.environment._list_healthy_controllers", return_value=[]
             ),
             mock.patch("asyncio.create_subprocess_exec", side_effect=fake_exec),
-            mock.patch("asyncio.wait_for", side_effect=TimeoutError),
+            mock.patch("asyncio.wait_for", side_effect=_raise_timeout),
         ):
             result = await tool.execute(preset="k8s")
 

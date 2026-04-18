@@ -24,11 +24,25 @@ def _decode_ssh_script(ssh_command: str) -> str:
 
 
 def _make_fake_process(returncode: int = 0, stdout: str = "", stderr: str = ""):
-    """Build a mock async subprocess."""
+    """Build a mock async subprocess.
+
+    ``kill`` is a sync method on ``asyncio.subprocess.Process`` — override
+    the AsyncMock's inferred async behaviour so the timeout path doesn't
+    leak an unawaited coroutine.
+    """
     proc = mock.AsyncMock()
     proc.communicate.return_value = (stdout.encode(), stderr.encode())
     proc.returncode = returncode
+    proc.kill = mock.MagicMock()
     return proc
+
+
+def _raise_timeout(coro, *_args, **_kwargs):
+    """Side-effect replacement for ``asyncio.wait_for`` that closes the
+    pending coroutine before raising, so mocked timeout tests don't
+    emit unawaited-coroutine warnings."""
+    coro.close()
+    raise TimeoutError
 
 
 def _mock_juju_unavailable():
@@ -201,7 +215,7 @@ class TestJujuDebugLogTool:
         with (
             _mock_juju_available(),
             mock.patch("asyncio.create_subprocess_exec", return_value=_make_fake_process()),
-            mock.patch("asyncio.wait_for", side_effect=TimeoutError),
+            mock.patch("asyncio.wait_for", side_effect=_raise_timeout),
         ):
             result = await tool.execute()
 

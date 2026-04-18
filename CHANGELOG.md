@@ -4,6 +4,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Zero pytest warnings (Phase 57.1)** — ``make check`` now runs
+  cleanly.  Three fixes: (1) ``_make_fake_process`` helpers in
+  ``tests/unit/test_observability_tools.py`` and ``tests/unit/test_tools.py``
+  now override ``proc.kill`` with a ``MagicMock()`` so the sync method
+  doesn't inherit AsyncMock's async-by-default behaviour and leak an
+  unawaited coroutine down the timeout path.  A new ``_raise_timeout``
+  side-effect helper closes ``proc.communicate()``'s pending coroutine
+  before raising, plugging the second leak that
+  ``mock.patch("asyncio.wait_for", side_effect=TimeoutError)`` caused.
+  (2) ``src/cantrip/web/server.py`` now exports typed ``AGENT_KEY`` and
+  ``WS_CLIENTS_KEY`` (``web.AppKey[T]``) and the call sites and tests
+  use them, eliminating ``NotAppKeyWarning``.  (3) The broad
+  ``ignore::RuntimeWarning:unittest.mock`` entry in ``pyproject.toml``
+  is replaced with a narrow ``ignore:unclosed event loop:ResourceWarning``
+  that targets only pytest-asyncio 1.3.0's auto-mode event-loop leak
+  (third-party, not our code).  ``2820 passed, 5 skipped in 55s`` with
+  zero warnings.
+
 ### Added
 - **Web UI accessibility — WCAG 2.1 AA remediation (Phase 60)** — the
   web UI now satisfies every high- and medium-severity finding from the

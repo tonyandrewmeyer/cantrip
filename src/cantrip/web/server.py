@@ -25,6 +25,12 @@ _STATIC_DIR = pathlib.Path(__file__).parent / "static"
 _VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _MAX_LOG_LINES = 5000
 
+# Typed keys for ``web.Application`` shared state.  aiohttp emits
+# ``NotAppKeyWarning`` for raw string keys; these provide the same
+# ergonomics with static typing and no warning.
+AGENT_KEY: web.AppKey[CantripAgent] = web.AppKey("agent", CantripAgent)
+WS_CLIENTS_KEY: web.AppKey[weakref.WeakSet] = web.AppKey("ws_clients", weakref.WeakSet)
+
 
 # ---------------------------------------------------------------------------
 # WebSocket broadcast
@@ -40,7 +46,7 @@ async def _safe_ws_send(ws: web.WebSocketResponse, payload: str) -> None:
 def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
     """Send a JSON message to all connected WebSocket clients."""
     payload = json.dumps({"type": event_type, "data": data})
-    clients: weakref.WeakSet = app["ws_clients"]
+    clients: weakref.WeakSet = app[WS_CLIENTS_KEY]
     stale: list[web.WebSocketResponse] = []
     for ws in clients:
         if ws.closed:
@@ -59,7 +65,7 @@ def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
 async def _index(request: web.Request) -> web.Response:
     """Serve the main page with initial state baked in."""
     env: jinja2.Environment = request.app["jinja_env"]
-    agent: CantripAgent = request.app["agent"]
+    agent: CantripAgent = request.app[AGENT_KEY]
     template = env.get_template("index.html.j2")
 
     tasks = []
@@ -84,7 +90,7 @@ async def _index(request: web.Request) -> web.Response:
 
 async def _api_state(request: web.Request) -> web.Response:
     """Return current tasks and messages as JSON."""
-    agent: CantripAgent = request.app["agent"]
+    agent: CantripAgent = request.app[AGENT_KEY]
 
     tasks = []
     if agent._work_queue:
@@ -110,7 +116,7 @@ async def _api_state(request: web.Request) -> web.Response:
 
 async def _api_messages(request: web.Request) -> web.Response:
     """Return conversation history as JSON for page reload."""
-    agent: CantripAgent = request.app["agent"]
+    agent: CantripAgent = request.app[AGENT_KEY]
 
     messages = [
         {"role": msg.role.value, "content": msg.content}
@@ -123,7 +129,7 @@ async def _api_messages(request: web.Request) -> web.Response:
 
 async def _api_juju_status(request: web.Request) -> web.Response:
     """Return Juju model status as JSON for the status panel."""
-    agent: CantripAgent = request.app["agent"]
+    agent: CantripAgent = request.app[AGENT_KEY]
     dev_model = agent.state.dev_model
     if not dev_model:
         return web.json_response({"apps": {}, "relations": []})
@@ -178,7 +184,7 @@ async def _api_logs(request: web.Request) -> web.Response:
     import shutil
     import subprocess
 
-    agent: CantripAgent = request.app["agent"]
+    agent: CantripAgent = request.app[AGENT_KEY]
     dev_model = agent.state.dev_model
     try:
         lines = int(request.query.get("lines", "100"))
@@ -221,7 +227,7 @@ async def _ws_logs_stream(request: web.Request) -> web.WebSocketResponse:
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
-    agent: CantripAgent = request.app["agent"]
+    agent: CantripAgent = request.app[AGENT_KEY]
     dev_model = agent.state.dev_model
     level = request.query.get("level", "WARNING").upper()
     if level not in _VALID_LOG_LEVELS:
@@ -255,10 +261,10 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
     """Handle a WebSocket connection for real-time chat and updates."""
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-    request.app["ws_clients"].add(ws)
-    log.info("WebSocket client connected (%d total)", len(request.app["ws_clients"]))
+    request.app[WS_CLIENTS_KEY].add(ws)
+    log.info("WebSocket client connected (%d total)", len(request.app[WS_CLIENTS_KEY]))
 
-    agent: CantripAgent = request.app["agent"]
+    agent: CantripAgent = request.app[AGENT_KEY]
 
     try:
         async for msg in ws:
@@ -336,8 +342,8 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
             ):
                 break
     finally:
-        request.app["ws_clients"].discard(ws)
-        log.info("WebSocket client disconnected (%d remaining)", len(request.app["ws_clients"]))
+        request.app[WS_CLIENTS_KEY].discard(ws)
+        log.info("WebSocket client disconnected (%d remaining)", len(request.app[WS_CLIENTS_KEY]))
 
     return ws
 
@@ -364,9 +370,9 @@ def _make_bus_forwarder(app: web.Application) -> ui_events.Subscriber:
 def _create_app(agent: CantripAgent, port: int) -> web.Application:
     """Build the aiohttp application."""
     app = web.Application()
-    app["agent"] = agent
+    app[AGENT_KEY] = agent
     app["port"] = port
-    app["ws_clients"] = weakref.WeakSet()
+    app[WS_CLIENTS_KEY] = weakref.WeakSet()
     app["chat_lock"] = asyncio.Lock()
 
     # Jinja2 environment for server-side rendering.
