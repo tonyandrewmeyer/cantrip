@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Chat search and navigation (Phase 31.1)** — the TUI chat and the
+  transcript viewer are now searchable. In the chat, `/` (when the input is
+  empty) or `Ctrl+F` opens a search bar above the history; typing filters
+  matches across all messages with a live `1/N` counter, Enter jumps to the
+  next match, and Escape closes the bar and returns focus to the chat input.
+  The transcript screen (F9) gets the same bindings over its conversation,
+  tasks, and events views. Matches are highlighted (bright yellow for the
+  active one, reverse-video for the rest); the match-finding logic is
+  case-insensitive and escapes Rich markup in user/assistant text so
+  highlight never collides with pre-existing bracket content.
 - **Token-level streaming in the TUI (Phase 31.2)** — the TUI now renders assistant
   text as chunks arrive from the LLM instead of waiting for the full response.
   `_process_agent_message` iterates `process_message_streaming`; a new

@@ -1,14 +1,17 @@
 """Chat widget for the TUI."""
 
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
+from rich.markup import escape as rich_escape
 from textual.app import ComposeResult
-from textual.containers import ScrollableContainer, Vertical
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.css.query import NoMatches
+from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import LoadingIndicator, Static
+from textual.widgets import Input, LoadingIndicator, Static
 
 
 class MessageRole(StrEnum):
@@ -105,10 +108,17 @@ class MessageWidget(Static):
         super().__init__()
         self.message = message
         self.add_class(message.role.value)
+        # Search highlighting state: query and which local match (0-indexed)
+        # should be styled as the "active" match.  ``None`` means no search.
+        self._search_query: str | None = None
+        self._active_local_idx: int | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the message widget."""
-        # Header with role indicator and timestamp.
+        yield Static(self._render_body(), id="message-body")
+
+    def _render_body(self) -> str:
+        """Build the Rich-markup body string for this message."""
         role_display = {
             MessageRole.USER: "> ",
             MessageRole.ASSISTANT: "",
@@ -118,18 +128,51 @@ class MessageWidget(Static):
         timestamp = self.message.timestamp.strftime("%H:%M")
         header = f"[dim][{timestamp}][/dim] {header}"
 
-        content_lines = [self.message.content]
+        content = self._highlighted_content() if self._search_query else self.message.content
+        content_lines = [content]
 
-        # Add progress items if any
         for item in self.message.progress_items:
             status_char = self._status_char(item.status)
             status_class = f"progress-{item.status.value.replace('_', '-')}"
             content_lines.append(f"[{status_class}]{status_char}[/{status_class}] {item.text}")
 
-        yield Static(header + "\n".join(content_lines), id="message-body")
+        return header + "\n".join(content_lines)
+
+    def _highlighted_content(self) -> str:
+        """Return message content with search matches wrapped in Rich tags.
+
+        Escapes existing markup in ``message.content`` to avoid collisions
+        with user/assistant text that happens to contain square brackets;
+        this is acceptable because highlighting is active only while the
+        search bar is open.
+        """
+        query = self._search_query or ""
+        text = self.message.content
+        if not query:
+            return rich_escape(text)
+
+        lower_text = text.lower()
+        lower_query = query.lower()
+        parts: list[str] = []
+        cursor = 0
+        local_idx = 0
+        while True:
+            pos = lower_text.find(lower_query, cursor)
+            if pos < 0:
+                parts.append(rich_escape(text[cursor:]))
+                break
+            parts.append(rich_escape(text[cursor:pos]))
+            end = pos + len(query)
+            # Active match uses a brighter style so the user can see which
+            # occurrence is currently focused.
+            style = "black on yellow" if local_idx == self._active_local_idx else "yellow reverse"
+            parts.append(f"[{style}]{rich_escape(text[pos:end])}[/{style}]")
+            cursor = end
+            local_idx += 1
+        return "".join(parts)
 
     def _rerender(self) -> None:
-        """Re-render the message body after a progress update.
+        """Re-render the message body.
 
         If the widget has been mounted but not yet composed (e.g. streaming
         chunks arrive on the same tick the message was added), the body
@@ -140,23 +183,19 @@ class MessageWidget(Static):
             body = self.query_one("#message-body", Static)
         except NoMatches:
             return
+        body.update(self._render_body())
 
-        role_display = {
-            MessageRole.USER: "> ",
-            MessageRole.ASSISTANT: "",
-            MessageRole.SYSTEM: "[system] ",
-        }
-        header = role_display.get(self.message.role, "")
-        timestamp = self.message.timestamp.strftime("%H:%M")
-        header = f"[dim][{timestamp}][/dim] {header}"
+    def count_matches(self, query: str) -> int:
+        """Return the number of case-insensitive occurrences of *query*."""
+        if not query:
+            return 0
+        return self.message.content.lower().count(query.lower())
 
-        content_lines = [self.message.content]
-        for item in self.message.progress_items:
-            status_char = self._status_char(item.status)
-            status_class = f"progress-{item.status.value.replace('_', '-')}"
-            content_lines.append(f"[{status_class}]{status_char}[/{status_class}] {item.text}")
-
-        body.update(header + "\n".join(content_lines))
+    def apply_highlight(self, query: str | None, active_local_idx: int | None) -> None:
+        """Configure search highlighting and re-render."""
+        self._search_query = query or None
+        self._active_local_idx = active_local_idx
+        self._rerender()
 
     def _status_char(self, status: MessageStatus) -> str:
         """Get status indicator character."""
@@ -185,8 +224,154 @@ class MessageWidget(Static):
         self._rerender()
 
 
+class ChatInput(Input):
+    """The chat input — subclassed so a leading ``/`` opens search.
+
+    Pressing ``/`` when the input is empty posts a ``SearchRequested`` message
+    (which the app converts into an ``open search`` action).  If the input
+    already has text, ``/`` is inserted at the cursor as normal, so users can
+    still type paths like ``/etc/hosts`` mid-message.
+    """
+
+    class SearchRequested(Message):
+        """Posted when the user presses ``/`` in an empty chat input."""
+
+    async def _on_key(self, event) -> None:
+        """Intercept ``/`` (only) when the field is empty, otherwise defer.
+
+        ``Input`` consumes printable characters directly in ``_on_key`` —
+        which means the normal ``BINDINGS`` mechanism cannot see them — so
+        the interception has to happen here, before ``super()._on_key``
+        inserts the character.
+        """
+        if event.key == "slash" and not self.value:
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.SearchRequested())
+            return
+        await super()._on_key(event)
+
+
+class SearchBar(Widget):
+    """Search bar shown above the chat scroll area when searching is active.
+
+    Holds its own ``Input`` and a status label showing match position.  Emits
+    ``Changed`` whenever the query changes and ``Dismissed`` when the user
+    presses Escape or Enter-with-empty-value.  Next/previous navigation is
+    driven by the containing widget.
+    """
+
+    DEFAULT_CSS = """
+    SearchBar {
+        height: 1;
+        display: none;
+    }
+
+    SearchBar.-visible {
+        display: block;
+    }
+
+    SearchBar #search-row {
+        height: 1;
+    }
+
+    SearchBar #search-input {
+        width: 1fr;
+        height: 1;
+        border: none;
+        padding: 0;
+        background: $boost;
+    }
+
+    SearchBar #search-status {
+        width: auto;
+        min-width: 14;
+        height: 1;
+        padding: 0 1;
+        color: $text-muted;
+        background: $boost;
+    }
+    """
+
+    class Changed(Message):
+        """Posted when the query text changes."""
+
+        def __init__(self, query: str) -> None:
+            super().__init__()
+            self.query = query
+
+    class Dismissed(Message):
+        """Posted when the user dismisses the search bar."""
+
+    class Navigate(Message):
+        """Posted when the user requests the next/previous match."""
+
+        def __init__(self, *, forward: bool) -> None:
+            super().__init__()
+            self.forward = forward
+
+    def compose(self) -> ComposeResult:
+        """Compose the search bar."""
+        with Horizontal(id="search-row"):
+            yield Input(placeholder="Search chat... (Enter: next, Esc: close)", id="search-input")
+            yield Static("", id="search-status")
+
+    def show(self) -> None:
+        """Reveal and focus the search bar."""
+        self.add_class("-visible")
+        input_widget = self.query_one("#search-input", Input)
+        input_widget.focus()
+
+    def hide(self) -> None:
+        """Hide the search bar and clear its query."""
+        self.remove_class("-visible")
+        self.query_one("#search-input", Input).value = ""
+        self.set_status("")
+
+    @property
+    def is_open(self) -> bool:
+        """Whether the search bar is currently shown."""
+        return self.has_class("-visible")
+
+    @property
+    def query_text(self) -> str:
+        """The current search text."""
+        try:
+            return self.query_one("#search-input", Input).value
+        except NoMatches:
+            return ""
+
+    def set_status(self, text: str) -> None:
+        """Update the match counter label."""
+        with contextlib.suppress(NoMatches):
+            self.query_one("#search-status", Static).update(text)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Propagate changes so the host can re-run the search."""
+        if event.input.id == "search-input":
+            event.stop()
+            self.post_message(self.Changed(event.value))
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter inside the search field jumps to the next match."""
+        if event.input.id == "search-input":
+            event.stop()
+            self.post_message(self.Navigate(forward=True))
+
+    def on_key(self, event) -> None:
+        """Escape closes the search bar."""
+        if not self.is_open:
+            return
+        if event.key == "escape":
+            event.stop()
+            self.post_message(self.Dismissed())
+
+
 class ChatWidget(Widget):
     """Widget for chat history and input."""
+
+    class SearchClosed(Message):
+        """Posted when the user dismisses the search bar."""
 
     DEFAULT_CSS = """
     ChatWidget {
@@ -200,7 +385,7 @@ class ChatWidget(Widget):
     }
 
     ChatWidget #chat-scroll {
-        height: 100%;
+        height: 1fr;
     }
 
     ChatWidget .welcome-message {
@@ -212,10 +397,15 @@ class ChatWidget(Widget):
         """Initialise the chat widget."""
         super().__init__(**kwargs)
         self._messages: list[ChatMessage] = []
+        # Flattened list of (message_widget, local_match_index) pairs for the
+        # current search query, rebuilt on every query change.
+        self._match_index: list[tuple[MessageWidget, int]] = []
+        self._active_match: int = 0
 
     def compose(self) -> ComposeResult:
         """Compose the chat widget."""
         with Vertical(id="chat-history"):
+            yield SearchBar(id="search-bar")
             yield ScrollableContainer(id="chat-scroll")
 
     def on_mount(self) -> None:
@@ -322,3 +512,128 @@ class ChatWidget(Widget):
         scroll = self.query_one("#chat-scroll", ScrollableContainer)
         scroll.remove_children()
         self._show_welcome()
+        # Any in-flight search is no longer meaningful.
+        self._match_index.clear()
+        self._active_match = 0
+        with contextlib.suppress(NoMatches):
+            self.query_one(SearchBar).hide()
+
+    # ------------------------------------------------------------------
+    # Search
+    # ------------------------------------------------------------------
+
+    def open_search(self) -> None:
+        """Reveal the search bar and focus its input."""
+        try:
+            bar = self.query_one(SearchBar)
+        except NoMatches:
+            return
+        bar.show()
+
+    def close_search(self) -> None:
+        """Clear highlights and hide the search bar."""
+        self._clear_highlights()
+        with contextlib.suppress(NoMatches):
+            self.query_one(SearchBar).hide()
+        self.post_message(self.SearchClosed())
+
+    @property
+    def search_active(self) -> bool:
+        """Whether the search bar is currently visible."""
+        try:
+            return self.query_one(SearchBar).is_open
+        except NoMatches:
+            return False
+
+    def on_search_bar_changed(self, event: SearchBar.Changed) -> None:
+        """Re-run the search each time the query text changes."""
+        event.stop()
+        self._run_search(event.query)
+
+    def on_search_bar_dismissed(self, event: SearchBar.Dismissed) -> None:
+        """Handle Esc inside the search bar."""
+        event.stop()
+        self.close_search()
+
+    def on_search_bar_navigate(self, event: SearchBar.Navigate) -> None:
+        """Handle next/previous requests from the search bar."""
+        event.stop()
+        self.navigate_match(forward=event.forward)
+
+    def navigate_match(self, *, forward: bool = True) -> None:
+        """Move to the next (or previous) match and scroll it into view."""
+        if not self._match_index:
+            return
+        delta = 1 if forward else -1
+        self._active_match = (self._active_match + delta) % len(self._match_index)
+        self._apply_highlights()
+        self._scroll_to_active()
+        self._update_status_label()
+
+    def _run_search(self, query: str) -> None:
+        """Rebuild the match list for *query* and highlight all matches."""
+        query = query.strip()
+        self._clear_highlights()
+        if not query:
+            self._update_status_label()
+            return
+
+        scroll = self.query_one("#chat-scroll", ScrollableContainer)
+        matches: list[tuple[MessageWidget, int]] = []
+        for widget in scroll.query(MessageWidget):
+            count = widget.count_matches(query)
+            matches.extend((widget, local) for local in range(count))
+        self._match_index = matches
+        self._active_match = 0
+        self._apply_highlights()
+        if matches:
+            self._scroll_to_active()
+        self._update_status_label()
+
+    def _apply_highlights(self) -> None:
+        """Push the current query / active-match state into every widget."""
+        if not self._match_index:
+            return
+        query = self.query_one(SearchBar).query_text
+        # Group match positions by widget so we can set the active local idx
+        # only on the widget that owns the active global match.
+        active_widget, active_local = self._match_index[self._active_match]
+        seen: set[int] = set()
+        for widget, _ in self._match_index:
+            if id(widget) in seen:
+                continue
+            seen.add(id(widget))
+            local_idx = active_local if widget is active_widget else None
+            widget.apply_highlight(query, local_idx)
+
+    def _clear_highlights(self) -> None:
+        """Remove highlights from any widget that was previously highlighted."""
+        seen: set[int] = set()
+        for widget, _ in self._match_index:
+            if id(widget) in seen:
+                continue
+            seen.add(id(widget))
+            widget.apply_highlight(None, None)
+        self._match_index.clear()
+        self._active_match = 0
+
+    def _scroll_to_active(self) -> None:
+        """Scroll the chat area so the active match is visible."""
+        if not self._match_index:
+            return
+        widget, _ = self._match_index[self._active_match]
+        scroll = self.query_one("#chat-scroll", ScrollableContainer)
+        scroll.scroll_to_widget(widget, animate=False)
+
+    def _update_status_label(self) -> None:
+        """Refresh the match-count text shown next to the search input."""
+        try:
+            bar = self.query_one(SearchBar)
+        except NoMatches:
+            return
+        if not bar.query_text.strip():
+            bar.set_status("")
+        elif not self._match_index:
+            bar.set_status("no matches")
+        else:
+            bar.set_status(f"{self._active_match + 1}/{len(self._match_index)}")

@@ -1,5 +1,6 @@
 """Main Cantrip TUI application."""
 
+import contextlib
 import datetime
 import traceback
 from pathlib import Path
@@ -60,6 +61,7 @@ class CantripApp(App):
         Binding("f9", "transcript", "Transcript"),
         Binding("q", "quit", "Quit"),
         Binding("ctrl+l", "clear_chat", "Clear"),
+        Binding("ctrl+f", "search_chat", "Search", priority=True),
         Binding("ctrl+c", "cancel_agent", "Cancel", show=False),
     ]
 
@@ -128,7 +130,7 @@ class CantripApp(App):
             Vertical(
                 modelbar_widget.ModelInfoBar(id="model-info"),
                 chat_widget.ChatWidget(id="chat"),
-                Input(placeholder="Type your message...", id="chat-input"),
+                chat_widget.ChatInput(placeholder="Type your message...", id="chat-input"),
                 id="left-panel",
             ),
             Vertical(
@@ -1211,6 +1213,24 @@ class CantripApp(App):
         """Clear chat history."""
         chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.clear()
+
+    def action_search_chat(self) -> None:
+        """Open the chat search bar."""
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        chat.open_search()
+
+    def on_chat_input_search_requested(self, event: chat_widget.ChatInput.SearchRequested) -> None:
+        """Handle a leading ``/`` in the empty chat input by opening search."""
+        event.stop()
+        self.action_search_chat()
+
+    def on_chat_widget_search_closed(self, event: chat_widget.ChatWidget.SearchClosed) -> None:
+        """Return focus to the chat input when the search bar closes."""
+        from textual.css.query import NoMatches
+
+        event.stop()
+        with contextlib.suppress(NoMatches):
+            self.query_one("#chat-input", Input).focus()
 
     def action_cancel_agent(self) -> None:
         """Cancel the running agent response worker."""
