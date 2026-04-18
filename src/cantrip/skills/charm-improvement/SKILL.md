@@ -95,7 +95,10 @@ def test_relate_database(juju: jubilant.Juju):
 
 ### Harness Migration
 
-If existing tests use `from ops.testing import Harness`, rewrite them using Scenario:
+If existing tests use `from ops.testing import Harness`, load the
+`harness-migration` skill for the full per-file workflow, the detector script
+that enumerates remaining Harness hits, and event-specific recipes. The short
+form:
 - `Harness(MyCharm)` → `ops.testing.Context(MyCharm)`
 - `harness.begin()` → not needed
 - `harness.charm.on.install.emit()` → `ctx.run(ctx.on.install(), state)`

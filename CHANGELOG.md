@@ -24,6 +24,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   identical output verified for every task description moved.
 
 ### Added
+- **`harness-migration` skill** — dedicated skill for rewriting deprecated
+  `ops.testing.Harness` unit tests as state-transition (Scenario) tests.
+  Covers the Harness→Scenario mapping table, event-specific recipes
+  (actions, relation-changed, pebble-ready, collect-status), a grep
+  pattern for inventorying remaining Harness usage, and per-file
+  workflow with done criteria. Adapted from the upstream
+  [canonical/copilot-collections](https://github.com/canonical/copilot-collections)
+  `migrate-harness-tests-to-state-transition-test` skill (revision
+  `a4e2d1d`) with UK English and cantrip tool names; the `charm-improvement`
+  skill now cross-references it.
 - **PyPI attestation checks for charm dependencies** — a shared
   ``pypi_attest`` helper consults the PyPI simple-index v1 API to
   determine whether a release carries a PEP 740 attestation uploaded
