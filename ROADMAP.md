@@ -4676,6 +4676,224 @@ task-level persistence.
 
 ---
 
+## Phase 53: Organisation Cleanup — Prompts, Planner, Dev Docs
+
+**Goal:** Finish the job started in Phase 0.5 and the skills work — every
+piece of transferable charm-building knowledge lives in markdown or
+Jinja2 templates, not inside Python source.  A fresh systematic review
+identified three concrete leaks:
+
+- `src/cantrip/agent/planner.py` has three triple-quoted prompt
+  constants (`_PLANNING_PROMPT`, `_DESIGN_TO_BUILD_PROMPT`,
+  `_DAY2_TO_BUILD_PROMPT`) at lines ~1196–1440 — collectively ~380 lines
+  of planner guidance text living inside a `.py` file.
+- The deterministic task generators (`plan_sprint_deploy`,
+  `plan_fast_path`, `plan_one_shot_build`, `plan_improvement_*`,
+  `plan_day2_*`) embed 20–50 line f-strings of numbered steps and
+  operational guidance into each `AgentTask.description`.  These are
+  instructions the agent *reads*, not metadata.
+- `planner.py` is 1620 lines and mixes deterministic task templates
+  with LLM-driven planning helpers; once the prompt text is extracted,
+  the remaining code should split along that seam.
+
+Two smaller wins round out the phase: rename `tools/registry.py` to
+clarify it is OCI/Docker registry search (not a tool registry), and
+add three design documents (`TOOLS.md`, `SKILLS.md`, `PROMPTS.md`)
+that record currently-implicit invariants of the three subsystems.
+
+### 53.1 High — Extract planner prompts to `.md.j2` templates
+
+- [ ] Create `src/cantrip/agent/prompts/planning/` with three templates:
+  `full.md.j2` (was `_PLANNING_PROMPT`), `design_to_build.md.j2`, and
+  `day2_to_build.md.j2`
+- [ ] Add a small loader next to `prompts/system.py` that lazy-loads
+  these templates with the same `StrictUndefined` + sanitisation shape
+  as the system prompt
+- [ ] Replace the Python constants in `planner.py` with calls into the
+  loader; keep the existing `{categories}` / `{context_block}` variable
+  substitution semantics
+- [ ] Unit tests verify the rendered output is byte-identical to the
+  pre-extraction prompts for a fixed set of inputs (freezes behaviour)
+
+### 53.2 High — Extract task-description guidance to templates
+
+- [ ] Create `src/cantrip/agent/prompts/tasks/` with one `.md.j2` per
+  deterministic task generator that currently builds a multi-line
+  description: `sprint_build.md.j2`, `sprint_deploy.md.j2`,
+  `fast_path_build.md.j2`, `one_shot_build.md.j2`,
+  `improvement_fixes.md.j2`, `operability_*.md.j2`, etc.
+- [ ] Add a helper `render_task_description(name, **vars)` that picks
+  the right template and renders it with the planner's per-task context
+  (workload, ubuntu version, profile, design text, …)
+- [ ] `AgentTask.description` is populated from the helper; no
+  per-task f-strings remain in `planner.py`
+- [ ] Snapshot tests lock in the rendered text for a canonical input
+  set — protects against accidental drift during the extraction
+
+### 53.3 Medium — Split `planner.py` along the deterministic / LLM seam
+
+- [ ] Introduce `src/cantrip/agent/planner/` package; move the
+  deterministic generators into `planner/deterministic.py` and the
+  LLM-driven code path (`TaskPlanner`, prompt loaders, JSON parser,
+  dependency validator) into `planner/llm.py`
+- [ ] Keep `planner/__init__.py` re-exports stable so existing
+  `from cantrip.agent.planner import …` imports do not break
+- [ ] Move the classifier helpers (`is_fast_path`, `is_sprint`,
+  `is_improvement`, `is_one_shot_build`) into `planner/routing.py`
+  alongside the existing top-level `routing.py` or merge the two
+- [ ] No functional change — behaviour is covered by the existing
+  planner unit tests plus the snapshot tests from 53.1 and 53.2
+
+### 53.4 Low — Rename `tools/registry.py` → `tools/oci_registry.py`
+
+- [ ] `src/cantrip/agent/tools/registry.py` currently holds Docker
+  Hub / OCI image-search tools, not a tool-registration mechanism —
+  rename to `oci_registry.py` to match its contents
+- [ ] Update the single import in `tools/__init__.py`
+- [ ] Grep-verify no other code references the old module name
+
+### 53.5 Medium — Add dev design docs for the three subsystems
+
+- [ ] `design/TOOLS.md` — the `Tool` ABC contract, the `build_tools()`
+  factory pattern, how to add and remove a tool, where tool schemas
+  come from, conventions for naming and file layout, how tools
+  interact with `PathAwareTool` and the virtual-file store
+- [ ] `design/SKILLS.md` — `SKILL.md` discovery via `SkillsIndex`,
+  frontmatter schema, lazy-load-on-demand flow, the skill index injected
+  into the system prompt, interop with Phase 50 standard-format skills
+- [ ] `design/PROMPTS.md` — the prompt layering (system full / system
+  compact / subagent / planning / task descriptions / skills loaded on
+  demand), Jinja2 conventions (`StrictUndefined`, trailing newlines),
+  the `_JINJA_SYNTAX` sanitisation regex and why it exists, extension
+  points for new prompt types
+- [ ] Cross-link the three docs from `design/PLAN.md` so the
+  architecture index points at them
+
+### What this phase is *not*
+
+- Not a rewrite of the planner's behaviour.  The LLM-driven path keeps
+  its current prompt; we only change *where the prompt text lives*.
+- Not a new abstraction layer.  Templates go into the same `prompts/`
+  directory structure the system prompt already uses — no new loader
+  framework, no plugin system.
+- Not a docs-site refresh.  User-facing documentation under `docs/docs/`
+  is handled separately in Phase 54.
+
+**Exit criteria:** No triple-quoted prompt constants or multi-line
+task-description f-strings remain in `planner.py` (or anywhere under
+`src/cantrip/agent/`) — `grep` confirms.  `planner.py` is split into a
+package with modules under 800 lines each.  `tools/registry.py` is
+renamed.  `design/TOOLS.md`, `design/SKILLS.md`, `design/PROMPTS.md`
+exist and are linked from `PLAN.md`.  Snapshot tests protect the
+extracted prompts against accidental drift.  `make check` passes.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Planner prompts (53.1) | Phase 0.5 prompt templating | Reuses `system.py` pattern |
+| Task descriptions (53.2) | 53.1 | Shares the new loader |
+| Planner split (53.3) | 53.1, 53.2 | Clean seam only exists after extraction |
+| Registry rename (53.4) | none | Independent; can land first |
+| Design docs (53.5) | 53.1–53.4 | Document the final shape, not the intermediate |
+
+---
+
+## Phase 54: Reverse-Engineer `docs/docs/` from HTML to Markdown
+
+**Goal:** Restore authored-markdown sources for the user-facing docs
+site (`docs/docs/*.html`) so the site can evolve alongside the code
+without hand-editing HTML.  The site was authored in HTML directly —
+there is no surviving markdown, `mkdocs.yml`, or Sphinx `conf.py` in
+the tree — so this is a careful reverse-engineering job, not a
+rebuild.  The hand-crafted structure (the Diátaxis split into
+tutorial / how-to / reference / explanation, the styling hooks in
+`docs.css`, the cross-page navigation) is design work worth
+preserving.
+
+This phase is **investigation-heavy** up front: pick a conversion
+path that survives round-tripping, verify it preserves everything
+that matters, then commit to it.
+
+### 54.1 High — Audit the existing HTML and pick a conversion path
+
+- [ ] Inventory every `docs/docs/*.html` page: headings, code blocks,
+  callouts, admonitions, cross-links, images, anchor IDs used by
+  external links, and any custom classes from `docs.css`
+- [ ] Pick a conversion tool (candidates: `pandoc`, `html2markdown`,
+  `markdownify`) and a target flavour (CommonMark vs MyST vs
+  MkDocs-Material-flavoured markdown); prefer the flavour that round-
+  trips back to HTML byte-identical or close to it
+- [ ] Convert one representative page end-to-end as a pilot and diff
+  the rebuilt HTML against the original — document what the tool
+  handles losslessly vs what needs manual fix-up
+- [ ] Write up the decision in `design/DOCS_REBUILD.md` so the
+  conversion rationale is preserved even if this phase spans many
+  sessions
+
+### 54.2 High — Convert every page and reconcile
+
+- [ ] Convert all 13 pages under `docs/docs/` to markdown in the
+  chosen flavour
+- [ ] Manually reconcile anything the converter dropped: admonition
+  boxes, syntax-highlighted code-block languages, anchor IDs linked
+  from other pages, footnote numbering, image paths
+- [ ] Preserve the Diátaxis filename convention
+  (`tutorial.md`, `howto-*.md`, `reference-*.md`, `explanation-*.md`)
+- [ ] Place the new markdown under `docs/src/` (or similar) so the
+  already-built HTML in `docs/docs/` keeps working until the build
+  system lands in 54.3
+
+### 54.3 Medium — Set up a markdown-to-HTML build system
+
+- [ ] Pick a static-site generator that fits (MkDocs with Material,
+  or a MyST-parser Sphinx setup, or a plain pandoc make-rule) — match
+  the flavour chosen in 54.1
+- [ ] Configure the build to emit HTML into `docs/docs/` with the
+  same filenames the current site uses, so external links keep
+  working
+- [ ] Preserve the `docs.css` styling and the current logo / favicon
+  assets under `docs/`
+- [ ] Add a `make docs` target and CI step that rebuilds the site
+  and diffs against the committed HTML (catches drift between the
+  markdown sources and the published HTML)
+
+### 54.4 Low — Round-trip verification and retire the old HTML
+
+- [ ] Run the full build; diff page-by-page against the original HTML;
+  document any intentional formatting differences
+- [ ] Once parity is confirmed, the generated `docs/docs/*.html` files
+  become build artifacts — they can either stay committed (for
+  GitHub Pages-style hosting) or move into CI-only
+- [ ] Update `CONTRIBUTING.md` with the new docs workflow: edit
+  markdown under `docs/src/`, run `make docs`, commit both
+
+### What this phase is *not*
+
+- Not a rewrite of the docs content.  The pages are good; we only
+  change the authoring format.
+- Not a migration to a new docs framework for the sake of it.  If
+  pandoc + a small Makefile rule produces acceptable output, that is
+  the right answer — resist the pull toward a heavyweight SSG.
+- Not user-facing content work.  Any new pages or rewrites belong in
+  a follow-up phase, once the authoring loop is fixed.
+
+**Exit criteria:** `docs/src/*.md` exists with authored-markdown
+sources for every current page.  `make docs` rebuilds `docs/docs/`
+from `docs/src/` with output that matches the committed HTML closely
+enough for the diff to be a sensible CI gate.  `design/DOCS_REBUILD.md`
+records the conversion-tool choice and any manual-reconciliation
+rules.  No authored HTML remains in the docs tree.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| HTML audit (54.1) | none | Pure investigation; first step |
+| Conversion (54.2) | 54.1 | Needs the chosen tool + flavour |
+| Build system (54.3) | 54.2 | Builds from the new markdown |
+| Round-trip (54.4) | 54.3 | Final gate before committing to the new authoring flow |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4724,4 +4942,6 @@ task-level persistence.
 | M50: Skills Interop | 50 | Standard-format skills import and export round-trip; MCP-aware skills resolve dependencies at load time |
 | M51: Team Research | 51 | Written assessment of whether and how Cantrip should support teams working on a charm, with architecture sketches and a next-step recommendation |
 | M52: Durable Subagents | 52 | Subagent LLM turns and tool calls checkpoint into SQLite; interrupted tasks resume from the last completed step instead of re-burning tokens |
+| M53: Knowledge-in-Markdown | 53 | Planner prompts and task descriptions live in Jinja2 templates; `planner.py` split along the deterministic / LLM seam; dev design docs cover tools, skills, and prompts |
+| M54: Authored Docs | 54 | `docs/docs/` site rebuilds from committed markdown sources through `make docs`; no hand-authored HTML remains in the docs tree |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
