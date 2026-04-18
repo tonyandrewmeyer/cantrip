@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from cantrip.agent.tools.registry import (
+from cantrip.agent.tools.oci_registry import (
     MAX_SEARCH_RESULTS,
     RegistryImageInfoTool,
     RegistrySearchTool,
@@ -136,7 +136,7 @@ class TestRegistrySearchTool:
         resp = _make_response(json_body=body)
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(query="redis")
 
         assert result.success
@@ -153,7 +153,7 @@ class TestRegistrySearchTool:
         resp = _make_response(json_body={"results": []})
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(query="nonexistent-image-xyz")
 
         assert result.success
@@ -176,7 +176,7 @@ class TestRegistrySearchTool:
         resp = _make_response(json_body={"results": results})
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(query="image")
 
         assert result.success
@@ -201,7 +201,7 @@ class TestRegistrySearchTool:
         resp = _make_response(json_body=body)
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(query="nginx")
 
         assert result.success
@@ -213,7 +213,7 @@ class TestRegistrySearchTool:
         """Timeout produces a clear error message."""
         mock = _mock_client(side_effect=httpx.TimeoutException("timed out"))
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(query="redis")
 
         assert not result.success
@@ -228,7 +228,7 @@ class TestRegistrySearchTool:
         )
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(query="redis")
 
         assert not result.success
@@ -239,7 +239,7 @@ class TestRegistrySearchTool:
         """Connection errors produce a failed ToolResult."""
         mock = _mock_client(side_effect=httpx.ConnectError("Connection refused"))
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(query="redis")
 
         assert not result.success
@@ -295,7 +295,7 @@ class TestRegistryImageInfoTool:
         )
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(image="redis")
 
         assert result.success
@@ -318,7 +318,7 @@ class TestRegistryImageInfoTool:
         )
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             await tool.execute(image="redis")
 
         # Verify the URL includes library/redis.
@@ -336,7 +336,7 @@ class TestRegistryImageInfoTool:
         )
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             await tool.execute(image="bitnami/redis")
 
         call_args = mock.get.call_args
@@ -365,7 +365,7 @@ class TestRegistryImageInfoTool:
         resp = _make_response(json_body=body)
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(image="redis", tag="7-alpine")
 
         assert result.success
@@ -385,7 +385,7 @@ class TestRegistryImageInfoTool:
         )
         mock = _mock_client(response=resp)
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(image="nonexistent")
 
         assert not result.success
@@ -397,7 +397,7 @@ class TestRegistryImageInfoTool:
         """Timeout produces a clear error message."""
         mock = _mock_client(side_effect=httpx.TimeoutException("timed out"))
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(image="redis")
 
         assert not result.success
@@ -408,7 +408,7 @@ class TestRegistryImageInfoTool:
         """Connection errors produce a failed ToolResult."""
         mock = _mock_client(side_effect=httpx.ConnectError("Connection refused"))
 
-        with patch("cantrip.agent.tools.registry.httpx.AsyncClient", return_value=mock):
+        with patch("cantrip.agent.tools.oci_registry.httpx.AsyncClient", return_value=mock):
             result = await tool.execute(image="redis")
 
         assert not result.success

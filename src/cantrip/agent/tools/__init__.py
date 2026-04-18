@@ -98,6 +98,10 @@ from cantrip.agent.tools.observability import (
     LokiQueryTool,
     TempoQueryTool,
 )
+from cantrip.agent.tools.oci_registry import (
+    RegistryImageInfoTool,
+    RegistrySearchTool,
+)
 from cantrip.agent.tools.operational_readiness import OperationalReadinessTool
 from cantrip.agent.tools.planning import PlanTasksTool
 from cantrip.agent.tools.pr_review import PrReviewReplyTool, PrReviewTool
@@ -108,10 +112,6 @@ from cantrip.agent.tools.publishing import (
     GenerateDocsTool,
     GenerateIconTool,
     GenerateReadmeTool,
-)
-from cantrip.agent.tools.registry import (
-    RegistryImageInfoTool,
-    RegistrySearchTool,
 )
 from cantrip.agent.tools.report import TestReportTool
 from cantrip.agent.tools.rockcraft import (
