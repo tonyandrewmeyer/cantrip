@@ -5649,8 +5649,18 @@ integration paths.
 
 Four unit-test files top 1500 lines:
 
-- [ ] ``tests/unit/test_executor.py`` (1972 lines) — split by
-  ``TestClass`` into ``test_executor_*.py``
+- [x] ``tests/unit/test_executor.py`` (1972 lines) — split by
+  concern into ``tests/unit/executor/`` mirroring the
+  ``tests/unit/charmlint/`` layout: ``test_lifecycle.py`` (start /
+  stop / pause / resume / graceful shutdown), ``test_execution.py``
+  (build_context, execute_task, handle_confirm, category timeouts),
+  ``test_run_loop.py`` (run loop, callbacks, concurrency),
+  ``test_followup.py`` (followup tasks, design handoff, noop
+  detection), ``test_git.py`` (uncommitted/precheck/snapshot/revert),
+  and ``test_errors.py`` (exit-state / error-resilience / usage
+  recording).  Shared helpers (``_make_tool``, ``_make_executor``)
+  moved to ``tests/unit/executor/conftest.py``.  All 107 tests still
+  pass; each file ≤478 lines
 - [ ] ``tests/unit/test_planner.py`` (1705 lines) — split by
   concern (parsing, routing, deterministic paths, LLM paths)
 - [ ] ``tests/unit/test_subagent.py`` (1542 lines)

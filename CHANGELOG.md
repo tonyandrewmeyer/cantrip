@@ -5,6 +5,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Executor unit tests reorganised** — the monolithic
+  ``tests/unit/test_executor.py`` (1972 lines, 107 tests) split into
+  six per-concern files under ``tests/unit/executor/`` mirroring the
+  ``tests/unit/charmlint/`` and ``tests/unit/quickpack/`` layouts:
+  ``test_lifecycle.py`` (start / stop / pause / resume / graceful
+  shutdown), ``test_execution.py`` (build_context, execute_task,
+  handle_confirm, category timeouts), ``test_run_loop.py`` (run loop,
+  callbacks, concurrency), ``test_followup.py`` (followup tasks,
+  design handoff, noop detection), ``test_git.py`` (uncommitted /
+  precheck / snapshot / revert), and ``test_errors.py`` (exit-state /
+  error-resilience / usage recording).  Shared helpers moved to
+  ``tests/unit/executor/conftest.py``.  Each file ≤478 lines; no test
+  content changed.  Phase 57.7 partially advanced (one of four files
+  done).
 - **Quickpack unit tests reorganised** — the monolithic
   ``tests/unit/test_quickpack.py`` (977 lines) split into per-module
   files under ``tests/unit/quickpack/`` mirroring the
