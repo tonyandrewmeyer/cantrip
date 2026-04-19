@@ -560,7 +560,7 @@ class TestBootstrap:
                 return default_juju
             return cos_juju
 
-        # to_thread calls: list_controllers, juju.status (raises), _find_k8s_controller.
+        # to_thread calls: list_controllers, _find_k8s_controller (returns None → skip).
         call_count = 0
 
         async def selective_to_thread(func, *args, **kwargs):  # noqa: ARG001
@@ -568,9 +568,7 @@ class TestBootstrap:
             call_count += 1
             if call_count == 1:
                 return []  # list_controllers
-            if call_count == 2:
-                raise cli_error("model not found")  # juju.status
-            return None  # _find_k8s_controller
+            return None  # _find_k8s_controller — no K8s controller
 
         with (
             patch(
@@ -632,6 +630,7 @@ class TestBootstrap:
                 side_effect=[[], cos_status],
             ),
             patch("cantrip.agent.preflight._model_is_k8s", return_value=False),
+            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
             patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
             patch(
                 "cantrip.agent.preflight._is_already_provisioned",
@@ -665,6 +664,7 @@ class TestBootstrap:
             ),
             patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
             patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
@@ -694,6 +694,68 @@ class TestBootstrap:
 
         assert result1.juju_available is True
         assert result2.juju_available is True
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_existing_cos_on_separate_k8s_controller(self):
+        """bootstrap finds an existing COS model on a separate K8s controller.
+
+        Regression: previously, when the current controller was IAAS (LXD)
+        and COS already existed on a K8s controller, the code checked the
+        model against the current controller (which raised CLIError) and
+        then tried to add-model on the K8s controller, which failed because
+        the model already existed there.  The fix routes the existence
+        check to the K8s controller via ``controller:model`` syntax.
+        """
+        state = AgentState()
+        runner = PreflightRunner(state)
+
+        default_juju = MagicMock()
+        default_juju.status.return_value = MagicMock()
+
+        # COS model already exists on concierge-k8s with cos-lite deployed.
+        cos_juju = MagicMock()
+        cos_status = MagicMock()
+        cos_status.apps = {"grafana": MagicMock()}
+        cos_juju.status.return_value = cos_status
+
+        seen_models: list[str | None] = []
+
+        def juju_factory(model: str | None = None) -> MagicMock:
+            seen_models.append(model)
+            if model is None:
+                return default_juju
+            return cos_juju
+
+        with (
+            patch(
+                "cantrip.agent.preflight._run_concierge",
+                new_callable=AsyncMock,
+                return_value=(0, "ok", ""),
+            ),
+            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch(
+                "cantrip.agent.preflight.asyncio.to_thread",
+                new_callable=AsyncMock,
+                side_effect=[[], "concierge-k8s", cos_status],
+            ),
+            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=False),
+            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch(
+                "cantrip.agent.preflight._is_already_provisioned",
+                new_callable=AsyncMock,
+                return_value=(True, None),
+            ),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+        ):
+            result = await runner.bootstrap("machine")
+
+        assert result.cos_ready is True
+        assert result.cos_controller == "concierge-k8s"
+        assert not result.errors
+        # The model check used controller:model syntax — it did NOT fall
+        # through to add-model.
+        assert "concierge-k8s:cos" in seen_models
 
 
 class TestPrepare:

@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Bulked-out e2e charm-build suite** — the live Flask test that lived
+  in ``tests/e2e/test_real_charm_build.py`` has been refactored into a
+  reusable harness (``tests/e2e/harness.py``) and parametrised across
+  Flask, Django, FastAPI, and Go (``test_paas_charm_build.py``).  A
+  new ``test_machine_charm_build.py`` exercises the non-PaaS path by
+  scaffolding with ``charmcraft init --profile machine`` and deploying
+  to an LXD controller.  The Go case skips rockcraft and deploys with
+  a pre-built public OCI image to keep the test quick.  Seed apps live
+  in ``tests/e2e/seeds.py`` so adding a new framework is now a
+  ~20-line change.
 - **Shared slash-command dispatcher** — new
   ``cantrip/agent/slash_commands.py`` hosts a single ``dispatch()`` and
   ``SlashResult`` dataclass that all three surfaces (CLI, TUI, Web) now
@@ -19,6 +29,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``/status``, ``/feelings``) stay on their original surface.
 
 ### Fixed
+- **Preflight COS creation failed when the model already existed on a
+  separate K8s controller** — when the current controller was IAAS
+  (LXD) but ``cos`` already existed on a sibling K8s controller (e.g.
+  ``concierge-k8s``), the existence check ran against the LXD
+  controller, raised ``CLIError``, and fell through to ``juju
+  add-model cos -c concierge-k8s`` which then failed because the
+  model was already there.  The runner now resolves the target
+  controller up front and uses ``controller:model`` syntax for
+  status, model creation, and offer setup.
 - **Streaming sentences run together across tool-call rounds** — the
   agent's streaming conversation loop concatenated each round's text
   directly, so a round ending ``"Let me check the file."`` followed by

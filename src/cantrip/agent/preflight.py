@@ -399,7 +399,23 @@ class PreflightRunner:
         if not self.result.controllers:
             self.result.controllers = await asyncio.to_thread(list_controllers)
 
-        juju = await self._check_cos_model(cos_model_name)
+        # Decide which controller will host COS — the current one if it's
+        # K8s, otherwise a separate K8s controller.  All subsequent checks
+        # and creation attempts target this controller explicitly so we
+        # don't look for the model on an IAAS controller that can't host it.
+        cos_controller: str | None = None
+        if not _current_controller_is_k8s():
+            cos_controller = await asyncio.to_thread(_find_k8s_controller)
+            if not cos_controller:
+                self._emit(
+                    "cos",
+                    CheckStatus.SKIPPED,
+                    "No Kubernetes controller found — COS requires K8s",
+                )
+                return
+            self.result.cos_controller = cos_controller
+
+        juju = await self._check_cos_model(cos_model_name, cos_controller)
         if juju is None:
             return
 
@@ -408,15 +424,22 @@ class PreflightRunner:
 
         await self._create_cos_offers(cos_model_name)
 
-    async def _check_cos_model(self, cos_model_name: str) -> jubilant.Juju | None:
-        """Check the COS model and create it if needed.
+    async def _check_cos_model(
+        self,
+        cos_model_name: str,
+        cos_controller: str | None,
+    ) -> jubilant.Juju | None:
+        """Check the COS model on the target controller, creating it if needed.
 
-        Returns a ``Juju`` instance targeting the COS model when cos-lite
-        still needs to be deployed, or ``None`` when the model is already
-        ready, was skipped, or creation failed.
+        ``cos_controller`` is the controller that should host COS, or
+        ``None`` to use the current controller.  Returns a ``Juju`` instance
+        targeting the COS model when cos-lite still needs to be deployed,
+        or ``None`` when the model is already ready, was skipped, or
+        creation failed.
         """
+        target = f"{cos_controller}:{cos_model_name}" if cos_controller else cos_model_name
         try:
-            juju = jubilant.Juju(model=cos_model_name)
+            juju = jubilant.Juju(model=target)
             status = await asyncio.to_thread(juju.status)
             if status.apps:
                 self.result.cos_ready = True
@@ -424,7 +447,7 @@ class PreflightRunner:
                 self._state.cos_model = cos_model_name
                 self._emit("cos", CheckStatus.PASSED, "COS model ready")
                 return None
-            if not _model_is_k8s(cos_model_name):
+            if not _model_is_k8s(target):
                 self._emit(
                     "cos",
                     CheckStatus.SKIPPED,
@@ -434,15 +457,20 @@ class PreflightRunner:
             self._emit("cos", CheckStatus.RUNNING, "Deploying cos-lite")
             return juju
         except jubilant.CLIError:
-            return await self._create_cos_model(cos_model_name)
+            return await self._create_cos_model(cos_model_name, cos_controller)
 
-    async def _create_cos_model(self, cos_model_name: str) -> jubilant.Juju | None:
-        """Create the COS model on an appropriate K8s controller.
+    async def _create_cos_model(
+        self,
+        cos_model_name: str,
+        cos_controller: str | None,
+    ) -> jubilant.Juju | None:
+        """Create the COS model on the target controller.
 
-        Returns a ``Juju`` instance for the new model, or ``None`` if
-        creation failed or no K8s controller is available.
+        ``cos_controller`` is the K8s controller that should host COS, or
+        ``None`` to use the current (K8s) controller.  Returns a ``Juju``
+        instance for the new model, or ``None`` if creation failed.
         """
-        if _current_controller_is_k8s():
+        if cos_controller is None:
             self._emit("cos", CheckStatus.RUNNING, f"Creating model {cos_model_name}")
             try:
                 juju_default = jubilant.Juju()
@@ -458,31 +486,26 @@ class PreflightRunner:
                 self.result.errors.append(f"COS model creation failed: {exc}")
                 return None
 
-        # Current controller is IAAS — look for a K8s controller.
-        k8s_ctrl = await asyncio.to_thread(_find_k8s_controller)
-        if not k8s_ctrl:
-            self._emit(
-                "cos",
-                CheckStatus.SKIPPED,
-                "No Kubernetes controller found — COS requires K8s",
-            )
-            return None
         self._emit(
             "cos",
             CheckStatus.RUNNING,
-            f"Creating COS model on K8s controller '{k8s_ctrl}'",
+            f"Creating COS model on K8s controller '{cos_controller}'",
         )
-        self.result.cos_controller = k8s_ctrl
-        created = await asyncio.to_thread(_create_model_on_controller, cos_model_name, k8s_ctrl)
-        if not created:
+        rc, stderr = await asyncio.to_thread(
+            _create_model_on_controller, cos_model_name, cos_controller
+        )
+        if rc != 0:
             self._emit(
                 "cos",
                 CheckStatus.FAILED,
-                f"Failed to create COS model on controller '{k8s_ctrl}'",
+                f"Failed to create COS model on controller '{cos_controller}'",
+                detail=stderr.strip(),
             )
-            self.result.errors.append(f"COS model creation on {k8s_ctrl} failed")
+            self.result.errors.append(
+                f"COS model creation on {cos_controller} failed: {stderr.strip()}"
+            )
             return None
-        return jubilant.Juju(model=cos_model_name)
+        return jubilant.Juju(model=f"{cos_controller}:{cos_model_name}")
 
     async def _deploy_cos_lite(self, juju: jubilant.Juju, cos_model_name: str) -> bool:
         """Deploy cos-lite into the COS model.
@@ -506,7 +529,12 @@ class PreflightRunner:
         if _current_controller_is_k8s():
             return
         self._emit("cos", CheckStatus.RUNNING, "Setting up cross-model COS offers")
-        offers = await asyncio.to_thread(_setup_cos_cross_model_offers, cos_model_name)
+        target = (
+            f"{self.result.cos_controller}:{cos_model_name}"
+            if self.result.cos_controller
+            else cos_model_name
+        )
+        offers = await asyncio.to_thread(_setup_cos_cross_model_offers, target)
         if offers:
             self._emit(
                 "cos",
@@ -522,7 +550,13 @@ class PreflightRunner:
 
 
 def _model_is_k8s(model_name: str) -> bool:
-    """Check whether an existing model is on a Kubernetes cloud."""
+    """Check whether an existing model is on a Kubernetes cloud.
+
+    Accepts either a plain model name or ``controller:model`` syntax.  The
+    JSON returned by ``juju show-model`` is keyed on the bare model name
+    regardless of how the model was specified, so we inspect the first
+    value rather than looking up by key.
+    """
     juju_bin = shutil.which("juju")
     if not juju_bin:
         return False
@@ -536,7 +570,9 @@ def _model_is_k8s(model_name: str) -> bool:
         if result.returncode != 0:
             return False
         data = json.loads(result.stdout)
-        model_info = data.get(model_name, {})
+        if not data:
+            return False
+        model_info = next(iter(data.values()), {})
         return model_info.get("model-type", "") == "caas"
     except (subprocess.TimeoutExpired, OSError, ValueError):
         return False
@@ -639,14 +675,15 @@ def list_controllers() -> list[dict[str, Any]]:
 def _create_model_on_controller(
     model_name: str,
     controller: str,
-) -> bool:
+) -> tuple[int, str]:
     """Create a Juju model on a specific controller.
 
-    Returns ``True`` on success, ``False`` on failure.
+    Returns ``(returncode, stderr)``.  A non-zero returncode indicates
+    failure; ``stderr`` carries the juju CLI error message for diagnostics.
     """
     juju_bin = shutil.which("juju")
     if not juju_bin:
-        return False
+        return 1, "juju CLI not found on PATH"
     try:
         result = subprocess.run(
             [juju_bin, "add-model", model_name, "-c", controller],
@@ -654,9 +691,11 @@ def _create_model_on_controller(
             text=True,
             timeout=30,
         )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, OSError):
-        return False
+        return result.returncode, result.stderr
+    except subprocess.TimeoutExpired:
+        return 1, "add-model timed out"
+    except OSError as exc:
+        return 1, str(exc)
 
 
 def _setup_cos_cross_model_offers(cos_model: str) -> list[str]:
