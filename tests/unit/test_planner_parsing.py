@@ -85,6 +85,22 @@ class TestParseTaskList:
         assert len(tasks) == 2
         assert tasks[1].dependencies == ["a"]
 
+    def test_malformed_item_is_skipped(self):
+        """A single untitled item is dropped; the rest of the plan survives."""
+        raw = (
+            '[{"id": "a", "title": "Keep me"},'
+            ' {"id": "b", "description": "no title here"},'
+            ' {"id": "c", "title": "Keep me too"}]'
+        )
+        tasks = _parse_task_list(raw)
+        assert [t.id for t in tasks] == ["a", "c"]
+
+    def test_all_items_malformed_raises(self):
+        """When every item is malformed, parsing fails loudly."""
+        raw = '[{"id": "a"}, {"id": "b"}]'
+        with pytest.raises(ValueError, match="No valid tasks"):
+            _parse_task_list(raw)
+
 
 class TestParseSingleTask:
     """Tests for _parse_single_task validation."""
@@ -139,6 +155,23 @@ class TestParseSingleTask:
     def test_category_case_insensitive(self):
         task = _parse_single_task({"title": "T", "category": "RESEARCH"}, 0)
         assert task.category == TaskCategory.RESEARCH
+
+    def test_name_falls_back_to_title(self):
+        """Gemini-style 'name' key is accepted when 'title' is absent."""
+        task = _parse_single_task({"id": "x", "name": "Named task"}, 0)
+        assert task.title == "Named task"
+
+    def test_task_falls_back_to_title(self):
+        task = _parse_single_task({"id": "x", "task": "Tasked task"}, 0)
+        assert task.title == "Tasked task"
+
+    def test_summary_falls_back_to_title(self):
+        task = _parse_single_task({"id": "x", "summary": "Summed task"}, 0)
+        assert task.title == "Summed task"
+
+    def test_title_preferred_over_fallbacks(self):
+        task = _parse_single_task({"title": "Primary", "name": "Secondary"}, 0)
+        assert task.title == "Primary"
 
 
 class TestPathQualification:

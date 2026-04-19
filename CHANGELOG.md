@@ -38,6 +38,12 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   model was already there.  The runner now resolves the target
   controller up front and uses ``controller:model`` syntax for
   status, model creation, and offer setup.
+- **Planner crashed on malformed LLM task items** — a single item
+  missing a ``title`` (common with smaller Gemini flash responses)
+  caused the whole replanning call to fail.  The parser now accepts
+  ``name`` / ``task`` / ``summary`` as title fallbacks, skips
+  individual malformed items with a warning, and logs the raw LLM
+  content when the batch cannot be parsed.
 - **Streaming sentences run together across tool-call rounds** — the
   agent's streaming conversation loop concatenated each round's text
   directly, so a round ending ``"Let me check the file."`` followed by

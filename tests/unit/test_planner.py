@@ -136,9 +136,10 @@ class TestParseTaskList:
         with pytest.raises(ValueError, match="JSON array"):
             _parse_task_list('{"foo": "bar"}')
 
-    def test_missing_title_raises(self) -> None:
+    def test_missing_title_skipped(self) -> None:
+        """A single untitled item is skipped; the whole plan then has no tasks."""
         raw = json.dumps([{"id": "x", "category": "build"}])
-        with pytest.raises(ValueError, match="missing a title"):
+        with pytest.raises(ValueError, match="No valid tasks"):
             _parse_task_list(raw)
 
     def test_unknown_category_defaults_to_build(self) -> None:

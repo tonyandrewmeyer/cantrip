@@ -259,11 +259,18 @@ def _parse_task_list(content: str) -> list[AgentTask]:
     - Raw JSON arrays
     - JSON wrapped in markdown code fences
     - ``{"tasks": [...]}`` wrapper objects
+
+    Individual malformed task items are logged and skipped rather than
+    failing the whole batch — smaller LLMs (e.g. Gemini flash) occasionally
+    emit an item with no title, and dropping it preserves the rest of the
+    plan.  Raises only when the content isn't parseable JSON, the shape
+    isn't an array, or every item fails to parse.
     """
     raw = _extract_json(content)
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
+        log.warning("LLM returned unparseable planning JSON: %s", _truncate(content, 1000))
         raise ValueError(f"Failed to parse task list JSON: {exc}") from exc
 
     # Unwrap {"tasks": [...]} if present.
@@ -276,17 +283,62 @@ def _parse_task_list(content: str) -> list[AgentTask]:
     if not isinstance(data, list):
         raise ValueError("Expected a JSON array of tasks")
 
-    tasks = [_parse_single_task(item, idx) for idx, item in enumerate(data)]
+    tasks: list[AgentTask] = []
+    for idx, item in enumerate(data):
+        try:
+            tasks.append(_parse_single_task(item, idx))
+        except ValueError as exc:
+            log.warning(
+                "Skipping malformed task at index %d: %s — raw item: %r",
+                idx,
+                exc,
+                item,
+            )
+
+    # Only fail hard when the LLM tried to produce tasks but we rejected them
+    # all.  An empty list from the LLM (``[]``) is a deliberate "no tasks" and
+    # is returned as-is — some replanning calls correctly produce no new tasks.
+    if data and not tasks:
+        log.warning("LLM planning response had no usable tasks: %s", _truncate(content, 1000))
+        raise ValueError("No valid tasks in planning response")
+
     _validate_dependencies(tasks)
     return tasks
 
 
+def _truncate(text: str, limit: int) -> str:
+    """Return ``text`` truncated to ``limit`` characters with an ellipsis marker."""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"… [truncated, total {len(text)} chars]"
+
+
+# Alternate keys some models emit instead of "title".  Tried in order.
+_TITLE_FALLBACK_KEYS = ("name", "task", "summary")
+
+
 def _parse_single_task(item: dict, index: int) -> AgentTask:
-    """Validate and construct a single ``AgentTask`` from parsed JSON."""
+    """Validate and construct a single ``AgentTask`` from parsed JSON.
+
+    Accepts ``title`` or, as a fallback, any of ``name`` / ``task`` /
+    ``summary`` — smaller models occasionally use these keys instead.
+    Raises ``ValueError`` when none of them are present or usable.
+    """
     if not isinstance(item, dict):
         raise ValueError(f"Task at index {index} is not an object")
 
     title = item.get("title")
+    if not title:
+        for key in _TITLE_FALLBACK_KEYS:
+            candidate = item.get(key)
+            if candidate:
+                title = str(candidate)
+                log.info(
+                    "Task at index %d used %r instead of 'title'",
+                    index,
+                    key,
+                )
+                break
     if not title:
         raise ValueError(f"Task at index {index} is missing a title")
 
@@ -301,7 +353,7 @@ def _parse_single_task(item: dict, index: int) -> AgentTask:
 
     return AgentTask(
         id=str(item.get("id", "")),
-        title=title,
+        title=str(title),
         category=TaskCategory(raw_category),
         description=str(item.get("description", "")),
         dependencies=[str(d) for d in dependencies],
