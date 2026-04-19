@@ -18,6 +18,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **MCP marketplace discovery (Phase 45.5)** — closes Phase 45.  Cantrip
+  can now pull MCP-server catalogues from user-supplied marketplaces in
+  the Codex / Cursor / Claude Code format.  Three source kinds declared
+  in a new top-level ``marketplaces:`` block in ``cantrip.mcp.yaml``:
+  ``github: <owner>/<repo>``, ``directory: <path>``, ``url: <url>``.
+  ``MarketplaceLoader`` caches at ``~/.cache/cantrip/marketplaces/``
+  with a 24-hour TTL and skips failed sources rather than crashing.
+  ``/mcp marketplace`` lists servers grouped by source with description,
+  install hint, required env vars, and OAuth scopes; ``/mcp marketplace
+  refresh`` bypasses the cache.  Cantrip never auto-installs — the user
+  copies the descriptor into their own config after reviewing it.  New
+  ``design/MCP_SERVERS.md`` documents authoring Charmhub / Launchpad /
+  Grafana / Snapcraft / Charmcraft / MAAS MCP servers (Python SDK
+  example, tool conventions, schema reference, authoring checklist,
+  local-test recipe).  34 unit tests cover source parsing, the YAML
+  loader, the cache layer, and the slash-command output for every
+  shape and error path.
 - **MCP OAuth 2.1 flow for HTTP servers (Phase 45.4b)** — closes Phase
   45.4.  HTTP MCP servers can now require OAuth and Cantrip walks the
   user through the full PKCE flow, with refresh tokens persisted to the

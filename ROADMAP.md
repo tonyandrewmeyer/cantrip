@@ -4126,7 +4126,7 @@ races. `make check` passes throughout.
 
 ---
 
-## Phase 45: Model Context Protocol (MCP) Client
+## Phase 45: Model Context Protocol (MCP) Client ✓
 
 **Goal:** Add MCP client support so Cantrip can pull context and tools from
 third-party MCP servers. MCP converged as the cross-vendor tool-extension
@@ -4257,14 +4257,32 @@ into Cantrip).
   request/response/timeout/cancel paths.  OAuth-flow tests follow the
   deferred OAuth integration commit
 
-### 45.5 Low — MCP server registry and marketplace awareness
+### 45.5 Low — MCP server registry and marketplace awareness ✅
 
-- [ ] Optional discovery against the Codex MCP marketplace format (GitHub URL,
-  local directory, or `marketplace.json`), surfaced read-only in the `/mcp`
-  command
-- [ ] Documentation for authoring Cantrip-specific MCP servers (Charmhub,
-  Launchpad) in `design/` — these may ship separately or live in the
-  `microsoft/skills`-style companion repository
+- [x] Read-only discovery against the Codex / Cursor / Claude Code
+  marketplace format.  ``cantrip.mcp.marketplace`` parses
+  ``marketplace.json`` documents from three source kinds — GitHub repo
+  (raw fetch), local directory, or arbitrary URL — declared in a new
+  ``marketplaces:`` block in ``cantrip.mcp.yaml``.  Responses are
+  cached at ``~/.cache/cantrip/marketplaces/`` with a 24-hour TTL
+  (``CANTRIP_MCP_MARKETPLACE_CACHE`` overrides).  ``/mcp marketplace``
+  surfaces the catalogue grouped by source with description, install
+  hint, required env vars, and OAuth scopes; ``/mcp marketplace
+  refresh`` bypasses the cache.  Cantrip never auto-installs a server
+  — the user copies the descriptor into ``cantrip.mcp.yaml`` after
+  reviewing it
+- [x] ``design/MCP_SERVERS.md`` documents authoring servers:
+  - Where they can live (own repo, companion bundle, or inside a
+    charm)
+  - A working Python SDK example (mirroring the in-tree stub)
+  - Tool design conventions (names, descriptions, schemas, output,
+    errors, side effects)
+  - Full ``marketplace.json`` schema reference with field table
+  - Authoring checklist
+  - Suggested servers (Charmhub, Launchpad, Grafana, Snapcraft,
+    Charmcraft, MAAS) — none ship in this repo; they're prompts for
+    follow-up projects
+  - Local-test recipe pointing Cantrip at a directory source
 
 **Exit criteria:** Cantrip can load an MCP server from a YAML config, route
 its tools to subagents with category-scoped access, handle OAuth and
