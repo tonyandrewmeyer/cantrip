@@ -598,6 +598,37 @@ class TestStream:
         assert final[0].usage == {"prompt_tokens": 10, "completion_tokens": 5}
 
     @pytest.mark.asyncio
+    async def test_stream_handles_empty_choices_frame(self):
+        """A frame with ``"choices": []`` (e.g. usage-only) must not crash."""
+        provider = self._make_provider()
+
+        # Some OpenAI-compatible servers send a final frame with an empty
+        # choices list alongside usage; the streamer must cope.
+        sse_lines = [
+            'data: {"choices":[{"delta":{"content":"Hi"}}]}',
+            'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
+            "data: [DONE]",
+        ]
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.aiter_lines = MagicMock(return_value=_async_iter(sse_lines))
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        provider.client = MagicMock()
+        provider.client.stream = MagicMock(return_value=mock_resp)
+
+        chunks = []
+        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
+            chunks.append(chunk)
+
+        assert any(c.content == "Hi" for c in chunks)
+        final = [c for c in chunks if c.is_final]
+        assert len(final) == 1
+        assert final[0].usage == {"prompt_tokens": 3, "completion_tokens": 1}
+
+    @pytest.mark.asyncio
     async def test_stream_empty_usage_when_not_provided(self):
         """Usage is empty dict when the server doesn't include it."""
         provider = self._make_provider()

@@ -147,6 +147,34 @@ class TestCantripAgent:
         assert len(agent.state.messages) == 4
 
     @pytest.mark.asyncio
+    async def test_streaming_separates_tool_call_rounds(self):
+        """A separator is injected between rounds so sentences don't run together.
+
+        Without this, if round 1 ends with "Let me check." and round 2 starts
+        with "The result is X.", the streamed text collapses into
+        "Let me check.The result is X." — visible in the TUI.
+        """
+        tool_call = ToolCall(id="tc1", name="juju_status", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="Let me check.", tool_calls=[tool_call]),
+                Response(content="The result is active."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(
+            return_value=type("R", (), {"success": True, "output": "active", "error": None})()
+        )
+
+        chunks = []
+        async for chunk in agent.process_message_streaming("Show status"):
+            chunks.append(chunk)
+
+        # The joined stream must have visible separation between rounds.
+        joined = "".join(chunks)
+        assert "check.\n\nThe" in joined
+
+    @pytest.mark.asyncio
     async def test_max_tool_rounds_enforced(self):
         """Test that the tool loop stops after MAX_TOOL_ROUNDS."""
         tool_call = ToolCall(id="loop", name="juju_status", arguments={})

@@ -871,6 +871,12 @@ class CantripAgent:
                     )
                 self._persist_compaction_state()
 
+            # Separate this round's text from the previous round's, since
+            # each round is an independent LLM response with no leading
+            # whitespace — without this, sentences run together visually.
+            if response.content and not response.content[-1].isspace():
+                yield "\n\n"
+
             # Stream the next LLM call.
             messages = self._build_llm_messages(include_budget=True)
             accumulated = ""

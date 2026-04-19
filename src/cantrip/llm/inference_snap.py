@@ -467,8 +467,10 @@ class InferenceSnapProvider(LLMProvider):
                             "completion_tokens": chunk_usage.get("completion_tokens", 0),
                         }
 
-                    choice = data.get("choices", [{}])[0]
-                    delta = choice.get("delta", {})
+                    # Some frames (e.g. the usage-only final frame) carry an
+                    # empty choices list, so the list access must be guarded.
+                    choices = data.get("choices") or [{}]
+                    delta = choices[0].get("delta", {})
 
                     # Accumulate streamed tool calls.
                     for tc_delta in delta.get("tool_calls", []):
