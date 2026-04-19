@@ -18,6 +18,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **Memory export/import with sanitisation (Phase 43.4)** — closes Phase
+  43.  ``export_to_skill`` bundles memories as a discoverable SKILL.md
+  (frontmatter + ``## Memory: <title>`` sections); ``export_to_markdown``
+  produces a directory of one ``.md`` per memory.  ``import_from_path``
+  reads either format and merges into a target scope, skipping duplicates
+  unless ``overwrite=True``.  Both directions sanitise: charm paths are
+  replaced with ``<CHARM_PATH>`` (resolved + raw forms substituted), and
+  five conservative secret patterns are scrubbed (GitHub tokens, AWS
+  access keys, Bearer tokens, ``password=…`` assignments, Slack tokens).
+  ``ExportResult.redactions`` surfaces the count so the slash-command
+  response notes "(N secret redactions)" before the user shares.  Three
+  new ``/memory`` subcommands wire it into TUI and Web:
+  ``/memory export <name> <path> [scope]``,
+  ``/memory export-md <dir> [scope]``,
+  ``/memory import <path> [target_scope]``.  30 unit tests cover each
+  pattern, both export formats, round-trip imports, duplicate handling,
+  and the slash-command dispatchers.
+- **Memory slash commands (Phase 43.3)** — three user-facing memory
+  commands shared by TUI and Web: ``/memory [scope]`` lists,
+  ``/remember <kind> [scope] -- <title> -- <body>`` writes (the ` -- `
+  separator allows any punctuation in titles and bodies),
+  ``/forget <title> [scope]`` deletes (with shlex-quoted multi-word
+  titles, and refusing ambiguous deletes when the same title exists in
+  both scopes).  All three run inline (no LLM round) for instant
+  feedback.  Logic lives in ``cantrip.agent.memory_commands`` so both
+  surfaces share parsing and formatting.  22 unit tests.
 - **Memory auto-writer with citations, revalidation, TTL, and inline notices
   (Phase 43.2)** — Cantrip now opportunistically captures durable lessons
   from the conversation.  A user message that matches a conservative

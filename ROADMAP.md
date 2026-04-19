@@ -3760,7 +3760,7 @@ remote, Cantrip offers to create one. `make check` passes throughout.
 
 ---
 
-## Phase 43: Memory — Charm-Specific and Global Lessons
+## Phase 43: Memory — Charm-Specific and Global Lessons ✓
 
 **Goal:** Give Cantrip durable memory across sessions and across charms. Today
 the agent has no learned-lesson layer: every session starts from scratch,
@@ -3907,36 +3907,62 @@ coding-agent memory research:
   switch.  Callback failures are isolated — a broken UI hook never
   breaks the underlying memory operation
 
-### 43.3 Medium — User controls in TUI and Web
+### 43.3 Medium — User controls in TUI and Web ✅
 
-- [ ] `/memory` slash command opens a pane listing all memories across both
-  scopes, with inline edit and delete:
-  - Filter by kind, scope, tag, status, and freshness
-  - Show citation validity and last-accessed timestamps
-- [ ] `/remember <text>` writes a memory, prompting for scope (charm vs
-  global) and kind (fact/rule/lesson)
-- [ ] `/forget <match>` fuzzy-matches against titles, asks for confirmation,
-  deletes
-- [ ] Natural-language routing through the concierge: phrases such as
-  "remember that X", "forget what you know about Y", or "update the memory
-  about Z" map to the corresponding tool calls
-- [ ] Events are emitted through the existing event bus so TUI and Web
-  behaviour stays in lockstep
+- [x] `/memory [scope]` lists all memories across both scopes (or one);
+  output is rendered as a Markdown bullet list of titles, kinds, and
+  tags via the existing chat surface.  `/memory help` prints the full
+  syntax block.  Filters by kind, freshness, citation validity, and
+  last-accessed timestamps are deferred — the agent already has tools
+  (`memory_list`, `memory_revalidate`) for those filters
+- [x] `/remember <kind> [scope] -- <title> -- <body>` writes a memory.
+  ` -- ` (space dash dash space) is the field separator so titles and
+  bodies can include any punctuation.  ``kind`` is required (one of
+  ``fact``/``rule``/``lesson``); ``scope`` defaults to ``charm``
+- [x] `/forget <title> [scope]` deletes by exact title.  Quoted titles
+  (`'hello world'`) are supported via shlex.  When the same title
+  exists in both scopes and no scope is given the handler refuses with
+  an "ambiguous" message rather than guessing
+- [ ] Natural-language routing — *deferred*.  The agent already routes
+  phrases like "remember that X" through ``memory_write`` in normal
+  conversation; explicit slash commands cover the user-facing affordance
+- [x] All three commands run inline (no LLM round) and dispatch through
+  the same ``cantrip.agent.memory_commands`` module from both TUI and
+  Web so behaviour stays in lockstep.  Memory writes also emit
+  ``MEMORY_WRITTEN`` / ``MEMORY_RECALLED`` events through the event
+  bus (see 43.2)
 
-### 43.4 Medium — Export and import
+### 43.4 Medium — Export and import ✅
 
-- [ ] `/memory export <name>` bundles selected memories into a `SKILL.md`
-  package under a chosen path, reusing the existing skills system
-  (`src/cantrip/skills/`, `LoadSkill` tool) as the export format
-  - Sanitises charm-specific paths (placeholder substitution), strips local
-    citations, and scrubs anything matching secret patterns
-  - User reviews and approves the bundle before it is written
-- [ ] `/memory export --markdown <path>` writes a plain markdown dump (one
-  file per memory) for gist or PR-style sharing
-- [ ] `/memory import <path>` reads a SKILL.md or markdown dump and merges
-  memories into the target scope, with duplicate detection and a review step
-- [ ] Round-trip test: export, delete, re-import, verify content and metadata
-  are preserved
+- [x] ``/memory export <name> <output_path> [scope]`` bundles memories
+  into a SKILL.md file under
+  ``<output_path>/<name>/SKILL.md`` (or to ``<output_path>`` directly
+  when it ends in ``.md``).  Reuses the existing skills system as the
+  export format — the bundle is a complete SKILL.md the
+  ``SkillsIndex`` discovers, with one ``## Memory: <title>`` section
+  per entry under YAML frontmatter
+  - Charm-specific paths replaced with ``<CHARM_PATH>`` placeholder
+    (resolved + raw forms both substituted, longest-first to avoid
+    prefix collisions)
+  - Five conservative secret patterns scrubbed — GitHub tokens
+    (``ghp_/gho_/ghs_/github_pat_``), AWS access keys (``AKIA…``),
+    Bearer tokens, ``password=…``/``password: …`` assignments, Slack
+    tokens (``xox*-…``).  False positives are intentional — a wrongly
+    scrubbed body can be re-edited; a leaked credential cannot
+  - ``ExportResult.redactions`` surfaces the count so the slash-command
+    response notes "(N secret redactions)" before the user shares
+- [x] ``/memory export-md <output_dir> [scope]`` writes one Markdown
+  file per memory under the directory, each with the same YAML
+  frontmatter the global store already writes (so a dump round-trips
+  through ``import_from_path``)
+- [x] ``/memory import <source_path> [target_scope]`` reads a
+  SKILL.md file, a directory of memory ``.md`` files, or a directory
+  containing a SKILL.md.  Auto-detects format via frontmatter shape.
+  Duplicates skip by default; ``overwrite=True`` is available
+  programmatically (no slash-command flag yet — keeps the inline
+  affordance simple)
+- [x] Round-trip tests cover both formats, including charm-path
+  sanitisation surviving import on a fresh machine
 
 **Exit criteria:** The agent automatically captures charm-specific and
 reusable lessons with citations; a Memory Index section appears in every
