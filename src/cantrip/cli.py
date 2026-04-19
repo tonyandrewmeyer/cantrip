@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import sys
+from collections.abc import Callable, Sequence
 
 from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
@@ -46,6 +47,79 @@ Available commands:
   /mcp            List configured MCP servers (run `/mcp help` for subcommands)
   exit, quit      Exit Cantrip
 """
+
+
+# CLI-native verbs that live outside the shared dispatcher — ``/tasks`` and
+# ``/status`` render Rich tables and so can't flow through ``slash_commands``.
+_CLI_ONLY_VERBS: tuple[str, ...] = ("/tasks", "/status")
+
+
+def _cli_slash_verbs() -> tuple[str, ...]:
+    """Return every slash verb the CLI REPL accepts, sorted for display.
+
+    Drives Tab-completion — verbs surface in the order Python's
+    :mod:`readline` cycles through them.  Aliases (``?``) are excluded
+    because readline treats them as independent tokens anyway.
+    """
+    shared = tuple(cmd.verb for cmd in slash_commands.COMMAND_CATALOGUE)
+    return tuple(sorted({*shared, *_CLI_ONLY_VERBS}, key=str.lower))
+
+
+def _make_slash_completer(
+    verbs: Sequence[str],
+) -> Callable[[str, int], str | None]:
+    """Return a :mod:`readline`-compatible completer for slash verbs.
+
+    readline invokes the completer repeatedly — ``(text, 0)`` for the
+    first completion, ``(text, 1)`` for the next, and so on until the
+    callable returns ``None``.  We return the Nth catalogue verb whose
+    prefix (case-insensitively) matches *text*, which is exactly what
+    readline wants.  Non-slash tokens return ``None`` straight away so
+    the default filename completion doesn't kick in on plain chat text.
+    """
+    frozen = tuple(verbs)
+
+    def _completer(text: str, state: int) -> str | None:
+        if not text.startswith("/"):
+            return None
+        prefix = text.lower()
+        matches = [v for v in frozen if v.lower().startswith(prefix)]
+        if state < 0 or state >= len(matches):
+            return None
+        return matches[state]
+
+    return _completer
+
+
+def _install_slash_completer(verbs: Sequence[str]) -> None:
+    """Wire Tab-completion for slash verbs into Python's readline, if available.
+
+    readline is POSIX-only and only works when ``input()`` is called on
+    an interactive terminal — on non-TTY stdin the completer is still
+    registered but never fires, which is the right no-op behaviour.
+    A missing ``readline`` module (Windows, stripped containers) or an
+    import failure makes this a silent no-op rather than an error; the
+    CLI still works, just without Tab-completion.
+
+    ``set_completer_delims`` is narrowed to whitespace so the ``/``
+    character stays inside the token being completed — the default
+    delimiters include ``/``, which would hand the completer ``"cost"``
+    instead of ``"/cost"``.
+    """
+    try:
+        import readline
+    except ImportError:
+        return
+
+    readline.set_completer(_make_slash_completer(verbs))
+    readline.set_completer_delims(" \t\n")
+    # GNU readline and libedit spell the same binding differently.  Most
+    # Linux systems (including Cantrip's snap) ship GNU readline, but
+    # macOS's system Python defaults to libedit — support both.
+    if "libedit" in (readline.__doc__ or ""):
+        readline.parse_and_bind("bind ^I rl_complete")
+    else:
+        readline.parse_and_bind("tab: complete")
 
 
 def _print_preflight_event(event: PreflightEvent) -> None:
@@ -128,6 +202,11 @@ async def _spinner(label: str | list[str] = "Thinking") -> None:
 
 async def _repl(agent: CantripAgent) -> None:
     """Run the interactive read-eval-print loop."""
+    # Tab-completes slash verbs against the shared catalogue plus the
+    # CLI-native ``/tasks`` and ``/status``.  No-op if readline isn't
+    # available (non-POSIX, stripped containers) or stdin isn't a TTY.
+    _install_slash_completer(_cli_slash_verbs())
+
     # Load prior session state if it exists.
     if agent.load_state():
         summary = agent.build_resume_summary()

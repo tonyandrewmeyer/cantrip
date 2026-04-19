@@ -6006,7 +6006,7 @@ as modal dialogs (focus moves in, is trapped, is restored on close).
 
 ---
 
-## Phase 61: Slash-Command Autocomplete in the TUI
+## Phase 61: Slash-Command Autocomplete in the TUI ✓
 
 **Goal:** Let users discover and complete slash commands as they type.
 Typing ``/c`` should surface ``/cost`` as a suggestion; Tab accepts the
@@ -6054,7 +6054,7 @@ intercept).
 
 ### 61.4 CLI parity (stretch)
 
-- [ ] In the CLI REPL, wire Readline completion for the same verb
+- [x] In the CLI REPL, wire Readline completion for the same verb
   list so ``/c<Tab>`` completes to ``/cost`` there too.  Depends on
   61.3 (shared catalogue).  Separate from the TUI change so it can
   land in a later PR.

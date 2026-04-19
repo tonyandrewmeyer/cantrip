@@ -15,6 +15,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   so the popup covers TUI-native verbs too. A unit test asserts the
   catalogue covers every verb the dispatcher handles, guarding
   against drift when new verbs land.
+- **Slash-command Tab-completion in the CLI** — the REPL now wires
+  Python's ``readline`` against the same catalogue (plus the CLI-only
+  ``/tasks`` and ``/status`` verbs).  Typing ``/c`` and pressing Tab
+  completes to ``/cost``; cycling through multiple matches via Tab
+  works as usual.  Gracefully no-ops on systems without ``readline``
+  (Windows, stripped containers) and picks the right parse-bind syntax
+  for GNU readline vs. libedit.
 
 ### Fixed
 - **Gemini rate-limit errors show the retry hint and quota kind** —

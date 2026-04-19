@@ -75,6 +75,95 @@ class TestPrintPreflightEvent:
         assert "ok" in out
 
 
+class TestSlashCompleter:
+    """``_make_slash_completer`` drives CLI Tab-completion for slash verbs."""
+
+    def _verbs(self) -> tuple[str, ...]:
+        """Canonical verb tuple — mirrors ``_cli_slash_verbs`` ordering."""
+        return cli._cli_slash_verbs()
+
+    def test_completer_returns_matches_in_order(self) -> None:
+        completer = cli._make_slash_completer(self._verbs())
+        # ``/c`` matches exactly ``/cost``.
+        assert completer("/c", 0) == "/cost"
+        assert completer("/c", 1) is None
+
+    def test_completer_is_case_insensitive(self) -> None:
+        completer = cli._make_slash_completer(self._verbs())
+        assert completer("/HELP", 0) == "/help"
+
+    def test_completer_exposes_all_matches_across_states(self) -> None:
+        """Several verbs start with ``/``, so state 0..N-1 yields each once."""
+        completer = cli._make_slash_completer(self._verbs())
+        results: list[str | None] = []
+        for state in range(len(self._verbs()) + 1):
+            results.append(completer("/", state))
+        assert None in results  # Terminates.
+        verbs_returned = [r for r in results if r is not None]
+        # Every catalogued verb is reachable via Tab-cycling from ``/``.
+        assert set(verbs_returned) == set(self._verbs())
+
+    def test_completer_ignores_plain_text(self) -> None:
+        """Non-slash input should not be completed (no filename fallback)."""
+        completer = cli._make_slash_completer(self._verbs())
+        assert completer("hello", 0) is None
+        assert completer("", 0) is None
+
+    def test_completer_unknown_prefix_returns_none(self) -> None:
+        completer = cli._make_slash_completer(self._verbs())
+        assert completer("/zzznope", 0) is None
+
+    def test_completer_handles_negative_state(self) -> None:
+        """Defensive: readline shouldn't ever pass a negative state, but if
+        it did the completer must not IndexError."""
+        completer = cli._make_slash_completer(self._verbs())
+        assert completer("/c", -1) is None
+
+    def test_cli_slash_verbs_include_shared_and_cli_only(self) -> None:
+        """``/tasks`` and ``/status`` are CLI-native; they must appear too."""
+        verbs = cli._cli_slash_verbs()
+        shared = {cmd.verb for cmd in cli.slash_commands.COMMAND_CATALOGUE}
+        assert shared <= set(verbs)
+        assert "/tasks" in verbs
+        assert "/status" in verbs
+
+    def test_install_is_noop_when_readline_unavailable(self) -> None:
+        """A missing readline module must not raise."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _no_readline(name, *args, **kwargs):
+            if name == "readline":
+                raise ImportError("simulated")
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch("builtins.__import__", side_effect=_no_readline):
+            cli._install_slash_completer(("/help",))  # Must not raise.
+
+    def test_install_wires_readline_when_available(self) -> None:
+        """Happy path: the installer hands the completer to ``readline``."""
+        fake_readline = mock.MagicMock()
+        fake_readline.__doc__ = "GNU readline stub"
+        with mock.patch.dict("sys.modules", {"readline": fake_readline}):
+            cli._install_slash_completer(cli._cli_slash_verbs())
+
+        fake_readline.set_completer.assert_called_once()
+        (completer_arg,), _ = fake_readline.set_completer.call_args
+        # The callable that was registered should actually complete ``/c``.
+        assert completer_arg("/c", 0) == "/cost"
+        fake_readline.set_completer_delims.assert_called_once_with(" \t\n")
+        fake_readline.parse_and_bind.assert_called_once_with("tab: complete")
+
+    def test_install_uses_libedit_binding_when_detected(self) -> None:
+        """macOS stock Python links libedit; the bind syntax differs."""
+        fake_readline = mock.MagicMock()
+        fake_readline.__doc__ = "This module is based on libedit."
+        with mock.patch.dict("sys.modules", {"readline": fake_readline}):
+            cli._install_slash_completer(("/help",))
+        fake_readline.parse_and_bind.assert_called_once_with("bind ^I rl_complete")
+
+
 class TestOnBusTaskEvent:
     def test_writes_status_line(self, capsys: pytest.CaptureFixture[str]) -> None:
         event = ui_events.task_updated(
