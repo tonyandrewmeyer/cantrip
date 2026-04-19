@@ -164,6 +164,10 @@ class MCPClient:
                 raise MCPConfigError(
                     f"server {self._config.name!r}: stdio transport requires `command`"
                 )
+            if self._config.oauth is not None:
+                raise MCPConfigError(
+                    f"server {self._config.name!r}: `oauth` is only valid for the http transport"
+                )
         elif self._config.transport == TransportKind.HTTP:
             if not self._config.url:
                 raise MCPConfigError(
@@ -173,6 +177,35 @@ class MCPClient:
             raise MCPConfigError(
                 f"server {self._config.name!r}: unknown transport {self._config.transport!r}"
             )
+
+    def _build_oauth_provider(self) -> Any:
+        """Construct the SDK's ``OAuthClientProvider`` when ``oauth`` is set.
+
+        Returns ``None`` when the server doesn't use OAuth.  Wires our
+        :class:`FileTokenStorage` so refresh tokens persist across
+        sessions; redirect/callback handlers come from
+        :mod:`cantrip.mcp.oauth`.  Tests override this method to inject
+        a fake auth provider without spinning up the live OAuth flow.
+        """
+        from cantrip.mcp.oauth import (
+            build_client_metadata,
+            make_callback_handler,
+            make_redirect_handler,
+        )
+        from cantrip.mcp.token_storage import FileTokenStorage
+
+        if self._config.oauth is None or self._config.url is None:
+            return None
+        from mcp.client.auth import OAuthClientProvider
+
+        return OAuthClientProvider(
+            server_url=self._config.url,
+            client_metadata=build_client_metadata(self._config.oauth),
+            storage=FileTokenStorage(self._config.name),
+            redirect_handler=make_redirect_handler(),
+            callback_handler=make_callback_handler(self._config.oauth.redirect_port),
+            client_metadata_url=self._config.oauth.client_metadata_url,
+        )
 
     async def _run(self) -> None:
         """Background task body — owns the transport and session lifetime.
@@ -196,10 +229,12 @@ class MCPClient:
                 async with stdio_client(params) as (read, write):
                     await self._serve(ClientSession, read, write)
             else:
+                auth = self._build_oauth_provider()
                 async with streamablehttp_client(
                     self._config.url or "",
                     headers=dict(self._config.headers) or None,
                     timeout=self._config.timeout_seconds,
+                    auth=auth,
                 ) as (read, write, _get_session_id):
                     await self._serve(ClientSession, read, write)
         except BaseException as exc:  # noqa: BLE001 - capture for the start() waiter

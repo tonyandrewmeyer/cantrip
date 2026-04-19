@@ -15,6 +15,29 @@ class TransportKind(enum.StrEnum):
 
 
 @dataclass(frozen=True)
+class OAuthConfig:
+    """Per-server OAuth 2.1 configuration (Phase 45.4b).
+
+    Used only when an HTTP MCP server requires OAuth.  The MCP SDK
+    handles the protocol details — PKCE, token exchange, RFC 9728
+    Protected Resource Metadata discovery — so this dataclass mostly
+    captures Cantrip-specific UX knobs.
+
+    ``redirect_port`` is the localhost port Cantrip binds for the
+    OAuth callback; pick a port unlikely to clash with other tools on
+    the dev machine.  ``client_metadata_url`` lets ops point Cantrip
+    at a published metadata document (RFC 9728) rather than relying on
+    dynamic client registration — required by some servers that don't
+    support DCR.
+    """
+
+    client_name: str = "cantrip"
+    scopes: list[str] = field(default_factory=list)
+    redirect_port: int = 9876
+    client_metadata_url: str | None = None
+
+
+@dataclass(frozen=True)
 class ServerConfig:
     """Declarative description of one MCP server.
 
@@ -35,6 +58,8 @@ class ServerConfig:
     # HTTP fields
     url: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
+    # Optional OAuth 2.1 config — HTTP transport only.
+    oauth: OAuthConfig | None = None
     # Common
     timeout_seconds: float = 30.0
     # Tool allowlist — names exactly as the server reports them.  An
@@ -64,6 +89,7 @@ class MCPToolInfo:
 
 __all__ = [
     "MCPToolInfo",
+    "OAuthConfig",
     "ServerConfig",
     "TransportKind",
 ]

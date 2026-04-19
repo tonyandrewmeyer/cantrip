@@ -27,7 +27,7 @@ from cantrip.mcp.exceptions import (
 )
 from cantrip.mcp.registry import MCPRegistry, ServerSnapshot, ServerStatus
 from cantrip.mcp.token_storage import FileTokenStorage
-from cantrip.mcp.types import MCPToolInfo, ServerConfig
+from cantrip.mcp.types import MCPToolInfo, OAuthConfig, ServerConfig
 
 __all__ = [
     "REPO_CONFIG_FILENAME",
@@ -40,6 +40,7 @@ __all__ = [
     "MCPInvocationError",
     "MCPRegistry",
     "MCPToolInfo",
+    "OAuthConfig",
     "ServerConfig",
     "ServerSnapshot",
     "ServerStatus",

@@ -36,7 +36,7 @@ from typing import Any
 import yaml
 
 from cantrip.mcp.exceptions import MCPConfigError
-from cantrip.mcp.types import ServerConfig, TransportKind
+from cantrip.mcp.types import OAuthConfig, ServerConfig, TransportKind
 
 log = logging.getLogger(__name__)
 
@@ -167,6 +167,8 @@ def _parse_server(name: str, spec: dict[str, Any], *, source: Path) -> ServerCon
             raise MCPConfigError(f"server {name!r} in {source}: `url` must be a string")
         url = url_raw
 
+    oauth = _parse_oauth(spec.get("oauth"), name=name, source=source)
+
     config = ServerConfig(
         name=name,
         transport=transport,
@@ -176,6 +178,7 @@ def _parse_server(name: str, spec: dict[str, Any], *, source: Path) -> ServerCon
         cwd=cwd,
         url=url,
         headers=headers,
+        oauth=oauth,
         timeout_seconds=float(timeout),
         allowed_tools=allowed_tools,
     )
@@ -185,7 +188,50 @@ def _parse_server(name: str, spec: dict[str, Any], *, source: Path) -> ServerCon
         raise MCPConfigError(f"server {name!r} in {source}: stdio transport requires `command`")
     if transport == TransportKind.HTTP and not config.url:
         raise MCPConfigError(f"server {name!r} in {source}: http transport requires `url`")
+    if oauth is not None and transport != TransportKind.HTTP:
+        raise MCPConfigError(
+            f"server {name!r} in {source}: `oauth` is only valid for the http transport"
+        )
     return config
+
+
+def _parse_oauth(value: Any, *, name: str, source: Path) -> OAuthConfig | None:
+    """Parse the optional ``oauth:`` block.  Returns ``None`` when absent."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise MCPConfigError(
+            f"server {name!r} in {source}: `oauth` must be a mapping, got {type(value).__name__}"
+        )
+    client_name_raw = value.get("client_name", "cantrip")
+    if not isinstance(client_name_raw, str) or not client_name_raw.strip():
+        raise MCPConfigError(
+            f"server {name!r} in {source}: `oauth.client_name` must be a non-empty string"
+        )
+    scopes = _string_list(value.get("scopes"), name=name, key="oauth.scopes", source=source)
+    redirect_port_raw = value.get("redirect_port", 9876)
+    if not isinstance(redirect_port_raw, int) or isinstance(redirect_port_raw, bool):
+        raise MCPConfigError(
+            f"server {name!r} in {source}: `oauth.redirect_port` must be an integer"
+        )
+    if not (1 <= redirect_port_raw <= 65535):
+        raise MCPConfigError(
+            f"server {name!r} in {source}: `oauth.redirect_port` must be between 1 and 65535"
+        )
+    metadata_url_raw = value.get("client_metadata_url")
+    metadata_url: str | None = None
+    if metadata_url_raw is not None:
+        if not isinstance(metadata_url_raw, str):
+            raise MCPConfigError(
+                f"server {name!r} in {source}: `oauth.client_metadata_url` must be a string"
+            )
+        metadata_url = metadata_url_raw
+    return OAuthConfig(
+        client_name=client_name_raw.strip(),
+        scopes=scopes,
+        redirect_port=redirect_port_raw,
+        client_metadata_url=metadata_url,
+    )
 
 
 def _string_list(value: Any, *, name: str, key: str, source: Path) -> list[str]:
