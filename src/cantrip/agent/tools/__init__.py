@@ -97,6 +97,7 @@ from cantrip.agent.tools.memory import (
     MemoryReadTool,
     MemoryRevalidateTool,
     MemorySearchTool,
+    MemorySweepTool,
     MemoryUpdateTool,
     MemoryWriteTool,
     build_memory_tools,
@@ -413,6 +414,7 @@ __all__ = [
     "MemoryReadTool",
     "MemoryRevalidateTool",
     "MemorySearchTool",
+    "MemorySweepTool",
     "MemoryUpdateTool",
     "MemoryWriteTool",
     # Skills

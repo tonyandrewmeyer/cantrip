@@ -130,6 +130,27 @@ class CitationCheck:
     reason: str
 
 
+# Default soft-expiry window — memories that have neither been accessed
+# nor revalidated within this many days are archived by a sweep.  Taken
+# from Phase 43.2's spec; override per-call or via ``CANTRIP_MEMORY_SOFT_EXPIRY_DAYS``.
+DEFAULT_SOFT_EXPIRY_DAYS = 60
+
+
+@dataclass(frozen=True)
+class SweepResult:
+    """Summary of a TTL sweep pass.
+
+    ``archived`` lists the ``(scope, title)`` pairs that moved from
+    ``active`` to ``archived`` on this sweep; ``kept`` is the count of
+    active entries left untouched.  The ``cutoff`` timestamp is what the
+    sweep used to decide staleness, handy for surfacing in UI.
+    """
+
+    archived: list[tuple[str, str]]
+    kept: int
+    cutoff: str
+
+
 @dataclass(frozen=True)
 class RevalidationResult:
     """Outcome of revalidating a single memory's citations.
@@ -219,6 +240,57 @@ def _maybe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _resolve_soft_expiry() -> int:
+    """Return the soft-expiry window in days, honouring ``CANTRIP_MEMORY_SOFT_EXPIRY_DAYS``.
+
+    An invalid or non-positive env value falls back to the default so a
+    misconfiguration never disables expiry silently.
+    """
+    raw = os.environ.get("CANTRIP_MEMORY_SOFT_EXPIRY_DAYS")
+    if raw is None:
+        return DEFAULT_SOFT_EXPIRY_DAYS
+    try:
+        parsed = int(raw)
+    except ValueError:
+        log.warning("Ignoring non-integer CANTRIP_MEMORY_SOFT_EXPIRY_DAYS=%r", raw)
+        return DEFAULT_SOFT_EXPIRY_DAYS
+    if parsed <= 0:
+        log.warning("Ignoring non-positive CANTRIP_MEMORY_SOFT_EXPIRY_DAYS=%s", parsed)
+        return DEFAULT_SOFT_EXPIRY_DAYS
+    return parsed
+
+
+def _parse_iso(value: str | None) -> datetime.datetime | None:
+    """Best-effort ISO-8601 parse; returns naive datetimes as UTC-aware."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.UTC)
+    return parsed
+
+
+def _is_stale(entry: MemoryEntry, cutoff: datetime.datetime) -> bool:
+    """Return True when the memory's most recent touch is older than ``cutoff``.
+
+    Checks ``last_accessed_at`` and ``last_validated_at`` (falling back to
+    ``created_at`` when either is missing).  A memory is stale only when
+    *both* signals are older than the cutoff — one recent touch keeps it
+    alive.  An entry with no parseable timestamps at all is treated as
+    fresh so a corrupt row never gets silently archived.
+    """
+    accessed = _parse_iso(entry.last_accessed_at) or _parse_iso(entry.created_at)
+    validated = _parse_iso(entry.last_validated_at) or _parse_iso(entry.created_at)
+    if accessed is None and validated is None:
+        return False
+    if accessed is not None and accessed >= cutoff:
+        return False
+    return not (validated is not None and validated >= cutoff)
 
 
 class GlobalMemoryStore:
@@ -753,6 +825,37 @@ class MemoryManager:
             results.append(self.revalidate(scope=entry.scope, title=entry.title))
         return results
 
+    # ── TTL sweep ───────────────────────────────────────────────────────
+
+    def sweep_stale(
+        self,
+        *,
+        scope: str | None = None,
+        soft_days: int | None = None,
+        now: datetime.datetime | None = None,
+    ) -> SweepResult:
+        """Archive active memories whose last touch is older than the threshold.
+
+        A memory is stale when ``last_accessed_at`` *and* ``last_validated_at``
+        (falling back to ``created_at`` when either is missing) are older
+        than ``soft_days`` days.  Only ``active`` entries are considered so
+        the sweep is idempotent — already-archived and quarantined memories
+        are left alone.
+        """
+        threshold = soft_days if soft_days is not None else _resolve_soft_expiry()
+        reference = now or datetime.datetime.now(datetime.UTC)
+        cutoff_dt = reference - datetime.timedelta(days=threshold)
+        cutoff = cutoff_dt.replace(microsecond=0).isoformat()
+        archived: list[tuple[str, str]] = []
+        kept = 0
+        for entry in self.list_entries(scope=scope, status="active"):
+            if _is_stale(entry, cutoff_dt):
+                self.update(scope=entry.scope, title=entry.title, status="archived")
+                archived.append((entry.scope, entry.title))
+            else:
+                kept += 1
+        return SweepResult(archived=archived, kept=kept, cutoff=cutoff)
+
     # ── Prompt injection ────────────────────────────────────────────────
 
     def render_prompt_index(self) -> str:
@@ -820,6 +923,7 @@ def _row_to_entry(row: dict[str, object]) -> MemoryEntry:
 
 
 __all__ = [
+    "DEFAULT_SOFT_EXPIRY_DAYS",
     "INDEX_FILENAME",
     "MEMORY_INDEX_MAX_LINES",
     "VALID_KINDS",
@@ -830,6 +934,7 @@ __all__ = [
     "MemoryManager",
     "MemoryScopeError",
     "RevalidationResult",
+    "SweepResult",
     "sha_for_range",
     "slugify_title",
     "validate_citation",

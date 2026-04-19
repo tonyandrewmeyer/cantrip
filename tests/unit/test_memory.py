@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from cantrip.agent.memory import (
+    DEFAULT_SOFT_EXPIRY_DAYS,
     INDEX_FILENAME,
     MEMORY_INDEX_MAX_LINES,
     GlobalMemoryStore,
@@ -785,3 +787,193 @@ class TestMemoryRevalidateTool:
         assert "1 clean" in result.output
         assert "1 newly quarantined" in result.output
         assert "drifted" in result.output
+
+
+# ── TTL sweep ──────────────────────────────────────────────────────────
+
+
+class TestMemorySweep:
+    """TTL sweep archives stale memories without touching quarantined/archived."""
+
+    def _age_entry(self, store: SessionStore, title: str, days: int) -> None:
+        """Shift a charm-scope memory's access/validate timestamps N days into the past."""
+        past = (
+            (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days))
+            .replace(microsecond=0)
+            .isoformat()
+        )
+        row = store.get_memory_by_title(title)
+        assert row is not None
+        store._conn.execute(  # type: ignore[union-attr]
+            "UPDATE memory SET last_accessed_at = ?, last_validated_at = ?, "
+            "created_at = ?, updated_at = ? WHERE id = ?",
+            (past, past, past, past, row["id"]),
+        )
+        store._conn.commit()  # type: ignore[union-attr]
+
+    def test_sweep_default_threshold(self, manager: MemoryManager, store: SessionStore) -> None:
+        manager.write(scope="charm", title="old", kind="fact", body="x")
+        manager.write(scope="charm", title="new", kind="fact", body="y")
+        self._age_entry(store, "old", DEFAULT_SOFT_EXPIRY_DAYS + 5)
+        result = manager.sweep_stale()
+        assert ("charm", "old") in result.archived
+        assert result.kept == 1
+        stale_entry = manager.read(title="old", scope="charm")
+        assert stale_entry is not None
+        assert stale_entry.status == "archived"
+        fresh = manager.read(title="new", scope="charm")
+        assert fresh is not None
+        assert fresh.status == "active"
+
+    def test_sweep_respects_custom_threshold(
+        self, manager: MemoryManager, store: SessionStore
+    ) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="x")
+        self._age_entry(store, "t", 10)
+        # Threshold 30 days: not stale yet.
+        keep_result = manager.sweep_stale(soft_days=30)
+        assert keep_result.archived == []
+        # Threshold 5 days: now stale.
+        archive_result = manager.sweep_stale(soft_days=5)
+        assert ("charm", "t") in archive_result.archived
+
+    def test_sweep_leaves_quarantined_alone(
+        self, manager: MemoryManager, store: SessionStore, tmp_path: Path
+    ) -> None:
+        # Write a memory with a broken citation and quarantine it.
+        manager.write(
+            scope="charm",
+            title="bad",
+            kind="lesson",
+            body="b",
+            citations=[{"path": str(tmp_path / "missing.py"), "sha": "deadbeef"}],
+        )
+        manager.revalidate(scope="charm", title="bad")
+        self._age_entry(store, "bad", DEFAULT_SOFT_EXPIRY_DAYS + 10)
+        result = manager.sweep_stale()
+        assert result.archived == []
+        entry = manager.read(title="bad", scope="charm")
+        assert entry is not None
+        assert entry.status == "quarantined"
+
+    def test_sweep_idempotent(self, manager: MemoryManager, store: SessionStore) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="x")
+        self._age_entry(store, "t", DEFAULT_SOFT_EXPIRY_DAYS + 5)
+        first = manager.sweep_stale()
+        assert len(first.archived) == 1
+        # Second pass: nothing to archive, since status is now 'archived'.
+        second = manager.sweep_stale()
+        assert second.archived == []
+        assert second.kept == 0
+
+    def test_sweep_global_scope(
+        self, manager: MemoryManager, global_store: GlobalMemoryStore
+    ) -> None:
+        manager.write(scope="global", title="g", kind="fact", body="x")
+        # Age the frontmatter of the global file.
+        path = global_store._path_for("g")
+        raw = path.read_text()
+        past = (
+            (
+                datetime.datetime.now(datetime.UTC)
+                - datetime.timedelta(days=DEFAULT_SOFT_EXPIRY_DAYS + 5)
+            )
+            .replace(microsecond=0)
+            .isoformat()
+        )
+        raw = raw.replace("created: ", f"last_accessed: {past}\nlast_validated: {past}\ncreated: ")
+        # Also shift the created line so fallback is old too.
+        import re
+
+        raw = re.sub(r"created: .+", f"created: {past}", raw)
+        raw = re.sub(r"updated: .+", f"updated: {past}", raw)
+        path.write_text(raw)
+        result = manager.sweep_stale()
+        assert ("global", "g") in result.archived
+        entry = manager.read(title="g", scope="global")
+        assert entry is not None
+        assert entry.status == "archived"
+
+    def test_env_override(
+        self,
+        manager: MemoryManager,
+        store: SessionStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="x")
+        self._age_entry(store, "t", 10)
+        monkeypatch.setenv("CANTRIP_MEMORY_SOFT_EXPIRY_DAYS", "5")
+        result = manager.sweep_stale()
+        assert ("charm", "t") in result.archived
+
+    def test_env_override_invalid_falls_back_to_default(
+        self,
+        manager: MemoryManager,
+        store: SessionStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A corrupt env var must not silently disable expiry — falls back to 60 days."""
+        manager.write(scope="charm", title="t", kind="fact", body="x")
+        self._age_entry(store, "t", 10)
+        monkeypatch.setenv("CANTRIP_MEMORY_SOFT_EXPIRY_DAYS", "not-a-number")
+        result = manager.sweep_stale()
+        assert result.archived == []  # 60-day default keeps it.
+
+    def test_env_override_non_positive_falls_back(
+        self,
+        manager: MemoryManager,
+        store: SessionStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="x")
+        self._age_entry(store, "t", 10)
+        monkeypatch.setenv("CANTRIP_MEMORY_SOFT_EXPIRY_DAYS", "0")
+        result = manager.sweep_stale()
+        assert result.archived == []
+
+
+class TestMemorySweepTool:
+    """The memory_sweep tool wraps the manager method."""
+
+    @pytest.fixture
+    def tools(self, manager: MemoryManager) -> dict[str, object]:
+        from cantrip.agent.tools.memory import build_memory_tools
+
+        return {t.name: t for t in build_memory_tools(manager)}
+
+    @pytest.mark.asyncio
+    async def test_happy_path(
+        self,
+        tools: dict[str, object],
+        manager: MemoryManager,
+        store: SessionStore,
+    ) -> None:
+        manager.write(scope="charm", title="old", kind="fact", body="x")
+        past = (
+            (
+                datetime.datetime.now(datetime.UTC)
+                - datetime.timedelta(days=DEFAULT_SOFT_EXPIRY_DAYS + 5)
+            )
+            .replace(microsecond=0)
+            .isoformat()
+        )
+        row = store.get_memory_by_title("old")
+        assert row is not None
+        store._conn.execute(  # type: ignore[union-attr]
+            "UPDATE memory SET last_accessed_at = ?, last_validated_at = ?, "
+            "created_at = ? WHERE id = ?",
+            (past, past, past, row["id"]),
+        )
+        store._conn.commit()  # type: ignore[union-attr]
+
+        result = await tools["memory_sweep"].execute()  # type: ignore[attr-defined]
+        assert result.success
+        assert "1 archived" in result.output
+        assert "archived: old" in result.output
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_soft_days(self, tools: dict[str, object]) -> None:
+        bad = await tools["memory_sweep"].execute(soft_days="huh")  # type: ignore[attr-defined]
+        assert not bad.success
+        neg = await tools["memory_sweep"].execute(soft_days=-1)  # type: ignore[attr-defined]
+        assert not neg.success

@@ -447,6 +447,65 @@ class MemoryRevalidateTool(_MemoryToolBase):
         return ToolResult(success=True, output="\n".join(detail_lines))
 
 
+class MemorySweepTool(_MemoryToolBase):
+    """Archive memories that haven't been accessed or validated recently."""
+
+    @property
+    def name(self) -> str:
+        return "memory_sweep"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Archive memories that haven't been accessed or validated recently.  "
+            "By default anything whose last touch is older than 60 days is moved "
+            "from 'active' to 'archived', so the prompt index stays focused on "
+            "recent material.  Already-archived and quarantined memories are "
+            "untouched.  Pass `soft_days` to override the threshold for this call."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "enum": _SCOPE_ENUM,
+                    "description": "Optional scope filter.",
+                },
+                "soft_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "Staleness threshold in days.  Defaults to 60 (or the "
+                        "CANTRIP_MEMORY_SOFT_EXPIRY_DAYS environment variable)."
+                    ),
+                },
+            },
+        }
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        """Archive memories whose last touch is older than the threshold."""
+        scope = kwargs.get("scope")
+        soft_days = kwargs.get("soft_days")
+        if soft_days is not None:
+            try:
+                soft_days = int(soft_days)
+            except (TypeError, ValueError):
+                return ToolResult(success=False, output="", error="soft_days must be an integer")
+            if soft_days <= 0:
+                return ToolResult(success=False, output="", error="soft_days must be positive")
+        result = self._manager.sweep_stale(scope=scope, soft_days=soft_days)
+        lines = [
+            f"Swept memories: {len(result.archived)} archived, "
+            f"{result.kept} kept active (cutoff {result.cutoff})"
+        ]
+        for entry_scope, title in result.archived:
+            lines.append(f"  → archived: {title} ({entry_scope})")
+        return ToolResult(success=True, output="\n".join(lines))
+
+
 class MemoryForgetTool(_MemoryToolBase):
     """Delete a memory by title."""
 
@@ -501,6 +560,7 @@ def build_memory_tools(manager: MemoryManager) -> list[Tool]:
         MemoryWriteTool(manager),
         MemoryUpdateTool(manager),
         MemoryRevalidateTool(manager),
+        MemorySweepTool(manager),
         MemoryForgetTool(manager),
     ]
 
@@ -511,6 +571,7 @@ __all__ = [
     "MemoryReadTool",
     "MemoryRevalidateTool",
     "MemorySearchTool",
+    "MemorySweepTool",
     "MemoryUpdateTool",
     "MemoryWriteTool",
     "build_memory_tools",
