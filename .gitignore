@@ -58,11 +58,14 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Cantrip session data
+# Cantrip session data (the SQLite DB plus its -shm / -wal sidecars)
 .cantrip
+.cantrip-shm
+.cantrip-wal
 
-# Claude Code local worktrees (experimental branches)
+# Claude Code local worktrees (experimental branches) and runtime locks
 .claude/worktrees/
+.claude/*.lock
 
 # Charms built during development
 *.charm
