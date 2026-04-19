@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Subagent unit tests reorganised** — the monolithic
+  ``tests/unit/test_subagent.py`` (1621 lines, 120 tests) split into
+  seven per-concern files under ``tests/unit/subagent/`` mirroring
+  the ``tests/unit/charmlint/``, ``tests/unit/quickpack/``,
+  ``tests/unit/executor/``, and ``tests/unit/planner/`` layouts:
+  ``test_context.py`` (SubagentContext / SubagentResult / exit
+  signalling), ``test_helpers.py`` (filter / select-provider /
+  tools-for-llm / parse-exit-state / truncate), ``test_prompt.py``
+  (prompt builder, task instruction, research / design / red-green /
+  commit / self-verification / demo guidance), ``test_run.py``
+  (Subagent.run / retry / tool execution / max rounds / phase
+  reporting), ``test_concurrency.py``, ``test_throttle.py``, and
+  ``test_allowlists.py`` (per-category tool allowlists).  Shared
+  helpers (``_make_tool``, ``_make_context``) moved to
+  ``tests/unit/subagent/conftest.py``.  Each file ≤419 lines; no
+  test content changed.  Phase 57.7 advances (three of four files
+  done).
 - **Planner unit tests reorganised** — the monolithic
   ``tests/unit/test_planner.py`` (1706 lines, 152 tests) split into
   nine per-concern files under ``tests/unit/planner/`` mirroring the

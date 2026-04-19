@@ -5673,7 +5673,19 @@ Four unit-test files top 1500 lines:
   PlanFromDay2Findings), ``test_operability.py`` (operability
   assessment + fixes), and ``test_tool.py`` (PlanTasksTool).  All
   152 tests still pass; each file ≤283 lines
-- [ ] ``tests/unit/test_subagent.py`` (1542 lines)
+- [x] ``tests/unit/test_subagent.py`` (1621 lines) — split by
+  concern into ``tests/unit/subagent/``: ``test_context.py``
+  (SubagentContext / SubagentResult / exit signalling),
+  ``test_helpers.py`` (filter / select-provider / tools-for-llm /
+  parse-exit-state / truncate), ``test_prompt.py`` (prompt builder,
+  task instruction, research / design / red-green / commit /
+  self-verification / demo guidance), ``test_run.py`` (Subagent.run
+  / retry / tool execution / max rounds / phase reporting),
+  ``test_concurrency.py``, ``test_throttle.py``, and
+  ``test_allowlists.py`` (per-category tool allowlists).  Shared
+  helpers (``_make_tool``, ``_make_context``) moved to
+  ``tests/unit/subagent/conftest.py``.  All 120 tests still pass;
+  each file ≤419 lines
 - [ ] ``tests/unit/test_tools.py`` (1514 lines) — already a grab-bag;
   fold tests into per-tool files where one exists
 
