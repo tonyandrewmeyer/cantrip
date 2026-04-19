@@ -1183,12 +1183,16 @@ class CantripApp(App):
         chat.show_thinking()
         self.query_one("#status-bar", statusbar_widget.StatusBar).task_label = "⟳ Thinking..."
 
-        # Run agent processing in a background worker.
+        # Run agent processing in a background worker. ``exit_on_error=False``
+        # keeps the Textual app alive when the provider raises (e.g. a 429
+        # rate-limit error) — the ERROR branch of ``_on_agent_response_done``
+        # renders a chat message instead of the app exiting with a traceback.
         self._streaming_widget = None
         self.run_worker(
             self._process_agent_message(message),
             name="agent_response",
             exclusive=True,
+            exit_on_error=False,
         )
 
     async def _process_agent_message(self, message: str) -> None:
@@ -1345,9 +1349,7 @@ class CantripApp(App):
         elif event.state == WorkerState.ERROR:
             error = event.worker.error
             if isinstance(error, ProviderRateLimitError | ProviderOverloadedError):
-                chat.add_system_message(
-                    "Provider temporarily unavailable — please wait a moment and try again."
-                )
+                chat.add_system_message(f"Provider unavailable: {error}")
             else:
                 chat.add_system_message(f"Error: {error}")
             input_widget.disabled = False

@@ -211,6 +211,60 @@ class GeminiProvider(LLMProvider):
         return [genai_types.Tool(function_declarations=declarations)]
 
     @staticmethod
+    def _format_rate_limit_message(err: genai_errors.ClientError) -> str:
+        """Build a human-readable rate-limit message from a Gemini 429.
+
+        Gemini returns the structured error JSON inside ``err.details`` — the
+        outer ``message`` field is itself a JSON blob whose inner
+        ``error.message`` carries a "Please retry in …" hint, and the
+        ``QuotaFailure`` detail names the quota that was breached (per-minute,
+        per-day, …).  We surface both so the user can tell a transient
+        backoff from an exhausted daily quota.
+        """
+        fallback = "Gemini API rate limit exceeded. Please wait a moment and try again."
+        details = getattr(err, "details", None)
+        if not isinstance(details, dict):
+            return fallback
+        inner_message = details.get("message")
+        inner: dict[str, Any] = {}
+        if isinstance(inner_message, str):
+            try:
+                parsed = json.loads(inner_message)
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                inner = parsed.get("error") or {}
+
+        text = inner.get("message") if isinstance(inner, dict) else None
+        if not isinstance(text, str):
+            text = details.get("message") if isinstance(details.get("message"), str) else ""
+
+        retry_hint = ""
+        match = re.search(r"[Pp]lease retry in\s+(\S+)", text or "")
+        if match:
+            retry_hint = f" Retry in {match.group(1).rstrip('.')}."
+
+        quota_hint = ""
+        quota_metric = ""
+        for detail in (inner.get("details") or []) if isinstance(inner, dict) else []:
+            if not isinstance(detail, dict):
+                continue
+            for violation in detail.get("violations") or []:
+                if isinstance(violation, dict) and violation.get("quotaMetric"):
+                    quota_metric = str(violation["quotaMetric"])
+                    break
+            if quota_metric:
+                break
+        if "per_day" in quota_metric or "per_model_per_day" in quota_metric:
+            quota_hint = " (daily quota exhausted)"
+        elif "per_minute" in quota_metric:
+            quota_hint = " (per-minute quota)"
+
+        if retry_hint or quota_hint:
+            return f"Gemini API rate limit exceeded{quota_hint}.{retry_hint}".strip()
+        return fallback
+
+    @staticmethod
     def _collect_thought_parts(
         parts: list[Any],
     ) -> list[dict[str, str]]:
@@ -260,9 +314,7 @@ class GeminiProvider(LLMProvider):
             )
         except genai_errors.ClientError as e:
             if e.code == 429:
-                raise ProviderRateLimitError(
-                    "Gemini API rate limit exceeded. Please wait a moment and try again."
-                ) from e
+                raise ProviderRateLimitError(self._format_rate_limit_message(e)) from e
             raise ProviderError(f"Gemini API error: {e}") from e
         except genai_errors.ServerError as e:
             raise ProviderOverloadedError(
@@ -394,9 +446,7 @@ class GeminiProvider(LLMProvider):
                             yield Chunk(content=part.text)
         except genai_errors.ClientError as e:
             if e.code == 429:
-                raise ProviderRateLimitError(
-                    "Gemini API rate limit exceeded. Please wait a moment and try again."
-                ) from e
+                raise ProviderRateLimitError(self._format_rate_limit_message(e)) from e
             raise ProviderError(f"Gemini API error: {e}") from e
         except genai_errors.ServerError as e:
             raise ProviderOverloadedError(

@@ -319,6 +319,46 @@ class TestGeminiProviderComplete:
             await provider.complete(messages)
 
     @pytest.mark.asyncio
+    async def test_complete_rate_limit_surfaces_retry_hint(self):
+        """Per-day 429s include the retry delay and quota kind in the error."""
+        import json as _json
+
+        from google.genai import errors as genai_errors
+
+        provider, _ = _make_provider()
+        inner = {
+            "error": {
+                "code": 429,
+                "message": ("You exceeded your current quota... Please retry in 14h28m39.9s."),
+                "status": "RESOURCE_EXHAUSTED",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                        "violations": [
+                            {
+                                "quotaMetric": (
+                                    "generativelanguage.googleapis.com/"
+                                    "generate_requests_per_model_per_day"
+                                )
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+        response_json = {"message": _json.dumps(inner), "status": "Too Many Requests"}
+        error = genai_errors.ClientError(code=429, response_json=response_json)
+
+        provider._client.aio.models.generate_content = AsyncMock(side_effect=error)
+
+        with pytest.raises(ProviderRateLimitError) as excinfo:
+            await provider.complete([Message(role=Role.USER, content="Hi")])
+
+        message = str(excinfo.value)
+        assert "daily quota exhausted" in message
+        assert "14h28m39.9s" in message
+
+    @pytest.mark.asyncio
     async def test_complete_none_content_handled(self):
         """Test that a response with None candidate content does not crash."""
         provider, _ = _make_provider()
