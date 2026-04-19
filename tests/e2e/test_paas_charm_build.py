@@ -41,28 +41,30 @@ _FLASK = harness.CharmSpec(
     seed_files=seeds.FLASK,
 )
 
-# Django-framework charms block without a database integration — the
-# paas-charm extension deliberately sets BlockedStatus until the
-# operator wires one in.  That is a fully-installed, running charm,
-# not a failure, so the test accepts blocked alongside active.  A
-# stricter run would also deploy postgresql-k8s and relate it, but
-# that is out of scope for a "can we build and deploy" smoke test.
+# Django- and FastAPI-framework charms deliberately end up in a
+# non-active-but-installed state when the operator has not wired in
+# the missing pieces yet — a database for Django, a few config
+# options for FastAPI — and the precise status varies (``blocked``,
+# ``waiting`` or ``maintenance`` depending on which check fires
+# first).  Any of those means the install hook ran cleanly and the
+# charm is running ops; the only status that actually signals a build
+# regression is ``error``, which we continue to reject.  A stricter
+# run would deploy postgresql-k8s and relate it, but that is out of
+# scope for a "can we build and deploy" smoke test.
 _DJANGO = harness.CharmSpec(
     name="django-demo",
     profile="django-framework",
     substrate="k8s",
     seed_files=seeds.DJANGO,
-    acceptable_statuses=frozenset({"active", "blocked"}),
+    acceptable_statuses=frozenset({"active", "blocked", "waiting"}),
 )
 
-# FastAPI-framework charms block without a handful of configured
-# options (app-port, app module path) — same reasoning as Django.
 _FASTAPI = harness.CharmSpec(
     name="fastapi-demo",
     profile="fastapi-framework",
     substrate="k8s",
     seed_files=seeds.FASTAPI,
-    acceptable_statuses=frozenset({"active", "blocked"}),
+    acceptable_statuses=frozenset({"active", "blocked", "waiting"}),
 )
 
 # The Go path reuses an existing public OCI image rather than building a
