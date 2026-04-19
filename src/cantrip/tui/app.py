@@ -83,7 +83,6 @@ class CantripApp(App):
         model: str | None = None,
         charm_path: Path | None = None,
         light_model: str | None = None,
-        watcher: bool = False,
         max_concurrency: int | None = None,
         snap_name: str = "gemma3",
         light_snap_name: str | None = None,
@@ -108,7 +107,7 @@ class CantripApp(App):
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
         self._bootstrap_started = False
-        self._watcher_autostart = watcher
+        self._watcher_retry_timer: object | None = None
         self._session_start = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
         self._pending_confirm_id: str | None = None
         self._pending_pr_branch: str | None = None
@@ -190,8 +189,8 @@ class CantripApp(App):
         self._update_model_info()
         # Refresh model info periodically to pick up subagent token usage.
         self.set_interval(5.0, self._update_model_info)
-        if self._watcher_autostart:
-            self._start_watcher()
+        self._subscribe_watcher_events()
+        self._start_watcher()
         # Start issue triage if a GitHub remote is detected.
         if self._agent and self._agent.state.github_repo:
             self._agent.start_issue_triage()
@@ -492,6 +491,7 @@ class CantripApp(App):
         def _update() -> None:
             checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
             checklist.notify_changed(self._agent.work_queue.all_tasks())
+            self._refresh_subagent_status_bar()
 
             # Detect when a confirm task becomes blocked.
             payload = event.payload
@@ -1065,39 +1065,37 @@ class CantripApp(App):
 
     # -- Watcher integration --------------------------------------------------
 
-    def _start_watcher(self) -> None:
-        """Start the event watcher if possible.
-
-        Events are automatically routed to the task queue by the agent's
-        ``start_watcher`` method.  The TUI subscribes to ``WATCHER_EVENT``
-        on the bus to display chat notifications.
+    def _subscribe_watcher_events(self) -> None:
+        """Subscribe to watcher events so the panes update even if the
+        watcher starts later (e.g. once the agent provisions a model).
         """
         if not self._agent:
             return
-        chat = self.query_one("#chat", chat_widget.ChatWidget)
-        if not self._agent.state.dev_model:
-            chat.add_system_message(
-                "Cannot start watcher: no development model is set. "
-                "Deploy a charm first, then press F5 to start watching."
-            )
-            return
-
-        # Subscribe to watcher events via the bus.
         self._agent.event_bus.subscribe(
             ui_events.EventType.WATCHER_EVENT, self._on_bus_watcher_event
         )
-        # Subscribe to periodic status-poll ticks so the model panes
-        # populate on first poll even when no diff event fires.
         self._agent.event_bus.subscribe(
             ui_events.EventType.JUJU_STATUS_CHANGED, self._on_bus_juju_status
         )
 
+    def _start_watcher(self) -> None:
+        """Try to start the event watcher.
+
+        If no Juju model is available yet, schedule a periodic retry so
+        the watcher starts as soon as the agent provisions one.  Events
+        are automatically routed to the task queue by the agent's
+        ``start_watcher`` method.
+        """
+        if not self._agent or self._agent.watcher_running:
+            return
         started = self._agent.start_watcher()
         if started:
             self._update_status_bar_watcher()
-            chat.add_system_message("Watcher started — monitoring development model for events.")
-        else:
-            chat.add_system_message("Failed to start watcher.")
+            if self._watcher_retry_timer is not None:
+                self._watcher_retry_timer.stop()
+                self._watcher_retry_timer = None
+        elif self._watcher_retry_timer is None:
+            self._watcher_retry_timer = self.set_interval(5.0, self._start_watcher)
 
     async def _stop_watcher(self) -> None:
         """Stop the event watcher."""
@@ -1139,6 +1137,22 @@ class CantripApp(App):
             status_bar.watcher_status = "👁 Watching"
         else:
             status_bar.watcher_status = ""
+
+    def _refresh_subagent_status_bar(self) -> None:
+        """Mirror the currently-active subagent phase into the status bar.
+
+        Picks the first ACTIVE task with a live ``subagent_phase`` so
+        research/build activity is visible without having to expand the
+        task pane.  Cleared when no subagent is running.
+        """
+        if not self._agent:
+            return
+        status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
+        for task in self._agent.work_queue.all_tasks():
+            if task.status == TaskStatus.ACTIVE and task.subagent_phase:
+                status_bar.subagent_label = f"⟳ {task.title} · {task.subagent_phase}"
+                return
+        status_bar.subagent_label = ""
 
     def action_toggle_watcher(self) -> None:
         """Toggle the event watcher on or off."""
@@ -1219,6 +1233,11 @@ class CantripApp(App):
         input_widget.placeholder = "Waiting for response..."
         chat.show_thinking()
         self.query_one("#status-bar", statusbar_widget.StatusBar).task_label = "⟳ Thinking..."
+        # Surface a transient "Planning tasks…" row so the task pane
+        # isn't just the preflight group while the agent decides what
+        # to do.  Cleared once real tasks appear or the turn finishes.
+        checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
+        checklist.set_agent_activity("Planning tasks…")
 
         # Run agent processing in a background worker. ``exit_on_error=False``
         # keeps the Textual app alive when the provider raises (e.g. a 429
@@ -1355,6 +1374,9 @@ class CantripApp(App):
         # indicator may still be up if the stream yielded nothing.
         chat.hide_thinking()
         self.query_one("#status-bar", statusbar_widget.StatusBar).task_label = ""
+        self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget).set_agent_activity(
+            None
+        )
         streamed_content = self._streaming_widget.message.content if self._streaming_widget else ""
         self._streaming_widget = None
 

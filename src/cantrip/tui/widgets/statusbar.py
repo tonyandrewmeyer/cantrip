@@ -22,6 +22,7 @@ class StatusBar(Widget):
     """
 
     task_label: reactive[str] = reactive("", init=False)
+    subagent_label: reactive[str] = reactive("", init=False)
     cos_health: reactive[str] = reactive("", init=False)
     test_summary: reactive[str] = reactive("", init=False)
     watcher_status: reactive[str] = reactive("", init=False)
@@ -34,7 +35,13 @@ class StatusBar(Widget):
         """Rebuild the bar text from current reactive values."""
         segments = [
             s
-            for s in (self.task_label, self.cos_health, self.test_summary, self.watcher_status)
+            for s in (
+                self.task_label,
+                self.subagent_label,
+                self.cos_health,
+                self.test_summary,
+                self.watcher_status,
+            )
             if s
         ]
         text = "  ".join(segments)
@@ -44,5 +51,5 @@ class StatusBar(Widget):
     # Every reactive triggers the same refresh — watchers generated below.
 
 
-for _attr in ("task_label", "cos_health", "test_summary", "watcher_status"):
+for _attr in ("task_label", "subagent_label", "cos_health", "test_summary", "watcher_status"):
     setattr(StatusBar, f"watch_{_attr}", lambda self: self._refresh_content())

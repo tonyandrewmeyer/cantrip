@@ -88,11 +88,6 @@ def parse_args() -> argparse.Namespace:
         help="Port for the Web UI (default: 8471)",
     )
     run_parser.add_argument(
-        "--watcher",
-        action="store_true",
-        help=("Start the event watcher on launch (monitors dev model for changes)"),
-    )
-    run_parser.add_argument(
         "--concurrency",
         type=int,
         default=None,
@@ -316,7 +311,6 @@ def _run(args: argparse.Namespace) -> int:
             model=args.model,
             charm_path=charm_path,
             light_model=args.light_model,
-            watcher=args.watcher,
             max_concurrency=args.concurrency,
             snap_name=args.snap,
             light_snap_name=args.light_snap,

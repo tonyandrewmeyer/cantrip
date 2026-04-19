@@ -221,6 +221,20 @@ class TaskChecklistWidget(Widget):
         self._tasks_available_posted = False
         self._expanded_id: str | None = None
         self._expanded_groups: set[TaskCategory] = set()
+        self._agent_activity: str | None = None
+
+    def set_agent_activity(self, label: str | None) -> None:
+        """Show a transient agent-activity row (e.g. "Planning tasks…").
+
+        Thread-safe — safe to call from any thread.  Pass ``None`` to
+        clear the row.  The row is only rendered while the work queue
+        is empty, so it quietly gives way once real tasks appear.
+        """
+        with self._lock:
+            if self._agent_activity == label:
+                return
+            self._agent_activity = label
+            self._dirty = True
 
     def compose(self) -> ComposeResult:
         """Compose the initial layout."""
@@ -335,19 +349,39 @@ class TaskChecklistWidget(Widget):
         container = results.first(Vertical)
         container.remove_children()
 
-        has_content = bool(self._preflight_groups) or bool(self._tasks)
+        has_content = (
+            bool(self._preflight_groups) or bool(self._tasks) or bool(self._agent_activity)
+        )
 
         if not has_content:
             container.mount(Static("No tasks yet.", classes="task-empty"))
             return
 
-        # Render preflight groups first.
+        # Render preflight groups first.  When a group is fully green,
+        # collapse it to a single summary line so it stops monopolising
+        # the task pane.
+        _terminal_ok = {CheckStatus.PASSED, CheckStatus.SKIPPED}
         for group in self._preflight_groups:
+            if group.items and all(status in _terminal_ok for _, status in group.items):
+                container.mount(
+                    Static(
+                        f"\u2713 {group.title} \u00b7 ready",
+                        classes="task-row task-done task-collapsed",
+                    )
+                )
+                continue
             container.mount(Static(group.title, classes="task-header"))
             container.mount(Static("\u2500" * 20, classes="task-divider"))
             for label, status in group.items:
                 char, css_class = _CHECK_STATUS_DISPLAY.get(status, ("\u25cb", "task-pending"))
                 container.mount(Static(f"{char} {label}", classes=f"task-row {css_class}"))
+
+        # Show the transient agent-activity row while the work queue is
+        # still empty (e.g. "Planning tasks…" before plan_tasks runs).
+        if self._agent_activity and not self._tasks:
+            container.mount(
+                Static(f"\u27f3 {self._agent_activity}", classes="task-row task-active")
+            )
 
         # Render work queue tasks.
         if self._tasks:

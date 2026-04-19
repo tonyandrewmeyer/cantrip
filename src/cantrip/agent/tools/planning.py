@@ -123,7 +123,7 @@ class PlanTasksTool(Tool):
         # without the conversation LLM needing to set things up.
         if is_sprint(context):
             if not self._state.dev_model:
-                detected = _detect_current_juju_model()
+                detected = detect_current_juju_model()
                 if detected:
                     self._state.dev_model = detected
                     log.info("Sprint: auto-detected dev model '%s'", detected)
@@ -147,7 +147,7 @@ class PlanTasksTool(Tool):
         )
 
 
-def _detect_current_juju_model() -> str | None:
+def detect_current_juju_model() -> str | None:
     """Return the name of the currently active (starred) Juju model.
 
     Prefers the model marked as current (``*`` in ``juju models``).

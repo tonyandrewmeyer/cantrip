@@ -552,14 +552,40 @@ class TestTestResultsCapture:
 class TestWatcherIntegration:
     """Tests for watcher integration in CantripAgent."""
 
-    def test_start_watcher_requires_dev_model(self):
-        """start_watcher returns False without a dev_model."""
+    def test_start_watcher_requires_dev_model(self, monkeypatch):
+        """start_watcher returns False when no dev_model is available.
+
+        With no state.dev_model and no detectable Juju model, the
+        watcher has nothing to watch and the call is a no-op.
+        """
         provider = FakeProvider()
         agent = CantripAgent(provider=provider)
+        monkeypatch.setattr(
+            "cantrip.agent.core.detect_current_juju_model",
+            lambda: None,
+        )
 
         assert agent.start_watcher() is False
         assert not agent.watcher_running
         assert not agent.state.watcher_enabled
+
+    @pytest.mark.asyncio
+    async def test_start_watcher_auto_detects_dev_model(self, monkeypatch):
+        """start_watcher falls back to the current Juju model when state is empty."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        monkeypatch.setattr(
+            "cantrip.agent.core.detect_current_juju_model",
+            lambda: "detected-model",
+        )
+
+        result = agent.start_watcher()
+
+        assert result is True
+        assert agent.state.dev_model == "detected-model"
+        assert agent.watcher_running
+
+        await agent.stop_watcher()
 
     @pytest.mark.asyncio
     async def test_start_watcher_with_dev_model(self):

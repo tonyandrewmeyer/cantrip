@@ -61,6 +61,7 @@ from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import Tool, ToolResult, build_tools
+from cantrip.agent.tools.planning import detect_current_juju_model
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.llm import base as llm
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
@@ -1174,12 +1175,22 @@ class CantripAgent:
     ) -> bool:
         """Create and start the event watcher.
 
-        Returns ``False`` if no ``dev_model`` is set (the watcher requires a
-        development model to monitor).  Every watcher event is automatically
-        routed to the task queue before the external callback fires.
+        If ``state.dev_model`` is not set, falls back to the currently
+        active Juju model (from ``juju models``), so the panes populate
+        immediately when the user already has a model.  Returns ``False``
+        only when no model can be detected at all — callers may retry
+        later once the agent has provisioned one.  Every watcher event is
+        automatically routed to the task queue before the external
+        callback fires.
         """
+        if self._watcher is not None and self._watcher.running:
+            return True
         if not self.state.dev_model:
-            return False
+            detected = detect_current_juju_model()
+            if detected:
+                self.state.dev_model = detected
+            else:
+                return False
 
         def _auto_route(event: WatcherEvent) -> None:
             """Route the event to the task queue, then publish to the bus."""

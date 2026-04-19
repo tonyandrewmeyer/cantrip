@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Watcher is always on; dev model auto-detected** — removed the
+  ``--watcher`` CLI flag.  The TUI now subscribes to watcher events at
+  startup and tries to start the watcher immediately, falling back to
+  the currently-active Juju model (via ``juju models``) when
+  ``state.dev_model`` is still empty.  If no model exists yet, the TUI
+  retries every 5 seconds so the Dev / COS status panes populate as
+  soon as the agent provisions one — no more staying on
+  "Not connected" / "Not deployed" for the whole session.  ``F5`` now
+  pauses/resumes the already-running watcher.
+- **Task pane is more informative during initial research** — the
+  "Preparing environment" group collapses to a single
+  ``✓ Preparing environment · ready`` line once all checks pass, a
+  transient ``⟳ Planning tasks…`` row appears while the agent is
+  deciding what to do before ``plan_tasks`` runs, and the active
+  subagent's phase is mirrored into the status bar so live research
+  activity (``⟳ title · searching web``, etc.) is visible without
+  having to expand the task pane.
 - **Tools unit tests reorganised** — the monolithic
   ``tests/unit/test_tools.py`` (1739 lines) folded per-tool: the file-
   tool tests were dropped as duplicates of ``test_file_tools.py``

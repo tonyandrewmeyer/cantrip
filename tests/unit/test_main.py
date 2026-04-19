@@ -57,7 +57,6 @@ class TestParseArgs:
             "--model",
             "opus-4",
             "--no-tui",
-            "--watcher",
             "--concurrency",
             "5",
             "--theme",
@@ -67,7 +66,6 @@ class TestParseArgs:
         assert args.provider == "claude"
         assert args.model == "opus-4"
         assert args.no_tui is True
-        assert args.watcher is True
         assert args.concurrency == 5
         assert args.theme == "ubuntu"
 
