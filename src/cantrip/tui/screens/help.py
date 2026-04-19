@@ -89,7 +89,6 @@ class HelpScreen(ModalScreen):
                     "F7        Model info\n"
                     "F8        Integration graph\n"
                     "F9        Transcript\n"
-                    "/         Search chat (empty input only)\n"
                     "Ctrl+F    Search chat\n"
                     "Ctrl+L    Clear chat\n"
                     "Ctrl+C    Cancel operation\n"

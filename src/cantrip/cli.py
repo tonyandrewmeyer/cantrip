@@ -209,6 +209,9 @@ async def _repl(agent: CantripAgent) -> None:
                 except Exception as exc:  # noqa: BLE001 — surface any loader error
                     followup_text = f"_Error: marketplace lookup failed: {exc}_"
                 print(f"{followup_text}\n")
+            if shared_result.quit:
+                await _drain_executor(agent)
+                break
             continue
 
         spinner_label[0] = "Thinking"

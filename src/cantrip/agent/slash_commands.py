@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 
 SHARED_VERBS: frozenset[str] = frozenset(
-    {"/help", "?", "/memory", "/remember", "/forget", "/mcp", "/cost"}
+    {"/help", "?", "/memory", "/remember", "/forget", "/mcp", "/cost", "/quit", "/exit"}
 )
 
 
@@ -43,10 +43,15 @@ class SlashResult:
     set the caller should render ``text`` now, await the coroutine, and
     render its result when ready.  Callers MUST await or close the
     ``followup`` — leaving it unawaited warns.
+
+    ``quit`` signals that the surface should terminate after rendering
+    ``text``.  Surfaces that can cleanly shut down (CLI REPL, TUI) act
+    on it; the Web surface ignores it.
     """
 
     text: str
     followup: Awaitable[str] | None = None
+    quit: bool = False
 
 
 def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
@@ -81,6 +86,8 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=mcp_commands.handle_mcp(agent.mcp_registry, args))
     if verb == "/cost":
         return SlashResult(text=format_cost(agent))
+    if verb in {"/quit", "/exit"}:
+        return SlashResult(text="Goodbye!", quit=True)
     return None
 
 
@@ -97,7 +104,8 @@ def help_text() -> str:
         "- `/remember <kind> [scope] -- <title> -- <body>` — write a memory.\n"
         "- `/forget <title>` — delete a memory by title.\n"
         "- `/mcp` — list configured MCP servers. Run `/mcp help` for subcommands.\n"
-        "- `/cost` — show token usage and estimated cost."
+        "- `/cost` — show token usage and estimated cost.\n"
+        "- `/quit`, `/exit` — leave cantrip cleanly."
     )
 
 

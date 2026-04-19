@@ -225,31 +225,13 @@ class MessageWidget(Static):
 
 
 class ChatInput(Input):
-    """The chat input — subclassed so a leading ``/`` opens search.
+    """The chat input widget.
 
-    Pressing ``/`` when the input is empty posts a ``SearchRequested`` message
-    (which the app converts into an ``open search`` action).  If the input
-    already has text, ``/`` is inserted at the cursor as normal, so users can
-    still type paths like ``/etc/hosts`` mid-message.
+    Previously ``/`` on an empty input opened search, but that shortcut
+    swallowed the leading character of slash commands (``/help``,
+    ``/memory``, ``/feelings``, …) and made them unreachable from the TUI.
+    Search is now bound only to Ctrl+F; ``/`` is a normal character.
     """
-
-    class SearchRequested(Message):
-        """Posted when the user presses ``/`` in an empty chat input."""
-
-    async def _on_key(self, event) -> None:
-        """Intercept ``/`` (only) when the field is empty, otherwise defer.
-
-        ``Input`` consumes printable characters directly in ``_on_key`` —
-        which means the normal ``BINDINGS`` mechanism cannot see them — so
-        the interception has to happen here, before ``super()._on_key``
-        inserts the character.
-        """
-        if event.key == "slash" and not self.value:
-            event.stop()
-            event.prevent_default()
-            self.post_message(self.SearchRequested())
-            return
-        await super()._on_key(event)
 
 
 class SearchBar(Widget):
@@ -466,7 +448,7 @@ class ChatWidget(Widget):
         )
         scroll.mount(
             Static(
-                "F1 help  \u00b7  /help commands  \u00b7  Ctrl+C cancel",
+                "F1 help  \u00b7  /help commands  \u00b7  q quit",
                 classes="welcome-message welcome-footer",
             )
         )

@@ -154,17 +154,27 @@ async def test_ctrl_f_opens_search_bar():
 
 
 @pytest.mark.asyncio
-async def test_slash_opens_search_when_input_empty():
-    """``/`` in an empty chat input opens the search bar."""
+async def test_slash_in_empty_input_does_not_open_search():
+    """``/`` on an empty input no longer opens search.
+
+    Previously ``/`` opened search when the input was empty, which made
+    slash commands (``/help``, ``/memory``, ``/feelings``) unreachable
+    from the TUI because the leading character was swallowed.  ``/`` is
+    now just a regular character; Ctrl+F opens search.
+    """
+    from textual.widgets import Input
+
     p1, p2, _ = _patch_app()
     with p1, p2:
         async with CantripApp().run_test() as pilot:
             chat = pilot.app.query_one("#chat", ChatWidget)
+            chat_input = pilot.app.query_one("#chat-input", Input)
 
             await pilot.press("/")
             await pilot.pause()
 
-            assert chat.search_active
+            assert not chat.search_active
+            assert chat_input.value == "/"
 
 
 @pytest.mark.asyncio

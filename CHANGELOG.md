@@ -29,6 +29,12 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``/status``, ``/feelings``) stay on their original surface.
 
 ### Fixed
+- **Slash commands were unreachable in the TUI** — pressing ``/`` in an
+  empty chat input opened the search bar, which swallowed the leading
+  character so ``/help``, ``/memory``, ``/mcp``, ``/feelings`` (and now
+  ``/quit`` / ``/exit``) could never actually be typed.  The ``/``
+  shortcut for search is gone; Ctrl+F still opens search, and ``/`` is
+  now a normal character that starts a slash command.
 - **Preflight COS creation failed when the model already existed on a
   separate K8s controller** — when the current controller was IAAS
   (LXD) but ``cos`` already existed on a sibling K8s controller (e.g.
@@ -57,6 +63,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   empty-list frames are tolerated.
 
 ### Added
+- **``/quit`` and ``/exit`` slash commands** — both cleanly shut down
+  the CLI REPL and TUI (the TUI delays the exit by one refresh tick
+  so the goodbye message renders first).  ``SlashResult`` gained a
+  ``quit`` flag that surfaces honour.  The Web surface ignores the
+  flag — browser sessions aren't "quittable" in the same sense.
 - **Live subagent phase in the task pane** — every in-flight task now
   shows a dim secondary line under its pinned row reporting what the
   subagent is currently doing ("thinking" or "running:

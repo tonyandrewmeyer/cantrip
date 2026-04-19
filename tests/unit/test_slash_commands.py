@@ -103,6 +103,22 @@ class TestDispatch:
         assert result is not None
         assert "Forgot" in result.text
 
+    def test_quit_returns_quit_flag(self, memory_manager: MemoryManager) -> None:
+        result = dispatch(_fake_agent(memory_manager), "/quit")
+        assert result is not None
+        assert result.quit is True
+
+    def test_exit_returns_quit_flag(self, memory_manager: MemoryManager) -> None:
+        """``/exit`` is an alias for ``/quit``."""
+        result = dispatch(_fake_agent(memory_manager), "/exit")
+        assert result is not None
+        assert result.quit is True
+
+    def test_non_quit_commands_do_not_set_quit(self, memory_manager: MemoryManager) -> None:
+        result = dispatch(_fake_agent(memory_manager), "/help")
+        assert result is not None
+        assert result.quit is False
+
 
 class TestMcpDispatch:
     """The /mcp branch — sync vs. async marketplace follow-up."""

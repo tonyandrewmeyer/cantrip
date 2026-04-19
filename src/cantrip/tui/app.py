@@ -1229,6 +1229,10 @@ class CantripApp(App):
         chat.add_system_message(result.text)
         if result.followup is not None:
             self.run_worker(result.followup, name="mcp_marketplace", exclusive=False)
+        if result.quit:
+            # Schedule the exit after the current tick so the goodbye
+            # message has a chance to render before the app tears down.
+            self.call_after_refresh(self.exit)
         return True
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
@@ -1413,11 +1417,6 @@ class CantripApp(App):
         """Open the chat search bar."""
         chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.open_search()
-
-    def on_chat_input_search_requested(self, event: chat_widget.ChatInput.SearchRequested) -> None:
-        """Handle a leading ``/`` in the empty chat input by opening search."""
-        event.stop()
-        self.action_search_chat()
 
     def on_chat_widget_search_closed(self, event: chat_widget.ChatWidget.SearchClosed) -> None:
         """Return focus to the chat input when the search bar closes."""

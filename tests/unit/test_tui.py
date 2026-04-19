@@ -178,6 +178,43 @@ class TestTuiWidgets:
                 assert "github.com" in combined
 
     @pytest.mark.asyncio
+    async def test_slash_quit_exits_app(self):
+        """``/quit`` dispatches and schedules a clean app shutdown."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                exit_mock = MagicMock()
+                pilot.app.exit = exit_mock  # type: ignore[method-assign]
+                for ch in "/quit":
+                    await pilot.press(ch if ch != "/" else "slash")
+                await pilot.press("enter")
+                await pilot.pause()
+                exit_mock.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_slash_help_reaches_dispatcher(self):
+        """Typing ``/help`` + Enter dispatches the shared slash-command handler.
+
+        Regression: ``/`` used to open search on an empty input, which meant
+        slash commands could never be typed in the TUI.
+        """
+        p1, p2, _ = _patch_app()
+        with p1, p2, patch("cantrip.tui.app.slash_commands.dispatch") as dispatch:
+            from cantrip.agent.slash_commands import SlashResult
+
+            dispatch.return_value = SlashResult(text="slash-help-response")
+            async with CantripApp().run_test() as pilot:
+                for ch in "/help":
+                    await pilot.press(ch if ch != "/" else "slash")
+                await pilot.press("enter")
+                await pilot.pause()
+
+                dispatch.assert_called_once()
+                # The message handed to the dispatcher is the full /help verb.
+                _, args, _ = dispatch.mock_calls[0]
+                assert args[1] == "/help"
+
+    @pytest.mark.asyncio
     async def test_input_submission_adds_user_message(self):
         """Type text + enter creates a user message widget."""
         p1, p2, _ = _patch_app()
