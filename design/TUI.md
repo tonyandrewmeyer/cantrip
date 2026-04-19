@@ -345,3 +345,37 @@ class StatusBar(Widget):
 class ModelGraphWidget(Widget):
     """Visual representation of model topology (Phase 6)."""
 ```
+
+## Known terminal quirks
+
+### Brief "pp" flash on launch in some terminals
+
+On startup, Textual's Linux driver writes two DECRQM capability queries to the
+terminal — `\x1b[?2048$p` (in-band resize support) and `\x1b[?2026$p`
+(synchronized output / DECSU). See
+`textual/drivers/linux_driver.py` in the installed Textual package.
+
+`$` is a CSI intermediate byte and `p` is the final byte. A terminal emulator
+that doesn't recognise the `$ p` form parses `\x1b[?2048` as a no-op CSI
+sequence ending at the unrecognised intermediate, then prints the trailing
+`p` literally. Two queries → two stray `p` characters → users see a brief
+"pp" flash on an otherwise blank screen, *before* Textual paints its first
+frame.
+
+This is a terminal-emulator quirk, not a cantrip bug. Modern emulators
+(Kitty, WezTerm, recent iTerm2, foot, Alacritty, recent gnome-terminal)
+parse `$p` correctly and don't show it. Reports tend to come from older
+macOS Terminal, older tmux versions, and minimal serial consoles.
+
+Workarounds for affected users:
+
+- Update or switch the terminal emulator.
+- If running under tmux, upgrade tmux (older releases had this bug) or set
+  `set -g allow-passthrough on`.
+- As a last resort, monkey-patch Textual's `linux_driver` to skip the two
+  writes — but you lose in-band resize and synchronized-output detection,
+  so don't do this unless the flash is genuinely intolerable.
+
+This is a Textual upstream issue; if it becomes more visible we should
+file a report with a minimal repro rather than working around it in
+cantrip.
