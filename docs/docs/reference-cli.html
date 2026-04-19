@@ -45,6 +45,7 @@
     <ul>
       <li><a href="#run">cantrip run</a></li>
       <li><a href="#export-transcript">export-transcript</a></li>
+      <li><a href="#slash-commands">Slash commands</a></li>
       <li><a href="#env-vars">Environment variables</a></li>
       <li><a href="#session-file">Session file</a></li>
     </ul>
@@ -219,6 +220,112 @@ cantrip --help</code></pre>
       </dd>
     </dl>
 
+    <h2 id="slash-commands">Slash commands</h2>
+    <p>
+      Type these directly into the chat (TUI or Web) to drive features
+      that don&rsquo;t go through the LLM. Output renders as a system
+      message; the agent is not consulted.
+    </p>
+
+    <h3>Memory</h3>
+    <p>
+      Manage durable lessons across sessions. See
+      <a href="howto-memory.html">the memory how-to</a> for workflow.
+    </p>
+    <dl>
+      <dt><code>/memory [scope]</code></dt>
+      <dd>
+        List every remembered entry. <code>scope</code> is optional
+        (<code>charm</code> or <code>global</code>); omit to list both.
+      </dd>
+
+      <dt><code>/memory help</code></dt>
+      <dd>Print the full syntax block.</dd>
+
+      <dt>
+        <code>/remember &lt;kind&gt; [scope] -- &lt;title&gt; -- &lt;body&gt;</code>
+      </dt>
+      <dd>
+        Record a new memory. <code>kind</code> is <code>fact</code>,
+        <code>rule</code>, or <code>lesson</code>; <code>scope</code>
+        defaults to <code>charm</code>. The
+        <code>&nbsp;--&nbsp;</code> separator (space dash dash space)
+        lets titles and bodies contain any punctuation.
+      </dd>
+
+      <dt><code>/forget &lt;title&gt; [scope]</code></dt>
+      <dd>
+        Delete a memory by exact title. Quoted titles with whitespace
+        are supported. When the same title exists in both scopes the
+        handler refuses with an <em>ambiguous</em> message rather than
+        guessing.
+      </dd>
+
+      <dt><code>/memory export &lt;name&gt; &lt;output_path&gt; [scope]</code></dt>
+      <dd>
+        Bundle memories into a <code>SKILL.md</code> file at
+        <code>&lt;output_path&gt;/&lt;name&gt;/SKILL.md</code> (or
+        directly at <code>&lt;output_path&gt;</code> when it ends in
+        <code>.md</code>). Charm paths are replaced with
+        <code>&lt;CHARM_PATH&gt;</code> and obvious secrets
+        (GitHub/AWS tokens, Bearer, <code>password=</code>, Slack)
+        are scrubbed.
+      </dd>
+
+      <dt><code>/memory export-md &lt;output_dir&gt; [scope]</code></dt>
+      <dd>
+        Write one Markdown file per memory under the directory &mdash;
+        the companion format for gist or PR-style sharing.
+      </dd>
+
+      <dt><code>/memory import &lt;source_path&gt; [target_scope]</code></dt>
+      <dd>
+        Read a <code>SKILL.md</code> or a directory of memory
+        <code>.md</code> files and merge into the target scope
+        (<code>global</code> by default). Duplicates skip by default.
+      </dd>
+    </dl>
+
+    <h3>MCP (Model Context Protocol)</h3>
+    <p>
+      Inspect configured MCP servers and discover new ones from
+      marketplaces. See <a href="howto-mcp.html">the MCP how-to</a>
+      for configuration.
+    </p>
+    <dl>
+      <dt><code>/mcp</code></dt>
+      <dd>
+        List configured servers, their connection status, and the
+        tool count each exposes. Status markers: <code>[ok]</code>
+        connected, <code>[!!]</code> failed, <code>[--]</code>
+        stopped, <code>[..]</code> pending.
+      </dd>
+
+      <dt><code>/mcp help</code></dt>
+      <dd>Print the full syntax block.</dd>
+
+      <dt><code>/mcp tools &lt;server&gt;</code></dt>
+      <dd>
+        List every tool a named server advertises, with descriptions.
+        Tools appear to the agent as
+        <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>.
+      </dd>
+
+      <dt><code>/mcp marketplace</code></dt>
+      <dd>
+        List servers from configured marketplaces (read-only).
+        Descriptors include the install hint, required env vars, and
+        OAuth scopes. Cantrip never auto-installs &mdash; you copy the
+        descriptor into <code>cantrip.mcp.yaml</code> after reviewing
+        it.
+      </dd>
+
+      <dt><code>/mcp marketplace refresh</code></dt>
+      <dd>
+        Bypass the 24-hour cache and re-fetch every marketplace.
+      </dd>
+    </dl>
+
     <h2 id="env-vars">Environment variables</h2>
     <table>
       <thead>
@@ -234,6 +341,80 @@ cantrip --help</code></pre>
           <td><code>ANTHROPIC_API_KEY</code></td>
           <td><code>--provider claude</code></td>
           <td>Anthropic API key</td>
+        </tr>
+        <tr>
+          <td><code>CANTRIP_MEMORY_DIR</code></td>
+          <td>optional</td>
+          <td>
+            Override the global memory directory. Defaults to
+            <code>$XDG_CONFIG_HOME/cantrip/memory</code> (falls back to
+            <code>~/.config/cantrip/memory</code>).
+          </td>
+        </tr>
+        <tr>
+          <td><code>CANTRIP_MEMORY_SOFT_EXPIRY_DAYS</code></td>
+          <td>optional</td>
+          <td>
+            Days untouched before a memory is archived by
+            <code>memory_sweep</code>. Default <code>60</code>.
+            Non-integer or non-positive values log a warning and fall
+            back to the default.
+          </td>
+        </tr>
+        <tr>
+          <td><code>CANTRIP_MEMORY_HARD_EXPIRY_DAYS</code></td>
+          <td>optional</td>
+          <td>
+            Days archived before a memory is surfaced as a deletion
+            candidate by <code>memory_purge_check</code>. Default
+            <code>180</code>.
+          </td>
+        </tr>
+        <tr>
+          <td><code>CANTRIP_MCP_USER_CONFIG</code></td>
+          <td>optional</td>
+          <td>
+            Override the user-scope MCP config path. Defaults to
+            <code>~/.config/cantrip/mcp.yaml</code>.
+          </td>
+        </tr>
+        <tr>
+          <td><code>CANTRIP_MCP_TOKEN_DIR</code></td>
+          <td>optional</td>
+          <td>
+            Override the per-server OAuth token storage directory.
+            Defaults to <code>~/.config/cantrip/mcp_tokens/</code> at
+            <code>0700</code>, with token files at <code>0600</code>.
+          </td>
+        </tr>
+        <tr>
+          <td><code>CANTRIP_MCP_GPG_TOKENS</code></td>
+          <td>optional</td>
+          <td>
+            Set to <code>1</code>/<code>true</code>/<code>yes</code>/<code>on</code>
+            to encrypt OAuth tokens at rest with
+            <code>gpg --symmetric</code>. Requires a configured
+            <code>gpg-agent</code> so writes don&rsquo;t block.
+          </td>
+        </tr>
+        <tr>
+          <td><code>CANTRIP_MCP_MARKETPLACE_CACHE</code></td>
+          <td>optional</td>
+          <td>
+            Override the marketplace response cache directory.
+            Defaults to <code>~/.cache/cantrip/marketplaces/</code>;
+            24-hour TTL.
+          </td>
+        </tr>
+        <tr>
+          <td><code>CANTRIP_MAX_WORKTREES</code></td>
+          <td>optional</td>
+          <td>
+            Cap concurrent subagent worktrees under
+            <code>.cantrip-worktrees/&lt;task-id&gt;/</code>. Set to
+            <code>0</code> to disable worktree isolation entirely and
+            run every subagent in the main tree.
+          </td>
         </tr>
       </tbody>
     </table>

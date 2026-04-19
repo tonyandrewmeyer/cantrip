@@ -36,6 +36,8 @@ Status: active | 3 subagents working
 - **Day-2 aware**: Researches backup/restore, scaling, HA, upgrades, and security hardening after initial build
 - **Quickpack**: Ultra-fast local charm packing — 20-100x faster than `charmcraft pack`, skipping LXD, linting, and analysis. Optional Rust backend with ~50 ms startup for tight build-test loops
 - **Charm linting**: Standalone `charmlint` tool with 40+ deterministic rules across 12 categories. Optional Rust backend completes a full lint in under 30 ms
+- **Durable memory**: Persistent lessons across sessions and charms — user corrections are auto-captured as rules, hard-won workarounds become lessons with SHA-256 citations that self-quarantine when the source drifts. Manage with `/memory`, `/remember`, `/forget`
+- **MCP-extensible**: Plug in third-party tools via the Model Context Protocol — stdio or HTTP servers, OAuth 2.1, token storage, mid-task elicitation, and marketplace discovery
 - **Ecosystem showcase**: Juju, Charmcraft, Rockcraft, Ops, Jubilant, Concierge, Scenario, Showboat
 
 ## Installation
@@ -85,6 +87,23 @@ cantrip --theme ubuntu
 # Export a session transcript
 cantrip export-transcript /path/to/my-charm --format html --page-size 50
 ```
+
+In the chat itself, slash commands let you drive persistent memory and
+inspect configured MCP servers without leaving the conversation:
+
+```
+/memory                 # list every remembered lesson
+/remember lesson -- uv-lock-stale -- Run `uv lock` before charmcraft pack.
+/forget uv-lock-stale
+
+/mcp                    # list configured MCP servers and their status
+/mcp tools charmhub     # list tools a particular server exposes
+/mcp marketplace        # browse server catalogues you've subscribed to
+```
+
+See [`docs/docs/howto-memory.html`](docs/docs/howto-memory.html) and
+[`docs/docs/howto-mcp.html`](docs/docs/howto-mcp.html) for full
+workflows.
 
 ## Development
 

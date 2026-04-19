@@ -53,6 +53,8 @@
       <li><a href="#publishing">Publishing</a></li>
       <li><a href="#rockcraft">Rockcraft and OCI</a></li>
       <li><a href="#environment">Environment</a></li>
+      <li><a href="#memory">Memory</a></li>
+      <li><a href="#mcp">MCP-sourced tools</a></li>
       <li><a href="#internal">Internal</a></li>
     </ul>
   </aside>
@@ -241,6 +243,46 @@
         <tr><td><code>run_command</code></td><td>Run a shell command</td></tr>
       </tbody>
     </table>
+
+    <h2 id="memory">Memory</h2>
+    <p>
+      Durable learning tools. The agent calls these when the auto-writer
+      needs to persist a lesson, or when the user drives a
+      <code>/memory</code>, <code>/remember</code>, or
+      <code>/forget</code> slash command. See the
+      <a href="howto-memory.html">memory how-to</a> for workflow.
+    </p>
+    <table>
+      <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>memory_list</code></td><td>Summaries-only listing across charm + global scopes, filterable by kind/tag/status</td></tr>
+        <tr><td><code>memory_read</code></td><td>Load one memory&rsquo;s full body by title; charm-scope shadows global-scope when titles collide</td></tr>
+        <tr><td><code>memory_search</code></td><td>Case-insensitive substring search across titles and bodies</td></tr>
+        <tr><td><code>memory_write</code></td><td>Create or overwrite a memory (kind, scope, body, tags, citations)</td></tr>
+        <tr><td><code>memory_update</code></td><td>Partial update by title; any omitted field is left unchanged</td></tr>
+        <tr><td><code>memory_revalidate</code></td><td>Re-check citation SHAs and quarantine entries whose source has drifted</td></tr>
+        <tr><td><code>memory_sweep</code></td><td>Archive entries untouched for 60+ days (soft-expiry TTL)</td></tr>
+        <tr><td><code>memory_purge_check</code></td><td>Surface archived entries older than 180 days as deletion candidates</td></tr>
+        <tr><td><code>memory_forget</code></td><td>Permanently delete a memory</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="mcp">MCP-sourced tools</h2>
+    <p>
+      When servers are declared in <code>cantrip.mcp.yaml</code>,
+      Cantrip registers each of their tools with the qualified name
+      <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>. The agent calls
+      them exactly like a built-in tool; the MCP client handles the
+      wire protocol, OAuth, elicitation, and reconnects. The per-server
+      <code>allowed_tools</code> list in the YAML is the authoritative
+      gate on which names surface.
+    </p>
+    <p>
+      Since the set varies per deployment, they aren&rsquo;t listed
+      here &mdash; run <code>/mcp tools &lt;server&gt;</code> in the
+      chat to see what a connected server exposes. See the
+      <a href="howto-mcp.html">MCP how-to</a> for configuration.
+    </p>
 
     <h2 id="internal">Internal</h2>
     <p>
