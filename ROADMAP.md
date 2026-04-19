@@ -3840,38 +3840,72 @@ coding-agent memory research:
   system-prompt injection (absent/present, Jinja sanitisation, compact
   template, size-bounded)
 
-### 43.2 High — Auto-writer with citations and revalidation
+### 43.2 High — Auto-writer with citations and revalidation ✅
 
-- [ ] Auto-write triggers, implemented as a small writer subagent run
-  opportunistically by the conversation loop:
-  - After a tool failure followed by a successful retry with a different
-    approach → write a `lesson` (scope inferred: charm-specific when tied to
-    this charm's files, global when tied to a reusable technique)
-  - After the user corrects the agent's approach (detected via
-    conversation-loop heuristics and explicit user phrases) → write a `rule`
-  - After a non-trivial task completes → optionally summarise the approach
-    as a `fact`
-- [ ] Gating heuristic: the writer subagent must answer "would this save
-  ≥5 minutes of work next time?" with a concrete rationale before a memory
-  is persisted; below-threshold candidates are discarded
-- [ ] Citation capture: every auto-written memory stores the file paths, line
-  ranges, and content SHAs from the tool-call history of the triggering
-  round, so revalidation can check them later
-- [ ] Revalidation on recall:
-  - Before surfacing a memory, verify citations are still valid (file
-    exists, SHA within tolerance, or regex still matches)
-  - On mismatch, move the memory to `quarantined` status and exclude it
-    from the prompt-index rather than silently using stale guidance
-  - Expose a `memory_revalidate` tool the agent can invoke to bulk-revalidate
-    after large code changes
-- [ ] TTL policy:
-  - Soft expiry: when `last_accessed_at` and `last_validated_at` are both
-    older than 60 days, set `status = archived`
-  - Hard prompt: at 180 days archived, surface as a CONFIRM task
-    ("delete or refresh?")
-  - Defaults configurable via settings
-- [ ] Inline notices in TUI and Web when a memory is written or recalled,
-  mirroring Claude Code's pattern ("Wrote memory: …" / "Recalled memory: …")
+- [x] Auto-write triggers (one of three landed; the other two deferred):
+  - **User-correction trigger** (landed) — a conservative regex flags
+    sentence-initial "no/actually/wait/stop", "don't <verb>",
+    "that's wrong", "instead", "always/never <verb>", and similar
+    phrases.  Hits schedule the ``AutoWriter`` as a background task
+    after the conversation-loop response, so the user is not blocked.
+    Both ``process_message`` and ``process_message_streaming`` fire it
+  - **Tool-failure-retry trigger** — *deferred*.  Needs in-loop
+    tracking of "previous tool errored, current tool succeeded with
+    different args"; tracked as future work
+  - **Task-complete trigger** — *deferred*.  Needs executor integration
+    so a ``DONE`` task can fire the writer with the task's tool-call
+    log; tracked as future work
+- [x] Gating heuristic — the writer prompt enforces "would this save
+  ≥5 minutes of work next time?" with concrete-scenario rationale.  The
+  prompt explicitly lists examples that fail the bar (one-off typos,
+  generic best-practice advice, restating tool documentation) and
+  examples that pass (workarounds for non-obvious failure modes,
+  explicit user corrections, non-trivial design decisions).  Most
+  events correctly collapse to ``skip``
+- [x] Citation capture — ``collect_file_citations`` scans a tool-call
+  log for ``read_file``/``write_file``/``edit_file``/``multi_edit``
+  arguments and extracts the deduplicated set of real files.  Before
+  persisting, the auto-writer computes SHA-256 over each cited file
+  and attaches it as a ``{path, sha}`` citation so revalidation has a
+  baseline.  Unreadable paths are dropped silently rather than blocking
+  the write
+- [x] Revalidation:
+  - ``MemoryManager.revalidate(scope, title)`` re-reads each citation,
+    computes the current SHA, and quarantines the entry on any
+    mismatch (or missing file).  Recovery happens automatically when a
+    later revalidation passes
+  - The prompt index already filters to ``status='active'``, so
+    quarantined entries vanish from the system prompt instantly
+  - ``memory_revalidate`` agent tool drives both single-entry checks
+    and bulk scope sweeps with a clean/quarantined/recovered/failing
+    summary
+  - Citations without a stored ``sha`` degrade to existence-only
+    checks; relative paths resolve against the manager's
+    ``charm_path``
+- [x] TTL policy:
+  - Soft expiry — ``MemoryManager.sweep_stale(soft_days=60)`` archives
+    memories where ``last_accessed_at`` and ``last_validated_at`` (or
+    ``created_at`` as a fallback) are both older than the threshold.
+    Quarantined and already-archived entries are left alone, making the
+    sweep idempotent.  ``memory_sweep`` agent tool wraps it
+  - Hard prompt — ``MemoryManager.list_due_for_purge(hard_days=180)``
+    returns archived memories whose ``updated_at`` is older than the
+    hard threshold.  ``memory_purge_check`` tool surfaces them so the
+    agent can ask the user "delete or refresh?".  Full CONFIRM-task
+    auto-creation deferred to a follow-up
+  - Both thresholds configurable per call, plus
+    ``CANTRIP_MEMORY_SOFT_EXPIRY_DAYS`` and
+    ``CANTRIP_MEMORY_HARD_EXPIRY_DAYS`` env overrides with a
+    misconfig-safe fallback (non-integer or non-positive logs a warning
+    and uses the default rather than silently disabling expiry)
+- [x] Inline notices — new ``MEMORY_WRITTEN`` and ``MEMORY_RECALLED``
+  event types; ``MemoryManager`` exposes ``set_write_callback`` /
+  ``set_recall_callback`` so callers wire it however they want; the
+  ``CantripAgent`` forwards both to the event bus.  TUI chat widget
+  renders them as inline system messages ("Wrote rule memory: foo
+  (charm)"); the Web frontend handles them in the existing dispatch
+  switch.  Callback failures are isolated — a broken UI hook never
+  breaks the underlying memory operation
 
 ### 43.3 Medium — User controls in TUI and Web
 

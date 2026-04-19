@@ -18,6 +18,30 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **Memory auto-writer with citations, revalidation, TTL, and inline notices
+  (Phase 43.2)** — Cantrip now opportunistically captures durable lessons
+  from the conversation.  A user message that matches a conservative
+  correction regex (sentence-initial "no/actually/wait/stop", "don't
+  <verb>", "that's wrong", "instead", "always/never <verb>") schedules a
+  background ``AutoWriter`` LLM call after the response.  The writer's
+  prompt enforces a "would this save ≥5 minutes next time?" gate, so
+  most events correctly skip; clean proposals persist via
+  ``MemoryManager.write`` with SHA-256 citations harvested from recent
+  ``read_file``/``write_file``/``edit_file``/``multi_edit`` tool calls.
+  ``MemoryManager.revalidate`` re-reads each citation and quarantines
+  entries on drift; ``revalidate_all`` and ``memory_revalidate`` drive
+  bulk sweeps.  ``sweep_stale`` archives memories untouched for 60 days
+  (``CANTRIP_MEMORY_SOFT_EXPIRY_DAYS``); ``list_due_for_purge`` surfaces
+  candidates archived for 180 days (``CANTRIP_MEMORY_HARD_EXPIRY_DAYS``);
+  ``memory_sweep`` and ``memory_purge_check`` agent tools wrap both.
+  New ``MEMORY_WRITTEN`` / ``MEMORY_RECALLED`` event types emit on every
+  write or recall via callbacks on ``MemoryManager``, with TUI chat
+  rendering inline system messages and the Web frontend handling them
+  through the existing dispatch.  ~120 unit tests added (revalidation,
+  sweep, auto-writer JSON parsing, citation collection, correction
+  regex, callback isolation, end-to-end trigger fire).  The
+  tool-failure-retry and task-complete triggers, plus full CONFIRM-task
+  auto-creation at 180 days, are tracked as deferred follow-ups.
 - **Memory primitives and storage (Phase 43.1)** — Cantrip gains a
   learned-lesson layer with two complementary scopes.  Charm-scope memories
   live in a new `memory` table (schema v8) inside ``.cantrip``; global-scope
