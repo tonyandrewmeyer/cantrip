@@ -69,6 +69,26 @@ class TestPathAwareTool:
         resolved = tool._resolve_path("a/b/../../c")
         assert resolved == (tmp_path / "c").resolve()
 
+    @pytest.mark.asyncio
+    async def test_sibling_with_matching_prefix_blocked(self, tmp_path):
+        """A sibling directory whose name shares a prefix is rejected.
+
+        Guards against a string-prefix containment check: if the base is
+        ``/tmp/abc`` then ``/tmp/abc-evil/secret`` must not be allowed.
+        """
+        evil_dir = tmp_path.parent / (tmp_path.name + "-evil")
+        evil_dir.mkdir(exist_ok=True)
+        evil_file = evil_dir / "secret.txt"
+        evil_file.write_text("stolen")
+        try:
+            tool = ReadFileTool(base_path=tmp_path)
+            result = await tool.execute(path=str(evil_file))
+            assert not result.success
+            assert "outside" in result.error.lower()
+        finally:
+            evil_file.unlink(missing_ok=True)
+            evil_dir.rmdir()
+
 
 class TestReadFileTool:
     """Tests for ReadFileTool."""
@@ -210,6 +230,20 @@ class TestWriteFileTool:
 
         assert result.success is True
         assert "5" in result.output
+
+    @pytest.mark.asyncio
+    async def test_write_to_read_only_directory(self, tmp_path):
+        """Writing to a read-only directory reports an OS error."""
+        read_only = tmp_path / "readonly"
+        read_only.mkdir()
+        read_only.chmod(0o444)
+        try:
+            tool = WriteFileTool(base_path=read_only)
+            result = await tool.execute(path="file.txt", content="data")
+            assert not result.success
+            assert result.error
+        finally:
+            read_only.chmod(0o755)
 
 
 class TestListDirectoryTool:

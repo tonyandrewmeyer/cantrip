@@ -5686,8 +5686,22 @@ Four unit-test files top 1500 lines:
   helpers (``_make_tool``, ``_make_context``) moved to
   ``tests/unit/subagent/conftest.py``.  All 120 tests still pass;
   each file ≤419 lines
-- [ ] ``tests/unit/test_tools.py`` (1514 lines) — already a grab-bag;
-  fold tests into per-tool files where one exists
+- [x] ``tests/unit/test_tools.py`` (1739 lines) — folded per-tool:
+  the file-tool tests (TestReadFileTool / TestWriteFileTool /
+  TestListDirectoryTool / TestEditFileTool, ~16 tests) were
+  duplicates of ``test_file_tools.py`` and dropped, with the two
+  unique cases (sibling-prefix path attack;
+  ``test_write_to_read_only_directory``) lifted into
+  ``test_file_tools.py``.  Testing helpers (TestBuildPytestTarget,
+  TestParseCoverageTotal) folded into ``test_testing_tools.py``.
+  Concierge / provisioning tests moved to a new
+  ``test_environment_tools.py``.  Charm-tool tests split into a
+  ``tests/unit/charm_tools/`` subdirectory:
+  ``test_analyse_framework.py``, ``test_charmcraft_init.py``
+  (gitignore / ops-tracing / paas requirements / pre-commit
+  injection), ``test_charmcraft_pack.py``, and ``test_inject.py``
+  (coverage threshold + GitHub workflows).  All 160 tests still
+  pass; each file ≤546 lines.  Phase 57.7 complete
 
 Each target file ≤600 lines.
 

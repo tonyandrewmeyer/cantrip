@@ -10,6 +10,8 @@ import pytest
 from cantrip.agent.tools.testing import (
     GenerateTestsTool,
     RunCharmTestsTool,
+    _build_pytest_target,
+    _parse_coverage_total,
     _parse_pytest_summary,
     _truncate_output,
     generate_integration_tests,
@@ -441,3 +443,104 @@ class TestGenerateTestsTool:
 
         assert not result.success
         assert "not found" in result.error.lower()
+
+
+# ===================================================================
+# TestBuildPytestTarget
+# ===================================================================
+
+
+class TestBuildPytestTarget:
+    """Tests for _build_pytest_target — selective test execution."""
+
+    @pytest.fixture
+    def test_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td) / "tests" / "integration"
+            d.mkdir(parents=True)
+            (d / "test_deploy.py").write_text("def test_deploy(): pass\n")
+            (d / "test_relations.py").write_text("def test_db(): pass\n")
+            yield d
+
+    def test_no_pattern_returns_whole_directory(self, test_dir):
+        result = _build_pytest_target(test_dir, None)
+        assert result == [str(test_dir) + "/"]
+
+    def test_file_name_match(self, test_dir):
+        """Plain name matching an existing file resolves to that file."""
+        result = _build_pytest_target(test_dir, "test_deploy")
+        assert result == [str(test_dir / "test_deploy.py")]
+
+    def test_file_function_form(self, test_dir):
+        """file::function form resolves to pytest node ID."""
+        result = _build_pytest_target(test_dir, "test_deploy::test_smoke")
+        assert result == [f"{test_dir / 'test_deploy.py'}::test_smoke"]
+
+    def test_file_function_nonexistent_file_falls_back_to_k(self, test_dir):
+        """file::function with a missing file falls back to -k."""
+        result = _build_pytest_target(test_dir, "missing::test_foo")
+        assert result == [str(test_dir) + "/", "-k", "test_foo"]
+
+    def test_k_expression_with_or(self, test_dir):
+        """Boolean expressions with 'or' are passed to -k."""
+        result = _build_pytest_target(test_dir, "deploy or relation")
+        assert result == [str(test_dir) + "/", "-k", "deploy or relation"]
+
+    def test_k_expression_with_spaces(self, test_dir):
+        """Expressions with spaces are passed to -k."""
+        result = _build_pytest_target(test_dir, "test deploy")
+        assert result == [str(test_dir) + "/", "-k", "test deploy"]
+
+    def test_unknown_name_falls_back_to_k(self, test_dir):
+        """A name that doesn't match any file falls back to -k."""
+        result = _build_pytest_target(test_dir, "test_nonexistent")
+        assert result == [str(test_dir) + "/", "-k", "test_nonexistent"]
+
+    def test_file_name_with_py_suffix(self, test_dir):
+        """Handles .py suffix in file::function form gracefully."""
+        result = _build_pytest_target(test_dir, "test_deploy.py::test_smoke")
+        assert result == [f"{test_dir / 'test_deploy.py'}::test_smoke"]
+
+
+# ===================================================================
+# TestParseCoverageTotal
+# ===================================================================
+
+
+class TestParseCoverageTotal:
+    """Tests for _parse_coverage_total — coverage percentage extraction."""
+
+    def test_typical_coverage_report(self):
+        output = (
+            "Name             Stmts   Miss  Cover\n"
+            "------------------------------------\n"
+            "src/charm.py        50      5    90%\n"
+            "TOTAL              100     10    90%\n"
+        )
+        assert _parse_coverage_total(output) == 90
+
+    def test_zero_coverage(self):
+        output = "TOTAL    100    100    0%\n"
+        assert _parse_coverage_total(output) == 0
+
+    def test_full_coverage(self):
+        output = "TOTAL    100    0    100%\n"
+        assert _parse_coverage_total(output) == 100
+
+    def test_no_coverage_output(self):
+        output = "=== 5 passed in 0.3s ===\n"
+        assert _parse_coverage_total(output) is None
+
+    def test_embedded_in_tox_output(self):
+        """Coverage line buried in larger tox output is still found."""
+        output = (
+            "unit: commands[0]> coverage run ...\n"
+            "========= 10 passed in 1.2s =========\n"
+            "unit: commands[1]> coverage report\n"
+            "Name             Stmts   Miss  Cover\n"
+            "------------------------------------\n"
+            "src/charm.py        80      4    95%\n"
+            "TOTAL              200     10    95%\n"
+            "unit: OK\n"
+        )
+        assert _parse_coverage_total(output) == 95

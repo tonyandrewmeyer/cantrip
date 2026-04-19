@@ -5,6 +5,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Tools unit tests reorganised** — the monolithic
+  ``tests/unit/test_tools.py`` (1739 lines) folded per-tool: the file-
+  tool tests were dropped as duplicates of ``test_file_tools.py``
+  with the two unique cases (sibling-prefix path attack and
+  read-only-directory write) preserved by lifting them into
+  ``test_file_tools.py``; testing-helper tests
+  (TestBuildPytestTarget, TestParseCoverageTotal) folded into
+  ``test_testing_tools.py``; concierge / provisioning tests moved to
+  a new ``test_environment_tools.py``; charm-tool tests split into
+  ``tests/unit/charm_tools/`` (analyse framework, charmcraft init /
+  pack, inject coverage / workflows).  No production-code changes;
+  Phase 57.7 complete (all four oversized unit-test files now split
+  to ≤600-line per-concern modules; the M57 unit-test cleanup
+  milestone advances).
 - **Subagent unit tests reorganised** — the monolithic
   ``tests/unit/test_subagent.py`` (1621 lines, 120 tests) split into
   seven per-concern files under ``tests/unit/subagent/`` mirroring
