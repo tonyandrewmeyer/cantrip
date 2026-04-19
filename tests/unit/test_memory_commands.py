@@ -179,5 +179,54 @@ class TestHandleForget:
 
     def test_help_text_mentions_all_commands(self) -> None:
         text = memory_help_text()
-        for cmd in ("/memory", "/remember", "/forget"):
+        for cmd in ("/memory", "/remember", "/forget", "export", "import"):
             assert cmd in text
+
+
+# ── /memory export and /memory import ──────────────────────────────────
+
+
+class TestExportImportSlashCommands:
+    def test_export_dispatch(self, manager: MemoryManager, tmp_path: Path) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        out = handle_memory(
+            manager,
+            f"export my-bundle {tmp_path / 'out'}",
+        )
+        assert "Exported 1 memories" in out
+        assert (tmp_path / "out" / "my-bundle" / "SKILL.md").is_file()
+
+    def test_export_md_dispatch(self, manager: MemoryManager, tmp_path: Path) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        out = handle_memory(manager, f"export-md {tmp_path / 'dump'}")
+        assert "Exported 1 memories" in out
+        files = list((tmp_path / "dump").glob("*.md"))
+        assert len(files) == 1
+
+    def test_export_missing_args(self, manager: MemoryManager) -> None:
+        out = handle_memory(manager, "export")
+        assert "Error" in out
+        assert "expected" in out
+
+    def test_export_unknown_scope(self, manager: MemoryManager, tmp_path: Path) -> None:
+        out = handle_memory(manager, f"export b {tmp_path / 'out'} elsewhere")
+        assert "Error" in out
+        assert "unknown scope" in out
+
+    def test_import_round_trip(
+        self,
+        manager: MemoryManager,
+        tmp_path: Path,
+    ) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        handle_memory(manager, f"export b {tmp_path / 'out'}")
+        # Import into the same manager's global scope.
+        out = handle_memory(manager, f"import {tmp_path / 'out' / 'b' / 'SKILL.md'}")
+        assert "Imported 1 memories" in out
+        # And it landed in global, not charm (charm already had it).
+        assert manager.read(title="t", scope="global") is not None
+
+    def test_import_missing_source(self, manager: MemoryManager, tmp_path: Path) -> None:
+        out = handle_memory(manager, f"import {tmp_path / 'nope.md'}")
+        assert "Error" in out
+        assert "import failed" in out

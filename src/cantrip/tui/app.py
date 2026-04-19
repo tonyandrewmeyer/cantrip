@@ -1207,7 +1207,11 @@ class CantripApp(App):
         verb, _, args = message.partition(" ")
         manager = self._agent._memory_manager
         if verb == "/memory":
-            chat.add_system_message(memory_commands.handle_memory(manager, args))
+            chat.add_system_message(
+                memory_commands.handle_memory(
+                    manager, args, charm_path=self._agent.state.charm_path
+                )
+            )
             return True
         if verb == "/remember":
             chat.add_system_message(memory_commands.handle_remember(manager, args))

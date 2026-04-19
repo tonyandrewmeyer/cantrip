@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import re
 import shlex
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from cantrip.agent import memory_export
 from cantrip.agent.memory import VALID_KINDS, MemoryScopeError
 
 if TYPE_CHECKING:
@@ -37,6 +39,14 @@ def memory_help_text() -> str:
         "**Memory commands**\n\n"
         "- `/memory [scope]` — list memories.  `scope` is optional "
         "(`charm` or `global`); omit to list both.\n"
+        "- `/memory export <name> <output_path> [scope]` — bundle "
+        "memories into a SKILL.md file at `<output_path>/<name>/SKILL.md` "
+        "(or write to `<output_path>` directly when it ends in `.md`).\n"
+        "- `/memory export-md <output_dir> [scope]` — write one Markdown "
+        "file per memory under `<output_dir>`.\n"
+        "- `/memory import <source_path> [target_scope]` — read a "
+        "SKILL.md or directory of memory `.md` files; merges into "
+        "`global` by default.\n"
         "- `/remember <kind> [scope] -- <title> -- <body>` — write a "
         "memory.  `kind` is one of `fact`, `rule`, `lesson`; `scope` "
         "defaults to `charm`.  Use ` -- ` (space dash dash space) as the "
@@ -46,11 +56,22 @@ def memory_help_text() -> str:
     )
 
 
-def handle_memory(manager: MemoryManager, args: str) -> str:
-    """Handle the ``/memory [scope]`` command."""
-    tokens = args.strip().split()
+def handle_memory(
+    manager: MemoryManager,
+    args: str,
+    *,
+    charm_path: Path | None = None,
+) -> str:
+    """Handle the ``/memory …`` command and its subcommands."""
+    tokens = shlex.split(args.strip(), posix=True) if args.strip() else []
     if tokens and tokens[0].lower() in {"help", "-h", "--help"}:
         return memory_help_text()
+    if tokens and tokens[0].lower() == "export":
+        return _handle_export(manager, tokens[1:], charm_path=charm_path)
+    if tokens and tokens[0].lower() == "export-md":
+        return _handle_export_markdown(manager, tokens[1:], charm_path=charm_path)
+    if tokens and tokens[0].lower() == "import":
+        return _handle_import(manager, tokens[1:])
     scope: str | None = None
     if tokens:
         candidate = tokens[0].lower()
@@ -62,6 +83,99 @@ def handle_memory(manager: MemoryManager, args: str) -> str:
         scope_label = scope or "any scope"
         return f"_No memories in {scope_label}._"
     return _format_entry_list(entries)
+
+
+def _handle_export(manager: MemoryManager, tokens: list[str], *, charm_path: Path | None) -> str:
+    """Handle ``/memory export <name> <output_path> [scope]``."""
+    if len(tokens) < 2:
+        return _error("expected `<name> <output_path> [scope]`. " + memory_help_text())
+    name = tokens[0]
+    output_path = Path(tokens[1]).expanduser()
+    scope: str | None = None
+    if len(tokens) >= 3:
+        candidate = tokens[2].lower()
+        if candidate not in _SCOPES:
+            return _error(f"unknown scope {candidate!r}; expected `charm` or `global`")
+        scope = candidate
+    if len(tokens) > 3:
+        return _error("too many arguments to export")
+    try:
+        result = memory_export.export_to_skill(
+            manager,
+            name=name,
+            output_path=output_path,
+            scope=scope,
+            charm_path=charm_path,
+        )
+    except (OSError, ValueError) as exc:
+        return _error(f"export failed: {exc}")
+    suffix = (
+        f" ({result.redactions} secret redaction{'s' if result.redactions != 1 else ''})"
+        if result.redactions
+        else ""
+    )
+    return f"Exported {len(result.entries)} memories to `{result.output_path}`{suffix}"
+
+
+def _handle_export_markdown(
+    manager: MemoryManager, tokens: list[str], *, charm_path: Path | None
+) -> str:
+    """Handle ``/memory export-md <output_dir> [scope]``."""
+    if not tokens:
+        return _error("expected `<output_dir> [scope]`. " + memory_help_text())
+    output_dir = Path(tokens[0]).expanduser()
+    scope: str | None = None
+    if len(tokens) >= 2:
+        candidate = tokens[1].lower()
+        if candidate not in _SCOPES:
+            return _error(f"unknown scope {candidate!r}; expected `charm` or `global`")
+        scope = candidate
+    if len(tokens) > 2:
+        return _error("too many arguments to export-md")
+    try:
+        result = memory_export.export_to_markdown(
+            manager, output_dir=output_dir, scope=scope, charm_path=charm_path
+        )
+    except (OSError, ValueError) as exc:
+        return _error(f"export failed: {exc}")
+    suffix = (
+        f" ({result.redactions} secret redaction{'s' if result.redactions != 1 else ''})"
+        if result.redactions
+        else ""
+    )
+    return f"Exported {len(result.entries)} memories under `{result.output_path}`{suffix}"
+
+
+def _handle_import(manager: MemoryManager, tokens: list[str]) -> str:
+    """Handle ``/memory import <source_path> [target_scope]``."""
+    if not tokens:
+        return _error("expected `<source_path> [target_scope]`. " + memory_help_text())
+    source = Path(tokens[0]).expanduser()
+    target_scope = "global"
+    if len(tokens) >= 2:
+        candidate = tokens[1].lower()
+        if candidate not in _SCOPES:
+            return _error(f"unknown scope {candidate!r}; expected `charm` or `global`")
+        target_scope = candidate
+    if len(tokens) > 2:
+        return _error("too many arguments to import")
+    try:
+        result = memory_export.import_from_path(manager, source, target_scope=target_scope)
+    except (FileNotFoundError, ValueError, MemoryScopeError) as exc:
+        return _error(f"import failed: {exc}")
+    parts = [f"Imported {len(result.imported)} memories into `{target_scope}`."]
+    if result.skipped:
+        parts.append(
+            f"Skipped {len(result.skipped)} duplicate{'s' if len(result.skipped) != 1 else ''}: "
+            + ", ".join(f"`{t}`" for t in result.skipped[:5])
+            + ("…" if len(result.skipped) > 5 else "")
+        )
+    if result.failed:
+        parts.append(
+            f"{len(result.failed)} failed: "
+            + "; ".join(f"`{t}` ({reason})" for t, reason in result.failed[:5])
+        )
+    return "\n".join(parts)
 
 
 def handle_remember(manager: MemoryManager, args: str) -> str:

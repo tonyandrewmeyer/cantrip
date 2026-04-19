@@ -74,7 +74,7 @@ def _handle_memory_slash_command(app: web.Application, agent: CantripAgent, cont
         return False
     manager = agent._memory_manager
     if verb == "/memory":
-        response = memory_commands.handle_memory(manager, args)
+        response = memory_commands.handle_memory(manager, args, charm_path=agent.state.charm_path)
     elif verb == "/remember":
         response = memory_commands.handle_remember(manager, args)
     else:
