@@ -22,6 +22,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   works as usual.  Gracefully no-ops on systems without ``readline``
   (Windows, stripped containers) and picks the right parse-bind syntax
   for GNU readline vs. libedit.
+- **Hypothesis-based property tests for the planner's dependency graph**
+  — ``hypothesis`` is now a dev-dep with two registered profiles
+  (``dev`` at 100 examples, ``ci`` at 500) selected via the
+  ``CANTRIP_HYPOTHESIS_PROFILE`` env var.  A new
+  ``tests/unit/test_planner_properties.py`` covers
+  ``_validate_dependencies`` with six invariants: the task set is
+  preserved, no phantom deps remain, the result is always acyclic,
+  acyclic input with valid refs is passed through unchanged, the
+  function is idempotent, and the result is always a sub-graph of the
+  input (only edge stripping, never invention).
 
 ### Fixed
 - **Gemini rate-limit errors show the retry hint and quota kind** —

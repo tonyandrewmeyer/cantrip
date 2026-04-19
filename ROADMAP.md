@@ -5803,18 +5803,23 @@ after that, each property test is a handful of lines.
 
 ### 59.1 Medium — Add hypothesis to dev-dependencies
 
-- [ ] Pin ``hypothesis`` in ``pyproject.toml``'s dev-dep list
-- [ ] Configure a ``tests/unit/conftest.py`` profile so CI runs with
+- [x] Pin ``hypothesis`` in ``pyproject.toml``'s dev-dep list
+- [x] Configure a ``tests/unit/conftest.py`` profile so CI runs with
   a higher ``max_examples`` (e.g. 500) and dev runs with the
-  default (100) for fast feedback
+  default (100) for fast feedback.  Profile is selected via
+  ``CANTRIP_HYPOTHESIS_PROFILE`` env var (``dev`` | ``ci``); the
+  GitHub Actions workflow sets ``ci``.
 
 ### 59.2 Medium — Planner dependency-graph properties
 
-- [ ] ``tests/unit/test_planner_properties.py`` —
+- [x] ``tests/unit/test_planner_properties.py`` —
   ``_validate_dependencies`` should leave acyclic graphs unchanged,
   and break every cycle it detects (no dependency in the result
   participates in a cycle).  Use ``hypothesis.strategies`` for
-  arbitrary DAGs and arbitrary cyclic graphs.
+  arbitrary DAGs and arbitrary cyclic graphs.  Six properties land:
+  task-set preservation, no phantom deps, result always acyclic,
+  acyclic-and-valid input unchanged, idempotence, and sub-graph
+  closure (edges only get removed, never added).
 
 ### 59.3 Medium — Charmlint rule-engine properties
 
