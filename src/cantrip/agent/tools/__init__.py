@@ -106,6 +106,7 @@ def build_tools(
         JujuShowUnitTool,
         JujuSSHTool,
         JujuStatusTool,
+        JujuTrustTool,
         JujuWaitTool,
     )
     from cantrip.agent.tools.loadtest import GenerateLoadTestTool
@@ -226,6 +227,7 @@ def build_tools(
         JujuDeployTool(),
         JujuRefreshTool(),
         JujuRelateTool(),
+        JujuTrustTool(),
         JujuSSHTool(),
         JujuRunActionTool(),
         JujuAddModelTool(),

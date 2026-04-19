@@ -15,6 +15,7 @@ from cantrip.agent.tools.juju import (
     JujuDispatchTool,
     JujuOfferTool,
     JujuRefreshTool,
+    JujuTrustTool,
     JujuWaitTool,
     _agent_charm_dir,
     _is_k8s_model,
@@ -519,6 +520,87 @@ class TestJujuRefreshTool:
             mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app")
+
+        assert not result.success
+        assert "app not found" in result.error
+
+
+class TestJujuTrustTool:
+    """Tests for JujuTrustTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return JujuTrustTool()
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool):
+        """Error when juju CLI is missing."""
+        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+            result = await tool.execute(app_name="mongodb")
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_trust_cluster_scope(self, tool):
+        """Grants trust with a cluster scope for a Kubernetes charm."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="mongodb", scope="cluster")
+
+        assert result.success
+        assert "mongodb" in result.output
+        assert "cluster" in result.output
+        mock_juju.trust.assert_called_once_with(app="mongodb", remove=False, scope="cluster")
+
+    @pytest.mark.asyncio
+    async def test_trust_no_scope(self, tool):
+        """Omits scope for machine-model charms."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app")
+
+        assert result.success
+        mock_juju.trust.assert_called_once_with(app="my-app", remove=False)
+
+    @pytest.mark.asyncio
+    async def test_trust_remove(self, tool):
+        """Revokes trust when remove=True."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app", remove=True)
+
+        assert result.success
+        assert "Revoked" in result.output
+        mock_juju.trust.assert_called_once_with(app="my-app", remove=True)
+
+    @pytest.mark.asyncio
+    async def test_trust_error(self, tool):
+        """Reports CLI errors."""
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.trust.side_effect = jubilant.CLIError(
+            returncode=1,
+            cmd=["juju", "trust"],
+            stderr="app not found",
+        )
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app", scope="cluster")
 
         assert not result.success
         assert "app not found" in result.error

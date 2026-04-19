@@ -5,6 +5,12 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`juju_trust` tool** — wraps ``jubilant.Juju.trust`` so the agent can
+  grant (or revoke) cluster-scope trust when a deployed companion such
+  as MongoDB blocks with *"Run `juju trust mongodb --scope=cluster`"*.
+  The deploy subagent prompt now tells the agent to inspect blocked
+  companions and follow actionable status messages (``juju_trust``,
+  ``juju_relate``, ``juju_config``) before escalating.
 - **Research-driven e2e test** — a new
   ``tests/e2e/test_research_charm_build.py`` hands the agent a
   minimal, user-style prompt (*"build a Kubernetes charm for Redis

@@ -265,6 +265,99 @@ class JujuDeployTool(Tool):
                 temp_copy.unlink(missing_ok=True)
 
 
+class JujuTrustTool(Tool):
+    """Tool to grant or revoke trust for a deployed application.
+
+    Used when a charm's status message directs the operator to run
+    ``juju trust <app> --scope=cluster`` (common for Kubernetes charms
+    that need cluster-wide privileges, e.g. MongoDB in-place refreshes).
+    """
+
+    @property
+    def name(self) -> str:
+        return "juju_trust"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Grant or revoke trust for a deployed application. "
+            "On Kubernetes models, pass scope='cluster' (required when the "
+            "app's blocked message asks for `juju trust <app> --scope=cluster`). "
+            "Set remove=true to revoke previously granted trust."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string",
+                    "description": "Application name to set trust status for.",
+                },
+                "scope": {
+                    "type": "string",
+                    "description": (
+                        "On Kubernetes models, must be 'cluster'. Omit on machine models."
+                    ),
+                    "enum": ["cluster"],
+                },
+                "remove": {
+                    "type": "boolean",
+                    "description": "Revoke trust instead of granting it.",
+                    "default": False,
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified).",
+                },
+            },
+            "required": ["app_name"],
+        }
+
+    async def execute(
+        self,
+        app_name: str,
+        scope: str | None = None,
+        remove: bool = False,
+        model: str | None = None,
+    ) -> ToolResult:
+        """Set trust status for a deployed application."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+            trust_kwargs: dict[str, Any] = {"app": app_name, "remove": remove}
+            if scope is not None:
+                trust_kwargs["scope"] = scope
+            await _run_juju(juju.trust, **trust_kwargs)
+
+            action = "Revoked trust for" if remove else "Granted trust to"
+            scope_note = f" (scope={scope})" if scope else ""
+            return ToolResult(
+                success=True,
+                output=f"{action} {app_name}{scope_note}",
+                data={"app_name": app_name, "scope": scope, "remove": remove},
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju trust timed out — the controller may be unavailable.",
+            )
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
+
+
 class JujuRefreshTool(Tool):
     """Tool to refresh (upgrade) a deployed charm."""
 

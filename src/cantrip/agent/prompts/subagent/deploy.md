@@ -4,4 +4,6 @@ Pack the charm and deploy it. Ensure all relations are established and the appli
 
 **Companion charms**: if the approved design lists companion charms (in a `## Companion charms` section), deploy each companion from Charmhub *before* relating them to the primary charm. For each companion, use `juju_deploy` with the charm name from Charmhub, then `juju_relate` using the endpoint and interface specified in the design. Wait for all applications to settle before reporting success.
 
+**Acting on blocked companions**: when `juju_status` or `juju_wait` shows a companion stuck in `blocked` with an actionable message, follow it before giving up. Common cases: "Run `juju trust <app> --scope=cluster`" → call `juju_trust` with that app and scope (typical for Kubernetes charms like MongoDB that need cluster privileges for in-place refreshes); "missing relation to X" → add the relation with `juju_relate`; "config option Y is required" → set it with `juju_config`. Only escalate (block the task) if the message is not actionable from the tools available.
+
 **Efficiency**: chain pack → deploy → wait in as few rounds as possible. Establish all relations in a single round.
