@@ -1,7 +1,7 @@
 """Property-based tests for ``quickpack.jujuignore.JujuIgnore``.
 
 The pattern matcher is a small, pure, string-only API: the example
-tests in ``test_quickpack.py::TestJujuignore`` cover the canonical
+tests in ``test_jujuignore.py::TestJujuignore`` cover the canonical
 cases; these property tests pin down invariants that should hold for
 any mix of patterns and paths.  The previous bug fixed during Phase
 58.1 (``Matcher.match`` using unanchored ``is_match`` instead of

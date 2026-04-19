@@ -6,7 +6,7 @@ charmcraft invocations) and require charmcraft to be installed.
 
 Run with::
 
-    uv run pytest tests/unit/test_quickpack_comparison.py -v --run-slow
+    uv run pytest tests/unit/quickpack/test_comparison.py -v --run-slow
 """
 
 import pathlib

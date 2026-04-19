@@ -4,6 +4,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Quickpack unit tests reorganised** — the monolithic
+  ``tests/unit/test_quickpack.py`` (977 lines) split into per-module
+  files under ``tests/unit/quickpack/`` mirroring the
+  ``tests/unit/charmlint/`` layout: ``test_jujuignore.py``,
+  ``test_metadata.py``, ``test_parts.py`` (with the attestation
+  tests that exercise ``quickpack.parts``), ``test_pack.py``, and
+  ``test_cli.py``.  The shared ``charm_project`` fixture moved to
+  ``tests/unit/quickpack/conftest.py``.
+  ``test_jujuignore_properties.py`` and
+  ``test_quickpack_comparison.py`` moved under the same directory
+  (``test_comparison.py``).  No test content changed; Phase 57.8
+  complete.
+
 ### Added
 - **Slash-command autocomplete in the TUI** — typing ``/`` in the chat
   input now surfaces a catalogue-driven popup above the input with
@@ -40,8 +54,8 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   always populated, and swap-symmetry holds for add/remove event
   counts across apps, units, and cross-model offers.
 - **Hypothesis-based property tests for quickpack's .jujuignore
-  matcher** — ``tests/unit/test_jujuignore_properties.py`` covers
-  ``JujuIgnore`` with six invariants: determinism, construction
+  matcher** — ``tests/unit/quickpack/test_jujuignore_properties.py``
+  covers ``JujuIgnore`` with six invariants: determinism, construction
   never raises on arbitrary patterns, default VCS ignores still bite
   regardless of user patterns, comments and blank lines are no-ops,
   ``[P, !P]`` un-ignores, and a later plain ``P`` does not override

@@ -5659,14 +5659,18 @@ Four unit-test files top 1500 lines:
 
 Each target file ≤600 lines.
 
-### 57.8 Low — Reorganise quickpack unit tests
+### 57.8 Low — Reorganise quickpack unit tests ✓
 
-- [ ] Move ``tests/unit/test_quickpack.py`` (977 lines, 83 tests)
+- [x] Moved ``tests/unit/test_quickpack.py`` (977 lines, 83 tests)
   and ``tests/unit/test_quickpack_comparison.py`` into
   ``tests/unit/quickpack/`` matching the ``tests/unit/charmlint/``
-  layout.  Split the flat file into ``test_metadata.py``,
-  ``test_pack.py``, ``test_parts.py``, ``test_jujuignore.py``
-  matching the ``src/quickpack/`` module boundaries.
+  layout.  The flat file split into ``test_jujuignore.py``,
+  ``test_metadata.py``, ``test_parts.py`` (with the attestation
+  tests, which also live in ``quickpack.parts``), ``test_pack.py``,
+  and ``test_cli.py`` matching the ``src/quickpack/`` module
+  boundaries.  The shared ``charm_project`` fixture moved to
+  ``tests/unit/quickpack/conftest.py``.  ``test_jujuignore_properties.py``
+  (from Phase 59.4) also moved under the new directory.
 
 ### What this phase is *not*
 
@@ -5837,8 +5841,7 @@ after that, each property test is a handful of lines.
 
 ### 59.4 Low — Quickpack ``.jujuignore`` properties
 
-- [x] ``tests/unit/test_jujuignore_properties.py`` (will move under
-  ``tests/unit/quickpack/`` when Phase 57.8 lands) — pattern
+- [x] ``tests/unit/quickpack/test_jujuignore_properties.py`` — pattern
   matching is deterministic, arbitrary patterns/paths never raise,
   the default VCS ignores still bite regardless of user patterns,
   comment and blank pattern lines are no-ops, and negation both
