@@ -5829,9 +5829,14 @@ after that, each property test is a handful of lines.
 
 ### 59.4 Low — Quickpack ``.jujuignore`` properties
 
-- [ ] ``tests/unit/quickpack/test_jujuignore_properties.py`` —
-  pattern matching is deterministic, ``.jujuignore`` with no
-  patterns matches nothing, negation rules compose correctly
+- [x] ``tests/unit/test_jujuignore_properties.py`` (will move under
+  ``tests/unit/quickpack/`` when Phase 57.8 lands) — pattern
+  matching is deterministic, arbitrary patterns/paths never raise,
+  the default VCS ignores still bite regardless of user patterns,
+  comment and blank pattern lines are no-ops, and negation both
+  un-ignores (``[P, !P]``) and is authoritative over later
+  matching rules (``[P, !P, P]`` leaves the path kept — unlike
+  gitignore's latest-rule-wins model).
 
 ### 59.5 Low — Watcher status-diff properties
 

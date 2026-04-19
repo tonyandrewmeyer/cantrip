@@ -39,6 +39,14 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   apps/units, every event carries ``source="status"``, dedup keys are
   always populated, and swap-symmetry holds for add/remove event
   counts across apps, units, and cross-model offers.
+- **Hypothesis-based property tests for quickpack's .jujuignore
+  matcher** — ``tests/unit/test_jujuignore_properties.py`` covers
+  ``JujuIgnore`` with six invariants: determinism, construction
+  never raises on arbitrary patterns, default VCS ignores still bite
+  regardless of user patterns, comments and blank lines are no-ops,
+  ``[P, !P]`` un-ignores, and a later plain ``P`` does not override
+  an earlier ``!P`` (``JujuIgnore.match``'s early-break semantics,
+  distinct from gitignore's latest-rule-wins).
 
 ### Fixed
 - **Gemini rate-limit errors show the retry hint and quota kind** —
