@@ -11,7 +11,7 @@ import weakref
 import aiohttp.web as web
 import jinja2
 
-from cantrip.agent import memory_commands
+from cantrip.agent import mcp_commands, memory_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
@@ -62,23 +62,28 @@ def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
 
 
 def _handle_memory_slash_command(app: web.Application, agent: CantripAgent, content: str) -> bool:
-    """Handle ``/memory``, ``/remember``, ``/forget`` inline.
+    """Handle ``/memory``, ``/remember``, ``/forget``, ``/mcp`` inline.
 
-    Returns ``True`` when the message was handled as a memory command —
-    the caller skips the normal LLM round in that case.  Echoes the
-    user's command and the system response so the chat history matches
-    the TUI behaviour.
+    Returns ``True`` when the message was handled as a memory or MCP
+    command — the caller skips the normal LLM round in that case.
+    Echoes the user's command and the system response so the chat
+    history matches the TUI behaviour.
     """
     verb, _, args = content.partition(" ")
-    if verb not in {"/memory", "/remember", "/forget"}:
+    if verb not in {"/memory", "/remember", "/forget", "/mcp"}:
         return False
-    manager = agent._memory_manager
-    if verb == "/memory":
-        response = memory_commands.handle_memory(manager, args, charm_path=agent.state.charm_path)
-    elif verb == "/remember":
-        response = memory_commands.handle_remember(manager, args)
+    if verb == "/mcp":
+        response = mcp_commands.handle_mcp(agent.mcp_registry, args)
     else:
-        response = memory_commands.handle_forget(manager, args)
+        manager = agent._memory_manager
+        if verb == "/memory":
+            response = memory_commands.handle_memory(
+                manager, args, charm_path=agent.state.charm_path
+            )
+        elif verb == "/remember":
+            response = memory_commands.handle_remember(manager, args)
+        else:
+            response = memory_commands.handle_forget(manager, args)
     _broadcast(app, "chat_message", {"role": "user", "content": content})
     _broadcast(app, "chat_message", {"role": "system", "content": response})
     return True

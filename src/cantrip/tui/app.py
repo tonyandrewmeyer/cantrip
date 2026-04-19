@@ -12,7 +12,7 @@ from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
 from cantrip import __version__
-from cantrip.agent import emotions, memory_commands
+from cantrip.agent import emotions, mcp_commands, memory_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.git_branch import PUSH_CONFIRM_PREFIX
@@ -1218,6 +1218,9 @@ class CantripApp(App):
             return True
         if verb == "/forget":
             chat.add_system_message(memory_commands.handle_forget(manager, args))
+            return True
+        if verb == "/mcp":
+            chat.add_system_message(mcp_commands.handle_mcp(self._agent.mcp_registry, args))
             return True
         return False
 

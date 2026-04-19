@@ -18,20 +18,28 @@ The submodule layout:
 from __future__ import annotations
 
 from cantrip.mcp.client import MCPClient
+from cantrip.mcp.config import REPO_CONFIG_FILENAME, USER_CONFIG_PATH, load_configs
 from cantrip.mcp.exceptions import (
     MCPConfigError,
     MCPConnectionError,
     MCPError,
     MCPInvocationError,
 )
+from cantrip.mcp.registry import MCPRegistry, ServerSnapshot, ServerStatus
 from cantrip.mcp.types import MCPToolInfo, ServerConfig
 
 __all__ = [
+    "REPO_CONFIG_FILENAME",
+    "USER_CONFIG_PATH",
     "MCPClient",
     "MCPConfigError",
     "MCPConnectionError",
     "MCPError",
     "MCPInvocationError",
+    "MCPRegistry",
     "MCPToolInfo",
     "ServerConfig",
+    "ServerSnapshot",
+    "ServerStatus",
+    "load_configs",
 ]

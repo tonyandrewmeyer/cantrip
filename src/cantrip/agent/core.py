@@ -64,6 +64,8 @@ from cantrip.agent.tools import Tool, ToolResult, build_tools
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.llm import base as llm
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
+from cantrip.mcp import MCPRegistry
+from cantrip.mcp import load_configs as load_mcp_configs
 from cantrip.ui import events as ui_events
 
 log = logging.getLogger(__name__)
@@ -188,6 +190,8 @@ class CantripAgent:
         self._memory_manager_cache: MemoryManager | None = None
         self._auto_writer_cache: AutoWriter | None = None
         self._memory_background_tasks: set[asyncio.Task[Any]] = set()
+        self._mcp_registry_cache: MCPRegistry | None = None
+        self._mcp_started: bool = False
 
         self._watcher: EventWatcher | None = None
         self._executor: BackgroundExecutor | None = None
@@ -1723,6 +1727,39 @@ class CantripAgent:
         if self._executor:
             await self._executor.stop()
             self._executor = None
+
+    @property
+    def mcp_registry(self) -> MCPRegistry:
+        """Lazy registry of configured MCP servers (Phase 45.2).
+
+        Loads ``cantrip.mcp.yaml`` (repo) and ``~/.config/cantrip/mcp.yaml``
+        (user) on first access and builds an :class:`MCPRegistry` over
+        them.  Returns the same instance on subsequent calls — call
+        :meth:`start_mcp` to actually open the connections.
+        """
+        if self._mcp_registry_cache is None:
+            configs = load_mcp_configs(repo_root=self.state.charm_path)
+            self._mcp_registry_cache = MCPRegistry(configs)
+        return self._mcp_registry_cache
+
+    async def start_mcp(self) -> None:
+        """Open every configured MCP connection.  Idempotent.
+
+        Failures are captured by the registry — a misconfigured server
+        logs a warning but never blocks the others.  Safe to call from
+        any UI startup path; subsequent calls are no-ops.
+        """
+        if self._mcp_started:
+            return
+        self._mcp_started = True
+        await self.mcp_registry.start_all()
+
+    async def stop_mcp(self) -> None:
+        """Tear down every MCP connection.  Best-effort, never raises."""
+        if self._mcp_registry_cache is None:
+            return
+        await self._mcp_registry_cache.stop_all()
+        self._mcp_started = False
 
     def save_state(self) -> None:
         """Save agent state to the session store."""
