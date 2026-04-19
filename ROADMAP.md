@@ -6006,6 +6006,84 @@ as modal dialogs (focus moves in, is trapped, is restored on close).
 
 ---
 
+## Phase 61: Slash-Command Autocomplete in the TUI
+
+**Goal:** Let users discover and complete slash commands as they type.
+Typing ``/c`` should surface ``/cost`` as a suggestion; Tab accepts the
+suggestion; Escape dismisses it.  Removes the "did I remember the name
+right?" friction and is the natural follow-on to making slash commands
+typeable at all (see the commit that removed the ``/``→search
+intercept).
+
+### 61.1 Inline suggestion popup in ``ChatInput``
+
+- [ ] When the chat input's first character is ``/`` and the value has
+  no spaces yet, show a small suggestion list above the input with
+  every verb in ``slash_commands.SHARED_VERBS`` plus the TUI-native
+  ``/feelings`` (and any future TUI-specific verbs) whose prefix
+  matches what the user has typed.  Case-insensitive.
+- [ ] List shows verb + a one-line description (from ``help_text`` or
+  a small lookup keyed by verb).  Up to ~6 rows; scroll if more match.
+- [ ] Exactly one suggestion is "active" — highlighted — at any time.
+  Up/Down arrow keys move the active row without stealing focus from
+  the input.
+- [ ] Hide the popup as soon as the value no longer starts with ``/``,
+  contains a space, or becomes empty.
+
+### 61.2 Accept / dismiss
+
+- [ ] Tab inserts the active suggestion's verb plus a trailing space
+  (so ``/c`` + Tab becomes ``/cost ``).  If exactly one suggestion
+  matches, Tab accepts it regardless of whether the list is showing.
+- [ ] Escape closes the popup without changing the input.
+- [ ] Enter submits the current input value as it stands (does not
+  auto-accept).  Rationale: submit should always do what you see.
+
+### 61.3 Source of truth: verbs come from the dispatcher
+
+- [ ] ``slash_commands`` exports a ``COMMAND_CATALOGUE`` list of
+  ``(verb, summary)`` pairs (or one dataclass) so each surface uses
+  the same names and descriptions.  ``SHARED_VERBS`` stays as the
+  authoritative verb set and seeds the catalogue.
+- [ ] TUI-native commands (``/feelings``, and ``/tasks`` / ``/status``
+  if they're ever promoted here) register into the catalogue at the
+  surface level so the popup can show them too.
+- [ ] A unit test asserts the catalogue covers every verb the
+  dispatcher actually handles (guards against drift when someone adds
+  a verb to ``dispatch`` but forgets the catalogue).
+
+### 61.4 CLI parity (stretch)
+
+- [ ] In the CLI REPL, wire Readline completion for the same verb
+  list so ``/c<Tab>`` completes to ``/cost`` there too.  Depends on
+  61.3 (shared catalogue).  Separate from the TUI change so it can
+  land in a later PR.
+
+### What this phase is *not*
+
+- Not argument completion (e.g. completing the ``<kind>`` on
+  ``/remember``).  That can come in a follow-up; verb-only is the
+  high-value 80% of the friction.
+- Not fuzzy matching.  Strict prefix is cheaper to implement and
+  matches user intuition when commands share prefixes.
+- Not a command palette / Ctrl+K launcher.  Different interaction
+  model; out of scope.
+
+**Exit criteria:** typing ``/c`` in the TUI shows ``/cost`` as a
+suggestion within the current frame; Tab completes it; an unknown
+prefix hides the popup; the catalogue test passes; no existing TUI
+keybinding regresses.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Catalogue (61.3) | none | Pure data; land first |
+| Popup UI (61.1) | 61.3 | Reads the catalogue |
+| Key bindings (61.2) | 61.1 | Needs the popup to highlight |
+| CLI readline (61.4) | 61.3 | Independent of the TUI work |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -6062,4 +6140,5 @@ as modal dialogs (focus moves in, is trapped, is restored on close).
 | M58: Rust Tested | 58 | `cargo test` runs in CI for both Rust crates; every `.rs` file above 60% coverage; regressions surface at unit-test time, not via spread |
 | M59: Property Tested | 59 | Hypothesis-backed property tests cover the planner dependency graph, charmlint rule engine, quickpack jujuignore, and watcher status-diff |
 | M60: Accessible Web UI | 60 | Web UI passes WCAG 2.1 AA: visible focus indicators, labelled controls, live regions for chat/status, overlays behave as modal dialogs; rodney/showboat regression guard in CI |
+| M61: Slash Autocomplete | 61 | Typing ``/`` in the TUI surfaces a catalogue-driven suggestion popup; Tab completes the active verb; CLI readline gets the same catalogue for parity |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
