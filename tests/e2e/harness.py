@@ -91,8 +91,23 @@ class CharmSpec:
     model.
     """
 
+    acceptable_statuses: frozenset[str] = dataclasses.field(
+        default_factory=lambda: frozenset({"active"})
+    )
+    """Statuses that count as "the charm installed and is running fine".
+
+    The default is ``{"active"}`` — a PaaS charm with the workload deps
+    in place should reach active.  Charms that need external relations
+    or further config to reach active (e.g. Django with no database,
+    FastAPI with no config) can widen this to ``{"active", "blocked"}``
+    so the test still distinguishes "charm hook crashed" (``error``)
+    from "charm is up and awaiting integration".
+
+    Ignored when :attr:`requires_active` is ``False``.
+    """
+
     active_timeout_seconds: int = 300
-    """How long to wait for active status when ``requires_active`` is true."""
+    """How long to wait for the status check when ``requires_active`` is true."""
 
 
 # ---------------------------------------------------------------------------
@@ -493,8 +508,29 @@ async def drive_to_deploy(
 def wait_for_active(model: str, app_name: str, timeout: int) -> str:
     """Poll ``juju status`` until *app_name* is active or *timeout* elapses.
 
-    Returns the last observed status string.  Callers that want a
-    boolean can compare against ``"active"``.
+    Thin wrapper around :func:`wait_for_status` that keeps the
+    traditional "active is the only success" contract for callers that
+    predate the generalised settled-status check.
+    """
+    return wait_for_status(model, app_name, timeout, frozenset({"active"}))
+
+
+def wait_for_status(
+    model: str,
+    app_name: str,
+    timeout: int,
+    acceptable: frozenset[str],
+) -> str:
+    """Poll until *app_name* enters any status in *acceptable* or *timeout* elapses.
+
+    Returns the last observed status.  Callers compare against their
+    own set — e.g. ``{"active"}`` for strict tests or
+    ``{"active", "blocked"}`` for charms that need external relations
+    to reach active.  The ``blocked`` path is crucial for PaaS charms
+    with minimal seeds (Django without a database, FastAPI without
+    required config): the install hook succeeded and the charm is
+    running — it is waiting for the operator's next action rather than
+    crashing.
     """
     import jubilant
 
@@ -507,7 +543,7 @@ def wait_for_active(model: str, app_name: str, timeout: int) -> str:
             if app_name in status.apps:
                 current = status.apps[app_name].app_status.current or "unknown"
                 last = current
-                if current == "active":
+                if current in acceptable:
                     return current
         except (jubilant.CLIError, OSError, subprocess.SubprocessError) as exc:
             log.debug("juju status poll error: %s", exc)

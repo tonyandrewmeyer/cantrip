@@ -41,18 +41,28 @@ _FLASK = harness.CharmSpec(
     seed_files=seeds.FLASK,
 )
 
+# Django-framework charms block without a database integration — the
+# paas-charm extension deliberately sets BlockedStatus until the
+# operator wires one in.  That is a fully-installed, running charm,
+# not a failure, so the test accepts blocked alongside active.  A
+# stricter run would also deploy postgresql-k8s and relate it, but
+# that is out of scope for a "can we build and deploy" smoke test.
 _DJANGO = harness.CharmSpec(
     name="django-demo",
     profile="django-framework",
     substrate="k8s",
     seed_files=seeds.DJANGO,
+    acceptable_statuses=frozenset({"active", "blocked"}),
 )
 
+# FastAPI-framework charms block without a handful of configured
+# options (app-port, app module path) — same reasoning as Django.
 _FASTAPI = harness.CharmSpec(
     name="fastapi-demo",
     profile="fastapi-framework",
     substrate="k8s",
     seed_files=seeds.FASTAPI,
+    acceptable_statuses=frozenset({"active", "blocked"}),
 )
 
 # The Go path reuses an existing public OCI image rather than building a
@@ -177,11 +187,15 @@ class TestPaasCharmBuild:
         )
 
         if spec.requires_active:
-            last = harness.wait_for_active(
-                effective_model, result.app_name, spec.active_timeout_seconds
+            last = harness.wait_for_status(
+                effective_model,
+                result.app_name,
+                spec.active_timeout_seconds,
+                spec.acceptable_statuses,
             )
-            assert last == "active", (
-                f"{result.app_name!r} did not reach active within "
+            assert last in spec.acceptable_statuses, (
+                f"{result.app_name!r} did not reach one of "
+                f"{sorted(spec.acceptable_statuses)} within "
                 f"{spec.active_timeout_seconds}s (last status: {last!r})"
             )
 
