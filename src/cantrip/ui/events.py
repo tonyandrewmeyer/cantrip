@@ -31,6 +31,7 @@ class EventType(enum.StrEnum):
     PREFLIGHT_UPDATED = "preflight_updated"
     MEMORY_WRITTEN = "memory_written"
     MEMORY_RECALLED = "memory_recalled"
+    MCP_ELICITATION_REQUEST = "mcp_elicitation_request"
 
 
 @dataclass(frozen=True)
@@ -300,4 +301,33 @@ def memory_recalled(
     return Event(
         type=EventType.MEMORY_RECALLED,
         payload={"title": title, "scope": scope, "kind": kind},
+    )
+
+
+def mcp_elicitation_request(
+    *,
+    request_id: str,
+    server_name: str,
+    mode: str,
+    message: str,
+    requested_schema: dict[str, Any] | None = None,
+    url: str | None = None,
+) -> Event:
+    """Build a ``MCP_ELICITATION_REQUEST`` event.
+
+    Emitted when an MCP server asks the user for structured input
+    mid-tool-call.  UIs render the prompt and call
+    ``agent.complete_elicitation(request_id, action, content)`` once
+    the user has answered.
+    """
+    return Event(
+        type=EventType.MCP_ELICITATION_REQUEST,
+        payload={
+            "request_id": request_id,
+            "server_name": server_name,
+            "mode": mode,
+            "message": message,
+            "requested_schema": requested_schema,
+            "url": url,
+        },
     )

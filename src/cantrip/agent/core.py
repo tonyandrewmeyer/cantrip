@@ -1750,15 +1750,52 @@ class CantripAgent:
         logs a warning but never blocks the others.  Safe to call from
         any UI startup path; subsequent calls are no-ops.  Invalidates
         the tools cache so the next access picks up the newly-connected
-        servers' tools.
+        servers' tools.  Wires the elicitation callback so server-driven
+        prompts surface as ``MCP_ELICITATION_REQUEST`` events.
         """
         if self._mcp_started:
             return
         self._mcp_started = True
+        self.mcp_registry.set_elicitation_callback(self._on_mcp_elicitation)
         await self.mcp_registry.start_all()
         # Force tool list rebuild so MCP tools surface to the agent.
         self._tools_cache = None
         self._tool_map_cache = None
+
+    def _on_mcp_elicitation(self, request: object) -> None:
+        """Forward an MCP elicitation request to the UI event bus."""
+        from cantrip.mcp.elicitation import ElicitationRequest
+
+        if not isinstance(request, ElicitationRequest):
+            return
+        try:
+            self._event_bus.publish(
+                ui_events.mcp_elicitation_request(
+                    request_id=request.request_id,
+                    server_name=request.server_name,
+                    mode=request.mode,
+                    message=request.message,
+                    requested_schema=request.requested_schema,
+                    url=request.url,
+                )
+            )
+        except Exception:  # noqa: BLE001 - UI hook must not break the SDK call.
+            log.debug("mcp_elicitation_request publish failed", exc_info=True)
+
+    def complete_mcp_elicitation(
+        self,
+        request_id: str,
+        action: str,
+        content: dict[str, Any] | None = None,
+    ) -> bool:
+        """UI entry point — answer a parked MCP elicitation by id.
+
+        Returns ``True`` when the request was found and resolved.
+        Validates ``action`` against ``accept|decline|cancel``.
+        """
+        if self._mcp_registry_cache is None:
+            return False
+        return self._mcp_registry_cache.complete_elicitation(request_id, action, content)
 
     async def stop_mcp(self) -> None:
         """Tear down every MCP connection.  Best-effort, never raises."""

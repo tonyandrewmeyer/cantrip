@@ -190,6 +190,9 @@ class TestBusBroadcastContract:
             events.juju_status_changed(status_data={}).type,
             events.memory_written(title="x", scope="charm", kind="fact", source="x").type,
             events.memory_recalled(title="x", scope="charm", kind="fact").type,
+            events.mcp_elicitation_request(
+                request_id="x", server_name="x", mode="form", message="x"
+            ).type,
         }
         enum_types = set(events.EventType)
         assert factory_types == enum_types

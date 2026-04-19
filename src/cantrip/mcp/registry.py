@@ -17,10 +17,16 @@ import asyncio
 import enum
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from cantrip.mcp.client import MCPClient
 from cantrip.mcp.exceptions import MCPError
 from cantrip.mcp.types import MCPToolInfo, ServerConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from cantrip.mcp.elicitation import ElicitationRequest
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +65,36 @@ class MCPRegistry:
         # Stop tracking per server: PENDING until ``start_all()`` resolves.
         self._status: dict[str, ServerStatus] = {cfg.name: ServerStatus.PENDING for cfg in configs}
         self._errors: dict[str, str] = {}
+
+    def set_elicitation_callback(
+        self, callback: Callable[[ElicitationRequest], None] | None
+    ) -> None:
+        """Forward every server's elicitation requests through ``callback``.
+
+        Called by the agent layer to wire elicitation events to the UI
+        bus.  The callback receives one :class:`ElicitationRequest` per
+        request and must call :meth:`complete_elicitation` later.
+        """
+        for client in self._clients.values():
+            client.elicitation.set_callback(callback)
+
+    def complete_elicitation(
+        self,
+        request_id: str,
+        action: str,
+        content: dict[str, Any] | None = None,
+    ) -> bool:
+        """Resolve an elicitation across every server.
+
+        The UI doesn't need to know which server originated a request;
+        the registry tries each pending manager and returns ``True``
+        on the first match.  Concurrent requests are still safe — each
+        elicitation has its own UUID.
+        """
+        for client in self._clients.values():
+            if client.elicitation.complete(request_id, action, content):
+                return True
+        return False
 
     # ── Lifecycle ───────────────────────────────────────────────────────
 

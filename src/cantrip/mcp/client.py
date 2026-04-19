@@ -7,6 +7,7 @@ import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
+from cantrip.mcp.elicitation import ElicitationManager
 from cantrip.mcp.exceptions import (
     MCPConfigError,
     MCPConnectionError,
@@ -40,7 +41,12 @@ class MCPClient:
     internally; only ``start()`` and ``stop()`` are mutually exclusive.
     """
 
-    def __init__(self, config: ServerConfig) -> None:
+    def __init__(
+        self,
+        config: ServerConfig,
+        *,
+        elicitation_manager: ElicitationManager | None = None,
+    ) -> None:
         self._config = config
         self._session: ClientSession | None = None
         self._tools: list[MCPToolInfo] = []
@@ -48,6 +54,12 @@ class MCPClient:
         self._ready: asyncio.Event = asyncio.Event()
         self._stop: asyncio.Event = asyncio.Event()
         self._start_error: BaseException | None = None
+        self._elicitation = elicitation_manager or ElicitationManager(config.name)
+
+    @property
+    def elicitation(self) -> ElicitationManager:
+        """The elicitation manager bound to this client."""
+        return self._elicitation
 
     @property
     def name(self) -> str:
@@ -211,7 +223,12 @@ class MCPClient:
     ) -> None:
         """Run the session inside the transport context, then await stop."""
         timeout = datetime.timedelta(seconds=self._config.timeout_seconds)
-        async with client_session_cls(read, write, read_timeout_seconds=timeout) as session:
+        async with client_session_cls(
+            read,
+            write,
+            read_timeout_seconds=timeout,
+            elicitation_callback=self._elicitation.handle,
+        ) as session:
             await session.initialize()
             tools_result = await session.list_tools()
             self._session = session
@@ -219,7 +236,12 @@ class MCPClient:
                 self._config.name, tools_result.tools, self._config.allowed_tools
             )
             self._ready.set()
-            await self._stop.wait()
+            try:
+                await self._stop.wait()
+            finally:
+                # Auto-decline any in-flight elicitations so the SDK call
+                # doesn't hang when the connection is being torn down.
+                self._elicitation.cancel_all()
             self._session = None
 
     async def _await_task(self) -> None:
