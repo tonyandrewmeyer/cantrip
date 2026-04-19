@@ -5787,7 +5787,7 @@ surfaces at unit-test time, not via a spread failure.
 
 ---
 
-## Phase 59: Property-Based Testing with Hypothesis
+## Phase 59: Property-Based Testing with Hypothesis ✓
 
 **Goal:** Add property-based tests to the handful of pure functions
 where exhaustive example-based testing misses edge cases.  The
@@ -5823,9 +5823,17 @@ after that, each property test is a handful of lines.
 
 ### 59.3 Medium — Charmlint rule-engine properties
 
-- [ ] ``tests/unit/charmlint/test_properties.py`` — for any
+- [x] ``tests/unit/charmlint/test_properties.py`` — for any
   structurally valid ``charmcraft.yaml``, the lint pass terminates
-  and never raises; findings always reference existing fields
+  and never raises; findings always reference existing fields.
+  Three properties: ``lint()`` never raises; it is deterministic
+  across repeated calls (sort-normalised diagnostic tuples match);
+  every ``Diagnostic`` has a populated ``rule_id`` / valid
+  ``Severity`` / non-empty message, and ``line`` is never set
+  without ``path``.  The module suppresses the
+  ``function_scoped_fixture`` health check because the shared
+  ``tmp_charm`` dir only has ``charmcraft.yaml`` overwritten per
+  example (no state leaks).
 
 ### 59.4 Low — Quickpack ``.jujuignore`` properties
 

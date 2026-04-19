@@ -47,6 +47,14 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``[P, !P]`` un-ignores, and a later plain ``P`` does not override
   an earlier ``!P`` (``JujuIgnore.match``'s early-break semantics,
   distinct from gitignore's latest-rule-wins).
+- **Hypothesis-based property tests for the charmlint rule engine**
+  — ``tests/unit/charmlint/test_properties.py`` throws arbitrary
+  structurally-valid ``charmcraft.yaml`` dicts at ``lint()`` and
+  asserts three invariants: ``lint()`` never raises, its output is
+  deterministic (sort-normalised diagnostic tuples match across
+  repeated runs), and every ``Diagnostic`` has populated
+  ``rule_id`` / ``severity`` / ``message`` fields (with ``line``
+  never set without ``path``).  Completes Phase 59.
 
 ### Fixed
 - **Gemini rate-limit errors show the retry hint and quota kind** —
