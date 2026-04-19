@@ -48,6 +48,10 @@ uv run pytest tests/e2e/test_paas_charm_build.py -k django -v
 # Just the research-driven path (agent plans the whole thing from scratch)
 uv run pytest tests/e2e/test_research_charm_build.py -v
 
+# Switch the e2e provider (default: gemini). Handy when one provider's
+# daily quota is exhausted.
+CANTRIP_E2E_PROVIDER=claude uv run pytest tests/e2e -m e2e -v
+
 # All checks (lint + unit)
 make check
 ```

@@ -550,17 +550,35 @@ def require_controller(cloud_type: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+_PROVIDER_ENV_VAR = "CANTRIP_E2E_PROVIDER"
+"""Environment override for the e2e provider.
+
+When set, this takes precedence over the ``name`` argument passed to
+:func:`make_provider` — handy for running the same test against a
+different provider without editing code.  Useful when a daily quota on
+one provider is exhausted and we want to keep running on another.
+"""
+
+
 def make_provider(name: str) -> LLMProvider:
-    """Instantiate a provider by name, skipping the test if keys are missing."""
+    """Instantiate a provider by name, skipping the test if keys are missing.
+
+    The concrete provider can be overridden per-run by setting the
+    ``CANTRIP_E2E_PROVIDER`` environment variable to ``gemini`` or
+    ``claude`` — tests themselves don't need to know which one.
+    """
     import os
 
     from cantrip.llm import create_provider
 
+    resolved = os.environ.get(_PROVIDER_ENV_VAR) or name
     env_map = {
         "gemini": "GEMINI_API_KEY",
         "claude": "ANTHROPIC_API_KEY",
     }
-    env = env_map.get(name)
-    if env and not os.environ.get(env):
-        pytest.skip(f"{env} not set")
-    return create_provider(name)
+    env = env_map.get(resolved)
+    if env is None:
+        pytest.skip(f"unknown e2e provider: {resolved!r}")
+    if not os.environ.get(env):
+        pytest.skip(f"{env} not set (resolved provider: {resolved})")
+    return create_provider(resolved)

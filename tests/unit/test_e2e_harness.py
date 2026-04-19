@@ -256,5 +256,24 @@ class TestFindDeployedApp:
 class TestMakeProvider:
     def test_missing_key_skips(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("CANTRIP_E2E_PROVIDER", raising=False)
         with pytest.raises(pytest.skip.Exception):
             harness.make_provider("gemini")
+
+    def test_env_override_selects_claude(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``CANTRIP_E2E_PROVIDER=claude`` makes gemini-wired tests use Claude."""
+        monkeypatch.setenv("CANTRIP_E2E_PROVIDER", "claude")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        # Keep GEMINI set so we can tell the env var is what's being honoured.
+        monkeypatch.setenv("GEMINI_API_KEY", "unused")
+        with pytest.raises(pytest.skip.Exception) as exc_info:
+            harness.make_provider("gemini")
+        assert "ANTHROPIC_API_KEY" in str(exc_info.value)
+
+    def test_unknown_provider_skips_with_clear_message(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CANTRIP_E2E_PROVIDER", "not-a-real-provider")
+        with pytest.raises(pytest.skip.Exception) as exc_info:
+            harness.make_provider("gemini")
+        assert "not-a-real-provider" in str(exc_info.value)
