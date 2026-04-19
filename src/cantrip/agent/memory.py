@@ -15,6 +15,7 @@ that the agent tools and the system-prompt builder talk to.
 from __future__ import annotations
 
 import datetime
+import hashlib
 import logging
 import os
 import re
@@ -118,6 +119,106 @@ class MemoryEntry:
             "last_validated_at": self.last_validated_at,
             "access_count": self.access_count,
         }
+
+
+@dataclass(frozen=True)
+class CitationCheck:
+    """Outcome of validating a single citation against the current filesystem."""
+
+    citation: dict[str, Any]
+    ok: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class RevalidationResult:
+    """Outcome of revalidating a single memory's citations.
+
+    ``new_status`` is set when revalidation changed the memory's lifecycle
+    status (``active`` → ``quarantined`` or the reverse); ``None`` means
+    the status was left untouched.  ``validated_at`` is the ISO timestamp
+    that got written to the entry's ``last_validated_at`` column, letting
+    callers surface "last checked X minutes ago" in UI later.
+    """
+
+    title: str
+    scope: str
+    ok: bool
+    reason: str
+    checks: list[CitationCheck] = field(default_factory=list)
+    new_status: str | None = None
+    validated_at: str | None = None
+
+
+def sha_for_range(path: Path, line_start: int | None, line_end: int | None) -> str:
+    """Return the hex SHA-256 of ``path`` (optionally restricted to a line range).
+
+    Lines are 1-indexed and inclusive on both ends.  Passing ``None`` for
+    either bound uses the start or end of the file respectively.  This is
+    the canonical hash stored in a citation so revalidation can spot a
+    drifting source file.
+    """
+    text = path.read_text()
+    if line_start is None and line_end is None:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    lines = text.splitlines(keepends=True)
+    start_idx = max(1, line_start or 1) - 1
+    end_idx = len(lines) if line_end is None else min(len(lines), line_end)
+    selected = "".join(lines[start_idx:end_idx])
+    return hashlib.sha256(selected.encode("utf-8")).hexdigest()
+
+
+def validate_citation(citation: dict[str, Any], *, base_path: Path | None = None) -> CitationCheck:
+    """Check a single citation against the current filesystem.
+
+    The citation is considered valid when ``path`` resolves to a readable
+    file and — when a ``sha`` is stored — its current SHA matches.
+    Citations without a ``sha`` are treated as existence-only checks: the
+    file merely has to still be there.  Relative paths resolve against
+    ``base_path`` when supplied; otherwise relative paths report as
+    invalid since there is no stable anchor for them.
+    """
+    raw_path = citation.get("path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return CitationCheck(citation=citation, ok=False, reason="missing path")
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        if base_path is None:
+            return CitationCheck(
+                citation=citation,
+                ok=False,
+                reason=f"relative path {raw_path!r} has no base to resolve against",
+            )
+        candidate = base_path / candidate
+    if not candidate.is_file():
+        return CitationCheck(citation=citation, ok=False, reason=f"file not found: {candidate}")
+    stored_sha = citation.get("sha")
+    if not isinstance(stored_sha, str) or not stored_sha:
+        return CitationCheck(citation=citation, ok=True, reason="file exists")
+    line_start = _maybe_int(citation.get("line_start"))
+    line_end = _maybe_int(citation.get("line_end"))
+    try:
+        actual_sha = sha_for_range(candidate, line_start, line_end)
+    except OSError as exc:
+        return CitationCheck(citation=citation, ok=False, reason=f"cannot read {candidate}: {exc}")
+    if actual_sha != stored_sha:
+        return CitationCheck(
+            citation=citation,
+            ok=False,
+            reason=f"sha mismatch at {candidate}: stored {stored_sha[:12]}…, "
+            f"current {actual_sha[:12]}…",
+        )
+    return CitationCheck(citation=citation, ok=True, reason="sha match")
+
+
+def _maybe_int(value: Any) -> int | None:
+    """Best-effort int coercion; returns ``None`` on anything uncoerceable."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class GlobalMemoryStore:
@@ -420,9 +521,12 @@ class MemoryManager:
         self,
         session_store: SessionStore | None,
         global_store: GlobalMemoryStore | None = None,
+        *,
+        charm_path: Path | None = None,
     ) -> None:
         self._session_store = session_store
         self._global_store = global_store or GlobalMemoryStore()
+        self._charm_path = charm_path
 
     @property
     def global_store(self) -> GlobalMemoryStore:
@@ -596,6 +700,59 @@ class MemoryManager:
             return self._global_store.delete(title)
         raise MemoryScopeError(f"Unknown memory scope: {scope!r}")
 
+    # ── Revalidation ────────────────────────────────────────────────────
+
+    def revalidate(self, *, scope: str, title: str) -> RevalidationResult:
+        """Validate the citations on a single memory and update its status.
+
+        A memory with no citations is left at its current status but still
+        gets a fresh ``last_validated_at`` timestamp — the check is
+        trivially successful.  On any citation failure the memory is moved
+        to ``quarantined`` so the prompt-index excludes it.  Recovery (a
+        later revalidate that passes) moves it back to ``active``.
+        """
+        entry = self.read(title=title, scope=scope)
+        if entry is None:
+            return RevalidationResult(
+                title=title, scope=scope, ok=False, reason="not found", checks=[]
+            )
+        checks = [validate_citation(c, base_path=self._charm_path) for c in entry.citations]
+        all_ok = all(c.ok for c in checks)
+        new_status: str | None = None
+        if entry.status == "active" and not all_ok:
+            new_status = "quarantined"
+        elif entry.status == "quarantined" and all_ok:
+            new_status = "active"
+        now = _now_iso()
+        self.update(
+            scope=scope,
+            title=title,
+            status=new_status,
+            last_validated_at=now,
+        )
+        return RevalidationResult(
+            title=title,
+            scope=scope,
+            ok=all_ok,
+            reason=(
+                "no citations"
+                if not checks
+                else "all citations valid"
+                if all_ok
+                else "one or more citations invalid"
+            ),
+            checks=checks,
+            new_status=new_status,
+            validated_at=now,
+        )
+
+    def revalidate_all(self, *, scope: str | None = None) -> list[RevalidationResult]:
+        """Revalidate every entry in *scope* (or both scopes by default)."""
+        results: list[RevalidationResult] = []
+        for entry in self.list_entries(scope=scope, status=None):
+            results.append(self.revalidate(scope=entry.scope, title=entry.title))
+        return results
+
     # ── Prompt injection ────────────────────────────────────────────────
 
     def render_prompt_index(self) -> str:
@@ -667,9 +824,13 @@ __all__ = [
     "MEMORY_INDEX_MAX_LINES",
     "VALID_KINDS",
     "VALID_STATUSES",
+    "CitationCheck",
     "GlobalMemoryStore",
     "MemoryEntry",
     "MemoryManager",
     "MemoryScopeError",
+    "RevalidationResult",
+    "sha_for_range",
     "slugify_title",
+    "validate_citation",
 ]

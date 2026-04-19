@@ -367,6 +367,86 @@ class MemoryUpdateTool(_MemoryToolBase):
         )
 
 
+class MemoryRevalidateTool(_MemoryToolBase):
+    """Re-check citations on memories and quarantine stale ones."""
+
+    @property
+    def name(self) -> str:
+        return "memory_revalidate"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Re-check a memory's citations (file exists, SHA still matches) and "
+            "update its status.  Memories whose cited source has drifted are "
+            "quarantined so the prompt index stops surfacing them; recovery "
+            "happens automatically when the citations become valid again.  "
+            "Pass a title to revalidate one entry, or omit it to sweep the "
+            "given scope (or both scopes)."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "enum": _SCOPE_ENUM,
+                    "description": "Optional scope filter.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Title of a single memory to revalidate.",
+                },
+            },
+        }
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        """Revalidate one memory or sweep a scope."""
+        scope = kwargs.get("scope")
+        title = kwargs.get("title")
+        if title is not None:
+            if not isinstance(title, str) or not title.strip():
+                return ToolResult(success=False, output="", error="title must be a string")
+            if not isinstance(scope, str):
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error="scope is required when title is given",
+                )
+            result = self._manager.revalidate(scope=scope, title=title)
+            if not result.checks and result.reason == "not found":
+                return ToolResult(success=False, output="", error=f"No memory found: {title}")
+            lines = [
+                f"{result.title} ({result.scope}): {result.reason}",
+            ]
+            for check in result.checks:
+                marker = "✓" if check.ok else "✗"
+                path = check.citation.get("path", "(no path)")
+                lines.append(f"  {marker} {path} — {check.reason}")
+            if result.new_status:
+                lines.append(f"  status → {result.new_status}")
+            return ToolResult(success=True, output="\n".join(lines))
+        # Bulk sweep.
+        results = self._manager.revalidate_all(scope=scope)
+        quarantined = sum(1 for r in results if r.new_status == "quarantined")
+        recovered = sum(1 for r in results if r.new_status == "active")
+        clean = sum(1 for r in results if r.ok and r.new_status is None)
+        failing = sum(1 for r in results if not r.ok and r.new_status is None)
+        summary = (
+            f"Revalidated {len(results)} memories — "
+            f"{clean} clean, {quarantined} newly quarantined, "
+            f"{recovered} recovered, {failing} still failing"
+        )
+        detail_lines = [summary]
+        for result in results:
+            if result.new_status or not result.ok:
+                marker = "✗" if not result.ok else "→"
+                detail_lines.append(f"  {marker} {result.title} ({result.scope}): {result.reason}")
+        return ToolResult(success=True, output="\n".join(detail_lines))
+
+
 class MemoryForgetTool(_MemoryToolBase):
     """Delete a memory by title."""
 
@@ -413,13 +493,14 @@ class MemoryForgetTool(_MemoryToolBase):
 
 
 def build_memory_tools(manager: MemoryManager) -> list[Tool]:
-    """Return the six memory tools bound to *manager*."""
+    """Return the memory tools bound to *manager*."""
     return [
         MemoryListTool(manager),
         MemoryReadTool(manager),
         MemorySearchTool(manager),
         MemoryWriteTool(manager),
         MemoryUpdateTool(manager),
+        MemoryRevalidateTool(manager),
         MemoryForgetTool(manager),
     ]
 
@@ -428,6 +509,7 @@ __all__ = [
     "MemoryForgetTool",
     "MemoryListTool",
     "MemoryReadTool",
+    "MemoryRevalidateTool",
     "MemorySearchTool",
     "MemoryUpdateTool",
     "MemoryWriteTool",

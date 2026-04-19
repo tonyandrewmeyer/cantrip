@@ -214,7 +214,10 @@ class CantripAgent:
         """Memory manager over charm-scope (if any) and global-scope memory."""
         if self._memory_manager_cache is None:
             self._ensure_store()
-            self._memory_manager_cache = MemoryManager(session_store=self._store)
+            self._memory_manager_cache = MemoryManager(
+                session_store=self._store,
+                charm_path=self.state.charm_path,
+            )
         return self._memory_manager_cache
 
     def _ensure_store(self) -> None:

@@ -13,7 +13,9 @@ from cantrip.agent.memory import (
     GlobalMemoryStore,
     MemoryManager,
     MemoryScopeError,
+    sha_for_range,
     slugify_title,
+    validate_citation,
 )
 from cantrip.agent.prompts.system import build_system_prompt
 from cantrip.agent.store import SessionStore
@@ -498,3 +500,288 @@ class TestSystemPromptInjection:
         # A generous ceiling — well under a 10k-token prefix.  Well-formed
         # indexes should stay far below this.
         assert len(rendered) < 50_000
+
+
+# ── Citation validation and revalidation ────────────────────────────────
+
+
+class TestCitationHelpers:
+    """Low-level helpers for citation validation."""
+
+    def test_sha_for_whole_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "src.py"
+        path.write_text("hello\nworld\n")
+        import hashlib
+
+        expected = hashlib.sha256(b"hello\nworld\n").hexdigest()
+        assert sha_for_range(path, None, None) == expected
+
+    def test_sha_for_line_range(self, tmp_path: Path) -> None:
+        path = tmp_path / "src.py"
+        path.write_text("a\nb\nc\nd\n")
+        import hashlib
+
+        # Lines 2..3 inclusive.
+        expected = hashlib.sha256(b"b\nc\n").hexdigest()
+        assert sha_for_range(path, 2, 3) == expected
+
+    def test_sha_clamps_past_eof(self, tmp_path: Path) -> None:
+        path = tmp_path / "src.py"
+        path.write_text("a\nb\n")
+        import hashlib
+
+        expected = hashlib.sha256(b"a\nb\n").hexdigest()
+        assert sha_for_range(path, 1, 999) == expected
+
+    def test_validate_citation_happy_path(self, tmp_path: Path) -> None:
+        path = tmp_path / "src.py"
+        path.write_text("foo\nbar\n")
+        sha = sha_for_range(path, 1, 2)
+        check = validate_citation(
+            {
+                "path": str(path),
+                "line_start": 1,
+                "line_end": 2,
+                "sha": sha,
+            }
+        )
+        assert check.ok
+        assert "sha match" in check.reason
+
+    def test_validate_citation_missing_file(self, tmp_path: Path) -> None:
+        check = validate_citation({"path": str(tmp_path / "nope.py"), "sha": "deadbeef"})
+        assert not check.ok
+        assert "file not found" in check.reason
+
+    def test_validate_citation_sha_mismatch(self, tmp_path: Path) -> None:
+        path = tmp_path / "src.py"
+        path.write_text("one\n")
+        check = validate_citation({"path": str(path), "sha": "deadbeef"})
+        assert not check.ok
+        assert "sha mismatch" in check.reason
+
+    def test_validate_citation_no_sha_existence_only(self, tmp_path: Path) -> None:
+        path = tmp_path / "src.py"
+        path.write_text("hi\n")
+        check = validate_citation({"path": str(path)})
+        assert check.ok
+        assert "file exists" in check.reason
+
+    def test_validate_citation_relative_without_base(self) -> None:
+        check = validate_citation({"path": "src/charm.py"})
+        assert not check.ok
+        assert "no base" in check.reason
+
+    def test_validate_citation_relative_resolves_against_base(self, tmp_path: Path) -> None:
+        (tmp_path / "src").mkdir()
+        f = tmp_path / "src" / "charm.py"
+        f.write_text("x")
+        check = validate_citation({"path": "src/charm.py"}, base_path=tmp_path)
+        assert check.ok
+
+    def test_validate_citation_missing_path(self) -> None:
+        check = validate_citation({})
+        assert not check.ok
+        assert "missing path" in check.reason
+
+
+class TestMemoryRevalidate:
+    """End-to-end revalidation through the MemoryManager."""
+
+    def _write_with_citation(
+        self,
+        manager: MemoryManager,
+        tmp_path: Path,
+        *,
+        title: str = "t",
+        body: str = "b",
+        scope: str = "charm",
+    ) -> Path:
+        source = tmp_path / "src.py"
+        source.write_text("alpha\nbeta\ngamma\n")
+        sha = sha_for_range(source, 1, 3)
+        manager.write(
+            scope=scope,
+            title=title,
+            kind="lesson",
+            body=body,
+            citations=[
+                {
+                    "path": str(source),
+                    "line_start": 1,
+                    "line_end": 3,
+                    "sha": sha,
+                }
+            ],
+        )
+        return source
+
+    def test_revalidate_happy_path(self, manager: MemoryManager, tmp_path: Path) -> None:
+        self._write_with_citation(manager, tmp_path)
+        result = manager.revalidate(scope="charm", title="t")
+        assert result.ok
+        assert result.new_status is None
+        assert result.validated_at is not None
+        entry = manager.read(title="t", scope="charm")
+        assert entry is not None
+        assert entry.status == "active"
+        assert entry.last_validated_at == result.validated_at
+
+    def test_revalidate_quarantines_on_drift(self, manager: MemoryManager, tmp_path: Path) -> None:
+        source = self._write_with_citation(manager, tmp_path)
+        # Drift the source after the memory was written.
+        source.write_text("DIFFERENT CONTENT\n")
+        result = manager.revalidate(scope="charm", title="t")
+        assert not result.ok
+        assert result.new_status == "quarantined"
+        entry = manager.read(title="t", scope="charm")
+        assert entry is not None
+        assert entry.status == "quarantined"
+
+    def test_revalidate_recovers_when_fixed(self, manager: MemoryManager, tmp_path: Path) -> None:
+        source = self._write_with_citation(manager, tmp_path)
+        original = source.read_text()
+        source.write_text("drift")
+        manager.revalidate(scope="charm", title="t")
+        # Restore the source.
+        source.write_text(original)
+        result = manager.revalidate(scope="charm", title="t")
+        assert result.ok
+        assert result.new_status == "active"
+        entry = manager.read(title="t", scope="charm")
+        assert entry is not None
+        assert entry.status == "active"
+
+    def test_revalidate_no_citations_is_ok(self, manager: MemoryManager) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        result = manager.revalidate(scope="charm", title="t")
+        assert result.ok
+        assert result.reason == "no citations"
+        assert result.new_status is None
+        entry = manager.read(title="t", scope="charm")
+        assert entry is not None
+        assert entry.last_validated_at is not None
+
+    def test_revalidate_missing_entry(self, manager: MemoryManager) -> None:
+        result = manager.revalidate(scope="charm", title="nope")
+        assert not result.ok
+        assert result.reason == "not found"
+
+    def test_revalidate_quarantined_excluded_from_prompt_index(
+        self, manager: MemoryManager, tmp_path: Path
+    ) -> None:
+        source = self._write_with_citation(manager, tmp_path, title="drifted")
+        source.write_text("moved on")
+        manager.revalidate(scope="charm", title="drifted")
+        rendered = manager.render_prompt_index()
+        assert "drifted" not in rendered
+
+    def test_revalidate_all_summary(
+        self,
+        manager: MemoryManager,
+        tmp_path: Path,
+    ) -> None:
+        # Three memories: one clean, one drifted, one with no citations.
+        (tmp_path / "a.py").write_text("A")
+        (tmp_path / "b.py").write_text("B")
+        sha_a = sha_for_range(tmp_path / "a.py", None, None)
+        sha_b_stale = sha_for_range(tmp_path / "b.py", None, None)
+        manager.write(
+            scope="charm",
+            title="clean",
+            kind="lesson",
+            body="b",
+            citations=[{"path": str(tmp_path / "a.py"), "sha": sha_a}],
+        )
+        manager.write(
+            scope="charm",
+            title="drifted",
+            kind="lesson",
+            body="b",
+            citations=[{"path": str(tmp_path / "b.py"), "sha": sha_b_stale}],
+        )
+        manager.write(scope="charm", title="no_cites", kind="fact", body="b")
+        # Drift b.py after the memory was recorded.
+        (tmp_path / "b.py").write_text("CHANGED")
+        results = manager.revalidate_all(scope="charm")
+        by_title = {r.title: r for r in results}
+        assert by_title["clean"].ok
+        assert not by_title["drifted"].ok
+        assert by_title["drifted"].new_status == "quarantined"
+        assert by_title["no_cites"].ok
+
+
+class TestMemoryRevalidateTool:
+    """The agent tool wrapper around revalidation."""
+
+    @pytest.fixture
+    def tools(self, manager: MemoryManager) -> dict[str, object]:
+        from cantrip.agent.tools.memory import build_memory_tools
+
+        return {t.name: t for t in build_memory_tools(manager)}
+
+    @pytest.mark.asyncio
+    async def test_single_memory(
+        self,
+        tools: dict[str, object],
+        manager: MemoryManager,
+        tmp_path: Path,
+    ) -> None:
+        source = tmp_path / "src.py"
+        source.write_text("x\n")
+        sha = sha_for_range(source, None, None)
+        manager.write(
+            scope="charm",
+            title="t",
+            kind="lesson",
+            body="b",
+            citations=[{"path": str(source), "sha": sha}],
+        )
+        result = await tools["memory_revalidate"].execute(  # type: ignore[attr-defined]
+            scope="charm", title="t"
+        )
+        assert result.success
+        assert "sha match" in result.output
+
+    @pytest.mark.asyncio
+    async def test_single_memory_requires_scope(self, tools: dict[str, object]) -> None:
+        result = await tools["memory_revalidate"].execute(title="t")  # type: ignore[attr-defined]
+        assert not result.success
+        assert "scope is required" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_single_missing(self, tools: dict[str, object]) -> None:
+        result = await tools["memory_revalidate"].execute(  # type: ignore[attr-defined]
+            scope="charm", title="nope"
+        )
+        assert not result.success
+
+    @pytest.mark.asyncio
+    async def test_bulk_sweep(
+        self,
+        tools: dict[str, object],
+        manager: MemoryManager,
+        tmp_path: Path,
+    ) -> None:
+        (tmp_path / "a.py").write_text("A")
+        sha_a = sha_for_range(tmp_path / "a.py", None, None)
+        manager.write(
+            scope="charm",
+            title="clean",
+            kind="lesson",
+            body="b",
+            citations=[{"path": str(tmp_path / "a.py"), "sha": sha_a}],
+        )
+        manager.write(
+            scope="charm",
+            title="drifted",
+            kind="lesson",
+            body="b",
+            citations=[{"path": str(tmp_path / "a.py"), "sha": "deadbeef"}],
+        )
+        result = await tools["memory_revalidate"].execute()  # type: ignore[attr-defined]
+        assert result.success
+        assert "Revalidated 2 memories" in result.output
+        assert "1 clean" in result.output
+        assert "1 newly quarantined" in result.output
+        assert "drifted" in result.output
