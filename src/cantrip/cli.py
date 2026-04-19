@@ -5,6 +5,7 @@ import asyncio
 import json
 import sys
 
+from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import TaskStatus
@@ -35,11 +36,15 @@ _TASK_STATUS_ICONS = {
 
 _HELP_TEXT = """\
 Available commands:
-  /help, ?       Show this help message
-  /tasks         Show current task status
-  /status        Show Juju model status
-  /cost          Show token usage summary
-  exit, quit     Exit Cantrip
+  /help, ?        Show this help message
+  /tasks          Show current task status
+  /status         Show Juju model status
+  /cost           Show token usage summary
+  /memory [scope] List memories (run `/memory help` for subcommands)
+  /remember …     Write a memory (`<kind> [scope] -- <title> -- <body>`)
+  /forget <title> Delete a memory by title
+  /mcp            List configured MCP servers (run `/mcp help` for subcommands)
+  exit, quit      Exit Cantrip
 """
 
 
@@ -189,6 +194,21 @@ async def _repl(agent: CantripAgent) -> None:
             continue
         if user_input.lower() == "/cost":
             _print_cost(agent)
+            continue
+
+        # Shared slash commands (memory, mcp) that render the same text
+        # in every surface.  The CLI prints the text directly and, if
+        # there's an async follow-up (e.g. `/mcp marketplace`), awaits
+        # it inline so the user sees the result before the next prompt.
+        shared_result = slash_commands.dispatch(agent, user_input)
+        if shared_result is not None:
+            print(f"\n{shared_result.text}\n")
+            if shared_result.followup is not None:
+                try:
+                    followup_text = await shared_result.followup
+                except Exception as exc:  # noqa: BLE001 — surface any loader error
+                    followup_text = f"_Error: marketplace lookup failed: {exc}_"
+                print(f"{followup_text}\n")
             continue
 
         spinner_label[0] = "Thinking"

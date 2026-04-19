@@ -11,7 +11,7 @@ import weakref
 import aiohttp.web as web
 import jinja2
 
-from cantrip.agent import mcp_commands, memory_commands
+from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
@@ -61,54 +61,29 @@ def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
         clients.discard(ws)
 
 
-def _handle_memory_slash_command(app: web.Application, agent: CantripAgent, content: str) -> bool:
-    """Handle ``/memory``, ``/remember``, ``/forget``, ``/mcp`` inline.
+def _handle_shared_slash_command(app: web.Application, agent: CantripAgent, content: str) -> bool:
+    """Dispatch the shared slash commands via :mod:`slash_commands`.
 
-    Returns ``True`` when the message was handled as a memory or MCP
-    command — the caller skips the normal LLM round in that case.
-    Echoes the user's command and the system response so the chat
-    history matches the TUI behaviour.
+    Returns ``True`` when the message was handled — the caller then
+    skips the LLM round.  Echoes the user's command and the system
+    response so the chat history matches the TUI behaviour.  Async
+    follow-ups (e.g. ``/mcp marketplace``) run as a background task
+    and broadcast their result when complete.
     """
-    verb, _, args = content.partition(" ")
-    if verb not in {"/memory", "/remember", "/forget", "/mcp"}:
+    result = slash_commands.dispatch(agent, content)
+    if result is None:
         return False
-    if verb == "/mcp":
-        if mcp_commands.is_marketplace_subcommand(args):
-            # Marketplace lookups touch the network; run async in a task
-            # so the websocket handler isn't blocked.
-            _broadcast(app, "chat_message", {"role": "user", "content": content})
-            _broadcast(
-                app,
-                "chat_message",
-                {"role": "system", "content": "Loading MCP marketplaces..."},
-            )
-            asyncio.create_task(_run_mcp_marketplace_async(app, agent, args))
-            return True
-        response = mcp_commands.handle_mcp(agent.mcp_registry, args)
-    else:
-        manager = agent._memory_manager
-        if verb == "/memory":
-            response = memory_commands.handle_memory(
-                manager, args, charm_path=agent.state.charm_path
-            )
-        elif verb == "/remember":
-            response = memory_commands.handle_remember(manager, args)
-        else:
-            response = memory_commands.handle_forget(manager, args)
     _broadcast(app, "chat_message", {"role": "user", "content": content})
-    _broadcast(app, "chat_message", {"role": "system", "content": response})
+    _broadcast(app, "chat_message", {"role": "system", "content": result.text})
+    if result.followup is not None:
+        asyncio.create_task(_broadcast_followup(app, result.followup))
     return True
 
 
-async def _run_mcp_marketplace_async(app: web.Application, agent: CantripAgent, args: str) -> None:
-    """Background task — fetch marketplace data, broadcast the rendered text."""
+async def _broadcast_followup(app: web.Application, followup) -> None:
+    """Await a dispatcher follow-up coroutine and broadcast its result."""
     try:
-        output = await mcp_commands.handle_mcp_async(
-            agent.mcp_registry,
-            agent.mcp_marketplace_sources,
-            agent.mcp_marketplace_loader,
-            args,
-        )
+        output = await followup
     except Exception as exc:  # noqa: BLE001 - background task; surface any error
         output = f"_Error: marketplace lookup failed: {exc}_"
     _broadcast(app, "chat_message", {"role": "system", "content": output})
@@ -342,7 +317,7 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     # them before grabbing the chat lock or showing the
                     # thinking indicator.  Echo the user's command first so
                     # the chat shows what they typed.
-                    if _handle_memory_slash_command(request.app, agent, content):
+                    if _handle_shared_slash_command(request.app, agent, content):
                         continue
 
                     # Serialise chat messages to prevent concurrent state mutation.

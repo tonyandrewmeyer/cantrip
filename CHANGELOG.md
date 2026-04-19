@@ -4,6 +4,33 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Shared slash-command dispatcher** — new
+  ``cantrip/agent/slash_commands.py`` hosts a single ``dispatch()`` and
+  ``SlashResult`` dataclass that all three surfaces (CLI, TUI, Web) now
+  route through for ``/help``, ``/memory``, ``/remember``, ``/forget``,
+  ``/mcp`` and ``/cost``.  Previously each surface duplicated its own
+  dispatch logic, which left ``/memory``, ``/remember``, ``/forget`` and
+  ``/mcp`` missing from the CLI; those now work there too.  Async
+  follow-ups (e.g. ``/mcp marketplace``'s network fetch) are surfaced
+  via ``SlashResult.followup`` so surfaces can show an immediate
+  prelude and render the result once it arrives.  Surface-native
+  commands with custom formatting or side effects (``/tasks``,
+  ``/status``, ``/feelings``) stay on their original surface.
+
+### Fixed
+- **Streaming sentences run together across tool-call rounds** — the
+  agent's streaming conversation loop concatenated each round's text
+  directly, so a round ending ``"Let me check the file."`` followed by
+  a round starting ``"The file contains X."`` rendered as
+  ``"file.The file contains"``.  A ``"\n\n"`` separator is now injected
+  between rounds when the previous round produced non-whitespace text.
+- **Inference-snap streaming crashed on empty-choices frames** — some
+  OpenAI-compatible servers emit a usage-only final frame with
+  ``"choices": []``; the streamer's ``[0]`` index raised
+  ``IndexError``.  The access is now guarded so both missing-key and
+  empty-list frames are tolerated.
+
 ### Changed
 - **Parallel unit tests with pytest-xdist + pytest-cov** — ``make unit``
   and ``make coverage`` now fan out across CPU cores via

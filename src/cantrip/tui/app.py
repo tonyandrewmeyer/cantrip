@@ -12,7 +12,7 @@ from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
 from cantrip import __version__
-from cantrip.agent import emotions, mcp_commands, memory_commands
+from cantrip.agent import emotions, slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.git_branch import PUSH_CONFIRM_PREFIX
@@ -1145,7 +1145,7 @@ class CantripApp(App):
             self._handle_feelings_command(message, chat)
             return
 
-        if self._handle_memory_slash_commands(message, chat):
+        if self._handle_shared_slash_commands(message, chat):
             return
 
         # Disable input and show thinking indicator while processing.
@@ -1212,55 +1212,24 @@ class CantripApp(App):
         result = await self._agent.run_parliament(enabled)
         return emotions.format_report(result, enabled=enabled)
 
-    def _handle_memory_slash_commands(self, message: str, chat: chat_widget.ChatWidget) -> bool:
-        """Dispatch /memory, /remember, /forget.
+    def _handle_shared_slash_commands(self, message: str, chat: chat_widget.ChatWidget) -> bool:
+        """Dispatch the shared slash commands via :mod:`slash_commands`.
 
         Returns ``True`` when the message was handled (so the caller
-        does not also send it to the LLM).  Routes to the shared
-        handlers in ``memory_commands`` so the same logic powers the
-        Web UI.
+        does not also send it to the LLM).  Async follow-ups (e.g.
+        ``/mcp marketplace``) run in a Textual worker so the UI stays
+        responsive; the result lands as a system message via
+        :meth:`_on_mcp_marketplace_done`.
         """
         if not self._agent:
             return False
-        verb, _, args = message.partition(" ")
-        manager = self._agent._memory_manager
-        if verb == "/memory":
-            chat.add_system_message(
-                memory_commands.handle_memory(
-                    manager, args, charm_path=self._agent.state.charm_path
-                )
-            )
-            return True
-        if verb == "/remember":
-            chat.add_system_message(memory_commands.handle_remember(manager, args))
-            return True
-        if verb == "/forget":
-            chat.add_system_message(memory_commands.handle_forget(manager, args))
-            return True
-        if verb == "/mcp":
-            if mcp_commands.is_marketplace_subcommand(args):
-                # Marketplace ops touch the network; run in a worker
-                # so the UI stays responsive.  The result lands as a
-                # system message via the worker-state handler below.
-                chat.add_system_message("Loading MCP marketplaces...")
-                self.run_worker(
-                    self._run_mcp_marketplace(args),
-                    name="mcp_marketplace",
-                    exclusive=False,
-                )
-            else:
-                chat.add_system_message(mcp_commands.handle_mcp(self._agent.mcp_registry, args))
-            return True
-        return False
-
-    async def _run_mcp_marketplace(self, args: str) -> str:
-        """Run the async marketplace dispatcher and return its rendered text."""
-        return await mcp_commands.handle_mcp_async(
-            self._agent.mcp_registry,
-            self._agent.mcp_marketplace_sources,
-            self._agent.mcp_marketplace_loader,
-            args,
-        )
+        result = slash_commands.dispatch(self._agent, message)
+        if result is None:
+            return False
+        chat.add_system_message(result.text)
+        if result.followup is not None:
+            self.run_worker(result.followup, name="mcp_marketplace", exclusive=False)
+        return True
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle worker state changes to update the UI."""
