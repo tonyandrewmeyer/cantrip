@@ -18,12 +18,23 @@ The submodule layout:
 from __future__ import annotations
 
 from cantrip.mcp.client import MCPClient
-from cantrip.mcp.config import REPO_CONFIG_FILENAME, USER_CONFIG_PATH, load_configs
+from cantrip.mcp.config import (
+    REPO_CONFIG_FILENAME,
+    USER_CONFIG_PATH,
+    load_configs,
+    load_marketplace_sources,
+)
 from cantrip.mcp.exceptions import (
     MCPConfigError,
     MCPConnectionError,
     MCPError,
     MCPInvocationError,
+)
+from cantrip.mcp.marketplace import (
+    Marketplace,
+    MarketplaceLoader,
+    MarketplaceServer,
+    MarketplaceSource,
 )
 from cantrip.mcp.registry import MCPRegistry, ServerSnapshot, ServerStatus
 from cantrip.mcp.token_storage import FileTokenStorage
@@ -40,9 +51,14 @@ __all__ = [
     "MCPInvocationError",
     "MCPRegistry",
     "MCPToolInfo",
+    "Marketplace",
+    "MarketplaceLoader",
+    "MarketplaceServer",
+    "MarketplaceSource",
     "OAuthConfig",
     "ServerConfig",
     "ServerSnapshot",
     "ServerStatus",
     "load_configs",
+    "load_marketplace_sources",
 ]

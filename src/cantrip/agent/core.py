@@ -64,7 +64,12 @@ from cantrip.agent.tools import Tool, ToolResult, build_tools
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.llm import base as llm
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
-from cantrip.mcp import MCPRegistry
+from cantrip.mcp import (
+    MarketplaceLoader,
+    MarketplaceSource,
+    MCPRegistry,
+    load_marketplace_sources,
+)
 from cantrip.mcp import load_configs as load_mcp_configs
 from cantrip.ui import events as ui_events
 
@@ -192,6 +197,8 @@ class CantripAgent:
         self._memory_background_tasks: set[asyncio.Task[Any]] = set()
         self._mcp_registry_cache: MCPRegistry | None = None
         self._mcp_started: bool = False
+        self._mcp_marketplace_sources_cache: list[MarketplaceSource] | None = None
+        self._mcp_marketplace_loader: MarketplaceLoader | None = None
 
         self._watcher: EventWatcher | None = None
         self._executor: BackgroundExecutor | None = None
@@ -1742,6 +1749,22 @@ class CantripAgent:
             configs = load_mcp_configs(repo_root=self.state.charm_path)
             self._mcp_registry_cache = MCPRegistry(configs)
         return self._mcp_registry_cache
+
+    @property
+    def mcp_marketplace_sources(self) -> list[MarketplaceSource]:
+        """Marketplace sources declared in user + repo MCP configs (Phase 45.5)."""
+        if self._mcp_marketplace_sources_cache is None:
+            self._mcp_marketplace_sources_cache = load_marketplace_sources(
+                repo_root=self.state.charm_path
+            )
+        return list(self._mcp_marketplace_sources_cache)
+
+    @property
+    def mcp_marketplace_loader(self) -> MarketplaceLoader:
+        """Lazy :class:`MarketplaceLoader` shared across slash-command calls."""
+        if self._mcp_marketplace_loader is None:
+            self._mcp_marketplace_loader = MarketplaceLoader()
+        return self._mcp_marketplace_loader
 
     async def start_mcp(self) -> None:
         """Open every configured MCP connection.  Idempotent.

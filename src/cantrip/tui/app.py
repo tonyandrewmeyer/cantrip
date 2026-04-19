@@ -1238,9 +1238,29 @@ class CantripApp(App):
             chat.add_system_message(memory_commands.handle_forget(manager, args))
             return True
         if verb == "/mcp":
-            chat.add_system_message(mcp_commands.handle_mcp(self._agent.mcp_registry, args))
+            if mcp_commands.is_marketplace_subcommand(args):
+                # Marketplace ops touch the network; run in a worker
+                # so the UI stays responsive.  The result lands as a
+                # system message via the worker-state handler below.
+                chat.add_system_message("Loading MCP marketplaces...")
+                self.run_worker(
+                    self._run_mcp_marketplace(args),
+                    name="mcp_marketplace",
+                    exclusive=False,
+                )
+            else:
+                chat.add_system_message(mcp_commands.handle_mcp(self._agent.mcp_registry, args))
             return True
         return False
+
+    async def _run_mcp_marketplace(self, args: str) -> str:
+        """Run the async marketplace dispatcher and return its rendered text."""
+        return await mcp_commands.handle_mcp_async(
+            self._agent.mcp_registry,
+            self._agent.mcp_marketplace_sources,
+            self._agent.mcp_marketplace_loader,
+            args,
+        )
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle worker state changes to update the UI."""
@@ -1248,7 +1268,23 @@ class CantripApp(App):
             self._on_agent_response_done(event)
         elif event.worker.name == "feelings":
             self._on_feelings_done(event)
+        elif event.worker.name == "mcp_marketplace":
+            self._on_mcp_marketplace_done(event)
         # Preflight workers don't need special handling on completion.
+
+    def _on_mcp_marketplace_done(self, event: Worker.StateChanged) -> None:
+        """Render the marketplace listing when the worker finishes."""
+        if event.state not in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
+            return
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        if event.state == WorkerState.SUCCESS:
+            output = event.worker.result
+            if output:
+                chat.add_system_message(str(output))
+        elif event.state == WorkerState.CANCELLED:
+            chat.add_system_message("Marketplace lookup cancelled.")
+        elif event.state == WorkerState.ERROR:
+            chat.add_system_message(f"Marketplace lookup failed: {event.worker.error}")
 
     def _on_feelings_done(self, event: Worker.StateChanged) -> None:
         """Post the parliament report (or an error) when the feelings worker finishes."""

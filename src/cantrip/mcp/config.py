@@ -36,6 +36,7 @@ from typing import Any
 import yaml
 
 from cantrip.mcp.exceptions import MCPConfigError
+from cantrip.mcp.marketplace import MarketplaceSource, parse_source
 from cantrip.mcp.types import OAuthConfig, ServerConfig, TransportKind
 
 log = logging.getLogger(__name__)
@@ -66,6 +67,54 @@ def load_configs(repo_root: Path | None = None) -> list[ServerConfig]:
             # Repo-scope config overrides user-scope on the same name.
             by_name[server.name] = server
     return sorted(by_name.values(), key=lambda s: s.name)
+
+
+def load_marketplace_sources(
+    repo_root: Path | None = None,
+) -> list[MarketplaceSource]:
+    """Discover marketplace sources from user + repo scope (Phase 45.5).
+
+    Walks the same two configs as :func:`load_configs` and pulls the
+    optional ``marketplaces:`` top-level block from each.  Repo-scope
+    sources are appended after user-scope; duplicate sources (same kind +
+    location) collapse to one so the user can override a user-scope
+    entry by re-declaring it in the repo without seeing it twice.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[MarketplaceSource] = []
+    for path in _candidate_paths(repo_root):
+        if not path.is_file():
+            continue
+        try:
+            sources = _parse_marketplaces_from_path(path)
+        except MCPConfigError as exc:
+            log.warning("Ignoring malformed MCP config at %s: %s", path, exc)
+            continue
+        for src in sources:
+            key = (src.kind.value, src.location)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(src)
+    return out
+
+
+def _parse_marketplaces_from_path(path: Path) -> list[MarketplaceSource]:
+    """Pull the ``marketplaces:`` block from one YAML file."""
+    try:
+        raw = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as exc:
+        raise MCPConfigError(f"could not parse {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        return []
+    block = raw.get("marketplaces")
+    if block is None:
+        return []
+    if not isinstance(block, list):
+        raise MCPConfigError(
+            f"`marketplaces` in {path} must be a list, got {type(block).__name__}"
+        )
+    return [parse_source(entry, source_label=str(path)) for entry in block]
 
 
 def _candidate_paths(repo_root: Path | None) -> list[Path]:

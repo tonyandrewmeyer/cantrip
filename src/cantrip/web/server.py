@@ -73,6 +73,17 @@ def _handle_memory_slash_command(app: web.Application, agent: CantripAgent, cont
     if verb not in {"/memory", "/remember", "/forget", "/mcp"}:
         return False
     if verb == "/mcp":
+        if mcp_commands.is_marketplace_subcommand(args):
+            # Marketplace lookups touch the network; run async in a task
+            # so the websocket handler isn't blocked.
+            _broadcast(app, "chat_message", {"role": "user", "content": content})
+            _broadcast(
+                app,
+                "chat_message",
+                {"role": "system", "content": "Loading MCP marketplaces..."},
+            )
+            asyncio.create_task(_run_mcp_marketplace_async(app, agent, args))
+            return True
         response = mcp_commands.handle_mcp(agent.mcp_registry, args)
     else:
         manager = agent._memory_manager
@@ -87,6 +98,20 @@ def _handle_memory_slash_command(app: web.Application, agent: CantripAgent, cont
     _broadcast(app, "chat_message", {"role": "user", "content": content})
     _broadcast(app, "chat_message", {"role": "system", "content": response})
     return True
+
+
+async def _run_mcp_marketplace_async(app: web.Application, agent: CantripAgent, args: str) -> None:
+    """Background task — fetch marketplace data, broadcast the rendered text."""
+    try:
+        output = await mcp_commands.handle_mcp_async(
+            agent.mcp_registry,
+            agent.mcp_marketplace_sources,
+            agent.mcp_marketplace_loader,
+            args,
+        )
+    except Exception as exc:  # noqa: BLE001 - background task; surface any error
+        output = f"_Error: marketplace lookup failed: {exc}_"
+    _broadcast(app, "chat_message", {"role": "system", "content": output})
 
 
 # ---------------------------------------------------------------------------
