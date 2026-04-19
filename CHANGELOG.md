@@ -32,6 +32,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   acyclic input with valid refs is passed through unchanged, the
   function is idempotent, and the result is always a sub-graph of the
   input (only edge stripping, never invention).
+- **Hypothesis-based property tests for the watcher status-diff**
+  — ``tests/unit/test_watcher_properties.py`` covers
+  ``diff_snapshots`` with nine invariants: ``diff_snapshots(None, s)``
+  is always empty, self-diff is empty, events always reference real
+  apps/units, every event carries ``source="status"``, dedup keys are
+  always populated, and swap-symmetry holds for add/remove event
+  counts across apps, units, and cross-model offers.
 
 ### Fixed
 - **Gemini rate-limit errors show the retry hint and quota kind** —

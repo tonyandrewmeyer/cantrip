@@ -5835,9 +5835,15 @@ after that, each property test is a handful of lines.
 
 ### 59.5 Low — Watcher status-diff properties
 
-- [ ] ``tests/unit/test_watcher_properties.py`` — diffing any status
+- [x] ``tests/unit/test_watcher_properties.py`` — diffing any status
   against itself is empty; diffing A→B then B→A produces inverse
-  change sets where applicable
+  change sets where applicable.  Nine properties: self-diff empty,
+  ``None`` old returns ``[]``, events reference real apps and units
+  (with offers contributing their ``application`` name to the app
+  universe — a real corner Hypothesis surfaced), all events carry
+  ``source="status"``, dedup keys are populated, and swap-symmetry
+  holds for ``new_app``/``removed_app``, ``new_unit``/``removed_unit``,
+  and ``new_offer``/``removed_offer`` event counts.
 
 ### What this phase is *not*
 
