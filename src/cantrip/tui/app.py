@@ -22,13 +22,6 @@ from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.llm import LLMProvider, create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
-from cantrip.tui.screens import graph as graph_screen
-from cantrip.tui.screens import help as help_screen
-from cantrip.tui.screens import logs as logs_screen
-from cantrip.tui.screens import questions as questions_screen
-from cantrip.tui.screens import relation as relation_screen
-from cantrip.tui.screens import traces as traces_screen
-from cantrip.tui.screens import transcript as transcript_screen
 from cantrip.tui.widgets import chat as chat_widget
 from cantrip.tui.widgets import filetree as filetree_widget
 from cantrip.tui.widgets import modelbar as modelbar_widget
@@ -565,6 +558,8 @@ class CantripApp(App):
         chat.add_system_message(proposal.format_for_chat())
 
         # Push the interactive questions screen.
+        from cantrip.tui.screens import questions as questions_screen
+
         self.push_screen(
             questions_screen.DesignQuestionsScreen(questions),
             callback=self._on_questions_answered,
@@ -1335,15 +1330,21 @@ class CantripApp(App):
 
     def action_help(self) -> None:
         """Show help screen."""
+        from cantrip.tui.screens import help as help_screen
+
         self.push_screen(help_screen.HelpScreen())
 
     def action_debug(self) -> None:
         """Show trace/debug screen."""
+        from cantrip.tui.screens import traces as traces_screen
+
         cos_model = self._agent.state.cos_model if self._agent else None
         self.push_screen(traces_screen.TraceScreen(cos_model=cos_model))
 
     def on_relation_line_selected(self, event: status_widgets.RelationLine.Selected) -> None:
         """Open the relation detail screen when a relation line is clicked."""
+        from cantrip.tui.screens import relation as relation_screen
+
         dev_model = self._agent.state.dev_model if self._agent else None
         self.push_screen(
             relation_screen.RelationDetailScreen(
@@ -1370,11 +1371,15 @@ class CantripApp(App):
 
     def action_logs(self) -> None:
         """Show log viewer screen."""
+        from cantrip.tui.screens import logs as logs_screen
+
         dev_model = self._agent.state.dev_model if self._agent else None
         self.push_screen(logs_screen.LogScreen(model=dev_model))
 
     def action_graph(self) -> None:
         """Show integration graph screen."""
+        from cantrip.tui.screens import graph as graph_screen
+
         status_widget = self.query_one("#juju-status", status_widgets.MultiModelStatusWidget)
         current_app = self._agent.state.charm_name if self._agent else None
         dev_model = self._agent.state.dev_model if self._agent else None
@@ -1389,6 +1394,8 @@ class CantripApp(App):
     def action_transcript(self) -> None:
         """Show session transcript screen."""
         import pathlib
+
+        from cantrip.tui.screens import transcript as transcript_screen
 
         db_path: pathlib.Path | None = None
         if self._agent and self._agent.state.charm_path:

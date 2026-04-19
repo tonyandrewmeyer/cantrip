@@ -28,6 +28,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   commands with custom formatting or side effects (``/tasks``,
   ``/status``, ``/feelings``) stay on their original surface.
 
+### Performance
+- **Faster TUI startup** — ``cantrip/agent/tools/__init__.py`` previously
+  imported all ~100 tool classes at package-import time, adding ~1.6s
+  to every ``cantrip`` invocation even when the TUI never built an
+  agent.  Tool-class imports are now deferred into ``build_tools()``
+  (the only caller that needs them), and the seven TUI screen modules
+  (``help``, ``logs``, ``graph``, ``traces``, ``relation``,
+  ``transcript``, ``questions``) are imported lazily inside their
+  action handlers instead of at ``cantrip.tui.app`` module scope.
+  Importing ``cantrip.agent.tools`` drops from ~1.6s to ~75ms, and
+  ``cantrip --help`` goes from ~1.3s to ~0.85s.
+
 ### Fixed
 - **PaaS charms shipped without ``paas-charm`` in ``requirements.txt``**
   — when the agent co-located a 12-factor app's source with the

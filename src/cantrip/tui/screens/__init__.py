@@ -1,17 +1,6 @@
-"""TUI screens."""
+"""TUI screens.
 
-from cantrip.tui.screens.graph import GraphScreen
-from cantrip.tui.screens.help import HelpScreen
-from cantrip.tui.screens.logs import LogScreen
-from cantrip.tui.screens.relation import RelationDetailScreen
-from cantrip.tui.screens.traces import TraceScreen
-from cantrip.tui.screens.transcript import TranscriptScreen
-
-__all__ = [
-    "GraphScreen",
-    "HelpScreen",
-    "LogScreen",
-    "RelationDetailScreen",
-    "TraceScreen",
-    "TranscriptScreen",
-]
+Screen modules are not re-exported here: each is imported lazily at its
+use site in :mod:`cantrip.tui.app` so the TUI starts quickly even though
+most screens (help, logs, graph, etc.) are only displayed on demand.
+"""
