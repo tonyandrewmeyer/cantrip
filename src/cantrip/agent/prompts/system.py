@@ -92,6 +92,7 @@ def build_system_prompt(
     cos_model: str | None = None,
     recent_decisions: list[dict] | None = None,
     skills_index: str | None = None,
+    memory_index: str | None = None,
     environment_ready: bool | None = None,
     watcher_enabled: bool | None = None,
     compact: bool = False,
@@ -107,6 +108,10 @@ def build_system_prompt(
         cos_model: Name of the COS Juju model.
         recent_decisions: List of recent decisions made.
         skills_index: Pre-rendered XML listing available skills.
+        memory_index: Pre-rendered Markdown listing available memories —
+            global MEMORY.md contents plus charm-scope titles.  Bodies are
+            loaded on demand via the ``memory_read`` tool to keep this
+            section small.
         environment_ready: Whether the dev environment is fully provisioned.
         watcher_enabled: Whether the event-driven watcher is active.
 
@@ -136,6 +141,7 @@ def build_system_prompt(
         cos_model=_sanitise(cos_model),
         recent_decisions=safe_decisions,
         skills_index=skills_index,
+        memory_index=_sanitise(memory_index),
         environment_ready=environment_ready,
         watcher_enabled=watcher_enabled,
     )

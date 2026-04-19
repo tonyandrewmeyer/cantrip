@@ -18,6 +18,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **Memory primitives and storage (Phase 43.1)** — Cantrip gains a
+  learned-lesson layer with two complementary scopes.  Charm-scope memories
+  live in a new `memory` table (schema v8) inside ``.cantrip``; global-scope
+  memories live under ``~/.config/cantrip/memory/`` (overridable via
+  ``CANTRIP_MEMORY_DIR``) as Markdown files with YAML frontmatter, fronted
+  by an always-loaded ``MEMORY.md`` index rebuilt on every write.  Six
+  agent tools — ``memory_list``, ``memory_read``, ``memory_search``,
+  ``memory_write``, ``memory_update``, ``memory_forget`` — route through a
+  unified ``MemoryManager`` that lets tools treat both scopes identically
+  and picks charm-scope over global-scope when titles collide.  The system
+  prompt gains a Memory Index section after Available Skills, carrying the
+  global MEMORY.md contents and charm-scope titles only (bodies are loaded
+  on demand).  40 unit tests cover the v7→v8 migration, SQLite and
+  filesystem round-trips, all six tool paths, and the prompt-injection
+  sanitisation.  Auto-writer, UI controls, and export/import follow in
+  Phases 43.2–43.4.
 - **Worktree configuration and limits (Phase 44.5)** — three defensive
   knobs on ``_DefaultWorktreeAllocator``.  ``CANTRIP_MAX_WORKTREES``
   caps concurrent worktrees (``0`` disables allocation entirely as an

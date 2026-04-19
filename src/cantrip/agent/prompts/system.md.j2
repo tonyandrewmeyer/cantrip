@@ -574,6 +574,18 @@ Use the `load_skill` tool to load full instructions when you need detailed guida
 
 {{ skills_index }}
 {% endif %}
+{% if memory_index %}
+
+## Memory Index
+
+Learned lessons and durable notes.  The full body of each memory is loaded on demand — only titles and a short description appear here.
+
+- Use `memory_read` with a title to load the body before acting on it
+- Use `memory_search` to find memories by keyword
+- Use `memory_write` to record a durable fact, rule, or lesson — scope `charm` for this charm only, `global` for reusable techniques
+
+{{ memory_index }}
+{% endif %}
 ## Virtual Files
 
 When tool results or conversation content is too large for the context window, it is stored as a virtual file with only the first portion shown inline. Use `virtual_file_read` to access full content and `virtual_file_search` to search by regex. After context compaction, prior conversation history is available as a virtual file.

@@ -14,7 +14,7 @@ from cantrip.agent.state import AgentState, Decision
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -107,6 +107,22 @@ CREATE TABLE IF NOT EXISTS events (
     detail TEXT NOT NULL DEFAULT '{}',
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    citations TEXT NOT NULL DEFAULT '[]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_accessed_at TEXT,
+    last_validated_at TEXT,
+    access_count INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -117,6 +133,25 @@ def _truncate(text: str, max_bytes: int = _MAX_CONTENT_BYTES) -> str:
     # Truncate at character boundary.
     truncated = text.encode("utf-8", errors="replace")[:max_bytes].decode("utf-8", errors="ignore")
     return truncated + f"\n\n[truncated — {len(text)} characters total]"
+
+
+def _memory_row_to_dict(row: sqlite3.Row) -> dict[str, object]:
+    """Convert a memory table row to a plain dict with decoded JSON fields."""
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "kind": row["kind"],
+        "body": row["body"],
+        "source": row["source"],
+        "citations": _safe_json_load(row["citations"], fallback=[]),
+        "tags": _safe_json_load(row["tags"], fallback=[]),
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "last_accessed_at": row["last_accessed_at"],
+        "last_validated_at": row["last_validated_at"],
+        "access_count": row["access_count"],
+    }
 
 
 class SessionStore:
@@ -222,6 +257,26 @@ class SessionStore:
                     "ALTER TABLE session ADD COLUMN "
                     "emergencies_attempted INTEGER NOT NULL DEFAULT 0"
                 )
+
+        if current < 8:
+            # v8: charm-scope memory table (Phase 43.1).
+            self._conn.executescript("""\
+                CREATE TABLE IF NOT EXISTS memory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL UNIQUE,
+                    kind TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    citations TEXT NOT NULL DEFAULT '[]',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    last_accessed_at TEXT,
+                    last_validated_at TEXT,
+                    access_count INTEGER NOT NULL DEFAULT 0
+                );
+            """)
 
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
@@ -711,6 +766,159 @@ class SessionStore:
             }
             for r in rows
         ]
+
+    # ── Memory (charm scope, Phase 43) ───────────────────────────────────
+
+    def record_memory(
+        self,
+        title: str,
+        kind: str,
+        body: str,
+        *,
+        source: str = "manual",
+        citations: list[dict[str, object]] | None = None,
+        tags: list[str] | None = None,
+        status: str = "active",
+    ) -> int:
+        """Insert a new memory row and return its id."""
+        cursor = self._db.execute(
+            """\
+            INSERT INTO memory (title, kind, body, source, citations, tags, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                title,
+                kind,
+                _truncate(body),
+                source,
+                json.dumps(citations or []),
+                json.dumps(tags or []),
+                status,
+            ),
+        )
+        self._db.commit()
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
+
+    def update_memory(
+        self,
+        memory_id: int,
+        *,
+        body: str | None = None,
+        kind: str | None = None,
+        tags: list[str] | None = None,
+        status: str | None = None,
+        citations: list[dict[str, object]] | None = None,
+        last_accessed_at: str | None = None,
+        last_validated_at: str | None = None,
+    ) -> bool:
+        """Partial update of a memory row. Returns True when a row was changed."""
+        fields: list[str] = []
+        params: list[object] = []
+        if body is not None:
+            fields.append("body = ?")
+            params.append(_truncate(body))
+        if kind is not None:
+            fields.append("kind = ?")
+            params.append(kind)
+        if tags is not None:
+            fields.append("tags = ?")
+            params.append(json.dumps(tags))
+        if status is not None:
+            fields.append("status = ?")
+            params.append(status)
+        if citations is not None:
+            fields.append("citations = ?")
+            params.append(json.dumps(citations))
+        if last_accessed_at is not None:
+            fields.append("last_accessed_at = ?")
+            params.append(last_accessed_at)
+        if last_validated_at is not None:
+            fields.append("last_validated_at = ?")
+            params.append(last_validated_at)
+        if not fields:
+            return False
+        fields.append("updated_at = datetime('now')")
+        params.append(memory_id)
+        cursor = self._db.execute(
+            f"UPDATE memory SET {', '.join(fields)} WHERE id = ?",  # noqa: S608
+            params,
+        )
+        self._db.commit()
+        return cursor.rowcount > 0
+
+    def touch_memory(self, memory_id: int) -> None:
+        """Bump access_count and set last_accessed_at to now."""
+        self._db.execute(
+            "UPDATE memory SET access_count = access_count + 1, "
+            "last_accessed_at = datetime('now') WHERE id = ?",
+            (memory_id,),
+        )
+        self._db.commit()
+
+    def delete_memory(self, memory_id: int) -> bool:
+        """Remove a memory row. Returns True when a row was removed."""
+        cursor = self._db.execute("DELETE FROM memory WHERE id = ?", (memory_id,))
+        self._db.commit()
+        return cursor.rowcount > 0
+
+    def get_memory(self, memory_id: int) -> dict[str, object] | None:
+        """Fetch a memory row by id."""
+        row = self._db.execute("SELECT * FROM memory WHERE id = ?", (memory_id,)).fetchone()
+        return _memory_row_to_dict(row) if row else None
+
+    def get_memory_by_title(self, title: str) -> dict[str, object] | None:
+        """Fetch a memory row by title."""
+        row = self._db.execute("SELECT * FROM memory WHERE title = ?", (title,)).fetchone()
+        return _memory_row_to_dict(row) if row else None
+
+    def list_memory(
+        self,
+        *,
+        kind: str | None = None,
+        status: str | None = "active",
+        tag: str | None = None,
+    ) -> list[dict[str, object]]:
+        """List memory rows matching optional filters, newest first.
+
+        ``status=None`` returns every row regardless of status; the default
+        hides archived and quarantined memories.  ``tag`` matches a single
+        tag against the JSON-encoded tags column with a LIKE probe; callers
+        that need exact matching should filter the result in Python.
+        """
+        query = "SELECT * FROM memory"
+        conditions: list[str] = []
+        params: list[object] = []
+        if kind is not None:
+            conditions.append("kind = ?")
+            params.append(kind)
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+        if tag is not None:
+            conditions.append("tags LIKE ?")
+            params.append(f'%"{tag}"%')
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY id DESC"
+        rows = self._db.execute(query, params).fetchall()
+        return [_memory_row_to_dict(r) for r in rows]
+
+    def search_memory(
+        self, query: str, *, status: str | None = "active"
+    ) -> list[dict[str, object]]:
+        """Keyword search across title and body. Case-insensitive substring match."""
+        like = f"%{query}%"
+        sql = (
+            "SELECT * FROM memory WHERE (title LIKE ? OR body LIKE ?)"
+            if status is None
+            else "SELECT * FROM memory WHERE (title LIKE ? OR body LIKE ?) AND status = ?"
+        )
+        params: list[object] = [like, like]
+        if status is not None:
+            params.append(status)
+        rows = self._db.execute(sql + " ORDER BY id DESC", params).fetchall()
+        return [_memory_row_to_dict(r) for r in rows]
 
     # ── Migration ────────────────────────────────────────────────────────
 

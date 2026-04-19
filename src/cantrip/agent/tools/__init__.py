@@ -91,6 +91,15 @@ from cantrip.agent.tools.juju import (
     JujuWaitTool,
 )
 from cantrip.agent.tools.loadtest import GenerateLoadTestTool
+from cantrip.agent.tools.memory import (
+    MemoryForgetTool,
+    MemoryListTool,
+    MemoryReadTool,
+    MemorySearchTool,
+    MemoryUpdateTool,
+    MemoryWriteTool,
+    build_memory_tools,
+)
 from cantrip.agent.tools.multi_edit import MultiEditTool
 from cantrip.agent.tools.observability import (
     JujuDebugLogTool,
@@ -140,6 +149,7 @@ def build_tools(
     provider: Any = None,
     state: Any = None,
     queue: Any = None,
+    memory_manager: MemoryManager | None = None,
 ) -> list[Tool]:
     """Build all agent tool instances.
 
@@ -275,12 +285,15 @@ def build_tools(
     if provider is not None and state is not None and queue is not None:
         tools.append(PlanTasksTool(provider=provider, state=state, queue=queue))
         tools.append(ManageTasksTool(queue=queue))
+    if memory_manager is not None:
+        tools.extend(build_memory_tools(memory_manager))
 
     return tools
 
 
 if TYPE_CHECKING:
     from cantrip.agent.context import VirtualFileStore
+    from cantrip.agent.memory import MemoryManager
     from cantrip.agent.skills import SkillsIndex
 
 
@@ -393,6 +406,13 @@ __all__ = [
     "PlanTasksTool",
     # Task management
     "ManageTasksTool",
+    # Memory
+    "MemoryForgetTool",
+    "MemoryListTool",
+    "MemoryReadTool",
+    "MemorySearchTool",
+    "MemoryUpdateTool",
+    "MemoryWriteTool",
     # Skills
     "LoadSkillTool",
     # Virtual files

@@ -1,0 +1,675 @@
+"""Memory primitives for Cantrip.
+
+Phase 43 adds two complementary memory scopes:
+
+* **Charm-scope** memories live in the per-charm ``.cantrip`` SQLite database
+  and are managed by :class:`cantrip.agent.store.SessionStore`.
+* **Global-scope** memories live on the filesystem under
+  ``~/.config/cantrip/memory/`` as Markdown files with YAML frontmatter,
+  fronted by an always-loaded ``MEMORY.md`` index.
+
+This module provides the filesystem side and a unified :class:`MemoryManager`
+that the agent tools and the system-prompt builder talk to.
+"""
+
+from __future__ import annotations
+
+import datetime
+import logging
+import os
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
+
+import yaml
+
+if TYPE_CHECKING:
+    from cantrip.agent.store import SessionStore
+
+log = logging.getLogger(__name__)
+
+# Maximum number of lines read from the global MEMORY.md index before truncation.
+# Rationale: keep the prompt-index section bounded so a runaway index cannot
+# blow the system-prompt budget.  Extra lines are dropped with a marker.
+MEMORY_INDEX_MAX_LINES = 200
+
+# Filename of the always-loaded global index.
+INDEX_FILENAME = "MEMORY.md"
+
+# Frontmatter delimiter for individual memory files.
+_FRONTMATTER_DELIMITER = "---"
+
+# Kinds of memory we recognise.  Not an enum so callers can store free-form
+# subtypes later without a breaking change, but tools validate against this set.
+VALID_KINDS = frozenset({"fact", "rule", "lesson"})
+
+# Valid lifecycle statuses.
+VALID_STATUSES = frozenset({"active", "quarantined", "archived"})
+
+# Characters forbidden in topic filenames — keep it portable and avoid path
+# traversal through a user-supplied title.
+_SAFE_SLUG_RE = re.compile(r"[^a-z0-9._-]+")
+
+
+def _default_global_dir() -> Path:
+    """Return the default location for the global memory directory.
+
+    Honours ``CANTRIP_MEMORY_DIR`` when set; otherwise falls back to
+    ``$XDG_CONFIG_HOME/cantrip/memory`` or ``~/.config/cantrip/memory``.
+    """
+    override = os.environ.get("CANTRIP_MEMORY_DIR")
+    if override:
+        return Path(override).expanduser()
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg).expanduser() if xdg else Path.home() / ".config"
+    return base / "cantrip" / "memory"
+
+
+def slugify_title(title: str) -> str:
+    """Turn a memory title into a safe filename stem.
+
+    Lower-cases, replaces runs of non-``[a-z0-9._-]`` characters with ``_``,
+    strips leading and trailing separators, and falls back to ``memory``
+    when the result would be empty.
+    """
+    slug = _SAFE_SLUG_RE.sub("_", title.lower()).strip("._-")
+    return slug or "memory"
+
+
+@dataclass
+class MemoryEntry:
+    """An in-memory representation of a single memory.
+
+    Covers both charm-scope rows from SQLite and global-scope Markdown files.
+    The ``scope`` field identifies the origin.
+    """
+
+    title: str
+    kind: str
+    body: str
+    scope: str  # "charm" or "global"
+    id: int | None = None
+    source: str = "manual"
+    tags: list[str] = field(default_factory=list)
+    citations: list[dict[str, Any]] = field(default_factory=list)
+    status: str = "active"
+    created_at: str | None = None
+    updated_at: str | None = None
+    last_accessed_at: str | None = None
+    last_validated_at: str | None = None
+    access_count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable view suitable for tool output."""
+        return {
+            "title": self.title,
+            "kind": self.kind,
+            "body": self.body,
+            "scope": self.scope,
+            "id": self.id,
+            "source": self.source,
+            "tags": list(self.tags),
+            "citations": list(self.citations),
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "last_accessed_at": self.last_accessed_at,
+            "last_validated_at": self.last_validated_at,
+            "access_count": self.access_count,
+        }
+
+
+class GlobalMemoryStore:
+    """Filesystem-backed memory store under ``~/.config/cantrip/memory/``.
+
+    Individual memories are Markdown files with YAML frontmatter.  The
+    sibling ``MEMORY.md`` is an always-loaded index — one line per memory —
+    that the system prompt injects verbatim so the agent can decide which
+    memories to ``memory_read`` for full context.
+    """
+
+    def __init__(self, directory: Path | None = None) -> None:
+        self._dir = directory or _default_global_dir()
+
+    @property
+    def directory(self) -> Path:
+        """Return the on-disk directory backing this store."""
+        return self._dir
+
+    @property
+    def index_path(self) -> Path:
+        """Return the path to the always-loaded MEMORY.md index."""
+        return self._dir / INDEX_FILENAME
+
+    def _ensure_dir(self) -> None:
+        """Create the backing directory on first write, 0700 to match secret stores."""
+        if not self._dir.exists():
+            self._dir.mkdir(parents=True, exist_ok=True)
+            try:
+                self._dir.chmod(0o700)
+            except OSError:
+                # Best-effort permission hardening; some filesystems (e.g.
+                # mounted VM shares) don't support chmod.
+                log.debug("Could not chmod %s; leaving default permissions", self._dir)
+
+    def _path_for(self, title: str) -> Path:
+        return self._dir / f"{slugify_title(title)}.md"
+
+    def list_entries(
+        self,
+        *,
+        kind: str | None = None,
+        status: str | None = "active",
+        tag: str | None = None,
+    ) -> list[MemoryEntry]:
+        """List all memory files, optionally filtered by kind, status, or tag."""
+        if not self._dir.is_dir():
+            return []
+        entries: list[MemoryEntry] = []
+        for path in sorted(self._dir.iterdir()):
+            if path.name == INDEX_FILENAME or not path.is_file():
+                continue
+            if path.suffix.lower() != ".md":
+                continue
+            try:
+                entry = self._read_file(path)
+            except (OSError, ValueError, yaml.YAMLError) as exc:
+                log.warning("Skipping malformed global memory %s: %s", path, exc)
+                continue
+            if kind is not None and entry.kind != kind:
+                continue
+            if status is not None and entry.status != status:
+                continue
+            if tag is not None and tag not in entry.tags:
+                continue
+            entries.append(entry)
+        return entries
+
+    def get(self, title: str) -> MemoryEntry | None:
+        """Return the memory with *title* or ``None`` if no file exists."""
+        path = self._path_for(title)
+        if not path.exists():
+            return None
+        try:
+            return self._read_file(path)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            log.warning("Cannot read global memory %s: %s", path, exc)
+            return None
+
+    def search(self, query: str, *, status: str | None = "active") -> list[MemoryEntry]:
+        """Case-insensitive substring match across title and body."""
+        needle = query.lower()
+        return [
+            entry
+            for entry in self.list_entries(status=status)
+            if needle in entry.title.lower() or needle in entry.body.lower()
+        ]
+
+    def write(
+        self,
+        title: str,
+        kind: str,
+        body: str,
+        *,
+        source: str = "manual",
+        citations: list[dict[str, Any]] | None = None,
+        tags: list[str] | None = None,
+        status: str = "active",
+    ) -> MemoryEntry:
+        """Create or overwrite the memory file for *title*."""
+        self._ensure_dir()
+        path = self._path_for(title)
+        now = _now_iso()
+        frontmatter: dict[str, Any] = {
+            "title": title,
+            "kind": kind,
+            "source": source,
+            "created": now,
+            "updated": now,
+            "status": status,
+            "tags": list(tags or []),
+            "citations": list(citations or []),
+        }
+        # Preserve the original ``created`` timestamp on overwrite so we don't
+        # erase the provenance of a long-lived memory.
+        if path.exists():
+            try:
+                existing = self._read_file(path)
+                if existing.created_at:
+                    frontmatter["created"] = existing.created_at
+            except (OSError, ValueError, yaml.YAMLError):
+                log.debug("Ignoring existing malformed memory at %s on overwrite", path)
+        rendered = _render_markdown(frontmatter, body)
+        path.write_text(rendered)
+        self._rebuild_index()
+        return self._read_file(path)
+
+    def update(
+        self,
+        title: str,
+        *,
+        body: str | None = None,
+        kind: str | None = None,
+        tags: list[str] | None = None,
+        status: str | None = None,
+        citations: list[dict[str, Any]] | None = None,
+        last_accessed_at: str | None = None,
+        last_validated_at: str | None = None,
+    ) -> MemoryEntry | None:
+        """Partial update of an existing global memory file."""
+        existing = self.get(title)
+        if existing is None:
+            return None
+        now = _now_iso()
+        frontmatter: dict[str, Any] = {
+            "title": existing.title,
+            "kind": kind if kind is not None else existing.kind,
+            "source": existing.source,
+            "created": existing.created_at or now,
+            "updated": now,
+            "status": status if status is not None else existing.status,
+            "tags": list(tags if tags is not None else existing.tags),
+            "citations": list(citations if citations is not None else existing.citations),
+        }
+        if last_accessed_at is not None:
+            frontmatter["last_accessed"] = last_accessed_at
+        elif existing.last_accessed_at:
+            frontmatter["last_accessed"] = existing.last_accessed_at
+        if last_validated_at is not None:
+            frontmatter["last_validated"] = last_validated_at
+        elif existing.last_validated_at:
+            frontmatter["last_validated"] = existing.last_validated_at
+        new_body = body if body is not None else existing.body
+        path = self._path_for(title)
+        path.write_text(_render_markdown(frontmatter, new_body))
+        self._rebuild_index()
+        return self._read_file(path)
+
+    def delete(self, title: str) -> bool:
+        """Remove the memory file for *title*; return ``True`` if a file was removed."""
+        path = self._path_for(title)
+        if not path.exists():
+            return False
+        path.unlink()
+        self._rebuild_index()
+        return True
+
+    def read_index(self) -> str:
+        """Return the contents of the MEMORY.md index, or empty string.
+
+        Truncates to :data:`MEMORY_INDEX_MAX_LINES` lines so the system-prompt
+        injection stays bounded even if the file grows large.
+        """
+        if not self.index_path.exists():
+            return ""
+        try:
+            raw = self.index_path.read_text()
+        except OSError:
+            return ""
+        lines = raw.splitlines()
+        if len(lines) <= MEMORY_INDEX_MAX_LINES:
+            return raw
+        kept = lines[:MEMORY_INDEX_MAX_LINES]
+        kept.append(f"[truncated — {len(lines) - MEMORY_INDEX_MAX_LINES} more lines omitted]")
+        return "\n".join(kept) + "\n"
+
+    def _rebuild_index(self) -> None:
+        """Regenerate MEMORY.md from the current on-disk files.
+
+        The index is one line per memory: ``- [title](file.md) — description``
+        where the description is the memory's first non-empty body line.
+        """
+        if not self._dir.is_dir():
+            return
+        entries = self.list_entries(status=None)
+        header = "# Memory Index\n\n"
+        if not entries:
+            self.index_path.write_text(header)
+            return
+        lines = [header]
+        for entry in entries:
+            filename = self._path_for(entry.title).name
+            first_line = _first_line(entry.body)
+            hook = first_line[:120] if first_line else entry.kind
+            lines.append(f"- [{entry.title}]({filename}) — {hook}\n")
+        self.index_path.write_text("".join(lines))
+
+    @staticmethod
+    def _read_file(path: Path) -> MemoryEntry:
+        """Parse a memory Markdown file into a :class:`MemoryEntry`."""
+        raw = path.read_text()
+        frontmatter, body = _split_frontmatter(raw)
+        if not isinstance(frontmatter, dict):
+            raise ValueError(f"Frontmatter is not a mapping in {path}")
+        title = frontmatter.get("title")
+        kind = frontmatter.get("kind")
+        if not title or not kind:
+            raise ValueError(f"Frontmatter missing title or kind in {path}")
+        return MemoryEntry(
+            title=str(title),
+            kind=str(kind),
+            body=body,
+            scope="global",
+            source=str(frontmatter.get("source", "manual")),
+            tags=[str(t) for t in frontmatter.get("tags", []) or []],
+            citations=list(frontmatter.get("citations", []) or []),
+            status=str(frontmatter.get("status", "active")),
+            created_at=_opt_str(frontmatter.get("created")),
+            updated_at=_opt_str(frontmatter.get("updated")),
+            last_accessed_at=_opt_str(frontmatter.get("last_accessed")),
+            last_validated_at=_opt_str(frontmatter.get("last_validated")),
+        )
+
+
+def _now_iso() -> str:
+    """Return the current UTC time as an ISO-8601 string without microseconds."""
+    return datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat()
+
+
+def _opt_str(value: Any) -> str | None:
+    """Coerce an optional frontmatter field to ``str | None``."""
+    if value is None:
+        return None
+    return str(value)
+
+
+def _first_line(body: str) -> str:
+    """Return the first non-empty line of *body*, stripped."""
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def _render_markdown(frontmatter: dict[str, Any], body: str) -> str:
+    """Render YAML frontmatter and Markdown body into a SKILL.md-style file."""
+    yaml_block = yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip()
+    trimmed = body.strip()
+    return f"---\n{yaml_block}\n---\n\n{trimmed}\n" if trimmed else f"---\n{yaml_block}\n---\n"
+
+
+def _split_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
+    """Split a Markdown file into its YAML frontmatter dict and Markdown body."""
+    lines = raw.split("\n")
+    if not lines or lines[0].strip() != _FRONTMATTER_DELIMITER:
+        return {}, raw
+    end = None
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == _FRONTMATTER_DELIMITER:
+            end = i
+            break
+    if end is None:
+        return {}, raw
+    frontmatter_text = "\n".join(lines[1:end])
+    data = yaml.safe_load(frontmatter_text) or {}
+    body = "\n".join(lines[end + 1 :]).strip()
+    return cast("dict[str, Any]", data) if isinstance(data, dict) else {}, body
+
+
+class MemoryManager:
+    """Unified interface over charm-scope (SQLite) and global-scope (filesystem) memories.
+
+    Tools call the manager to list, read, write, update, and forget memories
+    without caring which scope they live in.  The manager picks the backend
+    from the ``scope`` argument; read and search default to spanning both.
+    """
+
+    def __init__(
+        self,
+        session_store: SessionStore | None,
+        global_store: GlobalMemoryStore | None = None,
+    ) -> None:
+        self._session_store = session_store
+        self._global_store = global_store or GlobalMemoryStore()
+
+    @property
+    def global_store(self) -> GlobalMemoryStore:
+        """The filesystem-backed global memory store."""
+        return self._global_store
+
+    def has_charm_scope(self) -> bool:
+        """Return True when a per-charm SQLite store is available."""
+        return self._session_store is not None
+
+    # ── Listing and lookup ──────────────────────────────────────────────
+
+    def list_entries(
+        self,
+        *,
+        scope: str | None = None,
+        kind: str | None = None,
+        status: str | None = "active",
+        tag: str | None = None,
+    ) -> list[MemoryEntry]:
+        """Return entries matching the filters.  ``scope=None`` spans both sides."""
+        entries: list[MemoryEntry] = []
+        if scope in (None, "charm") and self._session_store is not None:
+            for row in self._session_store.list_memory(kind=kind, status=status, tag=tag):
+                entries.append(_row_to_entry(row))
+        if scope in (None, "global"):
+            entries.extend(self._global_store.list_entries(kind=kind, status=status, tag=tag))
+        return entries
+
+    def read(self, *, title: str, scope: str | None = None) -> MemoryEntry | None:
+        """Read a single memory by title; optionally restrict to one scope.
+
+        When ``scope`` is ``None``, charm-scope is searched first so a charm
+        override shadows a global memory of the same name.  The matched entry's
+        access counter is bumped as a side effect.
+        """
+        if scope in (None, "charm") and self._session_store is not None:
+            row = self._session_store.get_memory_by_title(title)
+            if row is not None:
+                self._session_store.touch_memory(cast("int", row["id"]))
+                return _row_to_entry(row)
+        if scope in (None, "global"):
+            entry = self._global_store.get(title)
+            if entry is not None:
+                return entry
+        return None
+
+    def search(self, query: str, *, scope: str | None = None) -> list[MemoryEntry]:
+        """Keyword search across scopes. Returns charm-scope hits first."""
+        entries: list[MemoryEntry] = []
+        if scope in (None, "charm") and self._session_store is not None:
+            for row in self._session_store.search_memory(query):
+                entries.append(_row_to_entry(row))
+        if scope in (None, "global"):
+            entries.extend(self._global_store.search(query))
+        return entries
+
+    # ── Mutation ────────────────────────────────────────────────────────
+
+    def write(
+        self,
+        *,
+        scope: str,
+        title: str,
+        kind: str,
+        body: str,
+        source: str = "manual",
+        tags: list[str] | None = None,
+        citations: list[dict[str, Any]] | None = None,
+        status: str = "active",
+    ) -> MemoryEntry:
+        """Create a new memory in *scope*. Overwrites an existing entry with the same title."""
+        _validate_kind(kind)
+        _validate_status(status)
+        if scope == "charm":
+            if self._session_store is None:
+                raise MemoryScopeError("charm-scope memory requires an active charm session")
+            existing = self._session_store.get_memory_by_title(title)
+            if existing is None:
+                memory_id = self._session_store.record_memory(
+                    title=title,
+                    kind=kind,
+                    body=body,
+                    source=source,
+                    citations=citations,
+                    tags=tags,
+                    status=status,
+                )
+                row = self._session_store.get_memory(memory_id)
+            else:
+                self._session_store.update_memory(
+                    cast("int", existing["id"]),
+                    body=body,
+                    kind=kind,
+                    tags=tags,
+                    status=status,
+                    citations=citations,
+                )
+                row = self._session_store.get_memory(cast("int", existing["id"]))
+            assert row is not None
+            return _row_to_entry(row)
+        if scope == "global":
+            return self._global_store.write(
+                title,
+                kind,
+                body,
+                source=source,
+                citations=citations,
+                tags=tags,
+                status=status,
+            )
+        raise MemoryScopeError(f"Unknown memory scope: {scope!r}")
+
+    def update(
+        self,
+        *,
+        scope: str,
+        title: str,
+        body: str | None = None,
+        kind: str | None = None,
+        tags: list[str] | None = None,
+        status: str | None = None,
+        citations: list[dict[str, Any]] | None = None,
+        last_validated_at: str | None = None,
+    ) -> MemoryEntry | None:
+        """Partial update of an existing memory."""
+        if kind is not None:
+            _validate_kind(kind)
+        if status is not None:
+            _validate_status(status)
+        if scope == "charm":
+            if self._session_store is None:
+                return None
+            row = self._session_store.get_memory_by_title(title)
+            if row is None:
+                return None
+            self._session_store.update_memory(
+                cast("int", row["id"]),
+                body=body,
+                kind=kind,
+                tags=tags,
+                status=status,
+                citations=citations,
+                last_validated_at=last_validated_at,
+            )
+            return _row_to_entry(
+                cast("dict[str, object]", self._session_store.get_memory(cast("int", row["id"])))
+            )
+        if scope == "global":
+            return self._global_store.update(
+                title,
+                body=body,
+                kind=kind,
+                tags=tags,
+                status=status,
+                citations=citations,
+                last_validated_at=last_validated_at,
+            )
+        raise MemoryScopeError(f"Unknown memory scope: {scope!r}")
+
+    def forget(self, *, scope: str, title: str) -> bool:
+        """Delete the memory; return True when something was removed."""
+        if scope == "charm":
+            if self._session_store is None:
+                return False
+            row = self._session_store.get_memory_by_title(title)
+            if row is None:
+                return False
+            return self._session_store.delete_memory(cast("int", row["id"]))
+        if scope == "global":
+            return self._global_store.delete(title)
+        raise MemoryScopeError(f"Unknown memory scope: {scope!r}")
+
+    # ── Prompt injection ────────────────────────────────────────────────
+
+    def render_prompt_index(self) -> str:
+        """Render the Memory Index section for the system prompt.
+
+        Always returns *something* even when both scopes are empty — an
+        empty string — so the template can trivially skip the section.
+        """
+        parts: list[str] = []
+        global_index = self._global_store.read_index()
+        if global_index.strip():
+            parts.append("### Global\n\n" + global_index.strip())
+        if self._session_store is not None:
+            rows = self._session_store.list_memory(status="active")
+            if rows:
+                charm_lines = ["### Charm\n"]
+                for row in rows:
+                    title = row["title"]
+                    kind = row["kind"]
+                    tags = row["tags"] if isinstance(row["tags"], list) else []
+                    tag_suffix = f" [{', '.join(tags)}]" if tags else ""
+                    charm_lines.append(f"- **{title}** ({kind}){tag_suffix}")
+                parts.append("\n".join(charm_lines))
+        return "\n\n".join(parts).strip()
+
+
+class MemoryScopeError(ValueError):
+    """Raised when a caller requests an unknown or unavailable memory scope."""
+
+
+def _validate_kind(kind: str) -> None:
+    if kind not in VALID_KINDS:
+        allowed = ", ".join(sorted(VALID_KINDS))
+        raise MemoryScopeError(f"Invalid memory kind: {kind!r}. Must be one of: {allowed}")
+
+
+def _validate_status(status: str) -> None:
+    if status not in VALID_STATUSES:
+        allowed = ", ".join(sorted(VALID_STATUSES))
+        raise MemoryScopeError(f"Invalid memory status: {status!r}. Must be one of: {allowed}")
+
+
+def _row_to_entry(row: dict[str, object]) -> MemoryEntry:
+    """Convert a charm-scope SQLite row dict to a :class:`MemoryEntry`."""
+    tags_raw = row.get("tags") or []
+    citations_raw = row.get("citations") or []
+    tags = [str(t) for t in cast("list[Any]", tags_raw)]
+    citations = list(cast("list[dict[str, Any]]", citations_raw))
+    return MemoryEntry(
+        title=str(row["title"]),
+        kind=str(row["kind"]),
+        body=str(row["body"]),
+        scope="charm",
+        id=cast("int", row["id"]),
+        source=str(row.get("source", "manual")),
+        tags=tags,
+        citations=citations,
+        status=str(row.get("status", "active")),
+        created_at=_opt_str(row.get("created_at")),
+        updated_at=_opt_str(row.get("updated_at")),
+        last_accessed_at=_opt_str(row.get("last_accessed_at")),
+        last_validated_at=_opt_str(row.get("last_validated_at")),
+        access_count=int(cast("int", row.get("access_count") or 0)),
+    )
+
+
+__all__ = [
+    "INDEX_FILENAME",
+    "MEMORY_INDEX_MAX_LINES",
+    "VALID_KINDS",
+    "VALID_STATUSES",
+    "GlobalMemoryStore",
+    "MemoryEntry",
+    "MemoryManager",
+    "MemoryScopeError",
+    "slugify_title",
+]

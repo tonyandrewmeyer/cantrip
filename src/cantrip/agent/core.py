@@ -31,6 +31,7 @@ from cantrip.agent.github_issues import (
     IssueTriage,
     build_issue_work_tasks,
 )
+from cantrip.agent.memory import MemoryManager
 from cantrip.agent.planner import (
     PlanningContext,
     TaskPlanner,
@@ -149,6 +150,7 @@ class CantripAgent:
         self._tool_map_cache: dict[str, Tool] | None = None
         self._store: SessionStore | None = None
         self._store_initialised = False
+        self._memory_manager_cache: MemoryManager | None = None
 
         self._watcher: EventWatcher | None = None
         self._executor: BackgroundExecutor | None = None
@@ -206,6 +208,14 @@ class CantripAgent:
         """Return the session store, initialising lazily if needed."""
         self._ensure_store()
         return self._store
+
+    @property
+    def _memory_manager(self) -> MemoryManager:
+        """Memory manager over charm-scope (if any) and global-scope memory."""
+        if self._memory_manager_cache is None:
+            self._ensure_store()
+            self._memory_manager_cache = MemoryManager(session_store=self._store)
+        return self._memory_manager_cache
 
     def _ensure_store(self) -> None:
         """Initialise the session store on first need."""
@@ -326,6 +336,7 @@ class CantripAgent:
             provider=self.provider,
             state=self.state,
             queue=self._work_queue,
+            memory_manager=self._memory_manager,
         )
 
     def _build_system_prompt(self) -> str:
@@ -335,6 +346,7 @@ class CantripAgent:
         to avoid exceeding the model's capacity.
         """
         compact = self.provider.max_tools is not None
+        memory_index = self._memory_manager.render_prompt_index() or None
         return build_system_prompt(
             charm_name=self.state.charm_name,
             charm_path=str(self.state.charm_path) if self.state.charm_path else None,
@@ -344,6 +356,7 @@ class CantripAgent:
             cos_model=self.state.cos_model,
             recent_decisions=[d.to_dict() for d in self.state.decisions],
             skills_index=self._skills_index.format_for_prompt(),
+            memory_index=memory_index,
             environment_ready=self.state.environment_ready,
             watcher_enabled=self.state.watcher_enabled,
             compact=compact,

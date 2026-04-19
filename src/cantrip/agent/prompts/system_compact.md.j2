@@ -43,6 +43,13 @@ For new charms, use `plan_tasks` to decompose the work. Present the plan and ask
 ## Available Skills
 {{ skills_index }}
 {% endif %}
+{% if memory_index %}
+
+## Memory Index
+Use `memory_read` for full bodies; `memory_write` to record new facts/rules/lessons.
+
+{{ memory_index }}
+{% endif %}
 {% if recent_decisions %}
 
 ## Recent Decisions

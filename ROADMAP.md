@@ -3786,35 +3786,59 @@ coding-agent memory research:
 - **Claude Skills' progressive disclosure** — only a compact index (~1k tokens)
   loads on every prompt. Individual memories load on demand via a tool.
 
-### 43.1 High — Memory primitives and storage
+### 43.1 High — Memory primitives and storage ✅
 
-- [ ] Schema v8: add a `memory` table to `.cantrip` SQLite for charm-scope
-  memories with columns `id`, `title`, `kind` (fact/rule/lesson), `body`
-  (markdown), `source` (auto/manual), `citations` (JSON array of
+- [x] Schema v8: `memory` table added to ``.cantrip`` for charm-scope
+  memories with columns `id`, `title` (unique), `kind` (fact/rule/lesson),
+  `body` (markdown), `source` (auto/manual), `citations` (JSON array of
   `{path, line_start, line_end, sha}`), `tags` (JSON array), `created_at`,
   `updated_at`, `last_accessed_at`, `last_validated_at`, `access_count`,
-  `status` (active/quarantined/archived)
-- [ ] Global memory directory layout at `~/.config/cantrip/memory/`:
-  - `MEMORY.md` — always-loaded index (one line per memory, capped at ~200
-    lines, truncated beyond)
+  `status` (active/quarantined/archived).  Migration from v7 leaves existing
+  decisions and sessions untouched
+- [x] Global memory directory at ``~/.config/cantrip/memory/``:
+  - `MEMORY.md` — always-loaded index rebuilt on every write (one line per
+    memory, read capped at 200 lines with a `[truncated …]` marker when
+    larger — prevents a runaway index from blowing the prompt budget)
   - `<topic>.md` — individual memory files with YAML frontmatter (`title`,
-    `kind`, `source`, `created`, `updated`, `citations`, `tags`, `status`)
-  - Location overridable via `CANTRIP_MEMORY_DIR` environment variable
-- [ ] New agent tools in the `context` category:
-  - `memory_list` — list titles + kinds, filtered by scope, tags, and status
-  - `memory_read` — load a full memory by id or title
-  - `memory_search` — keyword search across memory bodies
-  - `memory_write` — create a memory (scope, kind, body, citations, tags)
-  - `memory_update` — edit an existing memory by id
-  - `memory_forget` — delete a memory by id
-- [ ] System-prompt injection via `build_system_prompt()`: append a Memory
-  Index section after recent decisions, containing the global MEMORY.md
-  contents and the charm-scope memory titles (not bodies)
-- [ ] Respect compaction: memory-index entry, like decisions, is preserved
-  across compaction; individual memory bodies are not (they are fetched
-  on demand)
-- [ ] Unit tests for each tool, storage round-trips, system-prompt size
-  bounds, and schema migration from v7 to v8
+    `kind`, `source`, `created`, `updated`, `citations`, `tags`, `status`,
+    optional `last_accessed` / `last_validated`).  Titles are slugified
+    safely (path-traversal attempts flatten to a single segment)
+  - Location overridable via ``CANTRIP_MEMORY_DIR``, with ``XDG_CONFIG_HOME``
+    fallback before ``~/.config/``
+- [x] Six new agent tools wired via `MemoryManager`:
+  - `memory_list` — summaries only (titles, kinds, scopes, tags), filtered
+    by scope/kind/tag/status — bodies are never included
+  - `memory_read` — loads a full memory by title; charm-scope shadows
+    global-scope when both exist with the same title; bumps `access_count`
+  - `memory_search` — case-insensitive substring match across titles and
+    bodies, optionally scoped
+  - `memory_write` — creates or overwrites a memory; `scope`, `title`,
+    `kind`, `body` required; `tags`, `citations` optional
+  - `memory_update` — partial update by title and scope; any omitted field
+    is left unchanged; global-scope preserves the original `created`
+    timestamp on overwrite
+  - `memory_forget` — permanent delete; status-archive via `memory_update`
+    is the soft alternative
+- [x] System-prompt injection via `build_system_prompt(memory_index=…)`:
+  the Memory Index section appears after Available Skills in both the full
+  and compact templates, carrying the global MEMORY.md contents plus a
+  charm-scope titles-only list; memory bodies are loaded on demand via
+  `memory_read`.  The field is sanitised the same way as `recent_decisions`
+  to block Jinja template injection
+- [x] Compaction-safe by construction: memories live in SQLite and on the
+  filesystem, not inside the conversation history — the index is
+  re-rendered on every `_build_system_prompt()` call, so it survives
+  compaction for free without a decisions-style clone/restore step
+- [x] 40 unit tests in `tests/unit/test_memory.py` covering the v7→v8
+  migration (including round-trip after migration), each SessionStore
+  memory method, `GlobalMemoryStore` (round-trip, filters, search, update
+  preserves created, delete, index rebuild, index truncation, path
+  traversal, slugify), `MemoryManager` unified API (both scopes, charm
+  shadows global, missing lookups, invalid kind/status, absent charm
+  scope, prompt-index rendering), each of the six tools (write/read/list
+  summaries-only/search/update/forget including error paths), and
+  system-prompt injection (absent/present, Jinja sanitisation, compact
+  template, size-bounded)
 
 ### 43.2 High — Auto-writer with citations and revalidation
 
