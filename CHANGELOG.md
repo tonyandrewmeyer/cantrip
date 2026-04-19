@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Planner unit tests reorganised** — the monolithic
+  ``tests/unit/test_planner.py`` (1706 lines, 152 tests) split into
+  nine per-concern files under ``tests/unit/planner/`` mirroring the
+  ``tests/unit/charmlint/`` and ``tests/unit/quickpack/`` layouts:
+  ``test_parsing.py`` (JSON extraction + task-list / merge helpers),
+  ``test_paths.py`` (fast / sprint / one-shot / improvement path
+  detection plus their deterministic plan helpers), ``test_planner.py``
+  (TaskPlanner.plan / replan, unique IDs, PlanningContext fields),
+  ``test_prompts.py`` (prompt builders), ``test_design.py``
+  (PlanFromDesign + red/green build sequence), ``test_improvement.py``
+  (PlanImprovementFixes), ``test_day2.py`` (day-2 ops phase /
+  FindDay2Anchor / PlanFromDay2Findings), ``test_operability.py``
+  (operability assessment + fixes), and ``test_tool.py``
+  (PlanTasksTool).  Each file ≤283 lines; no test content changed.
+  Phase 57.7 advances (two of four files done).
 - **Executor unit tests reorganised** — the monolithic
   ``tests/unit/test_executor.py`` (1972 lines, 107 tests) split into
   six per-concern files under ``tests/unit/executor/`` mirroring the

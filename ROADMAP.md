@@ -5661,8 +5661,18 @@ Four unit-test files top 1500 lines:
   recording).  Shared helpers (``_make_tool``, ``_make_executor``)
   moved to ``tests/unit/executor/conftest.py``.  All 107 tests still
   pass; each file ≤478 lines
-- [ ] ``tests/unit/test_planner.py`` (1705 lines) — split by
-  concern (parsing, routing, deterministic paths, LLM paths)
+- [x] ``tests/unit/test_planner.py`` (1705 lines) — split by
+  concern into ``tests/unit/planner/``: ``test_parsing.py`` (JSON
+  extraction + task-list / merge helpers), ``test_paths.py`` (fast /
+  sprint / one-shot / improvement path detection plus their
+  deterministic plan helpers), ``test_planner.py`` (TaskPlanner.plan /
+  replan, unique IDs, PlanningContext fields), ``test_prompts.py``
+  (prompt builders), ``test_design.py`` (PlanFromDesign + red/green
+  build sequence), ``test_improvement.py`` (PlanImprovementFixes),
+  ``test_day2.py`` (day-2 ops phase / FindDay2Anchor /
+  PlanFromDay2Findings), ``test_operability.py`` (operability
+  assessment + fixes), and ``test_tool.py`` (PlanTasksTool).  All
+  152 tests still pass; each file ≤283 lines
 - [ ] ``tests/unit/test_subagent.py`` (1542 lines)
 - [ ] ``tests/unit/test_tools.py`` (1514 lines) — already a grab-bag;
   fold tests into per-tool files where one exists
