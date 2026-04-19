@@ -26,11 +26,13 @@ from cantrip.mcp.exceptions import (
     MCPInvocationError,
 )
 from cantrip.mcp.registry import MCPRegistry, ServerSnapshot, ServerStatus
+from cantrip.mcp.token_storage import FileTokenStorage
 from cantrip.mcp.types import MCPToolInfo, ServerConfig
 
 __all__ = [
     "REPO_CONFIG_FILENAME",
     "USER_CONFIG_PATH",
+    "FileTokenStorage",
     "MCPClient",
     "MCPConfigError",
     "MCPConnectionError",
