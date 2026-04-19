@@ -537,6 +537,16 @@ class CantripAgent:
 
         return await execute_tool(self._tool_map, name, arguments)
 
+    def _publish_activity(self, label: str) -> None:
+        """Publish a status-bar activity update (e.g. "running: charmcraft_pack").
+
+        Used by the main conversation loop so slow tools like
+        ``charmcraft_pack`` and ``juju_deploy`` produce visible feedback
+        between LLM rounds — without this the bar stuck on "Thinking..."
+        and the user had no idea a long-running command was in flight.
+        """
+        self._event_bus.publish(ui_events.status_bar_changed(task_label=label))
+
     def _capture_test_results(self, tool_name: str, result: ToolResult) -> None:
         """Update state with test results if the tool produced a test summary."""
         if tool_name not in _TEST_RESULT_TOOLS:
@@ -681,7 +691,9 @@ class CantripAgent:
             # Execute each tool and build TOOL result messages.
             tool_results = []
             for tc in response.tool_calls:
+                self._publish_activity(f"\u27f3 running: {tc.name}")
                 result = await self._execute_tool(tc.name, tc.arguments)
+                self._publish_activity("\u27f3 Thinking...")
                 self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
                 # Wrap tool output in delimiters to reduce prompt injection risk.
@@ -831,7 +843,9 @@ class CantripAgent:
             # Execute each tool and build TOOL result messages.
             tool_results = []
             for tc in response.tool_calls:
+                self._publish_activity(f"\u27f3 running: {tc.name}")
                 result = await self._execute_tool(tc.name, tc.arguments)
+                self._publish_activity("\u27f3 Thinking...")
                 self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
                 content = f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"

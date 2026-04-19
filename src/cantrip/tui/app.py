@@ -448,6 +448,12 @@ class CantripApp(App):
         self._agent.event_bus.subscribe(
             ui_events.EventType.MEMORY_RECALLED, self._on_bus_memory_recalled
         )
+        # Surface main-agent tool activity in the status bar — slow tools
+        # like charmcraft_pack and juju_deploy publish "running: <name>"
+        # between LLM rounds so the UI isn't frozen on "Thinking...".
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.STATUS_BAR_CHANGED, self._on_bus_status_bar
+        )
 
         self._agent.start_executor(max_concurrency=self._max_concurrency)
 
@@ -513,6 +519,23 @@ class CantripApp(App):
             chat.add_system_message(f"Recalled memory: {title} ({scope})")
 
         self.call_from_thread(_show)
+
+    def _on_bus_status_bar(self, event: ui_events.Event) -> None:
+        """Apply a STATUS_BAR_CHANGED event to the status bar reactives."""
+
+        def _apply() -> None:
+            status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
+            payload = event.payload
+            if "task_label" in payload:
+                status_bar.task_label = payload["task_label"]
+            if "cos_health" in payload:
+                status_bar.cos_health = payload["cos_health"]
+            if "test_summary" in payload:
+                status_bar.test_summary = payload["test_summary"]
+            if "watcher_status" in payload:
+                status_bar.watcher_status = payload["watcher_status"]
+
+        self.call_from_thread(_apply)
 
     def on_task_checklist_widget_tasks_available(self) -> None:
         """Show the status panel when tasks first appear."""

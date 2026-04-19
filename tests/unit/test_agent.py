@@ -75,6 +75,37 @@ class TestCantripAgent:
         assert agent.state.messages[3].role == Role.ASSISTANT
 
     @pytest.mark.asyncio
+    async def test_tool_activity_published_to_status_bar(self):
+        """Main-agent tool calls surface as STATUS_BAR_CHANGED events."""
+        from cantrip.ui import events as ui_events
+
+        tool_call = ToolCall(id="charmcraft_pack", name="charmcraft_pack", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Packed."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(
+            return_value=type("R", (), {"success": True, "output": "ok", "error": None})()
+        )
+
+        captured: list[dict] = []
+        agent.event_bus.subscribe(
+            ui_events.EventType.STATUS_BAR_CHANGED,
+            lambda event: captured.append(event.payload),
+        )
+
+        await agent.process_message("Pack it.")
+
+        labels = [p.get("task_label", "") for p in captured]
+        assert any("running: charmcraft_pack" in label for label in labels)
+        # After the tool completes, the bar is reset to "Thinking..." so
+        # the next LLM round has a neutral label.
+        assert any("Thinking" in label for label in labels)
+
+    @pytest.mark.asyncio
     async def test_tool_call_failure(self):
         """Test that failed tool calls are reported correctly."""
         tool_call = ToolCall(id="unknown_tool", name="unknown_tool", arguments={})

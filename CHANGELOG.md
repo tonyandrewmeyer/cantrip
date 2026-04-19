@@ -5,6 +5,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Fixed
+- **Main-agent tool activity visible in the status bar** — slow tools
+  like ``charmcraft pack`` and ``juju deploy`` used to run silently
+  while the bar showed "Thinking..." for minutes.  The main agent now
+  publishes ``STATUS_BAR_CHANGED`` events around every tool call (in
+  both the streaming and non-streaming conversation loops) and the TUI
+  subscribes so the bar shows "⟳ running: charmcraft_pack" while the
+  tool is in flight.
 - **Model panes populate on first poll** — the TUI's multi-model status
   widget previously only refreshed when the watcher emitted a *diff*
   event, so on a stable system (or right after start-up) the dev and
