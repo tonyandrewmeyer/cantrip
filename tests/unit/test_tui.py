@@ -149,14 +149,14 @@ class TestTuiWidgets:
                 await pilot.press("ctrl+l")
                 await pilot.pause()
 
-                # After clearing, the welcome message should be restored.
+                # After clearing, the welcome block should be restored.
                 scroll = chat.query_one("#chat-scroll")
                 welcome_widgets = scroll.query(".welcome-message")
-                assert len(welcome_widgets) == 1
+                assert len(welcome_widgets) > 0
 
     @pytest.mark.asyncio
     async def test_welcome_message_shown(self):
-        """Chat scroll contains 'Welcome to Cantrip' on mount.
+        """Chat scroll shows the welcome block on mount with useful examples.
 
         Patch _start_prepare so no system message is added, isolating the
         welcome message from preflight noise.
@@ -168,7 +168,14 @@ class TestTuiWidgets:
                 chat = pilot.app.query_one("#chat", ChatWidget)
                 scroll = chat.query_one("#chat-scroll")
                 welcome_widgets = scroll.query(".welcome-message")
-                assert len(welcome_widgets) == 1
+                assert len(welcome_widgets) > 0
+                combined = " ".join(str(w.render()) for w in welcome_widgets).lower()
+                # No longer suggests postgres as an example — there's
+                # already an excellent postgres charm on Charmhub.
+                assert "postgres" not in combined
+                # Shows the improve-mode example and source-URL input.
+                assert "improve" in combined
+                assert "github.com" in combined
 
     @pytest.mark.asyncio
     async def test_input_submission_adds_user_message(self):

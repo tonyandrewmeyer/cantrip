@@ -389,6 +389,24 @@ class ChatWidget(Widget):
     }
 
     ChatWidget .welcome-message {
+        padding: 1 0;
+    }
+
+    ChatWidget .welcome-title {
+        text-style: bold;
+        padding-bottom: 1;
+    }
+
+    ChatWidget .welcome-body {
+        padding-bottom: 1;
+    }
+
+    ChatWidget .welcome-examples {
+        color: $primary;
+        padding-bottom: 1;
+    }
+
+    ChatWidget .welcome-footer {
         color: $text-muted;
     }
     """
@@ -413,17 +431,43 @@ class ChatWidget(Widget):
         self._show_welcome()
 
     def _show_welcome(self) -> None:
-        """Show welcome message."""
+        """Show welcome message.
+
+        Tiered layout: a bold title, a one-line description, a short list
+        of example prompts, and a muted footer of keyboard shortcuts.
+        The examples deliberately showcase Cantrip's range — fresh
+        workload, upstream source URL, and improve-an-existing-charm —
+        rather than workloads that already have first-class Charmhub
+        charms (postgres, mysql, redis), which are better off reused.
+        """
         scroll = self.query_one("#chat-scroll", ScrollableContainer)
         scroll.mount(
             Static(
-                "Welcome to Cantrip!\n\n"
-                "Describe what you want to charm:\n"
-                '  "build a charm for my Flask app"\n'
-                '  "charm a PostgreSQL deployment"\n\n'
-                "I'll help you create a production-ready "
-                "Juju charm in minutes.",
-                classes="welcome-message",
+                "Welcome to Cantrip",
+                classes="welcome-message welcome-title",
+            )
+        )
+        scroll.mount(
+            Static(
+                "Describe a workload and I'll build a production-ready "
+                "Juju charm for it — scaffold, code, test, and deploy.",
+                classes="welcome-message welcome-body",
+            )
+        )
+        scroll.mount(
+            Static(
+                "Try asking:\n"
+                "  \u203a build a charm for my Flask app at ./backend\n"
+                "  \u203a charm Overleaf, the collaborative LaTeX editor\n"
+                "  \u203a build from https://github.com/example/cool-service\n"
+                "  \u203a improve the charm in ./my-charm",
+                classes="welcome-message welcome-examples",
+            )
+        )
+        scroll.mount(
+            Static(
+                "F1 help  \u00b7  /help commands  \u00b7  Ctrl+C cancel",
+                classes="welcome-message welcome-footer",
             )
         )
 

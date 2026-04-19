@@ -68,6 +68,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   phase is live so the counter stays accurate.
 
 ### Changed
+- **TUI welcome screen rewritten with better examples** — the landing
+  text no longer suggests "charm a PostgreSQL deployment" (there's
+  already an excellent postgres charm on Charmhub) and the help
+  screen no longer suggests "add postgresql integration".  The
+  welcome now has a clear title line, a one-sentence description,
+  and four example prompts that showcase Cantrip's range: fresh
+  workload ("my Flask app at ./backend"), a novel target (Overleaf),
+  a source-URL build, and improve mode.  Styled with visible
+  hierarchy (bold title, accent-coloured example bullets, muted
+  shortcut footer) rather than a single block of muted text.
 - **Task pane keeps the in-flight work visible** — active, failed, and
   blocked tasks are pinned to a top "In progress" section regardless
   of category order, and fully-completed category groups collapse to a

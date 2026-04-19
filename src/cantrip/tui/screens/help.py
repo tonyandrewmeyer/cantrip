@@ -72,7 +72,8 @@ class HelpScreen(ModalScreen):
                 yield Static(
                     "Just describe what you want to charm:\n"
                     "  > build a charm for my flask app\n"
-                    "  > add postgresql integration\n"
+                    "  > charm overleaf, the collaborative LaTeX editor\n"
+                    "  > improve the charm in ./my-charm\n"
                     "  > add a backup action"
                 )
 
