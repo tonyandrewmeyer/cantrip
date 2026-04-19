@@ -3897,7 +3897,7 @@ another and used by a fresh Cantrip install. `make check` passes throughout.
 
 ---
 
-## Phase 44: Worktree Isolation for Parallel Subagents
+## Phase 44: Worktree Isolation for Parallel Subagents ✓
 
 **Goal:** Give each concurrent subagent its own git worktree so the background
 executor can safely run parallel work without file-level conflicts. Today up to
