@@ -91,6 +91,7 @@ from cantrip.agent.tools.juju import (
     JujuWaitTool,
 )
 from cantrip.agent.tools.loadtest import GenerateLoadTestTool
+from cantrip.agent.tools.mcp_tool import MCPTool
 from cantrip.agent.tools.memory import (
     MemoryForgetTool,
     MemoryListTool,
@@ -153,6 +154,7 @@ def build_tools(
     state: Any = None,
     queue: Any = None,
     memory_manager: MemoryManager | None = None,
+    mcp_registry: MCPRegistry | None = None,
 ) -> list[Tool]:
     """Build all agent tool instances.
 
@@ -290,6 +292,9 @@ def build_tools(
         tools.append(ManageTasksTool(queue=queue))
     if memory_manager is not None:
         tools.extend(build_memory_tools(memory_manager))
+    if mcp_registry is not None:
+        for info in mcp_registry.aggregated_tools():
+            tools.append(MCPTool(info, mcp_registry))
 
     return tools
 
@@ -298,6 +303,7 @@ if TYPE_CHECKING:
     from cantrip.agent.context import VirtualFileStore
     from cantrip.agent.memory import MemoryManager
     from cantrip.agent.skills import SkillsIndex
+    from cantrip.mcp import MCPRegistry
 
 
 __all__ = [
@@ -409,6 +415,8 @@ __all__ = [
     "PlanTasksTool",
     # Task management
     "ManageTasksTool",
+    # MCP
+    "MCPTool",
     # Memory
     "MemoryForgetTool",
     "MemoryListTool",

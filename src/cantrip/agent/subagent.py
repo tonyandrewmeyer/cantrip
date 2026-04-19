@@ -464,11 +464,17 @@ def _select_provider(
 
 
 def _filter_tools(tools: list[Tool], category: TaskCategory) -> list[Tool]:
-    """Filter agent tools to those allowed for *category*."""
+    """Filter agent tools to those allowed for *category*.
+
+    MCP tools (names beginning ``mcp__``) bypass the per-category
+    allowlist — the per-server ``allowed_tools`` config (Phase 45.2)
+    is the gate for MCP exposure.  Operators who want category-scoped
+    MCP access can drop unwanted servers from the YAML config.
+    """
     allowlist = _CATEGORY_TOOLS.get(category)
     if allowlist is None:
         return []
-    return [t for t in tools if t.name in allowlist]
+    return [t for t in tools if t.name in allowlist or t.name.startswith("mcp__")]
 
 
 def _tools_for_llm(tools: list[Tool]) -> list[llm.Tool] | None:

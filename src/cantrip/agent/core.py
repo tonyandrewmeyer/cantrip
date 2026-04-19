@@ -462,6 +462,7 @@ class CantripAgent:
             state=self.state,
             queue=self._work_queue,
             memory_manager=self._memory_manager,
+            mcp_registry=self._mcp_registry_cache,
         )
 
     def _build_system_prompt(self) -> str:
@@ -1747,12 +1748,17 @@ class CantripAgent:
 
         Failures are captured by the registry — a misconfigured server
         logs a warning but never blocks the others.  Safe to call from
-        any UI startup path; subsequent calls are no-ops.
+        any UI startup path; subsequent calls are no-ops.  Invalidates
+        the tools cache so the next access picks up the newly-connected
+        servers' tools.
         """
         if self._mcp_started:
             return
         self._mcp_started = True
         await self.mcp_registry.start_all()
+        # Force tool list rebuild so MCP tools surface to the agent.
+        self._tools_cache = None
+        self._tool_map_cache = None
 
     async def stop_mcp(self) -> None:
         """Tear down every MCP connection.  Best-effort, never raises."""
