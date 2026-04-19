@@ -6017,38 +6017,38 @@ intercept).
 
 ### 61.1 Inline suggestion popup in ``ChatInput``
 
-- [ ] When the chat input's first character is ``/`` and the value has
+- [x] When the chat input's first character is ``/`` and the value has
   no spaces yet, show a small suggestion list above the input with
   every verb in ``slash_commands.SHARED_VERBS`` plus the TUI-native
   ``/feelings`` (and any future TUI-specific verbs) whose prefix
   matches what the user has typed.  Case-insensitive.
-- [ ] List shows verb + a one-line description (from ``help_text`` or
+- [x] List shows verb + a one-line description (from ``help_text`` or
   a small lookup keyed by verb).  Up to ~6 rows; scroll if more match.
-- [ ] Exactly one suggestion is "active" — highlighted — at any time.
+- [x] Exactly one suggestion is "active" — highlighted — at any time.
   Up/Down arrow keys move the active row without stealing focus from
   the input.
-- [ ] Hide the popup as soon as the value no longer starts with ``/``,
+- [x] Hide the popup as soon as the value no longer starts with ``/``,
   contains a space, or becomes empty.
 
 ### 61.2 Accept / dismiss
 
-- [ ] Tab inserts the active suggestion's verb plus a trailing space
+- [x] Tab inserts the active suggestion's verb plus a trailing space
   (so ``/c`` + Tab becomes ``/cost ``).  If exactly one suggestion
   matches, Tab accepts it regardless of whether the list is showing.
-- [ ] Escape closes the popup without changing the input.
-- [ ] Enter submits the current input value as it stands (does not
+- [x] Escape closes the popup without changing the input.
+- [x] Enter submits the current input value as it stands (does not
   auto-accept).  Rationale: submit should always do what you see.
 
 ### 61.3 Source of truth: verbs come from the dispatcher
 
-- [ ] ``slash_commands`` exports a ``COMMAND_CATALOGUE`` list of
+- [x] ``slash_commands`` exports a ``COMMAND_CATALOGUE`` list of
   ``(verb, summary)`` pairs (or one dataclass) so each surface uses
   the same names and descriptions.  ``SHARED_VERBS`` stays as the
   authoritative verb set and seeds the catalogue.
-- [ ] TUI-native commands (``/feelings``, and ``/tasks`` / ``/status``
+- [x] TUI-native commands (``/feelings``, and ``/tasks`` / ``/status``
   if they're ever promoted here) register into the catalogue at the
   surface level so the popup can show them too.
-- [ ] A unit test asserts the catalogue covers every verb the
+- [x] A unit test asserts the catalogue covers every verb the
   dispatcher actually handles (guards against drift when someone adds
   a verb to ``dispatch`` but forgets the catalogue).
 
