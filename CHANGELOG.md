@@ -57,6 +57,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   empty-list frames are tolerated.
 
 ### Changed
+- **Task pane keeps the in-flight work visible** — active, failed, and
+  blocked tasks are pinned to a top "In progress" section regardless
+  of category order, and fully-completed category groups collapse to a
+  single "✓ N tasks done (click to show)" row so a long finished phase
+  no longer pushes the current work off-screen.
 - **Parallel unit tests with pytest-xdist + pytest-cov** — ``make unit``
   and ``make coverage`` now fan out across CPU cores via
   ``pytest -n auto``; pytest-cov handles per-worker coverage combining

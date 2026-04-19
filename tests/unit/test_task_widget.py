@@ -368,3 +368,134 @@ class TestTaskChecklistWidget:
             for cat, label in _CATEGORY_ORDER:
                 if cat != TaskCategory.BUILD:
                     assert label not in combined, f"Unexpected header: {label}"
+
+    @pytest.mark.asyncio
+    async def test_active_task_pinned_to_top(self):
+        """ACTIVE tasks appear under 'In progress' ahead of category groups."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            tasks = [
+                _make_task(
+                    "Research docs",
+                    status=TaskStatus.PENDING,
+                    category=TaskCategory.RESEARCH,
+                ),
+                _make_task(
+                    "Scaffold charm",
+                    status=TaskStatus.ACTIVE,
+                    category=TaskCategory.BUILD,
+                ),
+            ]
+            checklist.notify_changed(tasks)
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            statics = container.query("Static")
+            texts = [str(s.render()) for s in statics]
+            combined = " ".join(texts)
+
+            assert "In progress" in combined
+            # "In progress" header must come before any category header.
+            progress_idx = texts.index("In progress")
+            research_idx = texts.index("Research")
+            assert progress_idx < research_idx
+            # The active task is tagged with its category for context.
+            assert any("Build" in t and "Scaffold charm" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_active_task_not_duplicated_in_category(self):
+        """An active task shown in 'In progress' does not also render in its category."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            tasks = [
+                _make_task(
+                    "Scaffold charm",
+                    status=TaskStatus.ACTIVE,
+                    category=TaskCategory.BUILD,
+                ),
+            ]
+            checklist.notify_changed(tasks)
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            statics = container.query("Static")
+            texts = [str(s.render()) for s in statics]
+            # Only one row contains the task title (in the pinned section).
+            matches = [t for t in texts if "Scaffold charm" in t]
+            assert len(matches) == 1
+            # And the Build category header is NOT rendered, since the only
+            # task in it is pinned.
+            assert "Build" not in texts
+
+    @pytest.mark.asyncio
+    async def test_fully_done_category_collapses(self):
+        """A category whose tasks are all DONE collapses to a summary row."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            tasks = [
+                _make_task("Analyse", status=TaskStatus.DONE, category=TaskCategory.RESEARCH),
+                _make_task("Survey", status=TaskStatus.DONE, category=TaskCategory.RESEARCH),
+                _make_task(
+                    "Scaffold",
+                    status=TaskStatus.PENDING,
+                    category=TaskCategory.BUILD,
+                ),
+            ]
+            checklist.notify_changed(tasks)
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            statics = container.query("Static")
+            combined = " ".join(str(s.render()) for s in statics)
+            # Individual research titles are hidden behind the summary.
+            assert "Analyse" not in combined
+            assert "Survey" not in combined
+            assert "2 tasks done" in combined
+            # Build is still rendered normally.
+            assert "Scaffold" in combined
+
+    @pytest.mark.asyncio
+    async def test_mixed_category_renders_normally(self):
+        """A category with DONE + PENDING tasks is NOT collapsed."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            tasks = [
+                _make_task("First done", status=TaskStatus.DONE, category=TaskCategory.BUILD),
+                _make_task("Next up", status=TaskStatus.PENDING, category=TaskCategory.BUILD),
+            ]
+            checklist.notify_changed(tasks)
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            statics = container.query("Static")
+            combined = " ".join(str(s.render()) for s in statics)
+            # Both titles visible; no "done" summary row.
+            assert "First done" in combined
+            assert "Next up" in combined
+            assert "tasks done (click to show)" not in combined
+
+    @pytest.mark.asyncio
+    async def test_collapsed_group_expands_on_toggle(self):
+        """Toggling a collapsed group reveals its tasks."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            tasks = [
+                _make_task("Analyse", status=TaskStatus.DONE, category=TaskCategory.RESEARCH),
+            ]
+            checklist.notify_changed(tasks)
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            combined = " ".join(str(s.render()) for s in container.query("Static"))
+            assert "Analyse" not in combined
+
+            checklist._toggle_group(TaskCategory.RESEARCH)
+            await pilot.pause(delay=0.1)
+
+            combined = " ".join(str(s.render()) for s in container.query("Static"))
+            assert "Analyse" in combined

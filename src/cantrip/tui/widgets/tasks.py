@@ -23,6 +23,17 @@ _CATEGORY_ORDER: list[tuple[TaskCategory, str]] = [
     (TaskCategory.CONFIRM, "Confirm"),
 ]
 
+# Statuses that are pinned to the top "In progress" section.  Keeping
+# active work visible regardless of queue order is the main win here —
+# otherwise a finished Research phase can push an ACTIVE build task
+# off-screen.
+_PINNED_STATUSES: frozenset[TaskStatus] = frozenset(
+    {TaskStatus.ACTIVE, TaskStatus.FAILED, TaskStatus.BLOCKED}
+)
+
+# Lookup from category to its display label.
+_CATEGORY_LABELS: dict[TaskCategory, str] = dict(_CATEGORY_ORDER)
+
 # Status indicator characters and CSS classes per task status.
 _STATUS_DISPLAY: dict[TaskStatus, tuple[str, str]] = {
     TaskStatus.PENDING: ("\u25cb", "task-pending"),  # ○
@@ -84,6 +95,14 @@ class _TaskRow(Static):
     def __init__(self, task_id: str, content: str, **kwargs: object) -> None:
         super().__init__(content, **kwargs)
         self.task_id = task_id
+
+
+class _CollapsedGroupRow(Static):
+    """A clickable summary row for a fully-completed category."""
+
+    def __init__(self, category: TaskCategory, content: str, **kwargs: object) -> None:
+        super().__init__(content, **kwargs)
+        self.category = category
 
 
 class TaskChecklistWidget(Widget):
@@ -151,6 +170,10 @@ class TaskChecklistWidget(Widget):
     TaskChecklistWidget .task-row {
         height: auto;
     }
+
+    TaskChecklistWidget .task-collapsed {
+        text-style: italic;
+    }
     """
 
     def __init__(self, **kwargs: object) -> None:
@@ -162,6 +185,7 @@ class TaskChecklistWidget(Widget):
         self._lock = threading.Lock()
         self._tasks_available_posted = False
         self._expanded_id: str | None = None
+        self._expanded_groups: set[TaskCategory] = set()
 
     def compose(self) -> ComposeResult:
         """Compose the initial layout."""
@@ -212,8 +236,8 @@ class TaskChecklistWidget(Widget):
             self._dirty = True
 
     def on_click(self, event: object) -> None:
-        """Handle click events on task rows to toggle detail."""
-        # Walk up the widget tree from the click target to find a _TaskRow.
+        """Handle click events on task and collapsed-group rows."""
+        # Walk up the widget tree from the click target to find a row.
         from textual.events import Click
 
         if not isinstance(event, Click):
@@ -224,11 +248,13 @@ class TaskChecklistWidget(Widget):
             widget = self.screen.get_widget_at(event.screen_x, event.screen_y)[0]
         except NoWidget:
             return
-        # Walk up to find a _TaskRow ancestor (or the widget itself).
         node = widget
         while node is not None:
             if isinstance(node, _TaskRow):
                 self._toggle_detail(node.task_id)
+                return
+            if isinstance(node, _CollapsedGroupRow):
+                self._toggle_group(node.category)
                 return
             if node is self:
                 break
@@ -240,6 +266,14 @@ class TaskChecklistWidget(Widget):
             self._expanded_id = None
         else:
             self._expanded_id = task_id
+        self._refresh_display()
+
+    def _toggle_group(self, category: TaskCategory) -> None:
+        """Expand or collapse a fully-done category group."""
+        if category in self._expanded_groups:
+            self._expanded_groups.discard(category)
+        else:
+            self._expanded_groups.add(category)
         self._refresh_display()
 
     def _check_dirty(self) -> None:
@@ -273,24 +307,71 @@ class TaskChecklistWidget(Widget):
                 char, css_class = _CHECK_STATUS_DISPLAY.get(status, ("\u25cb", "task-pending"))
                 container.mount(Static(f"{char} {label}", classes=f"task-row {css_class}"))
 
-        # Render work queue tasks grouped by category.
+        # Render work queue tasks.
         if self._tasks:
             # Post TasksAvailable once.
             if not self._tasks_available_posted:
                 self._tasks_available_posted = True
                 self.post_message(self.TasksAvailable())
 
-            # Bucket tasks by category, preserving queue order within each bucket.
+            # Pinned section — any ACTIVE, FAILED, or BLOCKED tasks rise to
+            # the top so they aren't hidden by finished or queued work below.
+            pinned = [t for t in self._tasks if t.status in _PINNED_STATUSES]
+            if pinned:
+                container.mount(Static("In progress", classes="task-header"))
+                container.mount(Static("\u2500" * 20, classes="task-divider"))
+                for task in pinned:
+                    char, css_class = _status_display(task.status)
+                    cat_label = _CATEGORY_LABELS.get(task.category, task.category.value)
+                    row = _TaskRow(
+                        task.id,
+                        f"{char} {cat_label} \u00b7 {task.title}",
+                        classes=f"task-row {css_class}",
+                    )
+                    container.mount(row)
+                    if self._expanded_id == task.id:
+                        container.mount(Static(_format_detail(task), classes="task-detail"))
+
+            # Category sections — only tasks not already shown in the pinned
+            # section (i.e. PENDING or DONE).  If every remaining task in a
+            # category is DONE, collapse the whole group into a summary row.
             by_category: dict[TaskCategory, list[AgentTask]] = {}
             for task in self._tasks:
+                if task.status in _PINNED_STATUSES:
+                    continue
                 by_category.setdefault(task.category, []).append(task)
 
             for category, label in _CATEGORY_ORDER:
                 group = by_category.get(category)
                 if not group:
                     continue
+
+                has_unfinished = any(t.status != TaskStatus.DONE for t in group)
+                # Auto-expand the group when the user has opened the detail
+                # for a task inside it, so the detail actually shows up.
+                has_opened_detail = self._expanded_id is not None and any(
+                    t.id == self._expanded_id for t in group
+                )
+                collapsed = (
+                    not has_unfinished
+                    and category not in self._expanded_groups
+                    and not has_opened_detail
+                )
+
                 container.mount(Static(label, classes="task-header"))
                 container.mount(Static("\u2500" * 20, classes="task-divider"))
+
+                if collapsed:
+                    count = len(group)
+                    plural = "task" if count == 1 else "tasks"
+                    summary = _CollapsedGroupRow(
+                        category,
+                        f"\u2713 {count} {plural} done (click to show)",
+                        classes="task-row task-done task-collapsed",
+                    )
+                    container.mount(summary)
+                    continue
+
                 for task in group:
                     char, css_class = _status_display(task.status)
                     row = _TaskRow(
