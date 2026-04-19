@@ -18,6 +18,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **MCP OAuth 2.1 flow for HTTP servers (Phase 45.4b)** — closes Phase
+  45.4.  HTTP MCP servers can now require OAuth and Cantrip walks the
+  user through the full PKCE flow, with refresh tokens persisted to the
+  Phase 45.4a ``FileTokenStorage``.  ``OAuthConfig`` on ``ServerConfig``
+  (``client_name``, ``scopes``, ``redirect_port``, ``client_metadata_url``)
+  with full YAML schema validation — non-mapping value, blank
+  ``client_name``, non-integer/out-of-range ``redirect_port``, and
+  ``oauth`` on a stdio server are all rejected with clear messages.
+  ``cantrip.mcp.oauth`` provides the redirect handler (opens the URL via
+  ``webbrowser``, falls back to a logged URL on headless systems) and
+  the localhost callback listener (aiohttp on ``127.0.0.1:<port>``,
+  captures one ``GET /callback?code=…&state=…``, tears down).  Every
+  failure mode surfaces cleanly: OAuth error → ``OSError``, missing
+  code → ``OSError``, port-in-use → ``OSError``, user-walks-away →
+  ``TimeoutError``.  ``MCPClient`` builds the SDK's
+  ``OAuthClientProvider`` and wires it through ``streamablehttp_client``
+  whenever ``oauth`` is set; cross-field validation rejects ``oauth``
+  on stdio at start time too.  25 unit tests cover YAML parsing,
+  redirect handler, localhost callback (success / error / missing /
+  timeout / bind failure), client metadata builder, and MCPClient
+  wiring.
 - **MCP elicitation routing (Phase 45.4c)** — server-driven mid-tool-call
   prompts now bridge to the UI event bus.  ``ElicitationManager`` per
   ``MCPClient`` parks each request on an ``asyncio.Future``, fires

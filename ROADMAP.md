@@ -4212,14 +4212,23 @@ into Cantrip).
   (happy path, server error, disconnected, unknown), build_tools
   integration, and the subagent filter passthrough
 
-### 45.4 Medium — OAuth and elicitation support
+### 45.4 Medium — OAuth and elicitation support ✅
 
-- [ ] *Deferred*: MCP OAuth 2.1 client with RFC 9728 Protected Resource
-  Metadata discovery.  The MCP SDK ships an ``OAuthClientProvider`` that
-  Cantrip can plug into via ``streamablehttp_client(auth=...)``;
-  remaining work is the browser-based redirect handler, the localhost
-  callback listener, the ``OAuthConfig`` dataclass on ``ServerConfig``,
-  and YAML-schema parsing.  A focused follow-up commit
+- [x] MCP OAuth 2.1 client with RFC 9728 Protected Resource Metadata
+  discovery.  Built on the SDK's ``OAuthClientProvider`` plumbed into
+  ``streamablehttp_client(auth=...)``; Cantrip provides the two
+  application-level callbacks the SDK can't infer.  ``OAuthConfig``
+  dataclass on ``ServerConfig`` (``client_name``, ``scopes``,
+  ``redirect_port``, ``client_metadata_url``) with full YAML schema
+  validation.  ``cantrip.mcp.oauth.make_redirect_handler`` opens the
+  authorization URL in the user's default browser
+  (``webbrowser.open``) and falls back to a logged URL on headless
+  systems.  ``wait_for_localhost_callback`` binds an aiohttp listener
+  to ``127.0.0.1:<redirect_port>``, captures one ``GET /callback?code=…&state=…``
+  and tears down.  Every failure mode surfaces cleanly: OAuth-error
+  query params raise ``OSError``, missing code raises ``OSError``,
+  port-already-in-use raises ``OSError``, user-walks-away raises
+  ``TimeoutError`` (default 300s)
 - [x] Token storage (Phase 45.4a) — ``FileTokenStorage`` implements
   the SDK's ``TokenStorage`` protocol with per-server JSON files at
   ``~/.config/cantrip/mcp_tokens/<name>/`` (override via
