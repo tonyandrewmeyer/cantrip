@@ -1546,6 +1546,10 @@ class TestRunWebAsync:
         agent.event_bus = MagicMock()
         agent.start_executor = MagicMock()
         agent.stop_executor = AsyncMock()
+        agent.mcp_registry = MagicMock()
+        agent.mcp_registry.configured = []
+        agent.start_mcp = AsyncMock()
+        agent.stop_mcp = AsyncMock()
 
         fake_runner = MagicMock()
         fake_runner.setup = AsyncMock()
@@ -1588,6 +1592,10 @@ class TestRunWebAsync:
         agent.event_bus = MagicMock()
         agent.start_executor = MagicMock()
         agent.stop_executor = AsyncMock()
+        agent.mcp_registry = MagicMock()
+        agent.mcp_registry.configured = []
+        agent.start_mcp = AsyncMock()
+        agent.stop_mcp = AsyncMock()
 
         fake_runner = MagicMock()
         fake_runner.setup = AsyncMock()

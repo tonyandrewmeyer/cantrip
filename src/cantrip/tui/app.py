@@ -171,6 +171,7 @@ class CantripApp(App):
         self._resume_session()
         self._start_prepare()
         self._start_executor()
+        self._start_mcp()
         self._update_header_subtitle()
         self._update_model_info()
         # Refresh model info periodically to pick up subagent token usage.
@@ -180,6 +181,23 @@ class CantripApp(App):
         # Start issue triage if a GitHub remote is detected.
         if self._agent and self._agent.state.github_repo:
             self._agent.start_issue_triage()
+
+    def _start_mcp(self) -> None:
+        """Connect any configured MCP servers in the background.
+
+        Runs as a worker so a slow-launching server never blocks the UI.
+        Failures are captured in the registry's per-server status —
+        ``/mcp`` shows them — so this fire-and-forget pattern is safe.
+        """
+        if not self._agent:
+            return
+        if not self._agent.mcp_registry.configured:
+            return
+        self.run_worker(
+            self._agent.start_mcp(),
+            name="mcp_start",
+            exclusive=False,
+        )
 
     def _init_agent(self) -> None:
         """Initialise the LLM provider and agent."""

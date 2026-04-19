@@ -457,6 +457,11 @@ async def _run_web_async(agent: CantripAgent, port: int) -> None:
     # Start the executor so autonomous tasks run.
     agent.start_executor()
 
+    # Connect any configured MCP servers in the background.  Failures
+    # land in the registry's per-server status; ``/mcp`` shows them.
+    if agent.mcp_registry.configured:
+        asyncio.create_task(agent.start_mcp())
+
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", port)
@@ -471,6 +476,7 @@ async def _run_web_async(agent: CantripAgent, port: int) -> None:
         pass
     finally:
         await agent.stop_executor()
+        await agent.stop_mcp()
         await runner.cleanup()
 
 

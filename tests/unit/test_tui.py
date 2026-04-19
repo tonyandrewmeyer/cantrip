@@ -73,6 +73,11 @@ def _mock_agent() -> MagicMock:
     # Session resume — default to no prior session.
     agent.load_state = MagicMock(return_value=False)
     agent.save_state = MagicMock()
+    # MCP mocks (default: no servers configured so start_mcp is skipped).
+    agent.mcp_registry = MagicMock()
+    agent.mcp_registry.configured = []
+    agent.start_mcp = AsyncMock()
+    agent.stop_mcp = AsyncMock()
     return agent
 
 

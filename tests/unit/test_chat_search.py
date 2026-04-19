@@ -64,6 +64,10 @@ def _mock_agent() -> MagicMock:
     agent.store = None
     agent.load_state = MagicMock(return_value=False)
     agent.save_state = MagicMock()
+    agent.mcp_registry = MagicMock()
+    agent.mcp_registry.configured = []
+    agent.start_mcp = AsyncMock()
+    agent.stop_mcp = AsyncMock()
     return agent
 
 
