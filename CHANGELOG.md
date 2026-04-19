@@ -18,6 +18,31 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **MCP client foundation (Phase 45.1–45.3)** — Cantrip can now consume
+  third-party Model Context Protocol servers.  ``cantrip.mcp`` wraps the
+  official ``mcp`` 1.27.0 SDK with a long-lived ``MCPClient`` (stdio +
+  streamable HTTP transports, dedicated background-task lifecycle to
+  satisfy the SDK's anyio same-task rule, bounded reconnect on transient
+  failure).  ``MCPRegistry`` owns the configured set, parallelises
+  ``start_all()`` so a misconfigured server never blocks healthy ones,
+  and surfaces a status snapshot.  YAML loader reads
+  ``cantrip.mcp.yaml`` (repo) and ``~/.config/cantrip/mcp.yaml`` (user,
+  override via ``CANTRIP_MCP_USER_CONFIG``) with repo winning on a
+  server-name conflict.  ``MCPTool`` wraps each remote tool as a
+  Cantrip ``Tool`` with the ``mcp__<server>__<tool>`` naming convention
+  so the LLM sees them alongside the built-ins; subagent ``_filter_tools``
+  passes ``mcp__*`` through every category gate (the per-server
+  ``allowed_tools`` config is the authoritative MCP gate).  TUI and Web
+  both auto-start MCP at boot and dispatch ``/mcp`` (overview),
+  ``/mcp tools <server>``, and ``/mcp help`` through a shared
+  ``cantrip.agent.mcp_commands`` module.  Adds ``mcp`` 1.27.0 + 14
+  transitive dependencies.  64 new unit tests against an in-tree stub
+  MCP server cover the client (lifecycle, allowlist, reconnect),
+  config loader (every shape, merge precedence), registry (partial
+  failure, status transitions), tool wrapper (descriptor fidelity,
+  execution failure modes, build_tools integration), and the subagent
+  passthrough.  OAuth/elicitation (45.4) and marketplace awareness
+  (45.5) tracked as deferred follow-ups.
 - **Memory export/import with sanitisation (Phase 43.4)** — closes Phase
   43.  ``export_to_skill`` bundles memories as a discoverable SKILL.md
   (frontmatter + ``## Memory: <title>`` sections); ``export_to_markdown``

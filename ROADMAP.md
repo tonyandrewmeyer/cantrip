@@ -4139,36 +4139,78 @@ Loki/Prometheus schema-aware wrappers. This phase is complementary to
 Phase 39 (ACP drives a remote agent as Cantrip's backend; MCP injects tools
 into Cantrip).
 
-### 45.1 High — MCP client protocol implementation
+### 45.1 High — MCP client protocol implementation ✅
 
-- [ ] Implement the MCP client wire protocol (stdio + streamable HTTP transports)
-  using the official Python MCP SDK, wrapped in `src/cantrip/mcp/`
-- [ ] Lifecycle: connect, handshake with capability negotiation, invoke, close,
-  reconnect on transient failure
-- [ ] Timeouts and backoff parity with existing tool invocation paths
-- [ ] Unit tests against a stub MCP server cover happy path, timeout, and
-  disconnect
+- [x] Wire-protocol implementation built on the official ``mcp`` 1.27.0
+  Python SDK, wrapped in ``src/cantrip/mcp/``.  Both transports are
+  supported: stdio (subprocess via ``StdioServerParameters``) and
+  streamable HTTP (``streamablehttp_client``)
+- [x] Lifecycle — ``MCPClient.start()`` opens the transport, runs the
+  ``initialize`` handshake, and caches the tool list; ``stop()`` tears
+  it all down idempotently.  ``call_tool`` reconnects with bounded
+  exponential backoff (1s → 30s) on a single transient connection
+  error mid-call.  The whole session lifetime is owned by a dedicated
+  background task because the SDK's anyio cancel scopes refuse to exit
+  in a different task than they were entered in
+- [x] Timeouts honoured per server (``timeout_seconds`` config knob,
+  default 30s); reconnect backoff matches the existing
+  ``cantrip.agent.retry`` cadence
+- [x] 14 unit tests against an in-tree stub MCP server cover lifecycle
+  (start/stop idempotency, async-context-manager, tool listing), config
+  errors (missing command/url), tool invocation (echo round-trip,
+  error surface, disconnected client), the per-server allowlist
+  (filter on list, reject on invoke, empty = allow all), and
+  transient-failure recovery
 
-### 45.2 High — Server configuration and discovery
+### 45.2 High — Server configuration and discovery ✅
 
-- [ ] `cantrip.mcp.yaml` (repo-scope) and `~/.config/cantrip/mcp.yaml`
-  (user-scope) declare servers with command, env, and allowlist of exposed
-  tools
-- [ ] On startup, Cantrip enumerates configured servers, verifies each is
-  launchable, and reports unreachable servers without crashing
-- [ ] A `/mcp` slash command lists configured servers, their status, and the
-  tools each exposes
+- [x] ``cantrip.mcp.yaml`` (repo-scope, next to the charm) and
+  ``~/.config/cantrip/mcp.yaml`` (user-scope, overridable via
+  ``CANTRIP_MCP_USER_CONFIG``) declare servers with ``command``,
+  ``args``, ``env``, ``cwd``, ``url``, ``headers``, ``timeout_seconds``,
+  and an ``allowed_tools`` allowlist.  The schema mirrors the Claude
+  Code / Cursor / Codex format for portability.  Repo scope wins on
+  server-name conflict
+- [x] Startup discovery — ``MCPRegistry.start_all()`` launches every
+  configured server in parallel.  Failures land in the per-server
+  ``ServerStatus`` rather than blocking healthy ones; a malformed
+  config file logs a warning and is skipped instead of crashing the
+  agent.  TUI ``on_mount`` and Web ``_run_web_async`` both call
+  ``agent.start_mcp()`` so configured servers actually connect at boot
+- [x] ``/mcp`` slash command in ``cantrip.agent.mcp_commands``, shared
+  by TUI and Web.  Subcommands: ``/mcp`` (overview with ``[ok]/[!!]``
+  status markers), ``/mcp tools <name>`` (per-server tool list with
+  qualified names), ``/mcp help``
+- [x] 39 unit tests — 21 for the YAML loader (every shape, every
+  error path, the merge precedence) and 18 for the registry + slash
+  command (lifecycle, partial failure, /mcp output for connected /
+  failed / disconnected / unknown / empty cases)
 
-### 45.3 Medium — MCP tool surfacing to subagents
+### 45.3 Medium — MCP tool surfacing to subagents ✅
 
-- [ ] Remote tools appear to the agent with a `mcp__<server>__<tool>` naming
-  convention (matching Claude Code's convention)
-- [ ] Tool schemas from the server are translated into the Cantrip tool
-  dataclass shape without losing JSONSchema fidelity
-- [ ] Respect Phase 21.6 scoped tool access — subagents see only MCP tools
-  allowed for their task category
-- [ ] Record MCP tool calls in transcripts (Phase 14.1) with the originating
-  server tagged
+- [x] Remote tools appear with the ``mcp__<server>__<tool>`` naming
+  convention via the new ``MCPTool`` adapter.  ``MCPToolInfo`` exposes
+  a ``qualified_name`` property so the convention is enforced in one
+  place
+- [x] Tool schemas pass through end-to-end — the SDK's ``inputSchema``
+  ``dict[str, Any]`` is copied defensively into ``MCPToolInfo`` and
+  threaded through to the LLM as ``MCPTool.parameters``.  No round-trip
+  conversion, so JSONSchema fidelity is preserved
+- [x] Phase 21.6 scoped access — ``_filter_tools`` recognises any tool
+  whose name starts with ``mcp__`` and lets it through every category
+  gate.  The per-server ``allowed_tools`` config (45.2) is the
+  authoritative MCP gate; operators tighten exposure by editing the
+  YAML rather than touching code
+- [x] ``CantripAgent.start_mcp()`` invalidates the tools cache so
+  newly-connected servers' tools surface to the next subagent without
+  restarting
+- [ ] *Future work*: tag MCP tool calls in transcripts (Phase 14.1)
+  with the originating server.  ``MCPTool.execute`` already returns
+  ``data={"mcp_server": …, "mcp_tool": …}``; the transcript layer
+  needs a small change to surface that field
+- [x] 11 unit tests cover descriptor fidelity, execution paths
+  (happy path, server error, disconnected, unknown), build_tools
+  integration, and the subagent filter passthrough
 
 ### 45.4 Medium — OAuth and elicitation support
 
