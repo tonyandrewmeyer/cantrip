@@ -1183,11 +1183,18 @@ class CantripAgent:
             if on_event is not None:
                 on_event(event)
 
+        def _on_status_poll(model_type: str) -> None:
+            """Publish a status-changed tick so UIs refresh their model panes."""
+            self._event_bus.publish(
+                ui_events.juju_status_changed(status_data={"model_type": model_type})
+            )
+
         self._watcher = EventWatcher(
             dev_model=self.state.dev_model,
             cos_model=self.state.cos_model,
             config=config,
             on_event=_auto_route,
+            on_status_poll=_on_status_poll,
         )
         self._watcher.start()
         self.state.watcher_enabled = True

@@ -619,11 +619,16 @@ class EventWatcher:
         cos_model: str | None = None,
         config: WatcherConfig | None = None,
         on_event: Callable[[WatcherEvent], None] | None = None,
+        on_status_poll: Callable[[str], None] | None = None,
     ) -> None:
         self._dev_model = dev_model
         self._cos_model = cos_model
         self._config = config or WatcherConfig()
         self._on_event = on_event
+        # Fires after each successful status poll with the string "dev" or
+        # "cos".  Lets UI surfaces refresh their model panes on every tick,
+        # not only when a diff event happens.
+        self._on_status_poll = on_status_poll
 
         self._queue: asyncio.Queue[WatcherEvent] = asyncio.Queue(
             maxsize=self._config.max_queue,
@@ -757,6 +762,8 @@ class EventWatcher:
         juju = jubilant.Juju(model=self._dev_model)
         status = await loop.run_in_executor(None, juju.status)
         self._latest_status = status
+        if self._on_status_poll is not None:
+            self._on_status_poll("dev")
         snapshot = capture_snapshot(status)
         events = diff_snapshots(self._last_snapshot, snapshot)
         self._last_snapshot = snapshot
@@ -794,6 +801,8 @@ class EventWatcher:
         loop = asyncio.get_running_loop()
         juju = jubilant.Juju(model=self._cos_model)
         self._latest_cos_status = await loop.run_in_executor(None, juju.status)
+        if self._on_status_poll is not None:
+            self._on_status_poll("cos")
 
     # -- Loki polling --------------------------------------------------------
 

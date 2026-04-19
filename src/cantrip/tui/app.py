@@ -1042,6 +1042,11 @@ class CantripApp(App):
         self._agent.event_bus.subscribe(
             ui_events.EventType.WATCHER_EVENT, self._on_bus_watcher_event
         )
+        # Subscribe to periodic status-poll ticks so the model panes
+        # populate on first poll even when no diff event fires.
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.JUJU_STATUS_CHANGED, self._on_bus_juju_status
+        )
 
         started = self._agent.start_watcher()
         if started:
@@ -1057,26 +1062,31 @@ class CantripApp(App):
         await self._agent.stop_watcher()
         self._update_status_bar_watcher()
 
+    def _refresh_model_panes(self) -> None:
+        """Push the watcher's latest status snapshots into the model widget."""
+        if not (self._agent and self._agent._watcher):
+            return
+        status_widget = self.query_one("#juju-status", status_widgets.MultiModelStatusWidget)
+        latest = self._agent._watcher.latest_status
+        if latest is not None:
+            status_widget.dev_status = latest
+        latest_cos = self._agent._watcher.latest_cos_status
+        if latest_cos is not None:
+            status_widget.cos_status = latest_cos
+
     def _on_bus_watcher_event(self, event: ui_events.Event) -> None:
         """Handle a watcher event from the bus."""
 
         def _update() -> None:
             chat = self.query_one("#chat", chat_widget.ChatWidget)
             chat.add_system_message(f"[Watcher] {event.payload.get('summary', '')}")
-
-            # Feed the latest status snapshots into the multi-model widget.
-            if self._agent and self._agent._watcher:
-                status_widget = self.query_one(
-                    "#juju-status", status_widgets.MultiModelStatusWidget
-                )
-                latest = self._agent._watcher.latest_status
-                if latest is not None:
-                    status_widget.dev_status = latest
-                latest_cos = self._agent._watcher.latest_cos_status
-                if latest_cos is not None:
-                    status_widget.cos_status = latest_cos
+            self._refresh_model_panes()
 
         self.call_from_thread(_update)
+
+    def _on_bus_juju_status(self, _event: ui_events.Event) -> None:
+        """Handle a periodic status-poll tick from the watcher."""
+        self.call_from_thread(self._refresh_model_panes)
 
     def _update_status_bar_watcher(self) -> None:
         """Update the status bar watcher indicator."""

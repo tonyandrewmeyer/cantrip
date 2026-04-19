@@ -747,6 +747,44 @@ class TestCosStatusPolling:
         assert watcher.latest_cos_status is None
 
 
+class TestStatusPollCallback:
+    """Tests for the on_status_poll UI refresh callback."""
+
+    @pytest.mark.asyncio
+    async def test_dev_poll_fires_callback(self):
+        """A dev status poll invokes on_status_poll with 'dev'."""
+        mock_status = mock.MagicMock(spec=jubilant.Status)
+        mock_status.apps = {}
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.status.return_value = mock_status
+
+        calls: list[str] = []
+        watcher = EventWatcher(dev_model="dev", on_status_poll=calls.append)
+
+        with mock.patch("cantrip.agent.watcher.jubilant.Juju", return_value=mock_juju):
+            await watcher._poll_status_once()
+
+        assert calls == ["dev"]
+
+    @pytest.mark.asyncio
+    async def test_cos_poll_fires_callback(self):
+        """A COS status poll invokes on_status_poll with 'cos'."""
+        mock_status = mock.MagicMock(spec=jubilant.Status)
+        mock_status.apps = {}
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.status.return_value = mock_status
+
+        calls: list[str] = []
+        watcher = EventWatcher(dev_model="dev", cos_model="cos", on_status_poll=calls.append)
+
+        with mock.patch("cantrip.agent.watcher.jubilant.Juju", return_value=mock_juju):
+            await watcher._poll_cos_status_once()
+
+        assert calls == ["cos"]
+
+
 # ---------------------------------------------------------------------------
 # Loki polling
 # ---------------------------------------------------------------------------

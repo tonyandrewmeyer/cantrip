@@ -4,6 +4,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **Model panes populate on first poll** — the TUI's multi-model status
+  widget previously only refreshed when the watcher emitted a *diff*
+  event, so on a stable system (or right after start-up) the dev and
+  COS panes both showed "Not connected" / "Not deployed" even though
+  the watcher was polling successfully.  The watcher now fires an
+  ``on_status_poll`` callback after every dev/cos poll; the agent
+  publishes it as ``JUJU_STATUS_CHANGED`` on the UI bus, and the TUI
+  subscribes so the panes populate on the first successful poll.
+
 ### Added
 - **`juju_trust` tool** — wraps ``jubilant.Juju.trust`` so the agent can
   grant (or revoke) cluster-scope trust when a deployed companion such
