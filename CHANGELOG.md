@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Research-driven e2e test** — a new
+  ``tests/e2e/test_research_charm_build.py`` hands the agent a
+  minimal, user-style prompt (*"build a Kubernetes charm for Redis
+  using the public redis:7-alpine image, deploy to this model"*) and
+  leaves framework detection, planning, scaffolding, packing and
+  deployment entirely to the agent.  Nudges are milestone-level
+  (*"what's the next concrete step toward a packed .charm?"*) rather
+  than tool-level so the test exercises the research and planning
+  parts of the loop that the prescriptive PaaS tests bypass.
 - **Bulked-out e2e charm-build suite** — the live Flask test that lived
   in ``tests/e2e/test_real_charm_build.py`` has been refactored into a
   reusable harness (``tests/e2e/harness.py``) and parametrised across

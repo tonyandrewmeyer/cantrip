@@ -38,11 +38,15 @@ uv run pytest tests/unit/test_tools.py::test_function_name -v
 uv run pytest tests/integration -v
 
 # End-to-end charm-build tests (requires Juju + GEMINI_API_KEY)
-# Parametrised over Flask, Django, FastAPI, Go, and a machine charm.
+# Parametrised over Flask, Django, FastAPI, Go, a machine charm,
+# plus a research-driven test that starts from a user-style prompt.
 uv run pytest tests/e2e -m e2e -v
 
 # Just one framework
 uv run pytest tests/e2e/test_paas_charm_build.py -k django -v
+
+# Just the research-driven path (agent plans the whole thing from scratch)
+uv run pytest tests/e2e/test_research_charm_build.py -v
 
 # All checks (lint + unit)
 make check
