@@ -136,6 +136,11 @@ class CitationCheck:
 # from Phase 43.2's spec; override per-call or via ``CANTRIP_MEMORY_SOFT_EXPIRY_DAYS``.
 DEFAULT_SOFT_EXPIRY_DAYS = 60
 
+# Default hard-prompt window — archived memories older than this many days
+# are surfaced as deletion candidates so the user can clear them out.
+# Override via ``CANTRIP_MEMORY_HARD_EXPIRY_DAYS``.
+DEFAULT_HARD_EXPIRY_DAYS = 180
+
 
 @dataclass(frozen=True)
 class SweepResult:
@@ -249,17 +254,27 @@ def _resolve_soft_expiry() -> int:
     An invalid or non-positive env value falls back to the default so a
     misconfiguration never disables expiry silently.
     """
-    raw = os.environ.get("CANTRIP_MEMORY_SOFT_EXPIRY_DAYS")
+    return _resolve_positive_int_env("CANTRIP_MEMORY_SOFT_EXPIRY_DAYS", DEFAULT_SOFT_EXPIRY_DAYS)
+
+
+def _resolve_hard_expiry() -> int:
+    """Return the hard-prompt window in days, honouring ``CANTRIP_MEMORY_HARD_EXPIRY_DAYS``."""
+    return _resolve_positive_int_env("CANTRIP_MEMORY_HARD_EXPIRY_DAYS", DEFAULT_HARD_EXPIRY_DAYS)
+
+
+def _resolve_positive_int_env(name: str, default: int) -> int:
+    """Read *name* from the environment as a positive int, falling back on misconfig."""
+    raw = os.environ.get(name)
     if raw is None:
-        return DEFAULT_SOFT_EXPIRY_DAYS
+        return default
     try:
         parsed = int(raw)
     except ValueError:
-        log.warning("Ignoring non-integer CANTRIP_MEMORY_SOFT_EXPIRY_DAYS=%r", raw)
-        return DEFAULT_SOFT_EXPIRY_DAYS
+        log.warning("Ignoring non-integer %s=%r", name, raw)
+        return default
     if parsed <= 0:
-        log.warning("Ignoring non-positive CANTRIP_MEMORY_SOFT_EXPIRY_DAYS=%s", parsed)
-        return DEFAULT_SOFT_EXPIRY_DAYS
+        log.warning("Ignoring non-positive %s=%s", name, parsed)
+        return default
     return parsed
 
 
@@ -890,6 +905,32 @@ class MemoryManager:
                 kept += 1
         return SweepResult(archived=archived, kept=kept, cutoff=cutoff)
 
+    def list_due_for_purge(
+        self,
+        *,
+        scope: str | None = None,
+        hard_days: int | None = None,
+        now: datetime.datetime | None = None,
+    ) -> list[MemoryEntry]:
+        """Return archived memories that have aged past the hard-prompt threshold.
+
+        These are candidates for permanent deletion via the hard-prompt
+        flow ("delete or refresh?").  Only entries with ``status='archived'``
+        whose ``updated_at`` is older than ``hard_days`` ago qualify.
+        ``updated_at`` is the natural anchor: it's set when the sweep
+        archived the entry, so the count starts from the archive moment
+        rather than from the original creation date.
+        """
+        threshold = hard_days if hard_days is not None else _resolve_hard_expiry()
+        reference = now or datetime.datetime.now(datetime.UTC)
+        cutoff = reference - datetime.timedelta(days=threshold)
+        candidates: list[MemoryEntry] = []
+        for entry in self.list_entries(scope=scope, status="archived"):
+            anchor = _parse_iso(entry.updated_at) or _parse_iso(entry.created_at)
+            if anchor is not None and anchor < cutoff:
+                candidates.append(entry)
+        return candidates
+
     # ── Prompt injection ────────────────────────────────────────────────
 
     def render_prompt_index(self) -> str:
@@ -957,6 +998,7 @@ def _row_to_entry(row: dict[str, object]) -> MemoryEntry:
 
 
 __all__ = [
+    "DEFAULT_HARD_EXPIRY_DAYS",
     "DEFAULT_SOFT_EXPIRY_DAYS",
     "INDEX_FILENAME",
     "MEMORY_INDEX_MAX_LINES",

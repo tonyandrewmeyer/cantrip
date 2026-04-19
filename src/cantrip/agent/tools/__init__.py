@@ -94,6 +94,7 @@ from cantrip.agent.tools.loadtest import GenerateLoadTestTool
 from cantrip.agent.tools.memory import (
     MemoryForgetTool,
     MemoryListTool,
+    MemoryPurgeCheckTool,
     MemoryReadTool,
     MemoryRevalidateTool,
     MemorySearchTool,
@@ -411,6 +412,7 @@ __all__ = [
     # Memory
     "MemoryForgetTool",
     "MemoryListTool",
+    "MemoryPurgeCheckTool",
     "MemoryReadTool",
     "MemoryRevalidateTool",
     "MemorySearchTool",

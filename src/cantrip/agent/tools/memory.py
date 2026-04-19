@@ -506,6 +506,69 @@ class MemorySweepTool(_MemoryToolBase):
         return ToolResult(success=True, output="\n".join(lines))
 
 
+class MemoryPurgeCheckTool(_MemoryToolBase):
+    """List archived memories that have aged past the hard-prompt threshold."""
+
+    @property
+    def name(self) -> str:
+        return "memory_purge_check"
+
+    @property
+    def description(self) -> str:
+        return (
+            "List archived memories that have aged past the hard-prompt "
+            "threshold (default 180 days since archiving).  These are "
+            "candidates for permanent deletion — surface them to the user "
+            "and ask whether to forget or refresh.  Returns an empty list "
+            "when nothing has aged out, which means there's no need to "
+            "interrupt the user."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "enum": _SCOPE_ENUM,
+                    "description": "Optional scope filter.",
+                },
+                "hard_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "Threshold in days since archiving.  Defaults to 180 "
+                        "(or the CANTRIP_MEMORY_HARD_EXPIRY_DAYS environment variable)."
+                    ),
+                },
+            },
+        }
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        """List candidates for permanent deletion."""
+        scope = kwargs.get("scope")
+        hard_days = kwargs.get("hard_days")
+        if hard_days is not None:
+            try:
+                hard_days = int(hard_days)
+            except (TypeError, ValueError):
+                return ToolResult(success=False, output="", error="hard_days must be an integer")
+            if hard_days <= 0:
+                return ToolResult(success=False, output="", error="hard_days must be positive")
+        candidates = self._manager.list_due_for_purge(scope=scope, hard_days=hard_days)
+        if not candidates:
+            return ToolResult(success=True, output="(no memories due for purge)")
+        lines = [f"{len(candidates)} memories due for purge — ask the user before deleting:"]
+        for entry in candidates:
+            lines.append(_entry_summary(entry))
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data={"candidates": [e.to_dict() for e in candidates]},
+        )
+
+
 class MemoryForgetTool(_MemoryToolBase):
     """Delete a memory by title."""
 
@@ -561,6 +624,7 @@ def build_memory_tools(manager: MemoryManager) -> list[Tool]:
         MemoryUpdateTool(manager),
         MemoryRevalidateTool(manager),
         MemorySweepTool(manager),
+        MemoryPurgeCheckTool(manager),
         MemoryForgetTool(manager),
     ]
 
@@ -568,6 +632,7 @@ def build_memory_tools(manager: MemoryManager) -> list[Tool]:
 __all__ = [
     "MemoryForgetTool",
     "MemoryListTool",
+    "MemoryPurgeCheckTool",
     "MemoryReadTool",
     "MemoryRevalidateTool",
     "MemorySearchTool",

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from cantrip.agent.memory import (
+    DEFAULT_HARD_EXPIRY_DAYS,
     DEFAULT_SOFT_EXPIRY_DAYS,
     INDEX_FILENAME,
     MEMORY_INDEX_MAX_LINES,
@@ -976,4 +977,116 @@ class TestMemorySweepTool:
         bad = await tools["memory_sweep"].execute(soft_days="huh")  # type: ignore[attr-defined]
         assert not bad.success
         neg = await tools["memory_sweep"].execute(soft_days=-1)  # type: ignore[attr-defined]
+        assert not neg.success
+
+
+# ── 180-day purge candidates ───────────────────────────────────────────
+
+
+class TestPurgeCandidates:
+    """list_due_for_purge surfaces archived memories past the hard threshold."""
+
+    def _archive_with_age(self, store: SessionStore, title: str, days_archived: int) -> None:
+        """Mark a memory as archived with ``updated_at`` set to ``days_archived`` ago."""
+        past = (
+            (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days_archived))
+            .replace(microsecond=0)
+            .isoformat()
+        )
+        row = store.get_memory_by_title(title)
+        assert row is not None
+        store._conn.execute(  # type: ignore[union-attr]
+            "UPDATE memory SET status='archived', updated_at = ? WHERE id = ?",
+            (past, row["id"]),
+        )
+        store._conn.commit()  # type: ignore[union-attr]
+
+    def test_no_candidates_when_nothing_archived(self, manager: MemoryManager) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert manager.list_due_for_purge() == []
+
+    def test_archived_but_fresh_skipped(self, manager: MemoryManager, store: SessionStore) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        self._archive_with_age(store, "t", 30)
+        assert manager.list_due_for_purge() == []
+
+    def test_archived_past_threshold_returned(
+        self, manager: MemoryManager, store: SessionStore
+    ) -> None:
+        manager.write(scope="charm", title="ancient", kind="fact", body="b")
+        self._archive_with_age(store, "ancient", DEFAULT_HARD_EXPIRY_DAYS + 5)
+        candidates = manager.list_due_for_purge()
+        assert [c.title for c in candidates] == ["ancient"]
+
+    def test_custom_threshold_overrides_default(
+        self, manager: MemoryManager, store: SessionStore
+    ) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        self._archive_with_age(store, "t", 100)
+        # Default 180 → keep; explicit 30 → return.
+        assert manager.list_due_for_purge() == []
+        assert [c.title for c in manager.list_due_for_purge(hard_days=30)] == ["t"]
+
+    def test_env_override(
+        self,
+        manager: MemoryManager,
+        store: SessionStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        self._archive_with_age(store, "t", 50)
+        monkeypatch.setenv("CANTRIP_MEMORY_HARD_EXPIRY_DAYS", "30")
+        assert [c.title for c in manager.list_due_for_purge()] == ["t"]
+
+
+class TestMemoryPurgeCheckTool:
+    """The tool wraps list_due_for_purge."""
+
+    @pytest.fixture
+    def tools(self, manager: MemoryManager) -> dict[str, object]:
+        from cantrip.agent.tools.memory import build_memory_tools
+
+        return {t.name: t for t in build_memory_tools(manager)}
+
+    @pytest.mark.asyncio
+    async def test_no_candidates(self, tools: dict[str, object]) -> None:
+        result = await tools["memory_purge_check"].execute()  # type: ignore[attr-defined]
+        assert result.success
+        assert "no memories due" in result.output
+
+    @pytest.mark.asyncio
+    async def test_returns_candidates(
+        self,
+        tools: dict[str, object],
+        manager: MemoryManager,
+        store: SessionStore,
+    ) -> None:
+        manager.write(scope="charm", title="ancient", kind="fact", body="b")
+        # Inline aging — duplicate of helper, kept here to show the
+        # tool independently of the manager-level test fixture.
+        past = (
+            (
+                datetime.datetime.now(datetime.UTC)
+                - datetime.timedelta(days=DEFAULT_HARD_EXPIRY_DAYS + 1)
+            )
+            .replace(microsecond=0)
+            .isoformat()
+        )
+        row = store.get_memory_by_title("ancient")
+        assert row is not None
+        store._conn.execute(  # type: ignore[union-attr]
+            "UPDATE memory SET status='archived', updated_at = ? WHERE id = ?",
+            (past, row["id"]),
+        )
+        store._conn.commit()  # type: ignore[union-attr]
+        result = await tools["memory_purge_check"].execute()  # type: ignore[attr-defined]
+        assert result.success
+        assert "ancient" in result.output
+        assert "1 memories due for purge" in result.output
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_hard_days(self, tools: dict[str, object]) -> None:
+        bad = await tools["memory_purge_check"].execute(hard_days="x")  # type: ignore[attr-defined]
+        assert not bad.success
+        neg = await tools["memory_purge_check"].execute(hard_days=0)  # type: ignore[attr-defined]
         assert not neg.success
