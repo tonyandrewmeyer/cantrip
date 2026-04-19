@@ -32,7 +32,11 @@ Use the `analyse_framework` tool to detect the framework and language. The tool 
 charmcraft init --profile=flask-framework --name=my-app
 ```
 
-Use the `charmcraft_init` tool with the detected profile. This creates `charmcraft.yaml`, `src/charm.py`, and test scaffolding tuned for the framework.
+Use the `charmcraft_init` tool with the detected profile. This creates `charmcraft.yaml`, `src/charm.py`, `requirements.txt`, `pyproject.toml`, and test scaffolding tuned for the framework.
+
+**The scaffolded `requirements.txt` contains `ops` and `paas-charm`** — these are mandatory: `src/charm.py` imports `paas_charm.<framework>`, so removing `paas-charm` makes the charm crash at install time with `ModuleNotFoundError: No module named 'paas_charm'`.
+
+If you bring the application's own `requirements.txt` into the charm directory, **merge** — never overwrite. The charm's `requirements.txt` must end up with BOTH the app's runtime deps (e.g. `flask`) AND `ops` + `paas-charm`. A `cp requirements.txt <charm-dir>/` is a bug.
 
 ### 3. Initialise the Rock
 

@@ -9,6 +9,7 @@ import pytest
 from cantrip.agent.tools.charm import (
     AnalyseFrameworkTool,
     CharmcraftInitTool,
+    CharmcraftPackTool,
     _inject_coverage_threshold,
     _inject_pre_commit,
 )
@@ -1157,6 +1158,219 @@ if __name__ == "__main__":
 
         assert result.success
         assert "skipped" in result.output.lower() or "not found" in result.output.lower()
+
+
+class TestCharmcraftInitPaasRequirements:
+    """Tests for the PaaS requirements.txt re-assertion.
+
+    The agent has been observed overwriting a freshly-scaffolded charm's
+    requirements.txt with the app's (e.g. ``cp app.py requirements.txt
+    flask-demo/``).  That wipes ``paas-charm`` and the deployed charm
+    then dies at install with ``ModuleNotFoundError: No module named
+    'paas_charm'``.  ``_ensure_paas_requirements`` guarantees the lines
+    are there again.
+    """
+
+    _PAAS_CHARMCRAFT_YAML = """\
+name: test-charm
+type: charm
+base: ubuntu@24.04
+platforms:
+  amd64:
+extensions:
+  - flask-framework
+"""
+
+    _NON_PAAS_CHARMCRAFT_YAML = """\
+name: test-charm
+type: charm
+base: ubuntu@24.04
+platforms:
+  amd64:
+"""
+
+    @pytest.fixture
+    def temp_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+
+    @pytest.fixture
+    def tool(self):
+        return CharmcraftInitTool()
+
+    def _mock_charmcraft(self):
+        return mock.patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=mock.Mock(returncode=0, stdout="Initialised.", stderr=""),
+        )
+
+    @pytest.mark.asyncio
+    async def test_app_requirements_overwrite_is_repaired(self, tool, temp_dir):
+        """Simulate the observed bug: requirements.txt has only the app's deps."""
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
+        (charm_dir / "requirements.txt").write_text("flask>=3.0\n")
+
+        with self._mock_charmcraft():
+            result = await tool.execute(
+                name="test-charm", path=str(temp_dir), profile="flask-framework"
+            )
+
+        assert result.success
+        reqs = (charm_dir / "requirements.txt").read_text()
+        assert "paas-charm" in reqs, f"paas-charm missing from reqs: {reqs!r}"
+        assert "ops" in reqs, f"ops missing from reqs: {reqs!r}"
+        # The application's dep must survive the repair.
+        assert "flask>=3.0" in reqs
+
+    @pytest.mark.asyncio
+    async def test_already_present_paas_deps_are_not_duplicated(self, tool, temp_dir):
+        """A well-formed PaaS requirements.txt is left alone."""
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
+        (charm_dir / "requirements.txt").write_text(
+            "ops ~= 2.17\npaas-charm>=1.0,<2\nflask>=3.0\n"
+        )
+
+        with self._mock_charmcraft():
+            result = await tool.execute(
+                name="test-charm", path=str(temp_dir), profile="flask-framework"
+            )
+
+        assert result.success
+        reqs = (charm_dir / "requirements.txt").read_text()
+        assert reqs.count("paas-charm") == 1
+        # One ``ops`` line (excluding ``ops-tracing`` which PaaS skips anyway).
+        ops_lines = [ln for ln in reqs.splitlines() if ln.strip().startswith("ops")]
+        assert len(ops_lines) == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_requirements_file_is_created(self, tool, temp_dir):
+        """When the agent deletes requirements.txt entirely the file is rebuilt."""
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
+        # Deliberately no requirements.txt.
+
+        with self._mock_charmcraft():
+            result = await tool.execute(
+                name="test-charm", path=str(temp_dir), profile="flask-framework"
+            )
+
+        assert result.success
+        reqs_path = charm_dir / "requirements.txt"
+        assert reqs_path.exists()
+        reqs = reqs_path.read_text()
+        assert "paas-charm" in reqs
+        assert "ops" in reqs
+
+    @pytest.mark.asyncio
+    async def test_non_paas_charm_untouched(self, tool, temp_dir):
+        """A non-PaaS charm's requirements.txt must NOT gain paas-charm."""
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        (charm_dir / "charmcraft.yaml").write_text(self._NON_PAAS_CHARMCRAFT_YAML)
+        (charm_dir / "requirements.txt").write_text("ops >= 2.0\n")
+
+        with self._mock_charmcraft():
+            result = await tool.execute(
+                name="test-charm", path=str(temp_dir), profile="kubernetes"
+            )
+
+        assert result.success
+        reqs = (charm_dir / "requirements.txt").read_text()
+        assert "paas-charm" not in reqs
+
+    @pytest.mark.asyncio
+    async def test_ops_tracing_is_not_treated_as_ops(self, tool, temp_dir):
+        """``ops-tracing`` alone must not satisfy the ``ops`` requirement.
+
+        Because the regex that looks for ``ops`` had to avoid false
+        positives on ``ops-tracing``, a requirements.txt containing only
+        ``ops-tracing`` should still get ``ops`` added.  Otherwise the
+        charm's ``import ops`` fails even though the deps look complete.
+        """
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
+        (charm_dir / "requirements.txt").write_text("ops-tracing\npaas-charm>=1.0,<2\n")
+
+        with self._mock_charmcraft():
+            result = await tool.execute(
+                name="test-charm", path=str(temp_dir), profile="flask-framework"
+            )
+
+        assert result.success
+        reqs = (charm_dir / "requirements.txt").read_text()
+        # One standalone ops line, plus the original ops-tracing line.
+        bare_ops_lines = [
+            ln
+            for ln in reqs.splitlines()
+            if ln.strip().startswith("ops")
+            and not ln.strip().startswith("ops-")
+            and not ln.strip().startswith("ops_")
+        ]
+        assert len(bare_ops_lines) == 1
+        assert "ops-tracing" in reqs
+
+
+class TestCharmcraftPackPaasRequirementsGuard:
+    """Pre-pack guard against a broken PaaS requirements.txt.
+
+    Even if the agent's init step produced a correct requirements.txt,
+    a subsequent ``cp`` or ``edit_file`` can still overwrite it.  The
+    pack tool runs the same re-assertion one last time before handing
+    off to ``charmcraft pack`` so a broken charm is never shipped.
+    """
+
+    @pytest.fixture
+    def temp_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+
+    @pytest.fixture
+    def tool(self):
+        return CharmcraftPackTool()
+
+    @pytest.mark.asyncio
+    async def test_pack_repairs_overwritten_requirements(self, tool, temp_dir):
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir()
+        (charm_dir / "charmcraft.yaml").write_text(
+            "name: x\ntype: charm\nextensions:\n  - flask-framework\n"
+        )
+        # Simulate the post-``cp`` state that caused the live test failure.
+        (charm_dir / "requirements.txt").write_text("flask>=3.0\n")
+
+        # ``charmcraft pack`` itself is mocked — we only care about the guard.
+        with mock.patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=mock.Mock(returncode=0, stdout="packed", stderr=""),
+        ):
+            result = await tool.execute(path=str(charm_dir))
+
+        assert result.success
+        reqs = (charm_dir / "requirements.txt").read_text()
+        assert "paas-charm" in reqs
+        assert "flask>=3.0" in reqs
+
+    @pytest.mark.asyncio
+    async def test_pack_does_not_touch_non_paas_requirements(self, tool, temp_dir):
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir()
+        (charm_dir / "charmcraft.yaml").write_text("name: x\ntype: charm\n")
+        (charm_dir / "requirements.txt").write_text("ops >= 2.0\n")
+
+        with mock.patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=mock.Mock(returncode=0, stdout="packed", stderr=""),
+        ):
+            await tool.execute(path=str(charm_dir))
+
+        reqs = (charm_dir / "requirements.txt").read_text()
+        assert "paas-charm" not in reqs
 
 
 class TestCharmcraftInitPreCommit:

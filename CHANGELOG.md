@@ -29,6 +29,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``/status``, ``/feelings``) stay on their original surface.
 
 ### Fixed
+- **PaaS charms shipped without ``paas-charm`` in ``requirements.txt``**
+  — when the agent co-located a 12-factor app's source with the
+  scaffolded charm it sometimes overwrote ``requirements.txt`` (e.g.
+  ``cp app.py requirements.txt flask-demo/``), wiping the charm-side
+  ``ops`` and ``paas-charm`` lines that ``charmcraft init`` had
+  generated.  The resulting ``.charm`` packed successfully but crashed
+  at install with ``ModuleNotFoundError: No module named 'paas_charm'``.
+  A new ``_ensure_paas_requirements`` guard in ``agent/tools/charm.py``
+  re-asserts ``ops`` and ``paas-charm`` both after ``charmcraft_init``
+  and before ``charmcraft_pack`` — app deps are preserved, no
+  duplicates are introduced, and ``ops-tracing`` is no longer
+  mis-identified as ``ops``.  The ``twelve-factor`` skill now
+  documents the merge-don't-overwrite rule explicitly.
 - **Slash commands were unreachable in the TUI** — pressing ``/`` in an
   empty chat input opened the search bar, which swallowed the leading
   character so ``/help``, ``/memory``, ``/mcp``, ``/feelings`` (and now

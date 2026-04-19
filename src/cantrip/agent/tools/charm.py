@@ -30,6 +30,84 @@ requires:
     limit: 1
 """
 
+# Canonical PaaS charm dependency lines.  When a charm uses a 12-factor
+# framework extension, its ``requirements.txt`` must carry ``ops`` and
+# ``paas-charm`` — without them the charm's ``src/charm.py`` fails at
+# import time with ``ModuleNotFoundError: No module named 'paas_charm'``.
+_PAAS_OPS_LINE = "ops ~= 2.17"
+_PAAS_CHARM_LINE = "paas-charm>=1.0,<2"
+
+
+def _charm_uses_paas_extension(charm_path: Path) -> bool:
+    """Return ``True`` when *charm_path*'s charmcraft.yaml uses a PaaS extension.
+
+    Inspects ``extensions:`` in ``charmcraft.yaml``.  A missing file or a
+    parse error counts as "no PaaS extension" — safer than failing the
+    whole tool run for a cosmetic check.
+    """
+    charmcraft_yaml = charm_path / "charmcraft.yaml"
+    if not charmcraft_yaml.exists():
+        return False
+    try:
+        parsed = yaml.safe_load(charmcraft_yaml.read_text()) or {}
+    except yaml.YAMLError:
+        return False
+    extensions = parsed.get("extensions") or []
+    if not isinstance(extensions, list):
+        return False
+    return any(
+        isinstance(ext, str) and ext.endswith("-framework") and ext in _PAAS_PROFILES
+        for ext in extensions
+    )
+
+
+def _ensure_paas_requirements(charm_path: Path) -> list[str]:
+    """Guarantee ``ops`` and ``paas-charm`` are in the charm's requirements.txt.
+
+    The agent sometimes overwrites the charm's scaffolded
+    ``requirements.txt`` with the application's own (e.g. when copying
+    a Flask app's sources into the charm directory).  That wipes out the
+    charm-side ``paas-charm`` dependency and the deployed charm crashes
+    at install time with ``ModuleNotFoundError: No module named
+    'paas_charm'``.  This helper is a belt-and-braces re-assertion: it
+    leaves any existing lines alone (so app deps like ``flask`` survive)
+    and only prepends what's missing.
+
+    Returns a list of human-readable descriptions of what was done.
+    Does nothing when the charm is not a PaaS charm.
+    """
+    actions: list[str] = []
+    if not _charm_uses_paas_extension(charm_path):
+        return actions
+
+    requirements = charm_path / "requirements.txt"
+    existing = requirements.read_text() if requirements.exists() else ""
+    existing_lower = existing.lower()
+
+    lines_to_prepend: list[str] = []
+    if "paas-charm" not in existing_lower and "paas_charm" not in existing_lower:
+        lines_to_prepend.append(_PAAS_CHARM_LINE)
+    # Match ``ops`` as a requirements-file token only — avoid false
+    # positives on ``ops-tracing``, ``ops-scenario``, etc.
+    has_ops = any(
+        line.strip().lower().split("=")[0].split(">")[0].split("<")[0].split("~")[0].strip()
+        == "ops"
+        for line in existing.splitlines()
+    )
+    if not has_ops:
+        lines_to_prepend.append(_PAAS_OPS_LINE)
+
+    if not lines_to_prepend:
+        return actions
+
+    prefix = "\n".join(lines_to_prepend) + "\n"
+    requirements.write_text(prefix + existing)
+    actions.append(
+        f"Re-asserted PaaS charm deps in requirements.txt: "
+        f"{', '.join(line.split('>')[0].split('~')[0].strip() for line in lines_to_prepend)}"
+    )
+    return actions
+
 
 def _inject_ops_tracing(target_path: Path, profile: str) -> list[str]:
     """Inject ops-tracing into a freshly scaffolded charm.
@@ -315,6 +393,11 @@ class CharmcraftInitTool(Tool):
             # Inject ops-tracing into the scaffolded charm.
             tracing_actions = _inject_ops_tracing(target_path, profile)
 
+            # For PaaS profiles, guarantee ops + paas-charm are in
+            # requirements.txt even if a prior step (or the agent) left
+            # only the application's deps behind.
+            paas_actions = _ensure_paas_requirements(target_path)
+
             # Set up pre-commit hooks delegating to tox environments.
             pre_commit_actions = _inject_pre_commit(target_path)
 
@@ -326,7 +409,11 @@ class CharmcraftInitTool(Tool):
             workflow_actions = inject_github_workflows(target_path, name)
 
             post_init_summary = "\n".join(
-                tracing_actions + pre_commit_actions + coverage_actions + workflow_actions
+                tracing_actions
+                + paas_actions
+                + pre_commit_actions
+                + coverage_actions
+                + workflow_actions
             )
 
             return ToolResult(
@@ -402,6 +489,14 @@ class CharmcraftPackTool(Tool):
         """Run charmcraft pack."""
         try:
             charm_path = Path(path).resolve()
+
+            # Re-assert PaaS charm dependencies before packing.  The
+            # agent has been observed overwriting the charm's
+            # requirements.txt with the app's, which silently produces a
+            # broken charm that crashes at install time.  Fixing this
+            # here means ``charmcraft pack`` never ships a PaaS charm
+            # without ``ops`` and ``paas-charm``.
+            _ensure_paas_requirements(charm_path)
 
             cmd = ["charmcraft", "pack"]
             if destructive_mode:
