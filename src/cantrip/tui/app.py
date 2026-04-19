@@ -12,7 +12,7 @@ from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
 from cantrip import __version__
-from cantrip.agent import emotions
+from cantrip.agent import emotions, memory_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.git_branch import PUSH_CONFIRM_PREFIX
@@ -1127,6 +1127,9 @@ class CantripApp(App):
             self._handle_feelings_command(message, chat)
             return
 
+        if self._handle_memory_slash_commands(message, chat):
+            return
+
         # Disable input and show thinking indicator while processing.
         input_widget = self.query_one("#chat-input", Input)
         input_widget.disabled = True
@@ -1190,6 +1193,29 @@ class CantripApp(App):
         """Run the parliament and return the formatted markdown report."""
         result = await self._agent.run_parliament(enabled)
         return emotions.format_report(result, enabled=enabled)
+
+    def _handle_memory_slash_commands(self, message: str, chat: chat_widget.ChatWidget) -> bool:
+        """Dispatch /memory, /remember, /forget.
+
+        Returns ``True`` when the message was handled (so the caller
+        does not also send it to the LLM).  Routes to the shared
+        handlers in ``memory_commands`` so the same logic powers the
+        Web UI.
+        """
+        if not self._agent:
+            return False
+        verb, _, args = message.partition(" ")
+        manager = self._agent._memory_manager
+        if verb == "/memory":
+            chat.add_system_message(memory_commands.handle_memory(manager, args))
+            return True
+        if verb == "/remember":
+            chat.add_system_message(memory_commands.handle_remember(manager, args))
+            return True
+        if verb == "/forget":
+            chat.add_system_message(memory_commands.handle_forget(manager, args))
+            return True
+        return False
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle worker state changes to update the UI."""

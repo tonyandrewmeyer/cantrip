@@ -11,6 +11,7 @@ import weakref
 import aiohttp.web as web
 import jinja2
 
+from cantrip.agent import memory_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
@@ -58,6 +59,29 @@ def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
         asyncio.ensure_future(_safe_ws_send(ws, payload))
     for ws in stale:
         clients.discard(ws)
+
+
+def _handle_memory_slash_command(app: web.Application, agent: CantripAgent, content: str) -> bool:
+    """Handle ``/memory``, ``/remember``, ``/forget`` inline.
+
+    Returns ``True`` when the message was handled as a memory command —
+    the caller skips the normal LLM round in that case.  Echoes the
+    user's command and the system response so the chat history matches
+    the TUI behaviour.
+    """
+    verb, _, args = content.partition(" ")
+    if verb not in {"/memory", "/remember", "/forget"}:
+        return False
+    manager = agent._memory_manager
+    if verb == "/memory":
+        response = memory_commands.handle_memory(manager, args)
+    elif verb == "/remember":
+        response = memory_commands.handle_remember(manager, args)
+    else:
+        response = memory_commands.handle_forget(manager, args)
+    _broadcast(app, "chat_message", {"role": "user", "content": content})
+    _broadcast(app, "chat_message", {"role": "system", "content": response})
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +306,13 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 if payload.get("type") == "chat_input":
                     content = payload.get("data", {}).get("content", "").strip()
                     if not content:
+                        continue
+
+                    # Memory slash commands run inline (no LLM), so handle
+                    # them before grabbing the chat lock or showing the
+                    # thinking indicator.  Echo the user's command first so
+                    # the chat shows what they typed.
+                    if _handle_memory_slash_command(request.app, agent, content):
                         continue
 
                     # Serialise chat messages to prevent concurrent state mutation.
