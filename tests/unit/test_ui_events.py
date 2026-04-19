@@ -188,6 +188,8 @@ class TestBusBroadcastContract:
             events.preflight_updated(group_index=0, item_index=0, status="x").type,
             events.tasks_snapshot([]).type,
             events.juju_status_changed(status_data={}).type,
+            events.memory_written(title="x", scope="charm", kind="fact", source="x").type,
+            events.memory_recalled(title="x", scope="charm", kind="fact").type,
         }
         enum_types = set(events.EventType)
         assert factory_types == enum_types

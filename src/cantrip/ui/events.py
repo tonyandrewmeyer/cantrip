@@ -29,6 +29,8 @@ class EventType(enum.StrEnum):
     WATCHER_EVENT = "watcher_event"
     STATUS_BAR_CHANGED = "status_bar_changed"
     PREFLIGHT_UPDATED = "preflight_updated"
+    MEMORY_WRITTEN = "memory_written"
+    MEMORY_RECALLED = "memory_recalled"
 
 
 @dataclass(frozen=True)
@@ -255,4 +257,47 @@ def preflight_updated(
             "item_index": item_index,
             "status": status,
         },
+    )
+
+
+def memory_written(
+    *,
+    title: str,
+    scope: str,
+    kind: str,
+    source: str,
+    reasoning: str = "",
+) -> Event:
+    """Build a ``MEMORY_WRITTEN`` event.
+
+    Emitted when the auto-writer persists a memory or when a memory tool
+    creates one — UIs render this as an inline "Wrote memory: …" notice.
+    """
+    return Event(
+        type=EventType.MEMORY_WRITTEN,
+        payload={
+            "title": title,
+            "scope": scope,
+            "kind": kind,
+            "source": source,
+            "reasoning": reasoning,
+        },
+    )
+
+
+def memory_recalled(
+    *,
+    title: str,
+    scope: str,
+    kind: str,
+) -> Event:
+    """Build a ``MEMORY_RECALLED`` event.
+
+    Emitted when an agent or tool reads a memory by title — UIs render
+    this as an inline "Recalled memory: …" notice so users see what
+    durable context the agent is leaning on.
+    """
+    return Event(
+        type=EventType.MEMORY_RECALLED,
+        payload={"title": title, "scope": scope, "kind": kind},
     )

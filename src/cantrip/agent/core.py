@@ -1,5 +1,6 @@
 """Core agent logic."""
 
+import asyncio
 import logging
 import re
 import sqlite3
@@ -31,7 +32,13 @@ from cantrip.agent.github_issues import (
     IssueTriage,
     build_issue_work_tasks,
 )
-from cantrip.agent.memory import MemoryManager
+from cantrip.agent.memory import MemoryEntry, MemoryManager
+from cantrip.agent.memory_writer import (
+    AutoWriter,
+    TriggerKind,
+    WriteMemoryContext,
+    collect_file_citations,
+)
 from cantrip.agent.planner import (
     PlanningContext,
     TaskPlanner,
@@ -76,6 +83,34 @@ _LIGHT_PURPOSES = frozenset({"compaction"})
 # Pattern for GitHub HTTPS and SSH remote URLs.
 _GITHUB_HTTPS_RE = re.compile(r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?$")
 _GITHUB_SSH_RE = re.compile(r"git@github\.com:([^/]+/[^/]+?)(?:\.git)?$")
+
+# User-correction phrases that trigger the auto-writer.  Reasonably
+# specific to avoid false positives ("don't" appears in plenty of
+# conversational text); the auto-writer's own gating heuristic provides
+# the second filter so a borderline match still costs only one LLM call.
+_USER_CORRECTION_RE = re.compile(
+    r"(?:^\s*(?:no|actually|wait|stop)[,.!\s]"
+    r"|\b(?:don'?t|do not)\s+(?:do|use|run|call|invoke|create|edit|push|commit|delete|change|modify|add|use)"
+    r"|\b(?:that(?:'s| is)) (?:wrong|not right|incorrect)\b"
+    r"|\bnot what i\b"
+    r"|\bnot (?:like|how) (?:that|i)\b"
+    r"|^\s*(?:always|never)\b"
+    r"|\bplease (?:always|never|stop|don'?t)\b"
+    r"|\binstead\b)",
+    re.IGNORECASE,
+)
+
+
+def _is_user_correction(message: str) -> bool:
+    """Return True when *message* looks like a correction worth recording.
+
+    Conservative match — the auto-writer's gating decides whether to
+    actually persist anything.  False negatives are fine (the agent can
+    always be asked again); false positives waste an LLM call.
+    """
+    if not message or not message.strip():
+        return False
+    return bool(_USER_CORRECTION_RE.search(message))
 
 
 def detect_github_repo(charm_path: Path | None) -> str | None:
@@ -151,6 +186,8 @@ class CantripAgent:
         self._store: SessionStore | None = None
         self._store_initialised = False
         self._memory_manager_cache: MemoryManager | None = None
+        self._auto_writer_cache: AutoWriter | None = None
+        self._memory_background_tasks: set[asyncio.Task[Any]] = set()
 
         self._watcher: EventWatcher | None = None
         self._executor: BackgroundExecutor | None = None
@@ -214,11 +251,92 @@ class CantripAgent:
         """Memory manager over charm-scope (if any) and global-scope memory."""
         if self._memory_manager_cache is None:
             self._ensure_store()
-            self._memory_manager_cache = MemoryManager(
+            manager = MemoryManager(
                 session_store=self._store,
                 charm_path=self.state.charm_path,
             )
+            manager.set_write_callback(self._on_memory_written)
+            manager.set_recall_callback(self._on_memory_recalled)
+            self._memory_manager_cache = manager
         return self._memory_manager_cache
+
+    @property
+    def _auto_writer(self) -> AutoWriter:
+        """Auto-writer subagent for opportunistic memory capture."""
+        if self._auto_writer_cache is None:
+            self._auto_writer_cache = AutoWriter(
+                provider=self.provider, manager=self._memory_manager
+            )
+        return self._auto_writer_cache
+
+    def _on_memory_written(self, entry: MemoryEntry) -> None:
+        """Forward MemoryManager write callbacks to the UI event bus."""
+        try:
+            self._event_bus.publish(
+                ui_events.memory_written(
+                    title=entry.title,
+                    scope=entry.scope,
+                    kind=entry.kind,
+                    source=entry.source,
+                )
+            )
+        except Exception:  # noqa: BLE001 - UI hook must not break memory writes.
+            log.debug("memory_written event publish failed", exc_info=True)
+
+    def _on_memory_recalled(self, entry: MemoryEntry) -> None:
+        """Forward MemoryManager recall callbacks to the UI event bus."""
+        try:
+            self._event_bus.publish(
+                ui_events.memory_recalled(title=entry.title, scope=entry.scope, kind=entry.kind)
+            )
+        except Exception:  # noqa: BLE001 - UI hook must not break recall.
+            log.debug("memory_recalled event publish failed", exc_info=True)
+
+    def _maybe_schedule_correction_writer(self, user_message: str) -> None:
+        """Schedule the auto-writer when the user message looks like a correction.
+
+        Runs as a background task so the conversation loop's response is
+        not blocked on a second LLM call.  The task reference is held in
+        ``_memory_background_tasks`` until completion to satisfy
+        asyncio's "task may be garbage-collected" warning.
+        """
+        if not _is_user_correction(user_message):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        prior_assistant = self._latest_assistant_text()
+        cited_paths = self._collect_recent_file_citations()
+        context = WriteMemoryContext(
+            trigger=TriggerKind.USER_CORRECTION,
+            summary=user_message[:200],
+            detail=(f"Agent's prior action: {prior_assistant[:500]}" if prior_assistant else ""),
+            cited_paths=cited_paths,
+            charm_name=self.state.charm_name,
+            charm_path=self.state.charm_path,
+            framework=self.state.framework,
+        )
+        task = loop.create_task(self._auto_writer.write(context))
+        self._memory_background_tasks.add(task)
+        task.add_done_callback(self._memory_background_tasks.discard)
+
+    def _latest_assistant_text(self) -> str:
+        """Return the text content of the most recent assistant message."""
+        for msg in reversed(self.state.messages):
+            if msg.role == Role.ASSISTANT and msg.content:
+                return msg.content
+        return ""
+
+    def _collect_recent_file_citations(self, max_messages: int = 20) -> list[Path]:
+        """Scan the most recent assistant tool calls for file-citation candidates."""
+        tool_calls: list[dict[str, Any]] = []
+        for msg in self.state.messages[-max_messages:]:
+            if msg.role != Role.ASSISTANT:
+                continue
+            for tc in msg.tool_calls:
+                tool_calls.append({"name": tc.name, "arguments": tc.arguments})
+        return collect_file_citations(tool_calls, base_path=self.state.charm_path)
 
     def _ensure_store(self) -> None:
         """Initialise the session store on first need."""
@@ -498,9 +616,11 @@ class CantripAgent:
         """
         self._pause_executor()
         try:
-            return await self._process_message_inner(user_message)
+            response = await self._process_message_inner(user_message)
         finally:
             self._resume_executor()
+        self._maybe_schedule_correction_writer(user_message)
+        return response
 
     async def _run_conversation_loop(self, user_message: str) -> Response:
         """Shared conversation loop: send a message, execute tool calls, repeat.
@@ -630,6 +750,7 @@ class CantripAgent:
                 yield chunk
         finally:
             self._resume_executor()
+        self._maybe_schedule_correction_writer(user_message)
 
     async def _run_conversation_loop_streaming(
         self,

@@ -19,6 +19,7 @@ import hashlib
 import logging
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -599,6 +600,26 @@ class MemoryManager:
         self._session_store = session_store
         self._global_store = global_store or GlobalMemoryStore()
         self._charm_path = charm_path
+        self._on_recall: Callable[[MemoryEntry], None] | None = None
+        self._on_write: Callable[[MemoryEntry], None] | None = None
+
+    def set_recall_callback(self, callback: Callable[[MemoryEntry], None] | None) -> None:
+        """Register a callback fired whenever a memory is read by title.
+
+        Used by the agent to surface "Recalled memory: …" in UI without
+        coupling the manager to the event bus directly.  Pass ``None``
+        to clear.
+        """
+        self._on_recall = callback
+
+    def set_write_callback(self, callback: Callable[[MemoryEntry], None] | None) -> None:
+        """Register a callback fired whenever a memory is created or overwritten.
+
+        Mirrors :meth:`set_recall_callback` so the agent can publish a
+        "Wrote memory: …" UI event regardless of whether the write came
+        from the auto-writer or a tool call.
+        """
+        self._on_write = callback
 
     @property
     def global_store(self) -> GlobalMemoryStore:
@@ -633,18 +654,23 @@ class MemoryManager:
 
         When ``scope`` is ``None``, charm-scope is searched first so a charm
         override shadows a global memory of the same name.  The matched entry's
-        access counter is bumped as a side effect.
+        access counter is bumped as a side effect, and the recall callback
+        (if any) is fired so UIs can show "Recalled memory: …".
         """
+        entry: MemoryEntry | None = None
         if scope in (None, "charm") and self._session_store is not None:
             row = self._session_store.get_memory_by_title(title)
             if row is not None:
                 self._session_store.touch_memory(cast("int", row["id"]))
-                return _row_to_entry(row)
-        if scope in (None, "global"):
+                entry = _row_to_entry(row)
+        if entry is None and scope in (None, "global"):
             entry = self._global_store.get(title)
-            if entry is not None:
-                return entry
-        return None
+        if entry is not None and self._on_recall is not None:
+            try:
+                self._on_recall(entry)
+            except Exception:  # noqa: BLE001 - never let a UI hook break recall.
+                log.debug("recall callback failed", exc_info=True)
+        return entry
 
     def search(self, query: str, *, scope: str | None = None) -> list[MemoryEntry]:
         """Keyword search across scopes. Returns charm-scope hits first."""
@@ -673,6 +699,7 @@ class MemoryManager:
         """Create a new memory in *scope*. Overwrites an existing entry with the same title."""
         _validate_kind(kind)
         _validate_status(status)
+        entry: MemoryEntry
         if scope == "charm":
             if self._session_store is None:
                 raise MemoryScopeError("charm-scope memory requires an active charm session")
@@ -699,9 +726,9 @@ class MemoryManager:
                 )
                 row = self._session_store.get_memory(cast("int", existing["id"]))
             assert row is not None
-            return _row_to_entry(row)
-        if scope == "global":
-            return self._global_store.write(
+            entry = _row_to_entry(row)
+        elif scope == "global":
+            entry = self._global_store.write(
                 title,
                 kind,
                 body,
@@ -710,7 +737,14 @@ class MemoryManager:
                 tags=tags,
                 status=status,
             )
-        raise MemoryScopeError(f"Unknown memory scope: {scope!r}")
+        else:
+            raise MemoryScopeError(f"Unknown memory scope: {scope!r}")
+        if self._on_write is not None:
+            try:
+                self._on_write(entry)
+            except Exception:  # noqa: BLE001 - never let a UI hook break write.
+                log.debug("write callback failed", exc_info=True)
+        return entry
 
     def update(
         self,

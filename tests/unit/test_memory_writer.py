@@ -361,3 +361,164 @@ class TestAutoWriterWrite:
         assert decision.decision == "write"
         assert not decision.persisted
         assert decision.error is not None
+
+
+# ── User-correction trigger detection ──────────────────────────────────
+
+
+class TestIsUserCorrection:
+    """Heuristic detection of user-correction phrases."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "no, that's wrong",
+            "Actually, use postgres",
+            "wait, stop",
+            "don't run charmcraft pack again",
+            "Don't push to main",
+            "Please always use uv lock first",
+            "never delete the .cantrip file",
+            "do not modify the rockcraft.yaml",
+            "that's wrong — try again",
+            "that is incorrect",
+            "not what i asked for",
+            "not like that",
+            "instead, use the existing charm",
+            "Always include ops-tracing",
+            "Never use Harness",
+        ],
+    )
+    def test_detects_corrections(self, message: str) -> None:
+        from cantrip.agent.core import _is_user_correction
+
+        assert _is_user_correction(message)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "I don't see the issue",  # "don't" but not imperative.
+            "thanks, that worked",
+            "build me a charm for redis",
+            "what does this do?",
+            "I think we should add COS",
+            "sometimes this happens",
+            "",
+            "   ",
+        ],
+    )
+    def test_skips_non_corrections(self, message: str) -> None:
+        from cantrip.agent.core import _is_user_correction
+
+        assert not _is_user_correction(message)
+
+
+# ── Memory event emission ──────────────────────────────────────────────
+
+
+class TestMemoryCallbacks:
+    """Write/recall callbacks fire on the right operations."""
+
+    def test_write_callback_fires(self, manager: MemoryManager) -> None:
+        seen: list[str] = []
+        manager.set_write_callback(lambda e: seen.append(e.title))
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert seen == ["t"]
+
+    def test_write_callback_fires_for_global_scope(self, manager: MemoryManager) -> None:
+        seen: list[str] = []
+        manager.set_write_callback(lambda e: seen.append(e.scope))
+        manager.write(scope="global", title="g", kind="fact", body="b")
+        assert seen == ["global"]
+
+    def test_recall_callback_fires_on_read(self, manager: MemoryManager) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        seen: list[str] = []
+        manager.set_recall_callback(lambda e: seen.append(e.title))
+        assert manager.read(title="t") is not None
+        assert seen == ["t"]
+
+    def test_recall_callback_does_not_fire_on_miss(self, manager: MemoryManager) -> None:
+        seen: list[str] = []
+        manager.set_recall_callback(lambda e: seen.append(e.title))
+        assert manager.read(title="never-existed") is None
+        assert seen == []
+
+    def test_callback_failures_swallowed(self, manager: MemoryManager) -> None:
+        """A broken UI hook never breaks the underlying memory operation."""
+
+        def boom(_entry: object) -> None:
+            raise RuntimeError("ui exploded")
+
+        manager.set_write_callback(boom)
+        manager.set_recall_callback(boom)
+        # Both must succeed despite the callback exploding.
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert manager.read(title="t") is not None
+
+
+# ── Trigger integration with CantripAgent ──────────────────────────────
+
+
+class TestCorrectionTriggerIntegration:
+    """End-to-end test that a user correction fires the auto-writer."""
+
+    @pytest.mark.asyncio
+    async def test_correction_message_fires_writer_and_emits_event(self, tmp_path: Path) -> None:
+        """A correction message in process_message persists a memory and emits MEMORY_WRITTEN."""
+        from cantrip.agent.core import CantripAgent
+        from cantrip.ui.events import EventType
+
+        # Two canned responses: the first is the conversation loop's
+        # answer to the user; the second is the auto-writer's JSON.
+        provider = FakeProvider(
+            responses=[
+                Response(content="okay, I'll switch approach"),
+                _writer_response(
+                    {
+                        "decision": "write",
+                        "reasoning": "user correction worth recording",
+                        "memory": {
+                            "title": "skip-charmcraft-pack",
+                            "kind": "rule",
+                            "scope": "charm",
+                            "body": "Don't run charmcraft pack on this charm.",
+                            "tags": ["charmcraft"],
+                        },
+                    }
+                ),
+            ]
+        )
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        captured: list[str] = []
+
+        def _capture(event: object) -> None:
+            assert hasattr(event, "type")
+            captured.append(event.type)  # type: ignore[attr-defined]
+
+        agent.event_bus.subscribe(EventType.MEMORY_WRITTEN, _capture)
+
+        await agent.process_message("don't run charmcraft pack again")
+        # Drain the background auto-writer task spawned by process_message.
+        for task in list(agent._memory_background_tasks):
+            await task
+
+        assert EventType.MEMORY_WRITTEN in captured
+        # Memory landed in the manager.
+        entry = agent._memory_manager.read(title="skip-charmcraft-pack")
+        assert entry is not None
+        assert entry.kind == "rule"
+        assert entry.source == "auto"
+
+    @pytest.mark.asyncio
+    async def test_non_correction_does_not_fire_writer(self, tmp_path: Path) -> None:
+        from cantrip.agent.core import CantripAgent
+
+        provider = FakeProvider(responses=[Response(content="working on it")])
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        await agent.process_message("build me a charm for redis")
+        # No background tasks should have been scheduled.
+        assert agent._memory_background_tasks == set()
+        # And nothing landed in the manager.
+        assert agent._memory_manager.list_entries() == []

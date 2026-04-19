@@ -118,6 +118,18 @@ const cantrip = (() => {
       case "thinking":
         setThinking(msg.data.active);
         break;
+      case "memory_written":
+        appendMessage(
+          "system",
+          `Wrote ${msg.data.kind} memory: ${msg.data.title} (${msg.data.scope})`,
+        );
+        break;
+      case "memory_recalled":
+        appendMessage(
+          "system",
+          `Recalled memory: ${msg.data.title} (${msg.data.scope})`,
+        );
+        break;
     }
   }
 

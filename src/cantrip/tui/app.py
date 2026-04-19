@@ -429,6 +429,14 @@ class CantripApp(App):
         self._agent.event_bus.subscribe(
             ui_events.EventType.TASK_UPDATED, self._on_bus_task_updated
         )
+        # Subscribe to memory write/recall events so the user can see when
+        # the agent durably remembers something or pulls up an old lesson.
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.MEMORY_WRITTEN, self._on_bus_memory_written
+        )
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.MEMORY_RECALLED, self._on_bus_memory_recalled
+        )
 
         self._agent.start_executor(max_concurrency=self._max_concurrency)
 
@@ -469,6 +477,31 @@ class CantripApp(App):
                     self._present_design_questions(task)
 
         self.call_from_thread(_update)
+
+    def _on_bus_memory_written(self, event: ui_events.Event) -> None:
+        """Render an inline 'Wrote memory: …' system message in chat."""
+
+        def _show() -> None:
+            chat = self.query_one("#chat", chat_widget.ChatWidget)
+            payload = event.payload
+            scope = payload.get("scope", "?")
+            kind = payload.get("kind", "?")
+            title = payload.get("title", "?")
+            chat.add_system_message(f"Wrote {kind} memory: {title} ({scope})")
+
+        self.call_from_thread(_show)
+
+    def _on_bus_memory_recalled(self, event: ui_events.Event) -> None:
+        """Render an inline 'Recalled memory: …' system message in chat."""
+
+        def _show() -> None:
+            chat = self.query_one("#chat", chat_widget.ChatWidget)
+            payload = event.payload
+            scope = payload.get("scope", "?")
+            title = payload.get("title", "?")
+            chat.add_system_message(f"Recalled memory: {title} ({scope})")
+
+        self.call_from_thread(_show)
 
     def on_task_checklist_widget_tasks_available(self) -> None:
         """Show the status panel when tasks first appear."""
