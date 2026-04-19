@@ -191,3 +191,45 @@ class TestCost:
         assert "1,000" in result.text
         assert "200" in result.text
         assert "1,200" in result.text
+
+
+class TestCommandCatalogue:
+    """The shared catalogue drives UI autocomplete and must stay in sync."""
+
+    def test_every_dispatched_verb_is_catalogued(self) -> None:
+        """Scan ``dispatch()`` for ``/<verb>`` literals; all must be in the catalogue.
+
+        Guards against drift when a new verb lands in the dispatcher but
+        the catalogue (and therefore the TUI slash-autocomplete popup)
+        is not updated.
+        """
+        import ast
+
+        source = inspect.getsource(slash_commands.dispatch)
+        tree = ast.parse(source)
+        dispatched: set[str] = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.startswith("/")
+        }
+        assert dispatched, "Expected at least one /-verb literal in dispatch()."
+        catalogue_verbs = {cmd.verb for cmd in slash_commands.COMMAND_CATALOGUE}
+        missing = dispatched - catalogue_verbs
+        assert not missing, (
+            f"dispatch() handles verbs missing from COMMAND_CATALOGUE: {sorted(missing)}"
+        )
+
+    def test_catalogue_verbs_are_shared_verbs(self) -> None:
+        """COMMAND_CATALOGUE cannot leak verbs the dispatcher does not accept."""
+        catalogue_verbs = {cmd.verb for cmd in slash_commands.COMMAND_CATALOGUE}
+        assert catalogue_verbs <= slash_commands.SHARED_VERBS
+
+    def test_catalogue_entries_have_non_empty_summaries(self) -> None:
+        for cmd in slash_commands.COMMAND_CATALOGUE:
+            assert cmd.summary, f"empty summary for {cmd.verb}"
+
+    def test_catalogue_verbs_are_unique(self) -> None:
+        verbs = [cmd.verb for cmd in slash_commands.COMMAND_CATALOGUE]
+        assert len(verbs) == len(set(verbs))

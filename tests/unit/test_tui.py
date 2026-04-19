@@ -7,13 +7,19 @@ flow with the LLM provider and agent fully mocked.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from textual.widgets import Input
 
 from cantrip.agent.state import TestResults
 from cantrip.tui.app import CantripApp
 from cantrip.tui.screens.help import HelpScreen
 from cantrip.tui.screens.logs import LogScreen
 from cantrip.tui.screens.traces import TraceScreen
-from cantrip.tui.widgets.chat import ChatWidget, MessageRole, MessageWidget
+from cantrip.tui.widgets.chat import (
+    ChatWidget,
+    MessageRole,
+    MessageWidget,
+    SlashCommandSuggestions,
+)
 from cantrip.tui.widgets.status import MultiModelStatusWidget
 from cantrip.tui.widgets.statusbar import StatusBar
 from cantrip.tui.widgets.tasks import TaskChecklistWidget
@@ -674,3 +680,115 @@ class TestTuiWidgets:
                 # Unblock the stream so the worker can finish cleanly.
                 keep_streaming.set()
                 await pilot.pause(delay=0.3)
+
+
+class TestSlashCommandSuggestions:
+    """Slash-command autocomplete popup + its wiring to ChatInput."""
+
+    @pytest.mark.asyncio
+    async def test_slash_prefix_shows_matching_suggestions(self):
+        """Typing ``/c`` reveals the popup with ``/cost`` as the first match."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("slash", "c")
+                await pilot.pause()
+
+                popup = pilot.app.query_one("#slash-suggestions", SlashCommandSuggestions)
+                assert popup.is_visible
+                verbs = [cmd.verb for cmd in popup.matches]
+                assert "/cost" in verbs
+                # Strict prefix — /help or /memory must not appear.
+                assert "/help" not in verbs
+
+    @pytest.mark.asyncio
+    async def test_tab_completes_unique_match(self):
+        """``/c`` + Tab populates the input with ``/cost ``."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("slash", "c")
+                await pilot.pause()
+                await pilot.press("tab")
+                await pilot.pause()
+
+                chat_input = pilot.app.query_one("#chat-input", Input)
+                assert chat_input.value == "/cost "
+
+    @pytest.mark.asyncio
+    async def test_escape_dismisses_popup(self):
+        """Escape hides the popup without clearing the input."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("slash", "c")
+                await pilot.pause()
+                popup = pilot.app.query_one("#slash-suggestions", SlashCommandSuggestions)
+                assert popup.is_visible
+
+                await pilot.press("escape")
+                await pilot.pause()
+                assert not popup.is_visible
+                chat_input = pilot.app.query_one("#chat-input", Input)
+                assert chat_input.value == "/c"
+
+    @pytest.mark.asyncio
+    async def test_down_arrow_moves_active_suggestion(self):
+        """Down arrow cycles the active row when multiple matches exist."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                # ``/`` alone matches every shared verb plus /feelings.
+                await pilot.press("slash")
+                await pilot.pause()
+
+                popup = pilot.app.query_one("#slash-suggestions", SlashCommandSuggestions)
+                assert popup.is_visible
+                assert len(popup.matches) > 1
+                first = popup.active()
+                assert first is not None
+
+                await pilot.press("down")
+                await pilot.pause()
+                second = popup.active()
+                assert second is not None
+                assert second.verb != first.verb
+
+    @pytest.mark.asyncio
+    async def test_popup_hides_on_space(self):
+        """Adding a space after the verb hides the popup (command has args now)."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("slash", "h", "e", "l", "p")
+                await pilot.pause()
+                popup = pilot.app.query_one("#slash-suggestions", SlashCommandSuggestions)
+                assert popup.is_visible
+
+                await pilot.press("space")
+                await pilot.pause()
+                assert not popup.is_visible
+
+    @pytest.mark.asyncio
+    async def test_non_slash_input_does_not_show_popup(self):
+        """Typing plain text never reveals the popup."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.press("h", "e", "l", "l", "o")
+                await pilot.pause()
+                popup = pilot.app.query_one("#slash-suggestions", SlashCommandSuggestions)
+                assert not popup.is_visible
+
+    @pytest.mark.asyncio
+    async def test_tab_with_ambiguous_prefix_does_nothing(self):
+        """Tab without a unique match or visible active row falls through."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                # Before typing anything, the popup has no active entry.
+                # Tab should not rewrite the empty input value.
+                await pilot.press("tab")
+                await pilot.pause()
+                chat_input = pilot.app.query_one("#chat-input", Input)
+                assert chat_input.value == ""

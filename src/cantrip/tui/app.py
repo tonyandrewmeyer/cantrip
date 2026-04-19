@@ -142,6 +142,10 @@ class CantripApp(App):
             Vertical(
                 modelbar_widget.ModelInfoBar(id="model-info"),
                 chat_widget.ChatWidget(id="chat"),
+                chat_widget.SlashCommandSuggestions(
+                    self._build_command_catalogue(),
+                    id="slash-suggestions",
+                ),
                 chat_widget.ChatInput(placeholder="Type your message...", id="chat-input"),
                 id="left-panel",
             ),
@@ -155,9 +159,26 @@ class CantripApp(App):
         )
         yield statusbar_widget.StatusBar(id="status-bar")
 
+    @staticmethod
+    def _build_command_catalogue() -> tuple[slash_commands.CommandInfo, ...]:
+        """Return the catalogue used by the slash-suggestion popup.
+
+        Starts from the shared :data:`slash_commands.COMMAND_CATALOGUE`
+        and appends TUI-native verbs (currently ``/feelings``) so the
+        popup can surface them alongside the cross-surface commands.
+        """
+        return (
+            *slash_commands.COMMAND_CATALOGUE,
+            slash_commands.CommandInfo("/feelings", "Convene the inner parliament"),
+        )
+
     def on_mount(self) -> None:
         """Handle app mount."""
-        self.query_one("#chat-input", Input).focus()
+        chat_input = self.query_one("#chat-input", chat_widget.ChatInput)
+        chat_input.focus()
+        chat_input.bind_suggestions(
+            self.query_one("#slash-suggestions", chat_widget.SlashCommandSuggestions)
+        )
         # The right panel is visible by default (charm file tree is useful
         # from the start).  Task checklist and Juju status appear as needed.
         self._init_agent()
@@ -1132,13 +1153,29 @@ class CantripApp(App):
 
     # -- Chat -----------------------------------------------------------------
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Drive the slash-suggestion popup from chat input changes."""
+        from textual.css.query import NoMatches
+
+        if event.input.id != "chat-input":
+            return
+        try:
+            suggestions = self.query_one("#slash-suggestions", chat_widget.SlashCommandSuggestions)
+        except NoMatches:
+            return
+        suggestions.update_from_value(event.value)
+
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle chat input submission."""
+        from textual.css.query import NoMatches
+
         message = event.value.strip()
         if not message:
             return
 
         event.input.value = ""
+        with contextlib.suppress(NoMatches):
+            self.query_one("#slash-suggestions", chat_widget.SlashCommandSuggestions).hide()
 
         chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.add_user_message(message)

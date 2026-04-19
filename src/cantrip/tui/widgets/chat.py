@@ -1,17 +1,21 @@
 """Chat widget for the TUI."""
 
 import contextlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
 from rich.markup import escape as rich_escape
+from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Input, LoadingIndicator, Static
+
+from cantrip.agent.slash_commands import CommandInfo
 
 
 class MessageRole(StrEnum):
@@ -224,14 +228,223 @@ class MessageWidget(Static):
         self._rerender()
 
 
+def _filter_catalogue(catalogue: Sequence[CommandInfo], value: str) -> list[CommandInfo]:
+    """Return catalogue entries whose verb starts with *value*.
+
+    Empty or non-slash values yield no matches, so callers can treat the
+    empty list as "nothing to suggest" without a separate null check.
+    Matching is case-insensitive and strict-prefix — ``/c`` matches
+    ``/cost`` but not ``/mcp``.
+    """
+    if not value.startswith("/") or " " in value or value == "":
+        return []
+    prefix = value.lower()
+    return [cmd for cmd in catalogue if cmd.verb.lower().startswith(prefix)]
+
+
+class SlashCommandSuggestions(Widget):
+    """Inline suggestion popup for slash commands.
+
+    Rendered directly above :class:`ChatInput` so users typing ``/c`` see
+    the ``/cost`` entry (and any other matches) without having to remember
+    the full verb.  The widget is the single source of truth for which
+    entry is "active" — Tab on the input reads :meth:`active` to know
+    which verb to insert.
+
+    The widget stays mounted at all times.  A ``-visible`` CSS class
+    flips it between a collapsed (``display: none``) and expanded state
+    so toggling is a one-liner and doesn't fight the compose tree.
+    """
+
+    DEFAULT_CSS = """
+    SlashCommandSuggestions {
+        display: none;
+        height: auto;
+        max-height: 8;
+        background: $panel;
+        border-top: solid $primary;
+        border-bottom: solid $primary;
+        padding: 0;
+    }
+
+    SlashCommandSuggestions.-visible {
+        display: block;
+    }
+
+    SlashCommandSuggestions .suggestion-row {
+        height: 1;
+        padding: 0 1;
+    }
+
+    SlashCommandSuggestions .suggestion-row.-active {
+        background: $accent;
+        color: $text;
+    }
+
+    SlashCommandSuggestions .suggestion-row.-spare {
+        display: none;
+    }
+    """
+
+    def __init__(
+        self,
+        catalogue: Sequence[CommandInfo],
+        *,
+        id: str | None = None,
+    ) -> None:
+        """Initialise with the set of catalogue entries to draw from."""
+        super().__init__(id=id)
+        self._catalogue: list[CommandInfo] = list(catalogue)
+        self._matches: list[CommandInfo] = []
+        self._active_index: int = 0
+
+    def compose(self) -> ComposeResult:
+        """Mount one :class:`Static` row per catalogue entry.
+
+        The rows are a pre-sized pool: we toggle the ``-spare`` class on
+        rows past the current match count rather than re-mounting
+        children on every keystroke.
+        """
+        for _ in range(max(len(self._catalogue), 1)):
+            yield Static("", classes="suggestion-row -spare")
+
+    def update_from_value(self, value: str) -> None:
+        """Refilter against *value* and re-render; hide on zero matches."""
+        matches = _filter_catalogue(self._catalogue, value)
+        self._matches = matches
+        if not matches:
+            self._active_index = 0
+            self.remove_class("-visible")
+            self._render_rows()
+            return
+        if self._active_index >= len(matches):
+            self._active_index = 0
+        self.add_class("-visible")
+        self._render_rows()
+
+    @property
+    def is_visible(self) -> bool:
+        """Whether the popup is currently showing."""
+        return self.has_class("-visible")
+
+    @property
+    def matches(self) -> tuple[CommandInfo, ...]:
+        """Current match list (read-only copy)."""
+        return tuple(self._matches)
+
+    def active(self) -> CommandInfo | None:
+        """Return the currently highlighted suggestion, or ``None``."""
+        if not self.is_visible or not self._matches:
+            return None
+        return self._matches[self._active_index]
+
+    def sole_match(self, value: str) -> CommandInfo | None:
+        """Return the unique catalogue match for *value*, or ``None``.
+
+        Independent of the popup's visibility — used by Tab to accept a
+        single-match completion even when the popup was dismissed via
+        Escape.
+        """
+        matches = _filter_catalogue(self._catalogue, value)
+        return matches[0] if len(matches) == 1 else None
+
+    def move(self, delta: int) -> None:
+        """Move the active row by *delta*, wrapping at both ends."""
+        if not self.is_visible or not self._matches:
+            return
+        self._active_index = (self._active_index + delta) % len(self._matches)
+        self._render_rows()
+
+    def hide(self) -> None:
+        """Force the popup closed (e.g. on Escape)."""
+        self._matches = []
+        self._active_index = 0
+        self.remove_class("-visible")
+        self._render_rows()
+
+    def _render_rows(self) -> None:
+        """Push the current match list into the row pool.
+
+        Rows beyond the match count get the ``-spare`` class so CSS
+        hides them; active row gets ``-active`` for the highlight.
+        """
+        try:
+            rows = list(self.query(".suggestion-row"))
+        except NoMatches:
+            return
+        for idx, row in enumerate(rows):
+            if idx >= len(self._matches):
+                row.set_class(True, "-spare")
+                row.set_class(False, "-active")
+                if isinstance(row, Static):
+                    row.update("")
+                continue
+            row.set_class(False, "-spare")
+            row.set_class(idx == self._active_index, "-active")
+            cmd = self._matches[idx]
+            if isinstance(row, Static):
+                verb = rich_escape(cmd.verb)
+                summary = rich_escape(cmd.summary)
+                row.update(f"{verb:<12} [dim]{summary}[/dim]")
+
+
 class ChatInput(Input):
-    """The chat input widget.
+    """Chat input with slash-command autocomplete.
 
     Previously ``/`` on an empty input opened search, but that shortcut
     swallowed the leading character of slash commands (``/help``,
     ``/memory``, ``/feelings``, …) and made them unreachable from the TUI.
     Search is now bound only to Ctrl+F; ``/`` is a normal character.
+
+    When a :class:`SlashCommandSuggestions` sibling is attached via
+    :meth:`bind_suggestions`, the input routes Up/Down to the popup,
+    Tab to accept the active/unique suggestion, and Escape to dismiss
+    — falling through to default handling (focus move, etc.) when the
+    popup has nothing relevant to say.
     """
+
+    def __init__(self, *args, **kwargs) -> None:
+        """Initialise with no bound suggestions widget."""
+        super().__init__(*args, **kwargs)
+        self._suggestions: SlashCommandSuggestions | None = None
+
+    def bind_suggestions(self, widget: SlashCommandSuggestions) -> None:
+        """Attach a suggestions popup that this input will drive."""
+        self._suggestions = widget
+
+    def _accept_suggestion(self, cmd: CommandInfo) -> None:
+        """Replace the input value with *cmd*'s verb plus a space."""
+        self.value = f"{cmd.verb} "
+        self.cursor_position = len(self.value)
+        if self._suggestions is not None:
+            self._suggestions.hide()
+
+    def on_key(self, event: events.Key) -> None:
+        """Route arrow/Tab/Escape to the suggestions popup when relevant."""
+        suggestions = self._suggestions
+        if suggestions is None:
+            return
+
+        key = event.key
+
+        if key == "escape" and suggestions.is_visible:
+            suggestions.hide()
+            event.stop()
+            event.prevent_default()
+            return
+
+        if key in {"up", "down"} and suggestions.is_visible:
+            suggestions.move(-1 if key == "up" else 1)
+            event.stop()
+            event.prevent_default()
+            return
+
+        if key == "tab":
+            active = suggestions.active() or suggestions.sole_match(self.value)
+            if active is not None:
+                self._accept_suggestion(active)
+                event.stop()
+                event.prevent_default()
 
 
 class SearchBar(Widget):

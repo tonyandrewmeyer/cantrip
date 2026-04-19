@@ -29,9 +29,43 @@ if TYPE_CHECKING:
     from cantrip.agent.core import CantripAgent
 
 
-SHARED_VERBS: frozenset[str] = frozenset(
-    {"/help", "?", "/memory", "/remember", "/forget", "/mcp", "/cost", "/quit", "/exit"}
+@dataclass(frozen=True)
+class CommandInfo:
+    """A slash-command verb plus a short summary for UI autocomplete.
+
+    ``verb`` includes the leading slash (``/help``).  ``summary`` is a
+    one-line description suitable for a suggestion popup — terser than
+    the ``/help`` text, which carries argument syntax and examples.
+    """
+
+    verb: str
+    summary: str
+
+
+# Core slash commands shared across surfaces (CLI, TUI, Web).  Order is
+# the order surfaces should list them in — help and discovery first,
+# destructive/exit commands last.  Surface-native commands (the TUI's
+# ``/feelings``, the CLI's ``/tasks`` / ``/status``) are added to this
+# list by each surface at render time; see ``_shared_command_catalogue``
+# in ``cantrip.tui.app`` for the TUI composition.
+COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
+    CommandInfo("/help", "Show command help"),
+    CommandInfo("/memory", "List memories"),
+    CommandInfo("/remember", "Save a memory"),
+    CommandInfo("/forget", "Delete a memory"),
+    CommandInfo("/mcp", "Manage MCP servers"),
+    CommandInfo("/cost", "Show token usage and cost"),
+    CommandInfo("/quit", "Leave Cantrip"),
+    CommandInfo("/exit", "Leave Cantrip"),
 )
+
+
+# Authoritative verb set accepted by :func:`dispatch`.  ``?`` is an
+# alias for ``/help`` and is deliberately absent from
+# :data:`COMMAND_CATALOGUE` — a suggestion popup that surfaces ``?``
+# beside ``/help`` would just add noise.  New verbs must be added to
+# both sets; the ``test_slash_commands`` drift test enforces this.
+SHARED_VERBS: frozenset[str] = frozenset({cmd.verb for cmd in COMMAND_CATALOGUE} | {"?"})
 
 
 @dataclass
@@ -176,6 +210,8 @@ def format_cost(agent: CantripAgent) -> str:
 
 
 __all__ = [
+    "COMMAND_CATALOGUE",
+    "CommandInfo",
     "SHARED_VERBS",
     "SlashResult",
     "dispatch",

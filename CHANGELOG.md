@@ -4,7 +4,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Slash-command autocomplete in the TUI** — typing ``/`` in the chat
+  input now surfaces a catalogue-driven popup above the input with
+  every matching verb.  Up/Down move the highlight, Tab accepts the
+  active suggestion (or the sole match if only one catalogue entry
+  still matches), Escape dismisses, and Enter submits what you see.
+  The shared ``COMMAND_CATALOGUE`` in ``cantrip.agent.slash_commands``
+  is the single source of truth; the TUI extends it with ``/feelings``
+  so the popup covers TUI-native verbs too. A unit test asserts the
+  catalogue covers every verb the dispatcher handles, guarding
+  against drift when new verbs land.
+
 ### Fixed
+- **Gemini rate-limit errors show the retry hint and quota kind** —
+  Gemini 429 responses carry a "Please retry in …" hint and a
+  ``QuotaFailure`` detail naming the metric that tripped
+  (per-minute vs. per-day).  Cantrip now parses both and includes
+  them in the message surfaced to the chat, so users can tell a
+  transient backoff from an exhausted daily quota.  The TUI agent
+  worker also runs with ``exit_on_error=False`` so a provider raise
+  lands as an in-chat error instead of taking the app down.
 - **Main-agent tool activity visible in the status bar** — slow tools
   like ``charmcraft pack`` and ``juju deploy`` used to run silently
   while the bar showed "Thinking..." for minutes.  The main agent now
