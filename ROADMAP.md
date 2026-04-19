@@ -4214,15 +4214,39 @@ into Cantrip).
 
 ### 45.4 Medium — OAuth and elicitation support
 
-- [ ] Implement MCP OAuth 2.1 client with RFC 9728 Protected Resource Metadata
-  discovery, matching Claude Code's support
-- [ ] Token storage uses the existing GPG opt-in pattern (Phase 25 cleanup)
-  for refresh tokens
-- [ ] Handle mid-task elicitation: a server can request structured input, the
-  request is routed to the conversation loop as a CONFIRM-like prompt, and the
-  response is returned to the server
-- [ ] Unit tests cover OAuth token refresh, elicitation round-trip, and
-  refusal cases
+- [ ] *Deferred*: MCP OAuth 2.1 client with RFC 9728 Protected Resource
+  Metadata discovery.  The MCP SDK ships an ``OAuthClientProvider`` that
+  Cantrip can plug into via ``streamablehttp_client(auth=...)``;
+  remaining work is the browser-based redirect handler, the localhost
+  callback listener, the ``OAuthConfig`` dataclass on ``ServerConfig``,
+  and YAML-schema parsing.  A focused follow-up commit
+- [x] Token storage (Phase 45.4a) — ``FileTokenStorage`` implements
+  the SDK's ``TokenStorage`` protocol with per-server JSON files at
+  ``~/.config/cantrip/mcp_tokens/<name>/`` (override via
+  ``CANTRIP_MCP_TOKEN_DIR``).  Per-server dirs at ``0700``, files at
+  ``0600``, atomic ``rename`` writes so a crashed write never leaves a
+  half-file.  Optional GPG-at-rest via ``CANTRIP_MCP_GPG_TOKENS=1``,
+  matching the existing ``CANTRIP_GPG_SIGN`` opt-in pattern.  Malformed
+  or unreadable files degrade to ``None`` so the SDK falls back to a
+  fresh OAuth flow rather than crashing.  23 unit tests, including a
+  live GPG round-trip that verifies no plaintext leaks
+- [x] Elicitation (Phase 45.4c) — ``ElicitationManager`` per
+  ``MCPClient`` bridges the SDK's ``elicitation_callback`` to the UI
+  event bus.  Server requests park on an ``asyncio.Future``; the UI
+  publishes ``MCP_ELICITATION_REQUEST``, prompts the user, and calls
+  ``CantripAgent.complete_mcp_elicitation(request_id, action, content)``
+  to resolve.  Bounded timeout (default 600s) auto-declines runaway
+  requests; ``cancel_all`` on shutdown auto-declines everything pending
+  so the SDK never hangs.  Both ``form`` and ``url`` elicitation modes
+  surface verbatim through the event payload.  14 unit tests cover
+  every failure mode (timeout, unknown id, invalid action,
+  callback-failure isolation, cross-server routing)
+- [ ] *Future work*: TUI/Web prompt rendering for the elicitation
+  event.  The bus event is fully wired; building an interactive form
+  widget that maps a JSONSchema to input fields is a follow-up
+- [x] Unit tests cover token-storage round-trips and elicitation
+  request/response/timeout/cancel paths.  OAuth-flow tests follow the
+  deferred OAuth integration commit
 
 ### 45.5 Low — MCP server registry and marketplace awareness
 

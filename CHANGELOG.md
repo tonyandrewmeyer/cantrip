@@ -18,6 +18,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **MCP elicitation routing (Phase 45.4c)** — server-driven mid-tool-call
+  prompts now bridge to the UI event bus.  ``ElicitationManager`` per
+  ``MCPClient`` parks each request on an ``asyncio.Future``, fires
+  ``MCP_ELICITATION_REQUEST`` via the event bus, and waits for the UI
+  to call ``agent.complete_mcp_elicitation(request_id, action, content)``.
+  Bounded 600s timeout auto-declines runaway requests; ``cancel_all``
+  on shutdown auto-declines everything pending so the SDK never hangs.
+  ``MCPRegistry`` fans the callback out to every server and routes
+  completion by request id across all servers.  Both ``form`` and
+  ``url`` modes surface verbatim through the event payload.  14 unit
+  tests cover round-trip accept/decline, timeout, unknown id, invalid
+  action, callback-failure isolation, cross-server routing.  TUI/Web
+  prompt rendering deferred — the event is emitted; building an
+  interactive form widget for it is a follow-up.
+- **MCP token storage with GPG opt-in (Phase 45.4a)** — file-backed
+  ``FileTokenStorage`` implements the SDK's ``TokenStorage`` protocol
+  with per-server JSON files under ``~/.config/cantrip/mcp_tokens/``.
+  Per-server dirs at ``0700``, files at ``0600``, atomic ``rename``
+  writes.  Optional ``CANTRIP_MCP_GPG_TOKENS=1`` opt-in runs
+  ``gpg --batch --yes --symmetric`` on every write, matching the
+  existing ``CANTRIP_GPG_SIGN`` pattern.  Malformed/unreadable files
+  degrade to ``None`` so the SDK falls back to a fresh OAuth flow
+  rather than crashing.  23 unit tests including a live GPG round-trip
+  that verifies no plaintext leaks.  OAuth flow integration (browser
+  redirect + localhost callback + OAuthClientProvider wiring) deferred
+  to a focused follow-up.
 - **MCP client foundation (Phase 45.1–45.3)** — Cantrip can now consume
   third-party Model Context Protocol servers.  ``cantrip.mcp`` wraps the
   official ``mcp`` 1.27.0 SDK with a long-lived ``MCPClient`` (stdio +
