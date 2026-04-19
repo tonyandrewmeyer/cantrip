@@ -56,6 +56,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``IndexError``.  The access is now guarded so both missing-key and
   empty-list frames are tolerated.
 
+### Added
+- **Live subagent phase in the task pane** — every in-flight task now
+  shows a dim secondary line under its pinned row reporting what the
+  subagent is currently doing ("thinking" or "running:
+  charmcraft_init, juju_deploy") plus an elapsed counter.  Two new
+  transient fields on ``AgentTask`` — ``subagent_phase`` and
+  ``subagent_started_at`` — are updated by the subagent around each
+  LLM call and tool round and surfaced via the existing
+  ``TASK_UPDATED`` event; the TUI widget redraws every 0.5 s while a
+  phase is live so the counter stays accurate.
+
 ### Changed
 - **Task pane keeps the in-flight work visible** — active, failed, and
   blocked tasks are pinned to a top "In progress" section regardless

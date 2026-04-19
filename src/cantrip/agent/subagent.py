@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import enum
 import logging
 import re as _re
@@ -23,6 +24,17 @@ if TYPE_CHECKING:
 
 # Called after each LLM completion with the response, for token tracking.
 UsageCallback = Callable[[llm.Response], None] | None
+
+# Called whenever the subagent's transient phase (``subagent_phase`` /
+# ``subagent_started_at``) changes so the UI can redraw.  The executor
+# wires this to publish a ``TASK_UPDATED`` event on the shared bus.
+PhaseChangeCallback = Callable[[AgentTask], None] | None
+
+
+# Tool-call "running" phases shorter than this threshold feel like flicker,
+# so we always show at least this long before the phase updates again.  It's
+# just a display heuristic — the underlying tool still runs to completion.
+_PHASE_LABEL_TOOL_LIMIT = 3
 
 
 # ---------------------------------------------------------------------------
@@ -718,6 +730,7 @@ class Subagent:
         throttle: ProviderThrottle | None = None,
         store: SessionStore | None = None,
         max_rounds: int = MAX_SUBAGENT_ROUNDS,
+        on_phase_change: PhaseChangeCallback = None,
     ) -> None:
         self._context = context
         self._provider = _select_provider(
@@ -733,9 +746,43 @@ class Subagent:
         self._throttle = throttle
         self._store = store
         self._max_rounds = max_rounds
+        self._on_phase_change = on_phase_change
+
+    def _set_phase(self, phase: str) -> None:
+        """Update the task's transient subagent phase and notify listeners."""
+        task = self._context.task
+        if task.subagent_phase == phase:
+            return
+        task.subagent_phase = phase
+        if self._on_phase_change:
+            self._on_phase_change(task)
+
+    def _tool_phase_label(self, tool_names: list[str]) -> str:
+        """Build a short "running: tool1, tool2" label, truncated gracefully."""
+        if not tool_names:
+            return "running"
+        shown = tool_names[:_PHASE_LABEL_TOOL_LIMIT]
+        extra = len(tool_names) - len(shown)
+        suffix = f" (+{extra})" if extra > 0 else ""
+        return f"running: {', '.join(shown)}{suffix}"
 
     async def run(self) -> SubagentResult:
         """Execute the task and return a structured outcome."""
+        # Stamp the subagent start time so the TUI can show elapsed seconds;
+        # use a single clock reading so phase-change events and elapsed
+        # counters agree.
+        self._context.task.subagent_started_at = datetime.datetime.now()
+        self._set_phase("thinking")
+        try:
+            return await self._run_inner()
+        finally:
+            # Clear transient state so the task pane doesn't show a stale
+            # phase on a DONE / FAILED / BLOCKED task.
+            self._context.task.subagent_started_at = None
+            self._set_phase("")
+
+    async def _run_inner(self) -> SubagentResult:
+        """Real body of ``run`` — phase stamping happens in the wrapper."""
         system_prompt = _build_subagent_prompt(self._context)
         user_instruction = _task_instruction(self._context.task)
 
@@ -796,9 +843,11 @@ class Subagent:
 
             # Execute tool calls concurrently — they are independent within
             # a single round.  asyncio.gather() preserves order.
+            self._set_phase(self._tool_phase_label([tc.name for tc in response.tool_calls]))
             raw_results = await asyncio.gather(
                 *(self._execute_tool(tc.name, tc.arguments) for tc in response.tool_calls)
             )
+            self._set_phase("thinking")
             tool_results: list[llm.ToolResult] = [
                 llm.ToolResult(
                     tool_call_id=tc.id,

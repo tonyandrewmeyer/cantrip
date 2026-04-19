@@ -1,5 +1,6 @@
 """Task checklist widget for the TUI."""
 
+import datetime
 import threading
 from dataclasses import dataclass, field
 
@@ -64,6 +65,34 @@ class _PreflightGroup:
 def _status_display(status: TaskStatus) -> tuple[str, str]:
     """Return ``(indicator_char, css_class)`` for a task status."""
     return _STATUS_DISPLAY.get(status, ("\u25cb", "task-pending"))
+
+
+def _elapsed_label(started: datetime.datetime | None) -> str:
+    """Render a compact elapsed-duration label (e.g. "12s", "3m14s")."""
+    if started is None:
+        return ""
+    delta = datetime.datetime.now() - started
+    total = int(delta.total_seconds())
+    if total < 0:
+        return ""
+    if total < 60:
+        return f"{total}s"
+    minutes, seconds = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes}m{seconds:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
+def _subagent_line(task: AgentTask) -> str | None:
+    """Build the subagent status line shown under an active task, or None."""
+    phase = task.subagent_phase
+    if not phase:
+        return None
+    elapsed = _elapsed_label(task.subagent_started_at)
+    if elapsed:
+        return f"  \u2514 {phase} \u00b7 {elapsed}"
+    return f"  \u2514 {phase}"
 
 
 def _format_detail(task: AgentTask) -> str:
@@ -174,6 +203,12 @@ class TaskChecklistWidget(Widget):
     TaskChecklistWidget .task-collapsed {
         text-style: italic;
     }
+
+    TaskChecklistWidget .subagent-phase {
+        color: $text-muted;
+        text-style: italic;
+        margin-bottom: 1;
+    }
     """
 
     def __init__(self, **kwargs: object) -> None:
@@ -277,9 +312,16 @@ class TaskChecklistWidget(Widget):
         self._refresh_display()
 
     def _check_dirty(self) -> None:
-        """Timer callback — refresh the display if the dirty flag is set."""
+        """Timer callback — refresh if dirty, or if a subagent is running.
+
+        Subagent phase rows show an elapsed counter, so we have to redraw on
+        every tick while one is active even without an explicit change event.
+        """
         with self._lock:
-            if not self._dirty:
+            has_live_phase = any(
+                t.subagent_phase and t.subagent_started_at is not None for t in self._tasks
+            )
+            if not self._dirty and not has_live_phase:
                 return
             self._dirty = False
 
@@ -329,6 +371,9 @@ class TaskChecklistWidget(Widget):
                         classes=f"task-row {css_class}",
                     )
                     container.mount(row)
+                    subagent_line = _subagent_line(task)
+                    if subagent_line:
+                        container.mount(Static(subagent_line, classes="subagent-phase"))
                     if self._expanded_id == task.id:
                         container.mount(Static(_format_detail(task), classes="task-detail"))
 

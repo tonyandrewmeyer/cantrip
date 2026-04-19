@@ -57,6 +57,12 @@ class AgentTask:
     # Not persisted to SQLite because worktrees don't survive sessions; they
     # are recreated on restart by whoever picks the task up next.
     worktree_path: str | None = None
+    # Transient — set while a subagent is running this task.  ``subagent_phase``
+    # is a short human-readable string like "thinking" or "running:
+    # charmcraft_pack" and ``subagent_started_at`` is the wall-clock time the
+    # subagent began.  Both cleared when the task transitions out of ACTIVE.
+    subagent_phase: str = ""
+    subagent_started_at: datetime.datetime | None = None
 
     def __post_init__(self) -> None:
         """Generate a unique ID if not provided."""

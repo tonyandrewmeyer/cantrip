@@ -1,5 +1,6 @@
 """Tests for the subagent runner."""
 
+import datetime
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -1540,3 +1541,81 @@ class TestMaxRoundsParameter:
         result = await subagent.run()
 
         assert result.exit_state == ExitState.COMPLETED
+
+
+# ===================================================================
+# TestSubagentPhaseReporting
+# ===================================================================
+
+
+class TestSubagentPhaseReporting:
+    """The subagent advertises its phase to subscribers for the TUI."""
+
+    @pytest.mark.asyncio
+    async def test_phase_sequence_during_run(self) -> None:
+        """Phase moves thinking → running: <tools> → thinking → "" on exit."""
+        tool = _make_tool("read_file")
+        task = AgentTask(id="t", title="Phase run", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task)
+
+        provider = FakeProvider(
+            responses=[
+                Response(
+                    content="",
+                    tool_calls=[ToolCall(id="tc1", name="read_file", arguments={})],
+                ),
+                Response(content="All done.\n\n[EXIT: completed]"),
+            ],
+        )
+
+        phases: list[str] = []
+
+        def capture(changed_task: AgentTask) -> None:
+            phases.append(changed_task.subagent_phase)
+
+        subagent = Subagent(ctx, tools=[tool], provider=provider, on_phase_change=capture)
+        await subagent.run()
+
+        # First phase is "thinking", then "running: read_file" during tool
+        # execution, then back to "thinking" before the follow-up LLM call,
+        # and finally cleared when ``run`` completes.
+        assert phases[0] == "thinking"
+        assert any(p.startswith("running:") and "read_file" in p for p in phases)
+        assert phases[-1] == ""
+
+    @pytest.mark.asyncio
+    async def test_started_at_set_and_cleared(self) -> None:
+        """``subagent_started_at`` is set during the run and cleared on exit."""
+        tool = _make_tool("read_file")
+        task = AgentTask(id="t", title="Time run", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task)
+
+        # The callback observes the started_at stamp *during* the run, since
+        # the finally-block clears it before returning to the caller.
+        snapshots: list[datetime.datetime | None] = []
+
+        def capture(changed_task: AgentTask) -> None:
+            snapshots.append(changed_task.subagent_started_at)
+
+        provider = FakeProvider(responses=[Response(content="Fine.\n\n[EXIT: completed]")])
+        subagent = Subagent(ctx, tools=[tool], provider=provider, on_phase_change=capture)
+        await subagent.run()
+
+        # At least one in-flight notification had a non-None start time.
+        assert any(s is not None for s in snapshots)
+        # After the run completes the field is cleared.
+        assert task.subagent_started_at is None
+        assert task.subagent_phase == ""
+
+    def test_tool_phase_label_truncates_long_tool_lists(self) -> None:
+        """More than 3 tool calls collapse into a "(+N)" tail."""
+        tool = _make_tool("read_file")
+        task = AgentTask(id="t", title="Label", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task)
+        subagent = Subagent(
+            ctx, tools=[tool], provider=FakeProvider(responses=[Response(content="x")])
+        )
+
+        label = subagent._tool_phase_label(["a", "b", "c", "d", "e"])
+        assert "a, b, c" in label
+        assert "(+2)" in label

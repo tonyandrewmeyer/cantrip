@@ -61,6 +61,8 @@ def _make_task(
     result: str | None = None,
     description: str = "",
     task_id: str = "",
+    subagent_phase: str = "",
+    subagent_started_at: datetime | None = None,
 ) -> AgentTask:
     """Create a minimal AgentTask for testing."""
     task = AgentTask(
@@ -72,6 +74,8 @@ def _make_task(
         created_at=datetime(2025, 1, 1),
     )
     task.result = result
+    task.subagent_phase = subagent_phase
+    task.subagent_started_at = subagent_started_at
     return task
 
 
@@ -477,6 +481,47 @@ class TestTaskChecklistWidget:
             assert "First done" in combined
             assert "Next up" in combined
             assert "tasks done (click to show)" not in combined
+
+    @pytest.mark.asyncio
+    async def test_subagent_phase_line_under_active_task(self):
+        """An active task with a subagent phase shows a secondary status line."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            task = _make_task(
+                "Scaffold charm",
+                status=TaskStatus.ACTIVE,
+                category=TaskCategory.BUILD,
+                subagent_phase="running: charmcraft_init",
+                subagent_started_at=datetime.now(),
+            )
+            checklist.notify_changed([task])
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            combined = " ".join(str(s.render()) for s in container.query("Static"))
+            assert "running: charmcraft_init" in combined
+            # The phase line is under the pinned title row.
+            assert "Scaffold charm" in combined
+
+    @pytest.mark.asyncio
+    async def test_subagent_phase_absent_when_empty(self):
+        """A task without a subagent phase does not render the secondary line."""
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            task = _make_task(
+                "Scaffold charm",
+                status=TaskStatus.ACTIVE,
+                category=TaskCategory.BUILD,
+            )
+            checklist.notify_changed([task])
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            combined = " ".join(str(s.render()) for s in container.query("Static"))
+            # No " └ " phase-indent marker present.
+            assert "\u2514" not in combined
 
     @pytest.mark.asyncio
     async def test_collapsed_group_expands_on_toggle(self):

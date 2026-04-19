@@ -773,6 +773,7 @@ class BackgroundExecutor:
             on_usage=self._record_usage,
             throttle=self._throttle,
             store=self._store,
+            on_phase_change=self._queue.notify_task,
             **({"max_rounds": max_rounds} if max_rounds is not None else {}),
         )
         t0 = time.monotonic()

@@ -148,6 +148,8 @@ def task_updated(
     result: str | None = None,
     blocked_reason: str | None = None,
     worktree_path: str | None = None,
+    subagent_phase: str = "",
+    subagent_started_at: str | None = None,
 ) -> Event:
     """Build a ``TASK_UPDATED`` event."""
     return Event(
@@ -161,6 +163,8 @@ def task_updated(
             "result": result,
             "blocked_reason": blocked_reason,
             "worktree_path": worktree_path,
+            "subagent_phase": subagent_phase,
+            "subagent_started_at": subagent_started_at,
         },
     )
 
@@ -171,6 +175,7 @@ def task_updated_from_task(task: Any) -> Event:
     Accepts ``Any`` to avoid importing ``AgentTask`` (which lives in
     the agent layer) and keeping the dependency direction clean.
     """
+    started = getattr(task, "subagent_started_at", None)
     return task_updated(
         task_id=task.id,
         title=task.title,
@@ -180,6 +185,8 @@ def task_updated_from_task(task: Any) -> Event:
         result=task.result,
         blocked_reason=task.blocked_reason,
         worktree_path=getattr(task, "worktree_path", None),
+        subagent_phase=getattr(task, "subagent_phase", "") or "",
+        subagent_started_at=started.isoformat() if started is not None else None,
     )
 
 
