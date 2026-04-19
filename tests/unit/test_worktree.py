@@ -303,3 +303,134 @@ class TestProtocolCompliance:
         from cantrip.agent.services import WorktreeAllocator
 
         assert isinstance(_DefaultWorktreeAllocator(), WorktreeAllocator)
+
+
+class TestMaxWorktreesCap:
+    """``max_worktrees`` and ``CANTRIP_MAX_WORKTREES`` refuse allocation past
+    the cap without raising."""
+
+    @pytest.mark.asyncio
+    async def test_cap_refuses_beyond_limit(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator(max_worktrees=2)
+
+        assert await alloc.allocate("a", tmp_path) is not None
+        assert await alloc.allocate("b", tmp_path) is not None
+        # Third allocation is refused — returns None, doesn't raise.
+        assert await alloc.allocate("c", tmp_path) is None
+
+    @pytest.mark.asyncio
+    async def test_cap_of_zero_disables_allocation(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator(max_worktrees=0)
+        assert await alloc.allocate("a", tmp_path) is None
+
+    @pytest.mark.asyncio
+    async def test_env_var_sets_default_cap(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _init_repo(tmp_path)
+        monkeypatch.setenv("CANTRIP_MAX_WORKTREES", "1")
+        alloc = _DefaultWorktreeAllocator()
+        assert await alloc.allocate("a", tmp_path) is not None
+        assert await alloc.allocate("b", tmp_path) is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_env_value_is_ignored(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _init_repo(tmp_path)
+        monkeypatch.setenv("CANTRIP_MAX_WORKTREES", "not-a-number")
+        alloc = _DefaultWorktreeAllocator()
+        # Unparseable values fall back to "no cap".
+        assert await alloc.allocate("a", tmp_path) is not None
+        assert await alloc.allocate("b", tmp_path) is not None
+
+
+class TestDiskSpaceGuard:
+    """Allocation is refused when the filesystem is below *min_free_bytes*."""
+
+    @pytest.mark.asyncio
+    async def test_zero_threshold_never_blocks(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator(min_free_bytes=0)
+        assert await alloc.allocate("a", tmp_path) is not None
+
+    @pytest.mark.asyncio
+    async def test_impossibly_high_threshold_blocks(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        # 10 PB — no developer machine has this much free space.
+        alloc = _DefaultWorktreeAllocator(min_free_bytes=10 * 1024**5)
+        assert await alloc.allocate("a", tmp_path) is None
+
+
+class TestDiskOrphanReaper:
+    """``reap_disk_orphans`` cleans up worktrees left behind by a prior run."""
+
+    @pytest.mark.asyncio
+    async def test_reaps_worktrees_not_in_active_set(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+
+        keep = await alloc.allocate("keep", tmp_path)
+        drop = await alloc.allocate("drop", tmp_path)
+        assert keep is not None and drop is not None
+
+        # Simulate a restart: build a fresh allocator that knows nothing
+        # about the on-disk worktrees.
+        restarted = _DefaultWorktreeAllocator()
+        reaped = await restarted.reap_disk_orphans(tmp_path, {"keep"})
+
+        assert reaped == 1
+        assert not drop.path.exists()
+        assert keep.path.exists()
+        # Branch for the dropped worktree is gone too.
+        delete_check = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{drop.branch}"],
+            cwd=tmp_path,
+            check=False,
+            capture_output=True,
+        )
+        assert delete_check.returncode != 0
+
+    @pytest.mark.asyncio
+    async def test_empty_active_set_reaps_everything(self, tmp_path: pathlib.Path) -> None:
+        _init_repo(tmp_path)
+        alloc = _DefaultWorktreeAllocator()
+        await alloc.allocate("a", tmp_path)
+        await alloc.allocate("b", tmp_path)
+
+        restarted = _DefaultWorktreeAllocator()
+        assert await restarted.reap_disk_orphans(tmp_path, set()) == 2
+
+    @pytest.mark.asyncio
+    async def test_non_git_base_path_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        alloc = _DefaultWorktreeAllocator()
+        assert await alloc.reap_disk_orphans(tmp_path, set()) == 0
+
+    @pytest.mark.asyncio
+    async def test_ignores_worktrees_outside_cantrip_directory(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """A user-created worktree elsewhere must not be reaped."""
+        _init_repo(tmp_path)
+        other = tmp_path.parent / "other-worktree"
+        subprocess.run(
+            ["git", "worktree", "add", "-b", "user-branch", str(other)],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+        alloc = _DefaultWorktreeAllocator()
+        reaped = await alloc.reap_disk_orphans(tmp_path, set())
+
+        assert reaped == 0
+        assert other.exists()
+        # Clean up the manually-created worktree so the test doesn't leak it.
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(other)],
+            cwd=tmp_path,
+            check=False,
+            capture_output=True,
+        )

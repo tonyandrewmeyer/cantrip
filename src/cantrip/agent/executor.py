@@ -517,6 +517,7 @@ class BackgroundExecutor:
 
     async def _run_loop(self) -> None:
         """Poll for ready tasks and execute them concurrently until stopped."""
+        await self._reap_worktree_orphans()
         while self._running:
             try:
                 decision = route(self._snapshot())
@@ -821,6 +822,31 @@ class BackgroundExecutor:
                 self._queue.notify_task(task)
             self._create_followups(task)
             self._persist()
+
+    async def _reap_worktree_orphans(self) -> None:
+        """Drop worktrees left over from a previous session on startup.
+
+        Tasks in terminal states (``DONE``, ``FAILED``, ``BLOCKED``) no longer
+        need a worktree either — only tasks that might still run get to keep
+        theirs across a restart.
+        """
+        if self._state.charm_path is None:
+            return
+        active = {
+            t.id
+            for t in self._queue.all_tasks()
+            if t.status in (TaskStatus.PENDING, TaskStatus.ACTIVE)
+        }
+        reaper = getattr(self._worktrees, "reap_disk_orphans", None)
+        if reaper is None:
+            return
+        try:
+            reaped = await reaper(self._state.charm_path, active)
+        except (OSError, RuntimeError) as exc:
+            log.warning("Worktree orphan reap failed: %s", exc)
+            return
+        if reaped:
+            log.info("Startup: reaped %d orphan worktree(s)", reaped)
 
     async def _try_allocate_worktree(self, task: AgentTask) -> WorktreeHandle | None:
         """Attempt to allocate a worktree for *task*, returning None on failure.

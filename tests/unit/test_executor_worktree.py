@@ -412,6 +412,71 @@ def _init_repo(path: pathlib.Path) -> None:
     subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=path, check=True)
 
 
+class TestStartupReaper:
+    """The executor drops orphan worktrees on start()."""
+
+    @pytest.mark.asyncio
+    async def test_reap_called_for_terminal_tasks(self) -> None:
+        """Tasks in ``DONE`` / ``FAILED`` / ``BLOCKED`` states are excluded
+        from the active set the reaper receives."""
+        allocator = FakeAllocator(handle_factory=_handle_for)
+        reap_calls: list[set[str]] = []
+
+        async def _reap_disk(base: Any, active: set[str]) -> int:  # noqa: ARG001
+            reap_calls.append(active)
+            return 0
+
+        allocator.reap_disk_orphans = _reap_disk  # type: ignore[attr-defined]
+
+        executor = _make_executor(allocator)
+        # Mix of states — only PENDING and ACTIVE should propagate.
+        pending = AgentTask(id="p", title="p", category=TaskCategory.RESEARCH)
+        active = AgentTask(id="a", title="a", category=TaskCategory.BUILD)
+        done = AgentTask(id="d", title="d", category=TaskCategory.TEST)
+        failed = AgentTask(id="f", title="f", category=TaskCategory.DEPLOY)
+        blocked = AgentTask(id="b", title="b", category=TaskCategory.DEBUG)
+
+        for t in (pending, active, done, failed, blocked):
+            executor._queue.add_task(t)
+        executor._queue.set_active(active.id)
+        executor._queue.set_done(done.id, "ok")
+        executor._queue.set_failed(failed.id, "oh no")
+        executor._queue.set_blocked(blocked.id, "needs input")
+
+        await executor._reap_worktree_orphans()
+
+        assert reap_calls == [{"p", "a"}]
+
+    @pytest.mark.asyncio
+    async def test_reap_noop_when_no_charm_path(self) -> None:
+        allocator = FakeAllocator(handle_factory=_handle_for)
+        called = False
+
+        async def _reap_disk(base: Any, active: set[str]) -> int:  # noqa: ARG001
+            nonlocal called
+            called = True
+            return 0
+
+        allocator.reap_disk_orphans = _reap_disk  # type: ignore[attr-defined]
+        executor = _make_executor(allocator, charm_path=None)
+        await executor._reap_worktree_orphans()
+
+        assert called is False
+
+    @pytest.mark.asyncio
+    async def test_reap_failure_is_non_fatal(self) -> None:
+        allocator = FakeAllocator(handle_factory=_handle_for)
+
+        async def _reap_disk(*_a: Any, **_kw: Any) -> int:
+            raise OSError("disk exploded")
+
+        allocator.reap_disk_orphans = _reap_disk  # type: ignore[attr-defined]
+
+        executor = _make_executor(allocator)
+        # Must not raise.
+        await executor._reap_worktree_orphans()
+
+
 class TestMergeWorktreeAgainstRealGit:
     """End-to-end merge using the real allocator and a real git repo."""
 

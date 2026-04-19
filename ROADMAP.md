@@ -3998,14 +3998,33 @@ of race condition from generated-charm builds.
 - [ ] Web UI mirrors the same view via the shared event bus (Phase 15.1)
 - [ ] Clicking a worktree in the TUI opens a file-tree preview scoped to it
 
-### 44.5 Low — Configuration and limits
+### 44.5 Low — Configuration and limits ✓
 
-- [ ] Setting `CANTRIP_MAX_WORKTREES` caps concurrent worktrees independently
-  of the subagent concurrency limit
-- [ ] Startup orphan reaper prunes worktrees whose task ids no longer exist in
-  the work queue
-- [ ] When disk space falls below a configurable threshold, the allocator
-  refuses new worktrees and surfaces a warning
+- [x] ``CANTRIP_MAX_WORKTREES`` caps concurrent worktrees independently of the
+  subagent concurrency limit.  The allocator reads the env var at
+  construction; an explicit ``max_worktrees=`` kwarg overrides it.  Setting
+  the cap to ``0`` disables worktree allocation entirely (allocator falls
+  back to the main tree), which is the escape hatch for users with a broken
+  git install.  Invalid values fall back to "no cap" with a warning log.
+- [x] Startup orphan reaper — a new ``reap_disk_orphans(base_path,
+  active_task_ids)`` method walks ``git worktree list --porcelain`` under
+  the base path, identifies worktrees under ``.cantrip-worktrees/<task-id>/``
+  whose task id isn't in the live queue, and removes both the worktree and
+  its ephemeral branch.  User-created worktrees outside
+  ``.cantrip-worktrees/`` are left untouched.  The executor invokes this at
+  the top of ``_run_loop``; terminal-state tasks (``DONE`` / ``FAILED`` /
+  ``BLOCKED``) are excluded from the active set so their worktrees are also
+  reaped.
+- [x] Disk-space guard — ``min_free_bytes`` (default 200 MB) is checked via
+  ``shutil.disk_usage`` before allocation.  Below the threshold the
+  allocator returns ``None`` with a warning log, which the executor treats
+  as "run in main tree".  Set ``min_free_bytes=0`` to disable.
+- [x] Unit tests cover the cap (explicit + env var + zero + invalid),
+  the disk-space guard (zero and impossibly-high thresholds), and
+  ``reap_disk_orphans`` (active set, empty set, non-git base, external
+  worktrees left alone), plus three executor integration tests for the
+  startup-reap hook (10 new tests across ``test_worktree.py`` and
+  ``test_executor_worktree.py``)
 
 **Exit criteria:** Parallel subagents run in isolated worktrees; merge and
 revert paths are tested with clean, conflicting, and failed cases; the TUI and

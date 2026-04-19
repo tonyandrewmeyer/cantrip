@@ -27,7 +27,9 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import os
 import pathlib
+import shutil
 import subprocess
 from typing import Protocol, runtime_checkable
 
@@ -36,6 +38,16 @@ log = logging.getLogger(__name__)
 _WORKTREES_DIRNAME = ".cantrip-worktrees"
 _BRANCH_PREFIX = "cantrip/wt/"
 _GIT_TIMEOUT = 30.0
+
+# Environment override for the per-allocator worktree cap.  Setting this to
+# ``0`` disables worktree allocation entirely (useful as an escape hatch if
+# a user hits a broken git install).
+_MAX_WORKTREES_ENV = "CANTRIP_MAX_WORKTREES"
+
+# Refuse to allocate a new worktree when the filesystem containing the base
+# path has less than this many free bytes.  Matches roughly "one charm build
+# with rocks" — a defensive floor, not a tuned value.
+_DEFAULT_MIN_FREE_BYTES = 200 * 1024 * 1024  # 200 MB
 
 
 @dataclasses.dataclass(frozen=True)
@@ -134,6 +146,23 @@ async def _head_sha(path: pathlib.Path) -> str | None:
     return sha or None
 
 
+def _has_free_space(path: pathlib.Path, min_bytes: int) -> bool:
+    """Return True if *path*'s filesystem has at least *min_bytes* free.
+
+    Falls back to True when the filesystem can't be queried (for example, a
+    path that doesn't exist yet) so we don't block allocation on transient
+    conditions.
+    """
+    if min_bytes <= 0:
+        return True
+    target = path if path.exists() else path.parent
+    try:
+        usage = shutil.disk_usage(target)
+    except OSError:
+        return True
+    return usage.free >= min_bytes
+
+
 async def _ensure_worktrees_excluded(base: pathlib.Path) -> None:
     """Add ``.cantrip-worktrees/`` to ``.git/info/exclude`` if not already there.
 
@@ -161,12 +190,46 @@ async def _ensure_worktrees_excluded(base: pathlib.Path) -> None:
         fh.write(entry)
 
 
-class _DefaultWorktreeAllocator:
-    """Subprocess-driven worktree allocator backed by ``git worktree``."""
+def _parse_max_worktrees(raw: str | None) -> int | None:
+    """Read the ``CANTRIP_MAX_WORKTREES`` env var, returning ``None`` for unset.
 
-    def __init__(self) -> None:
+    Zero is a valid value (disables allocation).  Garbage input is ignored.
+    """
+    if raw is None or not raw.strip():
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        log.warning("Ignoring invalid %s=%r", _MAX_WORKTREES_ENV, raw)
+        return None
+    return max(0, value)
+
+
+class _DefaultWorktreeAllocator:
+    """Subprocess-driven worktree allocator backed by ``git worktree``.
+
+    *max_worktrees* caps the number of concurrent worktrees; a ``None`` value
+    means unlimited.  Defaults to the ``CANTRIP_MAX_WORKTREES`` environment
+    variable when unset.
+
+    *min_free_bytes* is the minimum free space on the base path's filesystem
+    below which allocation is refused.  Defaults to 200 MB.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_worktrees: int | None = None,
+        min_free_bytes: int = _DEFAULT_MIN_FREE_BYTES,
+    ) -> None:
         self._handles: dict[str, WorktreeHandle] = {}
         self._lock = asyncio.Lock()
+        self._max_worktrees = (
+            max_worktrees
+            if max_worktrees is not None
+            else _parse_max_worktrees(os.environ.get(_MAX_WORKTREES_ENV))
+        )
+        self._min_free_bytes = max(0, min_free_bytes)
 
     # -- Public API ----------------------------------------------------------
 
@@ -180,6 +243,14 @@ class _DefaultWorktreeAllocator:
                     f"Worktree for task {task_id!r} already allocated at {existing.path}"
                 )
 
+            if self._max_worktrees is not None and len(self._handles) >= self._max_worktrees:
+                log.warning(
+                    "Worktree skipped: cap reached (%d/%s); falling back to main tree",
+                    len(self._handles),
+                    self._max_worktrees,
+                )
+                return None
+
             if not await _is_git_repo(base):
                 log.debug("Worktree skipped: %s is not a git repository", base)
                 return None
@@ -187,6 +258,14 @@ class _DefaultWorktreeAllocator:
             head = await _head_sha(base)
             if head is None:
                 log.debug("Worktree skipped: %s has no HEAD commit", base)
+                return None
+
+            if not _has_free_space(base, self._min_free_bytes):
+                log.warning(
+                    "Worktree skipped: %s has less than %d free bytes",
+                    base,
+                    self._min_free_bytes,
+                )
                 return None
 
             # Ensure the nested ``.cantrip-worktrees/`` directory is excluded
@@ -273,4 +352,58 @@ class _DefaultWorktreeAllocator:
         for task_id in stale:
             await self.release(task_id)
             reaped += 1
+        return reaped
+
+    async def reap_disk_orphans(
+        self,
+        base_path: pathlib.Path | str,
+        active_task_ids: set[str],
+    ) -> int:
+        """Reap worktrees left behind on disk from a prior session.
+
+        ``reap_orphans`` only sees handles in the current process's memory,
+        which is empty at startup.  ``reap_disk_orphans`` inspects
+        ``git worktree list`` under *base_path* and removes any
+        ``.cantrip-worktrees/<task-id>/`` whose ``task_id`` isn't in
+        *active_task_ids*.  Returns the number of worktrees removed.
+        """
+        base = pathlib.Path(base_path)
+        if not await _is_git_repo(base):
+            return 0
+
+        try:
+            listing = await _run_git(["worktree", "list", "--porcelain"], cwd=base)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return 0
+        if listing.returncode != 0:
+            return 0
+
+        reaped = 0
+        prefix = base / _WORKTREES_DIRNAME
+        for line in listing.stdout.splitlines():
+            if not line.startswith("worktree "):
+                continue
+            path = pathlib.Path(line[len("worktree ") :])
+            try:
+                rel = path.relative_to(prefix)
+            except ValueError:
+                continue
+            # ``rel`` is ``task_id/...`` — we want the first component.
+            parts = rel.parts
+            if not parts:
+                continue
+            task_id = parts[0]
+            if task_id in active_task_ids:
+                continue
+            # Unknown to the live queue; drop it.
+            branch = _branch_name(task_id)
+            remove = await _run_git(["worktree", "remove", "--force", str(path)], cwd=base)
+            if remove.returncode != 0:
+                await _run_git(["worktree", "prune"], cwd=base)
+            # Best-effort branch cleanup; the branch may not exist in every
+            # failure mode and that's fine.
+            await _run_git(["branch", "-D", branch], cwd=base)
+            reaped += 1
+        if reaped:
+            log.info("Reaped %d orphan worktree(s) under %s", reaped, prefix)
         return reaped

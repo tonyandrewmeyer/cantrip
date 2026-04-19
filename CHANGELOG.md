@@ -18,6 +18,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   is already hermetic so no tests broke under parallel execution.
 
 ### Added
+- **Worktree configuration and limits (Phase 44.5)** — three defensive
+  knobs on ``_DefaultWorktreeAllocator``.  ``CANTRIP_MAX_WORKTREES``
+  caps concurrent worktrees (``0`` disables allocation entirely as an
+  escape hatch).  ``min_free_bytes`` (default 200 MB) refuses allocation
+  when ``shutil.disk_usage`` reports less free space than the threshold.
+  ``reap_disk_orphans(base_path, active_task_ids)`` enumerates
+  ``git worktree list`` under ``.cantrip-worktrees/`` and removes any
+  worktree whose task id isn't in the live queue — user-created
+  worktrees elsewhere are left alone.  The executor calls this at the
+  top of ``_run_loop`` on startup, excluding terminal-state tasks from
+  the active set so their worktrees are also reaped.  10 new unit tests
+  cover the cap, env var parsing, disk-space guard, and orphan reaper.
 - **Worktree visibility in TUI and Web (Phase 44.3/44.4)** — each task now
   surfaces its active worktree path in the UI while the subagent is
   running and clears it on release.  ``AgentTask`` grew a transient
