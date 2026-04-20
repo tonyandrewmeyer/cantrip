@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **TUI screen coverage — Pilot tests for the three thinnest screens**
+  — Phase 57.5 landed.  ``tui/screens/relation.py`` goes from 0% to
+  99% via a new ``tests/unit/test_relation_screen.py`` that drives
+  mount / fetch / render with ``subprocess.run`` mocked (matching,
+  no-match, symmetric, error, unparseable, refresh branches).
+  ``tui/screens/questions.py`` goes from 30% to 100% via Pilot tests
+  for suggestion clicks, free-form submission, skip/previous, escape
+  cancel, and dismiss-on-last-question.  ``tui/app.py`` goes from 42%
+  to 66% via a new ``tests/unit/test_tui_actions.py`` targeting
+  F6–F9/Ctrl-F bindings, every bus handler (memory, status bar, task
+  updated, watcher event), worker-completion branches for
+  ``/feelings`` and MCP marketplace, every branch of the bootstrap /
+  push / triage response handlers, the confirmation presenters,
+  ``action_toggle_watcher``, and ``action_quit``.  No production-code
+  changes.
 - **Watcher is always on; dev model auto-detected** — removed the
   ``--watcher`` CLI flag.  The TUI now subscribes to watcher events at
   startup and tries to start the watcher immediately, falling back to

@@ -5622,17 +5622,37 @@ covered; the WebSocket code was not.
 Result: ``src/cantrip/web/server.py`` moved from 24% to 99% line
 coverage.  44 new tests added.
 
-### 57.5 Medium — TUI screen Pilot tests
+### 57.5 Medium — TUI screen Pilot tests ✓
 
 Textual's ``Pilot`` lets tests drive an app programmatically.  Three
-screens are under 40%:
+screens were under 40%:
 
-- [ ] ``tui/screens/relation.py`` (21%)
-- [ ] ``tui/screens/questions.py`` (30%)
-- [ ] ``tui/app.py`` (40%) — targeted branches, not full coverage
-
-One Pilot interaction test per screen — open, do the key action,
-assert the rendered state — raises each to ≥60%.
+- [x] ``tui/screens/relation.py`` (0% → 99%) — new
+  ``tests/unit/test_relation_screen.py`` drives the mount → fetch →
+  render pipeline with ``subprocess.run`` mocked.  Covers the
+  matching-relation render (with databags + asymmetry section),
+  no-match / symmetric / subprocess-error / unparseable-JSON branches,
+  and the ``action_refresh`` re-issue path, plus the pure
+  ``_fetch_data_blocking`` helper (five branches)
+- [x] ``tui/screens/questions.py`` (30% → 100%) — Pilot tests added
+  to ``tests/unit/test_questions_screen.py`` for suggestion clicks,
+  free-form submission (ignoring whitespace-only), skip/previous
+  buttons, escape cancel, and dismiss-on-last-question.  Buttons are
+  driven via ``Button.press()`` because ``pilot.click`` on
+  modal-overlay widgets didn't register
+- [x] ``tui/app.py`` (42% → 66%) — targeted branches in a new
+  ``tests/unit/test_tui_actions.py``: F6/F7/F8/F9/Ctrl-F bindings,
+  every bus handler (memory written/recalled, status bar, task
+  updated, watcher event), worker-completion branches for
+  ``/feelings`` and MCP marketplace (success / cancelled / error /
+  non-terminal), every branch of ``_handle_bootstrap_response`` /
+  ``_handle_push_response`` / ``_handle_triage_response`` (including
+  unrelated-message returns-false), the confirmation presenters,
+  ``action_toggle_watcher`` running / stopped / no-agent,
+  ``_refresh_subagent_status_bar``, ``on_relation_line_selected``,
+  and ``action_quit`` with services running.  ``call_from_thread`` is
+  patched with a synchronous passthrough so in-test direct invocation
+  of bus handlers works
 
 ### 57.6 Medium — Core-agent branch coverage
 
