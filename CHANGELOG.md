@@ -4,6 +4,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Live-browser accessibility regression test** — new
+  ``tests/integration/web/test_accessibility.py`` hosts the real
+  aiohttp app on a thread and drives ``uvx rodney`` against it to
+  assert the WCAG 2.1 AA invariants captured in
+  ``design/WEB_UI_ACCESSIBILITY_AUDIT.md``: accessible names on the
+  Send button and header buttons, ``role=log`` on the chat messages
+  region, the chat input's programmatic label, the three overlays'
+  dialog wiring (focus moves into the dialog on open and back to the
+  trigger on Escape, ``aria-expanded`` flips, ``inert`` is applied to
+  the backdrop), and computed white-on-accent-strong contrast ≥ 4.5:1
+  for the Send button.  Complements the static template/CSS/JS checks
+  in ``tests/unit/test_web_server.py::TestAccessibility`` by covering
+  behaviours only a real browser can compute.  Self-skips when
+  Chromium or ``uvx rodney`` isn't available, so CI collects the
+  module without mandating either.
+
 ### Fixed
 - **Dev / COS status panes stayed empty** — the Always-On watcher was
   running and polling Juju correctly, but the event bus was never

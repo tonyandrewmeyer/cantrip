@@ -6095,15 +6095,25 @@ evidence is one click away.
 
 ### 60.9 Medium — Regression test: re-run the audit in CI
 
-- [ ] Add a ``tests/integration/web/test_accessibility.py`` (or an
-  ``assets/audit.md`` the CI re-runs with ``showboat verify``) that
-  launches the web server, drives ``rodney ax-tree`` / ``rodney ax-node``
-  against the same probes the audit used, and asserts the key
-  accessible-name / role / contrast invariants.  This prevents the
-  audit from drifting silently on future UI changes
-- [ ] Alternatively, run a headless axe-core scan via rodney's ``js``
-  subcommand — cheaper than hand-crafted assertions but reports
-  different things.  Pick one; the audit doc lists both
+- [x] Add a ``tests/integration/web/test_accessibility.py`` that
+  hosts the real aiohttp app on a thread, drives ``uvx rodney``
+  against it, and asserts the key accessible-name / role / contrast
+  invariants — covers findings 1–8 (Send button name + focus ring,
+  chat-input programmatic label, chat-messages ``role=log``,
+  connection-status accessible name, help/logs/graph overlay
+  ``role=dialog`` with ``aria-modal``, header buttons' names) plus
+  the dynamic behaviours the static test in
+  ``tests/unit/test_web_server.py::TestAccessibility`` can't reach
+  (``aria-expanded`` toggling, ``inert`` backdrop, focus moving into
+  the dialog on open and back to the trigger on Escape, computed
+  contrast ≥ 4.5:1).  The module self-skips when Chromium or
+  ``uvx rodney`` isn't available, so CI collects it without mandating
+  the dependency
+- [~] Alternatively, run a headless axe-core scan via rodney's ``js``
+  subcommand — deferred; the targeted assertions above cover the
+  numbered findings directly, and axe would duplicate them with
+  less-specific failure messages.  The option remains open if a
+  broader sweep is ever needed
 
 ### What this phase is *not*
 
