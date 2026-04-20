@@ -5,6 +5,14 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Syntax-highlighted file preview** — the content preview in the
+  file detail modal now renders Python / YAML / TOML / JSON / Markdown
+  / Rust / shell and every other Pygments-supported language with
+  colour and Rich's line-number gutter.  Lexer is detected from the
+  filename via ``Syntax.guess_lexer``; theme is ``ansi_dark`` so the
+  highlight colours reuse the user's terminal palette and adapt across
+  the Cantrip / Ubuntu / Monokai / Solarized-dark themes.  Binary and
+  empty files still collapse to a plain dim notice.
 - **Click a file in the charm tree to open a detail view** —
   selecting a file in the right-panel file tree now opens a
   ``FileDetailScreen`` modal instead of a one-line toast.  The

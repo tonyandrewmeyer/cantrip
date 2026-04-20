@@ -13,6 +13,9 @@ import re
 import subprocess
 from pathlib import Path
 
+from rich.console import Group, RenderableType
+from rich.syntax import Syntax
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -30,30 +33,11 @@ _LOG_ENTRIES = 5
 _PREVIEW_MAX_LINES = 120
 _PREVIEW_MAX_BYTES = 32_768
 
-# File extensions treated as text for the preview.
-_TEXT_EXTENSIONS = frozenset(
-    {
-        ".py",
-        ".md",
-        ".yaml",
-        ".yml",
-        ".toml",
-        ".json",
-        ".txt",
-        ".rst",
-        ".cfg",
-        ".ini",
-        ".sh",
-        ".rs",
-        ".html",
-        ".css",
-        ".js",
-        ".ts",
-        ".tf",
-        ".dockerfile",
-        "",
-    }
-)
+# Pygments theme used by the preview.  ``ansi_dark`` uses the terminal's
+# own ANSI palette so the highlight colours adapt to any Cantrip theme
+# (cantrip, ubuntu, monokai, solarized-dark) instead of clashing with
+# one fixed palette.
+_SYNTAX_THEME = "ansi_dark"
 
 # Extensions that look like the charm's key YAML metadata files.
 _CHARM_METADATA_NAMES = frozenset(
@@ -436,29 +420,57 @@ def _fallback_purpose(path: Path) -> str:
     return f"[dim]{suffix} file — no structured summary available.[/dim]"
 
 
-def _render_preview(path: Path) -> str:
-    """Return a truncated plain-text preview of the file."""
-    suffix = path.suffix.lower()
-    if suffix and suffix not in _TEXT_EXTENSIONS:
-        return "[dim]Binary or non-text file — preview skipped.[/dim]"
+def _render_preview(path: Path) -> RenderableType:
+    """Return a syntax-highlighted preview of the file.
 
+    Returns a :class:`rich.syntax.Syntax` block for text content (with
+    line numbers and Pygments-driven highlighting), wrapped in a
+    :class:`rich.console.Group` plus a dim truncation notice when the
+    file exceeds the preview budget.  Binary / empty / unreadable files
+    return a plain :class:`rich.text.Text` notice instead.
+    """
     text = _read_text_safely(path, max_bytes=_PREVIEW_MAX_BYTES)
     if text is None:
-        return "[dim]Binary content detected — preview skipped.[/dim]"
+        return Text("Binary content detected — preview skipped.", style="dim italic")
     if not text:
-        return "[dim]Empty file.[/dim]"
+        return Text("Empty file.", style="dim italic")
 
     lines = text.splitlines()
-    truncated_lines = False
-    if len(lines) > _PREVIEW_MAX_LINES:
+    truncated = len(lines) > _PREVIEW_MAX_LINES
+    if truncated:
         lines = lines[:_PREVIEW_MAX_LINES]
-        truncated_lines = True
+    body = "\n".join(lines)
 
-    width = len(str(len(lines)))
-    numbered = "\n".join(f"{i + 1:>{width}}  {line}" for i, line in enumerate(lines))
-    if truncated_lines:
-        numbered += f"\n[dim]… (first {_PREVIEW_MAX_LINES} lines)[/dim]"
-    return numbered
+    lexer = _guess_lexer(path, body)
+    syntax = Syntax(
+        body,
+        lexer,
+        theme=_SYNTAX_THEME,
+        line_numbers=True,
+        word_wrap=False,
+        background_color="default",
+    )
+
+    if truncated:
+        return Group(
+            syntax,
+            Text(
+                f"… (first {_PREVIEW_MAX_LINES} lines)",
+                style="dim italic",
+            ),
+        )
+    return syntax
+
+
+def _guess_lexer(path: Path, body: str) -> str:
+    """Return the Pygments lexer alias for *path*.
+
+    Rich's ``Syntax.guess_lexer`` looks at both the filename and the
+    content (for shebangs, emacs modelines, etc.) and returns the
+    Pygments lexer short name.  Falls back to plain text when nothing
+    matches.
+    """
+    return Syntax.guess_lexer(str(path), body)
 
 
 def _read_text_safely(path: Path, *, max_bytes: int) -> str | None:

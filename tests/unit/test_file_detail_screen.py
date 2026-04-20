@@ -7,10 +7,14 @@ tests drive the modal's mount-populate-render cycle with
 
 import datetime
 import subprocess
+from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from rich.console import Console, Group
+from rich.syntax import Syntax
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import RichLog
 
@@ -21,6 +25,7 @@ from cantrip.tui.screens.file_detail import (
     _format_relative_time,
     _format_size,
     _format_stats,
+    _guess_lexer,
     _infer_purpose,
     _markdown_first_section,
     _python_module_docstring,
@@ -29,6 +34,19 @@ from cantrip.tui.screens.file_detail import (
     _toml_description,
     _yaml_summary,
 )
+
+
+def _render_rich(renderable: object) -> str:
+    """Render a Rich renderable to a plain string for content assertions."""
+    console = Console(
+        file=StringIO(),
+        force_terminal=False,
+        color_system=None,
+        width=200,
+    )
+    console.print(renderable)
+    return console.file.getvalue()
+
 
 pytestmark = pytest.mark.tui
 
@@ -245,29 +263,90 @@ class TestReadTextSafely:
 
 
 class TestRenderPreview:
-    def test_short_file_is_fully_rendered(self, tmp_path: Path) -> None:
+    def test_short_file_returns_syntax_with_content(self, tmp_path: Path) -> None:
         f = tmp_path / "a.txt"
         f.write_text("line1\nline2\nline3\n")
         out = _render_preview(f)
-        assert "1  line1" in out
-        assert "3  line3" in out
-        assert "…" not in out
+        assert isinstance(out, Syntax)
+        assert "line1" in out.code
+        assert "line3" in out.code
+        # Line numbers are rendered by Rich, not embedded in .code.
+        rendered = _render_rich(out)
+        assert "line1" in rendered
+        assert "1 " in rendered and "3 " in rendered
 
-    def test_long_file_is_truncated(self, tmp_path: Path) -> None:
+    def test_long_file_is_truncated_with_notice(self, tmp_path: Path) -> None:
         f = tmp_path / "big.txt"
         f.write_text("\n".join(f"line{i}" for i in range(500)))
         out = _render_preview(f)
-        assert "first 120 lines" in out
+        assert isinstance(out, Group)
+        rendered = _render_rich(out)
+        assert "first 120 lines" in rendered
+        # Only the first 120 lines are in the highlighted body.
+        assert "line0" in rendered
+        assert "line119" in rendered
+        assert "line120" not in rendered
 
-    def test_binary_file_skipped(self, tmp_path: Path) -> None:
+    def test_binary_file_shows_notice(self, tmp_path: Path) -> None:
         f = tmp_path / "blob.png"
         f.write_bytes(b"\x89PNG\r\n\x1a\n\x00binary")
-        assert "Binary" in _render_preview(f)
+        out = _render_preview(f)
+        assert isinstance(out, Text)
+        assert "Binary" in str(out)
 
-    def test_empty_file(self, tmp_path: Path) -> None:
+    def test_empty_file_shows_notice(self, tmp_path: Path) -> None:
         f = tmp_path / "empty.py"
         f.write_text("")
-        assert "Empty" in _render_preview(f)
+        out = _render_preview(f)
+        assert isinstance(out, Text)
+        assert "Empty" in str(out)
+
+
+class TestGuessLexer:
+    """Smoke-test that common file types get the expected Pygments lexer."""
+
+    def test_python(self, tmp_path: Path) -> None:
+        f = tmp_path / "x.py"
+        f.write_text("def f():\n    return 1\n")
+        assert _guess_lexer(f, f.read_text()) == "python"
+
+    def test_yaml(self, tmp_path: Path) -> None:
+        f = tmp_path / "charmcraft.yaml"
+        f.write_text("name: x\nsummary: y\n")
+        assert _guess_lexer(f, f.read_text()) == "yaml"
+
+    def test_shell_by_extension(self, tmp_path: Path) -> None:
+        f = tmp_path / "script.sh"
+        f.write_text("echo hi\n")
+        lexer = _guess_lexer(f, f.read_text())
+        assert lexer in {"bash", "sh", "shell"}
+
+    def test_markdown(self, tmp_path: Path) -> None:
+        f = tmp_path / "readme.md"
+        f.write_text("# hi\n")
+        assert _guess_lexer(f, f.read_text()) in {"md", "markdown"}
+
+    def test_toml(self, tmp_path: Path) -> None:
+        f = tmp_path / "pyproject.toml"
+        f.write_text('[project]\nname = "x"\n')
+        assert _guess_lexer(f, f.read_text()) == "toml"
+
+    def test_json(self, tmp_path: Path) -> None:
+        f = tmp_path / "data.json"
+        f.write_text('{"a": 1}\n')
+        assert _guess_lexer(f, f.read_text()) == "json"
+
+    def test_rust(self, tmp_path: Path) -> None:
+        f = tmp_path / "lib.rs"
+        f.write_text("fn main() {}\n")
+        assert _guess_lexer(f, f.read_text()) in {"rust", "rs"}
+
+    def test_unknown_falls_back(self, tmp_path: Path) -> None:
+        f = tmp_path / "weirdfile.xyznope"
+        f.write_text("some text\n")
+        # Pygments returns the default text lexer when it can't match.
+        lexer = _guess_lexer(f, f.read_text())
+        assert lexer == "default"
 
 
 class TestFormatGitLog:
