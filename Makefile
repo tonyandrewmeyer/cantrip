@@ -1,4 +1,4 @@
-.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage rust-test
+.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage rust-test rust-coverage
 
 # Format code with ruff
 format:
@@ -58,6 +58,17 @@ rust-test:
 	cd src/charmlint-rs && cargo test
 	cd src/quickpack-rs && cargo test
 
+# Run cargo-llvm-cov for each Rust crate (advisory — see Phase 58.4).
+# Install once: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview
+rust-coverage:
+	@command -v cargo-llvm-cov >/dev/null 2>&1 || { \
+		echo "cargo-llvm-cov not installed."; \
+		echo "Install: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview"; \
+		exit 1; \
+	}
+	cd src/charmlint-rs && cargo llvm-cov --summary-only
+	cd src/quickpack-rs && cargo llvm-cov --summary-only
+
 # Clean build artifacts
 clean:
 	rm -rf .pytest_cache .ruff_cache .ty_cache .coverage .coverage.* htmlcov
@@ -86,5 +97,6 @@ help:
 	@echo "  all         - Run format + check"
 	@echo "  coverage    - Run unit tests with coverage report"
 	@echo "  rust-test   - Run cargo test for charmlint-rs and quickpack-rs"
+	@echo "  rust-coverage - Run cargo-llvm-cov summary for each Rust crate"
 	@echo "  clean       - Remove build artifacts"
 	@echo "  install     - Install dependencies"

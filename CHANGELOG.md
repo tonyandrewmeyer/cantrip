@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 58 complete — Rust coverage wired into CI** — the
+  ``rust-test`` matrix job now runs ``cargo llvm-cov --summary-only
+  --json`` after ``cargo test``.  Per-file line coverage is compared
+  against a 60% advisory threshold and emitted as
+  ``::warning file=…`` annotations that show up inline on PRs but
+  don't fail the build.  New ``make rust-coverage`` target mirrors
+  the CI invocation locally (requires a one-time
+  ``cargo install cargo-llvm-cov && rustup component add
+  llvm-tools-preview``).  Baseline on landing: charmlint-rs 89.6%,
+  quickpack-rs 78.0%, no file under 60%.
 - **Phase 57 complete — total coverage 88%** — ``tui/themes.py``
   (the last file under the 50% floor) goes from 47% to 93% with a
   new ``tests/unit/test_themes.py`` covering the YAML theme loader,

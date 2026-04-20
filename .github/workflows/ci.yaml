@@ -123,3 +123,20 @@ jobs:
       - name: cargo test
         working-directory: src/${{ matrix.crate }}
         run: cargo test --all-targets
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486  # v2.75.18
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Rust coverage (advisory — warn below 60% per file)
+        working-directory: src/${{ matrix.crate }}
+        run: |
+          set -o pipefail
+          cargo llvm-cov --summary-only --json > /tmp/rust-coverage.json
+          jq -r --arg crate "${{ matrix.crate }}" '
+            .data[0].files[]
+            | select(.summary.lines.percent < 60)
+            | "::warning file=src/\($crate)/\(.filename | sub(".*/src/\($crate)/"; ""))::line coverage \(.summary.lines.percent | floor)% (below 60% advisory threshold)"
+          ' /tmp/rust-coverage.json
+          jq -r '.data[0].totals | "Total line coverage: \(.lines.percent * 100 | floor / 100)% (\(.lines.covered)/\(.lines.count) lines)"' /tmp/rust-coverage.json

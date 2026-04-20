@@ -5789,7 +5789,7 @@ organised to match source-file boundaries.
 
 ---
 
-## Phase 58: Rust Crate Unit Tests
+## Phase 58: Rust Crate Unit Tests ✓
 
 **Goal:** Close the coverage cliff on the two Rust reimplementations.
 The Python ``charmlint`` has a full ``tests/unit/charmlint/`` suite
@@ -5849,12 +5849,22 @@ test can't express cleanly.
 - [x] Add a ``make rust-test`` target to ``Makefile`` so the local
   loop matches CI.
 
-### 58.4 Low — Coverage instrumentation
+### 58.4 Low — Coverage instrumentation ✓
 
-- [ ] Wire ``cargo-llvm-cov`` into the CI job — emits the same
-  format as the Python coverage report, plots next to it
-- [ ] Set an advisory threshold (not blocking): warn if any Rust
-  file drops below 60%
+- [x] Wire ``cargo-llvm-cov`` into the CI job — the ``rust-test``
+  matrix job now runs ``cargo llvm-cov --summary-only --json`` after
+  ``cargo test``.  Per-file line coverage is extracted with ``jq`` and
+  compared against the 60% advisory threshold.  Baseline on
+  2026-04-20: charmlint-rs 89.6% total (lowest file ``main.rs`` 75%),
+  quickpack-rs 78.0% total (lowest ``parts.rs`` 64%).  No file below
+  60% at baseline, so zero annotations emitted
+- [x] Set an advisory threshold (not blocking): warn if any Rust
+  file drops below 60% — emitted via GitHub Actions ``::warning
+  file=…`` annotations so they appear inline on the PR but don't
+  fail the check.  Also added a ``make rust-coverage`` target that
+  runs the same ``cargo llvm-cov --summary-only`` locally after a
+  one-time ``cargo install cargo-llvm-cov && rustup component add
+  llvm-tools-preview``
 
 ### What this phase is *not*
 
