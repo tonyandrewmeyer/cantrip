@@ -30,7 +30,7 @@ class ResumePromptScreen(ModalScreen[str]):
     }
 
     #resume-container {
-        width: 80;
+        width: 100;
         max-height: 80%;
         border: thick $primary;
         background: $surface;
