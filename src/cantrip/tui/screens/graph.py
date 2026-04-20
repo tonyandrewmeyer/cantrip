@@ -1,5 +1,7 @@
 """Integration graph modal screen for Cantrip TUI."""
 
+import contextlib
+
 from jubilant import statustypes
 from rich.console import Group
 from rich.panel import Panel
@@ -9,6 +11,22 @@ from textual.binding import Binding
 from textual.containers import Center, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
+
+# Cycle order for the ``f`` binding; ``None`` means show every app.
+_FILTER_CYCLE: tuple[frozenset[str] | None, ...] = (
+    None,
+    frozenset({"blocked"}),
+    frozenset({"waiting"}),
+    frozenset({"blocked", "waiting"}),
+)
+
+# Short labels for the title bar.
+_FILTER_LABELS: dict[frozenset[str] | None, str] = {
+    None: "all",
+    frozenset({"blocked"}): "blocked",
+    frozenset({"waiting"}): "waiting",
+    frozenset({"blocked", "waiting"}): "blocked+waiting",
+}
 
 # Status indicator characters and Rich style names.
 _STATUS_STYLE: dict[str, tuple[str, str]] = {
@@ -88,15 +106,27 @@ def _relation_line(source: str, endpoint: str, target: str, interface: str) -> T
 def build_graph(
     status: statustypes.Status,
     current_app: str | None = None,
+    status_filter: frozenset[str] | None = None,
 ) -> list[Text | Panel | str]:
     """Build a list of Rich renderables representing the integration graph.
 
     Returns a flat list of panels (apps) and text lines (relations) that
     can be rendered sequentially.  Apps are grouped first, followed by a
     relation section.
+
+    When *status_filter* is set, only apps whose app-level status is in
+    the set appear as panels, and relations are restricted to pairs
+    where both ends pass the filter.  The relation section stays useful
+    rather than turning into a noise of half-dangling edges.
     """
     if not status.apps:
         return [Text("No applications deployed.", style="dim italic")]
+
+    visible_apps: dict[str, statustypes.AppStatus] = {
+        name: app
+        for name, app in status.apps.items()
+        if status_filter is None or app.app_status.current in status_filter
+    }
 
     parts: list[Text | Panel | str] = []
 
@@ -111,17 +141,24 @@ def build_graph(
     )
     parts.append("")
 
+    if not visible_apps:
+        label = ", ".join(sorted(status_filter)) if status_filter else "any"
+        parts.append(Text(f"No applications matching filter ({label}).", style="dim italic"))
+        return parts
+
     # App panels.
-    for app_name, app in sorted(status.apps.items()):
+    for app_name, app in sorted(visible_apps.items()):
         highlight = app_name == current_app
         parts.append(_app_panel(app_name, app, highlight=highlight))
 
-    # Relation section.
+    # Relation section — only include edges where both ends are visible.
     seen: set[tuple[str, str, str]] = set()
     relation_lines: list[Text] = []
-    for app_name, app in sorted(status.apps.items()):
+    for app_name, app in sorted(visible_apps.items()):
         for endpoint, related_list in sorted(app.relations.items()):
             for rel in related_list:
+                if rel.related_app not in visible_apps:
+                    continue
                 # Deduplicate bidirectional relations.
                 pair = tuple(sorted([app_name, rel.related_app]))
                 key = (pair[0], pair[1], rel.interface)
@@ -187,6 +224,7 @@ class GraphScreen(ModalScreen):
     BINDINGS = [
         Binding("escape", "dismiss", "Close"),
         Binding("r", "refresh", "Refresh"),
+        Binding("f", "cycle_filter", "Filter"),
     ]
 
     def __init__(
@@ -200,6 +238,10 @@ class GraphScreen(ModalScreen):
         self._status = status
         self._current_app = current_app
         self._model = model
+        # Held as a plain int so tests can cycle the filter without a
+        # mounted DOM; the binding re-renders explicitly in
+        # :meth:`action_cycle_filter`.
+        self.filter_index = 0
 
     def compose(self) -> ComposeResult:
         """Compose the graph layout."""
@@ -209,7 +251,7 @@ class GraphScreen(ModalScreen):
                 yield Static("[Esc Close]", classes="title-hint")
             yield RichLog(id="graph-body", wrap=True)
             yield Static(
-                "[r] Refresh  [Esc] Close",
+                "[r] Refresh  [f] Filter  [Esc] Close",
                 id="graph-footer",
             )
 
@@ -222,6 +264,12 @@ class GraphScreen(ModalScreen):
         if self._model:
             self.run_worker(self._fetch_and_render, thread=True)
         else:
+            self._render_graph()
+
+    def action_cycle_filter(self) -> None:
+        """Cycle the app-status filter: all → blocked → waiting → both."""
+        self.filter_index = (self.filter_index + 1) % len(_FILTER_CYCLE)
+        if self.is_mounted:
             self._render_graph()
 
     def _fetch_and_render(self) -> None:
@@ -246,10 +294,19 @@ class GraphScreen(ModalScreen):
         """Build and display the integration graph."""
         body = self.query_one("#graph-body", RichLog)
         body.clear()
+        self._update_title()
 
         if not self._status:
             body.write("No model connected.")
             return
 
-        for part in build_graph(self._status, self._current_app):
+        status_filter = _FILTER_CYCLE[self.filter_index]
+        for part in build_graph(self._status, self._current_app, status_filter):
             body.write(part)
+
+    def _update_title(self) -> None:
+        """Reflect the active filter in the title bar."""
+        with contextlib.suppress(LookupError):
+            title = self.query_one("#graph-title .title-text", Static)
+            label = _FILTER_LABELS[_FILTER_CYCLE[self.filter_index]]
+            title.update(f"Integration Graph [{label}]")

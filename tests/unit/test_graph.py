@@ -259,3 +259,98 @@ class TestGraphScreen:
         # should at least store the new status.
         screen._status = status
         assert screen._status is status
+
+
+# ---------------------------------------------------------------------------
+# TestStatusFilter
+# ---------------------------------------------------------------------------
+
+
+class TestStatusFilter:
+    """``status_filter`` keyword hides apps outside the set."""
+
+    def _mixed_status_graph(self) -> statustypes.Status:
+        return _make_status(
+            {
+                "happy-app": _app_data(status="active"),
+                "stuck-app": _app_data(status="blocked"),
+                "patient-app": _app_data(status="waiting"),
+            }
+        )
+
+    def test_none_filter_shows_everything(self) -> None:
+        """``status_filter=None`` — baseline: every app appears."""
+        parts = build_graph(self._mixed_status_graph(), status_filter=None)
+        panels = [p for p in parts if isinstance(p, Panel)]
+        assert {str(p.title) for p in panels} == {"happy-app", "stuck-app", "patient-app"}
+
+    def test_blocked_only(self) -> None:
+        """Blocked-only filter hides active and waiting."""
+        parts = build_graph(self._mixed_status_graph(), status_filter=frozenset({"blocked"}))
+        panels = [p for p in parts if isinstance(p, Panel)]
+        assert {str(p.title) for p in panels} == {"stuck-app"}
+
+    def test_blocked_and_waiting(self) -> None:
+        """Combined filter hides only active."""
+        parts = build_graph(
+            self._mixed_status_graph(),
+            status_filter=frozenset({"blocked", "waiting"}),
+        )
+        panels = [p for p in parts if isinstance(p, Panel)]
+        assert {str(p.title) for p in panels} == {"stuck-app", "patient-app"}
+
+    def test_empty_match_shows_placeholder(self) -> None:
+        """Filter matches nothing → placeholder, not a bare header."""
+        parts = build_graph(
+            _make_status({"happy-app": _app_data(status="active")}),
+            status_filter=frozenset({"blocked"}),
+        )
+        panels = [p for p in parts if isinstance(p, Panel)]
+        assert panels == []
+        plain = " ".join(p.plain for p in parts if isinstance(p, Text))
+        assert "No applications matching filter" in plain
+        assert "blocked" in plain
+
+    def test_relation_hidden_when_one_end_filtered_out(self) -> None:
+        """Edges crossing the filter boundary disappear so the graph stays honest."""
+        status = _make_status(
+            {
+                "stuck-app": _app_data(
+                    status="blocked",
+                    relations={
+                        "database": [
+                            {
+                                "related-application": "happy-app",
+                                "interface": "pgsql",
+                                "scope": "global",
+                            }
+                        ],
+                    },
+                ),
+                "happy-app": _app_data(status="active"),
+            }
+        )
+        parts = build_graph(status, status_filter=frozenset({"blocked"}))
+        text_parts = [p for p in parts if isinstance(p, Text)]
+        plain = " ".join(t.plain for t in text_parts)
+        assert "Relations" not in plain
+
+
+class TestGraphScreenFilterCycle:
+    """``action_cycle_filter`` advances through four modes."""
+
+    def test_cycle_advances_index(self) -> None:
+        screen = GraphScreen(status=_make_status({"a": _app_data()}))
+        assert screen.filter_index == 0
+        screen.action_cycle_filter()
+        assert screen.filter_index == 1
+        screen.action_cycle_filter()
+        assert screen.filter_index == 2
+        screen.action_cycle_filter()
+        assert screen.filter_index == 3
+
+    def test_cycle_wraps(self) -> None:
+        screen = GraphScreen(status=_make_status({"a": _app_data()}))
+        for _ in range(4):
+            screen.action_cycle_filter()
+        assert screen.filter_index == 0

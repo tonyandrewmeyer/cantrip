@@ -2741,9 +2741,23 @@ experienced users.
 
 ### 31.5 Medium — Log Screen Model Selector
 
-- [ ] `LogScreen` always shows the dev model — add a dropdown or binding to switch
-  to COS model logs
-- [ ] `GraphScreen` should support filtering by app status (show only blocked/waiting)
+- [x] `LogScreen` always shows the dev model — add a dropdown or binding to switch
+  to COS model logs — ``m`` binding cycles between dev and COS when
+  both are configured; no-op when only one model is set so the key
+  can't put the screen into a broken "None" state.  ``action_logs``
+  in the TUI now passes both ``dev_model`` and ``cos_model`` to the
+  screen; the legacy positional ``model=`` kwarg is preserved for
+  direct callers.  Title bar shows the active model and level, wrapped
+  in ``Content`` so arbitrary model-name characters can't be
+  mistaken for Textual markup.
+- [x] `GraphScreen` should support filtering by app status (show only
+  blocked/waiting) — ``f`` binding cycles the filter through
+  ``all → blocked → waiting → blocked+waiting``.  ``build_graph()``
+  gained an optional ``status_filter`` set; filtered edges (pairs
+  where one end is hidden) are dropped so the relation section stays
+  honest, and a "No applications matching filter" placeholder replaces
+  an empty panel section so the user knows the screen hasn't broken.
+  Title bar shows the active filter label.
 
 ### 31.6 Medium — Trace Screen with Real URLs
 

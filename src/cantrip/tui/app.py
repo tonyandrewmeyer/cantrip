@@ -1464,7 +1464,8 @@ class CantripApp(App):
         from cantrip.tui.screens import logs as logs_screen
 
         dev_model = self._agent.state.dev_model if self._agent else None
-        self.push_screen(logs_screen.LogScreen(model=dev_model))
+        cos_model = self._agent.state.cos_model if self._agent else None
+        self.push_screen(logs_screen.LogScreen(dev_model=dev_model, cos_model=cos_model))
 
     def action_graph(self) -> None:
         """Show integration graph screen."""

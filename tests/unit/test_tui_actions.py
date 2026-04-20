@@ -531,6 +531,67 @@ class TestLogsAction:
                 await pilot.pause()
                 assert isinstance(pilot.app.screen, LogScreen)
 
+    @pytest.mark.asyncio
+    async def test_logs_screen_receives_cos_model(self):
+        """Both dev and COS models are threaded into the LogScreen."""
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.state.dev_model = "development"
+        mock_agent.state.cos_model = "cos"
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app.action_logs()
+                await pilot.pause()
+                screen = pilot.app.screen
+                assert isinstance(screen, LogScreen)
+                assert screen._dev_model == "development"
+                assert screen._cos_model == "cos"
+
+
+class TestLogScreenModelCycling:
+    """``m`` binding cycles between dev and COS when both are set."""
+
+    def test_init_prefers_dev_over_cos(self):
+        screen = LogScreen(dev_model="dev", cos_model="cos")
+        assert screen._model == "dev"
+
+    def test_init_falls_back_to_cos(self):
+        screen = LogScreen(cos_model="cos")
+        assert screen._model == "cos"
+
+    def test_init_accepts_legacy_positional_model(self):
+        """Legacy ``model=`` callers still work — maps to ``dev_model``."""
+        screen = LogScreen(model="dev")
+        assert screen._model == "dev"
+        assert screen._dev_model == "dev"
+        assert screen._cos_model is None
+
+    def test_cycle_swaps_dev_to_cos(self):
+        screen = LogScreen(dev_model="dev", cos_model="cos")
+        with patch.object(screen, "_fetch_logs"), patch.object(screen, "_stop_stream"):
+            screen.action_cycle_model()
+        assert screen._model == "cos"
+
+    def test_cycle_swaps_back_to_dev(self):
+        screen = LogScreen(dev_model="dev", cos_model="cos")
+        with patch.object(screen, "_fetch_logs"), patch.object(screen, "_stop_stream"):
+            screen.action_cycle_model()
+            screen.action_cycle_model()
+        assert screen._model == "dev"
+
+    def test_cycle_is_noop_with_only_dev(self):
+        screen = LogScreen(dev_model="dev")
+        with patch.object(screen, "_fetch_logs") as fetch:
+            screen.action_cycle_model()
+        fetch.assert_not_called()
+        assert screen._model == "dev"
+
+    def test_cycle_is_noop_with_only_cos(self):
+        screen = LogScreen(cos_model="cos")
+        with patch.object(screen, "_fetch_logs") as fetch:
+            screen.action_cycle_model()
+        fetch.assert_not_called()
+        assert screen._model == "cos"
+
 
 # ---------------------------------------------------------------------------
 # Confirmation-prompt response handlers

@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **LogScreen dev/COS cycling** — ``m`` in the log viewer switches
+  between the dev and COS models when both are bootstrapped.  No-op
+  when only one is configured.  Title shows the active model.
+- **GraphScreen status filter** — ``f`` in the integration graph
+  cycles ``all → blocked → waiting → blocked+waiting`` so operators
+  can zoom in on whichever apps need attention.  Edges that cross the
+  filter boundary disappear and an explicit placeholder appears when
+  the filter matches nothing.  The underlying ``build_graph()`` helper
+  grew an optional ``status_filter`` kwarg.
 - **Task-completion notifications** — opt-in terminal bell and desktop
   popups when a task reaches ``done`` or ``failed``.  Enable via
   ``CANTRIP_NOTIFY=bell|desktop|both`` (default ``off``); ``bell``
