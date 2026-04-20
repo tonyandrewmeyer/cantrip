@@ -218,3 +218,187 @@ class TestStaleTaskRecovery:
         assert task_map["t1"].status == TaskStatus.PENDING
         assert task_map["t2"].status == TaskStatus.DONE
         assert task_map["t3"].status == TaskStatus.PENDING
+
+
+class TestPreviewSession:
+    """Tests for CantripAgent.preview_session — the Phase 31.3 preview path."""
+
+    def test_no_charm_path_returns_empty(self):
+        """Preview returns exists=False when no charm path is configured."""
+        agent = CantripAgent(provider=FakeProvider())
+        preview = agent.preview_session()
+        assert preview.exists is False
+
+    def test_no_cantrip_file_returns_empty(self, tmp_path: Path):
+        """Preview returns exists=False when the file isn't on disk."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        preview = agent.preview_session()
+        assert preview.exists is False
+
+    def test_returns_session_metadata(self, tmp_path: Path):
+        """Preview returns charm name, models, and task counts without mutating state."""
+        writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        writer.state.charm_name = "my-charm"
+        writer.state.charm_type = "k8s"
+        writer.state.dev_model = "dev"
+        writer.state.cos_model = "cos"
+        writer.save_state()
+        writer._ensure_store()
+        assert writer._store is not None
+        writer._store.save_tasks(
+            [
+                AgentTask(
+                    id="t1",
+                    title="Pending",
+                    category=TaskCategory.BUILD,
+                    status=TaskStatus.PENDING,
+                ),
+                AgentTask(
+                    id="t2",
+                    title="Done",
+                    category=TaskCategory.BUILD,
+                    status=TaskStatus.DONE,
+                ),
+            ]
+        )
+
+        reader = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        preview = reader.preview_session()
+
+        assert preview.exists is True
+        assert preview.charm_name == "my-charm"
+        assert preview.charm_type == "k8s"
+        assert preview.dev_model == "dev"
+        assert preview.cos_model == "cos"
+        assert preview.task_counts.get("pending") == 1
+        assert preview.task_counts.get("done") == 1
+        assert preview.has_unfinished_tasks is True
+        assert preview.updated_at is not None
+        # Reader's state should be untouched.
+        assert reader.state.charm_name is None
+
+    def test_has_unfinished_false_when_all_done(self, tmp_path: Path):
+        """has_unfinished_tasks is False when tasks are all terminal."""
+        writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        writer.state.charm_name = "c"
+        writer.save_state()
+        writer._ensure_store()
+        assert writer._store is not None
+        writer._store.save_tasks(
+            [
+                AgentTask(
+                    id="t1",
+                    title="Done",
+                    category=TaskCategory.BUILD,
+                    status=TaskStatus.DONE,
+                ),
+            ]
+        )
+
+        reader = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        preview = reader.preview_session()
+
+        assert preview.exists is True
+        assert preview.has_unfinished_tasks is False
+
+    def test_preview_does_not_mutate_agent_state(self, tmp_path: Path):
+        """Calling preview_session must leave agent.state.charm_name as-is."""
+        writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        writer.state.charm_name = "untouched-probe"
+        writer.save_state()
+
+        reader = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        reader.preview_session()
+        assert reader.state.charm_name is None
+        assert reader.state.messages == []
+
+    def test_summary_includes_charm_and_counts(self, tmp_path: Path):
+        """Summary string includes the charm name and a task count breakdown."""
+        writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        writer.state.charm_name = "my-charm"
+        writer.save_state()
+        writer._ensure_store()
+        assert writer._store is not None
+        writer._store.save_tasks(
+            [
+                AgentTask(
+                    id="t1",
+                    title="T",
+                    category=TaskCategory.BUILD,
+                    status=TaskStatus.PENDING,
+                ),
+            ]
+        )
+
+        reader = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        preview = reader.preview_session()
+
+        summary = preview.summary()
+        assert "my-charm" in summary
+        assert "pending" in summary
+
+
+class TestArchiveSession:
+    """Tests for CantripAgent.archive_session."""
+
+    def test_no_file_returns_none(self, tmp_path: Path):
+        """archive_session returns None when there's nothing to archive."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        assert agent.archive_session() is None
+
+    def test_renames_to_backup(self, tmp_path: Path):
+        """archive_session moves .cantrip to .cantrip.bak-TIMESTAMP."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent.state.charm_name = "to-be-archived"
+        agent.save_state()
+        db_path = tmp_path / ".cantrip"
+        assert db_path.is_file()
+
+        backup = agent.archive_session()
+
+        assert backup is not None
+        assert not db_path.exists()
+        assert backup.exists()
+        assert backup.name.startswith(".cantrip.bak-")
+        # The store has been reset so the next save starts fresh.
+        assert agent._store is None
+
+    def test_fresh_session_starts_empty_after_archive(self, tmp_path: Path):
+        """After archiving, save_state creates a new empty database."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent.state.charm_name = "stale"
+        agent.save_state()
+
+        agent.archive_session()
+        agent.state.charm_name = "fresh"
+        agent.save_state()
+
+        reader = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        reader.load_state()
+        assert reader.state.charm_name == "fresh"
+
+
+class TestTranscriptTail:
+    """Tests for CantripAgent.transcript_tail."""
+
+    def test_returns_last_n_messages(self, tmp_path: Path):
+        """transcript_tail returns the last N persisted messages."""
+        writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        writer.state.charm_name = "c"
+        writer.save_state()
+        writer._ensure_store()
+        assert writer._store is not None
+        for i in range(5):
+            writer._store.record_message(role="user", content=f"msg-{i}")
+
+        reader = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        tail = reader.transcript_tail(limit=3)
+
+        assert len(tail) == 3
+        assert tail[-1].content == "msg-4"
+        assert tail[0].content == "msg-2"
+
+    def test_empty_when_no_store(self, tmp_path: Path):
+        """transcript_tail returns [] when no store exists."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        assert agent.transcript_tail() == []

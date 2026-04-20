@@ -5,6 +5,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Resume prompt on launch — CLI and TUI** — instead of silently
+  loading whatever ``.cantrip`` file is on disk, Cantrip now asks
+  [R]esume / [F]resh / [T]ranscript?  Fresh renames the old session to
+  ``.cantrip.bak-<timestamp>`` so nothing is lost; Transcript shows the
+  last 20 persisted messages inline before re-asking.  New helpers:
+  ``CantripAgent.preview_session()`` peeks without mutating state,
+  ``archive_session()`` handles the rename + store reset,
+  ``transcript_tail(limit)`` returns the last N messages for review.
+  The CLI uses a synchronous input prompt (falls back to silent-resume
+  on non-TTY stdin so scripts keep working); the TUI shows a dedicated
+  modal (``cantrip.tui.screens.resume.ResumePromptScreen``) pushed
+  before the preflight / executor / watcher start, so choosing Fresh
+  doesn't leave a polluted state behind.  Web UI parity coming in a
+  follow-up.
 - **TraceScreen shows real Grafana deep-links and honest reachability**
   — F4 no longer hard-codes ``...`` placeholders and a perpetual
   ``Status: Connected``.  A new ``cantrip.agent.cos_endpoints`` helper

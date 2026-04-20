@@ -391,6 +391,34 @@ class SessionStore:
 
         return state
 
+    def peek_session(self) -> dict[str, object] | None:
+        """Return lightweight session metadata without mutating any state.
+
+        Used by ``CantripAgent.preview_session()`` to decide whether to
+        offer a resume prompt on launch.  Returns None when no session
+        row exists.
+        """
+        row = self._db.execute(
+            "SELECT charm_name, charm_path, charm_type, framework, "
+            "dev_model, cos_model, updated_at FROM session WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "charm_name": row["charm_name"],
+            "charm_path": row["charm_path"],
+            "charm_type": row["charm_type"],
+            "framework": row["framework"],
+            "dev_model": row["dev_model"],
+            "cos_model": row["cos_model"],
+            "updated_at": row["updated_at"],
+        }
+
+    def count_messages(self) -> int:
+        """Return the number of persisted conversation messages."""
+        row = self._db.execute("SELECT COUNT(*) FROM messages").fetchone()
+        return int(row[0]) if row else 0
+
     # ── Compaction safety counters (Phase 40.2) ─────────────────────────
 
     def save_compaction_counters(

@@ -80,6 +80,13 @@ def _mock_agent() -> MagicMock:
     # Session resume — default to no prior session.
     agent.load_state = MagicMock(return_value=False)
     agent.save_state = MagicMock()
+    # Phase 31.3 preview path — default to "no prior session", so the
+    # resume modal is skipped and tests see a clean app.
+    no_preview = MagicMock()
+    no_preview.exists = False
+    agent.preview_session = MagicMock(return_value=no_preview)
+    agent.transcript_tail = MagicMock(return_value=[])
+    agent.archive_session = MagicMock(return_value=None)
     # MCP mocks (default: no servers configured so start_mcp is skipped).
     agent.mcp_registry = MagicMock()
     agent.mcp_registry.configured = []
@@ -394,6 +401,90 @@ class TestTuiWidgets:
                 assert "datasource" in blob
                 assert "tempo" in blob
                 assert "loki" in blob
+
+    @pytest.mark.asyncio
+    async def test_resume_modal_shown_when_prior_session_exists(self):
+        """Session preview with exists=True pushes the ResumePromptScreen."""
+        from cantrip.tui.screens.resume import ResumePromptScreen
+
+        p1, p2, agent = _patch_app()
+        preview = MagicMock()
+        preview.exists = True
+        preview.summary.return_value = "Prior session: my-charm"
+        agent.preview_session = MagicMock(return_value=preview)
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.pause()
+                assert isinstance(pilot.app.screen, ResumePromptScreen)
+                # Dismiss with R — triggers load_state.
+                await pilot.press("r")
+                await pilot.pause()
+                agent.load_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_resume_modal_fresh_archives_without_loading(self):
+        """Pressing F on the resume modal archives and skips load_state."""
+        from pathlib import Path
+
+        from cantrip.tui.screens.resume import ResumePromptScreen
+
+        p1, p2, agent = _patch_app()
+        preview = MagicMock()
+        preview.exists = True
+        preview.summary.return_value = "Prior session: my-charm"
+        agent.preview_session = MagicMock(return_value=preview)
+        agent.archive_session = MagicMock(return_value=Path("/tmp/.cantrip.bak-20260420T000000Z"))
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.pause()
+                assert isinstance(pilot.app.screen, ResumePromptScreen)
+                await pilot.press("f")
+                await pilot.pause()
+                agent.archive_session.assert_called_once()
+                agent.load_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_resume_modal_transcript_toggle(self):
+        """Pressing T shows the transcript; pressing it again hides it."""
+        from cantrip.llm.base import Message, Role
+        from cantrip.tui.screens.resume import ResumePromptScreen
+
+        p1, p2, agent = _patch_app()
+        preview = MagicMock()
+        preview.exists = True
+        preview.summary.return_value = "Prior session"
+        agent.preview_session = MagicMock(return_value=preview)
+        agent.transcript_tail = MagicMock(
+            return_value=[Message(role=Role.USER, content="hello from history")]
+        )
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.pause()
+                screen = pilot.app.screen
+                assert isinstance(screen, ResumePromptScreen)
+                await pilot.press("t")
+                await pilot.pause()
+                # The transcript container should now have a Static inside it.
+                container = screen.query_one("#resume-transcript")
+                statics = list(container.query("Static"))
+                blob = "\n".join(str(s.render()) for s in statics)
+                assert "hello from history" in blob
+                # Toggle off.
+                await pilot.press("t")
+                await pilot.pause()
+                statics = list(container.query("Static"))
+                assert statics == []
+
+    @pytest.mark.asyncio
+    async def test_no_resume_modal_when_no_prior_session(self):
+        """Default mock (no prior session) does not push a resume modal."""
+        from cantrip.tui.screens.resume import ResumePromptScreen
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.pause()
+                assert not isinstance(pilot.app.screen, ResumePromptScreen)
 
     @pytest.mark.asyncio
     async def test_trace_screen_reports_unreachable(self):

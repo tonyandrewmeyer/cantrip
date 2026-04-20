@@ -201,6 +201,70 @@ async def _spinner(label: str | list[str] = "Thinking") -> None:
         print("\r" + " " * 40 + "\r", end="", flush=True)
 
 
+_RESUME_PROMPT = "\n[R]esume / [F]resh / [T]ranscript (show last 20 messages)?\n> "
+
+
+def _format_transcript_tail(agent: CantripAgent, limit: int = 20) -> str:
+    """Return a plain-text render of the last ``limit`` persisted messages."""
+    messages = agent.transcript_tail(limit=limit)
+    if not messages:
+        return "(no messages persisted)"
+    lines: list[str] = []
+    for msg in messages:
+        content = msg.content.replace("\n", " ")
+        if len(content) > 200:
+            content = content[:197] + "..."
+        lines.append(f"{msg.role.value.upper()}: {content}")
+    return "\n".join(lines)
+
+
+def _prompt_session_resume(agent: CantripAgent) -> None:
+    """Ask the user whether to resume, start fresh, or review the transcript.
+
+    When there's nothing to resume the function is silent — a brand-new
+    charm directory shouldn't generate a prompt about a session that
+    doesn't exist.  Non-interactive stdin (pipes, stripped containers)
+    falls back to the previous silent-resume behaviour so scripts keep
+    working.
+    """
+    preview = agent.preview_session()
+    if not preview.exists:
+        return
+
+    # Scripts and piped input: stay out of their way.
+    if not sys.stdin.isatty():
+        if agent.load_state():
+            summary = agent.build_resume_summary()
+            if summary:
+                print(f"[resume] {summary}\n")
+        return
+
+    print(f"\n{preview.summary()}")
+
+    while True:
+        try:
+            choice = input(_RESUME_PROMPT).strip().lower()
+        except EOFError:
+            choice = "r"
+        if choice in ("", "r", "resume"):
+            if agent.load_state():
+                summary = agent.build_resume_summary()
+                if summary:
+                    print(f"[resume] {summary}\n")
+            return
+        if choice in ("f", "fresh"):
+            backup = agent.archive_session()
+            if backup is not None:
+                print(f"[fresh] Previous session archived to {backup.name}\n")
+            return
+        if choice in ("t", "transcript"):
+            print("\n--- transcript tail ---")
+            print(_format_transcript_tail(agent))
+            print("--- end transcript ---\n")
+            continue
+        print(f"  Didn't understand {choice!r} — try R, F, or T.")
+
+
 async def _repl(agent: CantripAgent) -> None:
     """Run the interactive read-eval-print loop."""
     # Tab-completes slash verbs against the shared catalogue plus the
@@ -208,11 +272,9 @@ async def _repl(agent: CantripAgent) -> None:
     # available (non-POSIX, stripped containers) or stdin isn't a TTY.
     _install_slash_completer(_cli_slash_verbs())
 
-    # Load prior session state if it exists.
-    if agent.load_state():
-        summary = agent.build_resume_summary()
-        if summary:
-            print(f"[resume] {summary}\n")
+    # Offer an explicit Resume / Fresh / Transcript choice on launch
+    # rather than silently loading whatever's on disk.
+    _prompt_session_resume(agent)
 
     # Subscribe to task updates via the event bus.
     agent.event_bus.bind_loop(asyncio.get_running_loop())

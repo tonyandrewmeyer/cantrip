@@ -64,6 +64,13 @@ def _mock_agent() -> MagicMock:
     agent.store = None
     agent.load_state = MagicMock(return_value=False)
     agent.save_state = MagicMock()
+    # Phase 31.3 preview path — default to no prior session so the
+    # resume modal isn't pushed over the search-under-test app.
+    no_preview = MagicMock()
+    no_preview.exists = False
+    agent.preview_session = MagicMock(return_value=no_preview)
+    agent.transcript_tail = MagicMock(return_value=[])
+    agent.archive_session = MagicMock(return_value=None)
     agent.mcp_registry = MagicMock()
     agent.mcp_registry.configured = []
     agent.start_mcp = AsyncMock()

@@ -248,14 +248,41 @@ class CantripApp(App):
             chat.add_system_message(f"Failed to initialise provider: {e}")
 
     def _resume_session(self) -> None:
-        """Load prior session state and show a resume summary if available."""
+        """Offer a Resume / Fresh / Transcript choice when prior state exists.
+
+        Phase 31.3: replaces the old silent-load behaviour with an
+        explicit prompt.  No ``load_state`` happens here — the modal's
+        callback is responsible for loading (on Resume) or archiving
+        (on Fresh), so a user picking Fresh doesn't end up with a
+        polluted ``state`` that was populated before they decided.
+        """
         if not self._agent:
             return
-        if self._agent.load_state():
-            summary = self._agent.build_resume_summary()
-            if summary:
+        preview = self._agent.preview_session()
+        if not preview.exists:
+            return
+        from cantrip.tui.screens import resume as resume_screen
+
+        transcript = self._agent.transcript_tail(limit=20)
+        screen = resume_screen.ResumePromptScreen(preview, transcript=transcript)
+
+        def _on_choice(choice: str | None) -> None:
+            if choice == "fresh":
+                backup = self._agent.archive_session() if self._agent else None
                 chat = self.query_one("#chat", chat_widget.ChatWidget)
-                chat.add_system_message(summary)
+                if backup is not None:
+                    chat.add_system_message(
+                        f"Starting fresh — prior session archived to {backup.name}."
+                    )
+                return
+            # Default path (resume or dismissed): load state and show summary.
+            if self._agent and self._agent.load_state():
+                summary = self._agent.build_resume_summary()
+                if summary:
+                    chat = self.query_one("#chat", chat_widget.ChatWidget)
+                    chat.add_system_message(summary)
+
+        self.push_screen(screen, _on_choice)
 
     def _resolve_light_provider(self, main_provider: LLMProvider) -> LLMProvider | None:
         """Build a light provider for cheap internal tasks."""

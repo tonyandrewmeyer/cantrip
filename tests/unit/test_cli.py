@@ -619,12 +619,95 @@ class TestRepl:
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         agent = _make_repl_agent(load_returns=True)
+        # Preview reports a session exists so the resume codepath runs; in
+        # a non-TTY test env the code falls back to silent-resume.
+        preview = mock.MagicMock()
+        preview.exists = True
+        preview.summary.return_value = "Prior session: c"
+        agent.preview_session = mock.MagicMock(return_value=preview)
         with mock.patch(
             "cantrip.cli.asyncio.to_thread",
             new=_drive_repl([EOFError]),
         ):
             await cli._repl(agent)
         assert "[resume] resumed stuff" in capsys.readouterr().out
+
+    @pytest.mark.asyncio
+    async def test_no_prompt_when_no_prior_session(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A brand-new charm directory doesn't generate a resume prompt."""
+        agent = _make_repl_agent()
+        preview = mock.MagicMock()
+        preview.exists = False
+        agent.preview_session = mock.MagicMock(return_value=preview)
+        with mock.patch(
+            "cantrip.cli.asyncio.to_thread",
+            new=_drive_repl([EOFError]),
+        ):
+            await cli._repl(agent)
+        out = capsys.readouterr().out
+        assert "[resume]" not in out
+        assert "Resume" not in out
+        agent.load_state.assert_not_called()
+
+    def test_prompt_resume_tty_accepts_resume(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """TTY flow: typing 'r' triggers load_state + summary."""
+        agent = _make_repl_agent(load_returns=True)
+        preview = mock.MagicMock()
+        preview.exists = True
+        preview.summary.return_value = "Prior session: c"
+        agent.preview_session = mock.MagicMock(return_value=preview)
+        with (
+            mock.patch("cantrip.cli.sys.stdin.isatty", return_value=True),
+            mock.patch("builtins.input", side_effect=["r"]),
+        ):
+            cli._prompt_session_resume(agent)
+        agent.load_state.assert_called_once()
+        assert "[resume] resumed stuff" in capsys.readouterr().out
+
+    def test_prompt_resume_tty_fresh_archives(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """TTY flow: typing 'f' calls archive_session and skips load_state."""
+        import pathlib
+
+        agent = _make_repl_agent()
+        preview = mock.MagicMock()
+        preview.exists = True
+        preview.summary.return_value = "Prior session"
+        agent.preview_session = mock.MagicMock(return_value=preview)
+        agent.archive_session = mock.MagicMock(return_value=pathlib.Path("/tmp/.cantrip.bak-X"))
+        with (
+            mock.patch("cantrip.cli.sys.stdin.isatty", return_value=True),
+            mock.patch("builtins.input", side_effect=["f"]),
+        ):
+            cli._prompt_session_resume(agent)
+        agent.archive_session.assert_called_once()
+        agent.load_state.assert_not_called()
+        assert ".cantrip.bak-X" in capsys.readouterr().out
+
+    def test_prompt_resume_tty_transcript_then_resume(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """TTY flow: 't' prints the tail, re-prompts, then 'r' resumes."""
+        from cantrip.llm.base import Message, Role
+
+        agent = _make_repl_agent(load_returns=True)
+        preview = mock.MagicMock()
+        preview.exists = True
+        preview.summary.return_value = "Prior session"
+        agent.preview_session = mock.MagicMock(return_value=preview)
+        agent.transcript_tail = mock.MagicMock(
+            return_value=[Message(role=Role.USER, content="hello")]
+        )
+        with (
+            mock.patch("cantrip.cli.sys.stdin.isatty", return_value=True),
+            mock.patch("builtins.input", side_effect=["t", "r"]),
+        ):
+            cli._prompt_session_resume(agent)
+        out = capsys.readouterr().out
+        assert "transcript tail" in out
+        assert "hello" in out
+        agent.load_state.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_exit_command(self) -> None:

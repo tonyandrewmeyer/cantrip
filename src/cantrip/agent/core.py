@@ -1,6 +1,7 @@
 """Core agent logic."""
 
 import asyncio
+import datetime
 import logging
 import re
 import sqlite3
@@ -57,6 +58,7 @@ from cantrip.agent.preflight import (
 from cantrip.agent.prompts import build_system_prompt, claude_md
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.retry import complete_with_retry
+from cantrip.agent.session_preview import SessionPreview
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
@@ -1881,6 +1883,106 @@ class CantripAgent:
         if self._store:
             self._store.save_session(self.state)
             self._store.save_tasks(self._work_queue.all_tasks())
+
+    def preview_session(self) -> SessionPreview:
+        """Peek at the persisted session without mutating agent state.
+
+        Called on launch by every surface (CLI, TUI, Web) to decide
+        whether to show a resume prompt.  Returns
+        ``SessionPreview(exists=False)`` when there's nothing on disk,
+        when the charm path hasn't been set, or when the store can't be
+        opened — so callers can branch on ``preview.exists`` without
+        catching.
+        """
+        if not self.state.charm_path:
+            return SessionPreview()
+        db_path = self.state.charm_path / ".cantrip"
+        if not db_path.is_file():
+            return SessionPreview()
+        try:
+            self._ensure_store()
+        except (sqlite3.Error, OSError):
+            log.warning("Failed to open session store for preview")
+            return SessionPreview()
+        store = self._store
+        if store is None:
+            return SessionPreview()
+        try:
+            peek = store.peek_session()
+            if peek is None:
+                return SessionPreview()
+            tasks = store.load_tasks()
+            counts: dict[str, int] = {}
+            for t in tasks:
+                counts[t.status.value] = counts.get(t.status.value, 0) + 1
+            message_count = store.count_messages()
+        except (sqlite3.Error, KeyError, ValueError):
+            log.warning("Failed to preview session — .cantrip file may be corrupt")
+            return SessionPreview()
+        return SessionPreview(
+            exists=True,
+            charm_name=peek.get("charm_name") if isinstance(peek.get("charm_name"), str) else None,
+            charm_type=peek.get("charm_type") if isinstance(peek.get("charm_type"), str) else None,
+            framework=peek.get("framework") if isinstance(peek.get("framework"), str) else None,
+            dev_model=peek.get("dev_model") if isinstance(peek.get("dev_model"), str) else None,
+            cos_model=peek.get("cos_model") if isinstance(peek.get("cos_model"), str) else None,
+            updated_at=peek.get("updated_at") if isinstance(peek.get("updated_at"), str) else None,
+            message_count=message_count,
+            task_counts=counts,
+        )
+
+    def transcript_tail(self, limit: int = 20) -> list[Message]:
+        """Return the last ``limit`` persisted messages, for "review" mode.
+
+        Used when the user answers *Transcript* at the resume prompt —
+        they see the tail before committing to Resume or Fresh.  Reads
+        from the store but does not touch ``self.state.messages``.
+        """
+        self._ensure_store()
+        if self._store is None:
+            return []
+        try:
+            raw = self._store.load_messages()
+        except (sqlite3.Error, KeyError, ValueError):
+            return []
+        result: list[Message] = []
+        for msg in raw[-limit:]:
+            role_str = msg.get("role", "")
+            try:
+                role = Role(role_str)
+            except ValueError:
+                continue
+            content = msg.get("content", "")
+            if not content:
+                continue
+            result.append(Message(role=role, content=str(content)))
+        return result
+
+    def archive_session(self) -> Path | None:
+        """Rename the current ``.cantrip`` file aside so a fresh session can start.
+
+        Closes the session store, moves the file to
+        ``.cantrip.bak-<timestamp>``, and resets the lazy-init flag so
+        the next ``_ensure_store()`` call creates a new, empty database.
+        Returns the backup path, or None if there was nothing to archive.
+        """
+        if not self.state.charm_path:
+            return None
+        db_path = self.state.charm_path / ".cantrip"
+        if not db_path.is_file():
+            return None
+        if self._store is not None:
+            try:
+                self._store.close()
+            except sqlite3.Error:
+                log.warning("Failed to close session store before archiving")
+        timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+        backup = db_path.with_name(f".cantrip.bak-{timestamp}")
+        db_path.rename(backup)
+        self._store = None
+        self._store_initialised = False
+        log.info("Archived prior session to %s", backup)
+        return backup
 
     def load_state(self) -> bool:
         """Load agent state from the session store.
