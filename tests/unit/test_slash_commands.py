@@ -258,6 +258,48 @@ class TestExport:
         assert "no `.cantrip`" in result.text
 
 
+class TestArena:
+    """/arena returns usage when bare and a followup when given a prompt."""
+
+    def test_bare_arena_returns_usage(self, memory_manager: MemoryManager) -> None:
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/arena")
+        assert result is not None
+        assert result.followup is None
+        assert "/arena <prompt>" in result.text
+
+    def test_arena_with_prompt_returns_followup(self, memory_manager: MemoryManager) -> None:
+        # The followup is agent.begin_arena(args); we verify the
+        # dispatcher wires it without awaiting it (the follow-up is an
+        # awaitable this test just closes).
+
+        class _Agent(SimpleNamespace):
+            def begin_arena(self, prompt: str) -> object:
+                async def _run() -> str:
+                    return f"ran with: {prompt}"
+
+                return _run()
+
+        agent = _Agent(
+            _memory_manager=memory_manager,
+            state=SimpleNamespace(charm_path=None),
+            mcp_registry=None,
+            mcp_marketplace_sources=[],
+            mcp_marketplace_loader=None,
+            store=None,
+            provider=SimpleNamespace(model_name="fake"),
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+        )
+        result = dispatch(agent, "/arena compare two takes")
+        assert result is not None
+        assert result.followup is not None
+        assert "A and B" in result.text
+        # Close the awaitable so pytest's unraisable-warning detector
+        # doesn't flag it.
+        result.followup.close()  # type: ignore[attr-defined]
+
+
 class TestCommandCatalogue:
     """The shared catalogue drives UI autocomplete and must stay in sync."""
 

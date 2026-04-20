@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
+from cantrip.agent import arena
 from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.design import parse_design_from_result
@@ -214,6 +215,12 @@ class CantripAgent:
         # Session-level prompt cache accumulators (Claude-specific).
         self.cache_creation_tokens: int = 0
         self.cache_read_tokens: int = 0
+
+        # Pending blind A/B arena session, if the user has fired ``/arena``
+        # and not yet replied with a pick.  Cross-surface so every UI
+        # (TUI, CLI, Web) sees the same pending arena without each
+        # carrying its own copy of the state.
+        self._arena_session: arena.ArenaSession | None = None
 
         if charm_path:
             self._ensure_claude_md(charm_path)
@@ -1516,6 +1523,102 @@ class CantripAgent:
             ),
             dependencies=[last_task_id],
         )
+
+    # ── Blind A/B arena (Phase 47.5) ────────────────────────────────────
+
+    @property
+    def active_arena(self) -> arena.ArenaSession | None:
+        """The pending blind A/B arena, or ``None`` when idle.
+
+        Surfaces consult this before routing a user reply to the LLM so
+        ``A`` / ``B`` / ``tie`` / ``skip`` can be captured as an arena
+        pick rather than sent as a new conversation turn.
+        """
+        return self._arena_session
+
+    async def begin_arena(self, prompt: str) -> str:
+        """Run a blind A/B arena for *prompt* and return the formatted output.
+
+        The arena uses ``self.provider`` (primary) and
+        ``self._light_provider`` (light) as the two candidates.  When no
+        light provider is configured the method returns a user-facing
+        error message rather than raising — ``/arena`` is a best-effort
+        command and a missing second provider is a configuration issue,
+        not a bug.  The returned string is the blind A/B presentation
+        plus instructions for picking; the caller renders it verbatim.
+        """
+        if self._arena_session is not None:
+            return (
+                "Arena already in progress — reply **A**, **B**, **tie**, or "
+                "**skip** to finish the current arena before starting a new one."
+            )
+        if self._light_provider is None:
+            return (
+                "Arena requires a second provider, but no light provider is "
+                "configured.  Set ``CANTRIP_LIGHT_PROVIDER`` and restart to "
+                "enable ``/arena``."
+            )
+        try:
+            session = await arena.run_blind_arena(
+                provider_a=self.provider,
+                provider_b=self._light_provider,
+                prompt=prompt,
+            )
+        except arena.ArenaError as exc:
+            return f"Arena not started: {exc}"
+        self._arena_session = session
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "arena_started",
+                {
+                    "session_id": session.session_id,
+                    "prompt_excerpt": prompt[:200],
+                    "candidate_a_model": session.candidate_a.model_name,
+                    "candidate_b_model": session.candidate_b.model_name,
+                },
+            )
+        return arena.format_blind_arena(session)
+
+    def handle_arena_pick(self, message: str) -> str | None:
+        """Resolve a pending arena pick from a raw user reply.
+
+        Returns the reveal text when the message is a valid pick
+        (``A`` / ``B`` / ``tie`` / ``skip``), or ``None`` when the
+        message is anything else — the surface passes ``None`` replies
+        through to its normal message-handling path so the user isn't
+        locked out of the LLM while an arena waits for a verdict.
+        A ``skip`` reply clears the session without recording a memory.
+        """
+        session = self._arena_session
+        if session is None:
+            return None
+        outcome = arena.parse_pick(message)
+        if outcome == arena.ArenaOutcome.UNRECOGNISED:
+            return None
+        # Valid outcome — consume the session before writing so a memory
+        # write error does not leave the arena locked in pending state.
+        self._arena_session = None
+
+        memory_entry = None
+        if outcome != arena.ArenaOutcome.SKIPPED:
+            try:
+                memory_entry = arena.record_preference(self._memory_manager, session, outcome)
+            except (OSError, RuntimeError) as exc:
+                log.warning("Arena memory write failed: %s", exc)
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "arena_resolved",
+                {
+                    "session_id": session.session_id,
+                    "outcome": outcome,
+                    "memory_written": "yes" if memory_entry is not None else "no",
+                },
+            )
+        return arena.format_reveal(session, outcome)
 
     def handle_race_confirmation(self, confirm_task_id: str, *, approved: bool) -> str:
         """Resolve a race-cost CONFIRM task and unblock the parent.

@@ -398,6 +398,18 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     if not content:
                         continue
 
+                    # Blind A/B arena picks resolve the pending session
+                    # before the slash dispatcher sees the reply.
+                    if agent.active_arena is not None:
+                        reveal = agent.handle_arena_pick(content)
+                        if reveal is not None:
+                            _broadcast(
+                                request.app,
+                                "chat_message",
+                                {"role": "system", "content": reveal},
+                            )
+                            continue
+
                     # Memory slash commands run inline (no LLM), so handle
                     # them before grabbing the chat lock or showing the
                     # thinking indicator.  Echo the user's command first so

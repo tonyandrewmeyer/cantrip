@@ -57,6 +57,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/forget", "Delete a memory"),
     CommandInfo("/mcp", "Manage MCP servers"),
     CommandInfo("/cost", "Show token usage and cost"),
+    CommandInfo("/arena", "Blind A/B compare two models"),
     CommandInfo("/export", "Export the live session transcript"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
@@ -123,6 +124,19 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=mcp_commands.handle_mcp(agent.mcp_registry, args))
     if verb == "/cost":
         return SlashResult(text=format_cost(agent))
+    if verb == "/arena":
+        if not args.strip():
+            return SlashResult(
+                text=(
+                    "Usage: ``/arena <prompt>`` — runs two models blind on "
+                    "*prompt* and asks you to pick a winner.  Reply **A**, "
+                    "**B**, **tie**, or **skip** when the responses arrive."
+                )
+            )
+        return SlashResult(
+            text="Arena: running A and B side by side…",
+            followup=agent.begin_arena(args),
+        )
     if verb == "/export":
         return SlashResult(text=export_transcript(agent, args))
     if verb in {"/quit", "/exit"}:
@@ -144,6 +158,8 @@ def help_text() -> str:
         "- `/forget <title>` — delete a memory by title.\n"
         "- `/mcp` — list configured MCP servers. Run `/mcp help` for subcommands.\n"
         "- `/cost` — show token usage and estimated cost.\n"
+        "- `/arena <prompt>` — run two models blind on *prompt* and pick"
+        " a winner; the preference is recorded as a global-scope memory.\n"
         "- `/export [html|jsonl|markdown] [path]` — export the live"
         " transcript without leaving the session (default: html to"
         " `<charm>/transcript.html`).\n"

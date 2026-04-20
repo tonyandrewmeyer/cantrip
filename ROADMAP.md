@@ -4519,12 +4519,34 @@ by cost and off by default; opt-in per task category.
   transcript.  Mid-flight budget accounting is deferred until
   streaming-usage aggregation lands in Phase 41.6
 
-### 47.5 Low — Blind A/B arena mode
+### 47.5 Low — Blind A/B arena mode ✅
 
-- [ ] `/arena` slash command runs two candidates blind and asks the user to
+- [x] `/arena` slash command runs two candidates blind and asks the user to
   pick the winner for a one-off preference capture, mirroring Windsurf Arena
-- [ ] Preference outcomes feed into memory (Phase 43) as facts about which
-  models the user prefers for which task categories
+  — new ``cantrip.agent.arena`` module runs ``provider_a`` and
+  ``provider_b`` concurrently via ``asyncio.gather``, shuffles the
+  two responses into labels ``A`` and ``B``, and returns an
+  ``ArenaSession``.  ``/arena <prompt>`` in the shared slash
+  dispatcher emits a ``SlashResult`` with a follow-up that awaits
+  ``CantripAgent.begin_arena``; the follow-up's text is the blind
+  A/B block rendered by ``arena.format_blind_arena``.  TUI, CLI,
+  and Web intercept pending picks before routing a reply to the LLM
+  via ``agent.active_arena`` + ``handle_arena_pick``; recognised
+  replies (``A``, ``B``, ``tie``, ``skip`` and common synonyms)
+  consume the session and render ``arena.format_reveal`` to unmask
+  the models.  Unrecognised replies fall through so the user is
+  not locked out of normal chat
+- [x] Preference outcomes feed into memory (Phase 43) as facts about which
+  models the user prefers for which task categories —
+  ``arena.record_preference`` writes a ``kind="fact"`` entry at
+  ``scope="global"`` with ``source="arena"`` and tags
+  ``["arena", "model-preference"]``.  Directional picks record
+  "User preferred X over Y"; ties record "User rated X and Y as
+  equivalent"; every entry includes a 200-character prompt excerpt
+  so the preference is attributable to a specific ask.  Title is
+  ``arena-preference-<8-hex>`` so repeated arenas produce
+  disambiguated entries that ``/memory`` can list and ``/forget``
+  can remove
 
 ### 47.6 Low — Publish user-facing docs for racing
 

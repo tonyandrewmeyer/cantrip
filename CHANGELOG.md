@@ -19,6 +19,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``/arena`` lands a user-facing surface.
 
 ### Added
+- **Blind A/B arena — ``/arena`` (Phase 47.5)** —
+  new ``cantrip.agent.arena`` module runs two providers
+  concurrently on the same prompt, shuffles the results into
+  blinded ``A`` / ``B`` labels, and waits for the user to pick a
+  winner.  ``/arena <prompt>`` is wired through the shared slash
+  dispatcher with an async follow-up that awaits
+  ``CantripAgent.begin_arena``; the follow-up's text is the blind
+  A/B block.  All three surfaces (TUI, CLI, Web) intercept pending
+  picks via ``agent.active_arena`` + ``handle_arena_pick`` before
+  slash-dispatch or LLM routing — ``A`` / ``B`` / ``tie`` / ``skip``
+  (and common synonyms like ``left`` / ``right`` / ``cancel``) are
+  consumed, anything else falls through so users keep normal chat
+  access while an arena waits for a verdict.  Recognised non-skip
+  outcomes write a ``kind="fact"`` memory at ``scope="global"``
+  with ``source="arena"`` — directional picks record "User
+  preferred X over Y", ties record "User rated X and Y as
+  equivalent"; every entry includes a 200-character prompt excerpt
+  so the preference is attributable to a specific ask.  ``/help``
+  lists the new command and ``COMMAND_CATALOGUE`` carries it for
+  slash-autocomplete.  Covered by ``tests/unit/test_arena.py`` (38
+  tests: pick parsing, blind shuffle determinism, duplicate-provider
+  rejection, memory writes per outcome, reveal formatting),
+  ``tests/unit/test_agent_arena.py`` (10 tests: begin/handle
+  end-to-end against a real ``CantripAgent`` and ``MemoryManager``),
+  and ``TestArena`` in ``tests/unit/test_slash_commands.py`` (2
+  tests: bare-usage text and followup wiring).
 - **Best-of-N racing — cost guardrails (Phase 47.4)** —
   ``RaceConfig`` grows a ``confirm_threshold_tokens`` soft gate and
   ``baseline_tokens_per_run`` estimate basis; the new

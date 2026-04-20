@@ -286,6 +286,39 @@ cantrip --help</code></pre>
       </dd>
     </dl>
 
+    <h3>Arena (blind A/B)</h3>
+    <p>
+      Compare two models on the same prompt, blinded, and record the
+      outcome as a global-scope memory. Useful when you&rsquo;re picking
+      a light provider for day-to-day work and want a quick head-to-head
+      without reading model cards.
+    </p>
+    <dl>
+      <dt><code>/arena &lt;prompt&gt;</code></dt>
+      <dd>
+        Run the primary and light providers concurrently on
+        <code>prompt</code>. Both responses are shuffled into labels
+        <code>A</code> and <code>B</code>&mdash;model names are hidden
+        until you pick. Reply <code>A</code>, <code>B</code>,
+        <code>tie</code>, or <code>skip</code> when the two responses
+        arrive. A second <code>/arena</code> is rejected while one is
+        pending so the labels don&rsquo;t get mixed up.
+      </dd>
+    </dl>
+    <p>
+      Recognised picks write a <code>fact</code> memory at
+      <code>global</code> scope with <code>source=&quot;arena&quot;</code>,
+      tagged <code>arena</code> and <code>model-preference</code>. Titles
+      are <code>arena-preference-&lt;8-hex&gt;</code>, and the body cites
+      both models by name plus a 200-character excerpt of the prompt so
+      the preference is attributable to a specific ask. Ties record a
+      neutral &ldquo;rated equivalent&rdquo; entry;
+      <code>skip</code> clears the session without writing a memory.
+      Requires a configured light provider (<code>--light-provider</code>
+      or <code>CANTRIP_LIGHT_PROVIDER</code>)&mdash;without one the
+      command prints a setup hint and exits.
+    </p>
+
     <h3>MCP (Model Context Protocol)</h3>
     <p>
       Inspect configured MCP servers and discover new ones from

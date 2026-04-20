@@ -1296,6 +1296,15 @@ class CantripApp(App):
             self._handle_feelings_command(message, chat)
             return
 
+        # Blind A/B arena is pending — capture A/B/tie/skip picks before
+        # anything else so a one-letter reply doesn't get forwarded to
+        # the LLM or a slash dispatcher.
+        if self._agent and self._agent.active_arena is not None:
+            reveal = self._agent.handle_arena_pick(message)
+            if reveal is not None:
+                chat.add_system_message(reveal)
+                return
+
         if self._handle_shared_slash_commands(message, chat):
             return
 

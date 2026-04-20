@@ -339,6 +339,15 @@ async def _repl(agent: CantripAgent) -> None:
             _print_cost(agent)
             continue
 
+        # Blind A/B arena picks (A/B/tie/skip) resolve the pending
+        # session before the slash dispatcher runs — a one-letter reply
+        # is not a command.
+        if agent.active_arena is not None:
+            reveal = agent.handle_arena_pick(user_input)
+            if reveal is not None:
+                print(f"\n{reveal}\n")
+                continue
+
         # Shared slash commands (memory, mcp) that render the same text
         # in every surface.  The CLI prints the text directly and, if
         # there's an async follow-up (e.g. `/mcp marketplace`), awaits
