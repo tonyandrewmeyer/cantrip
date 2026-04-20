@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from textual.app import App, ComposeResult
-from textual.widgets import Static
+from textual.widgets import RichLog
 
 from cantrip.tui.screens.file_detail import (
     FileDetailScreen,
@@ -338,7 +338,39 @@ class TestGitLogBlocking:
         assert result == "abc|2d|alice|fix"
 
 
+def _rendered(screen: FileDetailScreen) -> str:
+    """Return the concatenated rendered text of the output RichLog."""
+    output = screen.query_one("#file-output", RichLog)
+    return " ".join(line.text for line in output.lines)
+
+
 class TestFileDetailScreenPilot:
+    @pytest.mark.asyncio
+    async def test_container_fills_most_of_the_screen(self, tmp_path: Path) -> None:
+        """Regression: the modal's output area must have a usable size.
+
+        The first version of this screen wrapped the container in
+        ``Center()``, which collapsed the Vertical's ``height: 90%`` to
+        its children's intrinsic height — one row — leaving the user
+        with an empty blue box.  Guard against that by asserting the
+        RichLog actually covers a useful slice of the screen.
+        """
+        f = tmp_path / "hello.py"
+        f.write_text('"""Hi."""\n')
+        mock_result = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=mock_result):
+            async with _Host().run_test(size=(120, 40)) as pilot:
+                screen = FileDetailScreen(f, charm_root=tmp_path)
+                await pilot.app.push_screen(screen)
+                await pilot.pause(delay=0.3)
+
+                output = screen.query_one("#file-output", RichLog)
+                # Height should be most of the screen, not collapsed to 1.
+                assert output.region.height > 10, (
+                    f"RichLog collapsed to {output.region.height} rows — "
+                    "check the Vertical container's height sizing."
+                )
+
     @pytest.mark.asyncio
     async def test_python_file_renders_docstring_and_preview(self, tmp_path: Path) -> None:
         f = tmp_path / "hello.py"
@@ -349,11 +381,11 @@ class TestFileDetailScreenPilot:
                 screen = FileDetailScreen(f, charm_root=tmp_path)
                 await pilot.app.push_screen(screen)
                 await pilot.pause(delay=0.3)
-
-                purpose = screen.query_one("#file-purpose", Static).render()
-                preview = screen.query_one("#file-preview", Static).render()
-                assert "Greets the world." in str(purpose)
-                assert "def hi" in str(preview)
+                text = _rendered(screen)
+                assert "Purpose" in text
+                assert "Greets the world." in text
+                assert "def hi" in text
+                assert "Content preview" in text
 
     @pytest.mark.asyncio
     async def test_git_log_error_is_rendered_as_dim_note(self, tmp_path: Path) -> None:
@@ -365,7 +397,7 @@ class TestFileDetailScreenPilot:
                 screen = FileDetailScreen(f, charm_root=tmp_path)
                 await pilot.app.push_screen(screen)
                 await pilot.pause(delay=0.3)
-                log = str(screen.query_one("#file-git-log", Static).render())
+                log = _rendered(screen)
                 assert "Not tracked by git" in log
 
     @pytest.mark.asyncio
@@ -378,7 +410,7 @@ class TestFileDetailScreenPilot:
                 screen = FileDetailScreen(f, charm_root=tmp_path)
                 await pilot.app.push_screen(screen)
                 await pilot.pause(delay=0.3)
-                log = str(screen.query_one("#file-git-log", Static).render())
+                log = _rendered(screen)
                 assert "No commits" in log
 
     @pytest.mark.asyncio
@@ -392,7 +424,7 @@ class TestFileDetailScreenPilot:
                 screen = FileDetailScreen(f, charm_root=tmp_path)
                 await pilot.app.push_screen(screen)
                 await pilot.pause(delay=0.3)
-                log = str(screen.query_one("#file-git-log", Static).render())
+                log = _rendered(screen)
                 assert "abc123" in log
                 assert "Alice" in log
 

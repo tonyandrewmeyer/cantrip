@@ -15,9 +15,9 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Static
+from textual.widgets import RichLog, Static
 from textual.worker import Worker, WorkerState
 
 # Timeout for ``git log`` subprocess (seconds).
@@ -100,23 +100,8 @@ class FileDetailScreen(ModalScreen):
         padding: 0 1;
     }
 
-    #file-scroll {
+    #file-output {
         height: 1fr;
-        padding-bottom: 1;
-    }
-
-    .file-section-header {
-        text-style: bold;
-        color: $primary;
-        padding-top: 1;
-    }
-
-    .file-stat-line {
-        color: $text-muted;
-    }
-
-    .file-preview {
-        color: $text;
     }
     """
 
@@ -143,22 +128,11 @@ class FileDetailScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         """Compose the file detail layout."""
-        with Center(), Vertical(id="file-container"):
+        with Vertical(id="file-container"):
             with Horizontal(id="file-title"):
                 yield Static(self._display_path, classes="title-text")
                 yield Static("[Esc Close]", classes="title-hint")
-            with VerticalScroll(id="file-scroll"):
-                yield Static("", id="file-stats", classes="file-stat-line")
-                yield Static("Purpose", classes="file-section-header")
-                yield Static("", id="file-purpose")
-                yield Static("Recent changes", classes="file-section-header")
-                yield Static(
-                    "[dim]Fetching git log…[/dim]",
-                    id="file-git-log",
-                    markup=True,
-                )
-                yield Static("Content preview", classes="file-section-header")
-                yield Static("", id="file-preview", classes="file-preview")
+            yield RichLog(id="file-output", wrap=True, markup=True)
             yield Static(
                 "[r] Refresh  [Esc] Close",
                 id="file-footer",
@@ -166,23 +140,40 @@ class FileDetailScreen(ModalScreen):
 
     def on_mount(self) -> None:
         """Populate everything that's cheap, then fire git log in a worker."""
-        self._populate_static()
+        self._render_all()
         self._fetch_git_log()
 
     def action_refresh(self) -> None:
         """Re-read the file and re-fetch git log."""
-        self._populate_static()
+        self._render_all()
         self._fetch_git_log()
 
     # ------------------------------------------------------------------
-    # Static sections — stat, purpose, preview
+    # Rendering
     # ------------------------------------------------------------------
 
-    def _populate_static(self) -> None:
-        """Update every panel except the asynchronous git log."""
-        self.query_one("#file-stats", Static).update(_format_stats(self._path))
-        self.query_one("#file-purpose", Static).update(_infer_purpose(self._path))
-        self.query_one("#file-preview", Static).update(_render_preview(self._path))
+    def _render_all(self, git_log: str | None = None) -> None:
+        """Rewrite the output log with stats + purpose + git log + preview."""
+        output = self.query_one("#file-output", RichLog)
+        output.clear()
+
+        output.write(f"[dim]{_format_stats(self._path)}[/dim]")
+        output.write("")
+        output.write("[bold cyan]Purpose[/bold cyan]")
+        output.write(_infer_purpose(self._path))
+        output.write("")
+        output.write("[bold cyan]Recent changes[/bold cyan]")
+        if git_log is None:
+            output.write("[dim]Fetching git log…[/dim]")
+        else:
+            output.write(git_log)
+        output.write("")
+        output.write("[bold cyan]Content preview[/bold cyan]")
+        output.write(_render_preview(self._path))
+
+    def _render_git_log(self, body: str) -> None:
+        """Re-render the output log with the resolved git log body."""
+        self._render_all(git_log=body)
 
     # ------------------------------------------------------------------
     # Git log — subprocess in a worker thread
@@ -239,22 +230,18 @@ class FileDetailScreen(ModalScreen):
             return
 
         raw = event.worker.result or ""
-        widget = self.query_one("#file-git-log", Static)
-
         if raw.startswith("__error__:"):
             reason = raw.removeprefix("__error__:")
-            # Non-repo files or missing git simply get a short dim note.
             if "not a git repository" in reason.lower() or reason == "":
-                widget.update("[dim]Not tracked by git.[/dim]")
+                body = "[dim]Not tracked by git.[/dim]"
             else:
-                widget.update(f"[dim]git log failed: {reason}[/dim]")
-            return
+                body = f"[dim]git log failed: {reason}[/dim]"
+        elif not raw.strip():
+            body = "[dim]No commits touch this file.[/dim]"
+        else:
+            body = _format_git_log(raw)
 
-        if not raw.strip():
-            widget.update("[dim]No commits touch this file.[/dim]")
-            return
-
-        widget.update(_format_git_log(raw))
+        self._render_git_log(body)
 
 
 # ---------------------------------------------------------------------------
