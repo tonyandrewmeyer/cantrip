@@ -1,5 +1,7 @@
 """Juju status widget for the TUI."""
 
+import collections
+
 from jubilant import statustypes
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -8,6 +10,45 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Input, Static
+
+# Status values ranked by "worth surfacing first" when a model has a mix —
+# error before blocked before waiting before active keeps the problem
+# states visible even when the summary line is short.
+_STATUS_ORDER = ("error", "blocked", "waiting", "maintenance", "active", "unknown")
+
+
+def _cos_collapsed_summary(status: statustypes.Status) -> str:
+    """Render the one-line summary shown when the COS section is collapsed.
+
+    Replaces the older "Apps: 6  ○ 3/6" string that didn't say what
+    the fraction meant or hint at offers.  The new form looks like
+    ``6 apps · 3 active, 2 waiting, 1 blocked · 4 offers (click to expand)``
+    — every number is labelled, non-active status buckets are listed
+    explicitly so "3/6" isn't a mystery, and offers show the number of
+    integration points the dev charm could consume.
+    """
+    counts = collections.Counter(app.app_status.current for app in status.apps.values())
+    total = sum(counts.values())
+    offers_count = len(getattr(status, "offers", None) or {})
+
+    if total == 0:
+        health = "no apps"
+    elif len(counts) == 1 and "active" in counts:
+        health = f"{total} apps · all active"
+    else:
+        parts = []
+        for name in _STATUS_ORDER:
+            if counts.get(name):
+                parts.append(f"{counts[name]} {name}")
+        # Tack on any exotic statuses we didn't pre-rank, so nothing
+        # silently vanishes when Juju grows a new state.
+        for name, n in counts.items():
+            if name not in _STATUS_ORDER and n:
+                parts.append(f"{n} {name}")
+        health = f"{total} apps · " + ", ".join(parts)
+
+    offers_suffix = f" · {offers_count} offers" if offers_count else ""
+    return f"{health}{offers_suffix}  (click to expand)"
 
 
 class AppBox(Static):
@@ -174,6 +215,25 @@ class RelationLine(Static):
         """Open the relation detail panel on click."""
         if self.endpoint:
             self.post_message(self.Selected(self.unit_name, self.endpoint, self.related_app))
+
+
+class OfferLine(Static):
+    """Widget showing a single cross-model offer.
+
+    Offers are exposed by apps in this model for consumption by apps in
+    *other* models via ``juju consume``.  Showing them alongside the
+    app list makes the "what can my dev charm integrate with?" question
+    answerable at a glance — in a COS model, offers typically include
+    prometheus/loki/grafana endpoints the dev charm can consume.
+    """
+
+    DEFAULT_CSS = """
+    OfferLine {
+        height: 1;
+        padding: 0 2;
+        color: $text-muted;
+    }
+    """
 
 
 class JujuStatusWidget(Widget):
@@ -366,6 +426,20 @@ class JujuStatusWidget(Widget):
         if not matched and self.filter_text:
             container.mount(Static(f"No matches for '{self.filter_text}'.", classes="no-apps"))
 
+        # Offers (cross-model endpoints exposed to other models).
+        # Empty when a model has no ``juju offer ...`` declarations; in a
+        # Cantrip-managed COS model the typical set is
+        # prometheus/loki/grafana/traefik-api, which is exactly what a
+        # dev charm would consume to wire up observability.
+        offers = getattr(self.status, "offers", None) or {}
+        if offers:
+            container.mount(Static("Offers", classes="model-header"))
+            for offer_name, offer in offers.items():
+                endpoints = ", ".join(
+                    f"{ep_name} ({ep.interface})" for ep_name, ep in offer.endpoints.items()
+                )
+                container.mount(OfferLine(f"│ {offer_name} ({offer.app}) — {endpoints}"))
+
     def update_status(self, status: statustypes.Status) -> None:
         """Update the displayed status."""
         self.status = status
@@ -454,17 +528,9 @@ class MultiModelStatusWidget(Widget):
             if self.cos_expanded:
                 cos_section.mount(JujuStatusWidget(status=self.cos_status))
             else:
-                # Collapsed summary
-                active_count = sum(
-                    1
-                    for app in self.cos_status.apps.values()
-                    if app.app_status.current == "active"
-                )
-                total = len(self.cos_status.apps)
-                health = "● healthy" if active_count == total else f"○ {active_count}/{total}"
                 cos_section.mount(
                     Static(
-                        f"Apps: {total}  {health}  (click to expand)",
+                        _cos_collapsed_summary(self.cos_status),
                         classes="collapsed-summary",
                     )
                 )

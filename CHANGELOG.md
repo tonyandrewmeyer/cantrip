@@ -22,6 +22,33 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   module without mandating either.
 
 ### Fixed
+- **COS status pane clipped to one line when expanded** — the right
+  column stacks ``#task-checklist`` + ``#charm-files`` + ``#juju-status``,
+  and inside ``#juju-status`` the dev and COS sections render
+  vertically.  Without ``overflow-y: auto`` on ``#juju-status``, an
+  expanded COS section with more apps than fit in the pane's share of
+  the column was clipped at the bottom: dev filled first, and cos got
+  just enough room for the ``Model: cos (k8s)`` header before the rest
+  was silently cut off.  Fix: ``overflow-y: auto`` on ``#juju-status``
+  so the whole pane scrolls.  Regression guarded by a Textual pilot
+  test that reads ``styles.overflow_y`` on the live widget.
+
+### Changed
+- **COS collapsed summary explains the numbers** — replaced the
+  opaque ``Apps: 6  ○ 3/6`` form with a labelled breakdown that
+  surfaces problem statuses first: e.g.
+  ``6 apps · 1 blocked, 2 waiting, 3 active · 4 offers (click to expand)``.
+  Every number is labelled (no bare fractions), error/blocked/waiting
+  rank ahead of active so regressions don't hide, and the offers
+  count hints that cross-model integrations are available.
+- **COS offers listed in the expanded view** — ``JujuStatusWidget``
+  now renders each ``status.offers`` entry as a one-liner
+  ``<offer-name> (<app>) — <endpoint> (<interface>)`` below the app
+  list.  In a Cantrip-managed COS model that's prometheus / loki /
+  grafana / traefik-api endpoints, which answers the "what can my
+  dev charm consume?" question at a glance.
+
+### Fixed
 - **Dev / COS status panes stayed empty** — the Always-On watcher was
   running and polling Juju correctly, but the event bus was never
   bound to the TUI's event loop.  With no bound loop, publishes from

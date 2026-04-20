@@ -461,6 +461,63 @@ class TestTuiWidgets:
                 )
 
     @pytest.mark.asyncio
+    async def test_cos_expansion_renders_offers(self):
+        """Expanded COS view must list offers, so the user sees what their
+        dev charm can consume via ``juju consume``."""
+        from cantrip.tui.widgets.status import JujuStatusWidget, OfferLine
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                widget = pilot.app.query_one("#juju-status", MultiModelStatusWidget)
+
+                # Status with two apps and two offers — mirrors a minimal COS:
+                # grafana-dashboard + prometheus_scrape endpoints offered to
+                # other models.
+                prom_ep = MagicMock(interface="prometheus_scrape", role="provider")
+                graf_ep = MagicMock(interface="grafana_dashboard", role="requirer")
+                offer_prom = MagicMock()
+                offer_prom.app = "prometheus"
+                offer_prom.endpoints = {"metrics-endpoint": prom_ep}
+                offer_graf = MagicMock()
+                offer_graf.app = "grafana"
+                offer_graf.endpoints = {"grafana-dashboard": graf_ep}
+
+                def _mock_app(name: str) -> MagicMock:
+                    m = MagicMock()
+                    m.app_status.current = "active"
+                    m.app_status.message = ""
+                    m.units = {f"{name}/0": MagicMock(workload_status=MagicMock(current="active"))}
+                    m.relations = {}
+                    return m
+
+                mock_status = MagicMock()
+                mock_status.model.name = "cos"
+                mock_status.model.cloud = "k8s"
+                mock_status.apps = {
+                    "prometheus": _mock_app("prometheus"),
+                    "grafana": _mock_app("grafana"),
+                }
+                mock_status.offers = {
+                    "prometheus-receive-remote-write": offer_prom,
+                    "grafana-dashboards": offer_graf,
+                }
+                widget.cos_status = mock_status
+                await pilot.pause()
+                widget.toggle_cos_expanded()
+                await pilot.pause()
+                await pilot.pause()
+
+                inner = widget.query_one(JujuStatusWidget)
+                offer_lines = list(inner.query(OfferLine))
+                assert len(offer_lines) == 2, f"Expected 2 OfferLine rows, got {len(offer_lines)}"
+                rendered = " ".join(str(ol.render()) for ol in offer_lines)
+                assert "prometheus-receive-remote-write" in rendered
+                assert "grafana-dashboards" in rendered
+                assert "prometheus_scrape" in rendered
+                assert "grafana_dashboard" in rendered
+
+    @pytest.mark.asyncio
     async def test_juju_status_pane_is_scrollable(self):
         """#juju-status must scroll when content exceeds its height.
 
