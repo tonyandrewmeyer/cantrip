@@ -779,11 +779,27 @@ class BackgroundExecutor:
 
         # Best-of-N racing dispatches to its own path.  The coordinator
         # allocates per-candidate worktrees itself, so the
-        # allocate/merge/revert logic below is skipped entirely.
+        # allocate/merge/revert logic below is skipped entirely.  The
+        # gate classifies the task against the race's cost thresholds
+        # before dispatching: the estimate might clear both thresholds
+        # (race), cross the confirm threshold only (CONFIRM surfaced,
+        # parent blocked), or exceed the hard budget (downgrade to a
+        # single-subagent run).
         specs = self._race_candidate_specs()
         if self._should_race(task, specs):
-            await self._execute_race(task, self._race_config.clamp_candidates(specs))
-            return
+            clamped = self._race_config.clamp_candidates(specs)
+            gate = self._dispatch_race_gate(task, clamped)
+            if gate == race.RaceGate.RACE:
+                await self._execute_race(task, clamped)
+                return
+            if gate == race.RaceGate.CONFIRM:
+                # ``_dispatch_race_gate`` emitted the CONFIRM task and
+                # blocked ``task``.  The conversation layer resolves the
+                # CONFIRM, flips ``task.race_decision``, and unblocks us
+                # for re-entry.
+                self._persist()
+                return
+            # DOWNGRADE — fall through to the single-subagent path.
 
         handle = await self._try_allocate_worktree(task)
         effective_path: str | pathlib.Path | None = (
@@ -900,6 +916,130 @@ class BackgroundExecutor:
         if self._state.charm_path is None:
             return False
         return self._race_config.should_race(task.category, len(specs))
+
+    def _dispatch_race_gate(
+        self,
+        task: AgentTask,
+        specs: list[race.CandidateSpec],
+    ) -> race.RaceGate:
+        """Classify *task* against the race cost thresholds and act on it.
+
+        A prior user decision stored on ``task.race_decision`` short-circuits
+        the threshold check: an approved race runs silently, a declined race
+        downgrades to a single-subagent run without re-prompting.  Otherwise
+        the estimate is compared against the configured thresholds and the
+        helper emits a CONFIRM task + blocks the parent when the soft
+        threshold is crossed, or records a downgrade event when the hard
+        budget is exceeded.
+        """
+        if task.race_decision == "approved":
+            return race.RaceGate.RACE
+        if task.race_decision == "declined":
+            self._record_race_downgrade(task, specs, reason="user_declined")
+            return race.RaceGate.DOWNGRADE
+
+        estimate = race.estimate_race_tokens(
+            baseline_tokens_per_run=self._race_config.baseline_tokens_per_run,
+            candidate_count=len(specs),
+        )
+        gate = self._race_config.race_gate(estimate)
+
+        if gate == race.RaceGate.DOWNGRADE:
+            self._record_race_downgrade(task, specs, reason="over_budget", estimate=estimate)
+        elif gate == race.RaceGate.CONFIRM:
+            self._emit_race_confirm_task(task, specs, estimate)
+        return gate
+
+    def _emit_race_confirm_task(
+        self,
+        task: AgentTask,
+        specs: list[race.CandidateSpec],
+        estimate: int,
+    ) -> None:
+        """Add a CONFIRM task gating *task* on the user's approval.
+
+        Idempotent: a pre-existing CONFIRM for the same parent is reused
+        rather than re-created so a task that re-enters the executor (for
+        any reason) does not flood the queue.  The parent task is moved
+        to BLOCKED with a reason the TUI and Web surface pick up via the
+        existing task-update bus.
+        """
+        confirm_id = f"{race.RACE_CONFIRM_PREFIX}{task.id}"
+        candidate_names = ", ".join(s.candidate_id for s in specs)
+        threshold = self._race_config.confirm_threshold_tokens
+        description = (
+            f"Racing **{len(specs)}** models ({candidate_names}) on "
+            f"*{task.title}* is estimated to consume **~{estimate:,} tokens** — "
+            f"above the configured race confirmation threshold of "
+            f"**{threshold:,}**.\n\n"
+            "Reply **yes** to proceed with the race, or **no** to run with a "
+            "single model instead."
+        )
+        blocked_reason = (
+            f"Awaiting race cost confirmation (~{estimate:,} tokens, {len(specs)} candidates)"
+        )
+
+        existing = self._queue.get_task(confirm_id)
+        if existing is None:
+            self._queue.add_task(
+                AgentTask(
+                    id=confirm_id,
+                    title=f"Confirm race for '{task.title}'",
+                    category=TaskCategory.CONFIRM,
+                    description=description,
+                    dependencies=[task.id],
+                )
+            )
+        else:
+            existing.description = description
+
+        self._queue.set_blocked(task.id, blocked_reason)
+        self._record_status_change(task, "blocked", error=blocked_reason)
+        # Mark the confirm itself blocked so the TUI's task-updated
+        # listener (which watches for CONFIRM+BLOCKED pairs) picks it up.
+        self._queue.set_blocked(confirm_id, description)
+
+        if self._state_service is not None:
+            self._state_service.record_event(
+                "race_confirm_requested",
+                {
+                    "task_id": task.id,
+                    "task_title": task.title,
+                    "confirm_task_id": confirm_id,
+                    "estimate_tokens": str(estimate),
+                    "threshold_tokens": str(threshold),
+                    "candidates": candidate_names,
+                },
+            )
+
+    def _record_race_downgrade(
+        self,
+        task: AgentTask,
+        specs: list[race.CandidateSpec],
+        *,
+        reason: str,
+        estimate: int | None = None,
+    ) -> None:
+        """Record that a would-be race ran as a single subagent instead."""
+        log.info(
+            "Race for task %s downgraded to single-subagent (%s, estimate=%s, candidates=%d)",
+            task.id,
+            reason,
+            estimate,
+            len(specs),
+        )
+        if self._state_service is None:
+            return
+        payload: dict[str, str] = {
+            "task_id": task.id,
+            "task_title": task.title,
+            "reason": reason,
+            "candidates": ",".join(s.candidate_id for s in specs),
+        }
+        if estimate is not None:
+            payload["estimate_tokens"] = str(estimate)
+            payload["budget_tokens"] = str(self._race_config.budget_tokens)
+        self._state_service.record_event("race_downgraded", payload)
 
     def _build_race_subagent_factory(self, parent_task: AgentTask) -> race.SubagentFactory:
         """Return a factory that builds per-candidate subagents.

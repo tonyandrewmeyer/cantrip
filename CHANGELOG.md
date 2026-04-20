@@ -19,6 +19,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``/arena`` lands a user-facing surface.
 
 ### Added
+- **Best-of-N racing — cost guardrails (Phase 47.4)** —
+  ``RaceConfig`` grows a ``confirm_threshold_tokens`` soft gate and
+  ``baseline_tokens_per_run`` estimate basis; the new
+  ``RaceConfig.race_gate`` classifies a token estimate into one of
+  three outcomes via ``RaceGate`` (``RACE`` / ``CONFIRM`` /
+  ``DOWNGRADE``).  The executor's ``_dispatch_race_gate`` applies the
+  classification: estimates below the threshold race silently,
+  estimates between threshold and budget emit a
+  ``race-confirm-<parent-id>`` CONFIRM task (blocking the parent
+  pending user approval), and estimates above ``budget_tokens`` fall
+  through to the single-subagent path with a ``race_downgraded``
+  event.  ``CantripAgent.handle_race_confirmation`` resolves the
+  CONFIRM, flips ``AgentTask.race_decision`` (``approved`` /
+  ``declined``), and unblocks the parent so the second entry races
+  or downgrades as the user chose.  TUI recognises the new prefix and
+  maps yes/no / approve/decline / race/single replies through the
+  handler.  Covered by ``TestRaceGate`` in ``tests/unit/test_race.py``
+  (5 tests), ``TestDispatchRaceGate`` and
+  ``TestExecuteTaskGateIntegration`` in
+  ``tests/unit/test_executor_race.py`` (8 tests), and the new
+  ``tests/unit/test_agent_race_confirm.py`` (3 tests covering approve,
+  decline, and orphaned-CONFIRM graceful handling).
 - **Best-of-N racing — executor wiring (Phase 47.3)** —
   ``BackgroundExecutor`` now dispatches race-eligible tasks to the
   coordinator.  A new ``_execute_race`` path builds candidate specs

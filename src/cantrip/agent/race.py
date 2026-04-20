@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import enum
 import logging
 import math
 import pathlib
@@ -34,6 +35,19 @@ from typing import TYPE_CHECKING
 
 from cantrip.agent.queue import TaskCategory
 from cantrip.agent.subagent import ExitState
+
+# Prefix for CONFIRM tasks that gate a pre-race cost confirmation.  The
+# parent task id follows the prefix so the confirm-task id is reversible.
+RACE_CONFIRM_PREFIX = "race-confirm-"
+
+
+class RaceGate(enum.StrEnum):
+    """Decision emitted by :meth:`RaceConfig.race_gate` at race-dispatch time."""
+
+    RACE = "race"
+    CONFIRM = "confirm"
+    DOWNGRADE = "downgrade"
+
 
 if TYPE_CHECKING:
     from cantrip.agent.subagent import Subagent, SubagentResult
@@ -170,15 +184,27 @@ class RaceConfig:
     """Opt-in configuration for Best-of-N racing.
 
     ``enabled_categories`` is empty by default — racing is off unless the
-    caller explicitly turns it on.  ``budget_tokens`` is advisory: the
-    coordinator surfaces the pre-race estimate but does not hard-cap
-    per-candidate token usage (that sits with the provider / subagent).
+    caller explicitly turns it on.  ``budget_tokens`` is a hard cap: when
+    the pre-race estimate exceeds it the executor downgrades to a
+    single-subagent run rather than racing, so a misconfigured pool can
+    never burn through the budget silently.  ``confirm_threshold_tokens``
+    is the softer gate: estimates between the threshold and the budget
+    surface a CONFIRM task so the user can approve the spend.
     """
 
     enabled_categories: frozenset[TaskCategory] = frozenset()
     max_candidates: int = 3
     budget_tokens: int = 500_000
     cancel_on_perfect: bool = True
+    # Baseline per-run estimate used when multiplying out a race's cost.
+    # Tuned low so the CONFIRM gate fires early for racy tasks; real usage
+    # is measured against this by the executor once streaming-usage lands.
+    baseline_tokens_per_run: int = 75_000
+    # Races whose estimate exceeds this threshold require a CONFIRM task
+    # before dispatching; below the threshold races run silently.  Tuned
+    # so a two-way race on a typical BUILD task fires the gate but a
+    # cheap DESIGN race does not.
+    confirm_threshold_tokens: int = 200_000
 
     def should_race(self, category: TaskCategory, candidate_count: int) -> bool:
         """True when a task of ``category`` should run a race.
@@ -193,6 +219,27 @@ class RaceConfig:
         if self.max_candidates <= 0:
             return []
         return list(candidates[: self.max_candidates])
+
+    def race_gate(self, estimated_tokens: int) -> RaceGate:
+        """Classify *estimated_tokens* against the configured thresholds.
+
+        The three outcomes are:
+
+        * :attr:`RaceGate.RACE` — below the confirm threshold, proceed
+          silently.
+        * :attr:`RaceGate.CONFIRM` — above the confirm threshold but
+          within the budget, surface a CONFIRM task.
+        * :attr:`RaceGate.DOWNGRADE` — above the hard budget cap,
+          downgrade to a single-subagent run.
+
+        A non-positive ``budget_tokens`` disables the budget cap so only
+        the confirm threshold applies.
+        """
+        if self.budget_tokens > 0 and estimated_tokens > self.budget_tokens:
+            return RaceGate.DOWNGRADE
+        if estimated_tokens > self.confirm_threshold_tokens:
+            return RaceGate.CONFIRM
+        return RaceGate.RACE
 
 
 @dataclasses.dataclass(frozen=True)
@@ -769,11 +816,13 @@ class RaceCoordinator:
 
 
 __all__ = [
+    "RACE_CONFIRM_PREFIX",
     "CandidateOutcome",
     "CandidateScore",
     "CandidateSpec",
     "RaceConfig",
     "RaceCoordinator",
+    "RaceGate",
     "RaceResult",
     "SubagentFactory",
     "compute_score",

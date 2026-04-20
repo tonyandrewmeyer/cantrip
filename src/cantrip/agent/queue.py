@@ -63,6 +63,13 @@ class AgentTask:
     # subagent began.  Both cleared when the task transitions out of ACTIVE.
     subagent_phase: str = ""
     subagent_started_at: datetime.datetime | None = None
+    # Tri-state signal for Best-of-N races that require a CONFIRM before
+    # dispatching: ``None`` means the executor has not yet reached the
+    # gate (or racing is disabled), ``"approved"`` means the user accepted
+    # the estimated cost and the race should proceed, ``"declined"`` means
+    # the user rejected it and the task should downgrade to a single
+    # subagent run.  Transient — not persisted across restarts.
+    race_decision: str | None = None
 
     def __post_init__(self) -> None:
         """Generate a unique ID if not provided."""

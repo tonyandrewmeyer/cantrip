@@ -384,6 +384,39 @@ class TestEstimateRaceTokens:
 
 
 # ---------------------------------------------------------------------------
+# Race cost gate
+# ---------------------------------------------------------------------------
+
+
+class TestRaceGate:
+    """``RaceConfig.race_gate`` maps estimates to RACE / CONFIRM / DOWNGRADE."""
+
+    def test_below_confirm_threshold_races_silently(self) -> None:
+        cfg = race.RaceConfig(confirm_threshold_tokens=200_000, budget_tokens=500_000)
+        assert cfg.race_gate(estimated_tokens=150_000) == race.RaceGate.RACE
+
+    def test_exact_confirm_threshold_still_races(self) -> None:
+        # Threshold is strict — equality races rather than prompting.
+        cfg = race.RaceConfig(confirm_threshold_tokens=200_000, budget_tokens=500_000)
+        assert cfg.race_gate(estimated_tokens=200_000) == race.RaceGate.RACE
+
+    def test_between_threshold_and_budget_prompts_confirm(self) -> None:
+        cfg = race.RaceConfig(confirm_threshold_tokens=200_000, budget_tokens=500_000)
+        assert cfg.race_gate(estimated_tokens=300_000) == race.RaceGate.CONFIRM
+
+    def test_over_budget_forces_downgrade(self) -> None:
+        cfg = race.RaceConfig(confirm_threshold_tokens=200_000, budget_tokens=500_000)
+        assert cfg.race_gate(estimated_tokens=600_000) == race.RaceGate.DOWNGRADE
+
+    def test_zero_budget_disables_budget_cap(self) -> None:
+        # A non-positive budget disables the hard cap so the confirm
+        # threshold alone decides the outcome.  This keeps the gate
+        # usable when the deployment doesn't want a hard ceiling.
+        cfg = race.RaceConfig(confirm_threshold_tokens=200_000, budget_tokens=0)
+        assert cfg.race_gate(estimated_tokens=10_000_000) == race.RaceGate.CONFIRM
+
+
+# ---------------------------------------------------------------------------
 # score_candidate — end-to-end with injected worktree
 # ---------------------------------------------------------------------------
 

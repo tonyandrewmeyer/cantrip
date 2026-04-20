@@ -4494,18 +4494,30 @@ by cost and off by default; opt-in per task category.
   ``subagent_messages`` land in their own partition; a ``race_candidate``
   event per candidate records the composite transcript id for lookup
 
-### 47.4 Medium — Cost guardrails
+### 47.4 Medium — Cost guardrails ✅
 
 - [x] Configuration gates Best-of-N per category: `race.enable = ["BUILD",
   "DESIGN"]`, `race.max_candidates = 3`, `race.budget_tokens = 500_000`
   — ``RaceConfig`` models all three knobs; ``should_race`` gates entry
   and ``clamp_candidates`` enforces the max
-- [~] Pre-race cost estimate surfaced as a CONFIRM task when the estimated
-  cost exceeds a threshold — ``estimate_race_tokens`` is the estimator;
-  the CONFIRM-task surface lands with the executor wiring (follow-up)
-- [ ] Budget exhaustion during the race downgrades gracefully to single-model
-  — follow-up; needs the executor integration to know what "single
-  model" means in context
+- [x] Pre-race cost estimate surfaced as a CONFIRM task when the estimated
+  cost exceeds a threshold — ``RaceConfig.race_gate`` classifies the
+  ``estimate_race_tokens`` output into ``RACE`` / ``CONFIRM`` /
+  ``DOWNGRADE`` against ``confirm_threshold_tokens`` and
+  ``budget_tokens``.  ``BackgroundExecutor._dispatch_race_gate`` reads
+  the classification and, on ``CONFIRM``, emits a
+  ``race-confirm-<task-id>`` task and blocks the parent; the TUI
+  recognises the new prefix and ``CantripAgent.handle_race_confirmation``
+  flips ``AgentTask.race_decision`` so re-entry races or downgrades
+  based on the user's answer
+- [x] Budget exhaustion during the race downgrades gracefully to single-model
+  — the gate returns ``DOWNGRADE`` when the estimate exceeds
+  ``budget_tokens`` (or when the user declined the CONFIRM), and the
+  executor falls through to the single-subagent path rather than
+  failing.  A ``race_downgraded`` event is recorded so the reason
+  (``over_budget`` / ``user_declined``) is visible in the session
+  transcript.  Mid-flight budget accounting is deferred until
+  streaming-usage aggregation lands in Phase 41.6
 
 ### 47.5 Low — Blind A/B arena mode
 

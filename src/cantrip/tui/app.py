@@ -21,6 +21,7 @@ from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.agent.race import RACE_CONFIRM_PREFIX
 from cantrip.llm import LLMProvider, create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.tui.widgets import chat as chat_widget
@@ -552,6 +553,8 @@ class CantripApp(App):
                 self._present_triage_confirmation(task)
             elif task_id.startswith(IMPROVEMENT_CONFIRM_BASE):
                 self._present_improvement_confirmation(task)
+            elif task_id.startswith(RACE_CONFIRM_PREFIX):
+                self._present_race_confirmation(task)
             else:
                 self._present_design_questions(task)
 
@@ -983,6 +986,48 @@ class CantripApp(App):
             f"{task.description}\n\nReply **push** to push, or **skip** to leave the branch local."
         )
 
+    def _present_race_confirmation(self, task: AgentTask) -> None:
+        """Show a race-cost confirmation prompt in chat.
+
+        Called when a ``race-confirm-*`` CONFIRM task becomes blocked.
+        """
+        if not self._agent:
+            return
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        chat.add_system_message(task.description)
+
+    def _handle_race_response(self, message: str) -> bool:
+        """Handle approve/decline response for a race-cost CONFIRM task.
+
+        Returns ``True`` if the message was handled (approved or declined),
+        ``False`` if it should be passed through to the LLM.  Yes / no and
+        common synonyms are accepted; anything else falls through so the
+        user can ask clarifying questions.
+        """
+        if not self._agent or not self._pending_confirm_id:
+            return False
+
+        confirm_id = self._pending_confirm_id
+        if not confirm_id.startswith(RACE_CONFIRM_PREFIX):
+            return False
+
+        lower = message.strip().lower()
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+
+        if lower in ("yes", "y", "approve", "race", "ok"):
+            self._pending_confirm_id = None
+            result = self._agent.handle_race_confirmation(confirm_id, approved=True)
+            chat.add_system_message(result)
+            return True
+
+        if lower in ("no", "n", "decline", "single", "skip"):
+            self._pending_confirm_id = None
+            result = self._agent.handle_race_confirmation(confirm_id, approved=False)
+            chat.add_system_message(result)
+            return True
+
+        return False
+
     def _handle_triage_response(self, message: str) -> bool:
         """Handle approve/skip response for a triage CONFIRM task.
 
@@ -1240,6 +1285,10 @@ class CantripApp(App):
                 return
         if self._pending_confirm_id and self._pending_confirm_id.startswith(TRIAGE_CONFIRM_PREFIX):
             handled = self._handle_triage_response(message)
+            if handled:
+                return
+        if self._pending_confirm_id and self._pending_confirm_id.startswith(RACE_CONFIRM_PREFIX):
+            handled = self._handle_race_response(message)
             if handled:
                 return
 

@@ -245,6 +245,255 @@ class TestShouldRace:
 
 
 # ---------------------------------------------------------------------------
+# _dispatch_race_gate — CONFIRM task, budget downgrade, decision memoisation
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchRaceGate:
+    """The gate classifies a task and has side-effects only for CONFIRM/DOWNGRADE."""
+
+    def test_below_threshold_returns_race(self, tmp_path: pathlib.Path) -> None:
+        # baseline 75_000 × 2 candidates = 150_000 → well below 200_000.
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            baseline_tokens_per_run=75_000,
+            confirm_threshold_tokens=200_000,
+            budget_tokens=500_000,
+        )
+        executor = _make_executor(
+            FakeAllocator(tmp_path),
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        task = AgentTask(id="t_race", title="Build", category=TaskCategory.BUILD)
+        executor._queue.add_task(task)
+
+        specs = executor._race_candidate_specs()
+        gate = executor._dispatch_race_gate(task, specs)
+        assert gate == race.RaceGate.RACE
+        # No side-effect: no CONFIRM task added, parent stays PENDING.
+        assert executor._queue.get_task(f"{race.RACE_CONFIRM_PREFIX}t_race") is None
+        assert executor._queue.get_task(task.id).status == TaskStatus.PENDING
+
+    def test_above_threshold_emits_confirm_and_blocks_parent(self, tmp_path: pathlib.Path) -> None:
+        # baseline 150_000 × 2 = 300_000 → above confirm (200_000), under budget (500_000).
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            baseline_tokens_per_run=150_000,
+            confirm_threshold_tokens=200_000,
+            budget_tokens=500_000,
+        )
+        executor = _make_executor(
+            FakeAllocator(tmp_path),
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        task = AgentTask(id="t_confirm", title="Build", category=TaskCategory.BUILD)
+        executor._queue.add_task(task)
+
+        specs = executor._race_candidate_specs()
+        gate = executor._dispatch_race_gate(task, specs)
+        assert gate == race.RaceGate.CONFIRM
+
+        confirm = executor._queue.get_task(f"{race.RACE_CONFIRM_PREFIX}t_confirm")
+        assert confirm is not None
+        assert confirm.category == TaskCategory.CONFIRM
+        assert confirm.status == TaskStatus.BLOCKED
+        # Description mentions the estimate and candidate names so the user
+        # can weigh the spend rather than guessing.
+        assert "300,000" in confirm.description
+        assert "primary-model" in confirm.description
+        assert "light-model" in confirm.description
+        # Parent is blocked awaiting the confirmation.
+        parent = executor._queue.get_task(task.id)
+        assert parent.status == TaskStatus.BLOCKED
+        assert "confirmation" in (parent.blocked_reason or "")
+
+    def test_emit_confirm_is_idempotent(self, tmp_path: pathlib.Path) -> None:
+        # Re-dispatching the same task should not duplicate the CONFIRM task.
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            baseline_tokens_per_run=150_000,
+            confirm_threshold_tokens=200_000,
+            budget_tokens=500_000,
+        )
+        executor = _make_executor(
+            FakeAllocator(tmp_path),
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        task = AgentTask(id="t_idem", title="Build", category=TaskCategory.BUILD)
+        executor._queue.add_task(task)
+
+        specs = executor._race_candidate_specs()
+        executor._dispatch_race_gate(task, specs)
+        executor._dispatch_race_gate(task, specs)
+
+        confirms = [
+            t for t in executor._queue.all_tasks() if t.id.startswith(race.RACE_CONFIRM_PREFIX)
+        ]
+        assert len(confirms) == 1
+
+    def test_over_budget_returns_downgrade(self, tmp_path: pathlib.Path) -> None:
+        # baseline 400_000 × 2 = 800_000 → over budget (500_000).  The gate
+        # returns DOWNGRADE and emits no CONFIRM task; caller falls through
+        # to the single-subagent path.
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            baseline_tokens_per_run=400_000,
+            confirm_threshold_tokens=200_000,
+            budget_tokens=500_000,
+        )
+        executor = _make_executor(
+            FakeAllocator(tmp_path),
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        task = AgentTask(id="t_over", title="Build", category=TaskCategory.BUILD)
+        executor._queue.add_task(task)
+
+        specs = executor._race_candidate_specs()
+        gate = executor._dispatch_race_gate(task, specs)
+        assert gate == race.RaceGate.DOWNGRADE
+        assert executor._queue.get_task(f"{race.RACE_CONFIRM_PREFIX}t_over") is None
+        assert executor._queue.get_task(task.id).status == TaskStatus.PENDING
+
+    def test_prior_approval_skips_threshold_check(self, tmp_path: pathlib.Path) -> None:
+        # An approved ``race_decision`` returns RACE even when the estimate
+        # would normally cross the confirm threshold.
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            baseline_tokens_per_run=200_000,
+            confirm_threshold_tokens=100_000,
+            budget_tokens=1_000_000,
+        )
+        executor = _make_executor(
+            FakeAllocator(tmp_path),
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        task = AgentTask(
+            id="t_approved",
+            title="Build",
+            category=TaskCategory.BUILD,
+            race_decision="approved",
+        )
+        executor._queue.add_task(task)
+
+        specs = executor._race_candidate_specs()
+        assert executor._dispatch_race_gate(task, specs) == race.RaceGate.RACE
+        # No CONFIRM task emitted.
+        assert executor._queue.get_task(f"{race.RACE_CONFIRM_PREFIX}t_approved") is None
+
+    def test_prior_decline_returns_downgrade(self, tmp_path: pathlib.Path) -> None:
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            baseline_tokens_per_run=75_000,
+            confirm_threshold_tokens=200_000,
+            budget_tokens=500_000,
+        )
+        executor = _make_executor(
+            FakeAllocator(tmp_path),
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        task = AgentTask(
+            id="t_declined",
+            title="Build",
+            category=TaskCategory.BUILD,
+            race_decision="declined",
+        )
+        executor._queue.add_task(task)
+
+        specs = executor._race_candidate_specs()
+        assert executor._dispatch_race_gate(task, specs) == race.RaceGate.DOWNGRADE
+
+
+# ---------------------------------------------------------------------------
+# _execute_task — full gate-to-coordinator integration
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteTaskGateIntegration:
+    """Gate + ``_execute_task`` behave as one unit."""
+
+    @pytest.mark.asyncio
+    async def test_confirm_gate_defers_race(self, tmp_path: pathlib.Path) -> None:
+        # When the estimate exceeds the confirm threshold, _execute_task
+        # blocks the parent and emits a CONFIRM, then returns without
+        # calling the coordinator.
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            baseline_tokens_per_run=150_000,
+            confirm_threshold_tokens=200_000,
+            budget_tokens=500_000,
+        )
+        executor = _make_executor(
+            FakeAllocator(tmp_path),
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        task = AgentTask(id="td1", title="Build", category=TaskCategory.BUILD)
+        executor._queue.add_task(task)
+        executor._queue.set_active(task.id)
+
+        mock = AsyncMock()
+        executor._race_coordinator.run = mock  # type: ignore[method-assign]
+        await executor._execute_task(task)
+
+        mock.assert_not_awaited()
+        assert executor._queue.get_task(task.id).status == TaskStatus.BLOCKED
+        assert executor._queue.get_task(f"{race.RACE_CONFIRM_PREFIX}td1") is not None
+
+    @pytest.mark.asyncio
+    async def test_downgrade_gate_runs_single_subagent(self, tmp_path: pathlib.Path) -> None:
+        # When the estimate is over budget the coordinator is NOT called;
+        # the single-subagent path runs instead.  Verify via the subagent
+        # patch target rather than _execute_race.
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            baseline_tokens_per_run=400_000,
+            confirm_threshold_tokens=200_000,
+            budget_tokens=500_000,
+        )
+        executor = _make_executor(
+            FakeAllocator(tmp_path),
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        task = AgentTask(id="td2", title="Build", category=TaskCategory.BUILD)
+        executor._queue.add_task(task)
+        executor._queue.set_active(task.id)
+
+        coord = AsyncMock()
+        executor._race_coordinator.run = coord  # type: ignore[method-assign]
+
+        subagent_mock = AsyncMock()
+        subagent_mock.run = AsyncMock(
+            return_value=SubagentResult(ExitState.COMPLETED, "done", "ok")
+        )
+        merge = AsyncMock(return_value=None)
+        with (
+            patch("cantrip.agent.executor.Subagent", return_value=subagent_mock),
+            patch.object(executor, "_merge_worktree", merge),
+        ):
+            await executor._execute_task(task)
+
+        # Race coordinator never called — downgrade fell through.
+        coord.assert_not_awaited()
+        # Subagent was constructed and run exactly once.
+        subagent_mock.run.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
 # _execute_race — end-to-end paths
 # ---------------------------------------------------------------------------
 

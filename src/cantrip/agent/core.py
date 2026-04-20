@@ -57,6 +57,7 @@ from cantrip.agent.preflight import (
 )
 from cantrip.agent.prompts import build_system_prompt, claude_md
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.race import RACE_CONFIRM_PREFIX
 from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.session_preview import SessionPreview
 from cantrip.agent.skills import SkillsIndex
@@ -1515,6 +1516,48 @@ class CantripAgent:
             ),
             dependencies=[last_task_id],
         )
+
+    def handle_race_confirmation(self, confirm_task_id: str, *, approved: bool) -> str:
+        """Resolve a race-cost CONFIRM task and unblock the parent.
+
+        The parent task's id is the suffix of *confirm_task_id*.  Flipping
+        ``race_decision`` on the parent lets the executor short-circuit the
+        gate on re-entry: approved → run the race, declined → downgrade to
+        a single-subagent run.  Returns a short status message for the
+        conversation surface.
+        """
+        parent_id = confirm_task_id.removeprefix(RACE_CONFIRM_PREFIX)
+        parent = self._work_queue.get_task(parent_id)
+
+        decision = "approved" if approved else "declined"
+        self._work_queue.set_done(
+            confirm_task_id,
+            f"Race {decision} by user",
+        )
+        if parent is None:
+            log.warning(
+                "Race-confirm %s resolved but parent %s not found",
+                confirm_task_id,
+                parent_id,
+            )
+            return f"Race confirmation resolved, but parent task `{parent_id}` is gone."
+
+        parent.race_decision = decision
+        self._work_queue.unblock(parent_id)
+
+        self._ensure_store()
+        if self._store:
+            self._store.record_event(
+                "race_confirm_resolved",
+                {
+                    "task_id": parent_id,
+                    "task_title": parent.title,
+                    "decision": decision,
+                },
+            )
+        if approved:
+            return f"Race approved — `{parent.title}` will run with multiple models."
+        return f"Race declined — `{parent.title}` will run with a single model."
 
     def handle_push_confirmation(self, confirm_task_id: str, *, approved: bool) -> str:
         """Handle an approved or skipped push-confirm task.
