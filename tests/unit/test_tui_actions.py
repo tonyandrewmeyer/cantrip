@@ -31,13 +31,17 @@ pytestmark = pytest.mark.tui
 
 
 def _sync_passthrough(app: CantripApp) -> None:
-    """Replace ``call_from_thread`` with a synchronous invoker.
+    """No-op retained for API compatibility.
 
-    The bus handlers use ``call_from_thread`` to marshal work onto the
-    UI thread.  Textual raises if that's called from the UI thread, so
-    for in-test direct invocations we swap in a synchronous pass-through.
+    Earlier versions of the bus handlers called ``call_from_thread``
+    to marshal work onto the UI thread.  That has since been replaced
+    by binding the event bus to the UI loop in :meth:`CantripApp.on_mount`,
+    so bus subscribers already run on the UI thread and can touch
+    widgets directly.  Tests that previously needed to patch
+    ``call_from_thread`` now work unmodified; the helper stays as a
+    no-op so existing callers still read cleanly.
     """
-    app.call_from_thread = lambda fn, *a, **kw: fn(*a, **kw)  # type: ignore[method-assign]
+    # Intentionally empty.
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +155,20 @@ class TestRelationLineSelected:
 
 class TestBusHandlers:
     """Inline bus handlers that marshal payloads onto the UI thread."""
+
+    @pytest.mark.asyncio
+    async def test_on_mount_binds_bus_loop(self):
+        """``on_mount`` must bind the event bus to the UI loop.
+
+        Regression: without this, the watcher's same-loop publish
+        delivered synchronously on the UI thread, the
+        ``call_from_thread`` guard raised RuntimeError, and the
+        exception was swallowed — leaving the Dev / COS panes empty.
+        """
+        p1, p2, mock_agent = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as _pilot:
+                mock_agent.event_bus.bind_loop.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_memory_written_writes_system_message(self):

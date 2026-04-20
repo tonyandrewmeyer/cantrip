@@ -1,5 +1,6 @@
 """Main Cantrip TUI application."""
 
+import asyncio
 import contextlib
 import datetime
 import traceback
@@ -181,6 +182,15 @@ class CantripApp(App):
         # The right panel is visible by default (charm file tree is useful
         # from the start).  Task checklist and Juju status appear as needed.
         self._init_agent()
+        # Route every cross-thread bus publish back onto the UI loop so
+        # bus subscribers always run on the UI thread (matches cli.py
+        # and web/server.py).  Without this, the watcher's in-loop
+        # publish delivered synchronously on the UI thread, the
+        # ``call_from_thread`` guard fired a RuntimeError, and the
+        # exception was swallowed by the bus — leaving the Dev / COS
+        # panes stuck on "Not connected" / "Not deployed".
+        if self._agent is not None:
+            self._agent.event_bus.bind_loop(asyncio.get_running_loop())
         self._resume_session()
         self._start_prepare()
         self._start_executor()
@@ -484,79 +494,68 @@ class CantripApp(App):
             checklist.notify_changed(existing)
 
     def _on_bus_task_updated(self, event: ui_events.Event) -> None:
-        """Handle a task-updated event from the bus."""
+        """Handle a task-updated event from the bus.
+
+        Subscribers run on the UI thread because the bus is bound to the
+        app's loop in :meth:`on_mount`, so widget access is safe.
+        """
         if not self._agent:
             return
 
-        def _update() -> None:
-            checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
-            checklist.notify_changed(self._agent.work_queue.all_tasks())
-            self._refresh_subagent_status_bar()
+        checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
+        checklist.notify_changed(self._agent.work_queue.all_tasks())
+        self._refresh_subagent_status_bar()
 
-            # Detect when a confirm task becomes blocked.
-            payload = event.payload
-            if (
-                payload.get("category") == TaskCategory.CONFIRM.value
-                and payload.get("status") == TaskStatus.BLOCKED.value
-                and self._pending_confirm_id is None
-            ):
-                task_id = payload["id"]
-                self._pending_confirm_id = task_id
-                task = self._agent.work_queue.get_task(task_id)
-                if task is None:
-                    return
-                if task_id.startswith(PUSH_CONFIRM_PREFIX):
-                    self._present_push_confirmation(task)
-                elif task_id.startswith(TRIAGE_CONFIRM_PREFIX):
-                    self._present_triage_confirmation(task)
-                elif task_id.startswith(IMPROVEMENT_CONFIRM_BASE):
-                    self._present_improvement_confirmation(task)
-                else:
-                    self._present_design_questions(task)
-
-        self.call_from_thread(_update)
+        # Detect when a confirm task becomes blocked.
+        payload = event.payload
+        if (
+            payload.get("category") == TaskCategory.CONFIRM.value
+            and payload.get("status") == TaskStatus.BLOCKED.value
+            and self._pending_confirm_id is None
+        ):
+            task_id = payload["id"]
+            self._pending_confirm_id = task_id
+            task = self._agent.work_queue.get_task(task_id)
+            if task is None:
+                return
+            if task_id.startswith(PUSH_CONFIRM_PREFIX):
+                self._present_push_confirmation(task)
+            elif task_id.startswith(TRIAGE_CONFIRM_PREFIX):
+                self._present_triage_confirmation(task)
+            elif task_id.startswith(IMPROVEMENT_CONFIRM_BASE):
+                self._present_improvement_confirmation(task)
+            else:
+                self._present_design_questions(task)
 
     def _on_bus_memory_written(self, event: ui_events.Event) -> None:
         """Render an inline 'Wrote memory: …' system message in chat."""
-
-        def _show() -> None:
-            chat = self.query_one("#chat", chat_widget.ChatWidget)
-            payload = event.payload
-            scope = payload.get("scope", "?")
-            kind = payload.get("kind", "?")
-            title = payload.get("title", "?")
-            chat.add_system_message(f"Wrote {kind} memory: {title} ({scope})")
-
-        self.call_from_thread(_show)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        payload = event.payload
+        scope = payload.get("scope", "?")
+        kind = payload.get("kind", "?")
+        title = payload.get("title", "?")
+        chat.add_system_message(f"Wrote {kind} memory: {title} ({scope})")
 
     def _on_bus_memory_recalled(self, event: ui_events.Event) -> None:
         """Render an inline 'Recalled memory: …' system message in chat."""
-
-        def _show() -> None:
-            chat = self.query_one("#chat", chat_widget.ChatWidget)
-            payload = event.payload
-            scope = payload.get("scope", "?")
-            title = payload.get("title", "?")
-            chat.add_system_message(f"Recalled memory: {title} ({scope})")
-
-        self.call_from_thread(_show)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        payload = event.payload
+        scope = payload.get("scope", "?")
+        title = payload.get("title", "?")
+        chat.add_system_message(f"Recalled memory: {title} ({scope})")
 
     def _on_bus_status_bar(self, event: ui_events.Event) -> None:
         """Apply a STATUS_BAR_CHANGED event to the status bar reactives."""
-
-        def _apply() -> None:
-            status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
-            payload = event.payload
-            if "task_label" in payload:
-                status_bar.task_label = payload["task_label"]
-            if "cos_health" in payload:
-                status_bar.cos_health = payload["cos_health"]
-            if "test_summary" in payload:
-                status_bar.test_summary = payload["test_summary"]
-            if "watcher_status" in payload:
-                status_bar.watcher_status = payload["watcher_status"]
-
-        self.call_from_thread(_apply)
+        status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
+        payload = event.payload
+        if "task_label" in payload:
+            status_bar.task_label = payload["task_label"]
+        if "cos_health" in payload:
+            status_bar.cos_health = payload["cos_health"]
+        if "test_summary" in payload:
+            status_bar.test_summary = payload["test_summary"]
+        if "watcher_status" in payload:
+            status_bar.watcher_status = payload["watcher_status"]
 
     def on_task_checklist_widget_tasks_available(self) -> None:
         """Show the status panel when tasks first appear."""
@@ -1118,17 +1117,13 @@ class CantripApp(App):
 
     def _on_bus_watcher_event(self, event: ui_events.Event) -> None:
         """Handle a watcher event from the bus."""
-
-        def _update() -> None:
-            chat = self.query_one("#chat", chat_widget.ChatWidget)
-            chat.add_system_message(f"[Watcher] {event.payload.get('summary', '')}")
-            self._refresh_model_panes()
-
-        self.call_from_thread(_update)
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        chat.add_system_message(f"[Watcher] {event.payload.get('summary', '')}")
+        self._refresh_model_panes()
 
     def _on_bus_juju_status(self, _event: ui_events.Event) -> None:
         """Handle a periodic status-poll tick from the watcher."""
-        self.call_from_thread(self._refresh_model_panes)
+        self._refresh_model_panes()
 
     def _update_status_bar_watcher(self) -> None:
         """Update the status bar watcher indicator."""

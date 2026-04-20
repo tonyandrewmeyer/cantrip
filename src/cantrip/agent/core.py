@@ -61,7 +61,10 @@ from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import Tool, ToolResult, build_tools
-from cantrip.agent.tools.planning import detect_current_juju_model
+from cantrip.agent.tools.planning import (
+    detect_cos_juju_model,
+    detect_current_juju_model,
+)
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.llm import base as llm
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
@@ -1191,6 +1194,13 @@ class CantripAgent:
                 self.state.dev_model = detected
             else:
                 return False
+        # Auto-detect a ``cos`` model so the COS pane populates without
+        # waiting for one of the narrow code paths that set
+        # ``state.cos_model`` explicitly (sprint-deploy planning, etc.).
+        if not self.state.cos_model:
+            cos = detect_cos_juju_model()
+            if cos:
+                self.state.cos_model = cos
 
         def _auto_route(event: WatcherEvent) -> None:
             """Route the event to the task queue, then publish to the bus."""

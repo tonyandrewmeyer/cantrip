@@ -188,6 +188,34 @@ def detect_current_juju_model() -> str | None:
     return None
 
 
+def detect_cos_juju_model() -> str | None:
+    """Return the name of the ``cos`` model if the controller has one.
+
+    Cantrip conventionally deploys COS into a model called ``cos``;
+    this helper answers yes/no without hard-coding the name at the
+    call site so the Dev/COS panes can auto-populate.
+    """
+    juju = shutil.which("juju")
+    if not juju:
+        return None
+    try:
+        result = subprocess.run(
+            [juju, "models", "--format=json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        for model in data.get("models", []):
+            if model.get("short-name") == "cos":
+                return "cos"
+    except (subprocess.TimeoutExpired, OSError, ValueError, KeyError):
+        return None
+    return None
+
+
 def _format_plan_summary(tasks: list) -> str:
     """Format a human-readable plan summary."""
     if not tasks:

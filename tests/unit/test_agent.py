@@ -588,6 +588,39 @@ class TestWatcherIntegration:
         await agent.stop_watcher()
 
     @pytest.mark.asyncio
+    async def test_start_watcher_auto_detects_cos_model(self, monkeypatch):
+        """start_watcher also picks up a 'cos' model when present."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+        monkeypatch.setattr("cantrip.agent.core.detect_cos_juju_model", lambda: "cos")
+
+        assert agent.start_watcher() is True
+        assert agent.state.cos_model == "cos"
+
+        await agent.stop_watcher()
+
+    @pytest.mark.asyncio
+    async def test_start_watcher_skips_cos_detection_when_already_set(self, monkeypatch):
+        """cos_model already set on state is not overwritten."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+        agent.state.cos_model = "preset-cos"
+        called = {"count": 0}
+
+        def _spy() -> str | None:
+            called["count"] += 1
+            return "cos"
+
+        monkeypatch.setattr("cantrip.agent.core.detect_cos_juju_model", _spy)
+        agent.start_watcher()
+        assert agent.state.cos_model == "preset-cos"
+        assert called["count"] == 0
+
+        await agent.stop_watcher()
+
+    @pytest.mark.asyncio
     async def test_start_watcher_with_dev_model(self):
         """start_watcher succeeds with a dev_model set."""
         provider = FakeProvider()

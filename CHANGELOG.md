@@ -4,6 +4,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **Dev / COS status panes stayed empty** — the Always-On watcher was
+  running and polling Juju correctly, but the event bus was never
+  bound to the TUI's event loop.  With no bound loop, publishes from
+  the same loop delivered synchronously on the UI thread, and the
+  handlers' ``call_from_thread`` guard immediately raised
+  ``RuntimeError``.  The error was swallowed by the bus's catch-all,
+  so the status-poll ticks never made it to the widget.  Fix:
+  ``on_mount`` now calls ``event_bus.bind_loop(asyncio.get_running_loop())``
+  (matching ``cli.py`` and ``web/server.py``), and the six bus
+  handlers drop their ``call_from_thread`` wrapping now that every
+  publish is guaranteed to reach subscribers on the UI thread.  Also
+  auto-detect a ``cos`` model alongside the dev model so the COS
+  pane populates without requiring ``state.cos_model`` to be set by
+  one of the narrow sprint-deploy code paths.
+
 ### Added
 - **Syntax-highlighted file preview** — the content preview in the
   file detail modal now renders Python / YAML / TOML / JSON / Markdown
