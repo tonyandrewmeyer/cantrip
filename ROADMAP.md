@@ -4514,10 +4514,23 @@ by cost and off by default; opt-in per task category.
 - [ ] Preference outcomes feed into memory (Phase 43) as facts about which
   models the user prefers for which task categories
 
+### 47.6 Low — Publish user-facing docs for racing
+
+- [ ] Once 47.4 and 47.5 land a user-facing surface (config keys,
+  CONFIRM prompts, ``/arena``), add a docs page covering Best-of-N
+  to ``docs/docs/`` — either a new ``explanation-race.html`` or a
+  section in ``reference-cli.html``.  Cover the scoring rubric
+  (charmlint 30 %, readiness 30 %, tests 25 %, diff 15 %),
+  ``RaceConfig.enabled_categories``, ``max_candidates``,
+  ``budget_tokens``, and how to interpret the ``race_candidate``
+  events in the transcript.  Deferred until racing has a documented
+  surface — shipping docs for a library-only feature would strand
+  readers on config keys they cannot yet set
+
 **Exit criteria:** Best-of-N races run for configured categories, score by
 measurable outcomes, merge the winner via the worktree merge path, and respect
-cost budgets. Blind arena mode is available behind `/arena`. `make check`
-passes throughout.
+cost budgets. Blind arena mode is available behind `/arena`. User-facing
+docs exist once there is a user-facing surface. `make check` passes throughout.
 
 **Dependencies:**
 | Item | Depends On | Notes |

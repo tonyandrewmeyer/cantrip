@@ -4,6 +4,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Documentation
+- **Backfill docs for recent shipped features.**
+  ``docs/docs/reference-cli.html`` now describes the
+  [R]esume / [F]resh / [T]ranscript launcher prompt (was still claiming
+  silent resume) and documents ``CANTRIP_NOTIFY=bell|desktop|both``.
+  ``docs/docs/howto-export.html`` covers the ``/export`` slash command
+  for mid-session transcript writes alongside the existing CLI
+  subcommand.  New ``docs/docs/explanation-tui-screens.html`` catalogues
+  every function-key modal (File detail, Logs with ``L``/``M``/``T``
+  cycling, Graph with ``F`` status filter, Traces with Grafana
+  deep-links) plus the Dev and COS status panes.  A docs TODO for
+  Best-of-N racing is tracked as ROADMAP Phase 47.6 &mdash; held until
+  ``/arena`` lands a user-facing surface.
+
 ### Added
 - **Best-of-N racing — executor wiring (Phase 47.3)** —
   ``BackgroundExecutor`` now dispatches race-eligible tasks to the

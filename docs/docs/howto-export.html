@@ -63,9 +63,27 @@
       documentation, review, or analysis.
     </p>
 
-    <h2 id="basic">Basic export</h2>
+    <h2 id="mid-session">Export mid-session with <code>/export</code></h2>
     <p>
-      After a session, export the full transcript as an HTML page:
+      The <code>/export</code> slash command writes the current session's
+      transcript without leaving Cantrip. It works the same way in the TUI,
+      CLI REPL, and Web UI:
+    </p>
+    <pre><code><span class="prompt">›</span> /export
+<span class="prompt">›</span> /export markdown
+<span class="prompt">›</span> /export jsonl /tmp/session.jsonl</code></pre>
+    <p>
+      Syntax: <code>/export [html|jsonl|markdown] [path]</code>. Both
+      arguments are optional &mdash; without them Cantrip writes
+      <code>transcript.html</code> into the charm directory. The first
+      positional argument selects the format; a trailing token becomes the
+      output path. The command runs against the live <code>.cantrip</code>
+      store, so you can grab a snapshot at any point without pausing work.
+    </p>
+
+    <h2 id="basic">Export from the command line</h2>
+    <p>
+      Outside a session, export the full transcript as an HTML page:
     </p>
     <pre><code><span class="prompt">$</span> cantrip export-transcript /path/to/my-charm</code></pre>
     <p>

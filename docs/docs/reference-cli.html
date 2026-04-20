@@ -416,6 +416,18 @@ cantrip --help</code></pre>
             run every subagent in the main tree.
           </td>
         </tr>
+        <tr>
+          <td><code>CANTRIP_NOTIFY</code></td>
+          <td>optional</td>
+          <td>
+            Notify when a task finishes. Set to <code>bell</code> for a
+            terminal bell (<code>\a</code> to stderr), <code>desktop</code>
+            to shell out to <code>notify-send</code> with the task title,
+            or <code>both</code>. Defaults to off. The desktop path
+            silently no-ops on platforms where <code>notify-send</code> is
+            not on <code>PATH</code>.
+          </td>
+        </tr>
       </tbody>
     </table>
     <p>
@@ -436,8 +448,30 @@ cantrip --help</code></pre>
       <li>Virtual file cache</li>
     </ul>
     <p>
-      Sessions resume automatically when you run <code>cantrip</code> in a
-      directory that contains a <code>.cantrip</code> file.
+      When you run <code>cantrip</code> in a directory that contains a
+      <code>.cantrip</code> file, the launcher prompts you to choose
+      <kbd>R</kbd>esume, <kbd>F</kbd>resh, or <kbd>T</kbd>ranscript:
+    </p>
+    <ul>
+      <li>
+        <strong>Resume</strong> &mdash; load the prior session (conversation,
+        task queue, decisions) and continue where you left off.
+      </li>
+      <li>
+        <strong>Fresh</strong> &mdash; rename the existing session to
+        <code>.cantrip.bak-&lt;timestamp&gt;</code> so nothing is lost, then
+        start with an empty store.
+      </li>
+      <li>
+        <strong>Transcript</strong> &mdash; show the last 20 persisted
+        messages inline, then re-ask the question.
+      </li>
+    </ul>
+    <p>
+      The TUI shows a dedicated resume screen with the same three choices;
+      the Web UI shows a banner across the top of the chat panel. On a
+      non-TTY stdin (scripts, piped input) the CLI falls back to silent
+      resume so automation keeps working.
     </p>
   </main>
 </div>
