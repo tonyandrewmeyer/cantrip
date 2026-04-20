@@ -4432,44 +4432,77 @@ charm building is an unusually good fit — success is measurable via unit tests
 integration tests, `charmlint` output, and operational-readiness score. Gated
 by cost and off by default; opt-in per task category.
 
-### 47.1 High — Scoring rubric
+### 47.1 High — Scoring rubric ✅
 
-- [ ] Define a scoring function that combines: unit test pass count,
+- [x] Define a scoring function that combines: unit test pass count,
   integration test pass count, `charmlint` violations (weighted by severity),
   operational-readiness score delta, and diff size (penalising large
-  unnecessary changes)
-- [ ] Scoring runs against each candidate's worktree (depends on Phase 44)
-- [ ] Scores are comparable across candidates even when tests have different
-  counts — normalise by the maximum achieved count
-- [ ] Unit tests cover tie-breaking, empty test suites, and degenerate
-  candidates (build failure scored as worst)
+  unnecessary changes) — ``cantrip.agent.race.compute_score`` composes
+  four subscores (charmlint 30 %, readiness 30 %, tests 25 %, diff
+  15 %) with exponential-decay weighting on charmlint severity
+- [x] Scoring runs against each candidate's worktree (depends on Phase 44)
+  — ``score_candidate`` runs ``charmlint`` + ``operational_readiness``
+  + ``git diff --numstat`` against the worktree; measurement order
+  keeps the uncommitted readiness report out of the diff count
+- [x] Scores are comparable across candidates even when tests have different
+  counts — ``_score_tests`` normalises to ``pass / total`` in ``[0, 1]``;
+  the other signals are naturally bounded, so pool totals are directly
+  comparable.  Integration test counts are a follow-up (the baseline
+  single-model path doesn't surface them yet)
+- [x] Unit tests cover tie-breaking, empty test suites, and degenerate
+  candidates (build failure scored as worst) — ``tests/unit/test_race.py``
+  covers tie-breaking on diff size, empty test suites, failed / no-op
+  / crashed candidates, and readiness-unavailable charms (44 tests)
 
-### 47.2 High — Parallel execution harness
+### 47.2 High — Parallel execution harness ✅
 
-- [ ] A `RaceCoordinator` in `src/cantrip/agent/race.py` spawns N candidate
+- [x] A `RaceCoordinator` in `src/cantrip/agent/race.py` spawns N candidate
   subagents against the same task, each in its own worktree and with a
-  different `provider`/`model` pairing
-- [ ] Candidates share the same system prompt, task, and scoped tool access;
-  they differ only by model
-- [ ] Cancellation: once a candidate achieves a perfect score, the coordinator
-  cancels the others (opt-in — some users want to see all results)
+  different `provider`/`model` pairing — coordinator uses
+  ``asyncio.gather`` over a caller-supplied ``SubagentFactory`` so the
+  race layer does not need to know about tool construction.  Worktree
+  keys are composite (``{task_id}__{candidate_id}``) so candidates for
+  the same task don't collide
+- [x] Candidates share the same system prompt, task, and scoped tool access;
+  they differ only by model — the factory receives a ``CandidateSpec``
+  (carrying the provider pair) and the worktree path; the executor
+  wires the same ``SubagentContext`` + tool list for every candidate
+  when it adopts this harness
+- [~] Cancellation: once a candidate achieves a perfect score, the coordinator
+  cancels the others (opt-in — some users want to see all results) —
+  ``CandidateScore.is_perfect`` and ``RaceConfig.cancel_on_perfect``
+  are in place but early cancellation is not yet implemented; the
+  coordinator waits for all candidates today.  Acceptable for the
+  initial rubric-validation pass; revisit once races are actually
+  running
 
 ### 47.3 Medium — Result selection and commit
 
 - [ ] After all candidates finish (or one wins early), the coordinator picks
   the highest-scored candidate's worktree and merges it into the charm branch
-  via Phase 44.2
-- [ ] Losing candidates' worktrees are torn down via Phase 44.3
+  via Phase 44.2 — coordinator now preserves the winner's branch and
+  hands back the ``WorktreeHandle`` in ``RaceResult.winner_outcome``;
+  the actual merge call lives in the executor (follow-up commit wires
+  ``_merge_worktree`` into the race exit path)
+- [x] Losing candidates' worktrees are torn down via Phase 44.3 —
+  ``RaceCoordinator._release_losers`` calls the allocator with
+  ``keep_branch=False`` for every non-winning candidate
 - [ ] Transcript records all candidates' output per Phase 14.2 so reviewers
-  can see the losers too
+  can see the losers too — follow-up; needs executor wiring so each
+  candidate's ``SubagentContext`` gets its own transcript id
 
 ### 47.4 Medium — Cost guardrails
 
-- [ ] Configuration gates Best-of-N per category: `race.enable = ["BUILD",
+- [x] Configuration gates Best-of-N per category: `race.enable = ["BUILD",
   "DESIGN"]`, `race.max_candidates = 3`, `race.budget_tokens = 500_000`
-- [ ] Pre-race cost estimate surfaced as a CONFIRM task when the estimated
-  cost exceeds a threshold
+  — ``RaceConfig`` models all three knobs; ``should_race`` gates entry
+  and ``clamp_candidates`` enforces the max
+- [~] Pre-race cost estimate surfaced as a CONFIRM task when the estimated
+  cost exceeds a threshold — ``estimate_race_tokens`` is the estimator;
+  the CONFIRM-task surface lands with the executor wiring (follow-up)
 - [ ] Budget exhaustion during the race downgrades gracefully to single-model
+  — follow-up; needs the executor integration to know what "single
+  model" means in context
 
 ### 47.5 Low — Blind A/B arena mode
 

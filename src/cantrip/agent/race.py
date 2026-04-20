@@ -28,14 +28,16 @@ import logging
 import math
 import pathlib
 import subprocess
+import time
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from cantrip.agent.queue import TaskCategory
 from cantrip.agent.subagent import ExitState
 
 if TYPE_CHECKING:
-    from cantrip.agent.subagent import SubagentResult
-    from cantrip.agent.worktree import WorktreeHandle
+    from cantrip.agent.subagent import Subagent, SubagentResult
+    from cantrip.agent.worktree import WorktreeAllocator, WorktreeHandle
     from cantrip.llm import base as llm
 
 log = logging.getLogger(__name__)
@@ -561,12 +563,219 @@ def estimate_race_tokens(
     return max(0, baseline_tokens_per_run) * max(0, candidate_count)
 
 
+# ---------------------------------------------------------------------------
+# Coordinator
+# ---------------------------------------------------------------------------
+
+
+# Factory passed by the executor: given a candidate spec and the
+# worktree path the candidate should run in, build and return a
+# ready-to-run :class:`Subagent`.  Keeping this as a callback means the
+# coordinator doesn't need to know about tools, SubagentContext, or the
+# executor's plumbing — tests can pass a trivial fake factory.
+SubagentFactory = Callable[
+    ["CandidateSpec", pathlib.Path, "WorktreeHandle | None"],
+    Awaitable["Subagent"],
+]
+
+
+class RaceCoordinator:
+    """Run N candidate subagents in parallel and select a winner.
+
+    Allocates a per-candidate worktree via the injected
+    :class:`WorktreeAllocator` (with a composite key so multiple
+    candidates for the same task don't collide), spawns each subagent
+    concurrently, scores the outcomes, and returns a :class:`RaceResult`.
+    Losing worktrees are released automatically; the winning worktree
+    is *kept* (branch preserved) so the caller can merge it back into
+    the main tree via their existing merge path.
+
+    The coordinator itself does not merge — that responsibility belongs
+    to the executor, which already has merge plumbing via
+    ``_merge_worktree``.  This keeps the coordinator testable without
+    needing a real git repo beyond what the allocator requires.
+    """
+
+    def __init__(
+        self,
+        *,
+        allocator: WorktreeAllocator,
+        config: RaceConfig,
+    ) -> None:
+        self._allocator = allocator
+        self._config = config
+
+    async def run(
+        self,
+        *,
+        task_id: str,
+        base_path: pathlib.Path,
+        specs: list[CandidateSpec],
+        build_subagent: SubagentFactory,
+    ) -> RaceResult:
+        """Race *specs* against each other on *task_id*.
+
+        Returns a :class:`RaceResult` whose ``winner_outcome.handle`` is
+        the worktree the caller should merge back.  Losing worktrees
+        have already been released by the time this returns.  When every
+        candidate fails, ``winner`` is ``None`` and all worktrees are
+        released — the caller has nothing to merge.
+        """
+        if not specs:
+            raise ValueError("race requires at least one candidate")
+
+        clamped = self._config.clamp_candidates(specs)
+        if len(clamped) < len(specs):
+            log.info(
+                "Race for task %s clamped from %d → %d candidates (max_candidates=%d)",
+                task_id,
+                len(specs),
+                len(clamped),
+                self._config.max_candidates,
+            )
+
+        start = time.monotonic()
+
+        # Run each candidate concurrently.  ``return_exceptions=True``
+        # keeps one crashing candidate from cancelling the others —
+        # we'll record it as a failed outcome and let the pool continue.
+        coros = [self._run_candidate(task_id, base_path, spec, build_subagent) for spec in clamped]
+        outcomes: list[CandidateOutcome] = await asyncio.gather(*coros, return_exceptions=False)
+
+        # Score every outcome.  Scoring is cheap and parallelisable but
+        # touches disk through charmlint/readiness; run concurrently so a
+        # slow subagent doesn't stall the whole scoring phase either.
+        score_coros = [score_candidate(outcome) for outcome in outcomes]
+        scores: list[CandidateScore] = await asyncio.gather(*score_coros)
+
+        winner = pick_winner(scores)
+
+        # Release losing worktrees (and any that don't have a handle,
+        # which is a no-op).  Preserve the winning branch so the caller
+        # can merge it.
+        await self._release_losers(outcomes, winner)
+
+        elapsed = time.monotonic() - start
+        log.info(
+            "Race for task %s finished in %.1fs: %d/%d candidates viable, winner=%s (%.3f)",
+            task_id,
+            elapsed,
+            sum(1 for s in scores if s.is_viable),
+            len(scores),
+            winner.candidate_id if winner else "<none>",
+            winner.total if winner else 0.0,
+        )
+        return RaceResult(
+            task_id=task_id,
+            winner=winner,
+            all_scores=scores,
+            all_outcomes=outcomes,
+            elapsed_seconds=round(elapsed, 3),
+        )
+
+    async def _run_candidate(
+        self,
+        task_id: str,
+        base_path: pathlib.Path,
+        spec: CandidateSpec,
+        build_subagent: SubagentFactory,
+    ) -> CandidateOutcome:
+        """Allocate a worktree for *spec*, build its subagent, run it, collect."""
+        alloc_key = f"{task_id}__{spec.candidate_id}"
+        handle: WorktreeHandle | None = None
+        try:
+            handle = await self._allocator.allocate(alloc_key, base_path)
+        except (OSError, ValueError) as exc:
+            log.warning(
+                "Race candidate %s/%s: worktree allocation failed: %s",
+                task_id,
+                spec.candidate_id,
+                exc,
+            )
+            # Fall through with handle=None so the candidate can still
+            # attempt to run in base_path (matching non-race behaviour).
+
+        work_path = handle.path if handle is not None else base_path
+
+        subagent: Subagent
+        try:
+            subagent = await build_subagent(spec, work_path, handle)
+        except (OSError, RuntimeError, ValueError) as exc:
+            log.exception(
+                "Race candidate %s/%s: build_subagent failed",
+                task_id,
+                spec.candidate_id,
+            )
+            if handle is not None:
+                await self._safe_release(handle, keep_branch=False)
+            return CandidateOutcome(
+                spec=spec,
+                handle=None,
+                result=None,
+                error=f"failed to build subagent: {exc}",
+            )
+
+        try:
+            result: SubagentResult = await subagent.run()
+        except asyncio.CancelledError:
+            if handle is not None:
+                await self._safe_release(handle, keep_branch=False)
+            raise
+        except (OSError, RuntimeError, ValueError) as exc:
+            log.exception(
+                "Race candidate %s/%s: subagent.run() raised",
+                task_id,
+                spec.candidate_id,
+            )
+            return CandidateOutcome(
+                spec=spec,
+                handle=handle,
+                result=None,
+                error=f"subagent crashed: {exc}",
+            )
+
+        return CandidateOutcome(spec=spec, handle=handle, result=result)
+
+    async def _release_losers(
+        self,
+        outcomes: list[CandidateOutcome],
+        winner: CandidateScore | None,
+    ) -> None:
+        """Release worktrees for losing candidates; keep the winner's."""
+        for outcome in outcomes:
+            if outcome.handle is None:
+                continue
+            is_winner = winner is not None and outcome.spec.candidate_id == winner.candidate_id
+            # Keep the winner's branch so the caller can merge it; drop
+            # the branch for every other candidate.
+            await self._safe_release(outcome.handle, keep_branch=is_winner)
+
+    async def _safe_release(self, handle: WorktreeHandle, *, keep_branch: bool) -> None:
+        """Release *handle* without propagating allocator failures.
+
+        Release is best-effort — a failure here should not crash the
+        race, and an orphaned worktree will be reaped on next startup
+        via ``reap_disk_orphans``.
+        """
+        try:
+            await self._allocator.release(handle.task_id, keep_branch=keep_branch)
+        except (OSError, RuntimeError) as exc:
+            log.warning(
+                "Race: failed to release worktree %s (keep_branch=%s): %s",
+                handle.task_id,
+                keep_branch,
+                exc,
+            )
+
+
 __all__ = [
     "CandidateOutcome",
     "CandidateScore",
     "CandidateSpec",
     "RaceConfig",
+    "RaceCoordinator",
     "RaceResult",
+    "SubagentFactory",
     "compute_score",
     "estimate_race_tokens",
     "pick_winner",

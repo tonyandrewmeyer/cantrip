@@ -6,20 +6,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Added
 - **Best-of-N racing library (Phase 47.1 + 47.2 + 47.4 core)** — new
-  ``cantrip.agent.race`` module with the scoring rubric and data types
-  needed to run N candidate subagents in parallel and pick a winner.
-  ``compute_score`` combines charmlint violations (weighted by
-  severity, exponential decay), operational-readiness percentage, unit
-  test pass ratio, and diff size into a single ``[0.0, 1.0]`` total;
-  failed and no-op subagents score zero regardless of the other
-  signals.  ``score_candidate`` runs charmlint + readiness + ``git
-  diff --numstat`` against a real worktree.  ``pick_winner`` picks the
-  top viable candidate with deterministic tie-breaking (smaller diff,
-  then candidate id).  ``RaceConfig`` is opt-in — no category races by
-  default.  The executor wiring and ``/arena`` slash command land in
+  ``cantrip.agent.race`` module with the scoring rubric, data types,
+  and the ``RaceCoordinator`` needed to run N candidate subagents in
+  parallel and pick a winner.  ``compute_score`` combines charmlint
+  violations (weighted by severity, exponential decay),
+  operational-readiness percentage, unit test pass ratio, and diff
+  size into a single ``[0.0, 1.0]`` total; failed and no-op subagents
+  score zero regardless of the other signals.  ``score_candidate``
+  runs charmlint + readiness + ``git diff --numstat`` against a real
+  worktree.  ``pick_winner`` picks the top viable candidate with
+  deterministic tie-breaking (smaller diff, then candidate id).
+  ``RaceCoordinator`` allocates per-candidate worktrees (composite
+  ``task_id__candidate`` keys so they don't collide), spawns every
+  candidate concurrently via a caller-supplied ``SubagentFactory``,
+  scores outcomes, and releases losing worktrees while preserving the
+  winner's branch for merge by the executor.  ``RaceConfig`` is
+  opt-in — no category races by default; ``max_candidates`` clamps
+  over-large pools; ``budget_tokens`` is surfaced for future CONFIRM
+  gating.  The executor wiring and ``/arena`` slash command land in
   follow-up commits once the rubric is validated against real charm
-  builds.  Covered by ``tests/unit/test_race.py`` (44 tests, including
-  one integration-style test that stands up a real git worktree).
+  builds.  Covered by ``tests/unit/test_race.py`` (52 tests: subscore
+  monotonicity, exit-state gating, tie-breaking, coordinator
+  parallelism, worktree release policy, allocation-failure fallback,
+  and one integration-style test that stands up a real git worktree).
 - **Web UI resume banner** — parity with the CLI/TUI resume prompt.
   A banner across the top of the chat panel shows the prior-session
   summary with Resume / Start fresh / View transcript buttons.  The

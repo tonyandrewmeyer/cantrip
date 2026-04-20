@@ -468,6 +468,278 @@ def _git(cwd: pathlib.Path, *args: str) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# RaceCoordinator
+# ---------------------------------------------------------------------------
+
+
+class _FakeAllocator:
+    """In-memory worktree allocator for coordinator tests.
+
+    Satisfies the :class:`WorktreeAllocator` protocol shape without
+    touching git or the filesystem — every allocation hands out a
+    unique path under ``tmp_path`` and every release records the key.
+    """
+
+    def __init__(self, tmp_path: pathlib.Path) -> None:
+        self._tmp_path = tmp_path
+        self._handles: dict[str, WorktreeHandle] = {}
+        self.released: list[tuple[str, bool]] = []  # (task_id, keep_branch)
+        self.allocate_fail_for: set[str] = set()
+        self.release_raise = False
+
+    async def allocate(self, task_id: str, base_path: pathlib.Path | str) -> WorktreeHandle | None:
+        if task_id in self.allocate_fail_for:
+            return None
+        path = self._tmp_path / "worktrees" / task_id
+        path.mkdir(parents=True, exist_ok=True)
+        handle = WorktreeHandle(
+            task_id=task_id,
+            path=path,
+            branch=f"cantrip/wt/{task_id}",
+            base_sha="0" * 40,
+        )
+        self._handles[task_id] = handle
+        return handle
+
+    async def release(self, task_id: str, *, keep_branch: bool = False) -> None:
+        if self.release_raise:
+            raise RuntimeError("simulated release failure")
+        self._handles.pop(task_id, None)
+        self.released.append((task_id, keep_branch))
+
+    def get(self, task_id: str) -> WorktreeHandle | None:
+        return self._handles.get(task_id)
+
+    def all_worktrees(self) -> dict[str, WorktreeHandle]:
+        return dict(self._handles)
+
+    async def reap_orphans(self, active_task_ids: set[str]) -> int:
+        return 0
+
+
+class _FakeSubagent:
+    """Subagent double that returns a pre-programmed result."""
+
+    def __init__(self, result: SubagentResult | None, raise_on_run: Exception | None = None):
+        self._result = result
+        self._raise = raise_on_run
+
+    async def run(self) -> SubagentResult:
+        if self._raise is not None:
+            raise self._raise
+        if self._result is None:
+            # None result is distinct from "crashed" — tests that want a
+            # crash pass ``raise_on_run``.
+            raise RuntimeError("unexpected None")
+        return self._result
+
+
+def _fake_factory(results_by_candidate: dict[str, SubagentResult | Exception]):
+    """Build a :class:`SubagentFactory` that hands out pre-programmed subagents."""
+
+    async def factory(
+        spec: race.CandidateSpec,
+        _work_path: pathlib.Path,
+        _handle: WorktreeHandle | None,
+    ):
+        entry = results_by_candidate.get(spec.candidate_id)
+        if isinstance(entry, Exception):
+            return _FakeSubagent(None, raise_on_run=entry)
+        return _FakeSubagent(entry)
+
+    return factory
+
+
+class TestRaceCoordinator:
+    @pytest.mark.asyncio
+    async def test_requires_at_least_one_candidate(self, tmp_path: pathlib.Path) -> None:
+        coord = race.RaceCoordinator(
+            allocator=_FakeAllocator(tmp_path),
+            config=race.RaceConfig(),
+        )
+        with pytest.raises(ValueError, match="requires at least one"):
+            await coord.run(
+                task_id="t1",
+                base_path=tmp_path,
+                specs=[],
+                build_subagent=_fake_factory({}),
+            )
+
+    @pytest.mark.asyncio
+    async def test_picks_best_of_n(self, tmp_path: pathlib.Path) -> None:
+        # Two candidates: "good" completes, "bad" fails.  Good wins.
+        allocator = _FakeAllocator(tmp_path)
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+        results = {
+            "good": SubagentResult(ExitState.COMPLETED, summary="done", detail=""),
+            "bad": SubagentResult(ExitState.FAILED, summary="broke", detail=""),
+        }
+        specs = [_spec("good"), _spec("bad")]
+
+        result = await coord.run(
+            task_id="t1",
+            base_path=tmp_path,
+            specs=specs,
+            build_subagent=_fake_factory(results),
+        )
+
+        assert result.winner is not None
+        assert result.winner.candidate_id == "good"
+        assert len(result.all_scores) == 2
+        assert len(result.all_outcomes) == 2
+        assert result.elapsed_seconds >= 0
+
+    @pytest.mark.asyncio
+    async def test_releases_losing_worktrees_and_keeps_winner(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        allocator = _FakeAllocator(tmp_path)
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+        results = {
+            "winner": SubagentResult(ExitState.COMPLETED, summary="yes", detail=""),
+            "loser1": SubagentResult(ExitState.FAILED, summary="no", detail=""),
+            "loser2": SubagentResult(ExitState.NOOP, summary="nothing", detail=""),
+        }
+        specs = [_spec("winner"), _spec("loser1"), _spec("loser2")]
+
+        result = await coord.run(
+            task_id="t2",
+            base_path=tmp_path,
+            specs=specs,
+            build_subagent=_fake_factory(results),
+        )
+
+        # Each candidate key is namespaced by (task_id, candidate_id).
+        released_map = dict(allocator.released)
+        assert released_map["t2__winner"] is True  # keep_branch
+        assert released_map["t2__loser1"] is False
+        assert released_map["t2__loser2"] is False
+        assert result.winner is not None
+        assert result.winner.candidate_id == "winner"
+
+    @pytest.mark.asyncio
+    async def test_all_failed_returns_no_winner(self, tmp_path: pathlib.Path) -> None:
+        allocator = _FakeAllocator(tmp_path)
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+        results = {
+            "a": SubagentResult(ExitState.FAILED, summary="no", detail=""),
+            "b": SubagentResult(ExitState.FAILED, summary="no", detail=""),
+        }
+        specs = [_spec("a"), _spec("b")]
+
+        result = await coord.run(
+            task_id="t3",
+            base_path=tmp_path,
+            specs=specs,
+            build_subagent=_fake_factory(results),
+        )
+
+        assert result.winner is None
+        # Both worktrees released with keep_branch=False since nobody won.
+        assert all(keep is False for _, keep in allocator.released)
+
+    @pytest.mark.asyncio
+    async def test_candidate_crash_becomes_failed_outcome(self, tmp_path: pathlib.Path) -> None:
+        allocator = _FakeAllocator(tmp_path)
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+        results: dict[str, SubagentResult | Exception] = {
+            "good": SubagentResult(ExitState.COMPLETED, summary="done", detail=""),
+            "crashed": RuntimeError("kaboom"),
+        }
+        specs = [_spec("good"), _spec("crashed")]
+
+        result = await coord.run(
+            task_id="t4",
+            base_path=tmp_path,
+            specs=specs,
+            build_subagent=_fake_factory(results),
+        )
+
+        # Good wins; crashed candidate is recorded but scores zero.
+        assert result.winner is not None
+        assert result.winner.candidate_id == "good"
+
+        crashed_outcome = result.outcome_for("crashed")
+        assert crashed_outcome is not None
+        assert crashed_outcome.result is None
+        assert "kaboom" in (crashed_outcome.error or "")
+
+        crashed_score = next(s for s in result.all_scores if s.candidate_id == "crashed")
+        assert crashed_score.total == 0.0
+        assert crashed_score.exit_state is ExitState.FAILED
+
+    @pytest.mark.asyncio
+    async def test_clamps_candidate_pool_to_max(self, tmp_path: pathlib.Path) -> None:
+        allocator = _FakeAllocator(tmp_path)
+        config = race.RaceConfig(max_candidates=2)
+        coord = race.RaceCoordinator(allocator=allocator, config=config)
+        results = {
+            "a": SubagentResult(ExitState.COMPLETED, summary="", detail=""),
+            "b": SubagentResult(ExitState.COMPLETED, summary="", detail=""),
+            "c": SubagentResult(ExitState.COMPLETED, summary="", detail=""),
+        }
+        specs = [_spec("a"), _spec("b"), _spec("c")]
+
+        result = await coord.run(
+            task_id="t5",
+            base_path=tmp_path,
+            specs=specs,
+            build_subagent=_fake_factory(results),
+        )
+
+        assert len(result.all_outcomes) == 2
+        assert {o.spec.candidate_id for o in result.all_outcomes} == {"a", "b"}
+
+    @pytest.mark.asyncio
+    async def test_allocation_failure_still_runs_candidate(self, tmp_path: pathlib.Path) -> None:
+        allocator = _FakeAllocator(tmp_path)
+        # Force allocation to fail for "a" — coordinator should fall
+        # back to running "a" in base_path.
+        allocator.allocate_fail_for.add("t6__a")
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+        results = {
+            "a": SubagentResult(ExitState.COMPLETED, summary="", detail=""),
+            "b": SubagentResult(ExitState.COMPLETED, summary="", detail=""),
+        }
+        specs = [_spec("a"), _spec("b")]
+
+        result = await coord.run(
+            task_id="t6",
+            base_path=tmp_path,
+            specs=specs,
+            build_subagent=_fake_factory(results),
+        )
+
+        # Both outcomes exist; "a" has no handle, "b" has one.
+        a_outcome = result.outcome_for("a")
+        b_outcome = result.outcome_for("b")
+        assert a_outcome is not None
+        assert a_outcome.handle is None
+        assert b_outcome is not None
+        assert b_outcome.handle is not None
+
+    @pytest.mark.asyncio
+    async def test_release_failure_does_not_crash_race(self, tmp_path: pathlib.Path) -> None:
+        allocator = _FakeAllocator(tmp_path)
+        allocator.release_raise = True
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+        results = {
+            "a": SubagentResult(ExitState.COMPLETED, summary="", detail=""),
+            "b": SubagentResult(ExitState.FAILED, summary="", detail=""),
+        }
+        specs = [_spec("a"), _spec("b")]
+
+        # Should not raise — release failures are logged and swallowed.
+        result = await coord.run(
+            task_id="t7",
+            base_path=tmp_path,
+            specs=specs,
+            build_subagent=_fake_factory(results),
+        )
+        assert result.winner is not None
+
+
 @pytest.mark.asyncio
 async def test_score_candidate_against_real_worktree(tmp_path: pathlib.Path) -> None:
     """Drive :func:`score_candidate` against a real git tree so the diff
