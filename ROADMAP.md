@@ -6415,6 +6415,189 @@ drift test; a short note in ``design/UI.md`` records the decision.
 
 ---
 
+## Phase 63: Self-Update Check — "A Newer Cantrip Is Available"
+
+**Goal:** When Cantrip starts, check PyPI in the background for a newer
+release of the ``cantrip`` distribution.  If one exists, surface a
+non-blocking notice in every front-end (TUI, Web, CLI) that shows the
+new version number, the relevant ``CHANGELOG.md`` entries between the
+installed version and the latest, and concrete upgrade instructions
+tailored to how Cantrip was installed (``uv tool``, ``pipx``, ``pip``,
+or the snap once it exists).
+
+Will McGugan's ``toad`` is the reference for UX: a background ``httpx``
+worker fires at startup, the prompt is shown **after the main UI
+exits** rather than interrupting the session, and the panel points at
+an upgrade path rather than trying to self-upgrade in place (which
+falls apart across installer choices).  Cantrip diverges in two ways —
+we query PyPI's JSON API directly (the source of truth for a published
+Python package) instead of a maintainer-hosted TOML, and we splice in
+the committed ``CHANGELOG.md`` so the user sees real release notes
+rather than a free-form marketing blurb.
+
+References:
+- ``toad`` update logic: https://github.com/batrachianai/toad
+  — ``src/toad/version.py`` (version check), ``src/toad/app.py``
+  (Textual worker + exit panel)
+- PyPI JSON API: ``https://pypi.org/pypi/cantrip/json`` — ``info.version``
+  for latest, ``releases`` for the version list
+- Cantrip's own ``CHANGELOG.md`` and ``src/cantrip/__init__.py``
+  (``__version__``) are the installed-side truths to compare against
+
+### 63.1 Medium — PyPI version-check helper
+
+- [ ] Add ``src/cantrip/update.py`` with ``async def
+  check_for_update(*, timeout: float = 3.0) -> UpdateInfo | None``.
+  Uses ``httpx.AsyncClient`` against
+  ``https://pypi.org/pypi/cantrip/json``; parses ``info.version``;
+  compares to ``cantrip.__version__`` via
+  ``packaging.version.parse``; returns an ``UpdateInfo`` dataclass
+  (``current``, ``latest``, ``pypi_url``, ``release_timestamp``) or
+  ``None`` if we're already current
+- [ ] Any ``httpx.HTTPError``, DNS failure, timeout, or parse failure
+  returns ``None`` — we never surface a stack trace or block startup
+  because PyPI is slow.  Log at DEBUG only
+- [ ] Cache the result on disk at ``~/.cache/cantrip/update.json``
+  with a 24-hour TTL so normal day-to-day startups don't hit PyPI at
+  all; honour ``CANTRIP_NO_UPDATE_CHECK=1`` and a
+  ``settings.update_check_disabled`` flag to skip entirely.  Corporate
+  networks that block ``pypi.org`` need a painless opt-out
+
+### 63.2 Medium — Changelog extraction and formatting
+
+- [ ] Fetch ``CHANGELOG.md`` for the latest version from the GitHub
+  raw URL at the matching tag (e.g.
+  ``https://raw.githubusercontent.com/<owner>/cantrip/v{latest}/CHANGELOG.md``)
+  via the same ``httpx`` client.  Fall back gracefully when the tag
+  doesn't exist yet (pre-release landed on ``main`` but wasn't
+  tagged) — surface the version number without notes
+- [ ] Parse the markdown with a tiny heading-walker (no new dep);
+  collect every ``## <version>`` section strictly between the
+  installed version and the latest, newest first.  Skip
+  ``## Unreleased`` — users upgrading to a tagged release don't
+  need to see post-release churn
+- [ ] Render the collected sections inside a Rich ``Panel`` for the
+  TUI/CLI exit prompt; render as HTML via ``markdown-it-py`` (already
+  a likely transitive dep — confirm before adding) for the Web
+  banner.  Cap the rendered block at 30 lines with a "…
+  full notes at {pypi_url}" trailer so four releases of backlog
+  don't swamp the screen
+
+### 63.3 Medium — Installer detection and upgrade instructions
+
+- [ ] ``src/cantrip/update.py`` gains ``detect_install_method() ->
+  InstallMethod`` — an enum of ``UV_TOOL``, ``PIPX``, ``PIP_USER``,
+  ``PIP_VENV``, ``SNAP``, ``UNKNOWN``.  Heuristics, cheapest first:
+  check if ``sys.executable`` lives under ``~/.local/share/uv/``
+  (uv tool), ``~/.local/pipx/venvs/`` (pipx), ``/snap/``
+  (snap), a user-site dir (pip --user), or a generic venv (pip).
+  ``UNKNOWN`` when nothing matches
+- [ ] Map each method to a copy-pasteable command: ``uv tool upgrade
+  cantrip``, ``pipx upgrade cantrip``, ``pip install --user --upgrade
+  cantrip``, ``pip install --upgrade cantrip``, ``snap refresh
+  cantrip``.  For ``UNKNOWN``, fall back to the PyPI URL and let the
+  user decide — matches toad's "visit-URL" philosophy for
+  ambiguous installs
+- [ ] Unit tests cover each detection branch by monkey-patching
+  ``sys.executable`` and the ``os.path.exists`` probe.  A final
+  "we never crash on weird paths" fuzz test feeds random path
+  strings and asserts we always return an ``InstallMethod`` (even
+  if it's ``UNKNOWN``)
+
+### 63.4 Medium — Wire the check into all three front-ends
+
+- [ ] **TUI** (``src/cantrip/tui/app.py``): kick off
+  ``check_for_update()`` in an ``asyncio.Task`` from ``on_mount``.
+  Result stashed on the app.  On ``action_quit`` / ``on_exit``,
+  if an update is available, print a Rich panel to stdout **after**
+  the Textual screen tears down.  Don't interrupt mid-session — the
+  user should finish their work first.  Matches toad's exit-time
+  prompt exactly
+- [ ] **Web UI** (``src/cantrip/web/server.py`` +
+  ``templates/index.html.j2``): the server runs the same helper
+  once at app-startup; the result is exposed via ``GET
+  /api/update-status`` and via a ``"update-available"`` SSE event
+  so reconnecting clients learn about it too.  The frontend shows
+  a dismissible banner at the top of the page (reuses the
+  resume-prompt banner pattern from Phase 31.3); dismissal is
+  remembered in ``localStorage`` keyed on the version number so
+  a second dismissal isn't needed for the same release
+- [ ] **CLI** (``src/cantrip/cli.py``): after the REPL exits (before
+  the final ``sys.exit``), print a single-line notice pointing at
+  the PyPI URL, followed by the upgrade command for the detected
+  install method.  The full changelog is *not* printed — the CLI
+  is often scripted, so keep stdout to one line and let the user
+  open the URL for detail
+- [ ] All three front-ends share the same helper and the same cache
+  file — no duplicated HTTP calls when a user runs the TUI, then
+  launches the Web UI ten minutes later
+
+### 63.5 Low — ``/update`` slash command for on-demand checks
+
+- [ ] Slash command ``/update`` forces a cache-bypassing check and
+  prints the result (or "You're on the latest version.")
+  immediately.  Useful when a user just ran ``uv tool upgrade`` and
+  wants to confirm the session picked up the new release — though
+  the *running* process is obviously still on the old code; the
+  command makes that explicit
+- [ ] ``/update --no-check`` writes ``update_check_disabled = true``
+  to ``settings.json`` so the user doesn't have to edit the file by
+  hand.  ``/update --check`` re-enables it.  Mention both in the
+  ``/help`` output and in ``design/UI.md``
+
+### 63.6 Low — Pre-release and yanked-version handling
+
+- [ ] Filter out pre-releases (``1.2.0rc1``) unless the *installed*
+  version is itself a pre-release — users on a stable don't want
+  to be nagged about alphas
+- [ ] Honour PyPI's ``yanked`` flag: if the currently installed
+  version is yanked, the notice shifts in tone ("Your installed
+  version has been yanked; upgrading to {latest} is recommended"),
+  and we skip changelog filtering since there's no guarantee of a
+  clean linear history between a yanked release and the next good
+  one
+- [ ] ``packaging.version.parse`` is already a transitive dep via
+  ``httpx``/``pip`` — confirm and pin; we are not adding ``pip``
+  as a runtime dep just for this
+
+### What this phase is *not*
+
+- Not an auto-upgrader.  We never run ``uv tool upgrade`` on the
+  user's behalf — the installer mix is too heterogeneous and the
+  consequences of a half-upgraded session are worse than a manual
+  copy-paste
+- Not a telemetry channel.  The only outbound request is to
+  ``pypi.org`` (and GitHub raw for the changelog); we don't phone
+  home to a Cantrip-operated server
+- Not a version-pinning story.  Users who want to stay on a specific
+  release set ``update_check_disabled = true`` and move on; we don't
+  ship a "subscribe to major-only" flag until there's demand
+- Not a migration tool.  If ``0.x`` → ``1.0`` needs a config
+  migration, the changelog says so and the user runs it manually
+
+**Exit criteria:** launching any of the three UIs on a version older
+than the PyPI latest surfaces a non-blocking notice with version
+number, filtered changelog, and a copy-pasteable upgrade command
+matching the detected installer; the check completes in under 3s in
+the happy path and never blocks startup longer than the timeout; a
+user on the latest version sees no extra output in any UI; unit tests
+cover version comparison, changelog filtering, installer detection,
+cache TTL, and every opt-out; ``/update`` and the
+``CANTRIP_NO_UPDATE_CHECK`` env var are documented in
+``design/UI.md``.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Version helper (63.1) | none | Pure Python + ``httpx``; land first |
+| Changelog fetch (63.2) | 63.1 | Reuses the same ``httpx`` client |
+| Installer detection (63.3) | none | Independent; can land in parallel |
+| UI wiring (63.4) | 63.1–63.3 | TUI/Web/CLI pick up the finished helpers |
+| ``/update`` command (63.5) | 63.4 | Polish; on-demand variant of the same path |
+| Pre-release handling (63.6) | 63.1 | Small filter on top of the version check |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -6473,4 +6656,5 @@ drift test; a short note in ``design/UI.md`` records the decision.
 | M60: Accessible Web UI | 60 | Web UI passes WCAG 2.1 AA: visible focus indicators, labelled controls, live regions for chat/status, overlays behave as modal dialogs; rodney/showboat regression guard in CI |
 | M61: Slash Autocomplete | 61 | Typing ``/`` in the TUI surfaces a catalogue-driven suggestion popup; Tab completes the active verb; CLI readline gets the same catalogue for parity |
 | M62: On-Theme Activity Labels | 62 | Status-bar and Web "Thinking..." literals replaced by randomly-selected spellcasting verbs (incanting, conjuring, brewing, …) so the UI matches the cantrip/juju theme |
+| M63: Self-Update Check | 63 | PyPI polled at startup; TUI, Web, and CLI surface a non-blocking notice with filtered changelog and an installer-aware upgrade command when a newer Cantrip is published |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
