@@ -5,6 +5,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Core-agent coverage — 62% → 87%** — Phase 57.6 complete.
+  Three new focused test files land alongside ``test_agent.py``:
+  ``test_agent_github.py`` (37 tests: every PR / issue-triage /
+  bootstrap helper with ``git_branch`` + ``github_issues`` patched so
+  no ``gh`` / ``git`` subprocesses run), ``test_agent_confirmations.py``
+  (8 tests: ``handle_design_confirmation`` / ``handle_day2_confirmation``
+  happy paths and early-exit branches, planner mocked), and
+  ``test_agent_lifecycle.py`` (22 tests: ``start_executor`` /
+  ``stop_executor``, ``build_resume_summary``, ``load_state`` error
+  and restoration branches, MCP registry / start / stop plumbing,
+  ``_on_mcp_elicitation`` bridge).  No production-code changes.
 - **TUI screen coverage — Pilot tests for the three thinnest screens**
   — Phase 57.5 landed.  ``tui/screens/relation.py`` goes from 0% to
   99% via a new ``tests/unit/test_relation_screen.py`` that drives
