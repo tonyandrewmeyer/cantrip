@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Task-completion notifications** — opt-in terminal bell and desktop
+  popups when a task reaches ``done`` or ``failed``.  Enable via
+  ``CANTRIP_NOTIFY=bell|desktop|both`` (default ``off``); ``bell``
+  writes ``\a`` to stderr, ``desktop`` shells out to ``notify-send`` on
+  Linux and silently no-ops when ``notify-send`` isn't available.  The
+  notifier dedupes by task id, so snapshot replays after reconnect
+  don't stack beeps.  Wired into the TUI and CLI REPL; the web surface
+  is deliberately unchanged (server-side notifications don't reach a
+  browser).
 - **`/export` slash command** — export the live session transcript
   without leaving Cantrip.  ``/export`` writes HTML to
   ``<charm>/transcript.html``; ``/export jsonl`` and

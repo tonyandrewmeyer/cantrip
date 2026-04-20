@@ -2767,10 +2767,18 @@ experienced users.
 
 ### 31.9 Low — Notification Sounds / Desktop Notifications
 
-- [ ] Long-running builds can take minutes — notify the user when a task completes
-  or needs confirmation
-- [ ] Use terminal bell (`\a`) for simple notification
-- [ ] Optional desktop notification via `notify-send` on Linux
+- [x] Long-running builds can take minutes — notify the user when a task completes
+  or needs confirmation — opt-in via ``CANTRIP_NOTIFY`` env var; a
+  ``TaskNotifier`` subscribes to ``TASK_UPDATED`` and fires at most once
+  per task when it first reaches ``done``/``failed`` (non-terminal
+  status changes stay silent)
+- [x] Use terminal bell (`\a`) for simple notification — ``CANTRIP_NOTIFY=bell``
+  writes ``\a`` to stderr; ``both`` combines bell + desktop
+- [x] Optional desktop notification via `notify-send` on Linux —
+  ``CANTRIP_NOTIFY=desktop`` shells out to ``notify-send`` with a
+  "Cantrip task completed/failed" summary and the task title; silently
+  no-ops when ``notify-send`` isn't on the PATH (macOS, stripped Docker
+  images), so enabling desktop mode never crashes a session
 
 ### 31.10 High — CLI REPL Improvements ✅
 

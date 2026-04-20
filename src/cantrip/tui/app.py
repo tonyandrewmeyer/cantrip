@@ -12,7 +12,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
-from cantrip import __version__
+from cantrip import __version__, notifications
 from cantrip.agent import emotions, slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
@@ -191,6 +191,7 @@ class CantripApp(App):
         # panes stuck on "Not connected" / "Not deployed".
         if self._agent is not None:
             self._agent.event_bus.bind_loop(asyncio.get_running_loop())
+            notifications.install(self._agent.event_bus)
         self._resume_session()
         self._start_prepare()
         self._start_executor()

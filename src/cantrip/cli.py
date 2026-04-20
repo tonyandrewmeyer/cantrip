@@ -6,6 +6,7 @@ import json
 import sys
 from collections.abc import Callable, Sequence
 
+from cantrip import notifications
 from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
@@ -216,6 +217,7 @@ async def _repl(agent: CantripAgent) -> None:
     # Subscribe to task updates via the event bus.
     agent.event_bus.bind_loop(asyncio.get_running_loop())
     agent.event_bus.subscribe(ui_events.EventType.TASK_UPDATED, _on_bus_task_event)
+    notifications.install(agent.event_bus)
 
     # Start the background executor so tasks are actually executed.
     agent.start_executor()
