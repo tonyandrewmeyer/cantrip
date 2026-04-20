@@ -4,6 +4,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Click a file in the charm tree to open a detail view** —
+  selecting a file in the right-panel file tree now opens a
+  ``FileDetailScreen`` modal instead of a one-line toast.  The
+  modal shows size + modification time, a best-effort *purpose*
+  summary (Python module docstring via AST, Markdown first H1 +
+  paragraph, charmcraft/metadata YAML ``summary``/``description``,
+  ``pyproject.toml`` ``[project].description``, or a short fallback
+  line), the last five ``git log`` entries that touched the file
+  (formatted with short SHA, relative age, author, subject), and a
+  numbered content preview truncated to 120 lines / 32 KB.  Binary
+  files are detected and previewed as a dim notice instead.  Press
+  ``r`` to refresh or ``Esc`` to close.
+
 ### Changed
 - **Phase 58 complete — Rust coverage wired into CI** — the
   ``rust-test`` matrix job now runs ``cargo llvm-cov --summary-only

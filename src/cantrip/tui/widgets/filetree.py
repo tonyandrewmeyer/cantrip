@@ -81,12 +81,8 @@ class CharmTreeWidget(Widget):
         tree.reload()
 
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
-        """Show the selected file path in a toast notification."""
+        """Open a modal detail screen for the selected file."""
         event.stop()
-        path = Path(event.path)
-        # Show relative to charm root for brevity.
-        try:
-            display = str(path.relative_to(self._charm_path))
-        except ValueError:
-            display = str(path)
-        self.notify(display, title="File", timeout=3)
+        from cantrip.tui.screens.file_detail import FileDetailScreen
+
+        self.app.push_screen(FileDetailScreen(Path(event.path), charm_root=self._charm_path))
