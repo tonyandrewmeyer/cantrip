@@ -5,6 +5,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`/export` slash command** — export the live session transcript
+  without leaving Cantrip.  ``/export`` writes HTML to
+  ``<charm>/transcript.html``; ``/export jsonl`` and
+  ``/export markdown`` use the matching renderer; an optional trailing
+  path argument overrides the destination.  Sits in the shared slash
+  dispatcher, so the command is typeable in the TUI, CLI REPL, and Web
+  surfaces and surfaces in the TUI's slash autocomplete popup.
 - **Live-browser accessibility regression test** — new
   ``tests/integration/web/test_accessibility.py`` hosts the real
   aiohttp app on a thread and drives ``uvx rodney`` against it to

@@ -193,6 +193,71 @@ class TestCost:
         assert "1,200" in result.text
 
 
+class TestExport:
+    """/export writes the live transcript to disk via the shared renderers."""
+
+    def test_defaults_to_html_in_charm_dir(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        del session_store  # fixture keeps the .cantrip file open for writes
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/export")
+        assert result is not None
+        destination = tmp_path / "transcript.html"
+        assert destination.exists()
+        assert str(destination) in result.text
+        body = destination.read_text()
+        assert "<html" in body.lower()
+
+    def test_explicit_format_markdown(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        del session_store
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/export markdown")
+        assert result is not None
+        destination = tmp_path / "transcript.md"
+        assert destination.exists()
+        assert "markdown" in result.text.lower()
+
+    def test_custom_output_path(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        del session_store
+        target = tmp_path / "out" / "session.jsonl"
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, f"/export jsonl {target}")
+        assert result is not None
+        assert target.exists()
+        assert str(target) in result.text
+
+    def test_extra_arguments_report_usage(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        del session_store
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/export html /tmp/a.html surprise")
+        assert result is not None
+        assert "Usage" in result.text
+        assert not (tmp_path / "transcript.html").exists()
+
+    def test_missing_charm_path_reports_error(self, memory_manager: MemoryManager) -> None:
+        agent = _fake_agent(memory_manager, charm_path=None)
+        result = dispatch(agent, "/export")
+        assert result is not None
+        assert "no charm path" in result.text.lower()
+
+    def test_missing_cantrip_file_reports_error(
+        self, memory_manager: MemoryManager, tmp_path: Path
+    ) -> None:
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        agent = _fake_agent(memory_manager, charm_path=empty)
+        result = dispatch(agent, "/export")
+        assert result is not None
+        assert "no `.cantrip`" in result.text
+
+
 class TestCommandCatalogue:
     """The shared catalogue drives UI autocomplete and must stay in sync."""
 

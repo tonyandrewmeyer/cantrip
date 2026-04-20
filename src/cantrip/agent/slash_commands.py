@@ -18,6 +18,8 @@ deliberately limited to commands that reduce to a string response.
 
 from __future__ import annotations
 
+import pathlib
+import shlex
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -55,6 +57,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/forget", "Delete a memory"),
     CommandInfo("/mcp", "Manage MCP servers"),
     CommandInfo("/cost", "Show token usage and cost"),
+    CommandInfo("/export", "Export the live session transcript"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -120,6 +123,8 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=mcp_commands.handle_mcp(agent.mcp_registry, args))
     if verb == "/cost":
         return SlashResult(text=format_cost(agent))
+    if verb == "/export":
+        return SlashResult(text=export_transcript(agent, args))
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     return None
@@ -139,6 +144,9 @@ def help_text() -> str:
         "- `/forget <title>` — delete a memory by title.\n"
         "- `/mcp` — list configured MCP servers. Run `/mcp help` for subcommands.\n"
         "- `/cost` — show token usage and estimated cost.\n"
+        "- `/export [html|jsonl|markdown] [path]` — export the live"
+        " transcript without leaving the session (default: html to"
+        " `<charm>/transcript.html`).\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
 
@@ -209,12 +217,81 @@ def format_cost(agent: CantripAgent) -> str:
     return "\n".join(lines)
 
 
+_EXPORT_FORMATS: dict[str, str] = {
+    "html": ".html",
+    "jsonl": ".jsonl",
+    "markdown": ".md",
+}
+
+
+def export_transcript(agent: CantripAgent, args: str) -> str:
+    """Export the live session transcript to a file.
+
+    ``args`` is the whitespace-separated remainder of the slash command;
+    a leading token matching an entry in :data:`_EXPORT_FORMATS` selects
+    the format, and a trailing token is treated as the output path.  Any
+    token that is neither is reported as an error so the user does not
+    silently overwrite an unintended file.
+    """
+    charm_path: pathlib.Path | None = getattr(agent.state, "charm_path", None)
+    if charm_path is None:
+        return "_Cannot export: no charm path for this session._"
+    db_path = charm_path / ".cantrip"
+    if not db_path.exists():
+        return f"_Cannot export: no `.cantrip` file at {charm_path}._"
+
+    try:
+        tokens = shlex.split(args)
+    except ValueError as exc:
+        return f"_Could not parse arguments: {exc}._"
+
+    fmt = "html"
+    output: pathlib.Path | None = None
+    if tokens and tokens[0].lower() in _EXPORT_FORMATS:
+        fmt = tokens.pop(0).lower()
+    if tokens:
+        output = pathlib.Path(tokens.pop(0)).expanduser()
+    if tokens:
+        return "_Usage: `/export [html|jsonl|markdown] [path]` — unexpected extra arguments._"
+
+    suffix = _EXPORT_FORMATS[fmt]
+    destination = output or (charm_path / f"transcript{suffix}")
+
+    # Import lazily so the slash module stays importable in environments
+    # where the transcript renderers' optional dependencies are unusual.
+    from cantrip.transcript import export as transcript_export
+
+    data = transcript_export.load_transcript(db_path)
+
+    if fmt == "html":
+        from cantrip.transcript.html import render_html
+
+        content = render_html(data)
+    elif fmt == "jsonl":
+        from cantrip.transcript.jsonl import render_jsonl
+
+        content = render_jsonl(data)
+    else:
+        from cantrip.transcript.markdown import render_markdown
+
+        content = render_markdown(data)
+
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content)
+    except OSError as exc:
+        return f"_Failed to write {destination}: {exc}._"
+
+    return f"Exported transcript ({fmt}) to `{destination}`."
+
+
 __all__ = [
     "COMMAND_CATALOGUE",
     "CommandInfo",
     "SHARED_VERBS",
     "SlashResult",
     "dispatch",
+    "export_transcript",
     "format_cost",
     "help_text",
 ]

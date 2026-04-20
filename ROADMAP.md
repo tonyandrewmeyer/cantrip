@@ -2759,9 +2759,11 @@ experienced users.
 
 ### 31.8 Low — Export Running Session
 
-- [ ] Allow exporting the transcript while the session is still running (not just
+- [x] Allow exporting the transcript while the session is still running (not just
   after exit via `export-transcript` subcommand)
-- [ ] Add `F10` binding or `/export` chat command
+- [x] Add `F10` binding or `/export` chat command — shared slash dispatcher
+  gained `/export [html|jsonl|markdown] [path]`, so the command is typeable
+  in the TUI, CLI REPL, and Web surfaces without leaving the session
 
 ### 31.9 Low — Notification Sounds / Desktop Notifications
 
