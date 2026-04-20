@@ -63,6 +63,12 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 - **Commit at appropriate times.** Commit after each logical, self-contained piece of work. Each commit should leave the tree in a working state (`make check` passes).
 - **Keep `CHANGELOG.md` up to date.** Add entries under `## Unreleased` for significant changes. Small fixes don't need entries.
 - **Maintain test coverage.** New code should include tests; coverage should not decrease.
+- **Consider user-facing docs when closing a task.** Before marking work done, ask whether the change affects anything a user sees: a CLI flag, slash command, env var, TUI screen, config key, or behaviour documented in `docs/docs/`. If so, update the relevant page in the same commit (or an adjacent one). Defer only when the feature has no user-facing surface yet — in that case, add a ROADMAP follow-up item so the docs debt is tracked rather than forgotten.
+  - `docs/docs/reference-cli.html` — CLI flags, env vars, session-file behaviour, slash-command catalogue
+  - `docs/docs/howto-*.html` — task-oriented guides (export, memory, MCP, providers, etc.)
+  - `docs/docs/explanation-*.html` — subsystem explanations (architecture, observability, TUI screens, Rust backends)
+  - `docs/docs/tutorial.html` — launch-to-first-charm walk-through
+  - `docs/docs/reference-tools.html` — tool catalogue surfaced to subagents
 
 ## Reference Documents
 
@@ -75,3 +81,4 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 - `design/WEB_UI_ACCESSIBILITY_AUDIT.md` — WCAG 2.1 AA audit of the Web UI with findings and evidence (see ROADMAP Phase 60)
 - `ROADMAP.md` — Implementation phases
 - `CHANGELOG.md` — Notable changes (keep updated)
+- `docs/docs/` — Published HTML user docs (tutorial, how-to, reference, explanation). Source of truth for user-facing behaviour — update alongside shipped features.
