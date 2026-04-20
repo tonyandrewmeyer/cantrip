@@ -106,12 +106,12 @@ class ResumePromptScreen(ModalScreen[str]):
         with Center(), Vertical(id="resume-container"):
             with Horizontal(id="resume-title"):
                 yield Static("Resume prior session?", classes="resume-title-text")
-                yield Static("[R/F/T]", classes="resume-title-hint")
-            yield Static("─" * 76, classes="resume-hint")
+                yield Static("[R/F/T]", classes="resume-title-hint", markup=False)
             yield Static(self._preview.summary(), classes="resume-summary")
             yield Static(
                 "[R]esume previous work   [F]resh start (archive old)   [T]ranscript (toggle)",
                 classes="resume-choices",
+                markup=False,
             )
             yield Static(
                 "Fresh renames .cantrip to .cantrip.bak-<timestamp> so nothing is lost.",
