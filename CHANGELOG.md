@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Best-of-N racing — executor wiring (Phase 47.3)** —
+  ``BackgroundExecutor`` now dispatches race-eligible tasks to the
+  coordinator.  A new ``_execute_race`` path builds candidate specs
+  from the primary, light, and any ``extra_providers`` (deduped by
+  model name), runs the race via the shared ``RaceCoordinator``, and
+  merges the winner's worktree back into main via the existing
+  ``_merge_worktree``.  Merge errors block the parent task and keep
+  the branch for manual resolution; blocked / noop winners skip the
+  merge.  Losing candidates' transcripts are preserved under composite
+  ``{task_id}__{candidate_id}`` ids in ``subagent_messages``, and a
+  ``race_candidate`` event per candidate ties the composite id back to
+  the parent task so reviewers can find every candidate's trace.
+  Opt-in via ``RaceConfig.enabled_categories`` — default config keeps
+  the single-subagent path.  Covered by
+  ``tests/unit/test_executor_race.py`` (18 tests: spec assembly and
+  dedup, ``_should_race`` gate, merge-and-done, merge-error blocks,
+  all-candidates-failed fail path, coordinator-raise fail path,
+  blocked-winner no-merge, and factory transcript namespacing).
 - **Best-of-N racing library (Phase 47.1 + 47.2 + 47.4 core)** — new
   ``cantrip.agent.race`` module with the scoring rubric, data types,
   and the ``RaceCoordinator`` needed to run N candidate subagents in

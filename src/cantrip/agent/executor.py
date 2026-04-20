@@ -2,13 +2,15 @@
 
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import pathlib
+import re
 import subprocess
 import time
 from collections.abc import Callable
 
-from cantrip.agent import routing
+from cantrip.agent import race, routing
 from cantrip.agent.autodeploy import followup_tasks
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.routing import RouteAction, route, snapshot_from_queue
@@ -61,6 +63,23 @@ _ERROR_COOLDOWN = 5.0
 
 # Called when a task completes or fails, for TUI/conversation-loop coordination.
 TaskEventCallback = Callable[[AgentTask], None] | None
+
+# Characters allowed in a filesystem-safe candidate id derived from a
+# provider's model name.  Everything else collapses to a single hyphen.
+_CANDIDATE_ID_RE = re.compile(r"[^a-z0-9-]+")
+
+
+def _candidate_id_for(provider: llm.LLMProvider) -> str:
+    """Build a short, filesystem-safe candidate id from *provider*.
+
+    The id lands in both a git branch name and a worktree directory, so
+    it needs to be lowercase, ASCII, and punctuation-light.  Falls back
+    to the provider's short name when the model name is absent, and to
+    the literal ``candidate`` when both are empty.
+    """
+    raw = getattr(provider, "model_name", None) or provider.name or ""
+    safe = _CANDIDATE_ID_RE.sub("-", raw.lower()).strip("-")
+    return safe or "candidate"
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +333,8 @@ class BackgroundExecutor:
         state_service: StateService | None = None,
         followup_planner: FollowupPlanner | None = None,
         worktree_allocator: WorktreeAllocator | None = None,
+        race_config: race.RaceConfig | None = None,
+        extra_providers: list[llm.LLMProvider] | None = None,
     ) -> None:
         self._queue = queue
         self._tools = tools
@@ -338,6 +359,18 @@ class BackgroundExecutor:
         # Serialises worktree-to-main merges so concurrent subagents do not
         # race on the main tree.
         self._merge_lock = asyncio.Lock()
+        # Best-of-N racing is opt-in: the default RaceConfig has an empty
+        # enabled_categories set so should_race() always returns False and
+        # every task takes the single-subagent path.
+        self._race_config = race_config or race.RaceConfig()
+        self._extra_providers: list[llm.LLMProvider] = list(extra_providers or [])
+        # The coordinator reuses the executor's allocator so composite-id
+        # race worktrees live in the same bookkeeping as single-task ones
+        # and the startup orphan-reaper sees both.
+        self._race_coordinator = race.RaceCoordinator(
+            allocator=self._worktrees,
+            config=self._race_config,
+        )
 
         self._running = False
         self._paused = False
@@ -744,6 +777,14 @@ class BackgroundExecutor:
             self._persist()
             return
 
+        # Best-of-N racing dispatches to its own path.  The coordinator
+        # allocates per-candidate worktrees itself, so the
+        # allocate/merge/revert logic below is skipped entirely.
+        specs = self._race_candidate_specs()
+        if self._should_race(task, specs):
+            await self._execute_race(task, self._race_config.clamp_candidates(specs))
+            return
+
         handle = await self._try_allocate_worktree(task)
         effective_path: str | pathlib.Path | None = (
             handle.path if handle is not None else self._state.charm_path
@@ -823,6 +864,234 @@ class BackgroundExecutor:
                 self._queue.notify_task(task)
             self._create_followups(task)
             self._persist()
+
+    # -- Racing --------------------------------------------------------------
+
+    def _race_candidate_specs(self) -> list[race.CandidateSpec]:
+        """Build candidate specs for a race from the executor's providers.
+
+        Always includes the primary provider.  The light provider (if
+        configured) is added as a second candidate.  Any ``extra_providers``
+        supplied to the constructor follow.  Duplicates by candidate id are
+        filtered so the same model is never raced against itself.
+        """
+        seen: set[str] = set()
+        specs: list[race.CandidateSpec] = []
+        for provider in (self._provider, self._light_provider, *self._extra_providers):
+            if provider is None:
+                continue
+            cid = _candidate_id_for(provider)
+            if cid in seen:
+                continue
+            seen.add(cid)
+            specs.append(
+                race.CandidateSpec(
+                    candidate_id=cid,
+                    provider=provider,
+                    light_provider=self._light_provider,
+                )
+            )
+        return specs
+
+    def _should_race(self, task: AgentTask, specs: list[race.CandidateSpec]) -> bool:
+        """Return True when *task* should run via the race coordinator."""
+        # Races need a charm path: the coordinator allocates per-candidate
+        # worktrees, which fall back silently without one.
+        if self._state.charm_path is None:
+            return False
+        return self._race_config.should_race(task.category, len(specs))
+
+    def _build_race_subagent_factory(self, parent_task: AgentTask) -> race.SubagentFactory:
+        """Return a factory that builds per-candidate subagents.
+
+        Each candidate runs under a shadow task whose id is
+        ``{parent_id}__{candidate_id}`` so the subagent's transcript
+        records land in their own ``subagent_messages`` partition — every
+        candidate's full tool-call trace is preserved for review, not
+        just the winner's.
+        """
+
+        async def factory(
+            spec: race.CandidateSpec,
+            work_path: pathlib.Path,
+            _handle: WorktreeHandle | None,
+        ) -> Subagent:
+            shadow_task = dataclasses.replace(
+                parent_task,
+                id=f"{parent_task.id}__{spec.candidate_id}",
+            )
+            context = self._build_context(shadow_task, work_path)
+            # BUILD tasks get the extended round budget that non-race BUILD
+            # subagents already enjoy; other categories use the default.
+            extra: dict[str, int] = {}
+            if parent_task.category == TaskCategory.BUILD:
+                extra["max_rounds"] = MAX_BUILD_ROUNDS
+            return Subagent(
+                context,
+                self._tools,
+                spec.provider,
+                light_provider=spec.light_provider or self._light_provider,
+                on_usage=self._record_usage,
+                throttle=self._throttle,
+                store=self._store,
+                on_phase_change=self._queue.notify_task,
+                **extra,
+            )
+
+        return factory
+
+    def _record_race_events(
+        self,
+        task: AgentTask,
+        specs: list[race.CandidateSpec],
+        result: race.RaceResult,
+    ) -> None:
+        """Write a ``race_finished`` event plus one per-candidate row.
+
+        Each candidate's composite transcript id is recorded so a reviewer
+        looking at ``subagent_messages`` can find the loser transcripts by
+        joining on ``race_candidate.transcript_task_id``.
+        """
+        if self._state_service is None:
+            return
+        self._state_service.record_event(
+            "race_finished",
+            {
+                "task_id": task.id,
+                "task_title": task.title,
+                "winner": result.winner.candidate_id if result.winner else "",
+                "winner_score": f"{result.winner.total:.3f}" if result.winner else "",
+                "candidates": ",".join(s.candidate_id for s in specs),
+                "elapsed_s": f"{result.elapsed_seconds:.1f}",
+            },
+        )
+        for candidate_score in result.all_scores:
+            self._state_service.record_event(
+                "race_candidate",
+                {
+                    "task_id": task.id,
+                    "candidate_id": candidate_score.candidate_id,
+                    "transcript_task_id": f"{task.id}__{candidate_score.candidate_id}",
+                    "exit_state": candidate_score.exit_state.value,
+                    "total": f"{candidate_score.total:.3f}",
+                },
+            )
+
+    async def _release_race_worktree(
+        self,
+        task_id: str,
+        candidate_id: str,
+        *,
+        keep_branch: bool,
+    ) -> None:
+        """Release a race candidate's composite-keyed worktree."""
+        key = f"{task_id}__{candidate_id}"
+        try:
+            await self._worktrees.release(key, keep_branch=keep_branch)
+        except (OSError, RuntimeError) as exc:
+            log.warning("Worktree release failed for race key %s: %s", key, exc)
+
+    async def _execute_race(
+        self,
+        task: AgentTask,
+        specs: list[race.CandidateSpec],
+    ) -> None:
+        """Race *specs* against each other on *task* and apply the winner.
+
+        The coordinator allocates its own worktrees, spawns every candidate
+        concurrently, scores them, and releases losing worktrees.  This
+        method merges the winner's worktree back into the main charm tree
+        and sets the parent task's status.  Losing candidates' transcripts
+        are preserved under composite task ids for post-hoc review.
+        """
+        base_path = self._state.charm_path
+        assert base_path is not None  # _should_race guards this  # noqa: S101
+        build_subagent = self._build_race_subagent_factory(task)
+
+        if self._state_service is not None:
+            self._state_service.record_event(
+                "race_started",
+                {
+                    "task_id": task.id,
+                    "task_title": task.title,
+                    "candidates": ",".join(s.candidate_id for s in specs),
+                },
+            )
+
+        try:
+            result = await self._race_coordinator.run(
+                task_id=task.id,
+                base_path=pathlib.Path(base_path),
+                specs=specs,
+                build_subagent=build_subagent,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            log.exception("Race for task %s failed: %s", task.id, exc)
+            self._fail_task(task, f"Race coordinator error: {exc}", exc, snapshot=None)
+            self._create_followups(task)
+            self._persist()
+            return
+
+        self._record_race_events(task, specs, result)
+
+        if result.winner is None or result.winner_outcome is None:
+            self._fail_task(task, "All race candidates failed", None, snapshot=None)
+            self._create_followups(task)
+            self._persist()
+            return
+
+        winner_outcome = result.winner_outcome
+        winner_result = winner_outcome.result
+        winner_handle = winner_outcome.handle
+        # A viable winner always carries a result; the coordinator's scoring
+        # layer forces a zero-total on ``result is None`` so pick_winner
+        # cannot select it.
+        assert winner_result is not None  # noqa: S101
+        winner_candidate_id = winner_outcome.spec.candidate_id
+
+        # Non-COMPLETED winners (BLOCKED / NOOP) skip the merge: we do not
+        # want to land a half-finished change on main.  Defer to the shared
+        # result handler to transition the parent task's status the same
+        # way a single-subagent run would.
+        if winner_result.exit_state != ExitState.COMPLETED:
+            await self._release_race_worktree(
+                task.id,
+                winner_candidate_id,
+                keep_branch=winner_result.exit_state == ExitState.BLOCKED,
+            )
+            self._handle_result(task, winner_result, fp_before="", effective_path=None)
+            self._create_followups(task)
+            self._persist()
+            return
+
+        merge_error: str | None = None
+        if winner_handle is not None:
+            try:
+                merge_error = await self._merge_worktree(winner_handle, task)
+            except (OSError, RuntimeError) as exc:
+                log.exception("Race winner merge for %s failed: %s", task.id, exc)
+                merge_error = f"merge failed: {exc}"
+
+        if merge_error is not None:
+            self._queue.set_blocked(task.id, merge_error)
+            self._record_status_change(task, "blocked", error=merge_error)
+            if self._on_task_failed:
+                self._on_task_failed(task)
+        else:
+            self._queue.set_done(task.id, winner_result.text)
+            self._record_status_change(task, "done")
+            if task.category in (TaskCategory.BUILD, TaskCategory.DEBUG):
+                self._check_uncommitted(task)
+            if self._on_task_done:
+                self._on_task_done(task)
+
+        await self._release_race_worktree(
+            task.id,
+            winner_candidate_id,
+            keep_branch=merge_error is not None,
+        )
+        self._create_followups(task)
+        self._persist()
 
     async def _reap_worktree_orphans(self) -> None:
         """Drop worktrees left over from a previous session on startup.

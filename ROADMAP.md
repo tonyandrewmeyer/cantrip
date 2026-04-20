@@ -4476,20 +4476,23 @@ by cost and off by default; opt-in per task category.
   initial rubric-validation pass; revisit once races are actually
   running
 
-### 47.3 Medium — Result selection and commit
+### 47.3 Medium — Result selection and commit ✅
 
-- [ ] After all candidates finish (or one wins early), the coordinator picks
+- [x] After all candidates finish (or one wins early), the coordinator picks
   the highest-scored candidate's worktree and merges it into the charm branch
-  via Phase 44.2 — coordinator now preserves the winner's branch and
-  hands back the ``WorktreeHandle`` in ``RaceResult.winner_outcome``;
-  the actual merge call lives in the executor (follow-up commit wires
-  ``_merge_worktree`` into the race exit path)
+  via Phase 44.2 — ``BackgroundExecutor._execute_race`` calls
+  ``_merge_worktree`` on the winner's ``WorktreeHandle``; merge failures
+  block the parent task and preserve the branch for manual resolution,
+  matching the single-subagent merge-error path
 - [x] Losing candidates' worktrees are torn down via Phase 44.3 —
   ``RaceCoordinator._release_losers`` calls the allocator with
   ``keep_branch=False`` for every non-winning candidate
-- [ ] Transcript records all candidates' output per Phase 14.2 so reviewers
-  can see the losers too — follow-up; needs executor wiring so each
-  candidate's ``SubagentContext`` gets its own transcript id
+- [x] Transcript records all candidates' output per Phase 14.2 so reviewers
+  can see the losers too — the executor's race subagent factory builds
+  each candidate with a shadow task whose id is
+  ``{parent_id}__{candidate_id}``, so every candidate's
+  ``subagent_messages`` land in their own partition; a ``race_candidate``
+  event per candidate records the composite transcript id for lookup
 
 ### 47.4 Medium — Cost guardrails
 
