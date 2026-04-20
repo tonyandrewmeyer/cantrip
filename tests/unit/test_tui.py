@@ -413,6 +413,72 @@ class TestTuiWidgets:
                 assert widget.cos_expanded is False
 
     @pytest.mark.asyncio
+    async def test_cos_expansion_renders_app_list(self):
+        """Expanding the COS section must list each app, not just the model header.
+
+        Regression guard for the "expand shows only 'Model: cos (k8s)'" bug:
+        the JujuStatusWidget mounted with ``status=...`` in ``__init__`` must
+        fill its #status-container with the app rows after it's mounted.
+        """
+        from cantrip.tui.widgets.status import AppBox, JujuStatusWidget
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                widget = pilot.app.query_one("#juju-status", MultiModelStatusWidget)
+
+                # Three COS apps so the test notices if only the header rendered.
+                def _mock_app(name: str) -> MagicMock:
+                    m = MagicMock()
+                    m.app_status.current = "active"
+                    m.app_status.message = ""
+                    m.units = {f"{name}/0": MagicMock(workload_status=MagicMock(current="active"))}
+                    m.relations = {}
+                    return m
+
+                mock_status = MagicMock()
+                mock_status.model.name = "cos"
+                mock_status.model.cloud = "k8s"
+                mock_status.apps = {
+                    "grafana": _mock_app("grafana"),
+                    "prometheus": _mock_app("prometheus"),
+                    "loki": _mock_app("loki"),
+                }
+                widget.cos_status = mock_status
+                await pilot.pause()
+
+                widget.toggle_cos_expanded()
+                await pilot.pause()
+                # A second pause lets the newly-mounted JujuStatusWidget's
+                # watch_status callback fire after its #status-container has
+                # composed.
+                await pilot.pause()
+
+                inner = widget.query_one(JujuStatusWidget)
+                app_boxes = list(inner.query(AppBox))
+                assert len(app_boxes) == 3, (
+                    f"Expected 3 AppBox rows after COS expansion, got {len(app_boxes)}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_juju_status_pane_is_scrollable(self):
+        """#juju-status must scroll when content exceeds its height.
+
+        The right panel packs task-checklist + charm-files + juju-status
+        into a fixed column; without ``overflow-y: auto`` on #juju-status,
+        an expanded COS section with more apps than fit in the pane's
+        share of the column gets clipped at the bottom, so the user only
+        ever sees the "Model: cos (k8s)" header.  Guard the CSS token.
+        """
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pane = pilot.app.query_one("#juju-status", MultiModelStatusWidget)
+                assert pane.styles.overflow_y == "auto", (
+                    f"#juju-status must have overflow-y: auto, got {pane.styles.overflow_y!r}"
+                )
+
+    @pytest.mark.asyncio
     async def test_test_summary_shown_after_agent_response(self):
         """Test results appear in status bar after successful agent response."""
         p1, p2, mock_agent = _patch_app()

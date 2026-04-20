@@ -39,6 +39,7 @@ Screen {
 
 #juju-status {
     height: 1fr;
+    overflow-y: auto;
 }
 
 #chat {
