@@ -4975,7 +4975,7 @@ task-level persistence.
 
 ---
 
-## Phase 53: Organisation Cleanup — Prompts, Planner, Dev Docs
+## Phase 53: Organisation Cleanup — Prompts, Planner, Dev Docs ✓
 
 **Goal:** Finish the job started in Phase 0.5 and the skills work — every
 piece of transferable charm-building knowledge lives in markdown or
@@ -5000,73 +5000,87 @@ clarify it is OCI/Docker registry search (not a tool registry), and
 add three design documents (`TOOLS.md`, `SKILLS.md`, `PROMPTS.md`)
 that record currently-implicit invariants of the three subsystems.
 
-### 53.1 High — Extract planner prompts to `.md.j2` templates
+### 53.1 High — Extract planner prompts to `.md.j2` templates ✅
 
-- [ ] Create `src/cantrip/agent/prompts/planning/` with three templates:
+- [x] Create `src/cantrip/agent/prompts/planning/` with three templates:
   `full.md.j2` (was `_PLANNING_PROMPT`), `design_to_build.md.j2`, and
   `day2_to_build.md.j2`
-- [ ] Add a small loader next to `prompts/system.py` that lazy-loads
+- [x] Add a small loader next to `prompts/system.py` that lazy-loads
   these templates with the same `StrictUndefined` + sanitisation shape
   as the system prompt
-- [ ] Replace the Python constants in `planner.py` with calls into the
+- [x] Replace the Python constants in `planner.py` with calls into the
   loader; keep the existing `{categories}` / `{context_block}` variable
   substitution semantics
-- [ ] Unit tests verify the rendered output is byte-identical to the
+- [x] Unit tests verify the rendered output is byte-identical to the
   pre-extraction prompts for a fixed set of inputs (freezes behaviour)
+  — covered by ``tests/unit/test_planner_prompt_snapshots.py`` and
+  ``tests/unit/planner/test_prompts.py``
 
-### 53.2 High — Extract task-description guidance to templates
+### 53.2 High — Extract task-description guidance to templates ✅
 
-- [ ] Create `src/cantrip/agent/prompts/tasks/` with one `.md.j2` per
+- [x] Create `src/cantrip/agent/prompts/tasks/` with one `.md.j2` per
   deterministic task generator that currently builds a multi-line
   description: `sprint_build.md.j2`, `sprint_deploy.md.j2`,
-  `fast_path_build.md.j2`, `one_shot_build.md.j2`,
-  `improvement_fixes.md.j2`, `operability_*.md.j2`, etc.
-- [ ] Add a helper `render_task_description(name, **vars)` that picks
-  the right template and renders it with the planner's per-task context
-  (workload, ubuntu version, profile, design text, …)
-- [ ] `AgentTask.description` is populated from the helper; no
-  per-task f-strings remain in `planner.py`
-- [ ] Snapshot tests lock in the rendered text for a canonical input
+  `fast_path_design.md.j2`, `one_shot_build.md.j2`, `improvement_*`,
+  `operability_*`, `research_*`, `day2_*` — 28 templates in total
+- [x] Add a helper `render(name, **vars)` that picks the right
+  template and renders it with the planner's per-task context
+  (workload, ubuntu version, profile, design text, …).  Named
+  ``render`` rather than ``render_task_description`` so the call site
+  reads ``task_prompts.render("sprint_build", …)``
+- [x] `AgentTask.description` is populated from the helper; no
+  multi-line per-task f-strings remain in the planner (the two remaining
+  inline descriptions — "Present the design proposal for user approval."
+  and the improvement confirm blurb — are single short sentences,
+  not multi-line guidance)
+- [x] Snapshot tests lock in the rendered text for a canonical input
   set — protects against accidental drift during the extraction
 
-### 53.3 Medium — Split `planner.py` along the deterministic / LLM seam
+### 53.3 Medium — Split `planner.py` along the deterministic / LLM seam ✅
 
-- [ ] Introduce `src/cantrip/agent/planner/` package; move the
+- [x] Introduce `src/cantrip/agent/planner/` package; move the
   deterministic generators into `planner/deterministic.py` and the
   LLM-driven code path (`TaskPlanner`, prompt loaders, JSON parser,
   dependency validator) into `planner/llm.py`
-- [ ] Keep `planner/__init__.py` re-exports stable so existing
+- [x] Keep `planner/__init__.py` re-exports stable so existing
   `from cantrip.agent.planner import …` imports do not break
-- [ ] Move the classifier helpers (`is_fast_path`, `is_sprint`,
-  `is_improvement`, `is_one_shot_build`) into `planner/routing.py`
-  alongside the existing top-level `routing.py` or merge the two
-- [ ] No functional change — behaviour is covered by the existing
+- [~] Classifier helpers (`is_fast_path`, `is_sprint`, `is_improvement`,
+  `is_one_shot_build`) stayed in ``planner/deterministic.py`` rather
+  than moving to ``planner/routing.py`` — the roadmap offered this as
+  an "or" option.  They classify against a ``PlanningContext`` and
+  are only used by the deterministic path, so they live next to their
+  caller.  The top-level ``agent/routing.py`` (which does something
+  different — task → subagent dispatch) is left untouched
+- [x] No functional change — behaviour is covered by the existing
   planner unit tests plus the snapshot tests from 53.1 and 53.2
 
-### 53.4 Low — Rename `tools/registry.py` → `tools/oci_registry.py`
+### 53.4 Low — Rename `tools/registry.py` → `tools/oci_registry.py` ✅
 
-- [ ] `src/cantrip/agent/tools/registry.py` currently holds Docker
+- [x] `src/cantrip/agent/tools/registry.py` currently holds Docker
   Hub / OCI image-search tools, not a tool-registration mechanism —
-  rename to `oci_registry.py` to match its contents
-- [ ] Update the single import in `tools/__init__.py`
-- [ ] Grep-verify no other code references the old module name
+  renamed to `oci_registry.py` to match its contents
+- [x] Update the single import in `tools/__init__.py`
+- [x] Grep-verify no other code references the old module name —
+  only historical mentions in ``CHANGELOG.md`` and this roadmap remain
 
-### 53.5 Medium — Add dev design docs for the three subsystems
+### 53.5 Medium — Add dev design docs for the three subsystems ✅
 
-- [ ] `design/TOOLS.md` — the `Tool` ABC contract, the `build_tools()`
+- [x] `design/TOOLS.md` — the `Tool` ABC contract, the `build_tools()`
   factory pattern, how to add and remove a tool, where tool schemas
   come from, conventions for naming and file layout, how tools
   interact with `PathAwareTool` and the virtual-file store
-- [ ] `design/SKILLS.md` — `SKILL.md` discovery via `SkillsIndex`,
+- [x] `design/SKILLS.md` — `SKILL.md` discovery via `SkillsIndex`,
   frontmatter schema, lazy-load-on-demand flow, the skill index injected
   into the system prompt, interop with Phase 50 standard-format skills
-- [ ] `design/PROMPTS.md` — the prompt layering (system full / system
+- [x] `design/PROMPTS.md` — the prompt layering (system full / system
   compact / subagent / planning / task descriptions / skills loaded on
   demand), Jinja2 conventions (`StrictUndefined`, trailing newlines),
   the `_JINJA_SYNTAX` sanitisation regex and why it exists, extension
   points for new prompt types
-- [ ] Cross-link the three docs from `design/PLAN.md` so the
-  architecture index points at them
+- [x] Cross-link the three docs from `design/PLAN.md` so the
+  architecture index points at them — new "Related Design Documents"
+  section at the top of ``PLAN.md`` links ``AGENT``, ``TOOLS``,
+  ``SKILLS``, ``PROMPTS``, ``UI``, and ``TERRAFORM``
 
 ### What this phase is *not*
 

@@ -1,5 +1,27 @@
 # Charm Building Agent - Project Plan
 
+## Related Design Documents
+
+This file covers project-level decisions: conventions, workflow, the
+two-loop architecture sketch, and the overall file structure.
+Subsystem-level contracts live in dedicated docs:
+
+- [AGENT.md](AGENT.md) — the two-loop agent architecture (conversation
+  loop, autonomous loop), subagents, work queue, and core tools.
+- [TOOLS.md](TOOLS.md) — the `Tool` ABC contract, how tools register
+  and execute, `PathAwareTool` and the virtual-file store, and how to
+  add or remove a tool.
+- [SKILLS.md](SKILLS.md) — `SkillsIndex` and the `SKILL.md`
+  frontmatter schema, the two-tier lazy-load flow, and how the skill
+  index is surfaced to the LLM.
+- [PROMPTS.md](PROMPTS.md) — prompt layering (system / compact /
+  subagent / planning / task descriptions / skills), Jinja2
+  conventions (`StrictUndefined`, template-injection guard), and
+  where to add a new prompt.
+- [UI.md](UI.md) — the shared TUI + Web UI event bus, layout, and
+  keyboard shortcuts.
+- [TERRAFORM.md](TERRAFORM.md) — Terraform module generation design.
+
 ## Project Conventions
 
 - **Language:** UK English for all docs, variable names, comments, UI text
