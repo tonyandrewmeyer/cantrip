@@ -4548,18 +4548,27 @@ by cost and off by default; opt-in per task category.
   disambiguated entries that ``/memory`` can list and ``/forget``
   can remove
 
-### 47.6 Low — Publish user-facing docs for racing
+### 47.6 Low — Publish user-facing docs for racing ✅
 
-- [ ] Once 47.4 and 47.5 land a user-facing surface (config keys,
+- [x] Once 47.4 and 47.5 land a user-facing surface (config keys,
   CONFIRM prompts, ``/arena``), add a docs page covering Best-of-N
   to ``docs/docs/`` — either a new ``explanation-race.html`` or a
   section in ``reference-cli.html``.  Cover the scoring rubric
   (charmlint 30 %, readiness 30 %, tests 25 %, diff 15 %),
   ``RaceConfig.enabled_categories``, ``max_candidates``,
   ``budget_tokens``, and how to interpret the ``race_candidate``
-  events in the transcript.  Deferred until racing has a documented
-  surface — shipping docs for a library-only feature would strand
-  readers on config keys they cannot yet set
+  events in the transcript — ``docs/docs/explanation-race.html``
+  covers the rubric (per-signal decay, viability short-circuit,
+  tie-breaking), every ``RaceConfig`` knob, the three-way
+  RACE/CONFIRM/DOWNGRADE gate, the full ``/arena`` pick grammar,
+  and every ``race_*`` transcript event including how to join a
+  loser's ``subagent_messages`` partition by
+  ``transcript_task_id``.  A callout warns that ``RaceConfig`` has
+  no CLI/env surface yet; the Limits section tracks the remaining
+  follow-ups (no early cancellation, static baseline estimate,
+  unit-only test scoring).  Linked from the index card grid, from
+  every explanation page's sidebar, and from the Arena section of
+  ``reference-cli.html``.
 
 **Exit criteria:** Best-of-N races run for configured categories, score by
 measurable outcomes, merge the winner via the worktree merge path, and respect

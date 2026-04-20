@@ -14,9 +14,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   subcommand.  New ``docs/docs/explanation-tui-screens.html`` catalogues
   every function-key modal (File detail, Logs with ``L``/``M``/``T``
   cycling, Graph with ``F`` status filter, Traces with Grafana
-  deep-links) plus the Dev and COS status panes.  A docs TODO for
-  Best-of-N racing is tracked as ROADMAP Phase 47.6 &mdash; held until
-  ``/arena`` lands a user-facing surface.
+  deep-links) plus the Dev and COS status panes.
+- **Racing and Arena explainer (Phase 47.6).**  New
+  ``docs/docs/explanation-race.html`` covers the Best-of-N scoring
+  rubric (charmlint 30 %, readiness 30 %, tests 25 %, diff 15 %) with
+  per-signal decay functions, viability short-circuit for FAILED /
+  NOOP runs, and tie-breaking on diff size.  Documents every
+  ``RaceConfig`` knob (``enabled_categories``, ``max_candidates``,
+  ``budget_tokens``, ``confirm_threshold_tokens``,
+  ``baseline_tokens_per_run``, ``cancel_on_perfect``), the three-way
+  RACE/CONFIRM/DOWNGRADE gate, the full ``/arena`` pick grammar, and
+  every ``race_*`` transcript event with the
+  ``parent__candidate`` join key for loser transcripts.  A callout
+  flags that ``RaceConfig`` still has no CLI/env surface; the Limits
+  section tracks the remaining gaps (no early cancellation, static
+  baseline estimate, unit-only test scoring).  Linked from the index
+  card grid, from every explanation-page sidebar, and from the Arena
+  section of ``reference-cli.html``.
 
 ### Added
 - **Blind A/B arena — ``/arena`` (Phase 47.5)** —

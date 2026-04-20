@@ -286,12 +286,15 @@ cantrip --help</code></pre>
       </dd>
     </dl>
 
-    <h3>Arena (blind A/B)</h3>
+    <h3 id="arena">Arena (blind A/B)</h3>
     <p>
       Compare two models on the same prompt, blinded, and record the
       outcome as a global-scope memory. Useful when you&rsquo;re picking
       a light provider for day-to-day work and want a quick head-to-head
-      without reading model cards.
+      without reading model cards. See
+      <a href="explanation-race.html">Racing and Arena</a> for the
+      design, the scoring rubric used by the non-interactive
+      Best-of-N race, and the transcript events both surfaces emit.
     </p>
     <dl>
       <dt><code>/arena &lt;prompt&gt;</code></dt>
