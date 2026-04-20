@@ -1426,10 +1426,17 @@ class CantripApp(App):
 
     def action_debug(self) -> None:
         """Show trace/debug screen."""
+        from cantrip.agent import cos_endpoints
         from cantrip.tui.screens import traces as traces_screen
 
         cos_model = self._agent.state.cos_model if self._agent else None
-        self.push_screen(traces_screen.TraceScreen(cos_model=cos_model))
+        status = (
+            self._agent._watcher.latest_cos_status
+            if self._agent and self._agent._watcher
+            else None
+        )
+        endpoints = cos_endpoints.derive_endpoints(status)
+        self.push_screen(traces_screen.TraceScreen(cos_model=cos_model, endpoints=endpoints))
 
     def on_relation_line_selected(self, event: status_widgets.RelationLine.Selected) -> None:
         """Open the relation detail screen when a relation line is clicked."""

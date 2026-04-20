@@ -2759,11 +2759,23 @@ experienced users.
   an empty panel section so the user knows the screen hasn't broken.
   Title bar shows the active filter label.
 
-### 31.6 Medium — Trace Screen with Real URLs
+### 31.6 Medium — Trace Screen with Real URLs ✅
 
-- [ ] `TraceScreen` has placeholder `...` URLs for Tempo/Loki — generate real
-  deep-link URLs from the COS model endpoint addresses
-- [ ] Actually check COS reachability instead of always showing "Connected"
+- [x] `TraceScreen` has placeholder `...` URLs for Tempo/Loki — generate real
+  deep-link URLs from the COS model endpoint addresses — new
+  ``cantrip.agent.cos_endpoints`` helper parses the watcher's cached COS
+  status into a ``CosEndpoints`` value carrying the Grafana URL (lifted
+  from the workload status message), Grafana-active flag, and Tempo/Loki
+  presence.  ``TraceScreen`` receives these and builds Grafana Explore
+  deep-links for Tempo and Loki (JSON ``left=`` blob pre-selecting the
+  datasource).  When the status message doesn't advertise a URL, the
+  screen falls back to ``http://localhost:3000`` and says so.
+- [x] Actually check COS reachability instead of always showing "Connected"
+  — status line is now tri-state: ``Not deployed`` (no COS model),
+  ``Unknown (no poll yet)`` (watcher hasn't fired yet), ``Reachable``
+  (Grafana present and all units ``active``), or ``Not reachable``
+  (Grafana present but not active).  No new network calls — reachability
+  is read from the watcher's cached status.
 
 ### 31.7 Low — Charm Comparison Mode
 

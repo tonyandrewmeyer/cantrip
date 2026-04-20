@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **TraceScreen shows real Grafana deep-links and honest reachability**
+  — F4 no longer hard-codes ``...`` placeholders and a perpetual
+  ``Status: Connected``.  A new ``cantrip.agent.cos_endpoints`` helper
+  turns the watcher's cached COS status into a ``CosEndpoints`` value
+  (Grafana URL lifted from the workload status message, Grafana-active
+  flag, Tempo/Loki presence).  The screen builds Grafana Explore
+  deep-links for Tempo and Loki with JSON ``left=`` panes preselecting
+  the datasource, and renders a tri-state line: ``Not deployed`` /
+  ``Unknown (no poll yet)`` / ``Reachable`` / ``Not reachable``.  When
+  Grafana doesn't advertise a URL in its status message the screen
+  falls back to ``http://localhost:3000`` and says so.  No new network
+  calls — reachability is read from the existing watcher poll.
 - **LogScreen dev/COS cycling** — ``m`` in the log viewer switches
   between the dev and COS models when both are bootstrapped.  No-op
   when only one is configured.  Title shows the active model.

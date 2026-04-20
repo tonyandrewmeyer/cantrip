@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from textual.widgets import Input
 
+from cantrip.agent.cos_endpoints import CosEndpoints
 from cantrip.agent.state import TestResults
 from cantrip.tui.app import CantripApp
 from cantrip.tui.screens.help import HelpScreen
@@ -354,6 +355,64 @@ class TestTuiWidgets:
                 await pilot.press("escape")
                 await pilot.pause()
                 assert not isinstance(pilot.app.screen, TraceScreen)
+
+    @pytest.mark.asyncio
+    async def test_trace_screen_renders_unknown_when_no_status(self):
+        """Default TraceScreen renders an 'Unknown' status when no poll data."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.app.push_screen(TraceScreen(cos_model="cos"))
+                await pilot.pause()
+                texts = [str(w.render()) for w in pilot.app.screen.query("Static")]
+                blob = "\n".join(texts)
+                assert "Unknown" in blob
+                # Falls back to the local port-forward URL.
+                assert "http://localhost:3000" in blob
+
+    @pytest.mark.asyncio
+    async def test_trace_screen_renders_real_grafana_urls(self):
+        """When endpoints carry a Grafana URL, real links show up in the body."""
+        endpoints = CosEndpoints(
+            known=True,
+            grafana_url="http://grafana.example:3000",
+            grafana_active=True,
+            has_grafana=True,
+            has_tempo=True,
+            has_loki=True,
+        )
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.app.push_screen(TraceScreen(cos_model="cos", endpoints=endpoints))
+                await pilot.pause()
+                texts = [str(w.render()) for w in pilot.app.screen.query("Static")]
+                blob = "\n".join(texts)
+                assert "Reachable" in blob
+                assert "http://grafana.example:3000" in blob
+                # Tempo/Loki deep-links include the datasource in the left pane.
+                assert "datasource" in blob
+                assert "tempo" in blob
+                assert "loki" in blob
+
+    @pytest.mark.asyncio
+    async def test_trace_screen_reports_unreachable(self):
+        """An inactive Grafana surfaces as 'Not reachable'."""
+        endpoints = CosEndpoints(
+            known=True,
+            grafana_url=None,
+            grafana_active=False,
+            has_grafana=True,
+            has_tempo=False,
+            has_loki=False,
+        )
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.app.push_screen(TraceScreen(cos_model="cos", endpoints=endpoints))
+                await pilot.pause()
+                blob = "\n".join(str(w.render()) for w in pilot.app.screen.query("Static"))
+                assert "Not reachable" in blob
 
     @pytest.mark.asyncio
     async def test_f3_opens_log_screen(self):

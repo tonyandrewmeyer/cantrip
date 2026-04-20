@@ -6,6 +6,8 @@ from textual.containers import Center, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from cantrip.agent import cos_endpoints
+
 
 class TraceScreen(ModalScreen):
     """Modal screen showing COS endpoint URLs and Grafana links."""
@@ -62,10 +64,43 @@ class TraceScreen(ModalScreen):
         Binding("escape", "dismiss", "Close"),
     ]
 
-    def __init__(self, cos_model: str | None = None) -> None:
-        """Initialise with the COS model name."""
+    # Shown when we couldn't derive a real Grafana URL from the COS status
+    # message.  The screen still renders placeholders so users have the
+    # local port-forward fallback.
+    _FALLBACK_GRAFANA = "http://localhost:3000"
+
+    def __init__(
+        self,
+        cos_model: str | None = None,
+        endpoints: cos_endpoints.CosEndpoints | None = None,
+    ) -> None:
+        """Initialise with the COS model name and optional derived endpoints.
+
+        ``endpoints`` should come from
+        :func:`cantrip.agent.cos_endpoints.derive_endpoints` applied to the
+        watcher's latest COS status snapshot.  Passing ``None`` (the default)
+        is equivalent to "no poll yet"; the screen renders an honest
+        "Unknown" status rather than lying.
+        """
         super().__init__()
         self._cos_model = cos_model
+        self._endpoints = endpoints or cos_endpoints.CosEndpoints()
+
+    def _status_line(self) -> str:
+        """Human-readable status for the COS Model section."""
+        if not self._cos_model:
+            return "Not deployed"
+        if not self._endpoints.known:
+            return "Status: Unknown (no poll yet)"
+        if not self._endpoints.has_grafana:
+            return "Status: Grafana not deployed in COS model"
+        if self._endpoints.grafana_active:
+            return "Status: Reachable"
+        return "Status: Not reachable"
+
+    def _grafana_base(self) -> str:
+        """Return the Grafana base URL for display — real URL or fallback."""
+        return self._endpoints.grafana_url or self._FALLBACK_GRAFANA
 
     def compose(self) -> ComposeResult:
         """Compose the trace/debug screen."""
@@ -80,17 +115,19 @@ class TraceScreen(ModalScreen):
             yield Static("─────────", classes="trace-separator")
             if self._cos_model:
                 yield Static(f"Model: {self._cos_model}")
-                yield Static("Status: Connected", classes="trace-info")
-            else:
-                yield Static("Not deployed", classes="trace-info")
+            yield Static(self._status_line(), classes="trace-info")
 
             # Grafana.
+            grafana_base = self._grafana_base()
             yield Static("Grafana", classes="trace-section-header")
             yield Static("───────", classes="trace-separator")
-            yield Static(
-                "URL: http://localhost:3000",
-                classes="trace-link",
-            )
+            yield Static(f"URL: {grafana_base}", classes="trace-link")
+            if self._endpoints.grafana_url is None:
+                yield Static(
+                    "(Grafana workload status did not advertise a URL — "
+                    "using the local port-forward fallback.)",
+                    classes="trace-info",
+                )
             yield Static(
                 "Dashboards, metrics, and alerting.",
                 classes="trace-info",
@@ -99,10 +136,21 @@ class TraceScreen(ModalScreen):
             # Quick links.
             yield Static("Quick Links", classes="trace-section-header")
             yield Static("───────────", classes="trace-separator")
+            explore = self._endpoints.grafana_explore_url or f"{grafana_base}/explore"
+            tempo = self._endpoints.tempo_explore_url
+            loki = self._endpoints.loki_explore_url
+            tempo_line = (
+                f"Tempo (traces):   {tempo}"
+                if tempo is not None
+                else "Tempo (traces):   not available (Tempo or Grafana URL missing)"
+            )
+            loki_line = (
+                f"Loki (logs):      {loki}"
+                if loki is not None
+                else "Loki (logs):      not available (Loki or Grafana URL missing)"
+            )
             yield Static(
-                "Grafana Explore:  http://localhost:3000/explore\n"
-                "Tempo (traces):   http://localhost:3000/explore?orgId=1&left=...\n"
-                "Loki (logs):      http://localhost:3000/explore?orgId=1&left=...",
+                f"Grafana Explore:  {explore}\n{tempo_line}\n{loki_line}",
                 classes="trace-link",
             )
 
@@ -110,7 +158,7 @@ class TraceScreen(ModalScreen):
             yield Static("Access", classes="trace-section-header")
             yield Static("──────", classes="trace-separator")
             yield Static(
-                "If Grafana is not accessible at localhost:3000,\n"
+                "If Grafana is not accessible at the URL above,\n"
                 "set up port forwarding:\n"
                 "  juju ssh --model cos grafana/0 -L 3000:localhost:3000",
                 classes="trace-info",
