@@ -6284,6 +6284,101 @@ keybinding regresses.
 
 ---
 
+## Phase 62: On-Theme Activity Labels — "Spellcasting" Instead of "Thinking"
+
+**Goal:** Cantrip is named after the *cantrip* — a small, quickly-cast
+spell — and the product it builds charms for is called *juju*.  Both
+names lean into a spellcasting theme that every other piece of status
+copy ignores: today the TUI and Web surfaces say ``⟳ Thinking...``,
+``⟳ Streaming...``, and ``⟳ Running...`` in perfectly literal English.
+Replace the literal labels with randomly-selected synonyms (or close
+relations) for spellcasting so the UI matches the name.
+
+Candidate verbs: *incanting*, *invoking*, *conjuring*, *weaving*,
+*chanting*, *divining*, *scrying*, *summoning*, *murmuring*,
+*channelling*, *enchanting*, *binding*, *hexing*, *charming*,
+*brewing*, *consulting the oracle*.  The agent is still literally
+thinking; the label is just theme-matching flavour text.
+
+### 62.1 Medium — Pick a synonym pool and helper
+
+- [ ] Add ``src/cantrip/ui/flavour.py`` (or a module under
+  ``cantrip.agent``) with a vetted list of spellcasting verbs — not a
+  free-for-all thesaurus; short, present-continuous, UK-English
+  friendly, and non-offensive (drop *hexing* if it reads too sinister
+  out of context)
+- [ ] Public helper ``pick_activity_label(seed: int | str | None = None,
+  category: ActivityCategory = ActivityCategory.THINK) -> str`` that
+  returns a label.  The ``seed`` argument makes it deterministic for
+  tests; production calls pass ``None`` for true randomness.  The
+  ``category`` hint lets us reserve some verbs for specific phases
+  (e.g. *scrying* for research, *brewing* for build, *weaving* for
+  code generation) rather than one bag for everything — still random
+  within a category, so the same user sees variety
+- [ ] Unit tests cover: deterministic seeding, per-category uniqueness
+  (no overlap across categories unless intentional), and that every
+  returned label passes a simple ``str.isprintable`` + length sanity
+  check
+
+### 62.2 Medium — Wire the helper into existing ``Thinking...`` call sites
+
+- [ ] ``src/cantrip/agent/core.py`` — the two
+  ``self._publish_activity("⟳ Thinking...")`` call sites become
+  ``self._publish_activity(f"⟳ {flavour.pick_activity_label()}...")``
+- [ ] ``src/cantrip/agent/subagent.py`` — ``self._set_phase("thinking")``
+  (both call sites) picks from the pool.  Note: ``Subagent._set_phase``
+  is also used for ``running:`` labels, which stay literal (those
+  describe tool calls, not LLM thought)
+- [ ] ``src/cantrip/tui/app.py`` — the ``⟳ Thinking...`` literals
+  become ``⟳ {flavour.pick_activity_label()}...``.  Status-bar
+  streaming and phase-change paths pass through the same helper
+- [ ] ``src/cantrip/web/server.py`` — the ``_broadcast(request.app,
+  "thinking", ...)`` event type stays ``"thinking"`` (it's the
+  protocol name, not user-visible), but the Web frontend maps it to a
+  rotating flavour label on the client side
+- [ ] ``src/cantrip/web/static/cantrip.js`` — in the ``case "thinking"``
+  handler, swap the hard-coded "Thinking..." text for a client-side
+  random pick from the same verb pool (ship the pool as a small
+  constant at the top of the file; keep the Python and JS pools in
+  sync via a unit test that diffs them)
+
+### 62.3 Low — Refresh cadence
+
+- [ ] Decide whether each new turn picks a fresh label (so a long
+  turn doesn't just read *conjuring…* forever) or whether a label is
+  stable per turn.  Stable-per-turn is simpler and avoids flicker;
+  per-turn re-roll adds charm at the cost of test determinism.
+  Recommendation: stable per turn, but pick a new one every time the
+  phase flips back to "thinking" (so a turn that runs tools, returns
+  to thinking, then runs more tools gets two different labels across
+  its two thinking phases)
+- [ ] Write up the decision in ``design/UI.md`` alongside the
+  ``Thinking...`` → flavour-label changeover so future contributors
+  understand the intent
+
+### What this phase is *not*
+
+- Not a rewrite of the status-bar layout.  Only the label text
+  changes; icons, colour, and positioning stay as they are
+- Not an ``i18n`` pass.  UK English only, consistent with the project
+  conventions in ``CLAUDE.md``
+- Not a gameification layer.  The label is flavour; we don't add XP
+  bars or spellcasting progress rings
+
+**Exit criteria:** No ``"Thinking..."`` string literal survives in the
+user-visible code paths listed above; the flavour helper has unit
+test coverage; the Python and JS verb pools are kept in sync by a
+drift test; a short note in ``design/UI.md`` records the decision.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Helper + pool (62.1) | none | Pure Python; land first |
+| Call-site wiring (62.2) | 62.1 | Touches TUI, Web, core, subagent |
+| Refresh cadence (62.3) | 62.2 | Polish; can follow |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -6341,4 +6436,5 @@ keybinding regresses.
 | M59: Property Tested | 59 | Hypothesis-backed property tests cover the planner dependency graph, charmlint rule engine, quickpack jujuignore, and watcher status-diff |
 | M60: Accessible Web UI | 60 | Web UI passes WCAG 2.1 AA: visible focus indicators, labelled controls, live regions for chat/status, overlays behave as modal dialogs; rodney/showboat regression guard in CI |
 | M61: Slash Autocomplete | 61 | Typing ``/`` in the TUI surfaces a catalogue-driven suggestion popup; Tab completes the active verb; CLI readline gets the same catalogue for parity |
+| M62: On-Theme Activity Labels | 62 | Status-bar and Web "Thinking..." literals replaced by randomly-selected spellcasting verbs (incanting, conjuring, brewing, …) so the UI matches the cantrip/juju theme |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
