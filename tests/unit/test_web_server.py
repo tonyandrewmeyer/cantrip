@@ -1052,6 +1052,182 @@ class TestApiState:
         asyncio.run(_run())
 
 
+class TestApiSession:
+    """Tests for the Phase 31.3 resume-prompt endpoints."""
+
+    def _build_session_app(self, agent: MagicMock) -> web.Application:
+        from cantrip.web import server
+
+        app = _build_ws_app(agent)
+        app[server.SESSION_DECIDED_KEY] = {"value": False}
+        app.router.add_get("/api/session/preview", server._api_session_preview)
+        app.router.add_post("/api/session/decide", server._api_session_decide)
+        app.router.add_get("/api/session/transcript", server._api_session_transcript)
+        return app
+
+    def _fake_preview(
+        self,
+        *,
+        exists: bool = True,
+        summary: str = "Prior session: c",
+    ) -> MagicMock:
+        preview = MagicMock()
+        preview.exists = exists
+        preview.summary.return_value = summary
+        preview.charm_name = "c"
+        preview.charm_type = "k8s"
+        preview.dev_model = "dev"
+        preview.cos_model = None
+        preview.updated_at = "2026-04-20"
+        preview.message_count = 3
+        preview.task_counts = {"pending": 1, "done": 2}
+        preview.has_unfinished_tasks = True
+        return preview
+
+    def test_preview_returns_exists_and_not_decided(self) -> None:
+        agent = _make_agent()
+        agent.preview_session = MagicMock(return_value=self._fake_preview())
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/session/preview")
+                data = await resp.json()
+                assert data["exists"] is True
+                assert data["decided"] is False
+                assert data["charm_name"] == "c"
+                assert data["task_counts"] == {"pending": 1, "done": 2}
+                assert data["has_unfinished_tasks"] is True
+
+        asyncio.run(_run())
+
+    def test_preview_reflects_decided_flag(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        agent.preview_session = MagicMock(return_value=self._fake_preview())
+        app = self._build_session_app(agent)
+        app[server.SESSION_DECIDED_KEY]["value"] = True
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/session/preview")
+                data = await resp.json()
+                assert data["decided"] is True
+
+        asyncio.run(_run())
+
+    def test_decide_resume_loads_state_and_broadcasts(self) -> None:
+        from cantrip.web import server
+
+        agent = _make_agent()
+        agent.load_state = MagicMock(return_value=True)
+        agent.build_resume_summary = MagicMock(return_value="[resumed]")
+        agent.archive_session = MagicMock()
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post("/api/session/decide", json={"choice": "resume"})
+                assert resp.status == 200
+                data = await resp.json()
+                assert data["choice"] == "resume"
+                assert data["summary"] == "[resumed]"
+
+        asyncio.run(_run())
+        agent.load_state.assert_called_once()
+        agent.archive_session.assert_not_called()
+        assert app[server.SESSION_DECIDED_KEY]["value"] is True
+
+    def test_decide_fresh_archives_without_loading(self) -> None:
+        from pathlib import Path
+
+        from cantrip.web import server
+
+        agent = _make_agent()
+        backup = Path("/tmp/.cantrip.bak-X")
+        agent.archive_session = MagicMock(return_value=backup)
+        agent.load_state = MagicMock()
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post("/api/session/decide", json={"choice": "fresh"})
+                assert resp.status == 200
+                data = await resp.json()
+                assert data["choice"] == "fresh"
+                assert data["backup"] == str(backup)
+
+        asyncio.run(_run())
+        agent.archive_session.assert_called_once()
+        agent.load_state.assert_not_called()
+        assert app[server.SESSION_DECIDED_KEY]["value"] is True
+
+    def test_decide_twice_returns_conflict(self) -> None:
+        agent = _make_agent()
+        agent.archive_session = MagicMock(return_value=None)
+        agent.load_state = MagicMock(return_value=False)
+        agent.build_resume_summary = MagicMock(return_value=None)
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                first = await client.post("/api/session/decide", json={"choice": "resume"})
+                assert first.status == 200
+                second = await client.post("/api/session/decide", json={"choice": "fresh"})
+                assert second.status == 409
+
+        asyncio.run(_run())
+
+    def test_decide_rejects_invalid_choice(self) -> None:
+        agent = _make_agent()
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post("/api/session/decide", json={"choice": "huh"})
+                assert resp.status == 400
+
+        asyncio.run(_run())
+
+    def test_decide_rejects_bad_json(self) -> None:
+        agent = _make_agent()
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post("/api/session/decide", data="not json")
+                assert resp.status == 400
+
+        asyncio.run(_run())
+
+    def test_transcript_returns_messages(self) -> None:
+        from cantrip.llm.base import Message, Role
+
+        agent = _make_agent()
+        agent.transcript_tail = MagicMock(
+            return_value=[
+                Message(role=Role.USER, content="hi"),
+                Message(role=Role.ASSISTANT, content="hello"),
+            ]
+        )
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/session/transcript?limit=5")
+                data = await resp.json()
+                assert data == {
+                    "messages": [
+                        {"role": "user", "content": "hi"},
+                        {"role": "assistant", "content": "hello"},
+                    ]
+                }
+
+        asyncio.run(_run())
+        agent.transcript_tail.assert_called_once_with(limit=5)
+
+
 class TestApiMessages:
     """/api/messages returns conversation history filtered by content."""
 
@@ -1198,6 +1374,9 @@ class TestCreateApp:
         assert "/api/juju-status" in paths
         assert "/api/logs" in paths
         assert "/api/logs-stream" in paths
+        assert "/api/session/preview" in paths
+        assert "/api/session/decide" in paths
+        assert "/api/session/transcript" in paths
         assert "/ws" in paths
         # Static route is registered under /static.
         assert any(p.startswith("/static") for p in paths)
@@ -1541,6 +1720,9 @@ class TestRunWebAsync:
         agent = MagicMock()
         agent.load_state.return_value = False
         agent.build_resume_summary.return_value = ""
+        preview = MagicMock()
+        preview.exists = False
+        agent.preview_session = MagicMock(return_value=preview)
         agent.state.charm_name = "c"
         agent._work_queue = None
         agent.event_bus = MagicMock()
@@ -1580,13 +1762,16 @@ class TestRunWebAsync:
         agent.event_bus.bind_loop.assert_called_once()
         agent.event_bus.subscribe.assert_called_once()
 
-    def test_logs_resume_summary_when_state_loaded(self) -> None:
-        """When load_state returns True, the resume summary is logged."""
+    def test_defers_load_state_for_browser_choice(self) -> None:
+        """Phase 31.3: server no longer auto-loads; it waits for the prompt."""
         from cantrip.web import server
 
         agent = MagicMock()
         agent.load_state.return_value = True
         agent.build_resume_summary.return_value = "resumed"
+        preview = MagicMock()
+        preview.exists = True
+        agent.preview_session = MagicMock(return_value=preview)
         agent.state.charm_name = "c"
         agent._work_queue = None
         agent.event_bus = MagicMock()
@@ -1615,4 +1800,8 @@ class TestRunWebAsync:
         ):
             asyncio.run(_runner())
 
-        agent.build_resume_summary.assert_called_once()
+        # Preview was consulted but load_state wasn't called — that
+        # happens only after the browser POSTs /api/session/decide.
+        agent.preview_session.assert_called_once()
+        agent.load_state.assert_not_called()
+        agent.build_resume_summary.assert_not_called()

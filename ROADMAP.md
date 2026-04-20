@@ -2717,12 +2717,26 @@ experienced users.
   (LoadingIndicator stays up until then, so users still see activity pre-stream)
 - [x] Depended on Phase 28.6 (now fully complete)
 
-### 31.3 Medium — Session Resume UX
+### 31.3 Medium — Session Resume UX ✅
 
-- [ ] On launch, if a `.cantrip` file exists with unfinished tasks, offer to resume
-  rather than starting fresh
-- [ ] Show a summary of what was in progress when the session ended
-- [ ] Let the user choose: resume, start fresh, or review transcript first
+- [x] On launch, if a `.cantrip` file exists with unfinished tasks, offer to resume
+  rather than starting fresh — new ``CantripAgent.preview_session()``
+  peeks at the store without mutating state.  CLI shows a synchronous
+  ``[R]esume / [F]resh / [T]ranscript`` prompt; TUI pushes a dedicated
+  ``ResumePromptScreen`` modal; the Web UI renders a banner across the
+  top of the chat panel with three buttons and a collapsible transcript
+  tail.  All three surfaces share the same preview helper.
+- [x] Show a summary of what was in progress when the session ended —
+  ``SessionPreview.summary()`` renders charm name, task counts
+  (pending/done/failed), message count, and the last save time in a
+  single line.  The transcript option expands the last 20 messages
+  inline via the new ``agent.transcript_tail(limit)`` helper.
+- [x] Let the user choose: resume, start fresh, or review transcript first
+  — Fresh renames ``.cantrip`` to ``.cantrip.bak-<timestamp>`` via
+  ``archive_session()`` so nothing is destroyed; Resume loads state as
+  before; Transcript shows the tail and re-prompts.  Web endpoints:
+  ``GET /api/session/preview``, ``POST /api/session/decide``,
+  ``GET /api/session/transcript``.
 
 ### 31.4 Medium — Token Cost Dashboard
 

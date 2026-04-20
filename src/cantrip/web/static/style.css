@@ -493,6 +493,73 @@ main {
 .graph-relation .rel-ep { color: var(--accent); }
 .graph-relation .rel-iface { color: var(--text-muted); font-style: italic; }
 
+/* Resume-session banner (Phase 31.3) */
+.resume-banner {
+  margin: 0.5rem 1rem 0.25rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.resume-banner[hidden] {
+  display: none;
+}
+
+.resume-banner-summary {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.resume-banner-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.resume-btn {
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.resume-btn:hover {
+  border-color: var(--accent);
+}
+
+.resume-btn.primary {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+  font-weight: 600;
+}
+
+.resume-transcript {
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+.resume-transcript[hidden] {
+  display: none;
+}
+
 /* Footer */
 footer {
   display: flex;

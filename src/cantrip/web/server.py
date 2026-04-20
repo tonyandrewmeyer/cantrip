@@ -35,6 +35,12 @@ CHAT_LOCK_KEY: web.AppKey[asyncio.Lock] = web.AppKey("chat_lock", asyncio.Lock)
 JINJA_ENV_KEY: web.AppKey[jinja2.Environment] = web.AppKey("jinja_env", jinja2.Environment)
 PORT_KEY: web.AppKey[int] = web.AppKey("port", int)
 
+# Tracks whether the resume-prompt decision has been made for this
+# server lifetime.  Shared across all connected clients — the first one
+# to pick Resume / Fresh wins; subsequent page loads see ``decided=True``
+# and skip the banner.
+SESSION_DECIDED_KEY: web.AppKey[dict[str, bool]] = web.AppKey("session_decided", dict)
+
 
 # ---------------------------------------------------------------------------
 # WebSocket broadcast
@@ -159,6 +165,85 @@ async def _api_messages(request: web.Request) -> web.Response:
     ]
 
     return web.json_response({"messages": messages})
+
+
+async def _api_session_preview(request: web.Request) -> web.Response:
+    """Return a lightweight preview of any persisted session.
+
+    The browser calls this on page load to decide whether to show the
+    resume banner.  ``decided`` is True once Resume or Fresh has been
+    chosen for this server process, so a second page load doesn't
+    re-prompt.
+    """
+    agent: CantripAgent = request.app[AGENT_KEY]
+    decided_flag = request.app[SESSION_DECIDED_KEY].get("value", False)
+    preview = agent.preview_session()
+    return web.json_response(
+        {
+            "exists": preview.exists,
+            "decided": decided_flag,
+            "summary": preview.summary(),
+            "charm_name": preview.charm_name,
+            "charm_type": preview.charm_type,
+            "dev_model": preview.dev_model,
+            "cos_model": preview.cos_model,
+            "updated_at": preview.updated_at,
+            "message_count": preview.message_count,
+            "task_counts": preview.task_counts,
+            "has_unfinished_tasks": preview.has_unfinished_tasks,
+        }
+    )
+
+
+async def _api_session_decide(request: web.Request) -> web.Response:
+    """Accept a Resume / Fresh choice and load or archive accordingly.
+
+    Idempotent — once decided, further POSTs return 409 so concurrent
+    clients don't race into a double-archive.
+    """
+    app = request.app
+    agent: CantripAgent = app[AGENT_KEY]
+    flag = app[SESSION_DECIDED_KEY]
+    if flag.get("value"):
+        return web.json_response({"error": "Session decision already made"}, status=409)
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+    choice = str(body.get("choice") or "").strip().lower()
+    if choice not in ("resume", "fresh"):
+        return web.json_response({"error": "choice must be 'resume' or 'fresh'"}, status=400)
+
+    if choice == "resume":
+        loaded = agent.load_state()
+        summary = agent.build_resume_summary() if loaded else None
+        flag["value"] = True
+        if summary:
+            _broadcast(app, "chat_message", {"role": "system", "content": summary})
+        return web.json_response({"choice": "resume", "summary": summary})
+
+    # Fresh path.
+    backup = agent.archive_session()
+    flag["value"] = True
+    if backup is not None:
+        msg = f"Starting fresh — prior session archived to {backup.name}."
+        _broadcast(app, "chat_message", {"role": "system", "content": msg})
+    return web.json_response({"choice": "fresh", "backup": str(backup) if backup else None})
+
+
+async def _api_session_transcript(request: web.Request) -> web.Response:
+    """Return the last N persisted messages so the UI can render a tail."""
+    agent: CantripAgent = request.app[AGENT_KEY]
+    try:
+        limit = int(request.query.get("limit", "20"))
+    except ValueError:
+        limit = 20
+    limit = max(1, min(limit, 200))
+    messages = agent.transcript_tail(limit=limit)
+    return web.json_response(
+        {"messages": [{"role": msg.role.value, "content": msg.content} for msg in messages]}
+    )
 
 
 async def _api_juju_status(request: web.Request) -> web.Response:
@@ -422,10 +507,17 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
         autoescape=True,
     )
 
+    # Phase 31.3: resume-prompt decision flag.  Shared across clients;
+    # the first to decide flips it, subsequent page loads skip the banner.
+    app[SESSION_DECIDED_KEY] = {"value": False}
+
     # Routes.
     app.router.add_get("/", _index)
     app.router.add_get("/api/state", _api_state)
     app.router.add_get("/api/messages", _api_messages)
+    app.router.add_get("/api/session/preview", _api_session_preview)
+    app.router.add_post("/api/session/decide", _api_session_decide)
+    app.router.add_get("/api/session/transcript", _api_session_transcript)
     app.router.add_get("/api/juju-status", _api_juju_status)
     app.router.add_get("/api/logs", _api_logs)
     app.router.add_get("/api/logs-stream", _ws_logs_stream)
@@ -444,11 +536,12 @@ async def _run_web_async(agent: CantripAgent, port: int) -> None:
     """Start the web server and agent executor."""
     app = _create_app(agent, port)
 
-    # Load prior session state if available.
-    if agent.load_state():
-        summary = agent.build_resume_summary()
-        if summary:
-            log.info("Resumed session: %s", summary[:200])
+    # Phase 31.3: defer load_state to the browser's resume-prompt
+    # decision.  If no prior session exists, pre-mark as decided so the
+    # banner is never shown and first-run users don't see it.
+    preview = agent.preview_session()
+    if not preview.exists:
+        app[SESSION_DECIDED_KEY]["value"] = True
 
     # Forward all bus events to WebSocket clients.
     agent.event_bus.bind_loop(asyncio.get_running_loop())

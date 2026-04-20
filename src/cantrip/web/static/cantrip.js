@@ -69,6 +69,7 @@ const cantrip = (() => {
       if (!historyLoaded) {
         historyLoaded = true;
         _fetchMessages();
+        _fetchSessionPreview();
       }
     };
 
@@ -555,6 +556,80 @@ const cantrip = (() => {
       const messages = data.messages || [];
       container.innerHTML = "";
       for (const m of messages) appendMessage(m.role, m.content);
+    } catch { /* ignore */ }
+  }
+
+  // ── Session resume prompt (Phase 31.3) ──────────────────────────
+
+  async function _fetchSessionPreview() {
+    try {
+      const resp = await fetch("/api/session/preview");
+      if (!resp.ok) return;
+      const preview = await resp.json();
+      if (!preview.exists || preview.decided) return;
+      _showResumeBanner(preview);
+    } catch { /* ignore */ }
+  }
+
+  function _showResumeBanner(preview) {
+    const banner = document.getElementById("resume-banner");
+    if (!banner) return;
+    const summary = document.getElementById("resume-banner-summary");
+    if (summary) summary.textContent = preview.summary || "Prior session on disk.";
+    banner.hidden = false;
+
+    const resumeBtn = document.getElementById("resume-btn-resume");
+    const freshBtn = document.getElementById("resume-btn-fresh");
+    const transcriptBtn = document.getElementById("resume-btn-transcript");
+    if (resumeBtn) resumeBtn.onclick = () => _decideSession("resume");
+    if (freshBtn) freshBtn.onclick = () => _decideSession("fresh");
+    if (transcriptBtn) transcriptBtn.onclick = () => _toggleResumeTranscript();
+  }
+
+  async function _decideSession(choice) {
+    try {
+      const resp = await fetch("/api/session/decide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ choice }),
+      });
+      if (!resp.ok) return;
+      const banner = document.getElementById("resume-banner");
+      if (banner) banner.hidden = true;
+      // Reload the messages list so the summary (resume) or empty state
+      // (fresh) reflects the new world.  The server also broadcasts a
+      // chat_message so WS-connected clients pick it up.
+      await _fetchMessages();
+    } catch { /* ignore */ }
+  }
+
+  async function _toggleResumeTranscript() {
+    const panel = document.getElementById("resume-transcript");
+    const btn = document.getElementById("resume-btn-transcript");
+    if (!panel || !btn) return;
+    if (!panel.hidden) {
+      panel.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+      return;
+    }
+    try {
+      const resp = await fetch("/api/session/transcript?limit=20");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const messages = data.messages || [];
+      if (messages.length === 0) {
+        panel.textContent = "(no messages persisted)";
+      } else {
+        panel.textContent = messages
+          .map((m) => {
+            let content = (m.content || "").replace(/\n/g, " ");
+            if (content.length > 200) content = content.slice(0, 197) + "...";
+            return `${(m.role || "").toUpperCase()}: ${content}`;
+          })
+          .join("\n");
+      }
+      panel.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
     } catch { /* ignore */ }
   }
 

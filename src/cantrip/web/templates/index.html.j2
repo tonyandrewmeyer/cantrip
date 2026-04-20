@@ -30,6 +30,17 @@
   <main>
     <section id="chat-panel" aria-label="Chat">
       <label for="chat-input" class="visually-hidden">Describe what you want to build</label>
+      <div id="resume-banner" class="resume-banner" role="region"
+           aria-label="Resume previous session" hidden>
+        <div id="resume-banner-summary" class="resume-banner-summary"></div>
+        <div class="resume-banner-buttons">
+          <button type="button" id="resume-btn-resume" class="resume-btn primary">Resume</button>
+          <button type="button" id="resume-btn-fresh" class="resume-btn">Start fresh</button>
+          <button type="button" id="resume-btn-transcript" class="resume-btn"
+                  aria-expanded="false" aria-controls="resume-transcript">View transcript</button>
+        </div>
+        <div id="resume-transcript" class="resume-transcript" hidden></div>
+      </div>
       <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
       <div id="thinking-indicator" role="status" aria-live="polite" hidden>
         <span class="dots"></span> Thinking&hellip;

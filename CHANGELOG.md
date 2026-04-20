@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Web UI resume banner** — parity with the CLI/TUI resume prompt.
+  A banner across the top of the chat panel shows the prior-session
+  summary with Resume / Start fresh / View transcript buttons.  The
+  server defers ``load_state`` until the browser POSTs
+  ``/api/session/decide`` so choosing Fresh leaves no polluted state
+  behind.  New endpoints: ``GET /api/session/preview``,
+  ``POST /api/session/decide`` (idempotent — second POST returns 409),
+  ``GET /api/session/transcript?limit=N``.  The decision is shared
+  across connected clients — first to pick wins.
 - **Resume prompt on launch — CLI and TUI** — instead of silently
   loading whatever ``.cantrip`` file is on disk, Cantrip now asks
   [R]esume / [F]resh / [T]ranscript?  Fresh renames the old session to
@@ -17,8 +26,7 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   on non-TTY stdin so scripts keep working); the TUI shows a dedicated
   modal (``cantrip.tui.screens.resume.ResumePromptScreen``) pushed
   before the preflight / executor / watcher start, so choosing Fresh
-  doesn't leave a polluted state behind.  Web UI parity coming in a
-  follow-up.
+  doesn't leave a polluted state behind.
 - **TraceScreen shows real Grafana deep-links and honest reachability**
   — F4 no longer hard-codes ``...`` placeholders and a perpetual
   ``Status: Connected``.  A new ``cantrip.agent.cos_endpoints`` helper
