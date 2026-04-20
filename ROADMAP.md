@@ -5508,7 +5508,7 @@ is announced to at least one charm-developer channel.
 
 ---
 
-## Phase 57: Test-Suite Cleanup — Organisation, Coverage, Warnings
+## Phase 57: Test-Suite Cleanup — Organisation, Coverage, Warnings ✓
 
 **Goal:** Close the gaps surfaced by the Phase 53 review's follow-on
 test audit.  Unit coverage sits at 77% with two kinds of holes: entry
@@ -5766,6 +5766,14 @@ coverage (up from 77%).  No file under ``src/cantrip/`` below 50%
 except the ``tui/`` screens that require a display environment.
 ``pytest tests/unit`` reports zero warnings.  Unit-test files
 organised to match source-file boundaries.
+
+**Status — all exit criteria met:**
+- Total coverage: **88%** (was 77%)
+- Lowest file: ``tui/themes.py`` at **93%** (was 47% before a
+  ``tests/unit/test_themes.py`` pass on 2026-04-20 covering the
+  YAML theme loader and user-directory discovery)
+- ``pytest tests/unit`` reports zero warnings
+- All four oversized unit-test files split; quickpack tests reorganised
 
 **Dependencies:**
 | Item | Depends On | Notes |

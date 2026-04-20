@@ -5,6 +5,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 57 complete — total coverage 88%** — ``tui/themes.py``
+  (the last file under the 50% floor) goes from 47% to 93% with a
+  new ``tests/unit/test_themes.py`` covering the YAML theme loader,
+  user-directory discovery, and bundled-theme registration.  All
+  Phase 57 exit criteria now met: ≥85% total coverage, no file under
+  50%, zero ``pytest tests/unit`` warnings, unit-test files
+  organised to match source-file boundaries.
 - **Core-agent coverage — 62% → 87%** — Phase 57.6 complete.
   Three new focused test files land alongside ``test_agent.py``:
   ``test_agent_github.py`` (37 tests: every PR / issue-triage /
