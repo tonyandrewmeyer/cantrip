@@ -92,6 +92,10 @@ def _mock_agent() -> MagicMock:
     agent.mcp_registry.configured = []
     agent.start_mcp = AsyncMock()
     agent.stop_mcp = AsyncMock()
+    # Arena (Phase 47.5) — default to "no arena pending" so a plain
+    # MagicMock (truthy) doesn't mis-route every chat message through
+    # the arena intercept and render a MagicMock into the chat widget.
+    agent.active_arena = None
     return agent
 
 

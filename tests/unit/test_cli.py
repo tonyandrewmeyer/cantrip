@@ -576,6 +576,10 @@ def _make_repl_agent(
     fake_agent.cache_creation_tokens = 0
     fake_agent.cache_read_tokens = 0
     fake_agent.store = None
+    # Arena (Phase 47.5) — default to "no arena pending" so a plain
+    # MagicMock (truthy) doesn't mis-route the REPL's first input
+    # through the arena intercept.
+    fake_agent.active_arena = None
     # Keep a weak hold so subprocess-capturing mocks don't accidentally leak.
     _ = weakref.ref(fake_agent)
     return fake_agent
