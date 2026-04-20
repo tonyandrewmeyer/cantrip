@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 
+import pytest
 from hypothesis import HealthCheck, settings
 
 # ``max_examples`` is the lever that matters: the CI profile runs a
@@ -40,3 +41,21 @@ settings.register_profile(
 )
 
 settings.load_profile(os.environ.get("CANTRIP_HYPOTHESIS_PROFILE", "dev"))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_memory_dir(
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Redirect ``GlobalMemoryStore`` at the user's real ``~/.config/cantrip/memory``.
+
+    ``MemoryManager`` falls back to a default-constructed
+    ``GlobalMemoryStore`` whenever a test doesn't inject one, and that
+    default reads/writes the real user directory — leaking real memories
+    into exports, counts, and assertions.  Pointing ``CANTRIP_MEMORY_DIR``
+    at a per-test scratch directory keeps every test hermetic without
+    forcing each one to wire a store by hand.
+    """
+    scratch = tmp_path_factory.mktemp("global-mem")
+    monkeypatch.setenv("CANTRIP_MEMORY_DIR", str(scratch))
