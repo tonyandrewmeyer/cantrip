@@ -722,6 +722,12 @@ def _make_agent(response: str = "ok") -> MagicMock:
     agent._work_queue = None
     agent.process_message = AsyncMock(return_value=response)
     agent.save_state = MagicMock()
+    # Default: no arena pending.  Tests that care about the arena
+    # intercept override this explicitly.  Without the override
+    # ``MagicMock`` makes ``active_arena`` return another MagicMock
+    # (truthy), which would mis-route every chat message as an arena
+    # pick.
+    agent.active_arena = None
     return agent
 
 
