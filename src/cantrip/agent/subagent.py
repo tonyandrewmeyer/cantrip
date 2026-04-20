@@ -18,6 +18,7 @@ from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool
 from cantrip.llm import base as llm
+from cantrip.ui import flavour
 
 if TYPE_CHECKING:
     from cantrip.agent.store import SessionStore
@@ -772,7 +773,7 @@ class Subagent:
         # use a single clock reading so phase-change events and elapsed
         # counters agree.
         self._context.task.subagent_started_at = datetime.datetime.now()
-        self._set_phase("thinking")
+        self._set_phase(flavour.pick_activity_label())
         try:
             return await self._run_inner()
         finally:
@@ -847,7 +848,10 @@ class Subagent:
             raw_results = await asyncio.gather(
                 *(self._execute_tool(tc.name, tc.arguments) for tc in response.tool_calls)
             )
-            self._set_phase("thinking")
+            # Fresh flavour each time we return to the thinking phase so
+            # a long turn that cycles through tools rolls a new label per
+            # thinking leg rather than reading the same verb forever.
+            self._set_phase(flavour.pick_activity_label())
             tool_results: list[llm.ToolResult] = [
                 llm.ToolResult(
                     tool_call_id=tc.id,

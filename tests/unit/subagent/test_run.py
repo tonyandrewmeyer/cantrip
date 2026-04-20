@@ -374,10 +374,13 @@ class TestSubagentPhaseReporting:
         subagent = Subagent(ctx, tools=[tool], provider=provider, on_phase_change=capture)
         await subagent.run()
 
-        # First phase is "thinking", then "running: read_file" during tool
-        # execution, then back to "thinking" before the follow-up LLM call,
-        # and finally cleared when ``run`` completes.
-        assert phases[0] == "thinking"
+        # First phase is a themed "thinking" label (e.g. "Conjuring",
+        # "Scrying"), then "running: read_file" during tool execution,
+        # then back to another themed thinking label before the
+        # follow-up LLM call, and finally cleared when ``run`` completes.
+        from cantrip.ui import flavour
+
+        assert phases[0] in flavour.think_pool()
         assert any(p.startswith("running:") and "read_file" in p for p in phases)
         assert phases[-1] == ""
 

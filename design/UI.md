@@ -164,6 +164,31 @@ Available via F1 (TUI) or `?` (web).  Shows keyboard shortcuts and quick-start h
 At `< 700px` the two-column layout collapses to a single column with the right panels
 stacked below the chat.
 
+### Activity Flavour Labels
+
+Where older copy said `⟳ Thinking...`, both surfaces now render a randomly-picked
+spellcasting-themed label: `⟳ Conjuring...`, `⟳ Scrying...`, `⟳ Thumbing the
+grimoire...`, and so on.  The label is flavour only — the agent is literally
+thinking; the verb is just theme-matching to the `cantrip`/`juju` naming.
+
+- **Pool:** `src/cantrip/ui/flavour.py` holds the canonical list
+  (`flavour.think_pool()`).  `src/cantrip/web/static/cantrip.js` carries a
+  JavaScript mirror so the browser can pick client-side when the server
+  broadcasts a `thinking` event.  `tests/unit/test_ui_flavour.py` diffs the two
+  so drift fails the build.
+- **Cadence:** **stable per thinking phase, re-rolled on every transition back
+  to thinking.**  A turn that runs a tool, returns to thinking, runs more tools,
+  returns to thinking again gets two different labels across its two thinking
+  phases.  The TUI and Web honour this by calling `pick_activity_label()` /
+  `pickFlavourLabel()` at each phase entry rather than caching a label per turn.
+- **What stays literal:** `⟳ Streaming...` (describes output delivery, not
+  thought) and `⟳ running: <tool>` (describes an actual tool call) both stay
+  as-is.  Flavour text replaces only the generic "LLM is cogitating" label.
+- **Category hints:** `ActivityCategory.THINK` is the default.  `RESEARCH` and
+  `BUILD` narrow the pool for themed work (divination verbs for research,
+  forging verbs for build).  The call-site surface defaults to THINK; narrower
+  categories are available when a surface knows what the agent is doing.
+
 ### Adding a New View
 
 1. **Event bus:** If the view needs new data, add an `EventType` and factory in `events.py`.

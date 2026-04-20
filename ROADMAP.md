@@ -6392,61 +6392,90 @@ Candidate verbs: *incanting*, *invoking*, *conjuring*, *weaving*,
 *brewing*, *consulting the oracle*.  The agent is still literally
 thinking; the label is just theme-matching flavour text.
 
-### 62.1 Medium — Pick a synonym pool and helper
+### 62.1 Medium — Pick a synonym pool and helper ✅
 
-- [ ] Add ``src/cantrip/ui/flavour.py`` (or a module under
+- [x] Add ``src/cantrip/ui/flavour.py`` (or a module under
   ``cantrip.agent``) with a vetted list of spellcasting verbs — not a
   free-for-all thesaurus; short, present-continuous, UK-English
   friendly, and non-offensive (drop *hexing* if it reads too sinister
-  out of context)
-- [ ] Public helper ``pick_activity_label(seed: int | str | None = None,
+  out of context) — ``src/cantrip/ui/flavour.py`` carries a 26-entry
+  ``_THINK_POOL`` mixing single verbs (*Conjuring*, *Scrying*) and
+  short phrases (*Thumbing the grimoire*, *Stirring the cauldron*,
+  *Casting bones on the table*).  Hexing and cursing are dropped as
+  the ROADMAP suggested
+- [x] Public helper ``pick_activity_label(seed: int | str | None = None,
   category: ActivityCategory = ActivityCategory.THINK) -> str`` that
   returns a label.  The ``seed`` argument makes it deterministic for
   tests; production calls pass ``None`` for true randomness.  The
   ``category`` hint lets us reserve some verbs for specific phases
   (e.g. *scrying* for research, *brewing* for build, *weaving* for
   code generation) rather than one bag for everything — still random
-  within a category, so the same user sees variety
-- [ ] Unit tests cover: deterministic seeding, per-category uniqueness
+  within a category, so the same user sees variety — ``ActivityCategory``
+  has ``THINK`` (default, broad pool), ``RESEARCH`` (12 divination-
+  flavoured entries), and ``BUILD`` (12 forging-flavoured entries).
+  Unknown categories fall back to THINK rather than raising
+- [x] Unit tests cover: deterministic seeding, per-category uniqueness
   (no overlap across categories unless intentional), and that every
   returned label passes a simple ``str.isprintable`` + length sanity
-  check
+  check — ``tests/unit/test_ui_flavour.py`` asserts determinism,
+  per-category subset membership, no duplicates, printable, non-empty,
+  ≤40 chars, no trailing ellipsis, no whitespace cuffs, and capitalised
+  first letter (33 cases across the three parametrised pools)
 
-### 62.2 Medium — Wire the helper into existing ``Thinking...`` call sites
+### 62.2 Medium — Wire the helper into existing ``Thinking...`` call sites ✅
 
-- [ ] ``src/cantrip/agent/core.py`` — the two
+- [x] ``src/cantrip/agent/core.py`` — the two
   ``self._publish_activity("⟳ Thinking...")`` call sites become
   ``self._publish_activity(f"⟳ {flavour.pick_activity_label()}...")``
-- [ ] ``src/cantrip/agent/subagent.py`` — ``self._set_phase("thinking")``
+  — both sites (post-tool in the sync and streaming branches) now
+  produce a fresh themed label per tool-completion re-entry
+- [x] ``src/cantrip/agent/subagent.py`` — ``self._set_phase("thinking")``
   (both call sites) picks from the pool.  Note: ``Subagent._set_phase``
   is also used for ``running:`` labels, which stay literal (those
-  describe tool calls, not LLM thought)
-- [ ] ``src/cantrip/tui/app.py`` — the ``⟳ Thinking...`` literals
+  describe tool calls, not LLM thought) — both thinking sites call
+  ``flavour.pick_activity_label()``; ``running:`` labels stay literal;
+  ``test_phase_sequence_during_run`` updated to assert pool membership
+- [x] ``src/cantrip/tui/app.py`` — the ``⟳ Thinking...`` literals
   become ``⟳ {flavour.pick_activity_label()}...``.  Status-bar
-  streaming and phase-change paths pass through the same helper
-- [ ] ``src/cantrip/web/server.py`` — the ``_broadcast(request.app,
+  streaming and phase-change paths pass through the same helper —
+  the initial status-bar label on user send now draws from the pool;
+  ``⟳ Streaming...`` stays literal (output delivery, not thought);
+  the subagent_phase fed into ``#task-checklist`` inherits the flavour
+  via subagent.py above
+- [x] ``src/cantrip/web/server.py`` — the ``_broadcast(request.app,
   "thinking", ...)`` event type stays ``"thinking"`` (it's the
   protocol name, not user-visible), but the Web frontend maps it to a
-  rotating flavour label on the client side
-- [ ] ``src/cantrip/web/static/cantrip.js`` — in the ``case "thinking"``
+  rotating flavour label on the client side — server untouched; event
+  name is the protocol contract, not the user-visible label
+- [x] ``src/cantrip/web/static/cantrip.js`` — in the ``case "thinking"``
   handler, swap the hard-coded "Thinking..." text for a client-side
   random pick from the same verb pool (ship the pool as a small
   constant at the top of the file; keep the Python and JS pools in
-  sync via a unit test that diffs them)
+  sync via a unit test that diffs them) — JS ``FLAVOUR_POOL`` mirrors
+  ``flavour.think_pool()``; ``setThinking(true)`` preserves the
+  animated dots span and appends a freshly-picked label;
+  ``TestJsPoolDrift`` in ``test_ui_flavour.py`` regexes the JS and
+  asserts list equality so drift fails the build
 
-### 62.3 Low — Refresh cadence
+### 62.3 Low — Refresh cadence ✅
 
-- [ ] Decide whether each new turn picks a fresh label (so a long
+- [x] Decide whether each new turn picks a fresh label (so a long
   turn doesn't just read *conjuring…* forever) or whether a label is
   stable per turn.  Stable-per-turn is simpler and avoids flicker;
   per-turn re-roll adds charm at the cost of test determinism.
   Recommendation: stable per turn, but pick a new one every time the
   phase flips back to "thinking" (so a turn that runs tools, returns
   to thinking, then runs more tools gets two different labels across
-  its two thinking phases)
-- [ ] Write up the decision in ``design/UI.md`` alongside the
+  its two thinking phases) — adopted the recommendation: every
+  transition *into* thinking (``_set_phase`` in subagent, the
+  post-tool ``_publish_activity`` in core, and the JS ``setThinking(true)``
+  re-roll) calls the picker fresh, so a long turn reads a different
+  verb after each tool round while the within-phase label stays stable
+- [x] Write up the decision in ``design/UI.md`` alongside the
   ``Thinking...`` → flavour-label changeover so future contributors
-  understand the intent
+  understand the intent — ``design/UI.md`` gets an "Activity Flavour
+  Labels" section under Implementation Notes covering pool location,
+  cadence, what stays literal, and category hints
 
 ### What this phase is *not*
 

@@ -101,9 +101,16 @@ class TestCantripAgent:
 
         labels = [p.get("task_label", "") for p in captured]
         assert any("running: charmcraft_pack" in label for label in labels)
-        # After the tool completes, the bar is reset to "Thinking..." so
-        # the next LLM round has a neutral label.
-        assert any("Thinking" in label for label in labels)
+        # After the tool completes, the bar is reset to a themed
+        # activity label (e.g. ``⟳ Conjuring...``) so the next LLM
+        # round has a neutral, non-tool label.
+        from cantrip.ui import flavour
+
+        pool = flavour.think_pool()
+        assert any(
+            label.startswith("\u27f3 ") and label.endswith("...") and label[2:-3] in pool
+            for label in labels
+        )
 
     @pytest.mark.asyncio
     async def test_tool_call_failure(self):

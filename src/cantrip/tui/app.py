@@ -31,6 +31,7 @@ from cantrip.tui.widgets import status as status_widgets
 from cantrip.tui.widgets import statusbar as statusbar_widget
 from cantrip.tui.widgets import tasks as tasks_widget
 from cantrip.ui import events as ui_events
+from cantrip.ui import flavour
 
 # Preflight check names shown during the eager prepare (full bootstrap).
 _PREPARE_CHECKS = ["concierge", "prepare", "juju", "controller", "cos"]
@@ -509,7 +510,8 @@ class CantripApp(App):
         )
         # Surface main-agent tool activity in the status bar — slow tools
         # like charmcraft_pack and juju_deploy publish "running: <name>"
-        # between LLM rounds so the UI isn't frozen on "Thinking...".
+        # between LLM rounds so the UI isn't frozen on a single flavour
+        # label.
         self._agent.event_bus.subscribe(
             ui_events.EventType.STATUS_BAR_CHANGED, self._on_bus_status_bar
         )
@@ -1313,7 +1315,9 @@ class CantripApp(App):
         input_widget.disabled = True
         input_widget.placeholder = "Waiting for response..."
         chat.show_thinking()
-        self.query_one("#status-bar", statusbar_widget.StatusBar).task_label = "⟳ Thinking..."
+        self.query_one(
+            "#status-bar", statusbar_widget.StatusBar
+        ).task_label = f"⟳ {flavour.pick_activity_label()}..."
         # Surface a transient "Planning tasks…" row so the task pane
         # isn't just the preflight group while the agent decides what
         # to do.  Cleared once real tasks appear or the turn finishes.
@@ -1335,8 +1339,9 @@ class CantripApp(App):
     async def _process_agent_message(self, message: str) -> None:
         """Stream a message through the agent, appending chunks as they arrive.
 
-        The first non-empty chunk replaces the "⟳ Thinking..." indicator
-        with a new assistant message; subsequent chunks are appended to
+        The first non-empty chunk replaces the flavoured activity
+        indicator (``⟳ Conjuring...`` etc.) with a new assistant
+        message; subsequent chunks are appended to
         that same widget.  The worker returns ``None`` — success is
         observed via the chat widget, not the worker result.
         """

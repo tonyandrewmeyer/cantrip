@@ -33,6 +33,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Added
+- **On-theme activity labels (Phase 62).**  The status bar used to
+  say ``⟳ Thinking...`` regardless of what the agent was up to; now
+  it picks from a spellcasting-themed pool — *Conjuring…*,
+  *Scrying…*, *Thumbing the grimoire…*, *Stirring the cauldron…*,
+  *Casting bones on the table…* — so the UI matches the
+  *cantrip*/*juju* naming.  New ``src/cantrip/ui/flavour.py`` holds
+  the pool and a ``pick_activity_label(seed, category)`` helper;
+  ``ActivityCategory`` splits divination (research) and forging
+  (build) subsets out of the broad THINK default.  Wired into
+  ``agent/core.py`` (both ``_publish_activity`` sites), ``agent/subagent.py``
+  (both ``_set_phase`` re-entries to thinking), ``tui/app.py`` (the
+  initial status-bar label on user send), and the Web UI's
+  ``setThinking()`` handler.  ``⟳ Streaming...`` and ``⟳ running: …``
+  stay literal — they describe output delivery and actual tool
+  calls, not LLM cogitation.  Cadence: stable within a thinking
+  phase, fresh pick every time the phase flips back to thinking
+  (documented in ``design/UI.md``).  ``src/cantrip/web/static/cantrip.js``
+  ships a JS mirror of the pool; a drift test in
+  ``tests/unit/test_ui_flavour.py`` regexes the JS constant and
+  diffs it against ``flavour.think_pool()`` so desynchronisation
+  fails the build.
 - **Blind A/B arena — ``/arena`` (Phase 47.5)** —
   new ``cantrip.agent.arena`` module runs two providers
   concurrently on the same prompt, shuffles the results into

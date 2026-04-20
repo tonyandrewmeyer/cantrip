@@ -9,6 +9,45 @@ const cantrip = (() => {
   let statusPollTimer = null;
   let historyLoaded = false;
 
+  // Spellcasting-themed labels for the "thinking" indicator.  Kept in
+  // lockstep with ``cantrip.ui.flavour.think_pool()`` on the Python
+  // side; a unit test (``tests/unit/test_ui_flavour.py``) diffs the
+  // two lists so drift fails the build rather than silently
+  // desynchronising the TUI and Web UIs.
+  const FLAVOUR_POOL = [
+    "Incanting",
+    "Invoking",
+    "Conjuring",
+    "Weaving the pattern",
+    "Chanting softly",
+    "Channelling",
+    "Enchanting",
+    "Murmuring to the circle",
+    "Consulting the oracle",
+    "Thumbing the grimoire",
+    "Tracing sigils",
+    "Drawing the pentagram",
+    "Stirring the cauldron",
+    "Threading the runes",
+    "Whispering to the familiar",
+    "Parting the veil",
+    "Pondering the arcane",
+    "Unrolling the scroll",
+    "Checking the almanac",
+    "Rifling through the spellbook",
+    "Shuffling the tarot",
+    "Lighting the candles",
+    "Polishing the crystal",
+    "Tuning the lute",
+    "Counting the motes",
+    "Casting bones on the table",
+  ];
+
+  function pickFlavourLabel() {
+    const idx = Math.floor(Math.random() * FLAVOUR_POOL.length);
+    return FLAVOUR_POOL[idx];
+  }
+
   // ── DOM references ──────────────────────────────────────────────
   const chatMessages = () => document.getElementById("chat-messages");
   const chatInput = () => document.getElementById("chat-input");
@@ -206,6 +245,15 @@ const cantrip = (() => {
   function setThinking(active) {
     const el = thinkingEl();
     if (!el) return;
+    if (active) {
+      // Preserve the animated dots span; only the trailing text
+      // changes.  A fresh label is picked each time the indicator
+      // switches on, matching the TUI's per-phase re-roll cadence.
+      const dots = el.querySelector(".dots");
+      el.textContent = "";
+      if (dots) el.appendChild(dots);
+      el.appendChild(document.createTextNode(` ${pickFlavourLabel()}…`));
+    }
     el.hidden = !active;
   }
 

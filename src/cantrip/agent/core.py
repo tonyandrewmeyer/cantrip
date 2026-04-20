@@ -80,6 +80,7 @@ from cantrip.mcp import (
 )
 from cantrip.mcp import load_configs as load_mcp_configs
 from cantrip.ui import events as ui_events
+from cantrip.ui import flavour
 
 log = logging.getLogger(__name__)
 
@@ -556,8 +557,9 @@ class CantripAgent:
 
         Used by the main conversation loop so slow tools like
         ``charmcraft_pack`` and ``juju_deploy`` produce visible feedback
-        between LLM rounds — without this the bar stuck on "Thinking..."
-        and the user had no idea a long-running command was in flight.
+        between LLM rounds — without this the bar stuck on a single
+        flavour label and the user had no idea a long-running command
+        was in flight.
         """
         self._event_bus.publish(ui_events.status_bar_changed(task_label=label))
 
@@ -707,7 +709,7 @@ class CantripAgent:
             for tc in response.tool_calls:
                 self._publish_activity(f"\u27f3 running: {tc.name}")
                 result = await self._execute_tool(tc.name, tc.arguments)
-                self._publish_activity("\u27f3 Thinking...")
+                self._publish_activity(f"\u27f3 {flavour.pick_activity_label()}...")
                 self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
                 # Wrap tool output in delimiters to reduce prompt injection risk.
@@ -859,7 +861,7 @@ class CantripAgent:
             for tc in response.tool_calls:
                 self._publish_activity(f"\u27f3 running: {tc.name}")
                 result = await self._execute_tool(tc.name, tc.arguments)
-                self._publish_activity("\u27f3 Thinking...")
+                self._publish_activity(f"\u27f3 {flavour.pick_activity_label()}...")
                 self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
                 content = f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"
