@@ -79,6 +79,7 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 - `design/SKILLS.md` — Skill discovery, frontmatter schema, load-on-demand flow
 - `design/PROMPTS.md` — Prompt layering, Jinja2 conventions, template-injection guard
 - `design/WEB_UI_ACCESSIBILITY_AUDIT.md` — WCAG 2.1 AA audit of the Web UI with findings and evidence (see ROADMAP Phase 60)
+- `design/UPSTREAM_AUDIT.md` — Bookkeeping for the upstream-ecosystem sweep (cutoff commits per repo, re-run procedure; pairs with ROADMAP Phase 37)
 - `ROADMAP.md` — Implementation phases
 - `CHANGELOG.md` — Notable changes (keep updated)
 - `docs/docs/` — Published HTML user docs (tutorial, how-to, reference, explanation). Source of truth for user-facing behaviour — update alongside shipped features.

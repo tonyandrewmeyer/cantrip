@@ -3286,11 +3286,12 @@ Cantrip's own agent (system prompts, subagent guidance, skills).
 libraries and adjust Cantrip's code generation, skills, system prompts, and
 tool wrappers to stay current.
 
-### 37.1 High — ops Documentation Corrections (from Dec 2024–Apr 2025 commits)
+### 37.1 High — ops Documentation Corrections (from Dec 2024–Apr 2026 commits)
 
 Review of `canonical/operator` docs commits identified concrete patterns that
 Cantrip's code generation, gold-standard charms, skills, and prompts need to
-adopt. Items marked with a source commit hash.
+adopt. Items marked with a source commit hash. The audit cutoff and procedure
+for re-running it live in `design/UPSTREAM_AUDIT.md`.
 
 **Unit test generation (ops.testing / Scenario):**
 
@@ -3361,6 +3362,57 @@ adopt. Items marked with a source commit hash.
   to capture live relation databags for regression tests. (34f12be)
 - [ ] Reference the new debugging how-to (`ops.Framework.breakpoint()`,
   `debugpy` setup, `juju debug-code`) in Cantrip's debugging guidance. (4bff400)
+
+**Charmcraft 4.2 / Ubuntu 24.04 base (added Apr 2026):**
+
+- [ ] Update generated `charmcraft.yaml` and gold-standard charms to use
+  `base: ubuntu@24.04` (was 22.04). Affects every charm template and any
+  workload-version assumption derived from the base. (df731e5)
+- [ ] Emit an `assumes:` block in K8s charm templates with at least
+  `juju >= 3.6` and `k8s-api`, matching the new Charmcraft 4.2 K8s profile.
+  (df731e5)
+- [ ] Drop generated `tox.ini` files where pyproject `[dependency-groups]`
+  cover the same surface — the new examples in `canonical/operator` are
+  pyproject-only. Audit the `quick-pack` and gold-standard charm scaffolding
+  before removing. (df731e5)
+
+**pytest-jubilant 2.0 official (added Apr 2026):**
+
+- [ ] Pin integration deps in generated `pyproject.toml` to
+  `jubilant>=1.8,<2` and `pytest-jubilant>=2,<3`. Strengthens the existing
+  pytest-jubilant item with concrete version floors. (7331ddd)
+- [ ] Stop generating a hand-rolled `juju` fixture in `conftest.py` — the
+  `pytest-jubilant` plugin registers a module-scoped one automatically with
+  temp-model creation, teardown, and debug-log dump on failure. The `charm`
+  fixture stays (build + `.resolve()`). Update the `jubilant-tests` skill
+  and `conftest.py` generation. (7331ddd)
+- [ ] Use `tox -e integration -- --juju-dump-logs <dir>` for log capture in
+  CI rather than ad-hoc debug-log printing in the fixture. (7331ddd)
+
+**CI bootstrap alignment (added Apr 2026):**
+
+- [ ] `gh_repo_bootstrap`'s CI workflow stub (`.github/workflows/ci.yaml`)
+  should match the new how-to: `permissions: {}` at top level,
+  `actions/checkout@v6` with `persist-credentials: false`,
+  `astral-sh/setup-uv@<v8 sha>`, `uv tool install tox --with tox-uv`,
+  separate `lint`/`unit`/`integration` jobs, integration job shells out to
+  Concierge (`sudo concierge prepare -p k8s|machine`) and pulls
+  `actions/upload-artifact@v7` for `juju-dump-logs`. (bbaff04)
+- [ ] Reference the new "set up CI" how-to from Cantrip's documentation
+  guidance and from any `ci-workflow` skill. (bbaff04)
+
+**COS Lite integration test pattern (added Apr 2026):**
+
+- [ ] Teach the `jubilant-tests` and `observability` skills the cross-model
+  COS pattern: spin a second Juju via `pytest_jubilant.JujuFactory.get_juju
+  (suffix="cos")`, deploy `cos-lite` (trust=True, allow ~10 min), and use
+  `cos.offer("loki", endpoint="logging")` plus
+  `juju.integrate(APP_NAME, f"{cos.model}.loki")` for the cross-model
+  relation. (0df3895)
+- [ ] Document the Traefik-action-then-HTTP-API verification pattern (run
+  `traefik/0` `show-proxied-endpoints`, parse the JSON, hit
+  `/loki/api/v1/label/juju_application/values` to assert the charm's logs
+  arrive). Useful template for any post-deploy COS smoke test. (0df3895)
 
 ### 37.2 High — Jubilant Changes
 
