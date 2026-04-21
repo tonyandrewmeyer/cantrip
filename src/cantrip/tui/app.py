@@ -12,7 +12,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
-from cantrip import __version__, notifications
+from cantrip import __version__, notifications, update
 from cantrip.agent import emotions, slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
@@ -118,6 +118,10 @@ class CantripApp(App):
         self._bootstrap_offered: bool = False
         self._pending_maintenance: dict | None = None  # {"pr_url": ..., "issue": ...}
         self._streaming_widget: chat_widget.MessageWidget | None = None
+        # Populated by the background PyPI version-check worker.  Read
+        # from :func:`cantrip.main._run` after ``app.run()`` returns so
+        # the Rich panel prints once the Textual screen has torn down.
+        self.pending_update_info: update.UpdateInfo | None = None
 
         # Register bundled and user themes.
         from cantrip.tui.themes import register_themes
@@ -207,6 +211,28 @@ class CantripApp(App):
         # Start issue triage if a GitHub remote is detected.
         if self._agent and self._agent.state.github_repo:
             self._agent.start_issue_triage()
+        self._start_update_check()
+
+    def _start_update_check(self) -> None:
+        """Kick off the PyPI update check as a background worker.
+
+        The result is stashed on :attr:`pending_update_info` and
+        printed by :func:`cantrip.main._run` after the Textual screen
+        tears down, matching ``toad``'s exit-time prompt so the notice
+        never interrupts mid-session.
+        """
+        self.run_worker(
+            self._run_update_check(),
+            name="update_check",
+            exclusive=False,
+        )
+
+    async def _run_update_check(self) -> None:
+        """Worker body — swallow any surprise and stash the result."""
+        try:
+            self.pending_update_info = await update.check_for_update()
+        except (OSError, RuntimeError, ValueError):
+            self.pending_update_info = None
 
     def _start_mcp(self) -> None:
         """Connect any configured MCP servers in the background.

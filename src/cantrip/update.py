@@ -707,6 +707,39 @@ def upgrade_command(method: InstallMethod | None = None) -> str | None:
     return _UPGRADE_COMMANDS.get(method)
 
 
+# ── Notice rendering ──────────────────────────────────────────────
+
+
+def _headline(info: UpdateInfo) -> str:
+    """Return the top-of-notice line that matches the user's situation.
+
+    Yanked-installed versions get a sharper tone because staying on a
+    withdrawn release is riskier than missing a feature release.
+    """
+    if info.installed_yanked:
+        return (
+            f"Your installed cantrip {info.current} has been yanked; "
+            f"upgrading to {info.latest} is recommended."
+        )
+    return f"A newer cantrip is available: {info.latest} (you have {info.current})."
+
+
+def format_cli_notice(info: UpdateInfo, *, method: InstallMethod | None = None) -> str:
+    """Return a compact two-line notice for the CLI's post-REPL print.
+
+    Line 1: version headline plus the PyPI project URL.  Line 2: the
+    installer-aware upgrade command, or a "visit PyPI" fallback when
+    :func:`detect_install_method` returned :attr:`InstallMethod.UNKNOWN`.
+    Scripts redirect stdout — keeping this short means piping
+    ``cantrip --no-tui`` into a log still produces usable output.
+    """
+    command = upgrade_command(method)
+    headline = f"{_headline(info)} See {info.pypi_url}"
+    if command is None:
+        return f"{headline}\nUpgrade via your usual installer; visit the URL for release notes."
+    return f"{headline}\nRun `{command}` to upgrade."
+
+
 __all__ = [
     "CACHE_DIR_ENV",
     "DEFAULT_CACHE_TTL_SECONDS",
@@ -718,6 +751,7 @@ __all__ = [
     "detect_install_method",
     "extract_release_notes",
     "fetch_changelog",
+    "format_cli_notice",
     "update_check_disabled",
     "upgrade_command",
 ]

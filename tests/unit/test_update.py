@@ -976,3 +976,50 @@ class TestYankedDetection:
         assert update._is_version_yanked({"releases": "not a dict"}, "0.1.0") is False
         assert update._is_version_yanked({"releases": {"0.1.0": "not a list"}}, "0.1.0") is False
         assert update._is_version_yanked({"releases": {}}, "0.1.0") is False
+
+
+# ─────────────────────────────────────────────────────────────────
+#  CLI notice formatting
+# ─────────────────────────────────────────────────────────────────
+
+
+class TestFormatCliNotice:
+    """``format_cli_notice`` produces the two-line post-REPL notice."""
+
+    def _info(self, **overrides) -> update.UpdateInfo:
+        defaults = {
+            "current": "0.1.0",
+            "latest": "0.2.0",
+            "pypi_url": "https://pypi.org/project/cantrip/0.2.0/",
+            "release_timestamp": None,
+        }
+        defaults.update(overrides)
+        return update.UpdateInfo(**defaults)
+
+    def test_known_installer_shows_command(self):
+        notice = update.format_cli_notice(self._info(), method=update.InstallMethod.UV_TOOL)
+        assert "0.2.0" in notice
+        assert "0.1.0" in notice
+        assert "https://pypi.org/project/cantrip/0.2.0/" in notice
+        assert "uv tool upgrade cantrip" in notice
+        # Two lines — keeps piped stdout short and predictable.
+        assert notice.count("\n") == 1
+
+    def test_unknown_installer_falls_back_to_url(self):
+        notice = update.format_cli_notice(self._info(), method=update.InstallMethod.UNKNOWN)
+        assert "usual installer" in notice
+        assert "uv tool upgrade" not in notice
+        assert "https://pypi.org/project/cantrip/0.2.0/" in notice
+
+    def test_yanked_install_changes_headline(self):
+        notice = update.format_cli_notice(
+            self._info(installed_yanked=True),
+            method=update.InstallMethod.PIPX,
+        )
+        assert "yanked" in notice
+        assert "pipx upgrade cantrip" in notice
+
+    def test_default_method_detects(self, monkeypatch):
+        monkeypatch.setattr(update, "detect_install_method", lambda: update.InstallMethod.PIPX)
+        notice = update.format_cli_notice(self._info())
+        assert "pipx upgrade cantrip" in notice

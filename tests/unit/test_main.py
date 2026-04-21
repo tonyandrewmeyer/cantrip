@@ -313,6 +313,78 @@ class TestRun:
         assert kwargs["improve_path"] == improve_dir
         assert kwargs["charm_path"] == improve_dir
 
+    def test_tui_dispatch_prints_update_panel(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``_run`` consults ``CantripApp.pending_update_info`` after ``app.run()``."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test")
+        fake_app = mock.MagicMock()
+        fake_app.pending_update_info = "sentinel"
+        with (
+            mock.patch("cantrip.tui.app.CantripApp", return_value=fake_app),
+            mock.patch("cantrip.main._install_unraisable_hook"),
+            mock.patch("cantrip.main._print_update_panel") as panel,
+        ):
+            cantrip_main._run(_run_args(tmp_path))
+        panel.assert_called_once_with("sentinel")
+
+
+class TestPrintUpdatePanel:
+    """``_print_update_panel`` handles ``None`` and renders real UpdateInfo."""
+
+    def test_noop_when_info_is_none(self, capsys: pytest.CaptureFixture[str]) -> None:
+        cantrip_main._print_update_panel(None)
+        assert capsys.readouterr().out == ""
+
+    def test_noop_when_info_is_wrong_type(self, capsys: pytest.CaptureFixture[str]) -> None:
+        cantrip_main._print_update_panel("not an UpdateInfo")
+        assert capsys.readouterr().out == ""
+
+    def test_renders_known_installer(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from cantrip import update
+
+        info = update.UpdateInfo(
+            current="0.1.0",
+            latest="0.2.0",
+            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            release_timestamp=None,
+            release_notes_markdown="## 0.2.0\n\n- New feature.\n",
+        )
+        with mock.patch(
+            "cantrip.update.detect_install_method",
+            return_value=update.InstallMethod.UV_TOOL,
+        ):
+            cantrip_main._print_update_panel(info)
+        out = capsys.readouterr().out
+        assert "0.2.0" in out
+        assert "uv tool upgrade cantrip" in out
+
+    def test_yanked_variant_mentions_yanked(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from cantrip import update
+
+        info = update.UpdateInfo(
+            current="0.1.0",
+            latest="0.2.0",
+            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            release_timestamp=None,
+            installed_yanked=True,
+        )
+        with mock.patch(
+            "cantrip.update.detect_install_method",
+            return_value=update.InstallMethod.UV_TOOL,
+        ):
+            cantrip_main._print_update_panel(info)
+        assert "yanked" in capsys.readouterr().out
+
+    def test_truncate_notes_caps_long_changelog(self) -> None:
+        body = "\n".join(str(i) for i in range(100))
+        truncated = cantrip_main._truncate_notes(body, line_cap=10)
+        # Cap produces 10 lines plus a trailer about the PyPI URL.
+        assert truncated.splitlines()[:10] == [str(i) for i in range(10)]
+        assert "PyPI URL" in truncated
+
 
 class TestExportTranscript:
     def test_error_when_no_cantrip_file(

@@ -319,7 +319,61 @@ def _run(args: argparse.Namespace) -> int:
             theme_name=args.theme,
         )
         app.run()
+        _print_update_panel(app.pending_update_info)
         return 0
+
+
+def _print_update_panel(info: object) -> None:
+    """Render the PyPI update notice in a Rich panel after TUI shutdown.
+
+    Called only once the Textual screen has torn down so the prompt
+    doesn't clash with live widgets.  Matches ``toad``'s exit-time
+    prompt pattern.  Safe to call with ``None`` — a user already on
+    the latest release sees no extra output.
+    """
+    from cantrip import update
+
+    if info is None:
+        return
+    if not isinstance(info, update.UpdateInfo):
+        return
+
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+
+    command = update.upgrade_command()
+    if info.installed_yanked:
+        title = f"Cantrip {info.current} has been yanked — upgrade to {info.latest} recommended"
+    else:
+        title = f"A newer Cantrip is available: {info.latest} (you have {info.current})"
+
+    body_parts: list[str] = [f"PyPI: {info.pypi_url}"]
+    if command is not None:
+        body_parts.append(f"Upgrade: `{command}`")
+    else:
+        body_parts.append("Upgrade via your usual installer.")
+    if info.release_notes_markdown:
+        body_parts.append("")
+        body_parts.append(_truncate_notes(info.release_notes_markdown))
+
+    body = "\n\n".join(body_parts)
+    console = Console()
+    console.print()
+    console.print(Panel(Markdown(body), title=title, border_style="cyan"))
+
+
+def _truncate_notes(markdown: str, *, line_cap: int = 30) -> str:
+    """Trim the release-notes markdown to *line_cap* visible lines.
+
+    Four releases of backlog shouldn't swamp the terminal when the
+    TUI quits — keep the panel short and point at the PyPI URL for
+    the rest.
+    """
+    lines = markdown.splitlines()
+    if len(lines) <= line_cap:
+        return markdown
+    return "\n".join(lines[:line_cap]) + "\n\n_… see the PyPI URL for full notes._"
 
 
 def main() -> int:

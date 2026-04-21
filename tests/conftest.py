@@ -30,6 +30,19 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_slow)
 
 
+@pytest.fixture(autouse=True)
+def _disable_pypi_update_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the PyPI self-update check (Phase 63) off during tests.
+
+    The TUI's ``on_mount`` kicks off ``check_for_update()`` as a
+    background worker and the CLI fires it from ``_repl``.  Tests
+    should never touch the live PyPI JSON endpoint — opt out by
+    default and let the dedicated ``test_update.py`` suite re-enable
+    the check with monkeypatches and fake transports.
+    """
+    monkeypatch.setenv("CANTRIP_NO_UPDATE_CHECK", "1")
+
+
 class FakeProvider(LLMProvider):
     """A fake LLM provider for testing.
 

@@ -560,6 +560,69 @@ main {
   display: none;
 }
 
+/* Self-update banner (Phase 63.4) */
+.update-banner {
+  margin: 0.5rem 1rem 0;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.update-banner[hidden] {
+  display: none;
+}
+
+.update-banner-body {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.update-banner-body code {
+  padding: 1px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.update-banner-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.update-btn {
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.update-btn:hover {
+  border-color: var(--accent);
+}
+
+.update-btn.primary {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+  font-weight: 600;
+}
+
 /* Footer */
 footer {
   display: flex;

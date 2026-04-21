@@ -109,6 +109,7 @@ const cantrip = (() => {
         historyLoaded = true;
         _fetchMessages();
         _fetchSessionPreview();
+        _fetchUpdateStatus();
       }
     };
 
@@ -169,6 +170,9 @@ const cantrip = (() => {
           "system",
           `Recalled memory: ${msg.data.title} (${msg.data.scope})`,
         );
+        break;
+      case "update_available":
+        _renderUpdateBanner(msg.data && msg.data.info);
         break;
     }
   }
@@ -649,6 +653,73 @@ const cantrip = (() => {
       // chat_message so WS-connected clients pick it up.
       await _fetchMessages();
     } catch { /* ignore */ }
+  }
+
+  // ── Self-update banner (Phase 63.4) ──────────────────────────────
+
+  const UPDATE_DISMISS_KEY = "cantrip.update.dismissed";
+
+  async function _fetchUpdateStatus() {
+    try {
+      const resp = await fetch("/api/update-status");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      _renderUpdateBanner(data.info);
+    } catch { /* ignore */ }
+  }
+
+  function _renderUpdateBanner(info) {
+    const banner = document.getElementById("update-banner");
+    if (!banner) return;
+    if (!info) {
+      banner.hidden = true;
+      return;
+    }
+    // Dismissal is keyed on the version so shipping a newer release
+    // re-surfaces the banner without the user having to clear storage.
+    const dismissed = _getDismissedUpdateVersion();
+    if (dismissed && dismissed === info.latest) {
+      banner.hidden = true;
+      return;
+    }
+
+    const body = document.getElementById("update-banner-body");
+    const link = document.getElementById("update-banner-link");
+    const dismiss = document.getElementById("update-banner-dismiss");
+    if (body) body.innerHTML = _updateBannerHtml(info);
+    if (link && info.pypi_url) link.href = info.pypi_url;
+    if (dismiss) {
+      dismiss.onclick = () => {
+        try {
+          localStorage.setItem(UPDATE_DISMISS_KEY, info.latest);
+        } catch { /* storage disabled; dismissal is per-session */ }
+        banner.hidden = true;
+      };
+    }
+    banner.hidden = false;
+  }
+
+  function _updateBannerHtml(info) {
+    const current = _esc(info.current || "");
+    const latest = _esc(info.latest || "");
+    let headline;
+    if (info.installed_yanked) {
+      headline = `Cantrip ${current} has been yanked — upgrading to ${latest} is recommended.`;
+    } else {
+      headline = `A newer Cantrip is available: ${latest} (you have ${current}).`;
+    }
+    const command = info.upgrade_command
+      ? ` Run <code>${_esc(info.upgrade_command)}</code> to upgrade.`
+      : " Upgrade via your usual installer.";
+    return `<strong>${headline}</strong>${command}`;
+  }
+
+  function _getDismissedUpdateVersion() {
+    try {
+      return localStorage.getItem(UPDATE_DISMISS_KEY);
+    } catch {
+      return null;
+    }
   }
 
   async function _toggleResumeTranscript() {

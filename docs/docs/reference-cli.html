@@ -464,6 +464,29 @@ cantrip --help</code></pre>
             not on <code>PATH</code>.
           </td>
         </tr>
+        <tr>
+          <td><code>CANTRIP_NO_UPDATE_CHECK</code></td>
+          <td>optional</td>
+          <td>
+            Skip the background PyPI self-update check. Accepts
+            <code>1</code>, <code>true</code>, <code>yes</code>, or
+            <code>on</code> (case-insensitive). Useful on corporate
+            networks that block <code>pypi.org</code> or for scripted
+            runs that shouldn't talk to the public internet at all.
+            The same effect can be made persistent by setting
+            <code>update_check_disabled = true</code> in
+            <code>~/.config/cantrip/settings.json</code>.
+          </td>
+        </tr>
+        <tr>
+          <td><code>CANTRIP_UPDATE_CACHE_DIR</code></td>
+          <td>optional</td>
+          <td>
+            Override the disk cache directory for the PyPI check.
+            Defaults to <code>~/.cache/cantrip/</code>; the verdict
+            lives in <code>update.json</code> with a 24-hour TTL.
+          </td>
+        </tr>
       </tbody>
     </table>
     <p>
@@ -508,6 +531,55 @@ cantrip --help</code></pre>
       the Web UI shows a banner across the top of the chat panel. On a
       non-TTY stdin (scripts, piped input) the CLI falls back to silent
       resume so automation keeps working.
+    </p>
+
+    <h2 id="self-update-check">Self-update check</h2>
+    <p>
+      On startup, Cantrip queries the PyPI JSON API in the background
+      to see whether a newer release of the <code>cantrip</code>
+      distribution has been published. The result is cached on disk at
+      <code>~/.cache/cantrip/update.json</code> for 24&nbsp;hours, so
+      day-to-day startups don't hit the network.
+    </p>
+    <p>
+      When a newer version is available each front-end surfaces a
+      non-blocking notice:
+    </p>
+    <ul>
+      <li>
+        <strong>TUI</strong> &mdash; a Rich panel prints after the
+        Textual screen tears down, so the prompt never interrupts
+        mid-session.
+      </li>
+      <li>
+        <strong>Web UI</strong> &mdash; a dismissible banner appears at
+        the top of the page. Dismissal is remembered per version in
+        <code>localStorage</code>, so the banner reappears on the next
+        release without further intervention.
+      </li>
+      <li>
+        <strong>CLI</strong> (<code>--no-tui</code>) &mdash; a single
+        two-line notice prints after the REPL exits: the new version,
+        the PyPI project URL, and the exact upgrade command for the
+        detected installer.
+      </li>
+    </ul>
+    <p>
+      The upgrade command is installer-aware. Cantrip inspects
+      <code>sys.executable</code> to pick among
+      <code>uv tool upgrade cantrip</code>, <code>pipx upgrade cantrip</code>,
+      <code>pip install --user --upgrade cantrip</code>,
+      <code>pip install --upgrade cantrip</code>, and
+      <code>snap refresh cantrip</code>. When nothing matches the
+      notice falls back to the PyPI URL rather than guess.
+    </p>
+    <p>
+      Pre-releases (<code>1.2.0rc1</code>) are hidden unless the
+      installed version is already a pre-release. If the installed
+      version has been yanked on PyPI the notice shifts in tone to
+      recommend upgrading &mdash; see
+      <code>CANTRIP_NO_UPDATE_CHECK</code> above to disable the check
+      entirely.
     </p>
   </main>
 </div>

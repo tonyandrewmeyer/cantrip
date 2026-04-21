@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 from types import SimpleNamespace
 from unittest import mock
 
@@ -860,3 +861,71 @@ class TestRepl:
             await cli._repl(agent)
 
         boot.assert_called_once_with(agent)
+
+
+# ---------------------------------------------------------------------------
+# Update notice
+# ---------------------------------------------------------------------------
+
+
+class TestPrintUpdateNotice:
+    """``_print_update_notice`` prints the post-REPL PyPI notice."""
+
+    @pytest.mark.asyncio
+    async def test_prints_notice_when_update_available(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import asyncio
+
+        from cantrip import update
+
+        info = update.UpdateInfo(
+            current="0.1.0",
+            latest="0.2.0",
+            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            release_timestamp=None,
+        )
+
+        async def _ready() -> update.UpdateInfo | None:
+            return info
+
+        task = asyncio.create_task(_ready())
+        with mock.patch(
+            "cantrip.update.detect_install_method",
+            return_value=update.InstallMethod.UV_TOOL,
+        ):
+            await cli._print_update_notice(task)
+        out = capsys.readouterr().out
+        assert "0.2.0" in out
+        assert "uv tool upgrade cantrip" in out
+
+    @pytest.mark.asyncio
+    async def test_silent_when_no_update(self, capsys: pytest.CaptureFixture[str]) -> None:
+        import asyncio
+
+        async def _nothing() -> None:
+            return None
+
+        task = asyncio.create_task(_nothing())
+        await cli._print_update_notice(task)
+        assert capsys.readouterr().out == ""
+
+    @pytest.mark.asyncio
+    async def test_cancels_slow_check(self, capsys: pytest.CaptureFixture[str]) -> None:
+        import asyncio
+
+        async def _slow() -> None:
+            await asyncio.sleep(10.0)
+            return None
+
+        task = asyncio.create_task(_slow())
+        # Tight timeout so the test completes quickly.
+        with mock.patch("cantrip.cli.asyncio.wait_for", side_effect=TimeoutError):
+            await cli._print_update_notice(task)
+        # Drain the cancellation so pytest's unawaited-coroutine warning
+        # doesn't fire — ``Task.cancel()`` requests cancellation but the
+        # task only settles once its coroutine is re-entered.
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        assert task.cancelled()
+        assert capsys.readouterr().out == ""

@@ -6,7 +6,7 @@ import json
 import sys
 from collections.abc import Callable, Sequence
 
-from cantrip import notifications
+from cantrip import notifications, update
 from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
@@ -272,6 +272,15 @@ async def _repl(agent: CantripAgent) -> None:
     # available (non-POSIX, stripped containers) or stdin isn't a TTY.
     _install_slash_completer(_cli_slash_verbs())
 
+    # Kick off the PyPI update check in the background so the result
+    # is ready by the time the REPL exits.  The cache on
+    # ``~/.cache/cantrip/update.json`` keeps subsequent launches
+    # instant; the post-exit notice is printed just before this
+    # coroutine returns.
+    update_task: asyncio.Task[update.UpdateInfo | None] = asyncio.create_task(
+        update.check_for_update()
+    )
+
     # Offer an explicit Resume / Fresh / Transcript choice on launch
     # rather than silently loading whatever's on disk.
     _prompt_session_resume(agent)
@@ -409,6 +418,33 @@ async def _repl(agent: CantripAgent) -> None:
     prepare_task.cancel()
     await asyncio.gather(prepare_task, return_exceptions=True)
     await agent.stop_executor()
+
+    await _print_update_notice(update_task)
+
+
+async def _print_update_notice(update_task: asyncio.Task[update.UpdateInfo | None]) -> None:
+    """Print the PyPI update notice if one is available.
+
+    Waits up to a second for the background check to finish — the
+    cache makes normal runs effectively instant; a first-run machine
+    on a slow network just doesn't see the notice on this launch,
+    but the next launch will because the cache will be populated.
+    Cancels the task if it hasn't settled so asyncio doesn't warn
+    about a pending task being garbage-collected at shutdown.
+    """
+    try:
+        info = await asyncio.wait_for(asyncio.shield(update_task), timeout=1.0)
+    except TimeoutError:
+        update_task.cancel()
+        return
+    except asyncio.CancelledError:
+        return
+    except (OSError, RuntimeError, ValueError):
+        return
+    if info is None:
+        return
+    print()
+    print(update.format_cli_notice(info))
 
 
 def _on_bus_task_event(event: ui_events.Event) -> None:

@@ -11,6 +11,7 @@ import weakref
 import aiohttp.web as web
 import jinja2
 
+from cantrip import update
 from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.llm import create_provider, resolve_light_provider
@@ -40,6 +41,12 @@ PORT_KEY: web.AppKey[int] = web.AppKey("port", int)
 # to pick Resume / Fresh wins; subsequent page loads see ``decided=True``
 # and skip the banner.
 SESSION_DECIDED_KEY: web.AppKey[dict[str, bool]] = web.AppKey("session_decided", dict)
+
+# Holds the latest PyPI update verdict for this server process.  The
+# startup worker fills in ``"info"`` (an :class:`update.UpdateInfo` or
+# ``None``) when the check completes.  Shared across clients so every
+# page load — including late reconnects — sees the same answer.
+UPDATE_STATE_KEY: web.AppKey[dict[str, object]] = web.AppKey("update_state", dict)
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +251,44 @@ async def _api_session_transcript(request: web.Request) -> web.Response:
     return web.json_response(
         {"messages": [{"role": msg.role.value, "content": msg.content} for msg in messages]}
     )
+
+
+async def _api_update_status(request: web.Request) -> web.Response:
+    """Return the PyPI update verdict for this server process.
+
+    Shape mirrors the WebSocket ``update_available`` event so the
+    frontend can reuse a single ``_renderUpdateBanner`` helper.
+    ``info=null`` means either "we're on the latest release" or "the
+    background check hasn't settled yet" — the browser shouldn't care,
+    because the WebSocket event fires the moment a verdict arrives.
+    """
+    state = request.app[UPDATE_STATE_KEY]
+    info = state.get("info")
+    return web.json_response({"info": _update_info_payload(info)})
+
+
+def _update_info_payload(info: object) -> dict[str, object] | None:
+    """Serialise an :class:`update.UpdateInfo` for the wire.
+
+    Returns ``None`` when *info* isn't an ``UpdateInfo`` (notably when
+    we're on the latest release and the worker stored ``None``).  The
+    payload includes the installer-aware upgrade command so the
+    frontend doesn't have to replicate the mapping.
+    """
+    if not isinstance(info, update.UpdateInfo):
+        return None
+    method = update.detect_install_method()
+    command = update.upgrade_command(method)
+    return {
+        "current": info.current,
+        "latest": info.latest,
+        "pypi_url": info.pypi_url,
+        "release_timestamp": info.release_timestamp,
+        "release_notes_markdown": info.release_notes_markdown,
+        "installed_yanked": info.installed_yanked,
+        "install_method": method.value,
+        "upgrade_command": command,
+    }
 
 
 async def _api_juju_status(request: web.Request) -> web.Response:
@@ -523,6 +568,10 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     # the first to decide flips it, subsequent page loads skip the banner.
     app[SESSION_DECIDED_KEY] = {"value": False}
 
+    # Phase 63.4: self-update verdict.  Filled in by the startup
+    # worker; served both as a GET and as a WebSocket event on arrival.
+    app[UPDATE_STATE_KEY] = {"info": None}
+
     # Routes.
     app.router.add_get("/", _index)
     app.router.add_get("/api/state", _api_state)
@@ -531,12 +580,31 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     app.router.add_post("/api/session/decide", _api_session_decide)
     app.router.add_get("/api/session/transcript", _api_session_transcript)
     app.router.add_get("/api/juju-status", _api_juju_status)
+    app.router.add_get("/api/update-status", _api_update_status)
     app.router.add_get("/api/logs", _api_logs)
     app.router.add_get("/api/logs-stream", _ws_logs_stream)
     app.router.add_get("/ws", _websocket_handler)
     app.router.add_static("/static", _STATIC_DIR, name="static")
 
     return app
+
+
+async def _run_update_check(app: web.Application) -> None:
+    """Background worker — populate ``UPDATE_STATE_KEY`` and broadcast.
+
+    A ``None`` verdict means the user is already on the latest release
+    (or opted out); we still fire the WebSocket event so reconnecting
+    clients see a definitive answer instead of assuming the check is
+    still pending.  The check honours the shared disk cache, so a TUI
+    launched minutes earlier doesn't cost this path an extra HTTP
+    round-trip.
+    """
+    try:
+        info = await update.check_for_update()
+    except (OSError, RuntimeError, ValueError):
+        info = None
+    app[UPDATE_STATE_KEY]["info"] = info
+    _broadcast(app, "update_available", {"info": _update_info_payload(info)})
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +629,12 @@ async def _run_web_async(agent: CantripAgent, port: int) -> None:
 
     # Start the executor so autonomous tasks run.
     agent.start_executor()
+
+    # Phase 63.4: kick off the PyPI self-update check in the
+    # background.  Clients pick up the verdict via GET
+    # ``/api/update-status`` on load and via the ``update_available``
+    # WebSocket event on completion.
+    asyncio.create_task(_run_update_check(app))
 
     # Connect any configured MCP servers in the background.  Failures
     # land in the registry's per-server status; ``/mcp`` shows them.

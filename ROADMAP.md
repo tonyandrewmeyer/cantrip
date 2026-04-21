@@ -6642,16 +6642,23 @@ References:
   asserts it always returns *some* ``InstallMethod`` (48 update
   tests in total)
 
-### 63.4 Medium — Wire the check into all three front-ends
+### 63.4 Medium — Wire the check into all three front-ends ✅
 
-- [ ] **TUI** (``src/cantrip/tui/app.py``): kick off
+- [x] **TUI** (``src/cantrip/tui/app.py``): kick off
   ``check_for_update()`` in an ``asyncio.Task`` from ``on_mount``.
   Result stashed on the app.  On ``action_quit`` / ``on_exit``,
   if an update is available, print a Rich panel to stdout **after**
   the Textual screen tears down.  Don't interrupt mid-session — the
   user should finish their work first.  Matches toad's exit-time
-  prompt exactly
-- [ ] **Web UI** (``src/cantrip/web/server.py`` +
+  prompt exactly — ``_start_update_check`` runs a Textual worker
+  on mount; ``pending_update_info`` is read from ``cantrip.main._run``
+  once ``app.run()`` returns and rendered by the new
+  ``_print_update_panel`` helper (Rich ``Panel`` + ``Markdown`` body
+  capped at 30 lines via ``_truncate_notes`` so four releases of
+  backlog don't swamp the terminal).  Yanked-installed versions
+  get a sharper title; ``UNKNOWN`` installers fall back to "Upgrade
+  via your usual installer."
+- [x] **Web UI** (``src/cantrip/web/server.py`` +
   ``templates/index.html.j2``): the server runs the same helper
   once at app-startup; the result is exposed via ``GET
   /api/update-status`` and via a ``"update-available"`` SSE event
@@ -6659,16 +6666,42 @@ References:
   a dismissible banner at the top of the page (reuses the
   resume-prompt banner pattern from Phase 31.3); dismissal is
   remembered in ``localStorage`` keyed on the version number so
-  a second dismissal isn't needed for the same release
-- [ ] **CLI** (``src/cantrip/cli.py``): after the REPL exits (before
+  a second dismissal isn't needed for the same release — landed
+  as a WebSocket ``update_available`` broadcast rather than SSE
+  to reuse the existing ``/ws`` fan-out (the rest of the Web UI
+  already streams over WebSockets; introducing SSE just for this
+  would have fragmented the client transport).  ``UPDATE_STATE_KEY``
+  holds the verdict; ``_run_update_check`` fills it in and
+  broadcasts on completion (both for "newer available" and the
+  explicit null case so a reconnecting client sees a definitive
+  answer).  ``_update_info_payload`` serialises with the
+  installer-aware ``upgrade_command`` already resolved so the JS
+  renderer doesn't have to replicate the mapping.  Dismissal key
+  is ``cantrip.update.dismissed = <latest>`` in ``localStorage``.
+- [x] **CLI** (``src/cantrip/cli.py``): after the REPL exits (before
   the final ``sys.exit``), print a single-line notice pointing at
   the PyPI URL, followed by the upgrade command for the detected
   install method.  The full changelog is *not* printed — the CLI
   is often scripted, so keep stdout to one line and let the user
-  open the URL for detail
-- [ ] All three front-ends share the same helper and the same cache
+  open the URL for detail — ``_repl`` starts the check as a
+  background ``asyncio.Task`` at the top of the REPL (so the
+  result is warm by the time the user quits); ``_print_update_notice``
+  awaits the task with a 1-second cap and prints the two-line
+  ``format_cli_notice(info)`` output (headline + PyPI URL, then
+  upgrade command).  The cap is deliberately tight so a stuck
+  check can't delay the user's next prompt — the next launch will
+  hit the populated cache anyway.
+- [x] All three front-ends share the same helper and the same cache
   file — no duplicated HTTP calls when a user runs the TUI, then
-  launches the Web UI ten minutes later
+  launches the Web UI ten minutes later — everything routes through
+  ``cantrip.update.check_for_update()``, which honours the 24-hour
+  mtime cache at ``~/.cache/cantrip/update.json`` regardless of
+  which surface called it first.  A tests-wide autouse fixture
+  (``tests/conftest.py::_disable_pypi_update_check``) sets
+  ``CANTRIP_NO_UPDATE_CHECK=1`` so unit tests never accidentally
+  touch the live endpoint; the existing ``test_update.py`` suite
+  deletes the env via ``no_settings_optout`` to re-enable the
+  check.
 
 ### 63.5 Low — ``/update`` slash command for on-demand checks
 

@@ -33,6 +33,43 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Added
+- **Self-update notice in TUI, Web, and CLI (Phase 63.4).**  The
+  three front-ends now surface a non-blocking "A newer cantrip is
+  available" notice when the background PyPI check finds an upgrade.
+  The TUI kicks the check off from ``on_mount`` as a Textual worker,
+  stashes the verdict on the app, and prints a Rich panel from
+  ``cantrip.main._run`` after the Textual screen tears down so the
+  prompt never interrupts mid-session (matches ``toad``'s exit-time
+  pattern).  The Web server runs the same helper once at startup,
+  exposes the verdict via ``GET /api/update-status``, and broadcasts
+  an ``update_available`` WebSocket event so reconnecting clients
+  learn about it too; a dismissible banner at the top of the page
+  remembers the dismissal per version in ``localStorage`` so a
+  second dismissal isn't needed for the same release.  The
+  ``--no-tui`` CLI starts the check as a background task in the
+  REPL and prints a two-line notice (PyPI URL + installer-aware
+  upgrade command) just before the REPL returns, keeping piped
+  stdout short.  All three share
+  ``~/.cache/cantrip/update.json`` so a user launching the TUI and
+  then the Web UI ten minutes later doesn't double up on PyPI
+  round-trips.  New ``format_cli_notice`` shared helper rides on
+  ``upgrade_command`` / ``detect_install_method`` for parity across
+  surfaces.  ``CANTRIP_NO_UPDATE_CHECK=1`` (env var) or
+  ``update_check_disabled = true`` (``~/.config/cantrip/settings.json``)
+  still opt out, as before.  Covered by 12 new tests across
+  ``test_cli.py`` (post-REPL notice path, slow-check cancellation,
+  no-update silence), ``test_main.py`` (``_print_update_panel`` /
+  ``_truncate_notes`` / TUI dispatch handoff), ``test_web_server.py``
+  (``/api/update-status`` payload shape, startup worker broadcasts
+  for both available and null verdicts, error-path swallow), plus
+  template + JS coverage that the banner DOM and dispatcher are
+  wired up.  A tests-wide autouse fixture sets
+  ``CANTRIP_NO_UPDATE_CHECK=1`` so unit tests never accidentally
+  hit PyPI; the dedicated ``test_update.py`` suite re-enables the
+  check per-test via its existing ``no_settings_optout`` fixture.
+  ``docs/docs/reference-cli.html`` gains a "Self-update check"
+  section plus entries for ``CANTRIP_NO_UPDATE_CHECK`` and
+  ``CANTRIP_UPDATE_CACHE_DIR`` in the env-var table.
 - **Changelog extraction + pre-release / yanked filter (Phase 63.2
   + 63.6).**  ``check_for_update`` now follows the version check
   with a fetch of ``CHANGELOG.md`` from

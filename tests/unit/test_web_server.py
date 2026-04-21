@@ -144,6 +144,14 @@ class TestTemplateRendering:
 
         assert "No tasks yet" in html
 
+    def test_template_includes_update_banner(self) -> None:
+        """Phase 63.4: the update banner is in the DOM (hidden on first load)."""
+        html = _render_template()
+        assert 'id="update-banner"' in html
+        # Hidden by default — filled in by _fetchUpdateStatus on page load.
+        assert 'class="update-banner"' in html
+        assert 'id="update-banner-dismiss"' in html
+
 
 class TestJavaScript:
     """Tests for the client-side JavaScript."""
@@ -165,6 +173,16 @@ class TestJavaScript:
         assert "chat_message" in js
         assert "task_updated" in js
         assert "thinking" in js
+
+    def test_js_has_update_banner_plumbing(self) -> None:
+        """Phase 63.4: self-update banner fetches, renders, and persists dismissal."""
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "_fetchUpdateStatus" in js
+        assert "_renderUpdateBanner" in js
+        assert "/api/update-status" in js
+        assert "update_available" in js
+        assert "UPDATE_DISMISS_KEY" in js
+        assert "localStorage" in js
 
 
 class TestCSS:
@@ -1378,6 +1396,7 @@ class TestCreateApp:
         assert "/api/state" in paths
         assert "/api/messages" in paths
         assert "/api/juju-status" in paths
+        assert "/api/update-status" in paths
         assert "/api/logs" in paths
         assert "/api/logs-stream" in paths
         assert "/api/session/preview" in paths
@@ -1397,6 +1416,165 @@ class TestCreateApp:
         assert isinstance(app[WS_CLIENTS_KEY], weakref.WeakSet)
         assert isinstance(app[CHAT_LOCK_KEY], asyncio.Lock)
         assert isinstance(app[JINJA_ENV_KEY], jinja2.Environment)
+
+
+class TestApiUpdateStatus:
+    """``/api/update-status`` serves the Phase 63.4 PyPI verdict."""
+
+    def test_null_info_when_state_empty(self) -> None:
+        from cantrip.web import server
+        from cantrip.web.server import UPDATE_STATE_KEY
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app[UPDATE_STATE_KEY] = {"info": None}
+        app.router.add_get("/api/update-status", server._api_update_status)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/update-status")
+                data = await resp.json()
+                assert data == {"info": None}
+
+        asyncio.run(_run())
+
+    def test_serialises_update_info(self) -> None:
+        from cantrip import update
+        from cantrip.web import server
+        from cantrip.web.server import UPDATE_STATE_KEY
+
+        info = update.UpdateInfo(
+            current="0.1.0",
+            latest="0.2.0",
+            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            release_timestamp="2026-04-21T00:00:00Z",
+            release_notes_markdown="## 0.2.0\n\n- Nice.",
+            installed_yanked=False,
+        )
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app[UPDATE_STATE_KEY] = {"info": info}
+        app.router.add_get("/api/update-status", server._api_update_status)
+
+        async def _run() -> None:
+            with patch(
+                "cantrip.update.detect_install_method",
+                return_value=update.InstallMethod.UV_TOOL,
+            ):
+                async with TestClient(TestServer(app)) as client:
+                    resp = await client.get("/api/update-status")
+                    data = await resp.json()
+                    payload = data["info"]
+                    assert payload["latest"] == "0.2.0"
+                    assert payload["current"] == "0.1.0"
+                    assert payload["upgrade_command"] == "uv tool upgrade cantrip"
+                    assert payload["install_method"] == "uv-tool"
+                    assert payload["installed_yanked"] is False
+
+        asyncio.run(_run())
+
+    def test_non_updateinfo_state_serialises_as_null(self) -> None:
+        from cantrip.web import server
+        from cantrip.web.server import UPDATE_STATE_KEY
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        # Stashing a junk value mustn't crash the endpoint — defensive
+        # coding because the key is public and could be cleared.
+        app[UPDATE_STATE_KEY] = {"info": "not an UpdateInfo"}
+        app.router.add_get("/api/update-status", server._api_update_status)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/update-status")
+                data = await resp.json()
+                assert data == {"info": None}
+
+        asyncio.run(_run())
+
+
+class TestRunUpdateCheck:
+    """``_run_update_check`` populates state and broadcasts once settled."""
+
+    def test_broadcasts_available_and_stores_info(self) -> None:
+        from cantrip import update
+        from cantrip.web import server
+        from cantrip.web.server import UPDATE_STATE_KEY
+
+        info = update.UpdateInfo(
+            current="0.1.0",
+            latest="0.2.0",
+            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            release_timestamp=None,
+        )
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app[UPDATE_STATE_KEY] = {"info": None}
+
+        async def _run() -> None:
+            with (
+                patch("cantrip.update.check_for_update", new=AsyncMock(return_value=info)),
+                patch(
+                    "cantrip.update.detect_install_method",
+                    return_value=update.InstallMethod.UNKNOWN,
+                ),
+                patch("cantrip.web.server._broadcast") as mock_broadcast,
+            ):
+                await server._run_update_check(app)
+            assert app[UPDATE_STATE_KEY]["info"] is info
+            mock_broadcast.assert_called_once()
+            args = mock_broadcast.call_args.args
+            assert args[1] == "update_available"
+            payload = args[2]["info"]
+            assert payload["latest"] == "0.2.0"
+            # UNKNOWN installer → upgrade_command is None; frontend
+            # falls back to the "visit PyPI" button.
+            assert payload["upgrade_command"] is None
+
+        asyncio.run(_run())
+
+    def test_broadcasts_null_on_no_update(self) -> None:
+        from cantrip.web import server
+        from cantrip.web.server import UPDATE_STATE_KEY
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app[UPDATE_STATE_KEY] = {"info": None}
+
+        async def _run() -> None:
+            with (
+                patch("cantrip.update.check_for_update", new=AsyncMock(return_value=None)),
+                patch("cantrip.web.server._broadcast") as mock_broadcast,
+            ):
+                await server._run_update_check(app)
+            # Still broadcasts, but with info=None so reconnecting
+            # clients see the definitive "nothing to show" answer.
+            mock_broadcast.assert_called_once()
+            assert mock_broadcast.call_args.args[2] == {"info": None}
+
+        asyncio.run(_run())
+
+    def test_swallows_worker_errors(self) -> None:
+        from cantrip.web import server
+        from cantrip.web.server import UPDATE_STATE_KEY
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+        app[UPDATE_STATE_KEY] = {"info": None}
+
+        async def _run() -> None:
+            with (
+                patch(
+                    "cantrip.update.check_for_update",
+                    new=AsyncMock(side_effect=OSError("network down")),
+                ),
+                patch("cantrip.web.server._broadcast") as mock_broadcast,
+            ):
+                await server._run_update_check(app)
+            # Error path still broadcasts null; never raises.
+            mock_broadcast.assert_called_once()
+
+        asyncio.run(_run())
 
 
 class TestApiLogsEdgeCases:
