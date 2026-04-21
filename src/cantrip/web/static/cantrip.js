@@ -174,7 +174,103 @@ const cantrip = (() => {
       case "update_available":
         _renderUpdateBanner(msg.data && msg.data.info);
         break;
+      case "preflight_started":
+        _preflightStarted(msg.data && msg.data.checks);
+        break;
+      case "preflight_updated":
+        _preflightUpdated(msg.data);
+        break;
+      case "preflight_complete":
+        _preflightComplete();
+        break;
+      case "preflight_failed":
+        _preflightFailed(msg.data && msg.data.error);
+        break;
     }
+  }
+
+  // ── Preflight panel (Phase 31.13) ───────────────────────────────
+  //
+  // Mirrors the TUI's ``#task-checklist`` preflight group: five
+  // fixed rows (Concierge, Environment, Juju CLI, Controller, COS)
+  // that animate from ○ pending → ⟳ running → ✓ passed / ✗ failed
+  // / ◌ skipped.  Panel stays visible until every row has settled;
+  // we hide it after a short grace period so the user has time to
+  // read the final state.
+
+  const _PREFLIGHT_LABELS = {
+    concierge: "Concierge",
+    prepare: "Environment",
+    juju: "Juju CLI",
+    controller: "Controller",
+    cos: "COS",
+    snap_install: "Snap install",
+    bootstrap: "Bootstrap",
+  };
+  let _preflightHideTimer = null;
+
+  function _preflightStarted(checks) {
+    const panel = document.getElementById("preflight-panel");
+    const list = document.getElementById("preflight-list");
+    if (!panel || !list) return;
+    if (_preflightHideTimer) { clearTimeout(_preflightHideTimer); _preflightHideTimer = null; }
+    list.innerHTML = "";
+    const names = Array.isArray(checks) && checks.length
+      ? checks
+      : ["concierge", "prepare", "juju", "controller", "cos"];
+    for (const name of names) {
+      const li = document.createElement("li");
+      li.className = "preflight-row preflight-pending";
+      li.dataset.check = name;
+      li.innerHTML =
+        `<span class="preflight-icon" aria-hidden="true"></span>` +
+        `<span class="preflight-label">${_esc(_PREFLIGHT_LABELS[name] || name)}</span>` +
+        `<span class="preflight-msg"></span>`;
+      list.appendChild(li);
+    }
+    panel.hidden = false;
+  }
+
+  function _preflightUpdated(data) {
+    const list = document.getElementById("preflight-list");
+    if (!list || !data) return;
+    let row = list.querySelector(`[data-check="${CSS.escape(data.check_name)}"]`);
+    if (!row) {
+      // Check wasn't in the pre-rendered list (e.g. snap_install on a
+      // warm_up path) — append it live so the UI still reflects reality.
+      row = document.createElement("li");
+      row.className = "preflight-row preflight-pending";
+      row.dataset.check = data.check_name;
+      row.innerHTML =
+        `<span class="preflight-icon" aria-hidden="true"></span>` +
+        `<span class="preflight-label">${_esc(data.label || data.check_name)}</span>` +
+        `<span class="preflight-msg"></span>`;
+      list.appendChild(row);
+    }
+    row.className = `preflight-row preflight-${data.status}`;
+    const msg = row.querySelector(".preflight-msg");
+    if (msg) msg.textContent = data.message || "";
+  }
+
+  function _preflightComplete() {
+    // Fade out after a grace period so users can see the final state.
+    if (_preflightHideTimer) clearTimeout(_preflightHideTimer);
+    _preflightHideTimer = setTimeout(() => {
+      const panel = document.getElementById("preflight-panel");
+      if (panel) panel.hidden = true;
+    }, 4000);
+  }
+
+  function _preflightFailed(error) {
+    const list = document.getElementById("preflight-list");
+    if (!list) return;
+    const row = document.createElement("li");
+    row.className = "preflight-row preflight-failed";
+    row.innerHTML =
+      `<span class="preflight-icon" aria-hidden="true"></span>` +
+      `<span class="preflight-label">Preflight</span>` +
+      `<span class="preflight-msg">${_esc(error || "failed")}</span>`;
+    list.appendChild(row);
   }
 
   // ── Markdown rendering ──────────────────────────────────────────
@@ -460,6 +556,15 @@ const cantrip = (() => {
   function toggleLogs()  { _toggleOverlay("logs"); }
   function toggleGraph() { _toggleOverlay("graph"); }
 
+  // Manual Juju status refresh — exposed so the panel button can call it.
+  function refreshJujuStatus() { _fetchJujuStatus(); }
+
+  // Cancel the in-flight agent turn.  Fires a WS message the server
+  // translates into ``asyncio.Task.cancel()`` on ``process_message``.
+  // The server answers with a ``thinking: {active: false}`` broadcast
+  // and a ``Cancelled.`` system message, so no UI state changes here.
+  function cancelTurn() { _send("cancel_request", {}); }
+
   async function _fetchLogs() {
     const output = logsOutput();
     if (!output) return;
@@ -580,9 +685,11 @@ const cantrip = (() => {
       e.preventDefault();
       toggleGraph();
     } else if (key === "r") {
+      e.preventDefault();
       if (_isOverlayOpen("graph")) {
-        e.preventDefault();
         _fetchGraph();
+      } else {
+        _fetchJujuStatus();
       }
     }
   }
@@ -764,6 +871,6 @@ const cantrip = (() => {
 
   return {
     connect, appendMessage, updateTask, replaceAllTasks, setThinking,
-    toggleHelp, toggleLogs, toggleGraph,
+    toggleHelp, toggleLogs, toggleGraph, refreshJujuStatus, cancelTurn,
   };
 })();

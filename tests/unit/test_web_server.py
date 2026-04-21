@@ -16,6 +16,7 @@ from cantrip.web.server import (
     _VALID_LOG_LEVELS,
     AGENT_KEY,
     CHAT_LOCK_KEY,
+    CURRENT_TURN_KEY,
     JINJA_ENV_KEY,
     PORT_KEY,
     WS_CLIENTS_KEY,
@@ -54,6 +55,7 @@ def _build_ws_app(agent: MagicMock) -> web.Application:
     app[AGENT_KEY] = agent
     app[WS_CLIENTS_KEY] = weakref.WeakSet()
     app[CHAT_LOCK_KEY] = asyncio.Lock()
+    app[CURRENT_TURN_KEY] = {"task": None}
     app[JINJA_ENV_KEY] = jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
         autoescape=True,
@@ -95,6 +97,52 @@ class TestBroadcast:
         app[WS_CLIENTS_KEY] = weakref.WeakSet()
         # Should not raise.
         _broadcast(app, "test_event", {"key": "value"})
+
+
+class TestPreflightBroadcast:
+    """Tests for preflight-event forwarding over the WebSocket."""
+
+    def test_broadcast_preflight_event_payload(self) -> None:
+        """_broadcast_preflight_event maps PreflightEvent to WS payload."""
+        import weakref
+
+        import aiohttp.web as web
+
+        from cantrip.agent.preflight import CheckStatus, PreflightEvent
+        from cantrip.web.server import _broadcast_preflight_event
+
+        app = web.Application()
+        app[WS_CLIENTS_KEY] = weakref.WeakSet()
+
+        captured: list[tuple[str, dict]] = []
+        with patch(
+            "cantrip.web.server._broadcast",
+            side_effect=lambda _a, t, d: captured.append((t, d)),
+        ):
+            _broadcast_preflight_event(
+                app,
+                PreflightEvent(
+                    check_name="controller",
+                    status=CheckStatus.RUNNING,
+                    message="Checking controller",
+                ),
+            )
+
+        assert len(captured) == 1
+        event_type, payload = captured[0]
+        assert event_type == "preflight_updated"
+        assert payload["check_name"] == "controller"
+        assert payload["label"] == "Controller"
+        assert payload["status"] == "running"
+        assert payload["message"] == "Checking controller"
+
+    def test_preflight_labels_cover_all_checks(self) -> None:
+        """Every standard check name has a human-readable label."""
+        from cantrip.web.server import _PREFLIGHT_CHECKS, _PREFLIGHT_LABELS
+
+        for check in _PREFLIGHT_CHECKS:
+            assert check in _PREFLIGHT_LABELS
+            assert _PREFLIGHT_LABELS[check]
 
 
 class TestTemplateRendering:
@@ -829,6 +877,66 @@ class TestWebSocketHandler:
                 msg = await ws.receive(timeout=2.0)
                 assert msg.json() == {"type": "thinking", "data": {"active": True}}
                 agent.process_message.assert_awaited_once_with("real")
+                await ws.close()
+
+        asyncio.run(_run())
+
+    def test_cancel_request_interrupts_in_flight_turn(self) -> None:
+        """A ``cancel_request`` WS message cancels process_message and returns a system message."""
+
+        async def _slow_process(_content: str) -> str:
+            await asyncio.sleep(30)
+            return "should not be reached"
+
+        agent = _make_agent()
+        agent.process_message = AsyncMock(side_effect=_slow_process)
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await ws.send_json({"type": "chat_input", "data": {"content": "hi"}})
+
+                # Wait for "thinking active" to confirm the turn started.
+                first = await ws.receive(timeout=2.0)
+                assert first.json() == {"type": "thinking", "data": {"active": True}}
+
+                # Give the turn task a tick to actually start awaiting.
+                await asyncio.sleep(0.05)
+
+                await ws.send_json({"type": "cancel_request"})
+
+                frames: list[dict] = []
+                for _ in range(2):
+                    msg = await ws.receive(timeout=2.0)
+                    frames.append(msg.json())
+
+                types_seen = [f["type"] for f in frames]
+                assert types_seen == ["thinking", "chat_message"]
+                assert frames[0]["data"] == {"active": False}
+                assert frames[1]["data"] == {
+                    "role": "system",
+                    "content": "Cancelled.",
+                }
+                # save_state must NOT be called when the turn is cancelled.
+                agent.save_state.assert_not_called()
+                await ws.close()
+
+        asyncio.run(_run())
+
+    def test_cancel_without_in_flight_turn_is_noop(self) -> None:
+        """A spurious ``cancel_request`` with no pending turn just returns."""
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await ws.send_json({"type": "cancel_request"})
+                # Follow with a real chat_input to prove the loop still works.
+                await ws.send_json({"type": "chat_input", "data": {"content": "hi"}})
+                msg = await ws.receive(timeout=2.0)
+                assert msg.json()["type"] == "thinking"
                 await ws.close()
 
         asyncio.run(_run())

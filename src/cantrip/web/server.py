@@ -14,6 +14,7 @@ import jinja2
 from cantrip import update
 from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
+from cantrip.agent.preflight import DEFAULT_PRESET, PreflightEvent
 from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.ui import events as ui_events
@@ -35,6 +36,11 @@ WS_CLIENTS_KEY: web.AppKey[weakref.WeakSet] = web.AppKey("ws_clients", weakref.W
 CHAT_LOCK_KEY: web.AppKey[asyncio.Lock] = web.AppKey("chat_lock", asyncio.Lock)
 JINJA_ENV_KEY: web.AppKey[jinja2.Environment] = web.AppKey("jinja_env", jinja2.Environment)
 PORT_KEY: web.AppKey[int] = web.AppKey("port", int)
+
+# Holds the currently-running ``process_message`` task so a ``cancel``
+# WebSocket message can interrupt it.  The chat lock serialises turns,
+# so at most one task is in flight at a time — a single slot suffices.
+CURRENT_TURN_KEY: web.AppKey[dict[str, asyncio.Task | None]] = web.AppKey("current_turn", dict)
 
 # Tracks whether the resume-prompt decision has been made for this
 # server lifetime.  Shared across all connected clients — the first one
@@ -421,6 +427,69 @@ async def _ws_logs_stream(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
+async def _process_chat_turn(app: web.Application, agent: CantripAgent, content: str) -> None:
+    """Run one chat turn end-to-end, broadcasting progress and results.
+
+    Extracted from the WebSocket handler so it can run as a background
+    task.  Keeping it off the read loop is what lets ``cancel_request``
+    arrive while a turn is in flight — the handler returns to
+    ``ws.receive()`` immediately after dispatching, instead of blocking
+    on ``agent.process_message``.
+    """
+    chat_lock = app[CHAT_LOCK_KEY]
+    async with chat_lock:
+        _broadcast(app, "thinking", {"active": True})
+
+        turn_task = asyncio.create_task(agent.process_message(content))
+        app[CURRENT_TURN_KEY]["task"] = turn_task
+        try:
+            response = await turn_task
+            _broadcast(app, "thinking", {"active": False})
+            _broadcast(
+                app,
+                "chat_message",
+                {"role": "assistant", "content": response},
+            )
+            agent.save_state()
+        except asyncio.CancelledError:
+            _broadcast(app, "thinking", {"active": False})
+            _broadcast(
+                app,
+                "chat_message",
+                {"role": "system", "content": "Cancelled."},
+            )
+        except (ProviderRateLimitError, ProviderOverloadedError) as e:
+            _broadcast(app, "thinking", {"active": False})
+            _broadcast(
+                app,
+                "chat_message",
+                {
+                    "role": "system",
+                    "content": (
+                        "Provider temporarily unavailable — please wait a moment and try again."
+                    ),
+                },
+            )
+            log.warning("Provider rate limited: %s", e)
+        except ProviderError as e:
+            _broadcast(app, "thinking", {"active": False})
+            _broadcast(
+                app,
+                "chat_message",
+                {"role": "system", "content": f"Provider error: {e}"},
+            )
+        except (OSError, ValueError, RuntimeError) as e:
+            _broadcast(app, "thinking", {"active": False})
+            _broadcast(
+                app,
+                "chat_message",
+                {"role": "system", "content": f"Error: {e}"},
+            )
+            log.exception("Error processing message")
+        finally:
+            app[CURRENT_TURN_KEY]["task"] = None
+
+
 async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
     """Handle a WebSocket connection for real-time chat and updates."""
     ws = web.WebSocketResponse()
@@ -429,6 +498,7 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
     log.info("WebSocket client connected (%d total)", len(request.app[WS_CLIENTS_KEY]))
 
     agent: CantripAgent = request.app[AGENT_KEY]
+    turn_tasks: set[asyncio.Task] = set()
 
     try:
         async for msg in ws:
@@ -436,6 +506,12 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 try:
                     payload = json.loads(msg.data)
                 except json.JSONDecodeError:
+                    continue
+
+                if payload.get("type") == "cancel_request":
+                    current = request.app[CURRENT_TURN_KEY].get("task")
+                    if current is not None and not current.done():
+                        current.cancel()
                     continue
 
                 if payload.get("type") == "chat_input":
@@ -462,62 +538,13 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     if _handle_shared_slash_command(request.app, agent, content):
                         continue
 
-                    # Serialise chat messages to prevent concurrent state mutation.
-                    chat_lock = request.app[CHAT_LOCK_KEY]
-                    async with chat_lock:
-                        _broadcast(request.app, "thinking", {"active": True})
-
-                        try:
-                            response = await agent.process_message(content)
-                            _broadcast(request.app, "thinking", {"active": False})
-                            _broadcast(
-                                request.app,
-                                "chat_message",
-                                {
-                                    "role": "assistant",
-                                    "content": response,
-                                },
-                            )
-                            # Persist state after each turn.
-                            agent.save_state()
-                        except (
-                            ProviderRateLimitError,
-                            ProviderOverloadedError,
-                        ) as e:
-                            _broadcast(request.app, "thinking", {"active": False})
-                            _broadcast(
-                                request.app,
-                                "chat_message",
-                                {
-                                    "role": "system",
-                                    "content": (
-                                        "Provider temporarily unavailable — "
-                                        "please wait a moment and try again."
-                                    ),
-                                },
-                            )
-                            log.warning("Provider rate limited: %s", e)
-                        except ProviderError as e:
-                            _broadcast(request.app, "thinking", {"active": False})
-                            _broadcast(
-                                request.app,
-                                "chat_message",
-                                {
-                                    "role": "system",
-                                    "content": f"Provider error: {e}",
-                                },
-                            )
-                        except (OSError, ValueError, RuntimeError) as e:
-                            _broadcast(request.app, "thinking", {"active": False})
-                            _broadcast(
-                                request.app,
-                                "chat_message",
-                                {
-                                    "role": "system",
-                                    "content": f"Error: {e}",
-                                },
-                            )
-                            log.exception("Error processing message")
+                    # Dispatch the turn as a background task so the read
+                    # loop stays free to handle ``cancel_request``.  The
+                    # chat lock inside ``_process_chat_turn`` still
+                    # serialises concurrent turns from multiple clients.
+                    task = asyncio.create_task(_process_chat_turn(request.app, agent, content))
+                    turn_tasks.add(task)
+                    task.add_done_callback(turn_tasks.discard)
 
             elif msg.type in (
                 web.WSMsgType.ERROR,
@@ -557,6 +584,7 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     app[PORT_KEY] = port
     app[WS_CLIENTS_KEY] = weakref.WeakSet()
     app[CHAT_LOCK_KEY] = asyncio.Lock()
+    app[CURRENT_TURN_KEY] = {"task": None}
 
     # Jinja2 environment for server-side rendering.
     app[JINJA_ENV_KEY] = jinja2.Environment(
@@ -587,6 +615,75 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     app.router.add_static("/static", _STATIC_DIR, name="static")
 
     return app
+
+
+# ---------------------------------------------------------------------------
+# Preflight bridge
+# ---------------------------------------------------------------------------
+
+
+# Check names emitted by :class:`PreflightRunner` during ``prepare()``.
+# The browser uses this list to render the pending rows before the first
+# event arrives, so users see the full checklist rather than nothing.
+_PREFLIGHT_CHECKS = ("concierge", "prepare", "juju", "controller", "cos")
+_PREFLIGHT_LABELS = {
+    "concierge": "Concierge",
+    "prepare": "Environment",
+    "juju": "Juju CLI",
+    "controller": "Controller",
+    "cos": "COS",
+    # Phase-1-only check; emitted only when concierge is missing.
+    "snap_install": "Snap install",
+    # Phase-2-only check from bootstrap().
+    "bootstrap": "Bootstrap",
+}
+
+
+def _broadcast_preflight_event(app: web.Application, event: PreflightEvent) -> None:
+    """Forward a preflight callback event as a WebSocket message."""
+    _broadcast(
+        app,
+        "preflight_updated",
+        {
+            "check_name": event.check_name,
+            "label": _PREFLIGHT_LABELS.get(event.check_name, event.check_name),
+            "status": event.status.value,
+            "message": event.message,
+            "detail": event.detail,
+        },
+    )
+
+
+async def _run_preflight(app: web.Application, agent: CantripAgent) -> None:
+    """Run environment preflight once at web startup and broadcast progress.
+
+    Mirrors the TUI's eager ``_start_prepare`` path so ``--web`` users get
+    the same environment preparation and the same visibility into it.
+    Failures are swallowed — preflight reports them through the checklist;
+    exceptions also land on the status as ``failed``.
+    """
+    loop = asyncio.get_running_loop()
+
+    def _callback(event: PreflightEvent) -> None:
+        # Preflight runs on the loop already, but ``_broadcast`` schedules
+        # futures — doing that from a thread would crash.  The callback
+        # is always invoked from the preflight coroutine itself, so we're
+        # on the loop; ``call_soon_threadsafe`` guards against any future
+        # refactor that moves the callback to a worker thread.
+        loop.call_soon_threadsafe(_broadcast_preflight_event, app, event)
+
+    _broadcast(app, "preflight_started", {"checks": list(_PREFLIGHT_CHECKS)})
+    try:
+        await agent.prepare(preset=DEFAULT_PRESET, callback=_callback)
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.warning("Preflight failed: %s", exc)
+        _broadcast(
+            app,
+            "preflight_failed",
+            {"error": str(exc)},
+        )
+    finally:
+        _broadcast(app, "preflight_complete", {})
 
 
 async def _run_update_check(app: web.Application) -> None:
@@ -635,6 +732,11 @@ async def _run_web_async(agent: CantripAgent, port: int) -> None:
     # ``/api/update-status`` on load and via the ``update_available``
     # WebSocket event on completion.
     asyncio.create_task(_run_update_check(app))
+
+    # Phase 31.13: run environment preflight so the browser gets the
+    # same eager-prepare visibility the TUI has.  Events flow out over
+    # the WebSocket as ``preflight_updated`` messages.
+    asyncio.create_task(_run_preflight(app, agent))
 
     # Connect any configured MCP servers in the background.  Failures
     # land in the registry's per-server status; ``/mcp`` shows them.

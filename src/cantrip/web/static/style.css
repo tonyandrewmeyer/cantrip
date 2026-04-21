@@ -200,12 +200,28 @@ main {
 
 /* Thinking indicator */
 #thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   padding: 0.5rem 1rem;
   color: var(--text-muted);
   font-size: 13px;
 }
 
 #thinking-indicator[hidden] { display: none; }
+
+.cancel-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.cancel-btn:hover { color: var(--red); border-color: var(--red); }
 
 .dots::after {
   content: "";
@@ -259,6 +275,51 @@ main {
   outline-offset: 2px;
 }
 
+/* Preflight panel */
+#preflight-panel {
+  flex: 0 0 auto;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+#preflight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.preflight-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.25rem;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.preflight-icon { width: 14px; text-align: center; font-weight: 600; }
+.preflight-label { color: var(--text); min-width: 7.5rem; }
+.preflight-msg {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preflight-pending .preflight-icon::before { content: "○"; color: var(--text-muted); }
+.preflight-running .preflight-icon::before { content: "⟳"; color: var(--blue); }
+.preflight-passed  .preflight-icon::before { content: "✓"; color: var(--green); }
+.preflight-failed  .preflight-icon::before { content: "✗"; color: var(--red); }
+.preflight-skipped .preflight-icon::before { content: "—"; color: var(--text-muted); }
+
+.preflight-running .preflight-icon { animation: spin 1.4s linear infinite; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Task panel */
 #task-panel {
   flex: 1;
@@ -275,6 +336,31 @@ main {
   letter-spacing: 0.05em;
   margin-bottom: 0.5rem;
 }
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.panel-header h2 {
+  margin-bottom: 0;
+}
+
+.panel-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.panel-btn:hover { color: var(--text); border-color: var(--accent); }
+.panel-btn:active { transform: rotate(90deg); transition: transform 120ms; }
 
 .task {
   display: flex;

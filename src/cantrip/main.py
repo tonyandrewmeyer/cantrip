@@ -335,6 +335,18 @@ def _run(args: argparse.Namespace) -> int:
     _install_unraisable_hook()
 
     if getattr(args, "web", False):
+        if improve_path is not None:
+            print(
+                "Error: --improve is not supported with --web. The improvement "
+                "flow requires the interactive confirmation UI that only the "
+                "TUI and CLI modes provide.",
+                file=sys.stderr,
+            )
+            print(
+                f"Run without --web:  cantrip run --improve {improve_path}",
+                file=sys.stderr,
+            )
+            return 2
         from cantrip.web.server import run_web
 
         return run_web(args)

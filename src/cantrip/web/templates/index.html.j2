@@ -55,6 +55,9 @@
       <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
       <div id="thinking-indicator" role="status" aria-live="polite" hidden>
         <span class="dots"></span> Thinking&hellip;
+        <button type="button" id="btn-cancel" class="cancel-btn"
+                aria-label="Cancel the in-flight request"
+                onclick="cantrip.cancelTurn()">Cancel</button>
       </div>
       <form id="chat-form" autocomplete="off">
         <input type="text" id="chat-input"
@@ -64,6 +67,13 @@
     </section>
 
     <section id="right-panels" aria-label="Workspace">
+      <section id="preflight-panel" aria-labelledby="preflight-heading" hidden>
+        <div class="panel-header">
+          <h2 id="preflight-heading">Preparing environment</h2>
+        </div>
+        <ul id="preflight-list" role="list"></ul>
+      </section>
+
       <section id="task-panel" aria-labelledby="tasks-heading">
         <h2 id="tasks-heading">Tasks</h2>
         <div id="task-list">
@@ -84,7 +94,13 @@
       </section>
 
       <section id="juju-panel" aria-labelledby="juju-heading">
-        <h2 id="juju-heading">Juju Status</h2>
+        <div class="panel-header">
+          <h2 id="juju-heading">Juju Status</h2>
+          <button type="button" id="btn-juju-refresh" class="panel-btn"
+                  aria-label="Refresh Juju status"
+                  title="Refresh (Alt+R)"
+                  onclick="cantrip.refreshJujuStatus()">⟳</button>
+        </div>
         <div id="juju-apps">
           <div class="juju-empty">No model connected.</div>
         </div>
@@ -101,7 +117,7 @@
         <dt><kbd>Alt</kbd>+<kbd>H</kbd></dt><dd>Toggle this help</dd>
         <dt><kbd>Alt</kbd>+<kbd>L</kbd></dt><dd>Toggle log viewer</dd>
         <dt><kbd>Alt</kbd>+<kbd>G</kbd></dt><dd>Toggle integration graph</dd>
-        <dt><kbd>Alt</kbd>+<kbd>R</kbd></dt><dd>Refresh graph (when open)</dd>
+        <dt><kbd>Alt</kbd>+<kbd>R</kbd></dt><dd>Refresh Juju status (or graph, when open)</dd>
         <dt><kbd>Esc</kbd></dt><dd>Close overlay</dd>
         <dt><kbd>Enter</kbd></dt><dd>Send message</dd>
       </dl>

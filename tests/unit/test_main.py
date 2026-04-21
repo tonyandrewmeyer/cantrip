@@ -274,6 +274,25 @@ class TestRun:
         assert rc == 0
         run_web.assert_called_once()
 
+    def test_web_mode_refuses_improve(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        improve_dir = tmp_path / "existing-charm"
+        improve_dir.mkdir()
+        monkeypatch.setenv("GEMINI_API_KEY", "test")
+        with (
+            mock.patch("cantrip.web.server.run_web", return_value=0) as run_web,
+            mock.patch("cantrip.main._install_unraisable_hook"),
+        ):
+            rc = cantrip_main._run(_run_args(tmp_path, web=True, improve=improve_dir))
+        err = capsys.readouterr().err
+        assert rc == 2
+        assert "--improve is not supported with --web" in err
+        run_web.assert_not_called()
+
     def test_no_tui_dispatches_to_run_cli(
         self,
         tmp_path: Path,

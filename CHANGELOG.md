@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Web UI polish — Phase 31.13 (partial).** Several small gaps closed:
+  ``--improve`` is now an explicit error in ``--web`` mode (exit 2 with
+  a message pointing at the TUI/CLI path) instead of being silently
+  dropped; the Juju Status panel grew a refresh button and ``Alt+R``
+  now force-refreshes the status when no overlay is open (still
+  refreshes the graph when the graph overlay is open); a new preflight
+  panel in the right sidebar renders the five environment checks
+  (Concierge, Environment, Juju CLI, Controller, COS) with animated
+  running icons and auto-hides a few seconds after completion, fed by
+  new ``preflight_started`` / ``preflight_updated`` /
+  ``preflight_complete`` / ``preflight_failed`` WebSocket events that
+  bridge the existing ``PreflightEvent`` callback to the browser; a
+  Cancel button appears alongside the thinking indicator and posts a
+  ``cancel_request`` WS message that ``task.cancel()``s the in-flight
+  ``process_message`` (the read loop now dispatches turns as
+  background tasks so cancel arrives while a turn is running instead
+  of queuing behind it).
 - **``cantrip compare`` subcommand — Phase 31.7 ✓.**  Diffs two
   charm implementations along four dimensions — directory structure,
   ``config.options``, relation endpoints
