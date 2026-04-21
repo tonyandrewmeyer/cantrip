@@ -27,7 +27,7 @@ dependencies = [
     "google-genai>=1.69.0",        # Gemini
     "anthropic>=0.86.0",           # Claude
     # Juju integration
-    "jubilant>=1.8.0",             # Juju control
+    "jubilant>=1.8,<2",            # Juju control (1.x is API-stable; pin to avoid silent v2 break)
     # Security
     "cryptography>=46.0.7",        # Transitive; pinned for CVE fix
     "requests>=2.33.0",            # Transitive; pinned for CVE fix

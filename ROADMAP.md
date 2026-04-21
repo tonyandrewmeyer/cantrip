@@ -3417,14 +3417,30 @@ for re-running it live in `design/UPSTREAM_AUDIT.md`.
   `/loki/api/v1/label/juju_application/values` to assert the charm's logs
   arrive). Useful template for any post-deploy COS smoke test. (0df3895)
 
-### 37.2 High — Jubilant Changes
+### 37.2 High — Jubilant Changes ✓
 
-- [ ] Review `canonical/jubilant` changelog — new helpers, changed APIs,
-  deprecations
-- [ ] Update Cantrip's Jubilant wrapper (`src/cantrip/juju/`) and integration
-  test generation guidance
-- [ ] Update the `jubilant-tests` skill if new Jubilant patterns are available
-- [ ] Bump Cantrip's own Jubilant floor in `pyproject.toml` if needed
+- [x] Review `canonical/jubilant` changelog — new helpers, changed APIs,
+  deprecations.  Audit cutoff `e9923ec` (release `2c389a6` / v1.8.0)
+  recorded in `design/UPSTREAM_AUDIT.md`.  Notable: breaking change to
+  `offer()` (respects `self.model`) doesn't affect Cantrip Python code;
+  `add_cloud`/`update_cloud`/`model_constraints`/`destroy_model` kwargs
+  surfaced as new methods Cantrip doesn't currently use.
+- [x] Update Cantrip's Jubilant wrapper (`src/cantrip/juju/`) and integration
+  test generation guidance — `generate_integration_tests` and
+  `generate_load_test` were emitting `run_action(...)` (removed from
+  Jubilant) and the legacy `wait(apps=…, status=…)` form; both are
+  rewritten to use `juju.run(unit, action, params)` and
+  `juju.wait(jubilant.all_active, …)`.  Generated `conftest.py` no
+  longer rolls its own `juju` fixture (pytest-jubilant supplies one)
+  and the `charm` fixture resolves the packed `.charm` honouring
+  `CHARM_PATH`.  System prompt's integration-tests checklist updated
+  to match.
+- [x] Update the `jubilant-tests` skill if new Jubilant patterns are available
+  — already done in §37.1 (pytest-jubilant 2.0, COS Lite cross-model
+  pattern).  No further skill changes warranted.
+- [x] Bump Cantrip's own Jubilant floor in `pyproject.toml` if needed —
+  pinned to `jubilant>=1.8,<2` (was `>=1.8.0` with no ceiling) to lock
+  in the API-stable 1.x major and avoid silent breakage on a future v2.
 
 ### 37.3 Medium — Concierge and Pebble Changes
 

@@ -42,19 +42,27 @@ class TestGenerateLoadTest:
         files = generate_load_test("my-app", _SAMPLE_METADATA)
         assert "tests/load/conftest.py" in files
         conftest = files["tests/load/conftest.py"]
-        assert "jubilant" in conftest
-        assert "my-app-load" in conftest
+        # pytest-jubilant supplies the ``juju`` fixture; conftest only
+        # needs ``charm`` + ``deployed_app``.
+        assert "def charm" in conftest
+        assert "deployed_app" in conftest
+        assert ".resolve()" in conftest
+        assert "def juju" not in conftest
+        assert "add_model" not in conftest
+        assert "destroy_model" not in conftest
 
     def test_produces_test_load(self) -> None:
         files = generate_load_test("my-app", _SAMPLE_METADATA)
         assert "tests/load/test_load.py" in files
 
     def test_action_throughput_tests(self) -> None:
+        """Modern Jubilant uses ``juju.run`` — ``run_action`` was removed."""
         files = generate_load_test("my-app", _SAMPLE_METADATA)
         test = files["tests/load/test_load.py"]
         assert "test_action_backup_throughput" in test
         assert "test_action_restore_throughput" in test
-        assert "run_action" in test
+        assert "juju.run(" in test
+        assert "run_action" not in test
 
     def test_config_settling_test(self) -> None:
         files = generate_load_test("my-app", _SAMPLE_METADATA)

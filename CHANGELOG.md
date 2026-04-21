@@ -33,6 +33,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Changed
+- **Jubilant catch-up — Phase 37.2 ✓.**  Audited
+  ``canonical/jubilant`` through release v1.8.0 (cutoff ``e9923ec``,
+  recorded in ``design/UPSTREAM_AUDIT.md``).  Two latent bugs in
+  Cantrip's test-template output: ``generate_integration_tests`` and
+  ``generate_load_test`` emitted ``juju.run_action(...)`` (removed
+  from Jubilant — modern API is ``juju.run(unit, action, params)``
+  returning a ``Task``) and the legacy ``wait(apps=…, status="active")``
+  kwargs (replaced by predicate callables like
+  ``jubilant.all_active``).  Both generators rewritten; the produced
+  ``conftest.py`` no longer rolls its own ``juju`` fixture (pytest-jubilant
+  supplies a module-scoped one) and the ``charm`` fixture resolves the
+  packed ``.charm`` honouring ``CHARM_PATH``.  Status assertions now
+  use ``status.apps[APP_NAME].is_active`` rather than the broken
+  ``app.status.current`` (the actual attribute is ``app_status``).
+  System prompt's integration-tests checklist updated.  Cantrip's
+  Jubilant pin tightens from ``>=1.8.0`` to ``>=1.8,<2`` to lock in the
+  API-stable 1.x major.  No changes to the ``jubilant-tests`` skill —
+  §37.1 already brought it up to pytest-jubilant 2.0.
 - **Upstream ecosystem catch-up — Phase 37.1 ✓.**  Refreshed Cantrip's
   charm-generation outputs against ``canonical/operator`` docs commits
   through April 2026.  Skills updated: ``scenario-tests`` (drop ``meta=``

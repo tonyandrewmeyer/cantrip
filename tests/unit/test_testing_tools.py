@@ -307,15 +307,25 @@ class TestGenerateIntegrationTests:
         files = generate_integration_tests("my-app", _SAMPLE_METADATA)
         assert "tests/integration/conftest.py" in files
         conftest = files["tests/integration/conftest.py"]
-        assert "jubilant" in conftest
-        assert "my-app-test" in conftest
+        # pytest-jubilant supplies the ``juju`` fixture, so conftest only
+        # needs a ``charm`` fixture that resolves the packed artefact.
+        assert "def charm" in conftest
+        assert "CHARM_PATH" in conftest
+        assert ".resolve()" in conftest
+        # No hand-rolled juju fixture — the plugin provides it.
+        assert "def juju" not in conftest
+        assert "add_model" not in conftest
+        assert "destroy_model" not in conftest
 
     def test_produces_deploy_test(self) -> None:
         files = generate_integration_tests("my-app", _SAMPLE_METADATA)
         assert "tests/integration/test_deploy.py" in files
         deploy = files["tests/integration/test_deploy.py"]
         assert "def test_deploy" in deploy
-        assert "my-app" in deploy
+        assert "APP_NAME" in deploy
+        # Modern Jubilant idiom: pass a predicate, not apps=/status= kwargs.
+        assert "jubilant.all_active" in deploy
+        assert "is_active" in deploy
 
     def test_produces_relation_tests(self) -> None:
         files = generate_integration_tests("my-app", _SAMPLE_METADATA)
@@ -373,9 +383,15 @@ class TestGenerateIntegrationTests:
         assert "tests/integration/conftest.py" in files
         assert "tests/integration/test_deploy.py" in files
 
-    def test_action_test_uses_run_action(self) -> None:
-        files = generate_integration_tests("my-app", _SAMPLE_METADATA)
-        assert "run_action" in files["tests/integration/test_actions.py"]
+    def test_action_test_uses_juju_run(self) -> None:
+        """Actions are driven by ``juju.run(unit, action, params)`` — the
+        older ``run_action`` name was removed from Jubilant."""
+        actions = generate_integration_tests("my-app", _SAMPLE_METADATA)[
+            "tests/integration/test_actions.py"
+        ]
+        assert "juju.run(" in actions
+        assert "run_action" not in actions
+        assert 'task.status == "completed"' in actions
 
     def test_deploy_test_uses_wait(self) -> None:
         files = generate_integration_tests("my-app", _SAMPLE_METADATA)

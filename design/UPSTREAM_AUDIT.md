@@ -35,7 +35,7 @@ points at stale guidance. Each sweep:
 | Repository | Last audited | Cutoff commit | Notes |
 |------------|--------------|---------------|-------|
 | `canonical/operator` | 2026-04-21 | `df731e5` (`docs: update tutorials and example charms to match Charmcraft 4.2`) | Filtered to `^docs:` commits. Picked up Charmcraft 4.2 / Ubuntu 24.04, pytest-jubilant 2.0 official, the new CI how-to, and the COS Lite cross-model integration test pattern. The previous sweep (initial seed of §37.1) used `4bff400` (2026-03-31) as the cutoff. |
-| `canonical/jubilant` | not yet audited | — | §37.2 placeholder. |
+| `canonical/jubilant` | 2026-04-21 | `e9923ec` (HEAD on `main`); release was `2c389a6` / v1.8.0 (2026-04-13) | Reviewed every commit since the previous Cantrip pin. Actionable findings: ``run_action`` was renamed to ``run`` and the legacy ``apps=…, status=…`` ``wait()`` form replaced by predicate callables (``jubilant.all_active`` etc.) — Cantrip's ``generate_integration_tests``/``generate_load_test`` outputs were calling APIs that no longer exist. Jubilant 1.8.0 ships a breaking change to ``offer()`` (now respects ``self.model``) but Cantrip doesn't call ``.offer()`` from Python — only the skills mention it. New helpers (``add_cloud``, ``update_cloud``, ``model_constraints``, ``destroy_model(release_storage=, no_wait=, timeout=)``, ``bootstrap(metadata_source=)``) are not currently surfaced by Cantrip. ``pytest-operator`` migration guide moved out of Jubilant docs (``a501972``) — already covered by the §37.1 ops-docs work. |
 | `canonical/charmcraft` | not yet audited | — | §37.5 placeholder. |
 | `canonical/rockcraft` | not yet audited | — | §37.5 placeholder. |
 | `jnsgruk/concierge` | not yet audited | — | §37.3 placeholder. |

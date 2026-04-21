@@ -97,13 +97,17 @@ After scaffolding or modifying a charm, generate and run tests:
 
 1. Load the `jubilant-tests` skill and read `charmcraft.yaml` to identify the charm's
    relations, actions, and config options.
-2. Create `tests/integration/conftest.py` with a module-scoped `juju` fixture that
-   creates and destroys a test model, and a `charm_path` fixture.
+2. Create `tests/integration/conftest.py` with a `charm` fixture that resolves the
+   packed `.charm` file (or honours `CHARM_PATH`).  Do **not** roll your own
+   `juju` fixture — `pytest-jubilant` provides a module-scoped one with model
+   creation, teardown, and debug-log dump on failure.
 3. Create `tests/integration/test_charm.py` covering:
    deploy → ActiveStatus, relation integration (for each endpoint in charmcraft.yaml),
-   config changes, and actions (if any).
-4. Add `jubilant` to `[project.optional-dependencies] integration` in `pyproject.toml`
-   if not already present.
+   config changes, and actions (if any).  Use `juju.wait(jubilant.all_active, …)`
+   and `status.apps[APP_NAME].is_active` rather than the older
+   `apps=…, status="active"` / `app.status.current` forms.
+4. Pin `jubilant>=1.8,<2` and `pytest-jubilant>=2,<3` in the
+   `[dependency-groups] integration` section of `pyproject.toml` if not already present.
 5. Offer to run integration tests with `run_charm_tests` with `test_type: "integration"`.
    Only run them if the user agrees — they need a live Juju controller and take minutes.
 

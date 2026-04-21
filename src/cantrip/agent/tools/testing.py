@@ -270,29 +270,34 @@ def generate_integration_tests(
     files: dict[str, str] = {}
 
     # -- conftest.py --------------------------------------------------------
+    #
+    # ``pytest-jubilant`` supplies a module-scoped ``juju`` fixture that
+    # creates and tears down a temporary Juju model and dumps debug logs
+    # on failure.  We only need a ``charm`` fixture pointing at the packed
+    # ``.charm`` file (honouring ``CHARM_PATH`` so CI can override).
 
     files["tests/integration/conftest.py"] = (
         '"""Shared fixtures for integration tests."""\n'
         "\n"
+        "import os\n"
         "import pathlib\n"
         "\n"
-        "import jubilant\n"
         "import pytest\n"
         "\n"
         "\n"
-        '@pytest.fixture(scope="module")\n'
-        "def juju():\n"
-        '    """Provide a Jubilant Juju instance with a temporary model."""\n'
-        "    j = jubilant.Juju()\n"
-        f'    j.add_model("{charm_name}-test")\n'
-        "    yield j\n"
-        f'    j.destroy_model("{charm_name}-test", force=True)\n'
-        "\n"
-        "\n"
-        '@pytest.fixture(scope="module")\n'
-        "def charm_path():\n"
-        '    """Return the path to the charm project root."""\n'
-        "    return pathlib.Path(__file__).parent.parent.parent\n"
+        '@pytest.fixture(scope="session")\n'
+        "def charm():\n"
+        '    """Return the path of the charm under test."""\n'
+        '    charm = os.environ.get("CHARM_PATH")\n'
+        "    if not charm:\n"
+        "        charm_dir = pathlib.Path()\n"
+        '        charms = list(charm_dir.glob("*.charm"))\n'
+        '        assert charms, f"No charms were found in {charm_dir.absolute()}"\n'
+        '        assert len(charms) == 1, f"Found more than one charm: {charms}"\n'
+        "        charm = charms[0]\n"
+        "    path = pathlib.Path(charm).resolve()\n"
+        '    assert path.is_file(), f"{path} is not a file"\n'
+        "    return path\n"
     )
 
     # -- test_deploy.py -----------------------------------------------------
@@ -300,14 +305,18 @@ def generate_integration_tests(
     files["tests/integration/test_deploy.py"] = (
         '"""Deploy tests — verify the charm reaches active/idle."""\n'
         "\n"
+        "import jubilant\n"
         "\n"
-        "def test_deploy(juju, charm_path):\n"
+        "\n"
+        f'APP_NAME = "{charm_name}"\n'
+        "\n"
+        "\n"
+        "def test_deploy(juju: jubilant.Juju, charm):\n"
         '    """Deploy the charm and wait for active status."""\n'
-        "    juju.deploy(charm_path)\n"
-        f'    juju.wait(apps=["{charm_name}"], status="active", timeout=300)\n'
+        "    juju.deploy(charm)\n"
+        "    juju.wait(jubilant.all_active, timeout=300)\n"
         "    status = juju.status()\n"
-        f'    app = status.apps["{charm_name}"]\n'
-        '    assert app.status.current == "active"\n'
+        "    assert status.apps[APP_NAME].is_active\n"
     )
 
     # -- test_relations.py (only if relations exist) ------------------------
@@ -319,21 +328,26 @@ def generate_integration_tests(
     if all_relations:
         rel_tests: list[str] = [
             '"""Relation tests — verify each integration endpoint."""\n',
-            "",
+            "\n",
+            "import jubilant\n",
+            "\n",
+            f'APP_NAME = "{charm_name}"\n',
+            "\n",
+            "\n",
         ]
         for rel_name, rel_data in requires.items():
             iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
             fn_name = re.sub(r"[^a-z0-9]", "_", rel_name.lower())
             rel_tests.append(
-                f"def test_relate_{fn_name}(juju, charm_path):\n"
+                f"def test_relate_{fn_name}(juju: jubilant.Juju, charm):\n"
                 f'    """Relate {charm_name} to a provider for {rel_name} ({iface})."""\n'
-                f"    juju.deploy(charm_path)\n"
+                f"    juju.deploy(charm)\n"
                 f"    # TODO: deploy a provider charm for interface '{iface}'\n"
                 f"    # juju.deploy('<provider-charm>')\n"
-                f'    # juju.integrate("{charm_name}:{rel_name}", "<provider-charm>")\n'
-                f'    # juju.wait(apps=["{charm_name}"], status="active", timeout=600)\n'
+                f'    # juju.integrate(f"{{APP_NAME}}:{rel_name}", "<provider-charm>")\n'
+                f"    # juju.wait(jubilant.all_active, timeout=600)\n"
                 f"    # status = juju.status()\n"
-                f'    # assert status.apps["{charm_name}"].status.current == "active"\n'
+                f"    # assert status.apps[APP_NAME].is_active\n"
                 f"\n"
                 f"\n"
             )
@@ -341,15 +355,15 @@ def generate_integration_tests(
             iface = rel_data.get("interface", "") if isinstance(rel_data, dict) else ""
             fn_name = re.sub(r"[^a-z0-9]", "_", rel_name.lower())
             rel_tests.append(
-                f"def test_provide_{fn_name}(juju, charm_path):\n"
+                f"def test_provide_{fn_name}(juju: jubilant.Juju, charm):\n"
                 f'    """Verify {charm_name} provides {rel_name} ({iface})."""\n'
-                f"    juju.deploy(charm_path)\n"
+                f"    juju.deploy(charm)\n"
                 f"    # TODO: deploy a requirer charm for interface '{iface}'\n"
                 f"    # juju.deploy('<requirer-charm>')\n"
-                f'    # juju.integrate("<requirer-charm>", "{charm_name}:{rel_name}")\n'
-                f'    # juju.wait(apps=["{charm_name}"], status="active", timeout=600)\n'
+                f'    # juju.integrate("<requirer-charm>", f"{{APP_NAME}}:{rel_name}")\n'
+                f"    # juju.wait(jubilant.all_active, timeout=600)\n"
                 f"    # status = juju.status()\n"
-                f'    # assert status.apps["{charm_name}"].status.current == "active"\n'
+                f"    # assert status.apps[APP_NAME].is_active\n"
                 f"\n"
                 f"\n"
             )
@@ -360,15 +374,20 @@ def generate_integration_tests(
     if actions:
         action_tests: list[str] = [
             '"""Action tests — verify each action executes successfully."""\n',
-            "",
+            "\n",
+            "import jubilant\n",
+            "\n",
+            f'APP_NAME = "{charm_name}"\n',
+            "\n",
+            "\n",
         ]
         for action_name, _action_data in actions.items():
             fn_name = re.sub(r"[^a-z0-9]", "_", action_name.lower())
             action_tests.append(
-                f"def test_action_{fn_name}(juju):\n"
+                f"def test_action_{fn_name}(juju: jubilant.Juju):\n"
                 f'    """Run the {action_name} action and verify it completes."""\n'
-                f'    result = juju.run_action("{charm_name}/leader", "{action_name}")\n'
-                f'    assert result.status == "completed"\n'
+                f'    task = juju.run(f"{{APP_NAME}}/leader", "{action_name}")\n'
+                f'    assert task.status == "completed"\n'
                 f"\n"
                 f"\n"
             )
@@ -379,7 +398,12 @@ def generate_integration_tests(
     if config:
         config_tests: list[str] = [
             '"""Config tests — verify each config option can be set."""\n',
-            "",
+            "\n",
+            "import jubilant\n",
+            "\n",
+            f'APP_NAME = "{charm_name}"\n',
+            "\n",
+            "\n",
         ]
         for opt_name, opt_data in config.items():
             fn_name = re.sub(r"[^a-z0-9]", "_", opt_name.lower())
@@ -394,12 +418,12 @@ def generate_integration_tests(
             else:
                 test_val = "test-value"
             config_tests.append(
-                f"def test_config_{fn_name}(juju):\n"
+                f"def test_config_{fn_name}(juju: jubilant.Juju):\n"
                 f'    """Set {opt_name} and verify the charm remains active."""\n'
-                f'    juju.config("{charm_name}", {{"{opt_name}": "{test_val}"}})\n'
-                f'    juju.wait(apps=["{charm_name}"], status="active", timeout=120)\n'
+                f'    juju.config(APP_NAME, {{"{opt_name}": "{test_val}"}})\n'
+                f"    juju.wait(jubilant.all_active, timeout=120)\n"
                 f"    status = juju.status()\n"
-                f'    assert status.apps["{charm_name}"].status.current == "active"\n'
+                f"    assert status.apps[APP_NAME].is_active\n"
                 f"\n"
                 f"\n"
             )

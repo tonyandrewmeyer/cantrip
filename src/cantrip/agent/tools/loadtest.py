@@ -35,28 +35,37 @@ def generate_load_test(
     files["tests/load/conftest.py"] = (
         '"""Shared fixtures for load tests."""\n'
         "\n"
+        "import os\n"
+        "import pathlib\n"
+        "\n"
         "import jubilant\n"
         "import pytest\n"
         "\n"
         "\n"
-        '@pytest.fixture(scope="module")\n'
-        "def juju():\n"
-        '    """Provide a Jubilant Juju instance with a temporary model."""\n'
-        "    j = jubilant.Juju()\n"
-        f'    j.add_model("{charm_name}-load")\n'
-        "    yield j\n"
-        f'    j.destroy_model("{charm_name}-load", force=True)\n'
+        f'APP_NAME = "{charm_name}"\n'
+        "\n"
+        "\n"
+        '@pytest.fixture(scope="session")\n'
+        "def charm():\n"
+        '    """Return the path of the charm under test."""\n'
+        '    charm = os.environ.get("CHARM_PATH")\n'
+        "    if not charm:\n"
+        "        charm_dir = pathlib.Path()\n"
+        '        charms = list(charm_dir.glob("*.charm"))\n'
+        '        assert charms, f"No charms were found in {charm_dir.absolute()}"\n'
+        '        assert len(charms) == 1, f"Found more than one charm: {charms}"\n'
+        "        charm = charms[0]\n"
+        "    path = pathlib.Path(charm).resolve()\n"
+        '    assert path.is_file(), f"{path} is not a file"\n'
+        "    return path\n"
         "\n"
         "\n"
         '@pytest.fixture(scope="module")\n'
-        "def deployed_app(juju):\n"
+        "def deployed_app(juju: jubilant.Juju, charm):\n"
         '    """Deploy the charm and wait for active status."""\n'
-        "    import pathlib\n"
-        "\n"
-        "    charm_path = pathlib.Path(__file__).parent.parent.parent\n"
-        "    juju.deploy(charm_path)\n"
-        f'    juju.wait(apps=["{charm_name}"], status="active", timeout=300)\n'
-        f'    return "{charm_name}"\n'
+        "    juju.deploy(charm)\n"
+        "    juju.wait(jubilant.all_active, timeout=300)\n"
+        "    return APP_NAME\n"
     )
 
     # -- test_load.py -------------------------------------------------------
@@ -68,21 +77,21 @@ def generate_load_test(
         "\n",
     ]
 
+    test_sections.append("import jubilant\n\n\n")
+
     # Action throughput tests.
     if actions:
         for action_name in actions:
             fn_name = action_name.replace("-", "_")
             test_sections.append(
-                f"def test_action_{fn_name}_throughput(juju, deployed_app):\n"
+                f"def test_action_{fn_name}_throughput(juju: jubilant.Juju, deployed_app):\n"
                 f'    """Run {action_name} repeatedly and measure throughput."""\n'
                 f"    iterations = 10\n"
                 f"    start = time.monotonic()\n"
                 f"    failures = 0\n"
                 f"    for _ in range(iterations):\n"
-                f"        result = juju.run_action(\n"
-                f'            f"{{deployed_app}}/leader", "{action_name}"\n'
-                f"        )\n"
-                f'        if result.status != "completed":\n'
+                f'        task = juju.run(f"{{deployed_app}}/leader", "{action_name}")\n'
+                f'        if task.status != "completed":\n'
                 f"            failures += 1\n"
                 f"    elapsed = time.monotonic() - start\n"
                 f"    rate = iterations / elapsed if elapsed > 0 else 0\n"
@@ -109,7 +118,7 @@ def generate_load_test(
             val_a, val_b = "value-a", "value-b"
 
         test_sections.append(
-            "def test_config_change_settling_time(juju, deployed_app):\n"
+            "def test_config_change_settling_time(juju: jubilant.Juju, deployed_app):\n"
             '    """Measure how long the charm takes to settle after config changes."""\n'
             "    iterations = 5\n"
             "    times = []\n"
@@ -117,7 +126,7 @@ def generate_load_test(
             f'        val = "{val_a}" if i % 2 == 0 else "{val_b}"\n'
             f'        juju.config(deployed_app, {{"{opt_name}": val}})\n'
             "        start = time.monotonic()\n"
-            '        juju.wait(apps=[deployed_app], status="active", timeout=120)\n'
+            "        juju.wait(jubilant.all_active, timeout=120)\n"
             "        times.append(time.monotonic() - start)\n"
             "    avg = sum(times) / len(times)\n"
             '    print(f"\\nConfig settling: avg {avg:.1f}s over {iterations} changes")\n'
@@ -128,18 +137,18 @@ def generate_load_test(
 
     # Scaling test.
     test_sections.append(
-        "def test_scale_up_settling_time(juju, deployed_app):\n"
+        "def test_scale_up_settling_time(juju: jubilant.Juju, deployed_app):\n"
         '    """Measure settling time when scaling from 1 to 3 units."""\n'
         "    juju.scale(deployed_app, 3)\n"
         "    start = time.monotonic()\n"
-        '    juju.wait(apps=[deployed_app], status="active", timeout=600)\n'
+        "    juju.wait(jubilant.all_active, timeout=600)\n"
         "    elapsed = time.monotonic() - start\n"
         '    print(f"\\nScale 1→3: settled in {elapsed:.1f}s")\n'
         "    status = juju.status()\n"
         "    assert len(status.apps[deployed_app].units) == 3\n"
         "    # Scale back down.\n"
         "    juju.scale(deployed_app, 1)\n"
-        '    juju.wait(apps=[deployed_app], status="active", timeout=300)\n'
+        "    juju.wait(jubilant.all_active, timeout=300)\n"
         "\n"
         "\n"
     )
