@@ -2248,8 +2248,35 @@ project style guide ("Never catch bare `Exception`"). Locations:
 ### 25.10 Medium — Fragile String Matching
 
 - [x] `watcher.py` — replaced substring `"hook failed"` with compiled `\bhook failed\b` regex
-- [ ] `charm.py` — string replacement for code injection is brittle
-- [ ] `autodeploy.py` — loose keyword matching in free-form text
+- [x] `charm.py` — string replacement for code injection is brittle —
+  ``_inject_ops_tracing_into_charm_py`` now uses anchored multi-line
+  regexes (``^import ops\r?$`` and ``^(?P<indent>[ \t]*)super\(\)\.__init__\([^)]*\)[ \t]*\r?$``)
+  and requires *both* anchors to match before patching.  The old
+  ``str.replace`` version would silently insert ``import ops_tracing``
+  without the paired setup call, leaving a NameError at charm startup.
+  Captures the init line's indent and reuses it for the injected
+  ``ops_tracing.setup(self)``, so a four-space charm no longer inherits
+  the hardcoded eight-space indent.  Eight unit tests in
+  ``TestInjectOpsTracingIntoCharmPy`` cover ``super().__init__(*args,
+  **kwargs)``, ``super().__init__()``, ``import ops.charm`` (which no
+  longer spoofs a match), missing-anchor refusal, custom indent, CRLF
+  files, and multiple-class first-occurrence semantics.
+- [x] `autodeploy.py` — loose keyword matching in free-form text —
+  ``_ACCEPTANCE_VERDICT_RE`` / ``_ACCEPTANCE_PROSE_FAIL_RE`` anchor
+  the area keyword with ``\b`` word boundaries and an optional plural
+  (``\b(action|relation|...)s?\b``), so ``actionable`` and
+  ``relationship`` no longer match.  Bare ``error`` has been dropped
+  from the prose alternation — it caused false positives on "action
+  executed without error" — leaving ``fail*`` / ``broken`` as the
+  explicit failure verbs.  A new ``_NEGATED_FAIL_IN_SNIPPET_RE``
+  disqualifies prose matches that contain negation phrases
+  (``no failures``, ``not failing``, ``didn't fail``, ``never fail``,
+  ``without failures``), so "no failures observed" near ``actions``
+  stops flagging actions.  Eight regression tests in
+  ``TestExtractAcceptanceFailures`` pin the new behaviour
+  (``actionable``/``relationship`` rejection, bare-``error`` rejection,
+  three flavours of negation, mixed-line passthrough, and plural
+  keywords).
 
 ### 25.11 Medium — TUI Reactive Boilerplate
 
@@ -2293,8 +2320,24 @@ project style guide ("Never catch bare `Exception`"). Locations:
 - [x] `tui/app.py` — `"confirm-improvements"` replaced with
   `IMPROVEMENT_CONFIRM_BASE` constant; `planner.py` defines matching
   `DESIGN_CONFIRM_BASE`, `DAY2_CONFIRM_BASE`, `OPERABILITY_CONFIRM_BASE`
-- [ ] `main.py` — magic string checks for project identity
-- [ ] Status indicators, CSS classes, log levels scattered throughout TUI widgets
+- [x] `main.py` — magic string checks for project identity —
+  extracted ``_CANTRIP_PYPROJECT_NAME_MARKER`` and
+  ``_CANTRIP_PYPROJECT_ENTRY_MARKER`` module constants so the
+  source-tree detection logic reads as a named invariant instead of
+  two anonymous substring checks.
+- [~] Status indicators, CSS classes, log levels scattered throughout
+  TUI widgets — deferred.  The highest-value offenders already have
+  module-level constants: ``tui/screens/logs.py`` defines
+  ``_LOG_LEVELS``; ``tui/widgets/status.py`` defines ``_STATUS_ORDER``
+  and the icon/class mappings.  Remaining scattered literals
+  (``"blocked"``, ``"waiting"``, ``"active"``, and their Textual CSS
+  class counterparts across ``tui/screens/transcript.py``,
+  ``tui/screens/graph.py``, and the chat widget) are mostly
+  self-documenting in their local context; extracting them would
+  require coordinating a shared ``JujuStatusLabel`` enum across
+  widgets and their CSS, which is out of proportion for a "Low"
+  cosmetic cleanup.  Revisit if these values start drifting or if a
+  future phase wants typed status objects end-to-end.
 
 ### 25.19 Low — `git.py` Hardcodes `--no-gpg-sign`
 

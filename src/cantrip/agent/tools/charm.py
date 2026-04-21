@@ -1,5 +1,6 @@
 """Charm scaffolding and management tools."""
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -154,36 +155,64 @@ def _inject_ops_tracing(target_path: Path, profile: str) -> list[str]:
     charm_py = target_path / "src" / "charm.py"
     if charm_py.exists():
         content = charm_py.read_text()
-        changed = False
-
-        if "ops_tracing" not in content:
-            # Insert ``import ops_tracing`` after ``import ops``.
-            if "import ops" in content:
-                content = content.replace("import ops\n", "import ops\nimport ops_tracing\n", 1)
-                changed = True
-
-            # Insert ``ops_tracing.setup(self)`` after the super().__init__ call.
-            if "super().__init__(framework)" in content:
-                content = content.replace(
-                    "super().__init__(framework)",
-                    "super().__init__(framework)\n        ops_tracing.setup(self)",
-                    1,
-                )
-                changed = True
-
-            if changed:
-                charm_py.write_text(content)
+        if "ops_tracing" in content:
+            actions.append("src/charm.py already contains ops_tracing — skipped")
+        else:
+            patched = _inject_ops_tracing_into_charm_py(content)
+            if patched is not None:
+                charm_py.write_text(patched)
                 actions.append("Injected ops_tracing import and setup into src/charm.py")
             else:
                 actions.append(
                     "src/charm.py did not match expected patterns — skipped ops-tracing"
                 )
-        else:
-            actions.append("src/charm.py already contains ops_tracing — skipped")
     else:
         actions.append("src/charm.py not found — skipped ops-tracing injection")
 
     return actions
+
+
+# Anchor a bare ``import ops`` line — not ``import ops.charm`` or
+# ``import ops_tracing``.  ``\r?$`` tolerates CRLF files that slipped
+# through without newline translation; ``re.MULTILINE`` makes ``$``
+# match at any line end.
+_IMPORT_OPS_RE = re.compile(r"^import ops\r?$", re.MULTILINE)
+
+# Match ``super().__init__(...)`` as a whole line and capture its leading
+# indent so the injected follow-up line uses the same indentation.  The
+# argument list is matched up to the first ``)`` — enough to handle
+# ``super().__init__(framework)``, ``super().__init__()``, and
+# keyword-argument variants.
+_SUPER_INIT_RE = re.compile(
+    r"^(?P<indent>[ \t]*)super\(\)\.__init__\([^)]*\)[ \t]*\r?$",
+    re.MULTILINE,
+)
+
+
+def _inject_ops_tracing_into_charm_py(content: str) -> str | None:
+    """Return updated ``src/charm.py`` content with ops-tracing wired in.
+
+    Inserts ``import ops_tracing`` after the first bare ``import ops`` line
+    and ``ops_tracing.setup(self)`` (using the matched indent) after the
+    first ``super().__init__(...)`` call.  Both anchors must match,
+    otherwise returns ``None`` — partially patching a charm would leave the
+    setup call without its import (or vice versa).  Callers that receive
+    ``None`` should report a skip rather than writing back unchanged
+    content.  Content that already contains ``ops_tracing`` is out of scope
+    for this helper; the caller guards that case.
+    """
+    if not _IMPORT_OPS_RE.search(content):
+        return None
+    if not _SUPER_INIT_RE.search(content):
+        return None
+
+    patched = _IMPORT_OPS_RE.sub("import ops\nimport ops_tracing", content, count=1)
+
+    def _add_setup(match: re.Match[str]) -> str:
+        return f"{match.group(0)}\n{match.group('indent')}ops_tracing.setup(self)"
+
+    patched = _SUPER_INIT_RE.sub(_add_setup, patched, count=1)
+    return patched
 
 
 _PRE_COMMIT_CONFIG = """\

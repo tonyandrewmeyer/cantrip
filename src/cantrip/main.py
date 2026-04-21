@@ -7,6 +7,14 @@ from pathlib import Path
 
 from cantrip import __version__
 
+# Markers that identify the Cantrip source tree when inspecting a
+# ``pyproject.toml``.  Having *both* avoids confusing a third-party
+# package called ``cantrip`` with the real source checkout: a fork of
+# our code is very likely to keep ``cantrip.main:main`` as its entry
+# point, while a namespace collision would not.
+_CANTRIP_PYPROJECT_NAME_MARKER = 'name = "cantrip"'
+_CANTRIP_PYPROJECT_ENTRY_MARKER = "cantrip.main:main"
+
 
 def _install_unraisable_hook() -> None:
     """Suppress 'Event loop is closed' errors from asyncio transport cleanup.
@@ -189,9 +197,9 @@ def _is_cantrip_source_tree(path: Path) -> bool:
         return False
     try:
         content = pyproject.read_text()
-        return 'name = "cantrip"' in content and "cantrip.main:main" in content
     except OSError:
         return False
+    return _CANTRIP_PYPROJECT_NAME_MARKER in content and _CANTRIP_PYPROJECT_ENTRY_MARKER in content
 
 
 def _export_transcript(args: argparse.Namespace) -> int:

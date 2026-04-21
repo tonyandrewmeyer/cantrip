@@ -622,6 +622,57 @@ class TestExtractAcceptanceFailures:
         result = _extract_acceptance_failures(text)
         assert "lifecycle" in result
 
+    def test_word_boundary_rejects_actionable(self) -> None:
+        """``actionable`` must not be mistaken for ``action``.
+
+        Regression guard for the previous ``\\S*`` suffix that would
+        greedily glue the keyword onto any longer word.
+        """
+        text = "The workflow is actionable and failed to complete"
+        assert _extract_acceptance_failures(text) == []
+
+    def test_word_boundary_rejects_relationship(self) -> None:
+        """``relationship`` is not a ``relation`` keyword match."""
+        text = "The relationship between the components failed."
+        assert _extract_acceptance_failures(text) == []
+
+    def test_prose_error_alone_is_no_longer_enough(self) -> None:
+        """Bare ``error`` near a keyword no longer counts as a failure.
+
+        Previously ``error`` was part of the prose alternation, which
+        flagged harmless text like ``action executed without error``.
+        """
+        text = "Actions: PASS (1/1) — action executed without error"
+        assert _extract_acceptance_failures(text) == []
+
+    def test_negation_in_prose_is_rejected(self) -> None:
+        """``no failures observed`` near ``actions`` does not flag actions."""
+        text = "Actions completed normally: no failures observed."
+        assert _extract_acceptance_failures(text) == []
+
+    def test_negation_with_contraction(self) -> None:
+        """``didn't fail`` near a keyword also disqualifies the match."""
+        text = "The relation smoke test didn't fail after the fix."
+        assert _extract_acceptance_failures(text) == []
+
+    def test_never_failed_is_rejected(self) -> None:
+        """``never failed`` is a negated prose phrase; no area flagged."""
+        text = "Scaling never failed in any of the trials."
+        assert _extract_acceptance_failures(text) == []
+
+    def test_partial_negation_then_real_failure_on_separate_lines(self) -> None:
+        """Negation on one line does not mask a failure on another."""
+        text = "Endpoints: no failures observed.\nActions: FAIL — backup broken"
+        result = _extract_acceptance_failures(text)
+        assert "actions" in result
+        assert "endpoints" not in result
+
+    def test_plural_area_keyword(self) -> None:
+        """Plural ``actions`` / ``relations`` match the verdict pattern."""
+        text = "actions: FAIL — one action returned non-zero"
+        result = _extract_acceptance_failures(text)
+        assert "actions" in result
+
 
 # ===================================================================
 # TestTasksAfterAcceptanceFailure

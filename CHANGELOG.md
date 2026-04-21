@@ -32,7 +32,42 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   card grid, from every explanation-page sidebar, and from the Arena
   section of ``reference-cli.html``.
 
+### Changed
+- **Robust ops-tracing injection — Phase 25.10.**
+  ``_inject_ops_tracing_into_charm_py`` in
+  ``src/cantrip/agent/tools/charm.py`` now uses anchored multi-line
+  regexes (``^import ops\r?$`` and a ``super().__init__(...)`` pattern
+  that captures the leading indent) in place of literal
+  ``str.replace`` calls.  Both anchors must match before the file is
+  modified — previously the helper would insert ``import ops_tracing``
+  without the paired ``ops_tracing.setup(self)`` call when the charm's
+  ``__init__`` used a different argument name, leaving a ``NameError``
+  at charm startup.  The injected setup line now matches the indent of
+  the ``super().__init__`` call it follows (four-space charms no longer
+  inherit the hardcoded eight-space indent).  Eight new unit tests
+  pin the behaviour across argument-name variants, CRLF files,
+  ``import ops.charm`` distraction, and multiple classes per file.
+- **Tightened acceptance-failure detection — Phase 25.10.**
+  ``_extract_acceptance_failures`` in ``src/cantrip/agent/autodeploy.py``
+  anchors the area keyword with ``\b`` word boundaries and an optional
+  plural, so ``actionable`` and ``relationship`` no longer pose as
+  ``action``/``relation`` matches.  Bare ``error`` has been dropped
+  from the prose alternation (it flagged "action executed without
+  error" as a failure); ``fail*`` and ``broken`` remain as the
+  explicit failure verbs.  A new negation guard discards prose matches
+  like "no failures observed", "didn't fail", "never fail", and
+  "without failures" — previously these falsely flagged the
+  neighbouring area as failed and triggered a spurious acceptance-fix
+  task.  Eight regression tests cover the new rejections.
+
 ### Added
+- **`main.py` project-identity constants — Phase 25.18.**  The two
+  substrings that ``_is_cantrip_source_tree`` checks for in a
+  ``pyproject.toml`` now live as named module constants
+  (``_CANTRIP_PYPROJECT_NAME_MARKER``,
+  ``_CANTRIP_PYPROJECT_ENTRY_MARKER``) with a comment explaining why
+  *both* are required (a third-party package called ``cantrip`` would
+  pass the first but not the second).
 - **`gh_repo_bootstrap` tool — Phase 42.5.**  New agent tool that
   applies default repository settings after ``gh repo create``.  Writes
   ``.github/ISSUE_TEMPLATE/bug_report.md`` + ``feature_request.md`` and

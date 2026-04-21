@@ -315,55 +315,84 @@ def tasks_after_acceptance_failure(task: AgentTask) -> list[AgentTask]:
 
 
 # Patterns that indicate acceptance test failures in subagent result text.
-# Each pattern matches within a single line to avoid cross-line false positives.
+# Each pattern matches within a single line to avoid cross-line false
+# positives.  Both patterns anchor the area keyword with ``\b`` word
+# boundaries (plus an optional ``s`` for plurals) so ``actionable`` or
+# ``relationship`` no longer match.
+_AREA_KEYWORD_GROUP = (
+    r"(?P<area>action|relation|endpoint|config|configuration|scaling|lifecycle)s?"
+)
 
 # Structured verdict: "Actions: FAIL" or "Relations: FAIL (1/2) — reason".
-# The area must appear at the start of the match, before FAIL.
+# The area appears as a whole word before an optional parenthetical count,
+# then a ``:`` and FAIL.
 _ACCEPTANCE_VERDICT_RE = re.compile(
-    r"(action|relation|endpoint|config|scaling|lifecycle)\S*"
-    r"\s*:\s*FAIL",
+    rf"\b{_AREA_KEYWORD_GROUP}\b[^\n:]*:\s*FAIL",
     re.IGNORECASE,
 )
 
-# Prose: "the relation test failed" or "endpoint checks failed".
-# Area appears before the failure word on the same line.
+# Prose: "the relation test failed" or "endpoint checks failed".  The area
+# appears before an explicit failure verb (``fail``/``broken``) within 60
+# characters on the same line.  ``error`` on its own has been dropped from
+# the old pattern — too broad without context, and caused false positives
+# like "executed without error".
 _ACCEPTANCE_PROSE_FAIL_RE = re.compile(
-    r"(action|relation|endpoint|config|scaling|lifecycle)\S*"
-    r"[^\n]{0,60}?(?:fail(?:ed|ure|ing)?|broken|error)",
+    rf"\b{_AREA_KEYWORD_GROUP}\b[^\n]{{0,60}}?(?:fail(?:ed|ure|ures|ing|s)?|broken)",
     re.IGNORECASE,
 )
+
+# Negation phrases that must disqualify a prose match.  Anchored with
+# ``\b`` so ``non-failing`` and "no failures" both trigger; kept
+# deliberately small to avoid false *negatives* on slightly exotic
+# phrasing.
+_NEGATED_FAIL_IN_SNIPPET_RE = re.compile(
+    r"\b(?:"
+    r"no\s+fail\w*|"
+    r"no\s+broken|"
+    r"not\s+fail\w*|"
+    r"never\s+fail\w*|"
+    r"did\s+not\s+fail\w*|"
+    r"didn[''']t\s+fail\w*|"
+    r"without\s+fail\w*"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Normalised area labels keyed by the lowercased singular keyword the
+# regex captures.
+_AREA_LABEL = {
+    "action": "actions",
+    "relation": "relations",
+    "endpoint": "endpoints",
+    "config": "config options",
+    "configuration": "config options",
+    "scaling": "scaling",
+    "lifecycle": "lifecycle",
+}
 
 
 def _extract_acceptance_failures(text: str) -> list[str]:
     """Extract failing acceptance areas from free-form subagent result text.
 
     Returns a deduplicated list of area names (e.g. "actions", "relations")
-    that appear to have failures based on keyword matching.
+    whose verdict or prose line mentions a genuine failure.  Matches
+    containing obvious negation (``"no failures observed"``) are
+    discarded rather than flagged.
     """
-    areas: dict[str, str] = {}
-
-    # Normalise area names for deduplication.
-    area_map = {
-        "action": "actions",
-        "actions": "actions",
-        "relation": "relations",
-        "relations": "relations",
-        "endpoint": "endpoints",
-        "endpoints": "endpoints",
-        "config": "config options",
-        "configuration": "config options",
-        "scaling": "scaling",
-        "lifecycle": "lifecycle",
-    }
+    areas: dict[str, None] = {}
 
     for pattern in (_ACCEPTANCE_VERDICT_RE, _ACCEPTANCE_PROSE_FAIL_RE):
         for match in pattern.finditer(text):
-            snippet = match.group(0).lower()
-            for keyword, label in area_map.items():
-                if keyword in snippet and label not in areas:
-                    areas[label] = label
+            if pattern is _ACCEPTANCE_PROSE_FAIL_RE and _NEGATED_FAIL_IN_SNIPPET_RE.search(
+                match.group(0)
+            ):
+                continue
+            keyword = match.group("area").lower()
+            label = _AREA_LABEL.get(keyword)
+            if label and label not in areas:
+                areas[label] = None
 
-    return list(areas.values())
+    return list(areas)
 
 
 def tasks_after_build_failure(task: AgentTask) -> list[AgentTask]:
