@@ -3505,7 +3505,7 @@ each compaction actually reduced context size. No infinite loop is possible.
 
 ---
 
-## Phase 41: Claude Provider Quality and Multi-Provider Parity
+## Phase 41: Claude Provider Quality and Multi-Provider Parity ✓
 
 **Goal:** Improve Claude provider robustness and bring all providers to feature
 parity, based on findings from live testing with the Anthropic API (April 2025).
@@ -3538,8 +3538,12 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
   2048 tokens (Opus) for the cached prefix to be eligible
 - [x] Add a log message or metric when the system prompt is too short for
   caching to activate, so operators know they are not benefiting from caching
-- [ ] Consider padding the system prompt to meet the minimum threshold when
-  it is close (e.g. adding the skills index or context summary)
+- [~] Consider padding the system prompt to meet the minimum threshold when
+  it is close (e.g. adding the skills index or context summary) — deferred.
+  The current system prompt already exceeds both the Sonnet (1024) and
+  Opus (2048) cache thresholds in every tested configuration, so synthetic
+  padding would be dead weight.  Revisit only if a provider tightens the
+  threshold or the system prompt shrinks below it.
 
 ### 41.4 Claude model ID updates ✅
 
@@ -3551,8 +3555,14 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 - [x] Add Sonnet 4.6 (`claude-sonnet-4-6`) and Opus 4.7 (`claude-opus-4-7`)
   to the context window map and light-model routing (Sonnet 4.6 → Haiku 4.5;
   Opus 4.7 → Sonnet 4.6)
-- [ ] Consider a fallback that queries the API for context window metadata
-  rather than hard-coding model-specific values
+- [~] Consider a fallback that queries the API for context window metadata
+  rather than hard-coding model-specific values — deferred.  Anthropic's
+  ``/v1/messages`` endpoint doesn't advertise context-window metadata in
+  the response, and ``/v1/models`` returns per-model info that we already
+  track in ``_CONTEXT_WINDOWS``.  Adding a bootstrap fetch would replace
+  one hard-coded table with another plus a network round-trip; not worth
+  it until a model ships whose context window we don't know at build
+  time.
 
 ### 41.5 Provider-level token counting ✅
 
@@ -3569,15 +3579,27 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
   `should_compact`) keep using the sync heuristic; only decision-point
   callers opt into the async accurate variant.
 
-### 41.6 Conversation loop cost display
+### 41.6 Conversation loop cost display ✅
 
-- [ ] During live testing, multi-turn conversations with tool use consumed
+- [x] During live testing, multi-turn conversations with tool use consumed
   significant tokens (350+ prompt tokens per turn, growing with history) but
-  the CLI mode provides no visibility into cumulative cost
-- [ ] Add a periodic cost summary to the CLI banner or a `/cost` command
-  that shows total tokens, estimated cost, and cache hit rate
-- [ ] The TUI model bar already shows some usage info — verify it updates
-  correctly with Claude's usage metrics including cache fields
+  the CLI mode provides no visibility into cumulative cost — addressed by
+  the items below, which both landed during Phase 31.4's ``/cost`` rollout
+  and Phase 27.1's cache-rate surfacing.
+- [x] Add a periodic cost summary to the CLI banner or a `/cost` command
+  that shows total tokens, estimated cost, and cache hit rate — ``/cost``
+  ships in both the CLI REPL (``cli._print_cost``) and the shared slash
+  dispatcher (``format_cost`` in ``agent.slash_commands``, surfaced as a
+  chat follow-up in TUI + Web).  Output includes per-model token counts,
+  request counts, estimated USD, and the Claude cache read/write rate
+  when non-zero.
+- [x] The TUI model bar already shows some usage info — verify it updates
+  correctly with Claude's usage metrics including cache fields — the
+  reactive pipeline (``CantripAgent.cache_creation_tokens`` /
+  ``cache_read_tokens`` → ``_update_model_info`` → ``ModelInfoBar``) is
+  wired and now regression-tested by
+  ``test_model_info_bar_shows_cache_hit_rate`` (200 write + 800 read →
+  ``cache: 80% hit`` rendered on the second info-bar line).
 
 ### 41.7 Compaction effectiveness monitoring ✅
 
@@ -3590,14 +3612,20 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
   warning suggesting the conversation may need manual reset
 - [x] This feeds into Phase 40 (compaction safety)
 
-### 41.8 Streaming chunk granularity
+### 41.8 Streaming chunk granularity ✅ (deferred)
 
-- [ ] The Claude streaming test revealed that very short responses may arrive
+- [x] The Claude streaming test revealed that very short responses may arrive
   as a single chunk rather than token-by-token streaming, which means the
-  spinner-to-streaming transition in the CLI may appear to jump
-- [ ] Consider adding a brief delay or transition indicator in the CLI/TUI
-  when switching from spinner to streamed output
-- [ ] This is cosmetic — low priority
+  spinner-to-streaming transition in the CLI may appear to jump —
+  acknowledged; the provider streams on whatever granularity the API
+  delivers and we don't want to hold back chunks for cosmetic smoothing.
+- [~] Consider adding a brief delay or transition indicator in the CLI/TUI
+  when switching from spinner to streamed output — deferred.  The TUI
+  already flips ``⟳ Thinking...`` → ``⟳ Streaming...`` on the first
+  chunk (Phase 31.2), which is sufficient visual signal; adding an
+  artificial delay would only make short responses feel slower.
+- [x] This is cosmetic — low priority — accurate self-assessment;
+  closing the subphase.
 
 ### 41.9 Concurrent subagent rate limit coordination ✅
 

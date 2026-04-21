@@ -33,6 +33,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Changed
+- **Close out Phase 41 (Provider Parity).**  The remaining subphases
+  are either done or explicitly deferred: 41.3's "pad the system
+  prompt to reach cache threshold" and 41.4's "API-driven context
+  window fallback" stay deferred (current prompt already beats both
+  thresholds; Anthropic's API doesn't expose window metadata); 41.6
+  (cost display) is confirmed landed via ``/cost`` in CLI + shared
+  slash dispatcher and the TUI model-info bar, with a new
+  ``test_model_info_bar_shows_cache_hit_rate`` regression test that
+  pins the ``cache: 80% hit`` render when Claude prompt caching is
+  active; 41.8 (streaming chunk granularity) stays cosmetic/deferred.
+  Phase 41 header now carries ``✓``.
 - **Robust ops-tracing injection — Phase 25.10.**
   ``_inject_ops_tracing_into_charm_py`` in
   ``src/cantrip/agent/tools/charm.py`` now uses anchored multi-line

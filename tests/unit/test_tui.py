@@ -928,6 +928,52 @@ class TestTuiWidgets:
                 assert "$0.45" in rendered
 
     @pytest.mark.asyncio
+    async def test_model_info_bar_shows_cache_hit_rate(self):
+        """ModelInfoBar shows Claude prompt-caching hit rate on line 2.
+
+        Regression guard for Phase 41.6 bullet 3: the reactive pipeline
+        from ``CantripAgent.cache_read_tokens`` /
+        ``cache_creation_tokens`` through ``ModelInfoBar`` must render
+        the ``cache: X% hit`` suffix when prompt caching is active.
+        """
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.provider.name = "claude"
+        mock_agent.provider.model_name = "claude-sonnet-4-6"
+        mock_agent.provider.context_window_tokens = 200_000
+        # 800 read + 200 write = 80% hit rate.
+        mock_agent.cache_creation_tokens = 200
+        mock_agent.cache_read_tokens = 800
+
+        store = MagicMock()
+        store.get_usage_since = MagicMock(
+            return_value={
+                "prompt_tokens": 10_000,
+                "completion_tokens": 1_000,
+                "request_count": 2,
+            }
+        )
+        store.get_total_usage = MagicMock(
+            return_value={"prompt_tokens": 10_000, "completion_tokens": 1_000}
+        )
+        store.get_usage_by_model = MagicMock(return_value=[])
+        store.get_usage_by_model_since = MagicMock(return_value=[])
+        mock_agent.store = store
+
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                await pilot.pause()
+                pilot.app._update_model_info()
+                await pilot.pause()
+
+                bar = pilot.app.query_one("#model-info")
+                assert bar.cache_creation_tokens == 200
+                assert bar.cache_read_tokens == 800
+
+                line2 = pilot.app.query_one("#model-info-line2")
+                rendered = str(line2.render())
+                assert "cache: 80% hit" in rendered
+
+    @pytest.mark.asyncio
     async def test_streaming_flips_status_bar_after_first_chunk(self):
         """The status bar shows 'Streaming...' once the first chunk arrives."""
         import asyncio
