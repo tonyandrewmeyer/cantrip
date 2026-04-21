@@ -33,6 +33,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Added
+- **`gh_repo_bootstrap` tool — Phase 42.5.**  New agent tool that
+  applies default repository settings after ``gh repo create``.  Writes
+  ``.github/ISSUE_TEMPLATE/bug_report.md`` + ``feature_request.md`` and
+  ``.github/workflows/ci.yaml`` stubs locally (existing files are
+  skipped, not overwritten) and enables conservative branch protection
+  on the default branch via ``gh api -X PUT
+  repos/{slug}/branches/{branch}/protection``: one required approving
+  review, force-pushes and deletions disabled, required-status-checks
+  left null until CI has landed green.  Each step is independently
+  opt-out (``branch_protection``, ``issue_templates``, ``ci_workflow``
+  flags all default to ``True``); the repo slug is auto-detected via
+  ``gh repo view`` when ``repo=`` is omitted.  API failures surface as
+  warnings on the result rather than losing the local writes.  Closes
+  the last open bullet on Phase 42.5.
 - **`/update` slash command (Phase 63.5).**  A shared slash verb
   ``/update`` forces a cache-bypassing ``check_for_update`` and
   renders the verdict as a follow-up chat message — the three-line

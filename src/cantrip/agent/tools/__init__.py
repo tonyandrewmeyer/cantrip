@@ -80,6 +80,7 @@ def build_tools(
         GhPrCreateTool,
         GhPrListTool,
         GhPrViewTool,
+        GhRepoBootstrapTool,
         GhRepoCreateTool,
     )
     from cantrip.agent.tools.glob import GlobTool
@@ -216,6 +217,7 @@ def build_tools(
         GitStashTool(),
         # GitHub operations
         GhRepoCreateTool(),
+        GhRepoBootstrapTool(),
         GhPrCreateTool(),
         GhPrListTool(),
         GhPrViewTool(),

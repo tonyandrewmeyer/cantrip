@@ -3768,8 +3768,25 @@ available and authenticated.
 - [x] Prompt the user for: public/private, organisation (or personal), and
   description
 - [x] Run `gh repo create`, set the remote, and push the initial commit
-- [ ] Optionally configure basic repository settings: default branch protection,
-  issue templates, CI workflow stub
+- [x] Optionally configure basic repository settings: default branch protection,
+  issue templates, CI workflow stub — new ``GhRepoBootstrapTool``
+  (``gh_repo_bootstrap``) applies each step independently.  Branch
+  protection is a ``gh api -X PUT
+  repos/{slug}/branches/{branch}/protection`` call with a conservative
+  payload (one required approving review, force-pushes and deletions
+  disabled, required-status-checks left null until CI has had a chance
+  to land green).  Issue templates are markdown stubs under
+  ``.github/ISSUE_TEMPLATE/`` (``bug_report.md`` +
+  ``feature_request.md``); the CI workflow stub lives at
+  ``.github/workflows/ci.yaml`` and runs ``uv`` / ``ruff`` / ``pytest
+  tests/unit`` on push + PR.  Existing files are skipped rather than
+  overwritten; the repo slug is auto-detected via ``gh repo view`` when
+  ``repo=`` is omitted.  Failures surface as warnings on the result
+  rather than blowing up the caller (``test_protection_failure_is_warning``
+  proves the branch-protection API failing doesn't lose the local
+  writes).  Ten unit tests in ``TestGhRepoBootstrapTool`` cover auth
+  gating, selective steps, slug auto-detection, and the custom-branch
+  path.
 
 ### 42.6 Medium — Issue-Driven Maintenance Loop ✅
 

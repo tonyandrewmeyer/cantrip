@@ -1,5 +1,7 @@
 """GitHub CLI tools."""
 
+import json
+import pathlib
 import shutil
 import subprocess
 from typing import Any
@@ -484,3 +486,308 @@ class GhPrViewTool(Tool):
                 return ToolResult(success=True, output=result.stdout.strip())
         except subprocess.TimeoutExpired:
             return ToolResult(success=False, output="", error="gh pr view timed out")
+
+
+_BUG_REPORT_TEMPLATE = """\
+---
+name: Bug report
+about: Report a problem with this charm
+title: ''
+labels: bug
+---
+
+## What happened?
+
+<!-- Describe the behaviour you saw. -->
+
+## What did you expect to happen?
+
+<!-- Describe the behaviour you expected. -->
+
+## Steps to reproduce
+
+1.
+2.
+3.
+
+## Environment
+
+- Juju version:
+- Charm revision:
+- Cloud / substrate:
+
+## Logs
+
+<!-- Paste relevant output from `juju debug-log` or `juju status` here. -->
+"""
+
+_FEATURE_REQUEST_TEMPLATE = """\
+---
+name: Feature request
+about: Suggest an idea for this charm
+title: ''
+labels: enhancement
+---
+
+## Problem
+
+<!-- What problem are you trying to solve? -->
+
+## Proposed solution
+
+<!-- What would you like to see? -->
+
+## Alternatives considered
+
+<!-- What else did you think about? -->
+"""
+
+_CI_WORKFLOW_TEMPLATE = """\
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format
+        run: uv run ruff format --check .
+  unit-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Unit tests
+        run: uv run pytest tests/unit -v
+"""
+
+# Conservative defaults for a fresh charm repo: require one PR review, forbid
+# force-pushes and deletions, no required status checks until CI has had a
+# chance to land green.
+_BRANCH_PROTECTION_PAYLOAD: dict[str, Any] = {
+    "required_status_checks": None,
+    "enforce_admins": False,
+    "required_pull_request_reviews": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews": False,
+        "require_code_owner_reviews": False,
+    },
+    "restrictions": None,
+    "allow_force_pushes": False,
+    "allow_deletions": False,
+}
+
+
+def _detect_repo_slug(path: str) -> tuple[str | None, str | None]:
+    """Return ``(slug, error)`` where ``slug`` is ``OWNER/REPO`` or ``None``."""
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=_GH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "gh repo view timed out"
+    if result.returncode != 0:
+        return None, result.stderr.strip() or "gh repo view failed"
+    slug = result.stdout.strip()
+    if not slug:
+        return None, "gh repo view returned an empty repository slug"
+    return slug, None
+
+
+class GhRepoBootstrapTool(Tool):
+    """Apply default repository settings after ``gh repo create``.
+
+    Writes issue templates and a CI workflow stub into the local
+    ``.github/`` tree (the caller commits and pushes them) and enables
+    conservative branch protection on the default branch via ``gh api``.
+    Each step is independently opt-out so the agent can apply a subset
+    when appropriate.
+    """
+
+    @property
+    def name(self) -> str:
+        return "gh_repo_bootstrap"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Configure a freshly-created GitHub repository with default branch "
+            "protection, issue templates, and a CI workflow stub. Local files "
+            "are written under .github/ and still need to be committed; branch "
+            "protection is applied immediately via the GitHub API."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the git repository",
+                    "default": ".",
+                },
+                "repo": {
+                    "type": "string",
+                    "description": (
+                        "Repository in OWNER/REPO format. If omitted, the slug "
+                        "is detected via `gh repo view` from the given path."
+                    ),
+                },
+                "branch": {
+                    "type": "string",
+                    "description": "Branch to protect",
+                    "default": "main",
+                },
+                "branch_protection": {
+                    "type": "boolean",
+                    "description": "Enable default branch protection",
+                    "default": True,
+                },
+                "issue_templates": {
+                    "type": "boolean",
+                    "description": (
+                        "Write .github/ISSUE_TEMPLATE/bug_report.md and "
+                        "feature_request.md if they don't already exist"
+                    ),
+                    "default": True,
+                },
+                "ci_workflow": {
+                    "type": "boolean",
+                    "description": ("Write .github/workflows/ci.yaml if it doesn't already exist"),
+                    "default": True,
+                },
+            },
+        }
+
+    async def execute(
+        self,
+        path: str = ".",
+        repo: str | None = None,
+        branch: str = "main",
+        branch_protection: bool = True,
+        issue_templates: bool = True,
+        ci_workflow: bool = True,
+    ) -> ToolResult:
+        """Run the bootstrap steps selected by the caller."""
+        if not shutil.which("gh"):
+            return ToolResult(
+                success=False,
+                output="",
+                error="gh CLI not found. Is it installed?",
+            )
+
+        auth_err = _check_gh_auth()
+        if auth_err:
+            return ToolResult(success=False, output="", error=auth_err)
+
+        charm_dir = pathlib.Path(path).resolve()
+        if not charm_dir.is_dir():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Directory not found: {path}",
+            )
+
+        written: list[str] = []
+        skipped: list[str] = []
+        warnings: list[str] = []
+
+        if issue_templates:
+            templates_dir = charm_dir / ".github" / "ISSUE_TEMPLATE"
+            templates_dir.mkdir(parents=True, exist_ok=True)
+            for filename, content in (
+                ("bug_report.md", _BUG_REPORT_TEMPLATE),
+                ("feature_request.md", _FEATURE_REQUEST_TEMPLATE),
+            ):
+                target = templates_dir / filename
+                if target.exists():
+                    skipped.append(str(target.relative_to(charm_dir)))
+                    continue
+                target.write_text(content)
+                written.append(str(target.relative_to(charm_dir)))
+
+        if ci_workflow:
+            workflows_dir = charm_dir / ".github" / "workflows"
+            workflows_dir.mkdir(parents=True, exist_ok=True)
+            ci_path = workflows_dir / "ci.yaml"
+            if ci_path.exists():
+                skipped.append(str(ci_path.relative_to(charm_dir)))
+            else:
+                ci_path.write_text(_CI_WORKFLOW_TEMPLATE)
+                written.append(str(ci_path.relative_to(charm_dir)))
+
+        protection_applied = False
+        if branch_protection:
+            slug = repo
+            if not slug:
+                slug, detect_err = _detect_repo_slug(str(charm_dir))
+                if not slug:
+                    warnings.append(
+                        f"Could not detect repository slug: {detect_err}. "
+                        "Branch protection skipped."
+                    )
+            if slug:
+                cmd = [
+                    "gh",
+                    "api",
+                    "-X",
+                    "PUT",
+                    f"repos/{slug}/branches/{branch}/protection",
+                    "--input",
+                    "-",
+                ]
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        input=json.dumps(_BRANCH_PROTECTION_PAYLOAD),
+                        capture_output=True,
+                        text=True,
+                        timeout=_GH_TIMEOUT,
+                    )
+                except subprocess.TimeoutExpired:
+                    warnings.append("Branch protection API call timed out.")
+                else:
+                    if result.returncode == 0:
+                        protection_applied = True
+                    else:
+                        stderr = result.stderr.strip() or "gh api failed"
+                        warnings.append(f"Branch protection API call failed: {stderr}")
+
+        summary_lines: list[str] = []
+        if written:
+            summary_lines.append("Wrote: " + ", ".join(written))
+        if skipped:
+            summary_lines.append("Skipped (already present): " + ", ".join(skipped))
+        if protection_applied:
+            summary_lines.append(f"Applied branch protection to {branch}.")
+        for warning in warnings:
+            summary_lines.append(f"Warning: {warning}")
+        if not summary_lines:
+            summary_lines.append("Nothing to do (all steps disabled).")
+
+        return ToolResult(
+            success=not warnings,
+            output="\n".join(summary_lines),
+            error="\n".join(warnings) if warnings else None,
+            data={
+                "written": written,
+                "skipped": skipped,
+                "branch_protection_applied": protection_applied,
+                "warnings": warnings,
+            },
+        )
