@@ -2434,7 +2434,7 @@ thinking available for design tasks. `make check` passes throughout.
 
 ---
 
-## Phase 28: Agent Core Robustness
+## Phase 28: Agent Core Robustness ✓
 
 **Goal:** Fix correctness and resilience issues in the executor, work queue, subagent
 runner, and state persistence that can cause silent failures, data loss, or deadlocks.
@@ -6139,7 +6139,7 @@ profile.
 
 ---
 
-## Phase 60: Web UI Accessibility
+## Phase 60: Web UI Accessibility ✓
 
 **Goal:** Fix the issues surfaced by the Phase 59-era accessibility audit of
 ``src/cantrip/web/`` (see ``design/WEB_UI_ACCESSIBILITY_AUDIT.md``).  The
