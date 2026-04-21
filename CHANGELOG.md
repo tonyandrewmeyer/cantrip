@@ -4,6 +4,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **``cantrip compare`` subcommand — Phase 31.7 ✓.**  Diffs two
+  charm implementations along four dimensions — directory structure,
+  ``config.options``, relation endpoints
+  (``provides``/``requires``/``peers``), actions, containers,
+  extensions, and unit/integration test counts — then prints a human-
+  readable report.  Parses modern ``charmcraft.yaml`` (4.x) as well as
+  the legacy ``metadata.yaml`` / ``config.yaml`` / ``actions.yaml``
+  split, merging the two so a hand-crafted charm using the old layout
+  compares cleanly against a Cantrip-generated charm using the new
+  one.  Invoke with ``cantrip compare CHARM_A/ CHARM_B/``.  Useful for
+  evaluating Cantrip output against upstream or hand-crafted
+  reference charms.
+
 ### Security
 - **Wrapper-command denylist in ``RunCommandTool`` — Phase 49.2 ✓.**
   Defence-in-depth on top of the existing allowlist: ``env``, ``sudo``,

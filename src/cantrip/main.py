@@ -122,6 +122,22 @@ def parse_args() -> argparse.Namespace:
         help="Path to charm project (default: current directory)",
     )
 
+    # ── compare (Phase 31.7) ─────────────────────────────────────────
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Diff two charm implementations (structure, config, relations, tests)",
+    )
+    compare_parser.add_argument(
+        "left",
+        type=Path,
+        help="First charm directory",
+    )
+    compare_parser.add_argument(
+        "right",
+        type=Path,
+        help="Second charm directory",
+    )
+
     # ── export-transcript ────────────────────────────────────────────
     export_parser = subparsers.add_parser(
         "export-transcript",
@@ -176,7 +192,7 @@ def parse_args() -> argparse.Namespace:
     # the entire argv as arguments to the "run" sub-parser.  This lets
     # ``cantrip /path/to/charm`` and ``cantrip --no-tui`` work without
     # requiring an explicit ``run`` subcommand.
-    _subcommands = {"run", "export-transcript"}
+    _subcommands = {"run", "export-transcript", "compare"}
     argv = sys.argv[1:]
     if (
         not argv
@@ -262,6 +278,22 @@ def _export_transcript(args: argparse.Namespace) -> int:
     output = args.output or (charm_path / f"transcript{suffix}")
     Path(output).write_text(content)
     print(f"Transcript exported to {output}")
+    return 0
+
+
+def _compare_charms(args: argparse.Namespace) -> int:
+    """Diff two charm implementations and print the report to stdout (Phase 31.7)."""
+    from cantrip import compare
+
+    left = args.left.resolve()
+    right = args.right.resolve()
+    for label, path in (("left", left), ("right", right)):
+        if not path.is_dir():
+            print(f"Error: {label} charm path is not a directory: {path}")
+            return 1
+
+    report = compare.compare_charms(left, right)
+    print(compare.format_report(report))
     return 0
 
 
@@ -390,6 +422,8 @@ def main() -> int:
 
     if args.command == "export-transcript":
         return _export_transcript(args)
+    if args.command == "compare":
+        return _compare_charms(args)
     return _run(args)
 
 

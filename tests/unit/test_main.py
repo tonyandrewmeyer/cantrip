@@ -89,6 +89,15 @@ class TestParseArgs:
         with pytest.raises(SystemExit):
             cantrip_main.parse_args()
 
+    def test_compare_subcommand(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        left = tmp_path / "a"
+        right = tmp_path / "b"
+        _set_argv(monkeypatch, "compare", str(left), str(right))
+        args = cantrip_main.parse_args()
+        assert args.command == "compare"
+        assert args.left == left
+        assert args.right == right
+
     def test_export_transcript_subcommand(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -551,3 +560,49 @@ class TestMain:
             rc = cantrip_main.main()
         assert rc == 7
         run_fn.assert_called_once_with(args)
+
+    def test_dispatches_compare(self, tmp_path: Path) -> None:
+        args = SimpleNamespace(command="compare", left=tmp_path / "a", right=tmp_path / "b")
+        with (
+            mock.patch.object(cantrip_main, "parse_args", return_value=args),
+            mock.patch.object(cantrip_main, "_compare_charms", return_value=3) as cmp_fn,
+        ):
+            rc = cantrip_main.main()
+        assert rc == 3
+        cmp_fn.assert_called_once_with(args)
+
+
+class TestCompareCharmsEntry:
+    """The ``_compare_charms`` CLI entry-point validates paths and prints the report."""
+
+    def test_missing_left_path_returns_error(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        args = SimpleNamespace(left=tmp_path / "nope", right=tmp_path)
+        rc = cantrip_main._compare_charms(args)
+        assert rc == 1
+        assert "left charm path is not a directory" in capsys.readouterr().out
+
+    def test_missing_right_path_returns_error(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (tmp_path / "a").mkdir()
+        args = SimpleNamespace(left=tmp_path / "a", right=tmp_path / "nope")
+        rc = cantrip_main._compare_charms(args)
+        assert rc == 1
+        assert "right charm path is not a directory" in capsys.readouterr().out
+
+    def test_prints_report(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+        a.mkdir()
+        b.mkdir()
+        (a / "charmcraft.yaml").write_text("name: alpha\n")
+        (b / "charmcraft.yaml").write_text("name: beta\n")
+        args = SimpleNamespace(left=a, right=b)
+        rc = cantrip_main._compare_charms(args)
+        assert rc == 0
+        output = capsys.readouterr().out
+        assert "alpha" in output
+        assert "beta" in output
+        assert "Comparing" in output

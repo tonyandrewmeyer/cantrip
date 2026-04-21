@@ -44,6 +44,7 @@
     <h4>On this page</h4>
     <ul>
       <li><a href="#run">cantrip run</a></li>
+      <li><a href="#compare">cantrip compare</a></li>
       <li><a href="#export-transcript">export-transcript</a></li>
       <li><a href="#slash-commands">Slash commands</a></li>
       <li><a href="#env-vars">Environment variables</a></li>
@@ -63,6 +64,7 @@
 
     <h2 id="synopsis">Synopsis</h2>
     <pre><code>cantrip [run] [OPTIONS] [PATH]
+cantrip compare CHARM_A CHARM_B
 cantrip export-transcript PATH [OPTIONS]
 cantrip --version
 cantrip --help</code></pre>
@@ -170,6 +172,49 @@ cantrip --help</code></pre>
         <code>3</code>.
       </dd>
     </dl>
+
+    <h2 id="compare">cantrip compare</h2>
+    <p>
+      Diff two charm implementations along four dimensions and print a
+      human-readable report. Useful for evaluating a Cantrip-generated
+      charm against a hand-crafted or upstream one without running a
+      full <code>diff -r</code>. Reads both modern
+      <code>charmcraft.yaml</code> and the legacy
+      <code>metadata.yaml</code> / <code>config.yaml</code> /
+      <code>actions.yaml</code> split so charms on either layout
+      compare cleanly.
+    </p>
+
+    <h3>Positional arguments</h3>
+    <dl>
+      <dt>CHARM_A</dt>
+      <dd>First charm directory. Required.</dd>
+      <dt>CHARM_B</dt>
+      <dd>Second charm directory. Required.</dd>
+    </dl>
+
+    <h3>Output</h3>
+    <p>The report groups drift into sections:</p>
+    <ul>
+      <li><strong>Structure</strong> &mdash; which landmark files and
+      directories exist on each side (e.g. <code>tests/integration</code>,
+      <code>terraform</code>, <code>.github/workflows</code>).</li>
+      <li><strong>Config options</strong> &mdash; added, removed, and
+      changed <code>config.options</code> keys, with both sides'
+      values printed for every changed option.</li>
+      <li><strong>provides / requires / peers</strong> &mdash; relation
+      endpoints, compared by name and interface.</li>
+      <li><strong>Actions</strong>, <strong>Containers</strong>,
+      <strong>Extensions</strong> &mdash; sets of names.</li>
+      <li><strong>Tests</strong> &mdash; unit- and integration-test
+      file counts, always rendered even when identical so
+      "both zero" is itself a visible finding.</li>
+    </ul>
+    <p>
+      Sections that match on both sides render as
+      <code>(identical &mdash; same X)</code> so your eye can skip
+      straight to drift.
+    </p>
 
     <h2 id="export-transcript">cantrip export-transcript</h2>
     <p>Export a session transcript from a <code>.cantrip</code> file.</p>

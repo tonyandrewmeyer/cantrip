@@ -2843,11 +2843,29 @@ experienced users.
   (Grafana present but not active).  No new network calls — reachability
   is read from the watcher's cached status.
 
-### 31.7 Low — Charm Comparison Mode
+### 31.7 Low — Charm Comparison Mode ✓
 
-- [ ] `--compare charm1/ charm2/` flag to diff two charm implementations
-- [ ] Highlight differences in structure, config, relations, tests
-- [ ] Useful for evaluating Cantrip-generated charms against hand-crafted ones
+- [x] New ``cantrip compare CHARM_A/ CHARM_B/`` subcommand (chose
+  a dedicated subcommand over a ``--compare`` flag on ``run`` so
+  invoking it doesn't risk triggering the agent loop).
+- [x] Diff surfaces: directory structure (landmark files and
+  directories), ``config.options`` (added/removed/changed, with
+  left+right values on changes), relation endpoints
+  (``provides``/``requires``/``peers``), actions, containers,
+  extensions, unit-test count, integration-test count, base, charm
+  name.  Identical sections render as ``(identical — same X)`` so
+  the reader's eye can skip straight to drift.
+- [x] New ``cantrip.compare`` module — pure-function design, frozen
+  dataclasses (``CharmSnapshot``, ``DictDiff``, ``ComparisonReport``)
+  — so the core logic is unit-testable without any CLI scaffolding.
+- [x] Parses both modern ``charmcraft.yaml`` (4.x) and the legacy
+  ``metadata.yaml`` / ``config.yaml`` / ``actions.yaml`` split,
+  merging the two so a hand-crafted charm on the old layout still
+  compares cleanly against a Cantrip-generated one on the new
+  layout.
+- [x] 18 unit tests for the core module + 4 CLI-entry tests
+  exercising argparse dispatch, path validation, and the printed
+  report.
 
 ### 31.8 Low — Export Running Session
 
