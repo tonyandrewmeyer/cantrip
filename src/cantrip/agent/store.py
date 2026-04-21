@@ -14,7 +14,7 @@ from cantrip.agent.state import AgentState, Decision
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -62,6 +62,11 @@ CREATE TABLE IF NOT EXISTS token_usage (
     model TEXT NOT NULL,
     prompt_tokens INTEGER NOT NULL,
     completion_tokens INTEGER NOT NULL,
+    -- NULL for main-conversation-loop turns and any legacy row written
+    -- before the v9 migration; subagent turns stamp the task category
+    -- here so /cost can break cost down by research / build / deploy /
+    -- test / debug.
+    category TEXT,
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -277,6 +282,14 @@ class SessionStore:
                     access_count INTEGER NOT NULL DEFAULT 0
                 );
             """)
+
+        if current < 9:
+            # v9: per-category cost breakdown (Phase 31.4).  Existing
+            # rows get NULL so historical totals remain correct — the
+            # aggregation queries treat NULL as "uncategorised".
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(token_usage)").fetchall()}
+            if "category" not in cols:
+                self._conn.execute("ALTER TABLE token_usage ADD COLUMN category TEXT")
 
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
@@ -690,14 +703,21 @@ class SessionStore:
         model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        category: str | None = None,
     ) -> int:
-        """Record token usage for a single LLM request. Returns the row ID."""
+        """Record token usage for a single LLM request. Returns the row ID.
+
+        *category* is the ``TaskCategory`` value of the task that was
+        active when the request fired (subagent turns), or ``None`` for
+        main-conversation-loop turns that aren't tied to a task.  Used
+        by ``/cost`` to break cost down by category.
+        """
         cursor = self._db.execute(
             """\
-            INSERT INTO token_usage (provider, model, prompt_tokens, completion_tokens)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO token_usage (provider, model, prompt_tokens, completion_tokens, category)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (provider, model, prompt_tokens, completion_tokens),
+            (provider, model, prompt_tokens, completion_tokens, category),
         )
         self._db.commit()
         assert cursor.lastrowid is not None
@@ -762,6 +782,43 @@ class SessionStore:
             "completion_tokens": row["completion_tokens"],
             "request_count": row["request_count"],
         }
+
+    def get_usage_by_category(self, since: str | None = None) -> list[dict[str, object]]:
+        """Return token usage broken down by task category and model.
+
+        *since* is an optional ISO timestamp; when provided, only rows
+        logged after that point are included (session-scoped cost).
+        Rows with a NULL category (main-conversation-loop turns or
+        legacy pre-v9 rows) appear under the literal string
+        ``"conversation"`` so the caller can render a single display
+        row without a special case.
+        """
+        base = """\
+            SELECT COALESCE(category, 'conversation') AS category,
+                   provider,
+                   model,
+                   SUM(prompt_tokens)     AS prompt_tokens,
+                   SUM(completion_tokens)  AS completion_tokens,
+                   COUNT(*)                AS request_count
+            FROM token_usage
+        """
+        params: tuple[object, ...] = ()
+        if since is not None:
+            base += " WHERE timestamp >= ?"
+            params = (since,)
+        base += " GROUP BY category, provider, model ORDER BY category, provider, model"
+        rows = self._db.execute(base, params).fetchall()
+        return [
+            {
+                "category": r["category"],
+                "provider": r["provider"],
+                "model": r["model"],
+                "prompt_tokens": r["prompt_tokens"],
+                "completion_tokens": r["completion_tokens"],
+                "request_count": r["request_count"],
+            }
+            for r in rows
+        ]
 
     def get_usage_by_model_since(self, since: str) -> list[dict[str, object]]:
         """Return per-model token usage for requests since *since* (ISO timestamp).

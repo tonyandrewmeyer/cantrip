@@ -197,6 +197,7 @@ class FakeStateService:
         model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        category: str | None = None,
     ) -> None:
         self.usage_records.append(
             {
@@ -204,6 +205,7 @@ class FakeStateService:
                 "model": model,
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
+                "category": category,
             }
         )
 

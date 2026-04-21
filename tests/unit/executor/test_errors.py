@@ -274,6 +274,7 @@ class TestUsageRecordingProviderIdentity:
             model="claude-haiku-4-5-20251001",
             prompt_tokens=100,
             completion_tokens=20,
+            category=None,
         )
 
     def test_record_usage_falls_back_to_primary(self) -> None:
@@ -297,4 +298,52 @@ class TestUsageRecordingProviderIdentity:
             model=primary.model_name,
             prompt_tokens=50,
             completion_tokens=10,
+            category=None,
         )
+
+    def test_record_usage_passes_task_category(self) -> None:
+        """The subagent stamps ``_task_category`` into metadata (Phase 31.4)."""
+        store = MagicMock()
+        store.record_event = MagicMock()
+        store.record_usage = MagicMock()
+        store.save_tasks = MagicMock()
+
+        executor = _make_executor(store=store)
+
+        response = Response(
+            content="done",
+            usage={"prompt_tokens": 100, "completion_tokens": 20},
+            metadata={
+                "_provider_name": "claude",
+                "_provider_model": "claude-haiku-4-5-20251001",
+                "_task_category": "build",
+            },
+        )
+        executor._record_usage(response)
+
+        store.record_usage.assert_called_once_with(
+            provider="claude",
+            model="claude-haiku-4-5-20251001",
+            prompt_tokens=100,
+            completion_tokens=20,
+            category="build",
+        )
+
+    def test_record_usage_ignores_non_string_category(self) -> None:
+        """Metadata may be round-tripped from JSON; defensively reject non-strings."""
+        store = MagicMock()
+        store.record_event = MagicMock()
+        store.record_usage = MagicMock()
+        store.save_tasks = MagicMock()
+
+        primary = FakeProvider(responses=[Response(content="done")])
+        executor = _make_executor(store=store, provider=primary)
+
+        response = Response(
+            content="done",
+            usage={"prompt_tokens": 10, "completion_tokens": 5},
+            metadata={"_task_category": 42},  # Not a string — treat as None.
+        )
+        executor._record_usage(response)
+
+        assert store.record_usage.call_args.kwargs["category"] is None

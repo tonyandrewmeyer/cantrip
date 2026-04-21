@@ -148,6 +148,39 @@ class TestTokenUsage:
         assert by_model[1]["completion_tokens"] == 75
         assert by_model[1]["request_count"] == 2
 
+    def test_record_with_category(self, store: SessionStore) -> None:
+        """``category`` is persisted so ``/cost`` can break cost down (Phase 31.4)."""
+        store.record_usage("claude", "claude-opus", 100, 50, category="build")
+        store.record_usage("claude", "claude-opus", 200, 100, category="test")
+        store.record_usage("claude", "claude-haiku", 50, 25)  # NULL category
+
+        # Total ignores category — historical rows still add up.
+        total = store.get_total_usage()
+        assert total["prompt_tokens"] == 350
+        assert total["completion_tokens"] == 175
+
+    def test_usage_by_category_groups_null_under_conversation(self, store: SessionStore) -> None:
+        """Legacy rows with NULL category aggregate under ``"conversation"``."""
+        store.record_usage("claude", "claude-opus", 100, 50, category="build")
+        store.record_usage("claude", "claude-opus", 400, 100, category="build")
+        store.record_usage("claude", "claude-opus", 200, 75, category="test")
+        store.record_usage("claude", "claude-haiku", 50, 25)  # NULL → conversation
+
+        by_cat = store.get_usage_by_category()
+        bucket = {r["category"]: r for r in by_cat}
+        assert bucket["build"]["prompt_tokens"] == 500
+        assert bucket["build"]["completion_tokens"] == 150
+        assert bucket["build"]["request_count"] == 2
+        assert bucket["test"]["prompt_tokens"] == 200
+        assert bucket["conversation"]["prompt_tokens"] == 50
+
+    def test_usage_by_category_since_filters_by_timestamp(self, store: SessionStore) -> None:
+        store.record_usage("claude", "claude-opus", 100, 50, category="build")
+        assert store.get_usage_by_category(since="9999-01-01 00:00:00") == []
+        past = store.get_usage_by_category(since="2000-01-01 00:00:00")
+        assert len(past) == 1
+        assert past[0]["category"] == "build"
+
     def test_usage_by_model_since(self, store: SessionStore) -> None:
         """get_usage_by_model_since filters rows by timestamp.
 
@@ -168,6 +201,59 @@ class TestTokenUsage:
         # A timestamp far in the future — no rows qualify.
         future_rows = store.get_usage_by_model_since("9999-01-01 00:00:00")
         assert future_rows == []
+
+
+class TestSchemaMigrations:
+    """Tests for incremental ``_apply_migrations`` paths (Phase 31.4 etc.)."""
+
+    def test_v9_adds_category_column_to_existing_token_usage(self, tmp_path: Path) -> None:
+        """A pre-v9 database gains the ``category`` column on open.
+
+        Legacy rows without the column survive — ``get_total_usage``
+        still totals them and ``get_usage_by_category`` surfaces them
+        under ``"conversation"``.
+        """
+        import sqlite3
+
+        db_path = tmp_path / ".cantrip"
+        # Hand-roll a v8 database: create the old token_usage schema
+        # (no category column) and pin schema_version=8.
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript("""\
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO schema_version (version) VALUES (8);
+            CREATE TABLE token_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                prompt_tokens INTEGER NOT NULL,
+                completion_tokens INTEGER NOT NULL,
+                timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO token_usage (provider, model, prompt_tokens, completion_tokens)
+            VALUES ('claude', 'claude-opus', 123, 45);
+        """)
+        conn.commit()
+        conn.close()
+
+        store = SessionStore(db_path)
+        store.open()
+        try:
+            cols = {r[1] for r in store._db.execute("PRAGMA table_info(token_usage)").fetchall()}
+            assert "category" in cols
+
+            # Legacy row still counts in the total and aggregates under
+            # the "conversation" bucket.
+            total = store.get_total_usage()
+            assert total["prompt_tokens"] == 123
+            assert total["completion_tokens"] == 45
+
+            by_cat = store.get_usage_by_category()
+            assert len(by_cat) == 1
+            assert by_cat[0]["category"] == "conversation"
+            assert by_cat[0]["prompt_tokens"] == 123
+        finally:
+            store.close()
 
 
 class TestMigration:

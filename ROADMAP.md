@@ -2781,7 +2781,7 @@ experienced users.
   ``GET /api/session/preview``, ``POST /api/session/decide``,
   ``GET /api/session/transcript``.
 
-### 31.4 Medium — Token Cost Dashboard
+### 31.4 Medium — Token Cost Dashboard ✓
 
 - [x] Show cumulative token usage and estimated cost in the `ModelInfoBar` —
   new `cantrip.llm.pricing` module with per-model rates (Claude 4 family,
@@ -2790,9 +2790,18 @@ experienced users.
   cache-read (10%) and cache-write (125%) modifiers to the agent's session
   accumulators; `/cost` CLI command grew a per-model cost column and an
   overall estimated total
-- [ ] Break down by category (research, build, deploy, test, debug) —
-  deferred; requires schema migration (task_id on token_usage) and
-  plumbing task context through every `_record_usage` call site
+- [x] Break down by category (research, build, deploy, test, debug) —
+  schema bumped to v9 with a nullable ``category`` column on
+  ``token_usage`` (idempotent ALTER so existing DBs migrate on open).
+  The subagent stamps ``response.metadata["_task_category"]`` so the
+  executor's ``_record_usage`` plumbs it through ``StateService``
+  into ``SessionStore.record_usage(..., category=...)``; main-loop
+  turns and legacy rows pass NULL and aggregate under ``conversation``
+  in the new ``get_usage_by_category(since=None)`` helper.  Both the
+  CLI ``_print_cost`` path and the ``/cost`` slash command render a
+  **By category** block below the **By model** one.  Cache cost is
+  not attributed per category — it's still reported as a global
+  adjustment on the overall total.
 - [x] Show cache hit rate when using Claude — already implemented earlier
   (Phase 27.1); confirmed still working alongside the new cost line
 

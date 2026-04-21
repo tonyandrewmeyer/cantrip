@@ -945,9 +945,12 @@ class Subagent:
         if self._on_usage:
             # Stamp the actual provider identity so the callback records
             # the correct model — the subagent may be using the light
-            # provider, not the primary one the executor holds.
+            # provider, not the primary one the executor holds.  Also
+            # stamp the task category so ``/cost`` can break cost down
+            # by research / build / deploy / test / debug (Phase 31.4).
             response.metadata["_provider_name"] = self._provider.name
             response.metadata["_provider_model"] = self._provider.model_name
+            response.metadata["_task_category"] = self._context.task.category.value
             self._on_usage(response)
         return response
 

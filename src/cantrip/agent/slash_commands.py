@@ -289,6 +289,35 @@ def format_cost(agent: CantripAgent) -> str:
         )
         total_cost += cache_cost
 
+    # Per-category breakdown (Phase 31.4) — aggregate across models so a
+    # category row sums every subagent that ran under it.  Cache cost is
+    # global (not category-attributed) so it stays out of this table.
+    by_cat = store.get_usage_by_category()
+    if by_cat:
+        cat_totals: dict[str, tuple[int, float, int]] = {}
+        for row in by_cat:
+            cat = str(row.get("category", "conversation"))
+            prompt_t = int(row.get("prompt_tokens", 0) or 0)
+            completion_t = int(row.get("completion_tokens", 0) or 0)
+            reqs = int(row.get("request_count", 0) or 0)
+            cost = pricing.estimate_cost(
+                str(row.get("model", "")),
+                prompt_tokens=prompt_t,
+                completion_tokens=completion_t,
+            )
+            tokens, running_cost, running_reqs = cat_totals.get(cat, (0, 0.0, 0))
+            cat_totals[cat] = (
+                tokens + prompt_t + completion_t,
+                running_cost + cost,
+                running_reqs + reqs,
+            )
+        lines.append("")
+        lines.append("**By category**")
+        for cat in sorted(cat_totals):
+            tokens, cat_cost, reqs = cat_totals[cat]
+            cost_str = pricing.format_cost(cat_cost) if cat_cost > 0 else "free"
+            lines.append(f"- {cat}: {tokens:,} tokens, {reqs} requests, {cost_str}")
+
     if total_cost > 0:
         lines.append("")
         lines.append(f"_Estimated total: {pricing.format_cost(total_cost)}_")

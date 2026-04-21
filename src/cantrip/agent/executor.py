@@ -278,12 +278,14 @@ class _SessionStoreAdapter:
         model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        category: str | None = None,
     ) -> None:
         self._store.record_usage(
             provider=provider,
             model=model,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            category=category,
         )
 
     def save_tasks(self, tasks: list[AgentTask]) -> None:
@@ -1409,18 +1411,21 @@ class BackgroundExecutor:
     def _record_usage(self, response: llm.Response) -> None:
         """Record token usage from a subagent LLM response.
 
-        The subagent stamps the actual provider identity into
-        ``response.metadata`` so we record the correct model even when
-        the subagent used the light provider instead of the primary one.
+        The subagent stamps the actual provider identity and the active
+        task's category into ``response.metadata`` so we record the
+        correct model (even when the subagent used the light provider)
+        and the right category for the Phase 31.4 cost breakdown.
         """
         if self._state_service and response.usage:
             provider_name = response.metadata.get("_provider_name", self._provider.name)
             model_name = response.metadata.get("_provider_model", self._provider.model_name)
+            category = response.metadata.get("_task_category")
             self._state_service.record_usage(
                 provider=provider_name,
                 model=model_name,
                 prompt_tokens=response.usage.get("prompt_tokens", 0),
                 completion_tokens=response.usage.get("completion_tokens", 0),
+                category=category if isinstance(category, str) else None,
             )
 
     # -- Persistence ---------------------------------------------------------

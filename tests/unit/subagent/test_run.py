@@ -36,6 +36,23 @@ class TestSubagentRun:
         assert result.text == "Task complete."
 
     @pytest.mark.asyncio
+    async def test_on_usage_receives_provider_and_task_category(self) -> None:
+        """Phase 31.4: subagent stamps the task category into response.metadata."""
+        provider = FakeProvider(responses=[Response(content="done", usage={"prompt_tokens": 1})])
+        task = AgentTask(id="t", title="Build", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task)
+        captured: list[Response] = []
+        subagent = Subagent(ctx, tools=[], provider=provider, on_usage=captured.append)
+
+        await subagent.run()
+
+        assert len(captured) == 1
+        meta = captured[0].metadata
+        assert meta["_provider_name"] == provider.name
+        assert meta["_provider_model"] == provider.model_name
+        assert meta["_task_category"] == "build"
+
+    @pytest.mark.asyncio
     async def test_one_tool_call_round(self) -> None:
         tool = _make_tool("read_file")
         task = AgentTask(id="t", title="Read", category=TaskCategory.BUILD)

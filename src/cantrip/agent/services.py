@@ -79,6 +79,7 @@ class StateService(Protocol):
         model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        category: str | None = None,
     ) -> None:
         """Record token usage from an LLM response."""
         ...

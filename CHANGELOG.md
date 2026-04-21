@@ -4,6 +4,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **``/cost`` per-category breakdown — Phase 31.4 ✓.**  The cost
+  dashboard now groups token usage by task category (``research`` /
+  ``build`` / ``deploy`` / ``test`` / ``debug``) in addition to the
+  existing per-model table.  Main-conversation-loop turns and any
+  legacy pre-v9 rows aggregate under ``conversation``.  Surfaces in
+  the CLI ``/cost`` command, the ``/cost`` slash command (TUI + Web),
+  and the backing ``SessionStore.get_usage_by_category(since=None)``
+  helper.  Subagent turns stamp the active task category into
+  ``response.metadata["_task_category"]`` so the executor records it
+  through ``SessionStore.record_usage(..., category=...)``.  DB
+  schema bumped to v9; existing databases add the ``category`` column
+  on open (idempotent ALTER), with NULL for every historical row so
+  totals stay correct.
+
 ### Changed
 - **Repo-bootstrap offer moved to a CONFIRM task — Phase 64 ✓.**  When
   Cantrip finishes a build in a directory with no GitHub remote, the

@@ -176,6 +176,7 @@ class TestCost:
         store = MagicMock()
         store.get_total_usage.return_value = {"prompt_tokens": 0, "completion_tokens": 0}
         store.get_usage_by_model.return_value = []
+        store.get_usage_by_category.return_value = []
         agent = _fake_agent(memory_manager, store=store)
         result = dispatch(agent, "/cost")
         assert result is not None
@@ -185,12 +186,50 @@ class TestCost:
         store = MagicMock()
         store.get_total_usage.return_value = {"prompt_tokens": 1000, "completion_tokens": 200}
         store.get_usage_by_model.return_value = []
+        store.get_usage_by_category.return_value = []
         agent = _fake_agent(memory_manager, store=store)
         result = dispatch(agent, "/cost")
         assert result is not None
         assert "1,000" in result.text
         assert "200" in result.text
         assert "1,200" in result.text
+
+    def test_cost_renders_category_breakdown(self, memory_manager: MemoryManager) -> None:
+        """Phase 31.4: ``/cost`` surfaces a **By category** table."""
+        store = MagicMock()
+        store.get_total_usage.return_value = {
+            "prompt_tokens": 500,
+            "completion_tokens": 250,
+        }
+        store.get_usage_by_model.return_value = []
+        store.get_usage_by_category.return_value = [
+            {
+                "category": "build",
+                "provider": "claude",
+                "model": "claude-opus-4",
+                "prompt_tokens": 300,
+                "completion_tokens": 150,
+                "request_count": 2,
+            },
+            {
+                "category": "research",
+                "provider": "claude",
+                "model": "claude-haiku-4-5-20251001",
+                "prompt_tokens": 200,
+                "completion_tokens": 100,
+                "request_count": 5,
+            },
+        ]
+        agent = _fake_agent(memory_manager, store=store)
+        result = dispatch(agent, "/cost")
+        assert result is not None
+        assert "**By category**" in result.text
+        # Sorted alphabetically — build before research.
+        build_idx = result.text.index("build:")
+        research_idx = result.text.index("research:")
+        assert build_idx < research_idx
+        assert "450 tokens" in result.text  # build: 300 + 150
+        assert "300 tokens" in result.text  # research: 200 + 100
 
 
 class TestExport:

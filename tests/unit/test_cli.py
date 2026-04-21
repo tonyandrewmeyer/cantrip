@@ -234,6 +234,7 @@ class TestPrintCost:
         store = SimpleNamespace(
             get_total_usage=lambda: {"prompt_tokens": 0, "completion_tokens": 0},
             get_usage_by_model=lambda: [],
+            get_usage_by_category=lambda: [],
         )
         cli._print_cost(
             SimpleNamespace(
@@ -264,6 +265,7 @@ class TestPrintCost:
                     "completion_tokens": 167,
                 },
             ],
+            get_usage_by_category=lambda: [],
         )
         cli._print_cost(
             SimpleNamespace(
@@ -280,6 +282,43 @@ class TestPrintCost:
         assert "gemini-3-flash" in out
         # Cost now shown for priced models and an overall total.
         assert "Estimated total" in out
+
+    def test_per_category_breakdown_rendered(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Phase 31.4: ``/cost`` groups rows by task category."""
+        store = SimpleNamespace(
+            get_total_usage=lambda: {"prompt_tokens": 500, "completion_tokens": 250},
+            get_usage_by_model=lambda: [],
+            get_usage_by_category=lambda: [
+                {
+                    "category": "build",
+                    "provider": "claude",
+                    "model": "claude-opus-4",
+                    "prompt_tokens": 300,
+                    "completion_tokens": 150,
+                    "request_count": 2,
+                },
+                {
+                    "category": "test",
+                    "provider": "claude",
+                    "model": "claude-haiku-4-5-20251001",
+                    "prompt_tokens": 200,
+                    "completion_tokens": 100,
+                    "request_count": 3,
+                },
+            ],
+        )
+        cli._print_cost(
+            SimpleNamespace(
+                store=store,
+                cache_creation_tokens=0,
+                cache_read_tokens=0,
+                provider=SimpleNamespace(model_name="claude-opus-4"),
+            )
+        )
+        out = capsys.readouterr().out
+        assert "By category:" in out
+        assert "build: 450 tokens, 2 requests" in out
+        assert "test: 300 tokens, 3 requests" in out
 
 
 class TestPrintJujuStatus:
