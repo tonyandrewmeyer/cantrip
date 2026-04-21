@@ -6529,24 +6529,41 @@ References:
 - Cantrip's own ``CHANGELOG.md`` and ``src/cantrip/__init__.py``
   (``__version__``) are the installed-side truths to compare against
 
-### 63.1 Medium — PyPI version-check helper
+### 63.1 Medium — PyPI version-check helper ✅
 
-- [ ] Add ``src/cantrip/update.py`` with ``async def
+- [x] Add ``src/cantrip/update.py`` with ``async def
   check_for_update(*, timeout: float = 3.0) -> UpdateInfo | None``.
   Uses ``httpx.AsyncClient`` against
   ``https://pypi.org/pypi/cantrip/json``; parses ``info.version``;
   compares to ``cantrip.__version__`` via
   ``packaging.version.parse``; returns an ``UpdateInfo`` dataclass
   (``current``, ``latest``, ``pypi_url``, ``release_timestamp``) or
-  ``None`` if we're already current
-- [ ] Any ``httpx.HTTPError``, DNS failure, timeout, or parse failure
+  ``None`` if we're already current — surface matches the spec; the
+  module also accepts ``use_cache=False`` for the eventual
+  ``/update`` slash command in 63.5; ``UpdateInfo.pypi_url`` points
+  at ``https://pypi.org/project/cantrip/<latest>/`` so the user can
+  click straight through to the release page
+- [x] Any ``httpx.HTTPError``, DNS failure, timeout, or parse failure
   returns ``None`` — we never surface a stack trace or block startup
-  because PyPI is slow.  Log at DEBUG only
-- [ ] Cache the result on disk at ``~/.cache/cantrip/update.json``
+  because PyPI is slow.  Log at DEBUG only — handled by a single
+  ``except (httpx.HTTPError, ValueError)`` around the JSON fetch.
+  Field-shape guards (``_extract_latest_and_timestamp``) treat any
+  unexpected payload shape as "no update visible" rather than
+  raising; ``packaging.version.InvalidVersion`` on the latest string
+  also returns ``None``
+- [x] Cache the result on disk at ``~/.cache/cantrip/update.json``
   with a 24-hour TTL so normal day-to-day startups don't hit PyPI at
   all; honour ``CANTRIP_NO_UPDATE_CHECK=1`` and a
   ``settings.update_check_disabled`` flag to skip entirely.  Corporate
-  networks that block ``pypi.org`` need a painless opt-out
+  networks that block ``pypi.org`` need a painless opt-out — TTL via
+  the cache file's mtime keeps the on-disk format minimal (just
+  ``latest`` + ``release_timestamp``); upgrading to the latest
+  release naturally invalidates the "newer version" verdict on the
+  next launch.  ``DISABLE_ENV`` accepts ``1`` / ``true`` / ``yes`` /
+  ``on`` (case-insensitive); ``_settings_disabled`` reads
+  ``~/.config/cantrip/settings.json`` leniently — missing or
+  malformed file means "no opt-out" so a corrupted settings file
+  cannot silently hide upgrade prompts
 
 ### 63.2 Medium — Changelog extraction and formatting
 
@@ -6568,26 +6585,43 @@ References:
   full notes at {pypi_url}" trailer so four releases of backlog
   don't swamp the screen
 
-### 63.3 Medium — Installer detection and upgrade instructions
+### 63.3 Medium — Installer detection and upgrade instructions ✅
 
-- [ ] ``src/cantrip/update.py`` gains ``detect_install_method() ->
+- [x] ``src/cantrip/update.py`` gains ``detect_install_method() ->
   InstallMethod`` — an enum of ``UV_TOOL``, ``PIPX``, ``PIP_USER``,
   ``PIP_VENV``, ``SNAP``, ``UNKNOWN``.  Heuristics, cheapest first:
   check if ``sys.executable`` lives under ``~/.local/share/uv/``
   (uv tool), ``~/.local/pipx/venvs/`` (pipx), ``/snap/``
   (snap), a user-site dir (pip --user), or a generic venv (pip).
-  ``UNKNOWN`` when nothing matches
-- [ ] Map each method to a copy-pasteable command: ``uv tool upgrade
+  ``UNKNOWN`` when nothing matches — heuristics ordered: ``/snap/``
+  prefix (snap), ``/.local/share/uv/`` or ``/share/uv/tools/``
+  (uv tool), ``/.local/pipx/`` or ``/.local/share/pipx/`` or
+  ``/pipx/venvs/`` (pipx), ``sys.prefix != sys.base_prefix``
+  (generic venv — runs *before* the user-site check so a venv
+  created under ``~/.local/share/`` is correctly tagged as
+  ``PIP_VENV`` rather than ``PIP_USER``), then ``~/.local/`` prefix
+  (pip --user)
+- [x] Map each method to a copy-pasteable command: ``uv tool upgrade
   cantrip``, ``pipx upgrade cantrip``, ``pip install --user --upgrade
   cantrip``, ``pip install --upgrade cantrip``, ``snap refresh
   cantrip``.  For ``UNKNOWN``, fall back to the PyPI URL and let the
   user decide — matches toad's "visit-URL" philosophy for
-  ambiguous installs
-- [ ] Unit tests cover each detection branch by monkey-patching
+  ambiguous installs — ``upgrade_command(method)`` returns the
+  string for known methods and ``None`` for ``UNKNOWN`` so callers
+  can fall through to the PyPI URL.  ``method=None`` calls
+  ``detect_install_method()`` for the user's installer
+- [x] Unit tests cover each detection branch by monkey-patching
   ``sys.executable`` and the ``os.path.exists`` probe.  A final
   "we never crash on weird paths" fuzz test feeds random path
   strings and asserts we always return an ``InstallMethod`` (even
-  if it's ``UNKNOWN``)
+  if it's ``UNKNOWN``) — ``tests/unit/test_update.py``
+  ``TestDetectInstallMethod`` parametrises every detection branch
+  (with a pinned ``Path.home()`` so user-site heuristics don't
+  depend on whoever runs the suite); ``test_never_crashes_on_weird_paths``
+  feeds the helper empty strings, paths with newlines, paths with
+  spaces, leading-dot paths, and "snap-but-not-quite" strings and
+  asserts it always returns *some* ``InstallMethod`` (48 update
+  tests in total)
 
 ### 63.4 Medium — Wire the check into all three front-ends
 

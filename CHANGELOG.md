@@ -33,6 +33,38 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Added
+- **PyPI version-check + installer detection (Phase 63.1 + 63.3).**
+  Library surface for the forthcoming "a newer Cantrip is available"
+  notice.  New ``src/cantrip/update.py`` exposes
+  ``async check_for_update(*, timeout=3.0, use_cache=True)`` which
+  hits ``https://pypi.org/pypi/cantrip/json``, compares
+  ``info.version`` to ``cantrip.__version__`` via
+  ``packaging.version.parse``, and returns an ``UpdateInfo``
+  dataclass (``current``, ``latest``, ``pypi_url``,
+  ``release_timestamp``) or ``None`` when the user is current /
+  opted out / a network call failed.  Results are cached at
+  ``~/.cache/cantrip/update.json`` with a 24-hour TTL measured
+  against the file's mtime, so the day-to-day startup path pays
+  nothing.  Two opt-outs are honoured before any I/O:
+  ``CANTRIP_NO_UPDATE_CHECK=1`` (accepts ``1`` / ``true`` / ``yes``
+  / ``on`` case-insensitively) and ``update_check_disabled: true``
+  in ``~/.config/cantrip/settings.json``.  Every failure path
+  (``httpx.HTTPError``, DNS failure, timeout, JSON parse failure,
+  unexpected PyPI schema, invalid version string, write-protected
+  cache dir) degrades to ``None`` and logs at DEBUG only — the
+  startup path can never trace out or be blocked by a slow PyPI.
+  Companion ``detect_install_method()`` returns an ``InstallMethod``
+  enum (``UV_TOOL`` / ``PIPX`` / ``PIP_USER`` / ``PIP_VENV`` /
+  ``SNAP`` / ``UNKNOWN``) based on ``sys.executable`` heuristics,
+  and ``upgrade_command(method)`` returns the copy-pasteable string
+  (``uv tool upgrade cantrip`` etc.) or ``None`` for ``UNKNOWN`` so
+  callers can fall through to the PyPI URL.  Fully library-only —
+  no UI wiring yet; that lands in 63.2/63.4/63.5.  Covered by
+  ``tests/unit/test_update.py`` (48 cases: version-comparison
+  newer/equal/older/pre-release, every HTTP failure mode, both
+  opt-outs in all their flavours, cache hit/miss/stale/corrupt,
+  every installer heuristic with a pinned ``Path.home()`` fixture,
+  and a "never crashes on weird paths" fuzz test).
 - **On-theme activity labels (Phase 62).**  The status bar used to
   say ``⟳ Thinking...`` regardless of what the agent was up to; now
   it picks from a spellcasting-themed pool — *Conjuring…*,
