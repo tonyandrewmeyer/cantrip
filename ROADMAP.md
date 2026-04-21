@@ -4918,13 +4918,31 @@ applicable to Cantrip.
 - [ ] Unit tests verify the sandboxed command cannot read files outside the
   bind-mounted working tree
 
-### 49.2 High — Deny-rule hardening
+### 49.2 High — Deny-rule hardening ✓
 
-- [ ] Match `env`, `sudo`, `watch`, `nohup`, `setsid`, and similar wrappers
-  when inspecting commands, so a deny rule on `rm` is not bypassed by
-  `env rm ...`
-- [ ] Apply the same normalisation in shell-pipeline form (`x | rm ...`)
-- [ ] Tests exercise each wrapper form
+- [x] Wrapper commands (``env``, ``sudo``, ``doas``, ``watch``,
+  ``nohup``, ``setsid``, ``timeout``, ``ionice``, ``nice``,
+  ``chroot``, ``stdbuf``, ``script``, ``xargs``, ``exec``, plus every
+  common shell) rejected categorically in
+  ``cantrip.agent.tools.run_command``.  Distinct error message from
+  the allowlist-miss case so the LLM learns to drop the wrapper
+  rather than retry.  Since Cantrip uses an allowlist (not a deny-
+  list), this is defence-in-depth for the scenario where an operator
+  adds a wrapper to the allowlist — ``env rm`` stays blocked either
+  way.
+- [x] Leading ``NAME=value`` env-var assignment prefixes rejected
+  with a wrapper-equivalent error (``FOO=bar make`` is a shell
+  wrapper, same attack surface as ``env``).
+- [x] Shell metacharacters (``;``, ``&&``, ``||``, ``|``, backticks,
+  ``$(...)``, ``>``, ``<``) rejected before the allowlist check.
+  The tool runs with ``shell=False`` so these are inert today, but
+  catching them at the source (a) makes the failure mode explicit
+  so the LLM splits the command into two calls rather than retrying
+  the same form, and (b) keeps a future refactor to ``shell=True``
+  from inheriting the bypass.
+- [x] 29 new tests: 14 wrapper forms, 3 ``NAME=value`` forms, 8
+  metacharacter forms, 1 distinctness assertion, 1 happy-path
+  regression check, 2 positive sanity checks.
 
 ### 49.3 Medium — Per-tool syscall allowlists
 

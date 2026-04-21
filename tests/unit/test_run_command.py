@@ -204,3 +204,123 @@ class TestRunCommandConstants:
 
     def test_max_timeout(self):
         assert _MAX_TIMEOUT == 300
+
+
+class TestWrapperDenylist:
+    """Phase 49.2: reject commands that wrap another command.
+
+    Defence-in-depth on top of the allowlist — even if an operator adds
+    ``env`` or ``bash`` to the allowlist (e.g. for local debugging),
+    wrapper-prefixed commands stay blocked.  The error must be distinct
+    from the allowlist-miss error so an LLM can learn the difference.
+    """
+
+    @pytest.fixture
+    def permissive_tool(self):
+        """An allowlist that deliberately contains every wrapper we still want to block."""
+        return RunCommandTool(
+            allowlist=frozenset(
+                {"env", "sudo", "bash", "sh", "nohup", "setsid", "timeout", "nice", "make"}
+            )
+        )
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "env make lint",
+            "sudo make lint",
+            "watch make test",
+            "nohup make build",
+            "setsid make run",
+            "timeout 30 make lint",
+            "nice -n 10 make",
+            "ionice -c 3 make",
+            "chroot /tmp make",
+            "stdbuf -oL make",
+            "xargs make",
+            "bash -c 'rm -rf /'",
+            "sh -c 'rm -rf /'",
+            "zsh -c 'rm -rf /'",
+            "exec rm -rf /",
+        ],
+    )
+    async def test_wrapper_rejected_even_when_allowlisted(self, permissive_tool, command):
+        """Every wrapper form fails with the wrapper-specific error."""
+        result = await permissive_tool.execute(command=command)
+        assert not result.success
+        assert "Wrapper command" in result.error
+        assert "masks what is really being run" in result.error
+
+    @pytest.mark.anyio
+    async def test_wrapper_error_distinct_from_allowlist_miss(self, tool):
+        """``env rm`` and ``rm`` produce different error messages.
+
+        ``env`` is a wrapper, ``rm`` is just not allowlisted — the LLM
+        needs to see the distinction so it learns to drop wrappers
+        rather than retrying the same invocation.
+        """
+        wrapper_result = await tool.execute(command="env rm -rf /")
+        plain_result = await tool.execute(command="rm -rf /")
+
+        assert not wrapper_result.success and not plain_result.success
+        assert "Wrapper command" in wrapper_result.error
+        assert "Wrapper command" not in plain_result.error
+        assert "not on the allowlist" in plain_result.error
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "FOO=bar make lint",
+            "PATH=/usr/local/bin make",
+            "MY_VAR=x PATH=/tmp make lint",
+        ],
+    )
+    async def test_env_assignment_prefix_rejected(self, tool, command):
+        """``NAME=value`` shell env-var assignments are wrapper-equivalent."""
+        result = await tool.execute(command=command)
+        assert not result.success
+        assert "Environment-variable assignment" in result.error
+
+
+class TestShellMetacharacters:
+    """Phase 49.2: reject pipelines / compound commands at the source."""
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("command", "expected_label"),
+        [
+            ("make ; rm -rf /", "command separator"),
+            ("make && rm -rf /", "AND list"),
+            ("make || rm -rf /", "OR list"),
+            ("make | rm", "pipe"),
+            ("make `rm -rf /`", "backtick"),
+            ("make $(rm -rf /)", "command substitution"),
+            ("make > /etc/passwd", "output redirection"),
+            ("make < /etc/shadow", "input redirection"),
+        ],
+    )
+    async def test_shell_metacharacter_rejected(self, tool, command, expected_label):
+        """Each metacharacter form produces an explicit 'Shell metacharacter' error."""
+        result = await tool.execute(command=command)
+        assert not result.success
+        assert "Shell metacharacter" in result.error
+        assert expected_label in result.error
+        # The allowlist error must NOT fire — metacharacter check runs
+        # first so the LLM sees the precise reason.
+        assert "not on the allowlist" not in result.error
+
+    @pytest.mark.anyio
+    async def test_plain_allowlisted_command_still_works(self, custom_tool):
+        """Sanity check: the new checks don't regress the happy path."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "ok\n"
+        mock_result.stderr = ""
+        with mock.patch(
+            "cantrip.agent.tools.run_command.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = await custom_tool.execute(command="echo hello world")
+        assert result.success

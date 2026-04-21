@@ -1,5 +1,6 @@
 """Scoped command runner — runs only pre-approved commands."""
 
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -21,6 +22,60 @@ DEFAULT_ALLOWLIST: frozenset[str] = frozenset(
         "python",
         "python3",
     }
+)
+
+# Commands that wrap another command and mask what's really running.
+# Rejected categorically (Phase 49.2) — even if an operator adds one to
+# the allowlist, "env rm ...", "sudo rm ...", "bash -c 'rm ...'" and
+# friends all stay blocked.  Reported as a distinct error so the LLM
+# can learn to drop the wrapper instead of retrying the same form.
+_WRAPPER_COMMANDS: frozenset[str] = frozenset(
+    {
+        # Process / environment wrappers.
+        "env",
+        "sudo",
+        "doas",
+        "watch",
+        "nohup",
+        "setsid",
+        "timeout",
+        "ionice",
+        "nice",
+        "chroot",
+        "stdbuf",
+        "script",
+        "xargs",
+        "exec",
+        # Shells — ``sh -c "..."`` defeats command inspection entirely.
+        "bash",
+        "sh",
+        "zsh",
+        "dash",
+        "ksh",
+        "fish",
+    }
+)
+
+# ``NAME=value`` tokens appearing at the start of a command are treated
+# by the shell as environment-variable assignments that apply to the
+# following command (``FOO=bar make ...``).  Rejected for the same
+# reason as ``env`` — they mask what's actually being invoked.
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+# Shell metacharacters that would enable pipelines / compound commands
+# under a shell=True interpreter.  We already run with shell=False, so
+# these are ineffective today, but rejecting them (a) makes the error
+# explicit so the LLM learns to split the command into two calls, and
+# (b) keeps a future refactor to shell=True from inheriting a bypass.
+_SHELL_METACHAR_PATTERNS: tuple[tuple[str, str], ...] = (
+    (";", "command separator ';'"),
+    ("&&", "'&&' (AND list)"),
+    ("||", "'||' (OR list)"),
+    ("|", "pipe '|'"),
+    ("`", "backtick command substitution"),
+    ("$(", "'$(...)' command substitution"),
+    (">", "output redirection '>'"),
+    ("<", "input redirection '<'"),
 )
 
 # Hard ceiling on command execution time.
@@ -99,12 +154,58 @@ class RunCommandTool(Tool):
         if not command:
             return ToolResult(success=False, output="", error="Empty command.")
 
+        # Reject shell metacharacters before parsing.  The checks that
+        # follow all inspect ``parts[0]``, so a compound command like
+        # ``make && rm -rf /`` would otherwise slip through the base-
+        # command gate even though ``subprocess.run(parts, ...)`` does
+        # not interpret the ``&&`` (Phase 49.2).
+        for needle, label in _SHELL_METACHAR_PATTERNS:
+            if needle in command:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=(
+                        f"Shell metacharacter rejected: {label}. "
+                        "Run each command as a separate run_command call."
+                    ),
+                )
+
         try:
             parts = shlex.split(command)
         except ValueError as exc:
             return ToolResult(success=False, output="", error=f"Invalid command syntax: {exc}")
 
+        # Strip leading ``NAME=value`` env-var assignments — the shell
+        # treats them as a wrapper around the following command
+        # (``FOO=bar make lint``).  Reject the prefix rather than
+        # silently running the inner command, so the LLM sees the
+        # exact form it sent.
+        if parts and _ENV_ASSIGNMENT_RE.match(parts[0]):
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Environment-variable assignment '{parts[0]}' is not allowed as a "
+                    "wrapper. Set env vars via the tool's own mechanism, not on the "
+                    "command line."
+                ),
+            )
+
         base = parts[0]
+
+        # Wrapper denylist takes precedence over the allowlist so that
+        # adding ``env`` / ``bash`` to the allowlist (e.g. during local
+        # experimentation) doesn't silently open a bypass.
+        if base in _WRAPPER_COMMANDS:
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Wrapper command '{base}' is blocked — it masks what is really "
+                    "being run. Invoke the underlying command directly."
+                ),
+            )
+
         if base not in self._allowlist:
             allowed = ", ".join(sorted(self._allowlist))
             return ToolResult(

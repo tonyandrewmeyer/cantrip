@@ -4,6 +4,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Security
+- **Wrapper-command denylist in ``RunCommandTool`` — Phase 49.2 ✓.**
+  Defence-in-depth on top of the existing allowlist: ``env``, ``sudo``,
+  ``doas``, ``watch``, ``nohup``, ``setsid``, ``timeout``, ``ionice``,
+  ``nice``, ``chroot``, ``stdbuf``, ``script``, ``xargs``, ``exec``,
+  and every common shell (``bash``/``sh``/``zsh``/``dash``/``ksh``/
+  ``fish``) are now categorically rejected, even if an operator adds
+  one to the allowlist for local debugging.  The error message is
+  distinct from the allowlist-miss error so an LLM learns to drop the
+  wrapper rather than retry.  Also rejects leading ``NAME=value`` env-
+  var assignments (``FOO=bar make ...``) and shell metacharacters
+  (``;``, ``&&``, ``||``, ``|``, backticks, ``$(...)``, ``>``, ``<``).
+  The tool still runs with ``shell=False`` so metacharacters are
+  inert today, but catching them at the source keeps a future
+  ``shell=True`` refactor from inheriting a bypass, and makes the
+  failure mode obvious to the agent.
+
 ### Added
 - **``/cost`` per-category breakdown — Phase 31.4 ✓.**  The cost
   dashboard now groups token usage by task category (``research`` /
