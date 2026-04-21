@@ -266,16 +266,24 @@ class TestCSS:
 
     def test_css_has_markdown_styles(self) -> None:
         css = (_STATIC_DIR / "style.css").read_text()
-        assert ".msg-assistant pre" in css
-        assert ".msg-assistant code" in css
+        # ``.msg-body`` applies to user and assistant alike now that
+        # both render Markdown.
+        assert ".msg-body pre" in css
+        assert ".msg-body code" in css
+        assert ".msg-body table" in css
 
 
 class TestJavaScriptFeatures:
     """Tests for the enhanced JavaScript features."""
 
-    def test_js_has_markdown_renderer(self) -> None:
+    def test_js_appends_message_with_server_rendered_html(self) -> None:
+        """Markdown renders server-side; the browser just injects the HTML."""
         js = (_STATIC_DIR / "cantrip.js").read_text()
-        assert "_renderMarkdown" in js
+        # The old regex renderer must be gone.
+        assert "_renderMarkdown" not in js
+        # ``appendMessage`` takes html + timestamp and ``innerHTML``s the HTML.
+        assert "function appendMessage(role, content, html, timestamp)" in js
+        assert "body.innerHTML = html" in js
 
     def test_js_has_juju_status_fetch(self) -> None:
         js = (_STATIC_DIR / "cantrip.js").read_text()
@@ -837,10 +845,12 @@ class TestWebSocketHandler:
                 assert types_seen == ["thinking", "thinking", "chat_message"]
                 assert frames[0]["data"] == {"active": True}
                 assert frames[1]["data"] == {"active": False}
-                assert frames[2]["data"] == {
-                    "role": "assistant",
-                    "content": "assistant-reply",
-                }
+                assert frames[2]["data"]["role"] == "assistant"
+                assert frames[2]["data"]["content"] == "assistant-reply"
+                # Server pre-renders Markdown and ships the HTML alongside.
+                assert "<p>assistant-reply</p>" in frames[2]["data"]["html"]
+                # A timestamp is included on every chat message.
+                assert frames[2]["data"]["timestamp"].endswith("Z")
                 agent.process_message.assert_awaited_once_with("hi")
                 agent.save_state.assert_called_once()
                 await ws.close()
@@ -914,10 +924,8 @@ class TestWebSocketHandler:
                 types_seen = [f["type"] for f in frames]
                 assert types_seen == ["thinking", "chat_message"]
                 assert frames[0]["data"] == {"active": False}
-                assert frames[1]["data"] == {
-                    "role": "system",
-                    "content": "Cancelled.",
-                }
+                assert frames[1]["data"]["role"] == "system"
+                assert frames[1]["data"]["content"] == "Cancelled."
                 # save_state must NOT be called when the turn is cancelled.
                 agent.save_state.assert_not_called()
                 await ws.close()
@@ -1380,12 +1388,37 @@ class TestApiMessages:
             async with TestClient(TestServer(app)) as client:
                 resp = await client.get("/api/messages")
                 data = await resp.json()
-                assert data == {
-                    "messages": [
-                        {"role": "user", "content": "hello"},
-                        {"role": "assistant", "content": "world"},
-                    ]
-                }
+                messages = data["messages"]
+                assert [m["role"] for m in messages] == ["user", "assistant"]
+                assert [m["content"] for m in messages] == ["hello", "world"]
+                # Every message carries pre-rendered HTML.
+                assert "<p>hello</p>" in messages[0]["html"]
+                assert "<p>world</p>" in messages[1]["html"]
+                # And a timestamp.
+                assert messages[0]["timestamp"]
+                assert messages[1]["timestamp"]
+
+    def test_uses_store_timestamps_when_available(self) -> None:
+        """When the agent has a SQLite store, its persisted timestamps win."""
+        from cantrip.web import server
+
+        agent = _make_agent()
+        store = MagicMock()
+        store.load_messages.return_value = [
+            {"role": "user", "content": "hi", "timestamp": "2026-04-22T08:00:00Z"},
+            {"role": "assistant", "content": "hello", "timestamp": "2026-04-22T08:00:05Z"},
+        ]
+        agent._store = store
+        app = _build_ws_app(agent)
+        app.router.add_get("/api/messages", server._api_messages)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get("/api/messages")
+                data = await resp.json()
+                messages = data["messages"]
+                assert messages[0]["timestamp"] == "2026-04-22T08:00:00Z"
+                assert messages[1]["timestamp"] == "2026-04-22T08:00:05Z"
 
         asyncio.run(_run())
 

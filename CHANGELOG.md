@@ -5,7 +5,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
-- **Web UI polish — Phase 31.13 (partial).** Several small gaps closed:
+- **Web UI chat UX — Phase 31.13 (Bundle B).**  Server-side Markdown
+  rendering via ``markdown-it-py`` (with ``linkify``, ``table``, and
+  ``strikethrough`` enabled) replaces the hand-rolled regex parser in
+  ``cantrip.js`` — chat messages now support tables, proper nested
+  lists, ``*`` bullets, links with ``javascript:`` URLs rejected,
+  autolinked bare URLs, images, and strikethrough.  Every
+  ``chat_message`` broadcast and ``/api/messages`` entry carries
+  ``content`` (raw text), ``html`` (pre-rendered), and ``timestamp``
+  (UTC ISO with ``Z`` suffix — per-turn time formatted HH:MM locally).
+  User messages now render Markdown too (same pipeline, same CSS).
+  Raw HTML is disabled in the renderer so ``<script>`` arrives as
+  escaped text.
+  A new Tool Activity indicator replaces the static "Thinking…"
+  label: ``status_bar_changed`` bus events drive a per-round label
+  update ("⟳ running: charmcraft_pack") so users can see which tool
+  is in flight.  A floating scroll-to-bottom button appears when the
+  user scrolls up, and the auto-scroll-on-new-message heuristic now
+  respects their position — new messages don't yank the viewport
+  back to the bottom while they're reading history.  The chat input
+  switched from ``<input>`` to an auto-growing ``<textarea>`` with
+  Shift+Enter for newlines.
+- **Web UI polish — Phase 31.13 (Bundle A).** Several small gaps closed:
   ``--improve`` is now an explicit error in ``--web`` mode (exit 2 with
   a message pointing at the TUI/CLI path) instead of being silently
   dropped; the Juju Status panel grew a refresh button and ``Alt+R``

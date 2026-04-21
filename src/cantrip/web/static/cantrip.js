@@ -75,9 +75,43 @@ const cantrip = (() => {
       const text = input.value.trim();
       if (!text) return;
       input.value = "";
-      appendMessage("user", text);
+      _autoResizeChatInput();
+      // Echo the user's message immediately — the server doesn't
+      // broadcast it back, so without the echo the chat sits silent
+      // until the assistant reply arrives.  Slash commands do come
+      // back via ``_broadcast_chat``; those cases naturally appear
+      // in addition to this eager echo.
+      _echoUserMessage(text);
       _send("chat_input", { content: text });
     });
+
+    function _echoUserMessage(text) {
+      // Use the server-side renderer's output shape (pre-rendered
+      // HTML + ISO timestamp) so the echoed row matches a real
+      // server-sent message visually.
+      const ts = new Date().toISOString();
+      // Simple client-side render: since the user just typed it,
+      // the content is trusted text — escape-and-paragraph it so
+      // it lines up with server-rendered output.
+      const html = `<p>${_esc(text).replace(/\n/g, "<br>")}</p>`;
+      appendMessage("user", text, html, ts);
+    }
+
+    // Multiline input: Enter submits, Shift+Enter inserts a newline.
+    // Without this every Enter keypress would just drop a newline in
+    // the textarea — fine for long-form text, lousy for fast chat.
+    const input = chatInput();
+    if (input) {
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          chatForm().requestSubmit();
+        }
+      });
+      // Auto-grow the textarea to fit its content, capped so it can't
+      // eat the entire panel.
+      input.addEventListener("input", _autoResizeChatInput);
+    }
 
     // Keyboard shortcuts.
     document.addEventListener("keydown", _handleKeyDown);
@@ -95,6 +129,14 @@ const cantrip = (() => {
     // Poll Juju status every 15 seconds.
     _fetchJujuStatus();
     statusPollTimer = setInterval(_fetchJujuStatus, 15000);
+
+    // Show the scroll-to-bottom button only when the user has
+    // scrolled up; hide it again once they're near the latest row.
+    const scroller = chatMessages();
+    if (scroller) {
+      scroller.addEventListener("scroll", _updateScrollBottomButton);
+      _updateScrollBottomButton();
+    }
   }
 
   function _openSocket() {
@@ -148,7 +190,9 @@ const cantrip = (() => {
   function _dispatch(msg) {
     switch (msg.type) {
       case "chat_message":
-        appendMessage(msg.data.role, msg.data.content);
+        appendMessage(
+          msg.data.role, msg.data.content, msg.data.html, msg.data.timestamp,
+        );
         break;
       case "task_updated":
         updateTask(msg.data);
@@ -186,7 +230,32 @@ const cantrip = (() => {
       case "preflight_failed":
         _preflightFailed(msg.data && msg.data.error);
         break;
+      case "status_bar_changed":
+        _handleStatusBarChanged(msg.data || {});
+        break;
     }
+  }
+
+  // Status-bar activity updates come from the agent's event bus via
+  // ``_publish_activity``.  ``task_label`` carries strings like
+  // ``⟳ running: charmcraft_pack`` between tool calls, letting the
+  // thinking indicator show what the agent is actually doing rather
+  // than a generic "Incanting...".  Empty ``task_label`` means the
+  // activity has ended — revert to the flavour pool on the next
+  // ``thinking`` event.
+  function _handleStatusBarChanged(data) {
+    if (data.task_label === undefined) return;
+    _setThinkingLabel(data.task_label);
+    const footer = document.getElementById("status-label");
+    if (footer) footer.textContent = data.task_label || "";
+  }
+
+  function _setThinkingLabel(label) {
+    const el = thinkingEl();
+    if (!el || el.hidden) return;
+    const labelEl = document.getElementById("thinking-label");
+    if (!labelEl) return;
+    labelEl.textContent = label ? ` ${label}` : ` ${pickFlavourLabel()}…`;
   }
 
   // ── Preflight panel (Phase 31.13) ───────────────────────────────
@@ -273,86 +342,81 @@ const cantrip = (() => {
     list.appendChild(row);
   }
 
-  // ── Markdown rendering ──────────────────────────────────────────
-
-  function _renderMarkdown(text) {
-    if (!text) return "";
-    let html = _esc(text);
-
-    // Code blocks (``` ... ```).
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-      return `<pre><code>${code}</code></pre>`;
-    });
-
-    // Inline code.
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-
-    // Bold.
-    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-
-    // Italic.
-    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-
-    // Headings (### before ## before #).
-    html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
-    html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
-    html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
-
-    // Unordered lists.
-    html = html.replace(/^- (.+)$/gm, "<li>$1</li>");
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
-
-    // Ordered lists.
-    html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
-
-    // Paragraphs: wrap remaining text blocks.
-    html = html.replace(/\n\n/g, "</p><p>");
-    if (!html.startsWith("<")) html = "<p>" + html;
-    if (!html.endsWith(">")) html += "</p>";
-
-    // Clean up empty paragraphs.
-    html = html.replace(/<p>\s*<\/p>/g, "");
-
-    return html;
-  }
-
   // ── Chat rendering ──────────────────────────────────────────────
+  //
+  // Markdown is rendered server-side by ``cantrip.web.markdown`` — the
+  // server sends both ``content`` (the raw text, useful for
+  // accessibility tooling) and ``html`` (the rendered HTML).  We
+  // ``innerHTML`` the HTML directly; the server disables raw HTML in
+  // its renderer so ``<script>`` etc. arrive as escaped text.  When
+  // the HTML field is missing (older server, system-generated local
+  // messages) we fall back to ``textContent`` to stay XSS-safe.
 
-  function appendMessage(role, content) {
+  function appendMessage(role, content, html, timestamp) {
     const container = chatMessages();
     if (!container) return;
 
     const div = document.createElement("div");
     div.className = `msg msg-${role}`;
 
-    const roleLabel = document.createElement("div");
+    const header = document.createElement("div");
+    header.className = "msg-header";
+
+    const roleLabel = document.createElement("span");
     roleLabel.className = "msg-role";
     roleLabel.textContent = role;
-    div.appendChild(roleLabel);
+    header.appendChild(roleLabel);
+
+    if (timestamp) {
+      const time = document.createElement("time");
+      time.className = "msg-time";
+      time.dateTime = timestamp;
+      time.textContent = _formatTimestamp(timestamp);
+      time.title = new Date(timestamp).toLocaleString();
+      header.appendChild(time);
+    }
+
+    div.appendChild(header);
 
     const body = document.createElement("div");
-    if (role === "assistant") {
-      body.innerHTML = _renderMarkdown(content);
+    body.className = "msg-body";
+    if (html) {
+      body.innerHTML = html;
     } else {
       body.textContent = content;
     }
     div.appendChild(body);
 
+    // Only auto-scroll if the user is already near the bottom;
+    // otherwise leave them where they are (the scroll-to-bottom
+    // button will appear so they know there's new content below).
+    const wasAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight
+        < _SCROLL_BOTTOM_THRESHOLD;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    _updateScrollBottomButton();
+  }
+
+  // Format an ISO timestamp as HH:MM in the browser's locale.  Falls
+  // back to the raw string when Date parsing fails so a malformed
+  // stamp doesn't break the chat layout.
+  function _formatTimestamp(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
   function setThinking(active) {
     const el = thinkingEl();
     if (!el) return;
     if (active) {
-      // Preserve the animated dots span; only the trailing text
-      // changes.  A fresh label is picked each time the indicator
-      // switches on, matching the TUI's per-phase re-roll cadence.
-      const dots = el.querySelector(".dots");
-      el.textContent = "";
-      if (dots) el.appendChild(dots);
-      el.appendChild(document.createTextNode(` ${pickFlavourLabel()}…`));
+      // Write into the dedicated label span so the cancel button
+      // and animated dots aren't disturbed.  A fresh flavour is
+      // picked each time the indicator switches on, matching the
+      // TUI's per-phase re-roll cadence.
+      const label = document.getElementById("thinking-label");
+      if (label) label.textContent = ` ${pickFlavourLabel()}…`;
     }
     el.hidden = !active;
   }
@@ -565,6 +629,37 @@ const cantrip = (() => {
   // and a ``Cancelled.`` system message, so no UI state changes here.
   function cancelTurn() { _send("cancel_request", {}); }
 
+  // Textarea auto-resize — grows with content up to ``max-height``
+  // set in CSS, then scrolls internally.  Reset to one row when the
+  // content is empty so the input doesn't keep the multiline height
+  // forever after submitting.
+  function _autoResizeChatInput() {
+    const input = chatInput();
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+  }
+
+  // Manual scroll-to-bottom — bypasses the "near bottom" heuristic
+  // and always jumps to the latest row.
+  function scrollChatToBottom() {
+    const scroller = chatMessages();
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }
+
+  // Threshold (in pixels) below which we consider the user "at the
+  // bottom" — within one screenful, so the button stays out of the
+  // way when they're actively reading recent messages.
+  const _SCROLL_BOTTOM_THRESHOLD = 120;
+
+  function _updateScrollBottomButton() {
+    const scroller = chatMessages();
+    const btn = document.getElementById("btn-scroll-bottom");
+    if (!scroller || !btn) return;
+    const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    btn.hidden = gap < _SCROLL_BOTTOM_THRESHOLD;
+  }
+
   async function _fetchLogs() {
     const output = logsOutput();
     if (!output) return;
@@ -714,7 +809,9 @@ const cantrip = (() => {
       const data = await resp.json();
       const messages = data.messages || [];
       container.innerHTML = "";
-      for (const m of messages) appendMessage(m.role, m.content);
+      for (const m of messages) {
+        appendMessage(m.role, m.content, m.html, m.timestamp);
+      }
     } catch { /* ignore */ }
   }
 
@@ -872,5 +969,6 @@ const cantrip = (() => {
   return {
     connect, appendMessage, updateTask, replaceAllTasks, setThinking,
     toggleHelp, toggleLogs, toggleGraph, refreshJujuStatus, cancelTurn,
+    scrollChatToBottom,
   };
 })();

@@ -53,15 +53,21 @@
         <div id="resume-transcript" class="resume-transcript" hidden></div>
       </div>
       <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <button type="button" id="btn-scroll-bottom" class="scroll-bottom-btn"
+              aria-label="Scroll to latest message"
+              title="Scroll to latest" hidden
+              onclick="cantrip.scrollChatToBottom()">↓</button>
       <div id="thinking-indicator" role="status" aria-live="polite" hidden>
-        <span class="dots"></span> Thinking&hellip;
+        <span class="dots"></span>
+        <span id="thinking-label"> Thinking&hellip;</span>
         <button type="button" id="btn-cancel" class="cancel-btn"
                 aria-label="Cancel the in-flight request"
                 onclick="cantrip.cancelTurn()">Cancel</button>
       </div>
       <form id="chat-form" autocomplete="off">
-        <input type="text" id="chat-input"
-               placeholder="Describe what you want to build&hellip;" autofocus>
+        <textarea id="chat-input" rows="1"
+                  placeholder="Describe what you want to build&hellip; (Shift+Enter for newline)"
+                  autofocus></textarea>
         <button type="submit">Send</button>
       </form>
     </section>

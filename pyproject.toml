@@ -40,6 +40,7 @@ dependencies = [
     "httpx>=0.27.0",               # HTTP client
     "jinja2>=3.1",                 # Prompt templating
     "mcp>=1.27.0",
+    "markdown-it-py[linkify]>=3.0",  # Web UI server-side Markdown rendering (linkify for autolink)
 ]
 
 [dependency-groups]

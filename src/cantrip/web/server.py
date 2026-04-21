@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import contextlib
+import datetime
 import json
 import logging
 import pathlib
@@ -18,6 +19,7 @@ from cantrip.agent.preflight import DEFAULT_PRESET, PreflightEvent
 from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.ui import events as ui_events
+from cantrip.web import markdown as md_render
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +82,33 @@ def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
         clients.discard(ws)
 
 
+def _now_iso() -> str:
+    """Return the current UTC time as an ISO-8601 string with ``Z`` suffix."""
+    return datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
+
+
+def _broadcast_chat(app: web.Application, role: str, content: str) -> None:
+    """Broadcast a ``chat_message`` with pre-rendered Markdown HTML.
+
+    Centralising the render call here means every chat message — user,
+    assistant, or system — arrives at the browser as both the source
+    text (``content``) and the rendered HTML (``html``), so the
+    frontend can ``innerHTML`` the HTML without having to run its own
+    Markdown parser.  The timestamp is a UTC ISO string; the browser
+    formats it per-locale.
+    """
+    _broadcast(
+        app,
+        "chat_message",
+        {
+            "role": role,
+            "content": content,
+            "html": md_render.render(content),
+            "timestamp": _now_iso(),
+        },
+    )
+
+
 def _handle_shared_slash_command(app: web.Application, agent: CantripAgent, content: str) -> bool:
     """Dispatch the shared slash commands via :mod:`slash_commands`.
 
@@ -92,8 +121,8 @@ def _handle_shared_slash_command(app: web.Application, agent: CantripAgent, cont
     result = slash_commands.dispatch(agent, content)
     if result is None:
         return False
-    _broadcast(app, "chat_message", {"role": "user", "content": content})
-    _broadcast(app, "chat_message", {"role": "system", "content": result.text})
+    _broadcast_chat(app, "user", content)
+    _broadcast_chat(app, "system", result.text)
     if result.followup is not None:
         asyncio.create_task(_broadcast_followup(app, result.followup))
     return True
@@ -105,7 +134,7 @@ async def _broadcast_followup(app: web.Application, followup) -> None:
         output = await followup
     except Exception as exc:  # noqa: BLE001 - background task; surface any error
         output = f"_Error: marketplace lookup failed: {exc}_"
-    _broadcast(app, "chat_message", {"role": "system", "content": output})
+    _broadcast_chat(app, "system", output)
 
 
 # ---------------------------------------------------------------------------
@@ -168,16 +197,51 @@ async def _api_state(request: web.Request) -> web.Response:
 
 
 async def _api_messages(request: web.Request) -> web.Response:
-    """Return conversation history as JSON for page reload."""
-    agent: CantripAgent = request.app[AGENT_KEY]
+    """Return conversation history as JSON for page reload.
 
-    messages = [
-        {"role": msg.role.value, "content": msg.content}
+    Prefers the SQLite store when available — it carries persisted
+    ``timestamp`` columns so the browser can show when each message
+    arrived.  Falls back to the in-memory ``state.messages`` when the
+    store isn't initialised yet (e.g. first page load before any
+    message is sent); those messages are stamped with the current
+    time since we have no better signal.
+    """
+    agent: CantripAgent = request.app[AGENT_KEY]
+    messages = _messages_with_timestamps(agent)
+    return web.json_response({"messages": messages})
+
+
+def _messages_with_timestamps(agent: CantripAgent) -> list[dict[str, object]]:
+    """Build the ``/api/messages`` payload with a ``timestamp`` per row."""
+    store = getattr(agent, "_store", None)
+    if store is not None:
+        try:
+            rows = store.load_messages()
+        except (OSError, ValueError, RuntimeError):
+            rows = []
+        if rows:
+            return [
+                {
+                    "role": r["role"],
+                    "content": r["content"],
+                    "html": md_render.render(str(r["content"] or "")),
+                    "timestamp": r.get("timestamp"),
+                }
+                for r in rows
+                if r.get("content")
+            ]
+
+    now = _now_iso()
+    return [
+        {
+            "role": msg.role.value,
+            "content": msg.content,
+            "html": md_render.render(msg.content),
+            "timestamp": now,
+        }
         for msg in agent.state.messages
         if msg.content
     ]
-
-    return web.json_response({"messages": messages})
 
 
 async def _api_session_preview(request: web.Request) -> web.Response:
@@ -233,7 +297,7 @@ async def _api_session_decide(request: web.Request) -> web.Response:
         summary = agent.build_resume_summary() if loaded else None
         flag["value"] = True
         if summary:
-            _broadcast(app, "chat_message", {"role": "system", "content": summary})
+            _broadcast_chat(app, "system", summary)
         return web.json_response({"choice": "resume", "summary": summary})
 
     # Fresh path.
@@ -241,7 +305,7 @@ async def _api_session_decide(request: web.Request) -> web.Response:
     flag["value"] = True
     if backup is not None:
         msg = f"Starting fresh — prior session archived to {backup.name}."
-        _broadcast(app, "chat_message", {"role": "system", "content": msg})
+        _broadcast_chat(app, "system", msg)
     return web.json_response({"choice": "fresh", "backup": str(backup) if backup else None})
 
 
@@ -445,46 +509,25 @@ async def _process_chat_turn(app: web.Application, agent: CantripAgent, content:
         try:
             response = await turn_task
             _broadcast(app, "thinking", {"active": False})
-            _broadcast(
-                app,
-                "chat_message",
-                {"role": "assistant", "content": response},
-            )
+            _broadcast_chat(app, "assistant", response)
             agent.save_state()
         except asyncio.CancelledError:
             _broadcast(app, "thinking", {"active": False})
-            _broadcast(
-                app,
-                "chat_message",
-                {"role": "system", "content": "Cancelled."},
-            )
+            _broadcast_chat(app, "system", "Cancelled.")
         except (ProviderRateLimitError, ProviderOverloadedError) as e:
             _broadcast(app, "thinking", {"active": False})
-            _broadcast(
+            _broadcast_chat(
                 app,
-                "chat_message",
-                {
-                    "role": "system",
-                    "content": (
-                        "Provider temporarily unavailable — please wait a moment and try again."
-                    ),
-                },
+                "system",
+                "Provider temporarily unavailable — please wait a moment and try again.",
             )
             log.warning("Provider rate limited: %s", e)
         except ProviderError as e:
             _broadcast(app, "thinking", {"active": False})
-            _broadcast(
-                app,
-                "chat_message",
-                {"role": "system", "content": f"Provider error: {e}"},
-            )
+            _broadcast_chat(app, "system", f"Provider error: {e}")
         except (OSError, ValueError, RuntimeError) as e:
             _broadcast(app, "thinking", {"active": False})
-            _broadcast(
-                app,
-                "chat_message",
-                {"role": "system", "content": f"Error: {e}"},
-            )
+            _broadcast_chat(app, "system", f"Error: {e}")
             log.exception("Error processing message")
         finally:
             app[CURRENT_TURN_KEY]["task"] = None
@@ -524,11 +567,7 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     if agent.active_arena is not None:
                         reveal = agent.handle_arena_pick(content)
                         if reveal is not None:
-                            _broadcast(
-                                request.app,
-                                "chat_message",
-                                {"role": "system", "content": reveal},
-                            )
+                            _broadcast_chat(request.app, "system", reveal)
                             continue
 
                     # Memory slash commands run inline (no LLM), so handle
