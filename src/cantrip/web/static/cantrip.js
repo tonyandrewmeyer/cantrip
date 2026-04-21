@@ -355,6 +355,9 @@ const cantrip = (() => {
   function appendMessage(role, content, html, timestamp) {
     const container = chatMessages();
     if (!container) return;
+    // First real message hides the welcome placeholder.
+    const empty = document.getElementById("chat-empty");
+    if (empty) empty.remove();
 
     const div = document.createElement("div");
     div.className = `msg msg-${role}`;
@@ -506,10 +509,14 @@ const cantrip = (() => {
       const unitCount = Object.keys(app.units || {}).length;
       const statusIcon = { active: "●", waiting: "○", blocked: "◌", error: "✗" }[app.status] || "○";
 
+      // Full message goes into ``title`` so hover shows the whole
+      // thing; CSS truncates the visible line with an ellipsis so
+      // one chatty status message doesn't blow up the card layout.
+      const fullMessage = app.message ? `${app.status}: ${app.message}` : app.status;
       div.innerHTML =
         `<div class="juju-app-name">${_esc(name)}</div>` +
-        `<div class="juju-app-status">${statusIcon} ${_esc(app.status)}` +
-        (app.message ? `: ${_esc(app.message.substring(0, 40))}` : "") + `</div>` +
+        `<div class="juju-app-status" title="${_esc(fullMessage)}">${statusIcon} ${_esc(app.status)}` +
+        (app.message ? `: <span class="juju-app-msg">${_esc(app.message)}</span>` : "") + `</div>` +
         `<div class="juju-app-units">${unitCount} unit${unitCount !== 1 ? "s" : ""}</div>`;
 
       container.appendChild(div);
@@ -663,13 +670,24 @@ const cantrip = (() => {
   async function _fetchLogs() {
     const output = logsOutput();
     if (!output) return;
-    output.textContent = "Loading...";
+    output.textContent = "Loading Juju debug-log…";
     try {
       const resp = await fetch("/api/logs?lines=200&level=INFO");
-      if (!resp.ok) { output.textContent = "Failed to fetch logs."; return; }
+      if (!resp.ok) {
+        output.textContent =
+          `Could not load logs (HTTP ${resp.status}). Is a dev model attached?`;
+        return;
+      }
       const data = await resp.json();
-      output.textContent = (data.lines || []).join("\n") || "No log entries.";
-    } catch { output.textContent = "Error fetching logs."; }
+      if (data.error) {
+        output.textContent = data.error;
+        return;
+      }
+      output.textContent =
+        (data.lines || []).join("\n") || "No log entries at this level.";
+    } catch (e) {
+      output.textContent = `Could not reach the server: ${e.message || e}.`;
+    }
   }
 
   // ── Graph overlay ────────────────────────────────────────────────
@@ -677,13 +695,20 @@ const cantrip = (() => {
   async function _fetchGraph() {
     const view = graphView();
     if (!view) return;
-    view.innerHTML = '<div class="juju-empty">Loading\u2026</div>';
+    view.innerHTML = '<div class="juju-empty">Loading model status\u2026</div>';
     try {
       const resp = await fetch("/api/juju-status");
-      if (!resp.ok) { view.innerHTML = '<div class="juju-empty">Failed to fetch status.</div>'; return; }
+      if (!resp.ok) {
+        view.innerHTML =
+          `<div class="juju-empty">Could not load status (HTTP ${resp.status}).</div>`;
+        return;
+      }
       const data = await resp.json();
       _renderGraph(view, data);
-    } catch { view.innerHTML = '<div class="juju-empty">Error fetching status.</div>'; }
+    } catch (e) {
+      view.innerHTML =
+        `<div class="juju-empty">Could not reach the server: ${_esc(e.message || String(e))}.</div>`;
+    }
   }
 
   function _renderGraph(container, data) {
@@ -808,6 +833,7 @@ const cantrip = (() => {
       if (!resp.ok) return;
       const data = await resp.json();
       const messages = data.messages || [];
+      if (messages.length === 0) return;  // keep the welcome placeholder
       container.innerHTML = "";
       for (const m of messages) {
         appendMessage(m.role, m.content, m.html, m.timestamp);

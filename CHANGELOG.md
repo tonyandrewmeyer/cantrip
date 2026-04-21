@@ -5,6 +5,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Web UI design-quality pass — Phase 31.15.**  Applied the
+  impeccable.style checklist (audit, critique, harden, clarify,
+  distill, layout, polish) without the skills being invocable as
+  slash commands — the SKILL.md reference material was applied
+  manually.  Concrete fixes:
+  a first-run empty state in the chat panel
+  ("Ready when you are.") with an example prompt, hidden once any
+  message arrives; charm name in the header now ellipses at 30ch so
+  long names don't push the controls off-screen; Juju-app status
+  messages display the full text via ``title`` but truncate visibly
+  with CSS ellipsis instead of the old ``substring(0, 40)`` hard
+  cut; header buttons grew to meet WCAG 2.5.5 touch-target guidance
+  (min-width 2.25rem, min-height 1.75rem) and gain an
+  ``aria-expanded="true"`` visual state; log-overlay and graph-overlay
+  error strings now include the HTTP status code and a specific
+  "is a dev model attached?" hint instead of generic "Failed to
+  fetch"; help overlay documents Shift+Enter for newlines; footer
+  hint lists Alt+R; "Start fresh" button gained a ``title`` tooltip
+  explaining that the previous session is archived, not deleted.
+  TUI palette (``cantrip.tcss``) reviewed and found aligned with
+  impeccable's "tokens not hard-coded colours" principle — no
+  changes needed since every colour already resolves through
+  Textual theme variables.
 - **Web UI chat UX — Phase 31.13 (Bundle B).**  Server-side Markdown
   rendering via ``markdown-it-py`` (with ``linkify``, ``table``, and
   ``strikethrough`` enabled) replaces the hand-rolled regex parser in

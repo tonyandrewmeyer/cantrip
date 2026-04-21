@@ -46,13 +46,23 @@
         <div id="resume-banner-summary" class="resume-banner-summary"></div>
         <div class="resume-banner-buttons">
           <button type="button" id="resume-btn-resume" class="resume-btn primary">Resume</button>
-          <button type="button" id="resume-btn-fresh" class="resume-btn">Start fresh</button>
+          <button type="button" id="resume-btn-fresh" class="resume-btn"
+                  title="Archive the previous session to .cantrip.bak-<timestamp> and start new">Start fresh</button>
           <button type="button" id="resume-btn-transcript" class="resume-btn"
                   aria-expanded="false" aria-controls="resume-transcript">View transcript</button>
         </div>
         <div id="resume-transcript" class="resume-transcript" hidden></div>
       </div>
-      <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions">
+        <div id="chat-empty" class="chat-empty">
+          <p class="chat-empty-title">Ready when you are.</p>
+          <p class="chat-empty-hint">
+            Describe the workload you want to charm — for example,
+            <em>a Flask app that speaks PostgreSQL</em> — and
+            Cantrip will plan the charm, write the code, and deploy it.
+          </p>
+        </div>
+      </div>
       <button type="button" id="btn-scroll-bottom" class="scroll-bottom-btn"
               aria-label="Scroll to latest message"
               title="Scroll to latest" hidden
@@ -126,6 +136,7 @@
         <dt><kbd>Alt</kbd>+<kbd>R</kbd></dt><dd>Refresh Juju status (or graph, when open)</dd>
         <dt><kbd>Esc</kbd></dt><dd>Close overlay</dd>
         <dt><kbd>Enter</kbd></dt><dd>Send message</dd>
+        <dt><kbd>Shift</kbd>+<kbd>Enter</kbd></dt><dd>Newline in chat input</dd>
       </dl>
       <p class="overlay-hint">Press Escape to close</p>
     </div>
@@ -156,7 +167,7 @@
   <footer>
     <span id="status-label"></span>
     <span id="status-spacer"></span>
-    <span class="footer-hint">Alt+H Help &middot; Alt+L Logs &middot; Alt+G Graph</span>
+    <span class="footer-hint">Alt+H Help &middot; Alt+L Logs &middot; Alt+G Graph &middot; Alt+R Refresh</span>
   </footer>
 
   <script src="/static/cantrip.js"></script>

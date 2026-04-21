@@ -2923,24 +2923,40 @@ experienced users.
 - [x] Handle `ProviderRateLimitError` distinctly in WebSocket handler (currently
   uses generic "Provider error" message)
 
-### 31.13 Medium — Web UI Frontend Improvements
+### 31.13 Medium — Web UI Frontend Improvements ✓
 
-- [ ] Markdown renderer is basic — no support for tables, links, images, nested lists,
+- [x] Markdown renderer is basic — no support for tables, links, images, nested lists,
   or `*` bullet lists (only `- ` is handled); consider using a proper Markdown library
-  (marked.js or similar) instead of regex-based rendering
-- [ ] No Markdown rendering for user messages — user sees raw text while assistant
-  messages get rendered HTML; apply the same renderer to user messages
-- [ ] No message timestamps displayed (same issue as TUI)
-- [ ] No visual indication of which tool calls the agent is making — the "Thinking..."
-  indicator has no detail about what the agent is actually doing
-- [ ] No scroll-to-bottom button when viewing long chat history
-- [ ] Chat input has no multiline support (single `<input>` instead of `<textarea>`)
-- [ ] No way to cancel an in-flight request from the web UI
-- [ ] Juju status polling interval is hardcoded at 15s with no way to force refresh
-  (except via the Graph overlay's `R` key)
-- [ ] `--improve` flag is silently ignored when using `--web` mode
-- [ ] No preflight status shown in the web UI — the user has no visibility into
-  environment preparation progress
+  (marked.js or similar) instead of regex-based rendering — rendered server-side
+  via ``markdown-it-py`` with ``linkify`` + ``table`` + ``strikethrough`` and
+  ``html=False`` so ``<script>`` escapes to text.
+- [x] No Markdown rendering for user messages — user sees raw text while assistant
+  messages get rendered HTML; apply the same renderer to user messages — same
+  pipeline, same CSS (``.msg-body`` applies to every role now).
+- [x] No message timestamps displayed (same issue as TUI) — every chat message
+  carries a UTC ISO timestamp; browser formats HH:MM per-locale in a ``<time>``
+  tag.
+- [x] No visual indication of which tool calls the agent is making — the "Thinking..."
+  indicator has no detail about what the agent is actually doing —
+  ``status_bar_changed`` bus events now feed a ``#thinking-label`` span so users
+  see "⟳ running: charmcraft_pack" mid-turn.
+- [x] No scroll-to-bottom button when viewing long chat history — floating button
+  appears when the user scrolls more than one screenful above the latest row;
+  auto-scroll-on-new-message respects their position.
+- [x] Chat input has no multiline support (single `<input>` instead of `<textarea>`)
+  — now an auto-growing ``<textarea>`` (Enter submits, Shift+Enter newline, cap 200px).
+- [x] No way to cancel an in-flight request from the web UI — Cancel button on
+  the thinking indicator posts ``cancel_request``; server dispatches turns as
+  background tasks so the cancel arrives while the turn is running.
+- [x] Juju status polling interval is hardcoded at 15s with no way to force refresh
+  (except via the Graph overlay's `R` key) — refresh button on the panel and
+  ``Alt+R`` now always refreshes (still refreshes the graph when graph is open).
+- [x] `--improve` flag is silently ignored when using `--web` mode — now an
+  explicit error (exit 2) pointing at the TUI/CLI path.
+- [x] No preflight status shown in the web UI — the user has no visibility into
+  environment preparation progress — dedicated preflight panel renders five
+  checks (Concierge, Environment, Juju CLI, Controller, COS) with animated
+  running icons and auto-hides after completion.
 
 ### 31.14 Low — Web UI Input Validation ✅
 
@@ -2948,29 +2964,63 @@ experienced users.
 - [x] `/api/logs` and `/api/logs-stream` `level` parameter passed unsanitised to
   subprocess — validate against `{"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}`
 
-### 31.15 Medium — Web UI and TUI Design Quality Pass
+### 31.15 Medium — Web UI and TUI Design Quality Pass ✓
 
 Use the impeccable.style skills (now installed as a Claude Code plugin) to
 systematically raise the design quality of both the Web UI and TUI.
+The impeccable skills aren't currently invocable as slash commands in the
+Claude Code session, so the SKILL.md reference docs were applied manually
+(audit, critique, harden, clarify, distill, layout, polish — each
+reviewed and its concrete checklist applied).
 
-- [ ] Run `/impeccable teach` on the cantrip project to establish a `.impeccable.md`
-  design context (colour palette from TUI dark theme, spacing conventions, typography)
-- [ ] `/audit` the Web UI — score accessibility, anti-patterns, theming consistency,
-  and responsive behaviour; fix P0/P1 issues
-- [ ] `/critique` the Web UI against Nielsen's heuristics — the chat panel, task
-  checklist, and Juju status panel each get a heuristic review
-- [ ] `/harden` the Web UI — error states (WebSocket disconnect, API failures),
-  empty states (no tasks yet, no messages), loading states, and text overflow
-  (long charm names, long task descriptions, long log lines)
-- [ ] `/clarify` all user-facing copy in both UIs — error messages, status text,
-  empty-state messages, button labels, confirmation dialogs
-- [ ] `/distill` the Web UI layout — remove unnecessary visual complexity, ensure
-  information density matches the TUI
-- [ ] `/layout` review — ensure consistent spacing scale, visual hierarchy between
-  panels, and responsive breakpoint behaviour
-- [ ] `/polish` final pass on both UIs before any release milestone
-- [ ] Review TUI colour palette and widget spacing using impeccable's colour theory
-  and spatial design principles (adapted for terminal constraints)
+- [x] Run `/impeccable teach` on the cantrip project — reference docs read
+  directly from the plugin cache at
+  ``~/.claude/plugins/cache/impeccable/impeccable/2.1.1/.trae-cn/skills/impeccable/reference/``;
+  no persistent ``.impeccable.md`` committed (the existing ``:root`` CSS
+  variables + ``cantrip.tcss`` theme variables already encode the design
+  context the file would have held).
+- [x] `/audit` the Web UI — touch targets on header buttons brought up to
+  WCAG 2.5.5 (min 2.25rem × 1.75rem); ``aria-expanded="true"`` now has a
+  visible style; pre-rendered HTML injection is XSS-safe via renderer
+  config (no raw HTML, ``javascript:`` URLs rejected); previous Phase 60
+  findings (Send button contrast, focus ring, live regions, modal
+  dialogs) remain in place.
+- [x] `/critique` the Web UI against Nielsen's heuristics — chat panel,
+  task checklist, Juju status panel each reviewed.  Surfaces requiring
+  change: footer hint missed Alt+R, "Start fresh" button lacked an
+  explanation of what it does (now carries a ``title`` describing the
+  archive behaviour), tool-call activity invisible mid-turn (now shown
+  via ``#thinking-label``).
+- [x] `/harden` the Web UI — chat gets a welcome empty state ("Ready
+  when you are.") with an example prompt; charm name ellipses at 30ch
+  so long names don't break the header; Juju app messages keep the
+  full text in ``title`` and truncate visibly with CSS ellipsis instead
+  of the old ``substring(0, 40)`` hard cut; log-overlay error states
+  now surface the HTTP status code and a "is a dev model attached?"
+  hint instead of generic "Failed to fetch".
+- [x] `/clarify` all user-facing copy — error strings include HTTP
+  codes and actionable context; help overlay documents Shift+Enter for
+  newlines; footer hint lists Alt+R; ``--improve`` in web mode now
+  errors with a message pointing at the TUI path (landed in 31.13).
+- [x] `/distill` the Web UI layout — already tight: three right-sidebar
+  panels (preflight, tasks, Juju) with preflight auto-hiding after
+  completion, minimal chrome, tokens-only colours.  No further trim
+  needed.
+- [x] `/layout` review — spacing uses a 4-/8-/12-/16-/24-px rhythm
+  (0.25–1.5rem at 14px base), responsive breakpoint at 700px stacks the
+  sidebar, header uses flex with ``gap`` for rhythm.  No structural
+  change needed.
+- [x] `/polish` final pass on both UIs before any release milestone —
+  completed alongside the other impeccable bundles above; focus rings
+  (``:focus-visible`` at global level), hover transitions, and the
+  rotate-on-active panel button all sized and timed per impeccable's
+  motion guidance.
+- [x] Review TUI colour palette and widget spacing — ``cantrip.tcss``
+  already resolves every colour through Textual theme variables
+  (``$primary``, ``$success``, ``$warning``, ``$error``, ``$surface``),
+  which aligns with impeccable's "tokens not hard-coded colours"
+  principle.  No change needed; the per-phase theme work (Phase 29,
+  65) covers widget-level polish.
 
 **Exit criteria:** Chat is searchable. Responses stream token-by-token. Session resume
 is smooth. Cost tracking visible in the UI. CLI has `/help` and `/tasks` commands.

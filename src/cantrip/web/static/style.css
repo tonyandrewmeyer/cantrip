@@ -72,7 +72,12 @@ header h1 {
 .header-right { display: flex; align-items: center; gap: 0.5rem; }
 
 .header-btn {
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -82,9 +87,18 @@ header h1 {
 }
 
 .header-btn:hover { color: var(--text); border-color: var(--accent); }
+.header-btn[aria-expanded="true"] {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--bg-surface);
+}
 
 .charm-name {
   color: var(--text-muted);
+  max-width: 30ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-dot {
@@ -133,6 +147,29 @@ main {
   overflow-y: auto;
   padding: 1rem;
 }
+
+.chat-empty {
+  max-width: 36rem;
+  margin: 2rem auto;
+  padding: 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.chat-empty-title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 0.5rem;
+}
+
+.chat-empty-hint {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.chat-empty-hint em { color: var(--text); font-style: italic; }
 
 /* Floating scroll-to-bottom button.  Shows when the user scrolls up
    and a new message arrives, then disappears once they're back near
@@ -494,10 +531,22 @@ main {
 .juju-app-name {
   font-weight: 600;
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .juju-app-status {
   color: var(--text-muted);
+  display: flex;
+  gap: 0.25rem;
+}
+
+.juju-app-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .juju-app-units {
