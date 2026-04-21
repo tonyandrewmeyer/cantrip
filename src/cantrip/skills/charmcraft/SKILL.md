@@ -143,6 +143,55 @@ charm-libs:
 - Patch auto-increments for non-breaking changes
 - Libraries go in `lib/charms/{charm_name}/v{X}/{lib_name}.py`
 
+### Libraries on PyPI (`charmlibs-*`)
+
+A growing subset of the ecosystem has been lifted into the
+`canonical/charmlibs` monorepo and is published to PyPI.  Prefer the
+PyPI package — it's versioned, hash-pinnable, and avoids a `charmcraft
+fetch-libs` step.  The import path changes from `charms.foo.vN.bar`
+to `charmlibs.bar` (or `charmlibs.interfaces.bar`).
+
+| PyPI package | Import | Replaces |
+|--------------|--------|----------|
+| `charmlibs-pathops` | `from charmlibs import pathops` | — (new; pathlib-style API for Pebble containers + local filesystem) |
+| `charmlibs-apt` | `from charmlibs import apt` | `charms.operator_libs_linux.v0.apt` |
+| `charmlibs-snap` | `from charmlibs import snap` | `charms.operator_libs_linux.v*.snap` |
+| `charmlibs-passwd` | `from charmlibs import passwd` | `charms.operator_libs_linux.v*.passwd` |
+| `charmlibs-sysctl` | `from charmlibs import sysctl` | `charms.operator_libs_linux.v*.sysctl` |
+| `charmlibs-systemd` | `from charmlibs import systemd` | `charms.operator_libs_linux.v*.systemd` |
+| `charmlibs-nginx-k8s` | `from charmlibs import nginx_k8s` | Charm-side nginx helpers |
+| `charmlibs-interfaces-tls-certificates` | `from charmlibs.interfaces import tls_certificates` | `charms.tls_certificates_interface.v*` |
+| `charmlibs-interfaces-certificate-transfer` | `from charmlibs.interfaces import certificate_transfer` | `charms.certificate_transfer_interface.v*` |
+| `charmlibs-interfaces-otlp` | `from charmlibs.interfaces import otlp` | interface schema only |
+| `charmlibs-interfaces-mcp` | `from charmlibs.interfaces import mcp` | interface schema only |
+| `charmlibs-interfaces-sloth` | `from charmlibs.interfaces import sloth` | interface schema only |
+| `charmlibs-interfaces-k8s-backup-target` | `from charmlibs.interfaces import k8s_backup_target` | interface schema only |
+| `charmlibs-interfaces-gateway-metadata` | `from charmlibs.interfaces import gateway_metadata` | interface schema only |
+| `cosl` | `import cosl` | COS Lite utilities (topology labels, Loki logging handler, cos-tool bindings) |
+
+Install with uv:
+
+```bash
+uv add charmlibs-pathops
+uv add charmlibs-apt charmlibs-snap  # just the submodules you need
+```
+
+### Libraries that still need `charmcraft fetch-libs`
+
+These charm libraries are **not on PyPI yet** and must be fetched the
+classic way:
+
+- `charms.loki_k8s.*` — log-forwarder library
+- `charms.grafana_k8s.*` — dashboard provider
+- `charms.prometheus_k8s.*` — scrape library
+- `charms.traefik_k8s.*` — ingress requirer
+- `charms.tempo_k8s.*`, `charms.tempo_coordinator_k8s.*`
+- `charms.catalogue_k8s.*`
+- `charms.observability_libs.*`
+- `charms.data_platform_libs.*` (Juju data-platform relation interfaces — PyPI namespace `dpcharmlibs` is reserved but not yet populated)
+- `charms.sdcore_nms_k8s.*`
+- most charm-specific interface libraries (e.g. `charms.kratos_info.*`, `charms.vault_kv.*` etc.) — check their host charm before assuming
+
 ## charmcraft.yaml Reference
 
 ### File Structure

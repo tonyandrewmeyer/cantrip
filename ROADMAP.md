@@ -3553,15 +3553,41 @@ for re-running it live in `design/UPSTREAM_AUDIT.md`.
   `iterate-fix` skill (breakpoint as the cheapest debug tool, deferred
   backlog as a Workload-bucket triage signal).
 
-### 37.4 Medium — Charm Libraries (charmlibs) Changes
+### 37.4 Medium — Charm Libraries (charmlibs) Changes ✓
 
-- [ ] Review recent releases of key charm libraries: `data-platform-libs`,
+- [x] Review recent releases of key charm libraries: `data-platform-libs`,
   `observability-libs`, `traefik-k8s`, `grafana-agent`, `loki-k8s`,
-  `prometheus-k8s`, `catalogue-k8s`
-- [ ] Check for new PyPI-published versions that replace `charmcraft fetch-libs`
-- [ ] Update the `observability` and `relation-data-design` skills if
-  integration patterns have changed
-- [ ] Update system prompt guidance on which libraries to use and how
+  `prometheus-k8s`, `catalogue-k8s`.  Audit recorded in
+  `design/UPSTREAM_AUDIT.md`.  None of these have moved to PyPI —
+  they still require `charmcraft fetch-libs`.
+- [x] Check for new PyPI-published versions that replace `charmcraft fetch-libs`
+  — the `canonical/charmlibs` monorepo publishes `charmlibs-pathops`,
+  `charmlibs-{apt,snap,passwd,sysctl,systemd}` (replacing
+  `operator_libs_linux` submodules), `charmlibs-nginx-k8s`, and the
+  `charmlibs-interfaces-*` family (TLS, certificate-transfer, OTLP,
+  MCP, SLOTH, k8s-backup-target, gateway-metadata).  `cosl` publishes
+  COS topology + logging utilities.  **Major correction:** Cantrip's
+  previous LIB001 PyPI map named ghosts (`loki-k8s-lib`,
+  `traefik-k8s-lib`, `data-platform-libs`, `grafana-k8s-lib` etc. do
+  not exist on PyPI).  Both Python (`src/charmlint/rules/libraries.py`)
+  and Rust (`src/charmlint-rs/src/rules.rs`) rewrites land accurate
+  mappings and split `operator_libs_linux` by submodule.  LIB001's
+  message now includes the new import path so the user can port
+  without guessing; LIB002's message is reframed as "no PyPI
+  equivalent yet; continue using `charmcraft fetch-libs`".
+- [x] Update the `observability` and `relation-data-design` skills if
+  integration patterns have changed — `observability` skill's
+  "fetch libraries from PyPI first" bullet rewritten to enumerate
+  what's actually on PyPI and what still needs fetch-libs.
+- [x] Update system prompt guidance on which libraries to use and how —
+  `### Libraries` block rewritten to name the `charmlibs-*` /
+  `charmlibs-interfaces-*` / `cosl` packages explicitly and flag the
+  Charmhub-only set (loki, grafana, prometheus, traefik, tempo,
+  catalogue, observability-libs, data-platform-libs).
+- [x] Skill coverage table for PyPI libraries added to the `charmcraft`
+  skill (`### Libraries on PyPI (charmlibs-*)` + `### Libraries that
+  still need charmcraft fetch-libs`).  Ingress skill's fetch-lib
+  example gains an explicit "traefik_k8s is not on PyPI" note.
 
 ### 37.5 Low — Charmcraft and Rockcraft Changes
 

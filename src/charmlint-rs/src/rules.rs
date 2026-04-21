@@ -644,25 +644,44 @@ fn check_doc_topic(ctx: &CharmContext, keyword: &str) -> bool {
 // ── LIB (Libraries) ─────────────────────────────────────────────────
 
 fn check_libraries(ctx: &CharmContext) -> Vec<Diagnostic> {
-    let pypi_map: &[(&str, &str)] = &[
-        ("data_platform_libs", "data-platform-libs"),
-        ("grafana_k8s", "grafana-k8s-lib"),
-        ("loki_k8s", "loki-k8s-lib"),
-        ("prometheus_k8s", "prometheus-k8s-lib"),
-        ("tempo_coordinator_k8s", "tempo-coordinator-k8s-lib"),
-        ("tempo_k8s", "tempo-k8s-lib"),
-        ("traefik_k8s", "traefik-k8s-lib"),
-        ("catalogue_k8s", "catalogue-k8s-lib"),
-        ("certificate_transfer_interface", "certificate-transfer-interface-lib"),
-        ("tls_certificates_interface", "tls-certificates-interface-lib"),
-        ("observability_libs", "observability-libs"),
-        ("operator_libs_linux", "operator-libs-linux"),
-        ("sdcore_nms_k8s", "sdcore-nms-k8s-lib"),
+    // Most charm libraries still require `charmcraft fetch-libs`.  A subset
+    // has been lifted into the `canonical/charmlibs` monorepo and published
+    // to PyPI under the `charmlibs-*` namespace; the import path also
+    // changes (`charms.foo.vN.bar` → `charmlibs.bar`).  See
+    // `design/UPSTREAM_AUDIT.md` for the audit log.  Values are
+    // (PyPI package, import hint shown to the user).
+    let pypi_map: &[(&str, &str, &str)] = &[
+        (
+            "certificate_transfer_interface",
+            "charmlibs-interfaces-certificate-transfer",
+            "from charmlibs.interfaces import certificate_transfer",
+        ),
+        (
+            "tls_certificates_interface",
+            "charmlibs-interfaces-tls-certificates",
+            "from charmlibs.interfaces import tls_certificates",
+        ),
     ];
-    let pypi_lookup: std::collections::HashMap<&str, &str> =
-        pypi_map.iter().cloned().collect();
+    let pypi_lookup: std::collections::HashMap<&str, (&str, &str)> = pypi_map
+        .iter()
+        .map(|(k, pkg, hint)| (*k, (*pkg, *hint)))
+        .collect();
 
-    let import_re = Regex::new(r"from\s+charms\.(\w+)\.v\d+\.\w+").unwrap();
+    // operator_libs_linux splits by submodule; each piece is a separate
+    // charmlibs-* PyPI package.
+    let op_libs_submodules: &[(&str, &str, &str)] = &[
+        ("apt", "charmlibs-apt", "from charmlibs import apt"),
+        ("snap", "charmlibs-snap", "from charmlibs import snap"),
+        ("passwd", "charmlibs-passwd", "from charmlibs import passwd"),
+        ("sysctl", "charmlibs-sysctl", "from charmlibs import sysctl"),
+        ("systemd", "charmlibs-systemd", "from charmlibs import systemd"),
+    ];
+    let op_libs_lookup: std::collections::HashMap<&str, (&str, &str)> = op_libs_submodules
+        .iter()
+        .map(|(k, pkg, hint)| (*k, (*pkg, *hint)))
+        .collect();
+
+    let import_re = Regex::new(r"from\s+charms\.(\w+)\.v\d+\.(\w+)").unwrap();
 
     let mut diagnostics = Vec::new();
     let mut seen = HashSet::new();
@@ -670,7 +689,9 @@ fn check_libraries(ctx: &CharmContext) -> Vec<Diagnostic> {
     for (path, content) in &ctx.python_sources {
         for cap in import_re.captures_iter(content) {
             let prefix = cap.get(1).unwrap().as_str();
-            if !seen.insert(prefix.to_string()) {
+            let submodule = cap.get(2).unwrap().as_str();
+            let key = format!("{prefix}.{submodule}");
+            if !seen.insert(key) {
                 continue;
             }
             let line_no = content[..cap.get(0).unwrap().start()]
@@ -679,11 +700,20 @@ fn check_libraries(ctx: &CharmContext) -> Vec<Diagnostic> {
                 .count()
                 + 1;
 
-            if let Some(pypi_name) = pypi_lookup.get(prefix) {
+            let resolved = if prefix == "operator_libs_linux" {
+                op_libs_lookup.get(submodule).copied()
+            } else {
+                pypi_lookup.get(prefix).copied()
+            };
+
+            if let Some((pypi_name, import_hint)) = resolved {
                 diagnostics.push(diag(
                     "LIB001",
                     Severity::Warning,
-                    &format!("charms.{prefix} — replace with PyPI package '{pypi_name}'"),
+                    &format!(
+                        "charms.{prefix}.v*.{submodule} — replace with PyPI package \
+                         '{pypi_name}' ({import_hint})"
+                    ),
                     Some(&path.to_string_lossy()),
                     Some(line_no),
                     Some(&format!("pip install {pypi_name}")),
@@ -692,7 +722,10 @@ fn check_libraries(ctx: &CharmContext) -> Vec<Diagnostic> {
                 diagnostics.push(diag(
                     "LIB002",
                     Severity::Info,
-                    &format!("charms.{prefix} — check PyPI for a published equivalent"),
+                    &format!(
+                        "charms.{prefix}.v*.{submodule} — no PyPI equivalent yet; continue \
+                         using `charmcraft fetch-libs`"
+                    ),
                     Some(&path.to_string_lossy()),
                     Some(line_no),
                     None,
@@ -1169,13 +1202,56 @@ mod tests {
 
     #[test]
     fn known_pypi_lib_flagged_as_lib001() {
+        // tls_certificates_interface has a real PyPI replacement.
+        let dir = charm_with_yaml("name: test\n");
+        write(
+            &dir.path().join("src/charm.py"),
+            "from charms.tls_certificates_interface.v3.tls_certificates \
+             import TLSCertificatesRequiresV3\n",
+        );
+        let diagnostics = run_rules(dir.path());
+        let ids = rule_ids(&diagnostics);
+        assert!(ids.contains("LIB001"));
+        // The message surfaces both the PyPI name and the new import path.
+        let lib001 = diagnostics
+            .iter()
+            .find(|d| d.rule_id == "LIB001")
+            .expect("LIB001 diagnostic");
+        assert!(lib001.message.contains("charmlibs-interfaces-tls-certificates"));
+        assert!(lib001
+            .message
+            .contains("from charmlibs.interfaces import tls_certificates"));
+    }
+
+    #[test]
+    fn operator_libs_linux_submodule_flagged_as_lib001() {
+        // operator_libs_linux splits per submodule — `apt` → `charmlibs-apt`.
+        let dir = charm_with_yaml("name: test\n");
+        write(
+            &dir.path().join("src/charm.py"),
+            "from charms.operator_libs_linux.v0.apt import DebianPackage\n",
+        );
+        let diagnostics = run_rules(dir.path());
+        let ids = rule_ids(&diagnostics);
+        assert!(ids.contains("LIB001"));
+        let lib001 = diagnostics
+            .iter()
+            .find(|d| d.rule_id == "LIB001")
+            .expect("LIB001 diagnostic");
+        assert!(lib001.message.contains("charmlibs-apt"));
+    }
+
+    #[test]
+    fn observability_libs_still_need_fetch_libs() {
+        // grafana_k8s has no PyPI equivalent yet — LIB002, not LIB001.
         let dir = charm_with_yaml("name: test\n");
         write(
             &dir.path().join("src/charm.py"),
             "from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboard\n",
         );
         let ids = rule_ids(&run_rules(dir.path()));
-        assert!(ids.contains("LIB001"));
+        assert!(ids.contains("LIB002"));
+        assert!(!ids.contains("LIB001"));
     }
 
     #[test]

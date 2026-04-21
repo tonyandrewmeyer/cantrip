@@ -283,7 +283,17 @@ Once COS is deployed and related, use the observability tools to investigate cha
 
 4. **Instrument the workload too.** If the workload supports OpenTelemetry or Prometheus metrics natively, expose those alongside charm-level observability.
 
-5. **Fetch libraries from PyPI first.** `ops-tracing` is on PyPI. For Grafana, Loki, and Prometheus libraries, check PyPI; fall back to `charmcraft fetch-libs`.
+5. **Fetch libraries from PyPI first.** `ops-tracing` and `cosl` (COS
+   Lite utilities — topology labels, Loki logging handler, cos-tool
+   bindings) are on PyPI.  The individual observability *charm*
+   libraries (``charms.loki_k8s.*``, ``charms.grafana_k8s.*``,
+   ``charms.prometheus_k8s.*``, ``charms.traefik_k8s.*``,
+   ``charms.tempo_*``, ``charms.catalogue_k8s.*``,
+   ``charms.observability_libs.*``) have **no PyPI equivalent yet**
+   and still require ``charmcraft fetch-libs``.  Interface schemas
+   (``charmlibs-interfaces-*``) and low-level utilities
+   (``charmlibs-apt``, ``charmlibs-pathops``, etc.) are on PyPI — see
+   the ``charmcraft`` skill for the full list.
 
 ## Manual Tracing Instrumentation
 

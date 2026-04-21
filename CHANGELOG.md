@@ -177,6 +177,35 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Changed
+- **Charm-library catch-up — Phase 37.4 ✓.**  Audited the PyPI
+  ecosystem (including the `canonical/charmlibs` monorepo) and found
+  that Cantrip's previous ``LIB001`` PyPI map was **mostly fictional**
+  — names like ``loki-k8s-lib``, ``traefik-k8s-lib``,
+  ``data-platform-libs``, and ``grafana-k8s-lib`` do not exist on
+  PyPI, so the rule was telling users to install ghosts.  Both the
+  Python (``src/charmlint/rules/libraries.py``) and Rust
+  (``src/charmlint-rs/src/rules.rs``) charmlint rules are rewritten
+  to match reality: ``operator_libs_linux`` now splits by submodule
+  (``apt`` → ``charmlibs-apt``, ``snap`` → ``charmlibs-snap``,
+  ``passwd`` / ``sysctl`` / ``systemd`` likewise), and TLS /
+  certificate-transfer interface libs map to the
+  ``charmlibs-interfaces-*`` PyPI packages.  LIB001 messages now
+  include the new import hint (``from charmlibs.interfaces import
+  tls_certificates`` etc.) so the port is a copy-paste; LIB002 is
+  reframed as "no PyPI equivalent yet; continue using ``charmcraft
+  fetch-libs``".  Python and Rust unit tests pin both paths
+  (submodule-aware mapping, observability libs correctly staying on
+  LIB002).  Skills updated: **``charmcraft``** gains a "Libraries on
+  PyPI" table listing every current ``charmlibs-*`` /
+  ``charmlibs-interfaces-*`` / ``cosl`` package with its import and
+  a complementary "still need fetch-libs" list.
+  **``observability``** rewrites the "fetch from PyPI first" bullet
+  to name ``cosl`` and the Charmhub-only observability libs.
+  **``ingress``** notes that ``traefik_k8s`` is not on PyPI.  System
+  prompt's ``### Libraries`` block rewritten with the full accurate
+  split.  One audit-tool test switched from a grafana-k8s example
+  (now correctly LIB002) to a tls_certificates_interface example
+  (still LIB001, with the correct PyPI name).
 - **Concierge + Pebble catch-up — Phase 37.3 ✓.**  Audited
   ``canonical/concierge`` (v1.0.0 → main, cutoff ``aeda3bc``) and
   ``canonical/operator`` Pebble/ops.testing commits.  No Cantrip code

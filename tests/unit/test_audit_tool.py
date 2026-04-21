@@ -165,12 +165,13 @@ class TestCharmAuditTool:
         src = temp_dir / "src"
         src.mkdir()
         (src / "charm.py").write_text(
-            "from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider\n"
+            "from charms.tls_certificates_interface.v3.tls_certificates "
+            "import TLSCertificatesRequiresV3\n"
         )
 
         result = await tool.execute(path=str(temp_dir))
 
-        assert "grafana-k8s-lib" in result.output
+        assert "charmlibs-interfaces-tls-certificates" in result.output
 
 
 # ===================================================================

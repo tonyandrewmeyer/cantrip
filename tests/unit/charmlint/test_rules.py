@@ -97,12 +97,43 @@ class TestLibraryRules:
     """Tests for fetch-libs PyPI checks."""
 
     def test_known_pypi_detected(self, tmp_charm: Path):
+        """tls_certificates_interface has a real PyPI replacement."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            (
+                "from charms.tls_certificates_interface.v3.tls_certificates "
+                "import TLSCertificatesRequiresV3\n"
+            ),
+        )
+        report = lint(tmp_charm)
+        diagnostics = {d.rule_id: d.message for d in report.diagnostics}
+        assert "LIB001" in diagnostics
+        # Ensure the new import hint is surfaced to the user.
+        assert "charmlibs-interfaces-tls-certificates" in diagnostics["LIB001"]
+        assert "from charmlibs.interfaces import tls_certificates" in diagnostics["LIB001"]
+
+    def test_operator_libs_linux_submodule_detected(self, tmp_charm: Path):
+        """``operator_libs_linux`` splits by submodule — ``apt`` → ``charmlibs-apt``."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm, "from charms.operator_libs_linux.v0.apt import DebianPackage\n"
+        )
+        report = lint(tmp_charm)
+        diagnostics = {d.rule_id: d.message for d in report.diagnostics}
+        assert "LIB001" in diagnostics
+        assert "charmlibs-apt" in diagnostics["LIB001"]
+
+    def test_observability_libs_still_need_fetch_libs(self, tmp_charm: Path):
+        """grafana_k8s has no PyPI equivalent yet — LIB002, not LIB001."""
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         write_charm_source(
             tmp_charm, "from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboard\n"
         )
         report = lint(tmp_charm)
-        assert "LIB001" in {d.rule_id for d in report.diagnostics}
+        rule_ids = {d.rule_id for d in report.diagnostics}
+        assert "LIB002" in rule_ids
+        assert "LIB001" not in rule_ids
 
     def test_unknown_lib_detected(self, tmp_charm: Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})

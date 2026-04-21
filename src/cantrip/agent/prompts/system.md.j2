@@ -126,8 +126,22 @@ adequate, and the charm packs successfully. Integration tests are not included i
 — they run separately on request.
 
 ### Libraries
-- Prefer PyPI versions where available
-- Use charmcraft.yaml + fetch-libs for Charmhub libraries
+- Prefer PyPI versions where available.  The ``charmlibs-*`` namespace
+  (``charmlibs-pathops``, ``charmlibs-apt``, ``charmlibs-snap``,
+  ``charmlibs-passwd``, ``charmlibs-sysctl``, ``charmlibs-systemd``,
+  ``charmlibs-nginx-k8s``) replaces the corresponding
+  ``charms.operator_libs_linux.v*.*`` submodules; imports become
+  ``from charmlibs import apt`` etc.  Interface libs under
+  ``charmlibs-interfaces-*`` (tls-certificates, certificate-transfer,
+  otlp, mcp, sloth, k8s-backup-target, gateway-metadata) are on PyPI
+  as ``from charmlibs.interfaces import …``.  ``cosl`` is on PyPI for
+  COS topology labels and the Loki logging handler.  See the
+  ``charmcraft`` skill for the full table.
+- Use charmcraft.yaml + ``charmcraft fetch-libs`` for Charmhub-only
+  libraries — as of Apr 2026 that still covers ``charms.loki_k8s``,
+  ``charms.grafana_k8s``, ``charms.prometheus_k8s``,
+  ``charms.traefik_k8s``, ``charms.tempo_*``, ``charms.catalogue_k8s``,
+  ``charms.observability_libs``, and ``charms.data_platform_libs``.
 - Always include: ops-tracing for observability
 
 ### Dependencies (supply-chain hygiene)

@@ -27,7 +27,9 @@ requires:
 
 ## Step 2: Use the Ingress Library
 
-Install or fetch the `traefik_route` / `ingress` library:
+Fetch the `traefik_route` / `ingress` library.  As of Apr 2026 the
+``traefik_k8s`` libraries are **not on PyPI** — ``charmcraft fetch-libs``
+(or the single-library shortcut below) is the only way to pull them:
 
 ```bash
 charmcraft fetch-lib charms.traefik_k8s.v2.ingress
