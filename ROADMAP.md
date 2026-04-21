@@ -7194,7 +7194,7 @@ completion.
 
 ---
 
-## Phase 66: Transcript and Debug-Log Modals Show Nothing
+## Phase 66: Transcript and Debug-Log Modals Show Nothing ✓
 
 **Goal:** Users report that opening the transcript window
 (``F8`` / ``action_transcript``) and the Juju debug-log window
@@ -7208,40 +7208,53 @@ biting the ``RichLog`` widgets inside ``TranscriptScreen``
 both are nested inside ``Center → Vertical`` containers that the
 filetree widget is not.
 
-### 66.1 High — Reproduce and diagnose
+### 66.1 High — Reproduce and diagnose ✓
 
-- [ ] Repro on a session with a known-good transcript database
+- [x] Repro on a session with a known-good transcript database
   (``.cantrip/`` directory with events).  Confirm whether the
   problem is (a) ``RichLog`` receiving no lines, (b)
   ``RichLog`` receiving lines but having zero rendered height,
   or (c) the modal container collapsing so the output is
-  clipped off-screen.  ``textual console`` + ``Widget.size``
-  prints should tell us which.
-- [ ] Same check for ``LogScreen`` — does the worker return
-  content that never reaches the widget, or does the widget
-  render but with zero visible height?
+  clipped off-screen.  **Root cause was (c):** a 100×40 pilot
+  showed ``#transcript-container`` and ``#log-container`` both
+  resolving to ``height=0`` because their outer ``Center()``
+  wrapper has ``height: auto`` and the inner ``Vertical`` asked
+  for ``height: 80%``/``90%`` of a zero-height parent.  The
+  ``RichLog`` then rendered at the 1-row minimum.
+- [x] Same check for ``LogScreen`` — same diagnosis; ``on_mount``
+  was writing ``"Fetching logs…"`` / ``"No development model
+  connected."`` correctly, the lines just had nowhere to go.
+  ``RelationDetailScreen`` and ``GraphScreen`` have the same
+  latent bug (also fixed in this phase).
 
-### 66.2 High — Fix the height, if that's the cause
+### 66.2 High — Fix the height ✓
 
-- [ ] If 66.1 points to the container sizing, apply the same
-  treatment that rescued ``#charm-files``: add an explicit
-  ``max-height`` (or a concrete ``height`` on the enclosing
-  ``Center``/``Vertical``) so the ``1fr`` allocation actually
-  resolves.  Both modals already set container ``height: 80%``
-  or ``90%``, but the inner ``Vertical`` may collapse under the
-  ``Center`` parent.
-- [ ] Add a smoke test that mounts each modal with fixture data
-  and asserts the output widget has a non-zero row count — so
-  the regression doesn't slip back in.
+- [x] Dropped the redundant ``Center()`` wrapper from
+  ``transcript.py``, ``logs.py``, ``relation.py``, and
+  ``graph.py``.  ``ModalScreen`` already centres its children
+  via its own ``align: center middle``, so the outer ``Center``
+  was never needed — it was silently forcing the percentage
+  heights to resolve against zero.  Container heights on a
+  100×40 pilot now go from 0 → 28–32 rows, and the ``RichLog``
+  widgets from 1 → 26–30 rows.  Uncovered a latent Textual
+  markup error in the transcript footer (``[/ Search]`` parsed
+  as a closing tag once the footer was actually being painted);
+  footer now renders with ``markup=False``.
+- [x] ``tests/unit/test_modal_heights.py`` — one Pilot test per
+  modal mounts it with fixture data and asserts the container
+  has non-zero height, the output widget has ``height > 1``,
+  and at least one line was rendered.  Six tests, all passing.
 
-### 66.3 Medium — Surface an empty-state message
+### 66.3 Medium — Surface an empty-state message ✓
 
-- [ ] If the source genuinely has no content (no juju debug-log
-  lines, no events in the store), render an explicit "No
-  transcript available" / "No log entries yet" string so the
-  window stops looking broken.  Currently ``LogScreen`` does
-  this for the ``EMPTY:`` marker but the modal appears blank
-  before the worker returns; pre-fill the widget on mount.
+- [x] Empty-state messages were already in place — they were
+  just invisible.  Transcript writes ``"No .cantrip session
+  file found."`` when the DB is absent and ``"No conversation
+  messages recorded."`` / ``"No tasks recorded."`` / ``"No
+  events recorded."`` per view.  ``LogScreen`` pre-fills with
+  ``"[dim]Fetching logs…[/dim]"`` before the worker runs and
+  writes ``"No log entries at level {level}."`` on the
+  ``EMPTY:`` branch.  All now visible once 66.2 landed.
 
 ### What this phase is *not*
 
@@ -7327,5 +7340,5 @@ in the commit message.
 | M63: Self-Update Check | 63 ✓ | PyPI polled at startup; TUI, Web, and CLI surface a non-blocking notice with filtered changelog and an installer-aware upgrade command when a newer Cantrip is published |
 | M64: Polite Repo Bootstrap | 64 | Create-GitHub-repo offer moved out of the main chat and suggests ``<workload>-operator`` by default |
 | M65: Right-Panel Tidy | 65 | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
-| M66: Transcript/Log Visible | 66 | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
+| M66: Transcript/Log Visible | 66 ✓ | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

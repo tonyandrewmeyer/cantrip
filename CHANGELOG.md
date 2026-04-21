@@ -4,6 +4,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **Transcript, log, relation, and graph modals rendered blank — Phase 66 ✓.**
+  The four ``ModalScreen`` subclasses wrapped their container in
+  ``Center()``, whose ``height: auto`` caused the inner
+  ``Vertical(height: 80%/90%)`` to resolve against a zero-height parent
+  and collapse to a single row — so every modal looked empty even
+  though ``on_mount`` had written content.  Dropped the redundant
+  ``Center`` wrapper (``ModalScreen`` already centres its children via
+  ``align: center middle``) in ``transcript.py``, ``logs.py``,
+  ``relation.py``, and ``graph.py``.  Fixed a latent Textual markup
+  error that surfaced once the transcript footer was actually painted:
+  ``[/ Search]`` parsed as a closing tag; footer now renders with
+  ``markup=False``.  New ``tests/unit/test_modal_heights.py`` pins the
+  regression: asserts every modal's output widget has non-zero height
+  and at least one rendered line.
+
 ### Documentation
 - **Backfill docs for recent shipped features.**
   ``docs/docs/reference-cli.html`` now describes the

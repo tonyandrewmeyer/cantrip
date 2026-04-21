@@ -6,7 +6,7 @@ import pathlib
 from rich.markup import escape as rich_escape
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Horizontal, Vertical
+from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.screen import ModalScreen
@@ -116,7 +116,7 @@ class TranscriptScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         """Compose the transcript viewer layout."""
-        with Center(), Vertical(id="transcript-container"):
+        with Vertical(id="transcript-container"):
             with Horizontal(id="transcript-title"):
                 yield Static("Session Transcript", classes="title-text")
                 yield Static("[Esc Close]", classes="title-hint")
@@ -130,6 +130,7 @@ class TranscriptScreen(ModalScreen):
             yield Static(
                 "[/ Search]  [v] View  [r] Refresh  [Esc] Close",
                 id="transcript-footer",
+                markup=False,
             )
 
     def on_mount(self) -> None:

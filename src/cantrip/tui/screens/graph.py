@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Horizontal, Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 
@@ -245,7 +245,7 @@ class GraphScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         """Compose the graph layout."""
-        with Center(), Vertical(id="graph-container"):
+        with Vertical(id="graph-container"):
             with Horizontal(id="graph-title"):
                 yield Static("Integration Graph", classes="title-text")
                 yield Static("[Esc Close]", classes="title-hint")

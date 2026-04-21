@@ -6,7 +6,7 @@ import subprocess
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Horizontal, Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 from textual.worker import Worker, WorkerState
@@ -84,7 +84,7 @@ class RelationDetailScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         """Compose the relation detail layout."""
-        with Center(), Vertical(id="relation-container"):
+        with Vertical(id="relation-container"):
             with Horizontal(id="relation-title"):
                 yield Static(
                     f"Relation: {self._endpoint} ↔ {self._related_app}",

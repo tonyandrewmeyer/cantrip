@@ -7,7 +7,7 @@ import subprocess
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Horizontal, Vertical
+from textual.containers import Horizontal, Vertical
 from textual.content import Content
 from textual.reactive import reactive
 from textual.screen import ModalScreen
@@ -113,7 +113,7 @@ class LogScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         """Compose the log viewer layout."""
-        with Center(), Vertical(id="log-container"):
+        with Vertical(id="log-container"):
             with Horizontal(id="log-title"):
                 yield Static("Juju Logs", classes="title-text")
                 yield Static("[Esc Close]", classes="title-hint")
