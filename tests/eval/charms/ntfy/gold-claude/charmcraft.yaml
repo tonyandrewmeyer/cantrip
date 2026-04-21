@@ -13,6 +13,10 @@ build-base: ubuntu@24.04
 platforms:
   amd64:
 
+assumes:
+  - juju >= 3.6
+  - k8s-api
+
 parts:
   charm:
     plugin: charm
