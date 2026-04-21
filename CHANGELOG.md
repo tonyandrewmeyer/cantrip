@@ -72,6 +72,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   task.  Eight regression tests cover the new rejections.
 
 ### Added
+- **Three new skills + CI scanner — Phase 34.3 + 34.4.**
+  ``iterate-fix`` formalises the deploy-test-debug retry loop: when to
+  run, how to triage failures by bucket (Environment / Deployment /
+  Workload / Test) and severity, a three-attempt-per-failure budget,
+  exit conditions, escalation triggers, and a structured
+  ``[iterate-fix] attempt N/max`` end-of-iteration block.
+  ``skill-writer`` documents how to author a new ``SKILL.md`` —
+  frontmatter contract, depth gates (one subject per skill, split at
+  500+ lines), ``EVAL.md`` scenarios, citation conventions, and
+  prompt-injection hygiene.  ``skill-scanner`` describes the audit
+  checks (prompt-injection phrases, unscoped authority, description
+  drift, body length tiers, missing sections, bare external URLs,
+  frontmatter validity).  The actual audit is implemented in
+  ``src/cantrip/agent/skill_scanner.py`` and runs in CI via
+  ``tests/unit/test_skill_scanner.py`` — any ``HIGH`` or ``MEDIUM``
+  finding against a bundled skill fails the build.  19 unit tests
+  cover the checks, and the ``operational-readiness`` description was
+  shortened from 185 characters to ≤120 so the new CI guard starts
+  green.
 - **`main.py` project-identity constants — Phase 25.18.**  The two
   substrings that ``_is_cantrip_source_tree`` checks for in a
   ``pyproject.toml`` now live as named module constants

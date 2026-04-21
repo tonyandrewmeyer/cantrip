@@ -3059,7 +3059,7 @@ the three most common legacy patterns. `make check` passes throughout.
 
 ---
 
-## Phase 34: Code Quality Skills for Charm Generation
+## Phase 34: Code Quality Skills for Charm Generation ✓
 
 **Goal:** Port structured review techniques from getsentry/skills into Cantrip's
 own skill system so that subagents can self-review generated charm code before
@@ -3092,29 +3092,75 @@ phased verification) for reviewing generated charm code.
 - [x] Run as a post-generation review step in BUILD subagents
 - [x] Structured output: file:line, severity, evidence, fix suggestion
 
-### 34.3 Low — Iterative CI Fix Loop
+### 34.3 Low — Iterative CI Fix Loop ✓
 
 Adapt the getsentry/skills `iterate-pr` pattern for Cantrip's deploy-test-debug
 cycle — the autonomous loop that pushes fixes until `juju status` is healthy and
 integration tests pass.
 
-- [ ] Formalise the existing watcher-driven retry loop into a skill with explicit
+- [x] Formalise the existing watcher-driven retry loop into a skill with explicit
   exit conditions (max retries, ask-for-help escalation, stop if environment is
-  broken)
-- [ ] Structured feedback triage: categorise Juju status errors, Loki log errors,
-  and test failures by severity before deciding which to fix first
-- [ ] Track attempts per failure to avoid infinite loops on the same issue
+  broken) — new ``iterate-fix`` skill under
+  ``src/cantrip/skills/iterate-fix/SKILL.md`` covers when to run (follow-up
+  tasks whose titles start with ``[Red/Green retry]``, ``[Acceptance fix]``,
+  ``Diagnose deployment failure:``, or ``[Watcher]``), the exit conditions
+  (green status + originating suite passes, environment-only failure,
+  retry budget exhausted, confirmed intermittent), and the escalation
+  triggers (three attempts with no new hypothesis, shape-shifting
+  failures, out-of-scope charm-library bugs, integration-test contracts
+  needing renegotiation).
+- [x] Structured feedback triage: categorise Juju status errors, Loki log errors,
+  and test failures by severity before deciding which to fix first — the
+  skill's *Triage* section routes each failure into Environment / Deployment
+  / Workload / Test, then ranks within-bucket by blockers → crash-loops →
+  concrete test-assertion messages → intermittents → warnings.
+- [x] Track attempts per failure to avoid infinite loops on the same issue —
+  the *Retry budgets* section defines a three-attempt ceiling per
+  originating failure and lists the signals that the budget is spent
+  (same pytest ID in two retry excerpts, same ``BlockedStatus`` message
+  two attempts running, same Loki traceback signature after a fresh
+  deploy).  Structured end-of-iteration block — ``[iterate-fix] attempt
+  N/max: <outcome>`` — makes the attempt count legible to the next
+  subagent.
 
-### 34.4 Low — Skill Authoring and Scanning
+### 34.4 Low — Skill Authoring and Scanning ✓
 
 Use the getsentry/skills `skill-writer` and `skill-scanner` patterns to improve
 Cantrip's own skill quality.
 
-- [ ] Adapt `skill-writer` workflow for creating new Cantrip skills: source
-  synthesis, depth gates, evaluation prompts (EVAL.md)
-- [ ] Adapt `skill-scanner` to audit Cantrip's existing skills for prompt injection
-  risks, excessive scope, and instruction drift
-- [ ] Run skill-scanner as a CI check when skills are added or modified
+- [x] Adapt `skill-writer` workflow for creating new Cantrip skills: source
+  synthesis, depth gates, evaluation prompts (EVAL.md) — new
+  ``src/cantrip/skills/skill-writer/SKILL.md`` covers frontmatter
+  requirements (``name`` == directory, ``description`` ≤120 chars and
+  non-keyword-soup), body structure (intro + When-to-use + guidance +
+  structured output + scope limit), depth gates (one subject per skill,
+  split at 500+ lines), the ``EVAL.md`` scenario contract, source-material
+  citation conventions, prompt-injection hygiene, and naming rules.
+- [x] Adapt `skill-scanner` to audit Cantrip's existing skills for prompt injection
+  risks, excessive scope, and instruction drift — new
+  ``src/cantrip/skills/skill-scanner/SKILL.md`` documents the checks
+  (prompt-injection phrases, unscoped authority, description drift,
+  body length tiers, missing sections, bare external URLs, user-like
+  text, frontmatter validity).  The *actual* audit is implemented in
+  ``src/cantrip/agent/skill_scanner.py`` so it can run from pytest and
+  from a future CLI; the module exposes ``scan_skill``, ``scan_all``,
+  and ``format_findings`` plus a ``Finding`` dataclass.  Fenced code
+  blocks and HTML comments are stripped before injection/URL checks so
+  the scanner can describe the patterns it detects without triggering
+  itself, and known reference-section headings (``## References``,
+  ``## Resources``, ``## Further reading``, etc.) exempt URLs from the
+  bare-URL check.
+- [x] Run skill-scanner as a CI check when skills are added or modified —
+  ``tests/unit/test_skill_scanner.py::TestBundledSkillsAreClean::test_every_bundled_skill_scans_clean``
+  runs ``scan_all`` against ``src/cantrip/skills/`` and fails the build
+  on any ``HIGH`` or ``MEDIUM`` finding.  19 scanner tests in total,
+  covering the frontmatter checks (``name`` mismatch, empty
+  ``description``, description-too-long), the four parametrised
+  injection phrases, structural section detection, length tiers,
+  URL-in-checks vs URL-in-references, and the formatter.  One bundled
+  skill (``operational-readiness``) had an over-long description; it
+  was shortened as part of this change so the new CI guard starts
+  green.
 
 **Exit criteria:** Security review and bug review skills exist and are wired into
 BUILD subagent guidance. At least one charm build benefits from self-review (a bug

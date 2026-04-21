@@ -1,6 +1,6 @@
 ---
 name: operational-readiness
-description: Implementing operational readiness features — status reporting, health checks, pause/resume, backup/restore, diagnostics, upgrade pre-flight, certificate management, and secret rotation
+description: Charm operational-readiness features — status, health, pause/resume, backup/restore, diagnostics, upgrades, certs, secret rotation
 ---
 
 # Operational Readiness
