@@ -3442,13 +3442,39 @@ for re-running it live in `design/UPSTREAM_AUDIT.md`.
   pinned to `jubilant>=1.8,<2` (was `>=1.8.0` with no ceiling) to lock
   in the API-stable 1.x major and avoid silent breakage on a future v2.
 
-### 37.3 Medium — Concierge and Pebble Changes
+### 37.3 Medium — Concierge and Pebble Changes ✓
 
-- [ ] Review `jnsgruk/concierge` for new features or changed deployment patterns
-- [ ] Review Pebble client changes (bundled with ops) — new layer options,
-  check types, notice handling, file push/pull changes
-- [ ] Update Cantrip's Concierge integration (`src/cantrip/agent/preflight.py`)
-  and Pebble layer generation guidance
+- [x] Review `canonical/concierge` for new features or changed deployment
+  patterns.  Audit cutoff `aeda3bc` recorded in `design/UPSTREAM_AUDIT.md`.
+  Repo moved from `jnsgruk/concierge` → `canonical/concierge`; always
+  clone the canonical one now.  The behaviour fixes since Cantrip's last
+  sweep (`0ddf24c` — scoped `/run/containerd` wipe; `86b1b21` — treat
+  non-active snaps as installed; `6307920` — merge provider credentials)
+  apply transparently to Cantrip's preflight.  Three features worth
+  surfacing to users (not Cantrip code): `--dry-run` on
+  `prepare`/`restore` (`bebf251`), per-provider `image-registry` block
+  with `$VAR` interpolation (`d844183`), and `extra-bootstrap-args` on
+  the `juju` section (`4d6726c`) — now documented in the `concierge`
+  skill.
+- [x] Review Pebble client changes (bundled with ops) — new layer options,
+  check types, notice handling, file push/pull changes.  Very little churn
+  in `ops/pebble.py` itself (`0ce8a0f`, `379d013` are transparent fixes).
+  The live-impact changes are in `ops.testing` (Scenario): `61e606e`
+  enables plain `breakpoint()` inside `testing.Context.run` (zero-deploy
+  debug loop); `55c41eb` autoloads charmcraft extension metadata so
+  12-factor PaaS charms Just Work in Scenario; `706b667` lets
+  `State.get_relation` accept a relation object.  `5e752be` in `ops`
+  proper now logs the total deferred-event count per hook — a backlog
+  signal worth flagging during Workload-bucket triage.
+- [x] Update Cantrip's Concierge integration (`src/cantrip/agent/preflight.py`)
+  and Pebble layer generation guidance — no code changes to preflight
+  warranted (the `_WARMUP_CONFIG` + `--preset` path still composes
+  correctly against modern Concierge); the new Concierge surfaces land
+  in the `concierge` skill rather than Cantrip's runtime.  Scenario
+  changes land in the `scenario-tests` skill (breakpoint section, new
+  `get_relation` ergonomic, charmcraft-extension autoload) and
+  `iterate-fix` skill (breakpoint as the cheapest debug tool, deferred
+  backlog as a Workload-bucket triage signal).
 
 ### 37.4 Medium — Charm Libraries (charmlibs) Changes
 

@@ -45,7 +45,11 @@ Source each failure into exactly one bucket:
 - **Workload** — charm deployed but workload crash-loops, HTTP 5xx,
   ``ActiveStatus`` but wrong behaviour.  Check ``loki_query`` for the
   workload logs; check ``juju_ssh`` / ``pebble`` state for container
-  services.
+  services.  Also scan ``juju_debug_log`` at DEBUG level for lines
+  logging how many deferred events are in the queue — ops now emits a
+  total-deferred count per hook.  A growing backlog (dozens, hundreds)
+  almost always points at a deferred handler that never makes
+  progress; fix that before chasing surface symptoms.
 - **Test** — integration or acceptance tests failed.  Read the pytest
   summary, then the actual assertion, then the charm code the assertion
   exercises.  Don't edit the test.
@@ -85,9 +89,16 @@ debugging tools before guessing at fixes:
   (relations, config, secrets) so you can reproduce the failure as a
   Scenario unit test offline — often faster than re-running the full
   deployment.
+- **Plain ``breakpoint()`` in a Scenario test.** ``ops.testing`` no
+  longer rebinds ``sys.breakpointhook`` during ``Context.run``, so you
+  can drop a ``breakpoint()`` into the charm handler and
+  ``uv run pytest -s tests/unit/test_charm.py`` lands you in pdb at
+  the offending line.  No deploy needed — this is the fastest
+  iteration loop once the snapshot is captured.
 
-These tools cost a deploy iteration each but *eliminate* guesswork —
-prefer them over a fourth speculative fix attempt.
+These tools cost a deploy iteration each (except the last, which is
+local) but *eliminate* guesswork — prefer them over a fourth
+speculative fix attempt.
 
 ## Retry budgets
 

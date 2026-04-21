@@ -204,6 +204,43 @@ def test_install_then_config_change():
 
 7. **Equality, not isinstance.** Compare statuses with `==` (e.g. `out.unit_status == testing.ActiveStatus("ready")`) so the message is checked too.
 
+## Passing relation objects to `State.get_relation`
+
+`State.get_relation` accepts either a relation ID or a relation object.
+When you pass the object you submitted with the input `State`, the
+return type is narrowed to the same kind (peer, regular, subordinate):
+
+```python
+rel_in = testing.Relation(endpoint="database", interface="postgresql")
+state_in = testing.State(relations={rel_in})
+state_out = ctx.run(ctx.on.relation_changed(rel_in), state_in)
+
+# Pass the object itself — cleaner than pulling `.id` off first.
+rel_out = state_out.get_relation(rel_in)
+```
+
+## Interactive debugging inside a test
+
+``testing.Context.run`` now leaves ``sys.breakpointhook`` alone, so you
+can drop a plain ``breakpoint()`` call into charm code under test and
+get a pdb session when ``pytest -s tests/unit/test_charm.py`` reaches
+it.  Unlike the live-charm ``Framework.breakpoint()`` + ``juju
+debug-code`` combo, this needs no deployment — useful when you're
+isolating a single state transition.
+
+Remove the breakpoint before committing; CI running without ``-s``
+will hang on a pdb prompt.
+
+## charmcraft extensions in Scenario
+
+For charms that use a ``charmcraft`` extension (the 12-factor
+``paas-charm`` family, for example), Scenario now autoloads the
+extension-expanded metadata, config, and actions the same way
+``charmcraft pack`` does before writing the per-file YAML.  You do not
+need to manually reconstruct the extended metadata in your tests —
+``testing.Context(MyCharm)`` picks it up automatically as long as the
+charm's ``charmcraft.yaml`` is discoverable from the charm class.
+
 ## Capturing live state for regression tests
 
 When a deployed charm misbehaves and you want to write a regression test

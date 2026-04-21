@@ -33,6 +33,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Changed
+- **Concierge + Pebble catch-up — Phase 37.3 ✓.**  Audited
+  ``canonical/concierge`` (v1.0.0 → main, cutoff ``aeda3bc``) and
+  ``canonical/operator`` Pebble/ops.testing commits.  No Cantrip code
+  changes to the preflight (``_WARMUP_CONFIG`` + ``--preset`` still
+  compose against modern Concierge; its behaviour fixes apply
+  transparently once the user's snap is current).  Skill updates:
+  **``concierge``** — document ``--dry-run`` on ``prepare``/``restore``
+  (``bebf251``), the per-provider ``image-registry`` block with
+  ``$VAR`` interpolation for docker.io mirrors (``d844183``), and
+  ``extra-bootstrap-args`` on the ``juju`` section (``4d6726c``).
+  **``scenario-tests``** — plain ``breakpoint()`` is now usable inside
+  ``testing.Context.run`` (``61e606e``, no more rebound
+  ``sys.breakpointhook``); ``State.get_relation`` accepts a relation
+  object with narrowed return type (``706b667``); Scenario autoloads
+  charmcraft extension metadata so 12-factor tests Just Work
+  (``55c41eb``).  **``iterate-fix``** — breakpoint-in-test added as
+  the cheapest debug tool (no deploy), and a growing
+  total-deferred-events count in ``juju debug-log`` (``5e752be``) now
+  flagged as a Workload-bucket triage signal.  ``design/UPSTREAM_AUDIT.md``
+  grows three rows: concierge, a Pebble/testing re-scan of operator, and
+  an explicit note that the Concierge repo moved from
+  ``jnsgruk/concierge`` to ``canonical/concierge``.
 - **Jubilant catch-up — Phase 37.2 ✓.**  Audited
   ``canonical/jubilant`` through release v1.8.0 (cutoff ``e9923ec``,
   recorded in ``design/UPSTREAM_AUDIT.md``).  Two latent bugs in

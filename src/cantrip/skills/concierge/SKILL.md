@@ -65,6 +65,19 @@ concierge restore
 
 **WARNING:** `restore` does NOT account for packages/configuration that existed before `prepare`. It literally reverses the `prepare` operation. If you had LXD installed before running `prepare`, `restore` will remove it.
 
+### Preview mode (`--dry-run`)
+
+Both `prepare` and `restore` accept `--dry-run`, which prints the
+shell commands that *would* run without actually touching the system.
+Useful for reviewing what a preset or custom config will do before
+committing — especially on a machine that already has snaps or a Juju
+controller you don't want clobbered.
+
+```bash
+concierge prepare -p k8s --dry-run
+concierge restore --dry-run
+```
+
 ### Custom Configuration
 
 Create a `concierge.yaml` file in your working directory:
@@ -78,12 +91,20 @@ juju:
     mem: 8G
   model_defaults:
     logging-config: "<root>=INFO"
+  # Arbitrary flags appended to `juju bootstrap`; shell-style splitting.
+  extra-bootstrap-args: --config idle-connection-timeout=90s --auto-upgrade=true
 
 providers:
   microk8s:
     enable: true
     bootstrap: true
     channel: "1.31-strict/stable"
+    # Mirror docker.io when rate limits or corporate proxies bite.
+    # Values interpolate ``$VAR`` / ``${VAR}`` from the environment.
+    image-registry:
+      url: https://mirror.example.com
+      username: ${REGISTRY_USER}
+      password: ${REGISTRY_PASS}
 
   lxd:
     enable: true
@@ -92,6 +113,7 @@ providers:
 
   k8s:
     enable: false
+    # Same image-registry shape also supported on the k8s provider.
 
   gcloud:
     enable: false
