@@ -6565,25 +6565,44 @@ References:
   malformed file means "no opt-out" so a corrupted settings file
   cannot silently hide upgrade prompts
 
-### 63.2 Medium — Changelog extraction and formatting
+### 63.2 Medium — Changelog extraction and formatting ✅
 
-- [ ] Fetch ``CHANGELOG.md`` for the latest version from the GitHub
+- [x] Fetch ``CHANGELOG.md`` for the latest version from the GitHub
   raw URL at the matching tag (e.g.
   ``https://raw.githubusercontent.com/<owner>/cantrip/v{latest}/CHANGELOG.md``)
   via the same ``httpx`` client.  Fall back gracefully when the tag
   doesn't exist yet (pre-release landed on ``main`` but wasn't
-  tagged) — surface the version number without notes
-- [ ] Parse the markdown with a tiny heading-walker (no new dep);
+  tagged) — surface the version number without notes — new
+  ``fetch_changelog(version, *, timeout=3.0)`` returns the raw
+  markdown body or ``None`` on 404 / HTTP error / timeout.  Repo
+  slug defaults to ``tonyandrewmeyer/cantrip`` from
+  ``pyproject.toml`` and is overridable via ``CANTRIP_UPDATE_REPO``
+  for tests
+- [x] Parse the markdown with a tiny heading-walker (no new dep);
   collect every ``## <version>`` section strictly between the
   installed version and the latest, newest first.  Skip
   ``## Unreleased`` — users upgrading to a tagged release don't
-  need to see post-release churn
-- [ ] Render the collected sections inside a Rich ``Panel`` for the
+  need to see post-release churn — ``extract_release_notes(markdown,
+  *, current, latest)`` walks the file line-by-line, distinguishes
+  ``## `` from ``### ``, accepts optional ``v`` prefixes, and
+  returns ``[(version, body), ...]`` newest-first via
+  ``packaging.version`` ordering.  ``## Unreleased`` and any
+  unparseable heading body close the prior section without
+  starting a new one so churn never bleeds into a real release's
+  body
+- [~] Render the collected sections inside a Rich ``Panel`` for the
   TUI/CLI exit prompt; render as HTML via ``markdown-it-py`` (already
   a likely transitive dep — confirm before adding) for the Web
   banner.  Cap the rendered block at 30 lines with a "…
   full notes at {pypi_url}" trailer so four releases of backlog
-  don't swamp the screen
+  don't swamp the screen — rendering belongs in the UI surfaces and
+  lands with 63.4.  ``markdown-it-py`` is confirmed available
+  (4.0.0 transitive); ``UpdateInfo.release_notes_markdown`` ships
+  the concatenated markdown ready for either renderer.  Library
+  applies a 200-line safety cap (``_RELEASE_NOTES_LINE_CAP``) so a
+  pathological CHANGELOG can't bloat the on-disk cache; the UI
+  layer applies its own (30-line) cap when rendering — also part
+  of 63.4
 
 ### 63.3 Medium — Installer detection and upgrade instructions ✅
 
@@ -6664,20 +6683,34 @@ References:
   hand.  ``/update --check`` re-enables it.  Mention both in the
   ``/help`` output and in ``design/UI.md``
 
-### 63.6 Low — Pre-release and yanked-version handling
+### 63.6 Low — Pre-release and yanked-version handling ✅
 
-- [ ] Filter out pre-releases (``1.2.0rc1``) unless the *installed*
+- [x] Filter out pre-releases (``1.2.0rc1``) unless the *installed*
   version is itself a pre-release — users on a stable don't want
-  to be nagged about alphas
-- [ ] Honour PyPI's ``yanked`` flag: if the currently installed
+  to be nagged about alphas — ``_make_info_if_newer`` checks
+  ``latest_parsed.is_prerelease and not current_parsed.is_prerelease``
+  and returns ``None`` in that case.  A user already on a
+  pre-release sees other pre-releases (they've opted into the
+  bleeding edge); a pre-release user upgrading to a stable
+  release also gets nagged correctly
+- [x] Honour PyPI's ``yanked`` flag: if the currently installed
   version is yanked, the notice shifts in tone ("Your installed
   version has been yanked; upgrading to {latest} is recommended"),
   and we skip changelog filtering since there's no guarantee of a
   clean linear history between a yanked release and the next good
-  one
-- [ ] ``packaging.version.parse`` is already a transitive dep via
+  one — ``_is_version_yanked(payload, version)`` walks
+  ``releases[version]`` and returns True if any file is yanked.
+  ``UpdateInfo.installed_yanked`` carries the bool through the
+  cache; the UI layer (63.4) consumes it to switch the prompt's
+  tone.  The yanked-skips-changelog-filtering note is documented
+  for the UI layer; the library still ships notes for normal
+  upgrades because callers may want to show *some* context even
+  to a yanked-version user
+- [x] ``packaging.version.parse`` is already a transitive dep via
   ``httpx``/``pip`` — confirm and pin; we are not adding ``pip``
-  as a runtime dep just for this
+  as a runtime dep just for this — confirmed available (26.0)
+  via the existing dep tree; no change to ``pyproject.toml``
+  required
 
 ### What this phase is *not*
 

@@ -55,23 +55,43 @@ def clean_env(monkeypatch):
     yield
 
 
-def _make_pypi_payload(latest: str, with_releases: bool = True) -> dict:
-    """Build a PyPI JSON payload mirroring the public schema."""
+def _make_pypi_payload(
+    latest: str,
+    with_releases: bool = True,
+    *,
+    yanked_versions: tuple[str, ...] = (),
+    extra_versions: tuple[str, ...] = (),
+) -> dict:
+    """Build a PyPI JSON payload mirroring the public schema.
+
+    *yanked_versions* lists versions whose files should carry
+    ``yanked: true`` — used to exercise the yanked-detection path.
+    *extra_versions* adds additional release entries (file metadata
+    only) so the ``releases`` map can include the installed version
+    as well as ``latest``.
+    """
     payload: dict = {"info": {"version": latest}}
     if with_releases:
-        payload["releases"] = {
-            latest: [
+        releases: dict[str, list[dict]] = {}
+        for version in (latest, *extra_versions):
+            releases[version] = [
                 {
                     "upload_time_iso_8601": "2026-04-01T12:00:00.000000Z",
                     "upload_time": "2026-04-01T12:00:00",
+                    "yanked": version in yanked_versions,
                 }
             ]
-        }
+        payload["releases"] = releases
     return payload
 
 
 def _patch_httpx(payload: dict | None = None, *, side_effect: Exception | None = None):
-    """Build a mock ``httpx.AsyncClient`` context manager."""
+    """Build a mock ``httpx.AsyncClient`` returning the same response per call.
+
+    Use :func:`_patch_httpx_routed` when the test exercises both the
+    PyPI fetch and the GitHub CHANGELOG fetch from a single
+    ``check_for_update`` invocation.
+    """
     body = json.dumps(payload or {}).encode()
     response = httpx.Response(
         status_code=200,
@@ -84,6 +104,45 @@ def _patch_httpx(payload: dict | None = None, *, side_effect: Exception | None =
         client.get = AsyncMock(side_effect=side_effect)
     else:
         client.get = AsyncMock(return_value=response)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    return patch("cantrip.update.httpx.AsyncClient", return_value=client)
+
+
+def _patch_httpx_routed(
+    *,
+    pypi_payload: dict | None = None,
+    changelog_text: str | None = None,
+    changelog_status: int = 200,
+):
+    """Build a mock ``httpx.AsyncClient`` that routes by URL substring.
+
+    Requests whose URL contains ``"/pypi/"`` get the PyPI JSON;
+    everything else (the GitHub raw URL) gets *changelog_text* with
+    *changelog_status*.  Pass ``changelog_text=None`` and
+    ``changelog_status=404`` to simulate the "tag doesn't exist
+    yet" fallback.
+    """
+
+    pypi_body = json.dumps(pypi_payload or {}).encode()
+
+    async def _get(url: str, *_args, **_kwargs):
+        if "/pypi/" in url:
+            return httpx.Response(
+                status_code=200,
+                content=pypi_body,
+                headers={"content-type": "application/json"},
+                request=httpx.Request("GET", url),
+            )
+        return httpx.Response(
+            status_code=changelog_status,
+            content=(changelog_text or "").encode(),
+            headers={"content-type": "text/plain"},
+            request=httpx.Request("GET", url),
+        )
+
+    client = AsyncMock()
+    client.get = AsyncMock(side_effect=_get)
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
     return patch("cantrip.update.httpx.AsyncClient", return_value=client)
@@ -530,3 +589,390 @@ class TestUpgradeCommand:
             lambda: update.InstallMethod.PIPX,
         )
         assert update.upgrade_command() == "pipx upgrade cantrip"
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Changelog parsing
+# ─────────────────────────────────────────────────────────────────
+
+
+_SAMPLE_CHANGELOG = """\
+# Changelog
+
+All notable changes ...
+
+## Unreleased
+
+### Documentation
+- Stuff that hasn't shipped.
+
+## 0.3.0 — 2026-04-01
+
+### Added
+- New feature C.
+
+### Fixed
+- Bug C.
+
+## 0.2.0 (2026-03-15)
+
+### Added
+- New feature B.
+
+## 0.1.5
+
+### Fixed
+- Tiny fix.
+
+## 0.1.0
+
+### Added
+- Initial release.
+"""
+
+
+class TestExtractReleaseNotes:
+    """``extract_release_notes`` walks ``## <version>`` headings correctly."""
+
+    def test_collects_sections_strictly_between_current_and_latest(self):
+        sections = update.extract_release_notes(
+            _SAMPLE_CHANGELOG,
+            current="0.1.5",
+            latest="0.3.0",
+        )
+        versions = [v for v, _ in sections]
+        # Exclusive of current, inclusive of latest: 0.2.0 and 0.3.0.
+        assert versions == ["0.3.0", "0.2.0"]
+
+    def test_skips_unreleased_section(self):
+        sections = update.extract_release_notes(
+            _SAMPLE_CHANGELOG,
+            current="0.1.0",
+            latest="0.3.0",
+        )
+        versions = [v for v, _ in sections]
+        assert "Unreleased" not in versions
+        assert versions == ["0.3.0", "0.2.0", "0.1.5"]
+
+    def test_returns_newest_first(self):
+        sections = update.extract_release_notes(
+            _SAMPLE_CHANGELOG,
+            current="0.1.0",
+            latest="0.3.0",
+        )
+        versions = [v for v, _ in sections]
+        # The CHANGELOG already lists newest first; the helper must
+        # not reverse it on the way out.
+        assert versions == sorted(versions, reverse=True)
+
+    def test_section_body_includes_subsection_headings(self):
+        sections = update.extract_release_notes(
+            _SAMPLE_CHANGELOG,
+            current="0.2.0",
+            latest="0.3.0",
+        )
+        assert len(sections) == 1
+        version, body = sections[0]
+        assert version == "0.3.0"
+        # ``### Added`` and ``### Fixed`` are section bodies, not
+        # new section starts — they should land in the body.
+        assert "### Added" in body
+        assert "### Fixed" in body
+        assert "New feature C." in body
+        # The next ``## 0.2.0`` heading must NOT bleed into 0.3.0's body.
+        assert "0.2.0" not in body
+
+    def test_empty_when_current_equals_latest(self):
+        assert (
+            update.extract_release_notes(
+                _SAMPLE_CHANGELOG,
+                current="0.3.0",
+                latest="0.3.0",
+            )
+            == []
+        )
+
+    def test_empty_when_current_above_latest(self):
+        assert (
+            update.extract_release_notes(
+                _SAMPLE_CHANGELOG,
+                current="0.99.0",
+                latest="0.3.0",
+            )
+            == []
+        )
+
+    def test_invalid_versions_return_empty(self):
+        assert (
+            update.extract_release_notes(
+                _SAMPLE_CHANGELOG,
+                current="not-a-version",
+                latest="0.3.0",
+            )
+            == []
+        )
+
+    def test_v_prefixed_headings_are_recognised(self):
+        markdown = "## v1.0.0\n\n- First.\n\n## v0.9.0\n\n- Older.\n"
+        sections = update.extract_release_notes(
+            markdown,
+            current="0.9.0",
+            latest="1.0.0",
+        )
+        assert [v for v, _ in sections] == ["1.0.0"]
+
+    def test_unparseable_heading_starts_a_skip_window(self):
+        # ``## Unreleased`` body must not bleed into the previous
+        # version's body even if the file is unconventional.
+        markdown = "## 1.0.0\n\n- Done.\n\n## Unreleased\n\n- Nope.\n\n## 0.9.0\n\n- Old.\n"
+        sections = update.extract_release_notes(
+            markdown,
+            current="0.9.0",
+            latest="1.0.0",
+        )
+        assert [v for v, _ in sections] == ["1.0.0"]
+        body = sections[0][1]
+        assert "Done." in body
+        assert "Nope." not in body  # Unreleased was skipped
+        assert "Old." not in body  # 0.9.0 wasn't in range
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Changelog fetch
+# ─────────────────────────────────────────────────────────────────
+
+
+class TestFetchChangelog:
+    """``fetch_changelog`` is gracious when the tag doesn't exist."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_text(self):
+        with _patch_httpx_routed(changelog_text=_SAMPLE_CHANGELOG):
+            text = await update.fetch_changelog("0.3.0")
+        assert text == _SAMPLE_CHANGELOG
+
+    @pytest.mark.asyncio
+    async def test_missing_tag_returns_none(self):
+        with _patch_httpx_routed(changelog_text=None, changelog_status=404):
+            text = await update.fetch_changelog("99.0.0")
+        assert text is None
+
+    @pytest.mark.asyncio
+    async def test_http_error_returns_none(self):
+        # Reuse _patch_httpx (not routed) and force a connect error.
+        with _patch_httpx(side_effect=httpx.ConnectError("DNS")):
+            text = await update.fetch_changelog("0.3.0")
+        assert text is None
+
+    @pytest.mark.asyncio
+    async def test_repo_slug_env_override(self, monkeypatch):
+        captured: list[str] = []
+
+        async def _capture(url: str, *_args, **_kwargs):
+            captured.append(url)
+            return httpx.Response(
+                status_code=200,
+                content=b"# Hi",
+                request=httpx.Request("GET", url),
+            )
+
+        client = AsyncMock()
+        client.get = AsyncMock(side_effect=_capture)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+
+        monkeypatch.setenv(update.REPO_SLUG_ENV, "alt-owner/alt-repo")
+        with patch("cantrip.update.httpx.AsyncClient", return_value=client):
+            await update.fetch_changelog("1.2.3")
+        assert captured
+        assert "alt-owner/alt-repo" in captured[0]
+        assert "v1.2.3" in captured[0]
+
+
+# ─────────────────────────────────────────────────────────────────
+#  check_for_update — integration with notes + filters
+# ─────────────────────────────────────────────────────────────────
+
+
+class TestCheckForUpdateWithNotes:
+    """The end-to-end happy path includes release notes when available."""
+
+    @pytest.mark.asyncio
+    async def test_release_notes_attached_to_update_info(
+        self, isolated_cache, no_settings_optout, monkeypatch
+    ):
+        monkeypatch.setattr(cantrip, "__version__", "0.1.5")
+        with _patch_httpx_routed(
+            pypi_payload=_make_pypi_payload("0.3.0"),
+            changelog_text=_SAMPLE_CHANGELOG,
+        ):
+            info = await update.check_for_update(use_cache=False)
+        assert info is not None
+        assert info.release_notes_markdown is not None
+        # Notes for 0.2.0 and 0.3.0; not 0.1.5 itself or earlier.
+        assert "## 0.3.0" in info.release_notes_markdown
+        assert "## 0.2.0" in info.release_notes_markdown
+        assert "## 0.1.0" not in info.release_notes_markdown
+
+    @pytest.mark.asyncio
+    async def test_changelog_404_leaves_notes_none(
+        self, isolated_cache, no_settings_optout, monkeypatch
+    ):
+        # A pre-release that landed on main but wasn't tagged: PyPI
+        # has the version but GitHub raw 404s.  The user still gets
+        # the version notice; just no inline notes.
+        monkeypatch.setattr(cantrip, "__version__", "0.1.0")
+        with _patch_httpx_routed(
+            pypi_payload=_make_pypi_payload("0.2.0"),
+            changelog_text=None,
+            changelog_status=404,
+        ):
+            info = await update.check_for_update(use_cache=False)
+        assert info is not None
+        assert info.latest == "0.2.0"
+        assert info.release_notes_markdown is None
+
+    @pytest.mark.asyncio
+    async def test_include_release_notes_false_skips_changelog_fetch(
+        self, isolated_cache, no_settings_optout, monkeypatch
+    ):
+        # When ``include_release_notes=False``, only the PyPI fetch
+        # should happen.  Assert by counting client.get calls.
+        monkeypatch.setattr(cantrip, "__version__", "0.1.0")
+        captured_urls: list[str] = []
+
+        async def _route(url: str, *_args, **_kwargs):
+            captured_urls.append(url)
+            return httpx.Response(
+                status_code=200,
+                content=json.dumps(_make_pypi_payload("0.2.0")).encode(),
+                request=httpx.Request("GET", url),
+            )
+
+        client = AsyncMock()
+        client.get = AsyncMock(side_effect=_route)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        with patch("cantrip.update.httpx.AsyncClient", return_value=client):
+            info = await update.check_for_update(use_cache=False, include_release_notes=False)
+        assert info is not None
+        assert info.release_notes_markdown is None
+        # Only one HTTP call — the PyPI fetch — went out.
+        assert len(captured_urls) == 1
+        assert "/pypi/" in captured_urls[0]
+
+    @pytest.mark.asyncio
+    async def test_cache_round_trips_release_notes(
+        self, isolated_cache, no_settings_optout, monkeypatch
+    ):
+        monkeypatch.setattr(cantrip, "__version__", "0.1.5")
+        with _patch_httpx_routed(
+            pypi_payload=_make_pypi_payload("0.3.0"),
+            changelog_text=_SAMPLE_CHANGELOG,
+        ):
+            first = await update.check_for_update(use_cache=False)
+        assert first is not None
+        first_notes = first.release_notes_markdown
+        assert first_notes is not None
+
+        # Second call uses the cache; no network at all.
+        client = AsyncMock()
+        with patch("cantrip.update.httpx.AsyncClient", return_value=client) as p:
+            second = await update.check_for_update()
+        p.assert_not_called()
+        assert second is not None
+        assert second.release_notes_markdown == first_notes
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Pre-release filter (63.6)
+# ─────────────────────────────────────────────────────────────────
+
+
+class TestPrereleaseFilter:
+    """Stable users aren't nagged about pre-releases."""
+
+    @pytest.mark.asyncio
+    async def test_stable_user_not_nagged_about_prerelease(
+        self, isolated_cache, no_settings_optout, monkeypatch
+    ):
+        monkeypatch.setattr(cantrip, "__version__", "1.0.0")
+        with _patch_httpx_routed(pypi_payload=_make_pypi_payload("1.1.0rc1")):
+            info = await update.check_for_update(use_cache=False)
+        assert info is None
+
+    @pytest.mark.asyncio
+    async def test_prerelease_user_sees_other_prereleases(
+        self, isolated_cache, no_settings_optout, monkeypatch
+    ):
+        # A user who installed 1.1.0rc1 has opted into the bleeding
+        # edge — they should see 1.1.0rc2.
+        monkeypatch.setattr(cantrip, "__version__", "1.1.0rc1")
+        with _patch_httpx_routed(pypi_payload=_make_pypi_payload("1.1.0rc2")):
+            info = await update.check_for_update(use_cache=False)
+        assert info is not None
+        assert info.latest == "1.1.0rc2"
+
+    @pytest.mark.asyncio
+    async def test_prerelease_user_sees_stable_release(
+        self, isolated_cache, no_settings_optout, monkeypatch
+    ):
+        # The reverse case: 1.0.0rc1 → 1.0.0 GA always wins.  Already
+        # covered indirectly by an earlier test, asserted explicitly
+        # here so the filter logic is documented end-to-end.
+        monkeypatch.setattr(cantrip, "__version__", "1.0.0rc1")
+        with _patch_httpx_routed(pypi_payload=_make_pypi_payload("1.0.0")):
+            info = await update.check_for_update(use_cache=False)
+        assert info is not None
+        assert info.latest == "1.0.0"
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Yanked detection (63.6)
+# ─────────────────────────────────────────────────────────────────
+
+
+class TestYankedDetection:
+    """``UpdateInfo.installed_yanked`` reflects the PyPI ``yanked`` flag."""
+
+    @pytest.mark.asyncio
+    async def test_yanked_installed_flagged(self, isolated_cache, no_settings_optout, monkeypatch):
+        monkeypatch.setattr(cantrip, "__version__", "0.1.0")
+        payload = _make_pypi_payload(
+            "0.2.0",
+            yanked_versions=("0.1.0",),
+            extra_versions=("0.1.0",),
+        )
+        with _patch_httpx_routed(pypi_payload=payload):
+            info = await update.check_for_update(use_cache=False)
+        assert info is not None
+        assert info.installed_yanked is True
+
+    @pytest.mark.asyncio
+    async def test_unyanked_installed_not_flagged(
+        self, isolated_cache, no_settings_optout, monkeypatch
+    ):
+        monkeypatch.setattr(cantrip, "__version__", "0.1.0")
+        payload = _make_pypi_payload("0.2.0", extra_versions=("0.1.0",))
+        with _patch_httpx_routed(pypi_payload=payload):
+            info = await update.check_for_update(use_cache=False)
+        assert info is not None
+        assert info.installed_yanked is False
+
+    @pytest.mark.asyncio
+    async def test_installed_version_not_in_releases_means_not_yanked(
+        self, isolated_cache, no_settings_optout, monkeypatch
+    ):
+        # Dev install or a release predating PyPI's yank metadata —
+        # ``releases`` doesn't list the installed version at all.
+        monkeypatch.setattr(cantrip, "__version__", "0.0.1.dev0")
+        with _patch_httpx_routed(pypi_payload=_make_pypi_payload("0.2.0")):
+            info = await update.check_for_update(use_cache=False)
+        assert info is not None
+        assert info.installed_yanked is False
+
+    def test_yanked_helper_handles_malformed_payload(self):
+        assert update._is_version_yanked("not a dict", "0.1.0") is False
+        assert update._is_version_yanked({"releases": "not a dict"}, "0.1.0") is False
+        assert update._is_version_yanked({"releases": {"0.1.0": "not a list"}}, "0.1.0") is False
+        assert update._is_version_yanked({"releases": {}}, "0.1.0") is False

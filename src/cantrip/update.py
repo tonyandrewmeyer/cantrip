@@ -55,6 +55,20 @@ log = logging.getLogger(__name__)
 # version so we can extract upload timestamps without a second call.
 _PYPI_URL = "https://pypi.org/pypi/cantrip/json"
 
+# Repo slug for fetching ``CHANGELOG.md`` at the matching tag.  An
+# env-var override exists so tests don't hit the live GitHub raw
+# endpoint.  The default mirrors the ``Repository`` field in
+# ``pyproject.toml``.
+_DEFAULT_REPO_SLUG = "tonyandrewmeyer/cantrip"
+REPO_SLUG_ENV = "CANTRIP_UPDATE_REPO"
+_CHANGELOG_URL_TEMPLATE = "https://raw.githubusercontent.com/{slug}/v{version}/CHANGELOG.md"
+
+# Cap on the number of release-notes lines we keep in the cache so a
+# pathological CHANGELOG can't bloat ``~/.cache/cantrip/update.json``
+# beyond a few KB.  The UI layer applies its own (smaller) cap when
+# rendering — this is just a safety net for the on-disk store.
+_RELEASE_NOTES_LINE_CAP = 200
+
 # Cache location.  Mirrors the marketplace cache at
 # ``~/.cache/cantrip/marketplaces/`` so users with one Cantrip cache
 # directory keep all of its contents in one place.  The cache stores
@@ -93,12 +107,28 @@ class UpdateInfo:
     one (it usually does), or ``None`` when the JSON payload omitted
     the ``releases`` map — the rest of the helper still works
     without it.
+
+    ``release_notes_markdown`` is the concatenated ``## <version>``
+    sections from the project's published ``CHANGELOG.md``, newest
+    first, covering everything strictly between *current* and
+    *latest*.  ``None`` when the changelog couldn't be fetched
+    (untagged release, network failure) or no release notes were
+    found between the two versions — the upgrade prompt should
+    still surface the version number even when notes are absent.
+
+    ``installed_yanked`` is True when PyPI has marked one or more
+    files of the *currently installed* version as yanked.  The UI
+    layer uses this to switch the prompt's tone from "an upgrade is
+    available" to "your installed version has been yanked;
+    upgrading is recommended".
     """
 
     current: str
     latest: str
     pypi_url: str
     release_timestamp: str | None
+    release_notes_markdown: str | None = None
+    installed_yanked: bool = False
 
 
 class InstallMethod(enum.StrEnum):
@@ -166,8 +196,24 @@ def _cache_path() -> pathlib.Path:
     return _cache_dir() / _CACHE_FILE_NAME
 
 
-def _read_cached_latest(now: float | None = None) -> tuple[str, str | None] | None:
-    """Return ``(latest_version, release_timestamp)`` from cache, or None.
+@dataclasses.dataclass(frozen=True)
+class _CachedCheck:
+    """What we persist to ``~/.cache/cantrip/update.json``.
+
+    Lives separately from :class:`UpdateInfo` because the cache is
+    "what PyPI said last time", whereas ``UpdateInfo`` is "what the
+    user should see now".  The version comparison runs at read time
+    so upgrading naturally invalidates the verdict on next launch.
+    """
+
+    latest: str
+    release_timestamp: str | None
+    release_notes_markdown: str | None
+    installed_yanked: bool
+
+
+def _read_cached_check(now: float | None = None) -> _CachedCheck | None:
+    """Return the cached check result, or None when missing / stale / corrupt.
 
     ``None`` covers all the "no usable cache" cases: the file is
     missing, the mtime is outside the TTL window, the JSON is
@@ -192,11 +238,26 @@ def _read_cached_latest(now: float | None = None) -> tuple[str, str | None] | No
     timestamp = data.get("release_timestamp")
     if timestamp is not None and not isinstance(timestamp, str):
         timestamp = None
-    return latest, timestamp
+    notes = data.get("release_notes_markdown")
+    if notes is not None and not isinstance(notes, str):
+        notes = None
+    yanked = bool(data.get("installed_yanked", False))
+    return _CachedCheck(
+        latest=latest,
+        release_timestamp=timestamp,
+        release_notes_markdown=notes,
+        installed_yanked=yanked,
+    )
 
 
-def _write_cache(latest: str, release_timestamp: str | None) -> None:
-    """Persist the latest-known PyPI version so the next startup short-circuits.
+def _write_cache(
+    latest: str,
+    release_timestamp: str | None,
+    *,
+    release_notes_markdown: str | None = None,
+    installed_yanked: bool = False,
+) -> None:
+    """Persist the latest-known PyPI verdict so the next startup short-circuits.
 
     Writes are best-effort: a permission failure on ``~/.cache/`` is
     not interesting enough to surface and would only spam the
@@ -206,7 +267,12 @@ def _write_cache(latest: str, release_timestamp: str | None) -> None:
     path = _cache_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"latest": latest, "release_timestamp": release_timestamp}
+        payload = {
+            "latest": latest,
+            "release_timestamp": release_timestamp,
+            "release_notes_markdown": release_notes_markdown,
+            "installed_yanked": installed_yanked,
+        }
         path.write_text(json.dumps(payload), encoding="utf-8")
     except OSError as exc:
         log.debug("update cache write failed: %s", exc)
@@ -220,23 +286,38 @@ def _make_info_if_newer(
     latest: str,
     *,
     release_timestamp: str | None,
+    release_notes_markdown: str | None = None,
+    installed_yanked: bool = False,
 ) -> UpdateInfo | None:
     """Return :class:`UpdateInfo` when *latest* > *current*, else ``None``.
 
-    ``packaging.version`` parses both PEP 440 releases and pre-release
-    tags so a user on ``1.2.0rc1`` is not nagged about ``1.2.0`` —
-    that follow-up filter lives in subphase 63.6.
+    Applies two filters before returning a hit:
+
+    * **Version comparison.** ``packaging.version`` orders both PEP
+      440 releases and pre-release tags so an out-of-order PyPI
+      response can't surface a downgrade nag.
+    * **Pre-release filter.** A user on a stable release (``1.0.0``)
+      is not nagged about an upcoming pre-release (``1.1.0rc1``).
+      Users *already on* a pre-release see other pre-releases —
+      they've opted into the bleeding edge by installing one.
     """
     try:
-        if pkg_version.parse(latest) <= pkg_version.parse(current):
-            return None
+        latest_parsed = pkg_version.parse(latest)
+        current_parsed = pkg_version.parse(current)
     except pkg_version.InvalidVersion:
+        return None
+    if latest_parsed <= current_parsed:
+        return None
+    # Pre-release filter: only nag stable users about stable releases.
+    if latest_parsed.is_prerelease and not current_parsed.is_prerelease:
         return None
     return UpdateInfo(
         current=current,
         latest=latest,
         pypi_url=f"https://pypi.org/project/cantrip/{latest}/",
         release_timestamp=release_timestamp,
+        release_notes_markdown=release_notes_markdown,
+        installed_yanked=installed_yanked,
     )
 
 
@@ -279,10 +360,183 @@ def _release_timestamp(payload: dict, version_str: str) -> str | None:
     return timestamp if isinstance(timestamp, str) else None
 
 
+def _is_version_yanked(payload: object, version_str: str) -> bool:
+    """Return True when any file of *version_str* is marked yanked on PyPI.
+
+    PyPI's per-file ``yanked`` flag is a single bool; the per-version
+    array can mix yanked and unyanked files (rare in practice — usually
+    every file for a release is yanked together).  We treat *any*
+    yanked file as "this release was yanked" because once one wheel is
+    pulled the release shouldn't be relied on, regardless of whether a
+    sibling sdist survives.
+
+    Returns False when the version isn't in ``releases`` at all
+    (editable installs, dev versions, releases predating PyPI's yank
+    metadata).  A missing version isn't a yank — it's a no-op.
+    """
+    if not isinstance(payload, dict):
+        return False
+    releases = payload.get("releases")
+    if not isinstance(releases, dict):
+        return False
+    files = releases.get(version_str)
+    if not isinstance(files, list) or not files:
+        return False
+    return any(isinstance(f, dict) and bool(f.get("yanked")) for f in files)
+
+
+# ── Changelog fetch and parse ─────────────────────────────────────
+
+
+def _repo_slug() -> str:
+    """Return the GitHub ``owner/repo`` slug for the changelog fetch."""
+    return os.environ.get(REPO_SLUG_ENV) or _DEFAULT_REPO_SLUG
+
+
+def _changelog_url(version: str) -> str:
+    """Build the raw GitHub URL for ``CHANGELOG.md`` at the matching tag."""
+    return _CHANGELOG_URL_TEMPLATE.format(slug=_repo_slug(), version=version)
+
+
+async def fetch_changelog(version: str, *, timeout: float = 3.0) -> str | None:
+    """Fetch the project's ``CHANGELOG.md`` at the ``v{version}`` tag.
+
+    Returns the raw markdown body or ``None`` when:
+
+    - The tag doesn't exist yet (a release landed on ``main`` but
+      wasn't tagged — common for pre-releases).
+    - The HTTP call fails for any reason (timeout, DNS, 404, parse).
+    - The repo slug is missing or malformed.
+
+    Failures log at DEBUG and never propagate so a slow GitHub can
+    only suppress the inline release notes, never crash the check.
+    """
+    url = _changelog_url(version)
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            headers={"User-Agent": f"Cantrip/{cantrip.__version__}"},
+        ) as client:
+            response = await client.get(url)
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.text
+    except httpx.HTTPError as exc:
+        log.debug("CHANGELOG fetch failed for %s: %s", version, exc)
+        return None
+
+
+def _normalise_section_version(heading_text: str) -> str | None:
+    """Extract the version token from a ``## <version>`` heading body.
+
+    The heading body may include trailers like ``— 2024-01-01`` or
+    ``(2024-01-01)``; we keep only the leading token so it parses as
+    a PEP 440 version.  Returns ``None`` when the leading token isn't
+    a recognisable version (e.g. ``Unreleased``).
+    """
+    token = heading_text.strip().split()[0] if heading_text.strip() else ""
+    # Strip a leading ``v`` so both ``## v1.0.0`` and ``## 1.0.0``
+    # parse — some projects prefix every heading with ``v``.
+    if token.startswith("v") or token.startswith("V"):
+        token = token[1:]
+    try:
+        pkg_version.parse(token)
+    except pkg_version.InvalidVersion:
+        return None
+    return token
+
+
+def extract_release_notes(
+    markdown: str,
+    *,
+    current: str,
+    latest: str,
+) -> list[tuple[str, str]]:
+    """Return ``(version, body)`` sections strictly between *current* and *latest*.
+
+    Walks ``## <version>`` headings line-by-line — no markdown-parser
+    dependency.  ``## Unreleased`` (and any other unparseable heading
+    body) is skipped: users upgrading to a tagged release shouldn't
+    see post-release churn.
+
+    Sections are returned newest-first.  The version range is
+    ``current < section_version <= latest`` so the user sees notes
+    for every release they're about to skip past, including the
+    target itself.
+    """
+    try:
+        current_parsed = pkg_version.parse(current)
+        latest_parsed = pkg_version.parse(latest)
+    except pkg_version.InvalidVersion:
+        return []
+
+    sections: list[tuple[str, list[str]]] = []
+    current_section: tuple[str, list[str]] | None = None
+    for line in markdown.splitlines():
+        # Match exactly two leading hashes followed by a space — three
+        # hashes is a subsection (``### Added``) which belongs in the
+        # current section's body.
+        if line.startswith("## ") and not line.startswith("### "):
+            heading = line[3:]
+            version = _normalise_section_version(heading)
+            if version is None:
+                # ``## Unreleased`` or any other non-version heading
+                # ends the previous section without starting a new one.
+                current_section = None
+                continue
+            current_section = (version, [])
+            sections.append(current_section)
+            continue
+        if current_section is not None:
+            current_section[1].append(line)
+
+    relevant: list[tuple[str, str]] = []
+    for version, body_lines in sections:
+        try:
+            section_parsed = pkg_version.parse(version)
+        except pkg_version.InvalidVersion:
+            continue
+        if not (current_parsed < section_parsed <= latest_parsed):
+            continue
+        relevant.append((version, "\n".join(body_lines).strip("\n")))
+
+    # Newest first.  ``packaging.version`` gives a total order, so
+    # sorting by the parsed version is reliable across pre-releases.
+    relevant.sort(key=lambda pair: pkg_version.parse(pair[0]), reverse=True)
+    return relevant
+
+
+def _format_release_notes(sections: list[tuple[str, str]]) -> str | None:
+    """Stitch ``(version, body)`` sections back into one markdown blob.
+
+    Returns ``None`` when the input is empty so the caller can store
+    "no notes" as a real ``None`` in :class:`UpdateInfo` rather than
+    an empty string that's awkward to test for.  Truncates to the
+    cache-side line cap as a safety net against pathological
+    changelogs; the UI layer applies its own (smaller) cap when
+    rendering.
+    """
+    if not sections:
+        return None
+    blocks: list[str] = []
+    for version, body in sections:
+        blocks.append(f"## {version}\n\n{body}".rstrip())
+    text = "\n\n".join(blocks)
+    lines = text.splitlines()
+    if len(lines) > _RELEASE_NOTES_LINE_CAP:
+        truncated = lines[:_RELEASE_NOTES_LINE_CAP]
+        truncated.append("")
+        truncated.append(f"_… release notes truncated at {_RELEASE_NOTES_LINE_CAP} lines._")
+        text = "\n".join(truncated)
+    return text
+
+
 async def check_for_update(
     *,
     timeout: float = 3.0,
     use_cache: bool = True,
+    include_release_notes: bool = True,
 ) -> UpdateInfo | None:
     """Return :class:`UpdateInfo` if PyPI has a newer ``cantrip`` release.
 
@@ -294,10 +548,16 @@ async def check_for_update(
       JSON parse failure) — failures never propagate, only log at
       DEBUG.
     - The installed version is at or above the PyPI ``info.version``.
+    - The newest PyPI release is a pre-release and the user is on a
+      stable release (the pre-release filter from subphase 63.6).
 
     Pass ``use_cache=False`` to bypass the disk cache entirely; the
     ``/update`` slash command in subphase 63.5 will use this path so
     a user who just upgraded can confirm the new version is live.
+    Pass ``include_release_notes=False`` to skip the secondary
+    GitHub fetch when only the version comparison is needed (the
+    Web ``/api/update-status`` endpoint may want this for a leaner
+    payload, for example).
     """
     if update_check_disabled():
         return None
@@ -305,10 +565,15 @@ async def check_for_update(
     current = cantrip.__version__
 
     if use_cache:
-        cached = _read_cached_latest()
+        cached = _read_cached_check()
         if cached is not None:
-            latest, timestamp = cached
-            return _make_info_if_newer(current, latest, release_timestamp=timestamp)
+            return _make_info_if_newer(
+                current,
+                cached.latest,
+                release_timestamp=cached.release_timestamp,
+                release_notes_markdown=cached.release_notes_markdown,
+                installed_yanked=cached.installed_yanked,
+            )
 
     try:
         async with httpx.AsyncClient(
@@ -326,8 +591,48 @@ async def check_for_update(
     if extracted is None:
         return None
     latest, timestamp = extracted
-    _write_cache(latest, timestamp)
-    return _make_info_if_newer(current, latest, release_timestamp=timestamp)
+    yanked = _is_version_yanked(payload, current)
+
+    notes_markdown: str | None = None
+    if include_release_notes:
+        notes_markdown = await _fetch_and_extract_notes(
+            current=current,
+            latest=latest,
+            timeout=timeout,
+        )
+
+    _write_cache(
+        latest,
+        timestamp,
+        release_notes_markdown=notes_markdown,
+        installed_yanked=yanked,
+    )
+    return _make_info_if_newer(
+        current,
+        latest,
+        release_timestamp=timestamp,
+        release_notes_markdown=notes_markdown,
+        installed_yanked=yanked,
+    )
+
+
+async def _fetch_and_extract_notes(
+    *,
+    current: str,
+    latest: str,
+    timeout: float,
+) -> str | None:
+    """Fetch the changelog at ``v{latest}`` and slice out the relevant range.
+
+    Returns the formatted markdown blob (newest-first) or ``None``
+    when the changelog couldn't be fetched or contained no usable
+    sections in the (current, latest] range.
+    """
+    raw = await fetch_changelog(latest, timeout=timeout)
+    if raw is None:
+        return None
+    sections = extract_release_notes(raw, current=current, latest=latest)
+    return _format_release_notes(sections)
 
 
 # ── Installer detection ───────────────────────────────────────────
@@ -406,10 +711,13 @@ __all__ = [
     "CACHE_DIR_ENV",
     "DEFAULT_CACHE_TTL_SECONDS",
     "DISABLE_ENV",
+    "REPO_SLUG_ENV",
     "InstallMethod",
     "UpdateInfo",
     "check_for_update",
     "detect_install_method",
+    "extract_release_notes",
+    "fetch_changelog",
     "update_check_disabled",
     "upgrade_command",
 ]

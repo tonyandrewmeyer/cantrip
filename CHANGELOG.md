@@ -33,6 +33,38 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Added
+- **Changelog extraction + pre-release / yanked filter (Phase 63.2
+  + 63.6).**  ``check_for_update`` now follows the version check
+  with a fetch of ``CHANGELOG.md`` from
+  ``raw.githubusercontent.com/<owner>/cantrip/v{latest}/CHANGELOG.md``.
+  New ``fetch_changelog(version)`` returns the raw markdown body
+  or ``None`` on 404 / HTTP failure (a pre-release that landed on
+  ``main`` but wasn't tagged surfaces the version notice without
+  inline notes).  The repo slug defaults to
+  ``tonyandrewmeyer/cantrip`` and is overridable via
+  ``CANTRIP_UPDATE_REPO`` for tests.  ``extract_release_notes(markdown,
+  current, latest)`` walks ``## <version>`` headings line-by-line
+  (no markdown-parser dependency), distinguishes ``## `` from
+  ``### ``, accepts optional ``v`` prefixes, skips ``## Unreleased``,
+  and returns ``[(version, body), ...]`` newest-first via
+  ``packaging.version`` ordering.  ``UpdateInfo`` grows
+  ``release_notes_markdown`` (concatenated, capped at 200 lines as
+  a cache safety net) and ``installed_yanked`` (true when any file
+  of the installed version is marked yanked on PyPI).
+  ``include_release_notes=False`` skips the GitHub fetch when
+  callers want a leaner payload.  Pre-release filter:
+  ``_make_info_if_newer`` returns ``None`` when ``latest`` is a
+  pre-release and ``current`` is stable — users on a stable don't
+  get nagged about alphas, but pre-release users still see other
+  pre-releases (and stable releases) since they've opted into the
+  bleeding edge.  Cache shape extended to round-trip the new
+  fields.  Covered by 24 new tests in
+  ``tests/unit/test_update.py`` (72 in total): heading-walker
+  edge cases (Unreleased skip, ``v``-prefix, range exclusivity,
+  unparseable headings), changelog fetch happy / 404 / HTTP
+  error / repo-slug override, end-to-end notes attachment +
+  cache round-trip, pre-release filter in both directions,
+  yanked detection with malformed-payload guards.
 - **PyPI version-check + installer detection (Phase 63.1 + 63.3).**
   Library surface for the forthcoming "a newer Cantrip is available"
   notice.  New ``src/cantrip/update.py`` exposes
