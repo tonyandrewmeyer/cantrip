@@ -4423,7 +4423,7 @@ passes throughout.
 
 ---
 
-## Phase 47: Best-of-N Multi-Model Racing for High-Value Tasks
+## Phase 47: Best-of-N Multi-Model Racing for High-Value Tasks ✓
 
 **Goal:** For tasks with objective success criteria (BUILD, DESIGN,
 RED/GREEN), optionally run N models in parallel and pick the winner. Cursor
@@ -6376,7 +6376,7 @@ keybinding regresses.
 
 ---
 
-## Phase 62: On-Theme Activity Labels — "Spellcasting" Instead of "Thinking"
+## Phase 62: On-Theme Activity Labels — "Spellcasting" Instead of "Thinking" ✓
 
 **Goal:** Cantrip is named after the *cantrip* — a small, quickly-cast
 spell — and the product it builds charms for is called *juju*.  Both
