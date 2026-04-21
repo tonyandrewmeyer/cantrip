@@ -114,6 +114,36 @@ Both interfaces use the same logical layout:
 | `Esc` | Close overlay |
 | `Enter` | Send message |
 
+## Slash Commands
+
+Slash commands are the shared cross-surface verb layer.  Every command routed by
+`cantrip.agent.slash_commands.dispatch` is accepted verbatim by the CLI REPL,
+the TUI chat input, and the Web chat panel.  Surface-native verbs (the CLI's
+`/tasks` and `/status`, the TUI's `/feelings`) are each owned by one surface
+and do not flow through the shared dispatcher.
+
+| Verb | Purpose |
+|------|---------|
+| `/help`, `?` | Render the help block (shared verbs + args). |
+| `/memory [scope]` | List memories; `/memory help` shows subcommands. |
+| `/remember <kind> [scope] -- <title> -- <body>` | Write a memory. |
+| `/forget <title>` | Delete a memory by title. |
+| `/mcp` | List configured MCP servers; `/mcp help` for subcommands. |
+| `/cost` | Token usage and estimated cost. |
+| `/arena <prompt>` | Blind A/B compare two models; reply **A** / **B** / **tie** / **skip**. |
+| `/export [html\|jsonl\|markdown] [path]` | Export the live transcript. |
+| `/update` | Force a cache-bypassing PyPI check; prints the result. |
+| `/update --no-check` | Persist `update_check_disabled = true` in `~/.config/cantrip/settings.json`. |
+| `/update --check` | Clear the persistent opt-out. |
+| `/quit`, `/exit` | Leave cantrip cleanly. |
+
+`/update` is non-blocking — it returns a prelude (`"Checking PyPI for a newer
+Cantrip…"`) immediately and then renders the verdict as a follow-up message
+so a slow PyPI doesn't freeze the chat.  The running process still executes
+the old code until restarted; the notice calls that out explicitly.
+`CANTRIP_NO_UPDATE_CHECK=1` at the process level shadows the settings-file
+toggle and stays in force for the session.
+
 ## Alternative Views
 
 ### Integration Graph

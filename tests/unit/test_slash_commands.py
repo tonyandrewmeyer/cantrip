@@ -300,6 +300,132 @@ class TestArena:
         result.followup.close()  # type: ignore[attr-defined]
 
 
+class TestUpdate:
+    """``/update`` dispatch and the toggle flags."""
+
+    def test_bare_update_returns_followup(self, memory_manager: MemoryManager) -> None:
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/update")
+        assert result is not None
+        assert result.followup is not None
+        assert "PyPI" in result.text
+        result.followup.close()  # type: ignore[attr-defined]
+
+    def test_no_check_writes_settings(
+        self, memory_manager: MemoryManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import json
+
+        from cantrip import update
+
+        settings_path = tmp_path / "settings.json"
+        monkeypatch.setattr(update, "_SETTINGS_PATH", settings_path)
+
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/update --no-check")
+        assert result is not None
+        assert "disabled" in result.text
+        written = json.loads(settings_path.read_text())
+        assert written["update_check_disabled"] is True
+
+    def test_check_re_enables_settings(
+        self, memory_manager: MemoryManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import json
+
+        from cantrip import update
+
+        settings_path = tmp_path / "settings.json"
+        settings_path.write_text(json.dumps({"update_check_disabled": True, "other": "keep"}))
+        monkeypatch.setattr(update, "_SETTINGS_PATH", settings_path)
+
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/update --check")
+        assert result is not None
+        assert "re-enabled" in result.text
+        written = json.loads(settings_path.read_text())
+        assert written["update_check_disabled"] is False
+        # Unrelated keys must survive the toggle.
+        assert written["other"] == "keep"
+
+    def test_unknown_flag_shows_usage(self, memory_manager: MemoryManager) -> None:
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/update --weird")
+        assert result is not None
+        assert result.followup is None
+        assert "Usage" in result.text
+
+    def test_extra_tokens_show_usage(self, memory_manager: MemoryManager) -> None:
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/update --check please")
+        assert result is not None
+        assert "Usage" in result.text
+
+
+class TestUpdateFollowup:
+    """The ``/update`` follow-up coroutine hits PyPI cache-bypassed."""
+
+    @pytest.mark.asyncio
+    async def test_latest_version_returns_up_to_date_text(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from unittest.mock import AsyncMock
+
+        from cantrip import update
+
+        monkeypatch.setattr(update, "check_for_update", AsyncMock(return_value=None))
+        monkeypatch.setattr(update, "update_check_disabled", lambda: False)
+        text = await slash_commands._run_update_slash_check()
+        assert "latest" in text
+
+    @pytest.mark.asyncio
+    async def test_newer_release_renders_formatted_notice(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from unittest.mock import AsyncMock
+
+        from cantrip import update
+
+        info = update.UpdateInfo(
+            current="0.1.0",
+            latest="0.2.0",
+            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            release_timestamp=None,
+        )
+        monkeypatch.setattr(update, "check_for_update", AsyncMock(return_value=info))
+        monkeypatch.setattr(update, "update_check_disabled", lambda: False)
+        monkeypatch.setattr(update, "detect_install_method", lambda: update.InstallMethod.UV_TOOL)
+        text = await slash_commands._run_update_slash_check()
+        assert "0.2.0" in text
+        assert "uv tool upgrade cantrip" in text
+        # The running process still executes the old code — the notice
+        # says so explicitly because /update fires mid-session.
+        assert "restart" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_disabled_check_short_circuits(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cantrip import update
+
+        monkeypatch.setattr(update, "update_check_disabled", lambda: True)
+        text = await slash_commands._run_update_slash_check()
+        assert "disabled" in text
+        assert "--check" in text
+
+    @pytest.mark.asyncio
+    async def test_network_error_reports_cleanly(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from unittest.mock import AsyncMock
+
+        from cantrip import update
+
+        monkeypatch.setattr(update, "update_check_disabled", lambda: False)
+        monkeypatch.setattr(
+            update, "check_for_update", AsyncMock(side_effect=OSError("no network"))
+        )
+        text = await slash_commands._run_update_slash_check()
+        assert "Could not reach PyPI" in text
+        assert "no network" in text
+
+
 class TestCommandCatalogue:
     """The shared catalogue drives UI autocomplete and must stay in sync."""
 

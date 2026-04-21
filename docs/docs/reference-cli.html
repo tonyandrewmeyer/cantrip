@@ -581,6 +581,24 @@ cantrip --help</code></pre>
       <code>CANTRIP_NO_UPDATE_CHECK</code> above to disable the check
       entirely.
     </p>
+    <p>
+      The <code>/update</code> slash command forces a cache-bypassing
+      check from inside a session and renders the result in the chat
+      panel. Use it to confirm a newly published release without
+      waiting for the 24-hour cache TTL. Two flags toggle the
+      persistent opt-out without hand-editing
+      <code>settings.json</code>:
+    </p>
+    <ul>
+      <li><code>/update --no-check</code> writes
+        <code>update_check_disabled = true</code>.</li>
+      <li><code>/update --check</code> clears the flag.</li>
+    </ul>
+    <p>
+      The <code>CANTRIP_NO_UPDATE_CHECK</code> environment variable
+      shadows the settings file and stays in force for the running
+      session regardless of <code>/update --check</code>.
+    </p>
   </main>
 </div>
 

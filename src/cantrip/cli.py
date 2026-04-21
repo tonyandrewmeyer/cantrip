@@ -46,6 +46,7 @@ Available commands:
   /remember …     Write a memory (`<kind> [scope] -- <title> -- <body>`)
   /forget <title> Delete a memory by title
   /mcp            List configured MCP servers (run `/mcp help` for subcommands)
+  /update         Check PyPI for a newer release (`--no-check` / `--check` toggle auto-check)
   exit, quit      Exit Cantrip
 """
 

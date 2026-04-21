@@ -6500,7 +6500,7 @@ drift test; a short note in ``design/UI.md`` records the decision.
 
 ---
 
-## Phase 63: Self-Update Check — "A Newer Cantrip Is Available"
+## Phase 63: Self-Update Check — "A Newer Cantrip Is Available" ✅
 
 **Goal:** When Cantrip starts, check PyPI in the background for a newer
 release of the ``cantrip`` distribution.  If one exists, surface a
@@ -6703,18 +6703,39 @@ References:
   deletes the env via ``no_settings_optout`` to re-enable the
   check.
 
-### 63.5 Low — ``/update`` slash command for on-demand checks
+### 63.5 Low — ``/update`` slash command for on-demand checks ✅
 
-- [ ] Slash command ``/update`` forces a cache-bypassing check and
+- [x] Slash command ``/update`` forces a cache-bypassing check and
   prints the result (or "You're on the latest version.")
   immediately.  Useful when a user just ran ``uv tool upgrade`` and
   wants to confirm the session picked up the new release — though
   the *running* process is obviously still on the old code; the
-  command makes that explicit
-- [ ] ``/update --no-check`` writes ``update_check_disabled = true``
+  command makes that explicit — wired through
+  ``cantrip.agent.slash_commands.dispatch`` as a ``SlashResult`` with
+  a follow-up coroutine (``_run_update_slash_check``) that hits
+  ``check_for_update(use_cache=False)`` and renders via the new
+  ``format_slash_notice`` helper.  The notice carries an explicit
+  "restart Cantrip after upgrading" line so the user doesn't wonder
+  why ``__version__`` hasn't moved.
+- [x] ``/update --no-check`` writes ``update_check_disabled = true``
   to ``settings.json`` so the user doesn't have to edit the file by
   hand.  ``/update --check`` re-enables it.  Mention both in the
-  ``/help`` output and in ``design/UI.md``
+  ``/help`` output and in ``design/UI.md`` — new
+  ``update.set_update_check_disabled(bool)`` helper writes
+  ``~/.config/cantrip/settings.json`` and preserves any sibling
+  keys the user may have added.  Malformed JSON is replaced rather
+  than left in place — the user just asked for a toggle, so the
+  sensible thing is a clean file.  Extra tokens or an unknown flag
+  render a two-line usage hint instead of executing anything.
+  ``/help`` (shared + CLI ``_HELP_TEXT``) carries the verb, and
+  ``design/UI.md`` gained a Slash Commands section that catalogues
+  every shared verb plus a note that ``CANTRIP_NO_UPDATE_CHECK``
+  env var shadows the settings-file toggle for the session.
+  15 new unit tests in ``test_slash_commands.py`` /
+  ``test_update.py`` cover dispatch shape, toggle round-trip,
+  usage-hint paths, malformed-settings replacement, and the
+  follow-up coroutine's four branches (up-to-date, newer, disabled,
+  network error).
 
 ### 63.6 Low — Pre-release and yanked-version handling ✅
 
@@ -6841,5 +6862,5 @@ cache TTL, and every opt-out; ``/update`` and the
 | M60: Accessible Web UI | 60 | Web UI passes WCAG 2.1 AA: visible focus indicators, labelled controls, live regions for chat/status, overlays behave as modal dialogs; rodney/showboat regression guard in CI |
 | M61: Slash Autocomplete | 61 | Typing ``/`` in the TUI surfaces a catalogue-driven suggestion popup; Tab completes the active verb; CLI readline gets the same catalogue for parity |
 | M62: On-Theme Activity Labels | 62 | Status-bar and Web "Thinking..." literals replaced by randomly-selected spellcasting verbs (incanting, conjuring, brewing, …) so the UI matches the cantrip/juju theme |
-| M63: Self-Update Check | 63 | PyPI polled at startup; TUI, Web, and CLI surface a non-blocking notice with filtered changelog and an installer-aware upgrade command when a newer Cantrip is published |
+| M63: Self-Update Check | 63 ✓ | PyPI polled at startup; TUI, Web, and CLI surface a non-blocking notice with filtered changelog and an installer-aware upgrade command when a newer Cantrip is published |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

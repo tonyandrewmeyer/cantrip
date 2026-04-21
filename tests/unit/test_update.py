@@ -1023,3 +1023,67 @@ class TestFormatCliNotice:
         monkeypatch.setattr(update, "detect_install_method", lambda: update.InstallMethod.PIPX)
         notice = update.format_cli_notice(self._info())
         assert "pipx upgrade cantrip" in notice
+
+
+class TestFormatSlashNotice:
+    """``format_slash_notice`` renders the ``/update`` chat response."""
+
+    def _info(self, **overrides) -> update.UpdateInfo:
+        defaults = {
+            "current": "0.1.0",
+            "latest": "0.2.0",
+            "pypi_url": "https://pypi.org/project/cantrip/0.2.0/",
+            "release_timestamp": None,
+        }
+        defaults.update(overrides)
+        return update.UpdateInfo(**defaults)
+
+    def test_renders_markdown_link_and_fenced_command(self):
+        notice = update.format_slash_notice(self._info(), method=update.InstallMethod.UV_TOOL)
+        assert "<https://pypi.org/project/cantrip/0.2.0/>" in notice
+        assert "`uv tool upgrade cantrip`" in notice
+        # Restart reminder is load-bearing — the running process still
+        # executes the old code after the user upgrades.
+        assert "restart" in notice.lower()
+
+    def test_unknown_installer_fallback(self):
+        notice = update.format_slash_notice(self._info(), method=update.InstallMethod.UNKNOWN)
+        assert "your usual installer" in notice
+        assert "uv tool upgrade" not in notice
+
+
+class TestSetUpdateCheckDisabled:
+    """``set_update_check_disabled`` round-trips the toggle into settings.json."""
+
+    def test_writes_new_file(self, tmp_path, monkeypatch):
+        path = tmp_path / "settings.json"
+        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+        written = update.set_update_check_disabled(True)
+        assert written == path
+        assert json.loads(path.read_text())["update_check_disabled"] is True
+
+    def test_preserves_existing_keys(self, tmp_path, monkeypatch):
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps({"other": "keep", "update_check_disabled": False}))
+        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+        update.set_update_check_disabled(True)
+        data = json.loads(path.read_text())
+        assert data["update_check_disabled"] is True
+        assert data["other"] == "keep"
+
+    def test_replaces_malformed_file(self, tmp_path, monkeypatch):
+        path = tmp_path / "settings.json"
+        path.write_text("not json")
+        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+        update.set_update_check_disabled(False)
+        assert json.loads(path.read_text()) == {"update_check_disabled": False}
+
+    def test_round_trip_with_update_check_disabled(self, tmp_path, monkeypatch):
+        path = tmp_path / "settings.json"
+        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+        monkeypatch.delenv(update.DISABLE_ENV, raising=False)
+
+        update.set_update_check_disabled(True)
+        assert update.update_check_disabled() is True
+        update.set_update_check_disabled(False)
+        assert update.update_check_disabled() is False

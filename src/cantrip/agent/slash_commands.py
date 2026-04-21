@@ -24,6 +24,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cantrip import update as update_module
 from cantrip.agent import mcp_commands, memory_commands
 from cantrip.llm import pricing
 
@@ -59,6 +60,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/cost", "Show token usage and cost"),
     CommandInfo("/arena", "Blind A/B compare two models"),
     CommandInfo("/export", "Export the live session transcript"),
+    CommandInfo("/update", "Check PyPI for a newer release"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -139,9 +141,68 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         )
     if verb == "/export":
         return SlashResult(text=export_transcript(agent, args))
+    if verb == "/update":
+        return _handle_update(args)
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     return None
+
+
+def _handle_update(args: str) -> SlashResult:
+    """Dispatch the ``/update`` slash command.
+
+    ``/update`` forces a cache-bypassing PyPI check and renders the
+    result in the chat.  ``--no-check`` / ``--check`` toggle the
+    persistent opt-out in ``~/.config/cantrip/settings.json``.
+    """
+    tokens = args.split()
+    if not tokens:
+        return SlashResult(
+            text="Checking PyPI for a newer Cantrip…",
+            followup=_run_update_slash_check(),
+        )
+
+    flag = tokens[0].lower()
+    if len(tokens) != 1 or flag not in {"--check", "--no-check"}:
+        return SlashResult(
+            text=(
+                "Usage: `/update` (check PyPI now), "
+                "`/update --no-check` (disable auto-check), "
+                "or `/update --check` (re-enable)."
+            )
+        )
+    try:
+        path = update_module.set_update_check_disabled(flag == "--no-check")
+    except OSError as exc:
+        return SlashResult(text=f"_Failed to update {_SETTINGS_LABEL}: {exc}._")
+    verb_label = "disabled" if flag == "--no-check" else "re-enabled"
+    return SlashResult(text=f"Auto-update check {verb_label} — wrote `{path}`.")
+
+
+_SETTINGS_LABEL = "~/.config/cantrip/settings.json"
+
+
+async def _run_update_slash_check() -> str:
+    """Hit PyPI, bypassing the cache, and format the result for chat.
+
+    Follows the same failure-model as the startup check — any error
+    gets translated into a clear user-facing message rather than a
+    traceback.  The cache bypass exists precisely for a user who just
+    ran their installer's upgrade command and wants to see the new
+    version reflected immediately.
+    """
+    if update_module.update_check_disabled():
+        return (
+            "_Auto-update check is disabled (env var or settings file). "
+            "Re-enable with `/update --check`._"
+        )
+    try:
+        info = await update_module.check_for_update(use_cache=False)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return f"_Could not reach PyPI: {exc}._"
+    if info is None:
+        return "You're on the latest Cantrip release."
+    return update_module.format_slash_notice(info)
 
 
 def help_text() -> str:
@@ -163,6 +224,9 @@ def help_text() -> str:
         "- `/export [html|jsonl|markdown] [path]` — export the live"
         " transcript without leaving the session (default: html to"
         " `<charm>/transcript.html`).\n"
+        "- `/update` — check PyPI for a newer Cantrip release right"
+        " now (cache-bypassing).  `/update --no-check` disables the"
+        " auto-check; `/update --check` re-enables it.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
 

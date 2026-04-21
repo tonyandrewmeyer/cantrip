@@ -33,6 +33,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Added
+- **`/update` slash command (Phase 63.5).**  A shared slash verb
+  ``/update`` forces a cache-bypassing ``check_for_update`` and
+  renders the verdict as a follow-up chat message — the three-line
+  markdown notice (headline + PyPI link + installer-aware upgrade
+  command) matches the exit-time prompt from Phase 63.4 and adds
+  an explicit "restart Cantrip after upgrading" line so the user
+  doesn't wonder why ``__version__`` hasn't moved mid-session.
+  ``/update --no-check`` persists ``update_check_disabled = true``
+  in ``~/.config/cantrip/settings.json`` via a new
+  ``set_update_check_disabled`` helper that preserves unrelated
+  keys; ``/update --check`` clears the opt-out.  Unknown flags or
+  extra tokens render a two-line usage hint.  ``format_slash_notice``
+  ships alongside the existing ``format_cli_notice`` so chat
+  surfaces get markdown-styled output while piped CLI stdout stays
+  compact.  ``/help`` (shared + CLI) lists the new verb; the
+  ``design/UI.md`` Slash Commands section catalogues every
+  cross-surface verb for the first time.  Backed by 15 new tests
+  covering dispatch, toggle round-trip (including malformed-settings
+  replacement and sibling-key preservation), usage hints, and all
+  four follow-up branches (up-to-date / newer / disabled /
+  OSError).  `COMMAND_CATALOGUE` entry and drift test mean the
+  new verb surfaces in the TUI slash-autocomplete popup and the
+  CLI readline Tab-completer without extra wiring.
 - **Self-update notice in TUI, Web, and CLI (Phase 63.4).**  The
   three front-ends now surface a non-blocking "A newer cantrip is
   available" notice when the background PyPI check finds an upgrade.

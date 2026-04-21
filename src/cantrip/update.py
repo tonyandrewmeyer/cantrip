@@ -181,6 +181,36 @@ def update_check_disabled() -> bool:
     return _settings_disabled()
 
 
+def set_update_check_disabled(disabled: bool) -> pathlib.Path:
+    """Persist the ``update_check_disabled`` flag in ``settings.json``.
+
+    Returns the path that was written so callers can surface it in
+    confirmation text.  Reads the current settings leniently (a
+    malformed file is replaced rather than left in place — the
+    user explicitly asked for a toggle, so the sensible thing is
+    to write a clean file) and merges the single ``update_check_disabled``
+    key so unrelated settings the user may have added are preserved.
+
+    The write is best-effort but raises ``OSError`` on disk failure
+    so the slash-command handler can surface the error verbatim —
+    silently swallowing a permission denial would leave the user
+    thinking their toggle took effect when it didn't.
+    """
+    path = _SETTINGS_PATH.expanduser()
+    data: dict[str, object] = {}
+    if path.is_file():
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            parsed = None
+        if isinstance(parsed, dict):
+            data = parsed
+    data["update_check_disabled"] = bool(disabled)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 # ── Cache plumbing ────────────────────────────────────────────────
 
 
@@ -740,6 +770,29 @@ def format_cli_notice(info: UpdateInfo, *, method: InstallMethod | None = None) 
     return f"{headline}\nRun `{command}` to upgrade."
 
 
+def format_slash_notice(info: UpdateInfo, *, method: InstallMethod | None = None) -> str:
+    """Return a markdown notice for the ``/update`` slash command.
+
+    Unlike :func:`format_cli_notice` the output targets a chat
+    renderer (TUI ``MessageWidget``, Web markdown-ish renderer, CLI
+    ``print``) so the PyPI URL becomes a real markdown link and the
+    upgrade command is fenced as ``code``.  Keeps both TUI and Web
+    output tidy without each surface duplicating the formatting.
+    """
+    command = upgrade_command(method)
+    headline = _headline(info)
+    lines = [f"**{headline}**", f"Release page: <{info.pypi_url}>"]
+    if command is not None:
+        lines.append(f"Upgrade: `{command}`")
+    else:
+        lines.append("_Upgrade via your usual installer — visit the URL above._")
+    lines.append(
+        "_The running process still executes the old code; "
+        "restart Cantrip after upgrading to pick up the new release._"
+    )
+    return "\n".join(lines)
+
+
 __all__ = [
     "CACHE_DIR_ENV",
     "DEFAULT_CACHE_TTL_SECONDS",
@@ -752,6 +805,8 @@ __all__ = [
     "extract_release_notes",
     "fetch_changelog",
     "format_cli_notice",
+    "format_slash_notice",
+    "set_update_check_disabled",
     "update_check_disabled",
     "upgrade_command",
 ]
