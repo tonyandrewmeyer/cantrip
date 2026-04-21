@@ -4,6 +4,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Repo-bootstrap offer moved to a CONFIRM task — Phase 64 ✓.**  When
+  Cantrip finishes a build in a directory with no GitHub remote, the
+  "create a repository?" prompt no longer appears as an inline system
+  message that interrupts the conversation.  It is now emitted as a
+  ``bootstrap-repo-<name>`` CONFIRM task in the work queue (same
+  pattern as ``push-branch-*`` and ``triage-issue-*``), so it surfaces
+  in the task panel and stays blocked until the user replies
+  ``approve`` or ``skip``.  The chat still gets a framed
+  "**Repo bootstrap:**" confirmation prompt; it no longer drifts off-
+  screen behind unrelated output.  Default name follows the Canonical
+  upstream convention: ``foo`` → ``foo-operator``; names already
+  ending in ``-operator``, ``-charm``, ``-k8s``, or ``-machine`` are
+  kept as-is.  Reply tokens: ``approve``, ``skip``, ``public``,
+  ``name=my-repo``, ``org=canonical``, ``desc=My charm`` (combinable).
+  New ``cantrip.agent.git_branch.suggest_repo_name()`` helper; new
+  ``agent.build_repo_bootstrap_confirm_task()`` method; new
+  ``BOOTSTRAP_CONFIRM_PREFIX``.  The old ``_pending_bootstrap`` flag
+  is gone — the reply router now gates on
+  ``_pending_confirm_id.startswith(BOOTSTRAP_CONFIRM_PREFIX)``.
+
 ### Fixed
 - **Transcript, log, relation, and graph modals rendered blank — Phase 66 ✓.**
   The four ``ModalScreen`` subclasses wrapped their container in

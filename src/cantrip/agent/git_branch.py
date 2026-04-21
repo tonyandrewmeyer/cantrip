@@ -23,6 +23,37 @@ BRANCH_PREFIX = "cantrip/"
 # Task ID prefix for push-confirmation CONFIRM tasks.
 PUSH_CONFIRM_PREFIX = "push-branch-"
 
+# Task ID prefix for the repo-bootstrap CONFIRM task (Phase 64).
+BOOTSTRAP_CONFIRM_PREFIX = "bootstrap-repo-"
+
+# Suffixes that already follow (or deliberately opt out of) the
+# Canonical ``<workload>-operator`` repository convention.  A charm
+# name ending in one of these is taken as-is; any other name gets
+# ``-operator`` appended by :func:`suggest_repo_name`.
+_OPERATOR_REPO_SUFFIXES: tuple[str, ...] = (
+    "-operator",
+    "-charm",
+    "-k8s",
+    "-machine",
+)
+
+
+def suggest_repo_name(charm_name: str) -> str:
+    """Default GitHub repo name for *charm_name*.
+
+    Appends ``-operator`` unless *charm_name* already ends in one of
+    ``-operator``, ``-charm``, ``-k8s``, or ``-machine`` — the goal
+    is the Canonical upstream convention, and the suffix filter
+    stops us double-appending on names that already follow it.
+    Empty / whitespace-only names are returned unchanged so callers
+    can fall back to their own placeholder.
+    """
+    if not charm_name or not charm_name.strip():
+        return charm_name
+    if charm_name.endswith(_OPERATOR_REPO_SUFFIXES):
+        return charm_name
+    return f"{charm_name}-operator"
+
 
 def current_branch(charm_path: str) -> str | None:
     """Return the name of the current git branch, or ``None``."""

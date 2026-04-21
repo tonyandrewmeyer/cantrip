@@ -16,7 +16,7 @@ from cantrip import __version__, notifications, update
 from cantrip.agent import emotions, slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
-from cantrip.agent.git_branch import PUSH_CONFIRM_PREFIX
+from cantrip.agent.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
 from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
@@ -114,7 +114,6 @@ class CantripApp(App):
         self._session_start = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
         self._pending_confirm_id: str | None = None
         self._pending_pr_branch: str | None = None
-        self._pending_bootstrap: bool = False
         self._bootstrap_offered: bool = False
         self._pending_maintenance: dict | None = None  # {"pr_url": ..., "issue": ...}
         self._streaming_widget: chat_widget.MessageWidget | None = None
@@ -583,6 +582,8 @@ class CantripApp(App):
                 self._present_improvement_confirmation(task)
             elif task_id.startswith(RACE_CONFIRM_PREFIX):
                 self._present_race_confirmation(task)
+            elif task_id.startswith(BOOTSTRAP_CONFIRM_PREFIX):
+                self._present_bootstrap_confirmation(task)
             else:
                 self._present_design_questions(task)
 
@@ -721,75 +722,99 @@ class CantripApp(App):
     # -- Improvement confirmation flow ----------------------------------------
 
     def _offer_repo_bootstrap(self) -> None:
-        """Offer to create a GitHub repo if conditions are met."""
+        """Offer to create a GitHub repo by queuing a CONFIRM task.
+
+        The CONFIRM task surfaces in the task panel and — via the
+        shared CONFIRM+BLOCKED routing in :meth:`_on_bus_task_status_changed`
+        — shows a framed confirmation prompt rather than an inline
+        system message that blurs with other chat output.
+        """
         if self._bootstrap_offered or not self._agent:
             return
         if not self._agent.should_offer_bootstrap():
             return
 
         self._bootstrap_offered = True
-        self._pending_bootstrap = True
-        charm_name = self._agent.state.charm_name or "my-charm"
+        task = self._agent.build_repo_bootstrap_confirm_task()
+        self._agent.work_queue.add_task(task)
+
+    def _present_bootstrap_confirmation(self, task: AgentTask) -> None:
+        """Show the repo-bootstrap CONFIRM prompt in chat.
+
+        Mirrors :meth:`_present_triage_confirmation` — the task stays
+        blocked, and the user's next message is matched against the
+        approve / skip / ``name=… public org=… desc=…`` tokens by
+        :meth:`_handle_bootstrap_response`.
+        """
         chat = self.query_one("#chat", chat_widget.ChatWidget)
-        chat.add_system_message(
-            f"No GitHub remote detected. Would you like to create a repository?\n\n"
-            f"Reply **yes** (or **public** for a public repo) to create "
-            f"**{charm_name}** on GitHub, or **skip** to continue without one.\n\n"
-            f"You can also specify: `yes org=canonical` or `yes desc=My charm`"
-        )
+        chat.add_system_message(f"**Repo bootstrap:**\n\n{task.description}")
 
     def _handle_bootstrap_response(self, message: str) -> bool:
-        """Handle the user's response to the repo bootstrap offer.
+        """Handle approve / skip / customised reply for the bootstrap CONFIRM.
 
-        Returns ``True`` if the message was handled.
+        Returns ``True`` if the message was consumed.  The default
+        repo name comes from the CONFIRM task's ID suffix; callers
+        override it with ``name=foo`` inside the reply.
         """
-        if not self._agent:
+        if not self._agent or not self._pending_confirm_id:
+            return False
+        confirm_id = self._pending_confirm_id
+        if not confirm_id.startswith(BOOTSTRAP_CONFIRM_PREFIX):
             return False
 
         lower = message.strip().lower()
         chat = self.query_one("#chat", chat_widget.ChatWidget)
 
-        if lower in ("skip", "no", "n"):
-            self._pending_bootstrap = False
+        if lower in ("skip", "no", "n", "dismiss"):
+            self._pending_confirm_id = None
+            self._agent.work_queue.set_done(confirm_id, "Skipped by user")
             chat.add_system_message("Repository creation skipped.")
             return True
 
-        # Parse options from message (e.g. "yes org=canonical desc=My charm").
-        if lower.startswith(("yes", "y", "ok", "public", "private")):
-            self._pending_bootstrap = False
-            private = "public" not in lower
-            charm_name = self._agent.state.charm_name or "my-charm"
+        if not lower.startswith(("approve", "yes", "y", "ok", "public", "private")):
+            # Unrecognised — pass through to the LLM.
+            return False
 
-            # Extract org= and desc= from the message.
-            org = ""
-            description = ""
-            import re
+        self._pending_confirm_id = None
+        self._agent.work_queue.set_done(confirm_id, "Approved by user")
 
-            org_match = re.search(r"org=(\S+)", message)
-            if org_match:
-                org = org_match.group(1)
-            desc_match = re.search(r"desc=(.+?)(?:\s+org=|$)", message)
-            if desc_match:
-                description = desc_match.group(1).strip()
+        # ``public`` anywhere in the reply flips visibility; otherwise private.
+        private = "public" not in lower
 
-            chat.add_system_message(
-                f"Creating {'private' if private else 'public'} repository **{charm_name}**..."
-            )
-            result = self._agent.handle_repo_bootstrap(
-                charm_name,
-                private=private,
-                description=description,
-                org=org,
-            )
-            chat.add_system_message(result)
+        # Extract ``name=`` / ``org=`` / ``desc=`` from the reply.  The
+        # suggested name is encoded in the task ID so a bare "approve"
+        # (without ``name=``) picks up ``<workload>-operator``.
+        default_name = confirm_id.removeprefix(BOOTSTRAP_CONFIRM_PREFIX)
+        import re
 
-            # Update header if repo was created.
-            if self._agent.state.github_repo:
-                self._update_header_subtitle()
-                self._update_model_info()
-            return True
+        name_match = re.search(r"name=(\S+)", message)
+        repo_name = name_match.group(1) if name_match else default_name
 
-        return False
+        org = ""
+        org_match = re.search(r"org=(\S+)", message)
+        if org_match:
+            org = org_match.group(1)
+
+        description = ""
+        desc_match = re.search(r"desc=(.+?)(?:\s+(?:org|name)=|$)", message)
+        if desc_match:
+            description = desc_match.group(1).strip()
+
+        chat.add_system_message(
+            f"Creating {'private' if private else 'public'} repository **{repo_name}**..."
+        )
+        result = self._agent.handle_repo_bootstrap(
+            repo_name,
+            private=private,
+            description=description,
+            org=org,
+        )
+        chat.add_system_message(result)
+
+        if self._agent.state.github_repo:
+            self._update_header_subtitle()
+            self._update_model_info()
+        return True
 
     def _handle_pr_response(self, message: str) -> bool:
         """Handle pr/draft/skip response after a successful push.
@@ -1299,10 +1324,6 @@ class CantripApp(App):
             handled = self._handle_maintenance_response(message)
             if handled:
                 return
-        if self._pending_bootstrap:
-            handled = self._handle_bootstrap_response(message)
-            if handled:
-                return
         if self._pending_pr_branch:
             handled = self._handle_pr_response(message)
             if handled:
@@ -1317,6 +1338,12 @@ class CantripApp(App):
                 return
         if self._pending_confirm_id and self._pending_confirm_id.startswith(RACE_CONFIRM_PREFIX):
             handled = self._handle_race_response(message)
+            if handled:
+                return
+        if self._pending_confirm_id and self._pending_confirm_id.startswith(
+            BOOTSTRAP_CONFIRM_PREFIX
+        ):
+            handled = self._handle_bootstrap_response(message)
             if handled:
                 return
 

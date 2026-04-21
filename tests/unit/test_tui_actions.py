@@ -604,8 +604,65 @@ def _system_messages(pilot) -> str:
     return " ".join(m.content for m in chat._messages if m.role == chat_widget.MessageRole.SYSTEM)
 
 
+class TestOfferRepoBootstrap:
+    """``_offer_repo_bootstrap`` enqueues a CONFIRM task rather than
+    writing an inline chat message (Phase 64)."""
+
+    @pytest.mark.asyncio
+    async def test_queues_confirm_task_when_eligible(self):
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.should_offer_bootstrap = MagicMock(return_value=True)
+        mock_agent.state.charm_name = "my-charm"
+        mock_agent.state.github_repo = None
+        from cantrip.agent.queue import AgentTask, TaskCategory
+
+        fake_task = AgentTask(
+            id="bootstrap-repo-my-charm-operator",
+            title="Create GitHub repo my-charm-operator?",
+            category=TaskCategory.CONFIRM,
+            description="desc",
+        )
+        mock_agent.build_repo_bootstrap_confirm_task = MagicMock(return_value=fake_task)
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app._bootstrap_offered = False
+                pilot.app._offer_repo_bootstrap()
+                mock_agent.build_repo_bootstrap_confirm_task.assert_called_once()
+                mock_agent.work_queue.add_task.assert_called_once_with(fake_task)
+                assert pilot.app._bootstrap_offered is True
+
+    @pytest.mark.asyncio
+    async def test_skips_when_already_offered(self):
+        p1, p2, mock_agent = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app._bootstrap_offered = True
+                pilot.app._offer_repo_bootstrap()
+                mock_agent.work_queue.add_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_should_offer_false(self):
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.should_offer_bootstrap = MagicMock(return_value=False)
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app._bootstrap_offered = False
+                pilot.app._offer_repo_bootstrap()
+                mock_agent.work_queue.add_task.assert_not_called()
+                assert pilot.app._bootstrap_offered is False
+
+
 class TestBootstrapResponse:
-    """Every branch of ``_handle_bootstrap_response``."""
+    """Every branch of ``_handle_bootstrap_response`` (Phase 64 CONFIRM flow).
+
+    The handler now gates on ``_pending_confirm_id`` starting with
+    :data:`cantrip.agent.git_branch.BOOTSTRAP_CONFIRM_PREFIX` — the
+    task ID suffix carries the default ``<workload>-operator`` repo
+    name so bare ``approve`` picks that up without re-parsing the
+    charm name.
+    """
+
+    _DEFAULT_CONFIRM_ID = "bootstrap-repo-my-charm-operator"
 
     @pytest.mark.asyncio
     async def test_no_agent_returns_false(self):
@@ -613,34 +670,78 @@ class TestBootstrapResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
+                pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
+                assert pilot.app._handle_bootstrap_response("yes") is False
+
+    @pytest.mark.asyncio
+    async def test_wrong_confirm_id_prefix_returns_false(self):
+        """Non-bootstrap CONFIRMs must pass straight through."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app._pending_confirm_id = "push-branch-foo"
                 assert pilot.app._handle_bootstrap_response("yes") is False
 
     @pytest.mark.asyncio
     async def test_skip_branch(self):
-        p1, p2, _ = _patch_app()
+        p1, p2, mock_agent = _patch_app()
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._pending_bootstrap = True
+                pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
                 assert pilot.app._handle_bootstrap_response("skip") is True
-                assert pilot.app._pending_bootstrap is False
+                assert pilot.app._pending_confirm_id is None
                 assert "Repository creation skipped." in _system_messages(pilot)
+                mock_agent.work_queue.set_done.assert_called_with(
+                    self._DEFAULT_CONFIRM_ID, "Skipped by user"
+                )
 
     @pytest.mark.asyncio
-    async def test_yes_branch_creates_private_repo(self):
+    async def test_approve_uses_default_name_from_confirm_id(self):
+        """Bare ``approve`` uses the ``<workload>-operator`` suffix from the task ID."""
         p1, p2, mock_agent = _patch_app()
         mock_agent.state.charm_name = "my-charm"
         mock_agent.state.github_repo = None
         mock_agent.handle_repo_bootstrap = MagicMock(return_value="Repo created.")
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._pending_bootstrap = True
-                ok = pilot.app._handle_bootstrap_response("yes org=canonical desc=Nice")
+                pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
+                ok = pilot.app._handle_bootstrap_response("approve")
                 assert ok is True
                 mock_agent.handle_repo_bootstrap.assert_called_once()
+                args, kwargs = mock_agent.handle_repo_bootstrap.call_args
+                assert args[0] == "my-charm-operator"
+                assert kwargs["private"] is True
+
+    @pytest.mark.asyncio
+    async def test_approve_with_tokens(self):
+        """``yes org=canonical desc=Nice`` is parsed end-to-end."""
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.state.charm_name = "my-charm"
+        mock_agent.state.github_repo = None
+        mock_agent.handle_repo_bootstrap = MagicMock(return_value="Repo created.")
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
+                ok = pilot.app._handle_bootstrap_response("yes org=canonical desc=Nice")
+                assert ok is True
                 call_kwargs = mock_agent.handle_repo_bootstrap.call_args.kwargs
                 assert call_kwargs["private"] is True
                 assert call_kwargs["org"] == "canonical"
                 assert call_kwargs["description"] == "Nice"
+
+    @pytest.mark.asyncio
+    async def test_name_override_wins(self):
+        """``name=my-custom-repo`` overrides the default ``-operator`` name."""
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.state.charm_name = "my-charm"
+        mock_agent.state.github_repo = None
+        mock_agent.handle_repo_bootstrap = MagicMock(return_value="ok")
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
+                pilot.app._handle_bootstrap_response("approve name=my-custom-repo")
+                args, _ = mock_agent.handle_repo_bootstrap.call_args
+                assert args[0] == "my-custom-repo"
 
     @pytest.mark.asyncio
     async def test_public_variant_sets_private_false(self):
@@ -650,7 +751,7 @@ class TestBootstrapResponse:
         mock_agent.handle_repo_bootstrap = MagicMock(return_value="ok")
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._pending_bootstrap = True
+                pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
                 pilot.app._handle_bootstrap_response("public")
                 assert mock_agent.handle_repo_bootstrap.call_args.kwargs["private"] is False
 
@@ -659,7 +760,7 @@ class TestBootstrapResponse:
         p1, p2, _ = _patch_app()
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._pending_bootstrap = True
+                pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
                 assert pilot.app._handle_bootstrap_response("maybe later") is False
 
 

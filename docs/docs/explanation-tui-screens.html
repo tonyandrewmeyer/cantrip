@@ -56,6 +56,7 @@
       <li><a href="#graph">Integration graph</a></li>
       <li><a href="#traces">Traces and COS endpoints</a></li>
       <li><a href="#status-panes">Dev and COS status panes</a></li>
+      <li><a href="#confirmations">Confirmation prompts</a></li>
     </ul>
   </aside>
 
@@ -228,6 +229,47 @@
       Both panes refresh from the event watcher, so they stay current
       without polling. Expanding either pane scrolls rather than
       clipping when the app or offer list grows past the pane height.
+    </p>
+
+    <h2 id="confirmations">Confirmation prompts</h2>
+    <p>
+      Work that affects the outside world &mdash; pushing a branch,
+      creating a GitHub repo, working on a triaged issue, spending a
+      Best-of-N racing budget &mdash; is never done silently. Instead,
+      Cantrip emits a <strong>CONFIRM task</strong> that appears in the
+      task panel as a blocked row and prints a framed
+      &ldquo;&hellip; confirmation&rdquo; prompt in the chat log. The
+      task stays blocked until the user replies <code>approve</code> or
+      <code>skip</code>, so the prompt never disappears off-screen.
+    </p>
+    <p>
+      The most common confirmation is the <strong>repo bootstrap</strong>
+      offer, which fires when Cantrip finishes a build inside a directory
+      that has no GitHub remote and <code>gh</code> is available. The
+      default repository name follows the Canonical upstream convention
+      &mdash; if the charm is <code>foo</code>, the suggested name is
+      <code>foo-operator</code>. Names that already end in
+      <code>-operator</code>, <code>-charm</code>, <code>-k8s</code>, or
+      <code>-machine</code> are kept as-is.
+    </p>
+    <p>
+      Reply tokens for the bootstrap prompt:
+    </p>
+    <ul>
+      <li><code>approve</code> (or <code>yes</code>) &mdash; create the
+      repo with the suggested name, privately by default.</li>
+      <li><code>skip</code> (or <code>no</code>) &mdash; dismiss the
+      offer; Cantrip does not re-ask for the rest of the session.</li>
+      <li><code>public</code> anywhere in the reply flips the repo to
+      public visibility.</li>
+      <li><code>name=my-repo</code> overrides the suggested name.</li>
+      <li><code>org=canonical</code> creates the repo under that
+      organisation instead of your personal account.</li>
+      <li><code>desc=My charm</code> sets the repository description.</li>
+    </ul>
+    <p>
+      Tokens can be combined: <code>approve public org=canonical
+      name=my-charm-operator desc=Runs my charm</code>.
     </p>
   </main>
 </div>

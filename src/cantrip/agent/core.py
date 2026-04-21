@@ -17,6 +17,7 @@ from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.emotions import ParliamentResult, run_parliament
 from cantrip.agent.executor import BackgroundExecutor
 from cantrip.agent.git_branch import (
+    BOOTSTRAP_CONFIRM_PREFIX,
     PUSH_CONFIRM_PREFIX,
     PrFeedback,
     bootstrap_github_repo,
@@ -28,6 +29,7 @@ from cantrip.agent.git_branch import (
     gh_issue_comment,
     gh_pr_view,
     push_branch,
+    suggest_repo_name,
 )
 from cantrip.agent.github_issues import (
     TRIAGE_CONFIRM_PREFIX,
@@ -1780,6 +1782,35 @@ class CantripAgent:
             return False
         charm_path = str(self.state.charm_path) if self.state.charm_path else None
         return can_bootstrap(charm_path)
+
+    def build_repo_bootstrap_confirm_task(self) -> AgentTask:
+        """Build the CONFIRM task that offers to create a GitHub repo.
+
+        Suggests ``<workload>-operator`` by default (Canonical upstream
+        convention).  The user may override in their reply with
+        ``name=foo``, ``org=canonical``, ``desc=My charm``, or
+        ``public``.  Emitting this as a CONFIRM task (instead of an
+        inline chat system message) keeps the offer in the task panel
+        rather than the conversation log, so it doesn't interrupt an
+        in-progress exchange.
+        """
+        charm_name = self.state.charm_name or "my-charm"
+        suggested = suggest_repo_name(charm_name)
+        description = (
+            f"No GitHub remote detected.  Create a repository for this charm?\n\n"
+            f"Default name: **{suggested}** "
+            f"(Canonical convention is ``<workload>-operator``).\n\n"
+            f"Reply **approve** to create **{suggested}** as a private repo, "
+            f"or customise with tokens: ``name=my-repo``, ``org=canonical``, "
+            f"``desc=My charm``, ``public``.\n\n"
+            f"Reply **skip** to continue without a remote."
+        )
+        return AgentTask(
+            id=f"{BOOTSTRAP_CONFIRM_PREFIX}{suggested}",
+            title=f"Create GitHub repo {suggested}?",
+            category=TaskCategory.CONFIRM,
+            description=description,
+        )
 
     def handle_repo_bootstrap(
         self,

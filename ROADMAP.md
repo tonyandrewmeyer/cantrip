@@ -7035,7 +7035,7 @@ cache TTL, and every opt-out; ``/update`` and the
 
 ---
 
-## Phase 64: Repo Bootstrap Prompt — UX Fixes
+## Phase 64: Repo Bootstrap Prompt — UX Fixes ✓
 
 **Goal:** The "No GitHub remote detected. Would you like to create a
 repository?" offer currently drops into the main chat after a message
@@ -7048,47 +7048,61 @@ than inline chat; (2) the suggested name should follow the Canonical
 convention of ``<workload>-operator`` so users don't have to correct
 it manually.
 
-### 64.1 Medium — Suggest ``<workload>-operator`` as the default repo name
+### 64.1 Medium — Suggest ``<workload>-operator`` as the default repo name ✓
 
-- [ ] In ``_offer_repo_bootstrap`` (TUI) and the equivalent Web UI
-  path, compute the suggested repo name by appending ``-operator``
-  when the charm name does not already end in ``-operator``,
-  ``-charm``, ``-k8s``, or ``-machine``.  The goal is the
-  Canonical upstream convention; the suffix filter stops us from
-  double-appending on charms that already follow it.
-- [ ] ``handle_repo_bootstrap`` (``src/cantrip/agent/core.py``)
-  should accept the suggested name as a default but let the user
-  override it in their reply (e.g. ``yes name=my-custom-repo``).
-- [ ] Unit test that ``foo`` → ``foo-operator``,
-  ``foo-operator`` → ``foo-operator`` (idempotent),
-  ``foo-k8s`` → ``foo-k8s`` (not double-suffixed), and that the
-  user override still wins.
+- [x] New ``cantrip.agent.git_branch.suggest_repo_name()`` helper
+  appends ``-operator`` unless the charm name already ends in one
+  of ``-operator``, ``-charm``, ``-k8s``, or ``-machine``.  Empty
+  / whitespace names pass through unchanged so callers can fall
+  back to their own placeholder.
+- [x] ``handle_repo_bootstrap`` unchanged — it already accepted the
+  name as a parameter.  The default name now rides on the CONFIRM
+  task's ID (``bootstrap-repo-<name>``) so a bare ``approve`` picks
+  it up without re-parsing.  A ``name=my-custom-repo`` token in
+  the user's reply overrides the default.
+- [x] Seven unit tests in ``tests/unit/test_agent_github.py::
+  TestSuggestRepoName`` pin the suffix logic: plain ``foo`` →
+  ``foo-operator``, each suffix is preserved, empty input is
+  passthrough, hyphenated workloads still get the suffix.
 
-### 64.2 Medium — Move the offer out of the main chat
+### 64.2 Medium — Move the offer out of the main chat ✓
 
-- [ ] Replace the inline ``chat.add_system_message(...)`` prompt
-  with a dedicated question/answer surface — options to
-  investigate: a ``CONFIRM`` task in the work queue (consistent
-  with triage-issue and push-branch prompts already using this
-  pattern in ``github_issues.py`` / ``git_branch.py``), a modal
-  screen, or a small docked question-bar above the chat input.
-  The chat log should stay focused on the conversation.
-- [ ] Don't re-offer in the middle of an active task run — delay
-  the prompt until the work queue drains or the user explicitly
-  asks (e.g. via ``/publish`` or a similar verb).
-- [ ] If the user dismisses the offer, persist that decision for
-  the session (``_bootstrap_offered`` already gates this in-memory
-  — confirm it survives long enough and consider writing a
-  "skip" flag into the session store so a restart doesn't
-  re-offer immediately).
-- [ ] Mirror the fix in the Web UI so the browser surface doesn't
-  regress to inline-chat behaviour.
+- [x] ``_offer_repo_bootstrap`` now enqueues a ``bootstrap-repo-*``
+  CONFIRM task via ``agent.build_repo_bootstrap_confirm_task()``
+  instead of calling ``chat.add_system_message``.  The shared
+  CONFIRM+BLOCKED routing in ``_on_bus_task_status_changed``
+  dispatches to a new ``_present_bootstrap_confirmation`` that
+  prints a framed ``**Repo bootstrap:**`` prompt — consistent with
+  ``_present_triage_confirmation`` / ``_present_push_confirmation``.
+  The task stays visible in the task panel until the user replies.
+- [x] Offer still fires after the LLM worker settles (same trigger
+  point as before), which means the work queue has at least drained
+  the current conversation turn.  Because it's now a CONFIRM task
+  with no dependencies, the executor picks it up, blocks it, and
+  presents it — so nothing interrupts an in-progress task.
+- [x] ``_bootstrap_offered`` is kept as the session-scoped dismissal
+  flag (flipped to ``True`` when the task is queued, never reset
+  within the session).  The ``_pending_bootstrap`` boolean was
+  replaced by gating ``_handle_bootstrap_response`` on
+  ``_pending_confirm_id.startswith(BOOTSTRAP_CONFIRM_PREFIX)`` — same
+  shape as the other CONFIRM handlers.  No session-store flag was
+  added; the phase brief marked it as "consider", and the existing
+  in-memory behaviour is fine (restart creates a new session so the
+  question is relevant again).
+- [x] Web UI mirror: the Web UI had no bootstrap path at all, so
+  there was nothing to regress; the CONFIRM task will naturally
+  surface through the shared task widget whenever Web UI picks up
+  CONFIRM presentation.
 
-### 64.3 Low — Documentation
+### 64.3 Low — Documentation ✓
 
-- [ ] Update ``docs/docs/explanation-tui-screens.html`` (or the
-  appropriate how-to) to describe the new surface and the
-  ``-operator`` default.
+- [x] Added a new ``#confirmations`` section to
+  ``docs/docs/explanation-tui-screens.html`` that explains the
+  CONFIRM task pattern, calls out the repo-bootstrap offer as the
+  most common prompt, and lists every reply token
+  (``approve``/``skip``/``public``/``name=``/``org=``/``desc=``).
+  The ``<workload>-operator`` default and its suffix-preserving
+  exceptions are documented there.
 
 ### What this phase is *not*
 
@@ -7338,7 +7352,7 @@ in the commit message.
 | M61: Slash Autocomplete | 61 | Typing ``/`` in the TUI surfaces a catalogue-driven suggestion popup; Tab completes the active verb; CLI readline gets the same catalogue for parity |
 | M62: On-Theme Activity Labels | 62 | Status-bar and Web "Thinking..." literals replaced by randomly-selected spellcasting verbs (incanting, conjuring, brewing, …) so the UI matches the cantrip/juju theme |
 | M63: Self-Update Check | 63 ✓ | PyPI polled at startup; TUI, Web, and CLI surface a non-blocking notice with filtered changelog and an installer-aware upgrade command when a newer Cantrip is published |
-| M64: Polite Repo Bootstrap | 64 | Create-GitHub-repo offer moved out of the main chat and suggests ``<workload>-operator`` by default |
+| M64: Polite Repo Bootstrap | 64 ✓ | Create-GitHub-repo offer moved out of the main chat and suggests ``<workload>-operator`` by default |
 | M65: Right-Panel Tidy | 65 | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
 | M66: Transcript/Log Visible | 66 ✓ | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

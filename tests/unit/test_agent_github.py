@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.git_branch import PrFeedback, PrReviewComment
+from cantrip.agent.git_branch import PrFeedback, PrReviewComment, suggest_repo_name
 from cantrip.agent.queue import AgentTask, TaskCategory
 from tests.conftest import FakeProvider
 
@@ -74,6 +74,39 @@ class TestCheckPrFeedback:
             result = agent.check_pr_feedback(7)
         gh.assert_called_once_with("o/r", 7)
         assert result is fake
+
+
+# ---------------------------------------------------------------------------
+# suggest_repo_name
+# ---------------------------------------------------------------------------
+
+
+class TestSuggestRepoName:
+    """``suggest_repo_name`` appends ``-operator`` unless already suffixed."""
+
+    def test_plain_name_gets_operator_suffix(self) -> None:
+        assert suggest_repo_name("foo") == "foo-operator"
+
+    def test_idempotent_on_operator_suffix(self) -> None:
+        assert suggest_repo_name("foo-operator") == "foo-operator"
+
+    def test_preserves_k8s_suffix(self) -> None:
+        assert suggest_repo_name("foo-k8s") == "foo-k8s"
+
+    def test_preserves_machine_suffix(self) -> None:
+        assert suggest_repo_name("foo-machine") == "foo-machine"
+
+    def test_preserves_charm_suffix(self) -> None:
+        assert suggest_repo_name("foo-charm") == "foo-charm"
+
+    def test_empty_name_returned_unchanged(self) -> None:
+        # Callers supply their own placeholder when the charm name is
+        # absent; don't produce a weird "-operator" out of nothing.
+        assert suggest_repo_name("") == ""
+        assert suggest_repo_name("   ") == "   "
+
+    def test_hyphenated_workload_still_gets_suffix(self) -> None:
+        assert suggest_repo_name("traefik-route") == "traefik-route-operator"
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +251,39 @@ class TestHandlePrCreation:
             result = agent.handle_pr_creation("cantrip/feat")
         assert "PR creation failed" in result
         assert "gh failed" in result
+
+
+# ---------------------------------------------------------------------------
+# build_repo_bootstrap_confirm_task
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRepoBootstrapConfirmTask:
+    """The agent builds a CONFIRM task whose ID carries the default repo name."""
+
+    def test_uses_operator_suffix_by_default(self) -> None:
+        agent = _agent()
+        agent.state.charm_name = "meilisearch"
+        task = agent.build_repo_bootstrap_confirm_task()
+        assert task.id == "bootstrap-repo-meilisearch-operator"
+        assert task.category == TaskCategory.CONFIRM
+        assert "meilisearch-operator" in task.title
+        assert "meilisearch-operator" in task.description
+
+    def test_preserves_existing_suffix(self) -> None:
+        agent = _agent()
+        agent.state.charm_name = "traefik-k8s"
+        task = agent.build_repo_bootstrap_confirm_task()
+        assert task.id == "bootstrap-repo-traefik-k8s"
+
+    def test_falls_back_to_my_charm_placeholder(self) -> None:
+        """When ``charm_name`` is empty, we fall back to ``my-charm`` — which
+        already ends in ``-charm`` and is therefore kept as-is.  The user
+        will supply a real name via ``approve name=foo``."""
+        agent = _agent()
+        agent.state.charm_name = ""
+        task = agent.build_repo_bootstrap_confirm_task()
+        assert task.id == "bootstrap-repo-my-charm"
 
 
 # ---------------------------------------------------------------------------
