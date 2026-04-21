@@ -6993,6 +6993,237 @@ cache TTL, and every opt-out; ``/update`` and the
 
 ---
 
+## Phase 64: Repo Bootstrap Prompt — UX Fixes
+
+**Goal:** The "No GitHub remote detected. Would you like to create a
+repository?" offer currently drops into the main chat after a message
+turn completes (``_offer_repo_bootstrap`` in ``src/cantrip/tui/app.py``
+around line 723) and suggests a repository named after the bare
+charm name (e.g. ``grafana`` instead of ``grafana-operator``).  Two
+complaints: (1) the prompt interrupts the conversation at annoying
+moments, so move it into a dedicated question/answer surface rather
+than inline chat; (2) the suggested name should follow the Canonical
+convention of ``<workload>-operator`` so users don't have to correct
+it manually.
+
+### 64.1 Medium — Suggest ``<workload>-operator`` as the default repo name
+
+- [ ] In ``_offer_repo_bootstrap`` (TUI) and the equivalent Web UI
+  path, compute the suggested repo name by appending ``-operator``
+  when the charm name does not already end in ``-operator``,
+  ``-charm``, ``-k8s``, or ``-machine``.  The goal is the
+  Canonical upstream convention; the suffix filter stops us from
+  double-appending on charms that already follow it.
+- [ ] ``handle_repo_bootstrap`` (``src/cantrip/agent/core.py``)
+  should accept the suggested name as a default but let the user
+  override it in their reply (e.g. ``yes name=my-custom-repo``).
+- [ ] Unit test that ``foo`` → ``foo-operator``,
+  ``foo-operator`` → ``foo-operator`` (idempotent),
+  ``foo-k8s`` → ``foo-k8s`` (not double-suffixed), and that the
+  user override still wins.
+
+### 64.2 Medium — Move the offer out of the main chat
+
+- [ ] Replace the inline ``chat.add_system_message(...)`` prompt
+  with a dedicated question/answer surface — options to
+  investigate: a ``CONFIRM`` task in the work queue (consistent
+  with triage-issue and push-branch prompts already using this
+  pattern in ``github_issues.py`` / ``git_branch.py``), a modal
+  screen, or a small docked question-bar above the chat input.
+  The chat log should stay focused on the conversation.
+- [ ] Don't re-offer in the middle of an active task run — delay
+  the prompt until the work queue drains or the user explicitly
+  asks (e.g. via ``/publish`` or a similar verb).
+- [ ] If the user dismisses the offer, persist that decision for
+  the session (``_bootstrap_offered`` already gates this in-memory
+  — confirm it survives long enough and consider writing a
+  "skip" flag into the session store so a restart doesn't
+  re-offer immediately).
+- [ ] Mirror the fix in the Web UI so the browser surface doesn't
+  regress to inline-chat behaviour.
+
+### 64.3 Low — Documentation
+
+- [ ] Update ``docs/docs/explanation-tui-screens.html`` (or the
+  appropriate how-to) to describe the new surface and the
+  ``-operator`` default.
+
+### What this phase is *not*
+
+- Not a rewrite of the underlying ``gh_repo_create`` /
+  ``gh_repo_bootstrap`` tools — those already work.  This phase
+  is purely about *when* and *how* the offer is surfaced and
+  *what name* it suggests.
+- Not a full form/wizard for all repo options.  Public/private,
+  org, description can stay as ``key=value`` tokens in the
+  reply; the point is to get the question out of the chat log.
+
+**Exit criteria:** launching Cantrip against a charm with no
+GitHub remote surfaces the create-repo question outside the main
+chat transcript; the suggested name ends in ``-operator`` by
+default; dismissing the offer once keeps it dismissed for the
+session; unit tests pin the name-suffixing behaviour.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Name default (64.1) | none | Pure string logic; land first |
+| Surface move (64.2) | 64.1 | Reuse the CONFIRM-task pattern if possible |
+| Docs (64.3) | 64.2 | Follows the shipped UI |
+
+---
+
+## Phase 65: TUI Right-Panel Review — Task Panel and Multi-Model Pane
+
+**Goal:** The right panel of the TUI hosts three widgets in a
+vertical stack: ``TaskChecklistWidget`` (``#task-checklist``),
+``CharmTreeWidget`` (``#charm-files``), and
+``MultiModelStatusWidget`` (``#juju-status``).  Two of them still
+don't carry their weight: the task panel looks odd (inconsistent
+indentation / grouping between preflight, pinned, and category
+sections — details obscure titles, collapsed rows don't line up
+with expanded ones), and the dev-vs-COS multi-model pane rarely
+shows information worth the screen real estate it occupies.
+
+This phase is a *review-and-fix* pass, not a rewrite.  The output
+is a short written audit of what's wrong on each widget, then the
+specific small fixes that follow.
+
+### 65.1 Medium — Audit the task panel
+
+- [ ] Sit with a non-trivial session (several research / build /
+  test tasks) and capture screenshots of the pinned section,
+  collapsed group rows, expanded detail, and the subagent-phase
+  indicator in every state transition (pending → active →
+  done / failed / blocked).
+- [ ] Write the findings into the roadmap or a short design note
+  under ``design/``.  Likely candidates based on a read of
+  ``src/cantrip/tui/widgets/tasks.py``: the ``_format_detail``
+  helper uses leading spaces for indent (fine in a ``RichLog``,
+  awkward in a ``Static`` with a CSS margin), the collapsed-group
+  row "✓ N tasks done (click to show)" doesn't visually align
+  with active group headers, and the ``⟳ Category · Title``
+  pinned format collides with the ``⟳ Title`` category format
+  when the same task category sits in both places.
+- [ ] Fix each finding as its own commit so blame stays
+  comprehensible.
+
+### 65.2 Medium — Decide what the multi-model pane should show
+
+- [ ] For each mode Cantrip runs in (dev model only, dev + COS,
+  pre-deploy), list what the pane currently shows and what would
+  *actually* help the user.  Candidate answers: collapse the COS
+  section by default (already done; confirm it's still useful
+  when expanded), hide the pane entirely until a model is
+  connected, inline the single most useful datum (e.g.
+  "3 apps, 1 error" summary) so the pane earns its vertical
+  space without taking the full ``1fr`` allowance.
+- [ ] Either rework ``MultiModelStatusWidget`` to match the chosen
+  design, or retire it in favour of a one-line status strip and
+  move Juju detail to the existing ``/status`` modal.
+
+### 65.3 Low — Spacing and consistency
+
+- [ ] Review the right-panel CSS (``cantrip.tcss``) after 65.1 and
+  65.2 land: dividers, padding, ``max-height: 50%`` on
+  ``#task-checklist`` vs ``#charm-files``, and whether the
+  retired/shrunk multi-model pane still needs ``height: 1fr``.
+
+### What this phase is *not*
+
+- Not a redesign of the task data model.  Categories, statuses,
+  pinned rules all stay as they are.
+- Not a Web-UI counterpart — Web follows in a later phase once
+  the TUI answers are clear.
+
+**Exit criteria:** written audit of the task panel committed;
+each audit finding resolved in its own commit; the multi-model
+pane either shows genuinely useful information in every mode or
+is retired; manual walk-through in a live session confirms the
+right panel looks tidy from empty state through mid-build through
+completion.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Task audit (65.1) | none | Independent |
+| Multi-model decision (65.2) | none | Independent |
+| CSS cleanup (65.3) | 65.1, 65.2 | Follows the widget changes |
+
+---
+
+## Phase 66: Transcript and Debug-Log Modals Show Nothing
+
+**Goal:** Users report that opening the transcript window
+(``F8`` / ``action_transcript``) and the Juju debug-log window
+(``action_logs``) both display empty panes.  The ``CharmTreeWidget``
+had a similar "content but no visible rows" bug that was fixed by
+pinning ``height: 1fr; max-height: 50%;`` on ``#charm-files`` in
+``cantrip.tcss`` — the same CSS height-computation edge case may be
+biting the ``RichLog`` widgets inside ``TranscriptScreen``
+(``#transcript-output``, currently ``height: 1fr``) and
+``LogScreen`` (``#log-output``, currently ``height: 1fr``), since
+both are nested inside ``Center → Vertical`` containers that the
+filetree widget is not.
+
+### 66.1 High — Reproduce and diagnose
+
+- [ ] Repro on a session with a known-good transcript database
+  (``.cantrip/`` directory with events).  Confirm whether the
+  problem is (a) ``RichLog`` receiving no lines, (b)
+  ``RichLog`` receiving lines but having zero rendered height,
+  or (c) the modal container collapsing so the output is
+  clipped off-screen.  ``textual console`` + ``Widget.size``
+  prints should tell us which.
+- [ ] Same check for ``LogScreen`` — does the worker return
+  content that never reaches the widget, or does the widget
+  render but with zero visible height?
+
+### 66.2 High — Fix the height, if that's the cause
+
+- [ ] If 66.1 points to the container sizing, apply the same
+  treatment that rescued ``#charm-files``: add an explicit
+  ``max-height`` (or a concrete ``height`` on the enclosing
+  ``Center``/``Vertical``) so the ``1fr`` allocation actually
+  resolves.  Both modals already set container ``height: 80%``
+  or ``90%``, but the inner ``Vertical`` may collapse under the
+  ``Center`` parent.
+- [ ] Add a smoke test that mounts each modal with fixture data
+  and asserts the output widget has a non-zero row count — so
+  the regression doesn't slip back in.
+
+### 66.3 Medium — Surface an empty-state message
+
+- [ ] If the source genuinely has no content (no juju debug-log
+  lines, no events in the store), render an explicit "No
+  transcript available" / "No log entries yet" string so the
+  window stops looking broken.  Currently ``LogScreen`` does
+  this for the ``EMPTY:`` marker but the modal appears blank
+  before the worker returns; pre-fill the widget on mount.
+
+### What this phase is *not*
+
+- Not a redesign of either modal's search / filter / streaming
+  UX.  Those keep working as they are.
+- Not a refactor of the transcript data layer — this is purely
+  about getting the existing content on screen.
+
+**Exit criteria:** pressing the transcript binding shows either
+real events or a clear empty-state string; pressing the log
+binding shows either ``juju debug-log`` output or an empty-state
+string; both are proven by a smoke test; the underlying cause
+(heights, container sizing, or worker plumbing) is documented
+in the commit message.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Diagnosis (66.1) | none | Must run first |
+| Height fix (66.2) | 66.1 | Small CSS / container change |
+| Empty-state (66.3) | 66.1 | Independent of 66.2 |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -7052,4 +7283,7 @@ cache TTL, and every opt-out; ``/update`` and the
 | M61: Slash Autocomplete | 61 | Typing ``/`` in the TUI surfaces a catalogue-driven suggestion popup; Tab completes the active verb; CLI readline gets the same catalogue for parity |
 | M62: On-Theme Activity Labels | 62 | Status-bar and Web "Thinking..." literals replaced by randomly-selected spellcasting verbs (incanting, conjuring, brewing, …) so the UI matches the cantrip/juju theme |
 | M63: Self-Update Check | 63 ✓ | PyPI polled at startup; TUI, Web, and CLI surface a non-blocking notice with filtered changelog and an installer-aware upgrade command when a newer Cantrip is published |
+| M64: Polite Repo Bootstrap | 64 | Create-GitHub-repo offer moved out of the main chat and suggests ``<workload>-operator`` by default |
+| M65: Right-Panel Tidy | 65 | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
+| M66: Transcript/Log Visible | 66 | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
