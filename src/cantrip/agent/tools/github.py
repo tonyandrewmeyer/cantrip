@@ -542,33 +542,50 @@ labels: enhancement
 <!-- What else did you think about? -->
 """
 
+# CI workflow stub aligned with the upstream "set up CI for a charm" how-to:
+# top-level least-privilege, pinned action SHAs/majors, persist-credentials off
+# on checkout, and tox/tox-uv driving the actual lint + unit jobs.
 _CI_WORKFLOW_TEMPLATE = """\
 name: CI
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions: {}
+
 jobs:
   lint:
+    name: Linting
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - name: Install dependencies
-        run: uv sync --dev
-      - name: Ruff lint
-        run: uv run ruff check .
-      - name: Ruff format
-        run: uv run ruff format --check .
-  unit-tests:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57  # v8.0.0
+      - name: Set up tox and tox-uv
+        run: uv tool install tox --with tox-uv
+      - name: Lint the code
+        run: tox -e lint
+
+  unit:
+    name: Unit tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - name: Install dependencies
-        run: uv sync --dev
-      - name: Unit tests
-        run: uv run pytest tests/unit -v
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57  # v8.0.0
+      - name: Set up tox and tox-uv
+        run: uv tool install tox --with tox-uv
+      - name: Run unit tests
+        run: tox -e unit
 """
 
 # Conservative defaults for a fresh charm repo: require one PR review, forbid

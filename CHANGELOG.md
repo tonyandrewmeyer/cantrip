@@ -33,6 +33,35 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Changed
+- **Upstream ecosystem catch-up — Phase 37.1 ✓.**  Refreshed Cantrip's
+  charm-generation outputs against ``canonical/operator`` docs commits
+  through April 2026.  Skills updated: ``scenario-tests`` (drop ``meta=``
+  from ``Context``, ``get_filesystem`` for pushed files,
+  ``dataclasses.replace`` for State sequences, ``collect_status`` via
+  ``update_status`` with ``layers=``/``service_statuses=``,
+  ``pytest.mark.parametrize`` for config validation), ``jubilant-tests``
+  (full ``pytest-jubilant`` 2.0 adoption: drop hand-rolled ``juju``
+  fixture, pin ``jubilant>=1.8,<2``/``pytest-jubilant>=2,<3``,
+  ``--juju-dump-logs`` in CI, COS Lite cross-model pattern with
+  ``JujuFactory``), ``observability`` (Pebble's Loki label is ``charm``
+  not ``juju_charm``; cross-model COS smoke-test pointer),
+  ``relation-data-design`` (secret IDs are opaque, secrets-over-CMR are
+  granted only by the offering app), ``charmcraft`` (Charmcraft 4.2
+  ``base:``/``platforms:``/``assumes:`` form, storage-event bracket
+  notation, ``pathops``, Juju/Pebble version matrix), ``jhack`` /
+  ``iterate-fix`` (``jhack scenario snapshot`` for live state capture,
+  interactive debugging via ``Framework.breakpoint`` + ``debugpy`` +
+  ``juju debug-code``).  Gold-standard charms (meilisearch, ntfy,
+  miniflux) drop the ``meta=``/``_meta()``/``_config()`` placeholders,
+  import the real charm class, and gain ``assumes: [juju >= 3.6,
+  k8s-api]``.  ``GhRepoBootstrapTool``'s CI workflow stub now matches
+  the upstream "set up CI for a charm" how-to (``permissions: {}``,
+  pinned action SHAs, ``persist-credentials: false``,
+  ``uv tool install tox --with tox-uv``, separate lint/unit jobs).
+  System prompt: charm deps live in ``pyproject.toml`` (not
+  ``requirements.txt``), and never put secrets in CLI arguments.  New
+  ``design/UPSTREAM_AUDIT.md`` records the audit cutoff (operator
+  ``df731e5``) and the procedure for re-running the sweep next quarter.
 - **Close out Phase 41 (Provider Parity).**  The remaining subphases
   are either done or explicitly deferred: 41.3's "pad the system
   prompt to reach cache threshold" and 41.4's "API-driven context

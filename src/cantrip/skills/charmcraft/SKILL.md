@@ -158,16 +158,19 @@ summary: string           # Short description (< 100 chars)
 description: |            # Full description (supports markdown)
   Multi-line description of your charm.
 
-# Base configuration (required for charms)
-bases:
-  - build-on:
-      - name: ubuntu
-        channel: "22.04"
-        architectures: [amd64]
-    run-on:
-      - name: ubuntu
-        channel: "22.04"
-        architectures: [amd64]
+# Base configuration (Charmcraft 4.2 form — preferred)
+base: ubuntu@24.04
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+  arm64:           # Optional — list each platform you build for.
+
+# Declare runtime expectations.  K8s charms on Charmcraft 4.2 should
+# include both juju >= 3.6 and k8s-api so deployment fails fast on
+# incompatible controllers.
+assumes:
+  - juju >= 3.6
+  - k8s-api        # Drop this line for machine charms.
 
 # Build configuration (required)
 parts:
@@ -275,25 +278,56 @@ storage:
     minimum-size: 1G
 ```
 
-### Multi-Base Builds
+### Storage events on K8s
 
-```yaml
-bases:
-  - build-on:
-      - name: ubuntu
-        channel: "22.04"
-    run-on:
-      - name: ubuntu
-        channel: "22.04"
-  - build-on:
-      - name: ubuntu
-        channel: "24.04"
-    run-on:
-      - name: ubuntu
-        channel: "24.04"
+K8s charms support a single instance of each declared storage; machine
+charms get a list.  Read events with bracket notation, never attribute
+notation:
+
+```python
+self.framework.observe(
+    self.on["data"].storage_attached,   # bracket notation
+    self._on_data_attached,
+)
 ```
 
-Pack for specific base: `charmcraft pack --bases-index=0`
+In the handler, resolve the workload mount from charmcraft metadata:
+
+```python
+mount = self.meta.containers["my-app"].mounts["data"].location
+```
+
+For K8s charms there is exactly one storage instance, so index `[0]`:
+
+```python
+storage = self.model.storages["data"][0]
+```
+
+Consider the `pathops` library (on PyPI) when you need pathlib-style
+file operations against the workload container.
+
+### Multi-Base Builds
+
+To target multiple bases, declare a `platforms` entry per base/arch and
+pack each separately.  Charmcraft 4.2 retired the `build-on`/`run-on`
+matrix; use one charmcraft.yaml per base or override at pack time:
+
+```bash
+charmcraft pack --base=ubuntu@24.04
+charmcraft pack --base=ubuntu@22.04
+```
+
+### Juju / Pebble / ops version matrix
+
+When picking values for the `assumes:` block, line up with the version
+matrix the upstream operator docs publish:
+
+| Juju  | Pebble  | Notes                                     |
+|-------|---------|-------------------------------------------|
+| 3.6   | 1.19.2  | LTS — safe minimum for Charmcraft 4.2.    |
+| 4.0   | 1.26.0  | Required for newer Pebble notice / check kinds. |
+
+Bump the floor only when the charm actually uses a feature that needs it.
 
 ## Common Patterns
 

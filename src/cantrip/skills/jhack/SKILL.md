@@ -127,7 +127,12 @@ jhack scenario snapshot myapp/0 > state.json
 jhack scenario state-apply myapp/0 state.json
 ```
 
-**Integration with ops-scenario:** Use `snapshot` to capture real charm state, then use it in unit tests with the Ops state-transition (unit) testing framework.
+**Integration with ops-scenario:** Use `snapshot` to capture real charm
+state — including live relation databags — and pin it as the input
+`State` for a Scenario regression test. This is the canonical way to
+turn a one-off production bug into a repeatable test: dump the snapshot,
+paste the relevant fields into a `testing.State(...)` literal, and fire
+the event that triggered the failure.
 
 ### Charm Manipulation
 

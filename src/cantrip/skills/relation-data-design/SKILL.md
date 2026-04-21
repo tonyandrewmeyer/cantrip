@@ -139,9 +139,47 @@ def _set_unit_address(self):
 
 8. **Use interface libraries where possible.** They handle serialisation, validation, and versioning of the data format. Writing raw relation data is acceptable for simple custom interfaces.
 
+## Secrets in relation data
+
+When the charm shares a Juju secret over a relation, put only the secret
+*identifier* (an opaque string) in the relation databag — never the
+secret body. Two rules worth knowing:
+
+- **Secret IDs are opaque.** Do not parse, match by length, or assume
+  the `secret://Xid` form. Treat the value as a blob and hand it back to
+  the framework (`self.model.get_secret(id=...)`).
+- **Secrets over cross-model relations (CMR): only the offering
+  application can grant access.** The side of the relation that created
+  the secret must call `secret.grant(relation)` — consuming charms cannot
+  grant to themselves. When you're writing the charm that owns the
+  secret, do the grant in the relation-joined / relation-changed
+  handler. When you're writing the consumer, just `get_secret(id=...)`;
+  do not attempt to manage the grant from your side.
+
+```python
+# Owner (offering) side
+def _on_db_relation_changed(self, event):
+    if not self.unit.is_leader():
+        return
+    secret = self.model.get_secret(label="db-password")
+    secret.grant(event.relation)
+    event.relation.data[self.app]["password-id"] = secret.id
+
+# Consumer side
+def _on_db_relation_changed(self, event):
+    secret_id = event.relation.data[event.app].get("password-id")
+    if not secret_id:
+        return
+    secret = self.model.get_secret(id=secret_id)
+    password = secret.get_content()["password"]
+```
+
 ## Common Pitfalls
 
 - **Writing app data from a non-leader unit** causes a runtime error. Always check `is_leader()`.
 - **Reading `event.relation.data[event.app]` when `event.app` is `None`** — this happens on some event types. Guard against it.
 - **Forgetting to handle `relation-broken`** — the charm should gracefully degrade when a relation is removed.
-- **Putting secrets in relation data** — use Juju secrets instead for sensitive values like passwords and tokens.
+- **Putting secret *bodies* in relation data** — share the opaque secret
+  ID instead, and grant access via `secret.grant(relation)`.
+- **Parsing secret IDs.** They are opaque strings; do not assume the
+  `Xid` format or any specific length.

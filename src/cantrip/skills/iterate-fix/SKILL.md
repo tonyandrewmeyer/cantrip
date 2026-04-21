@@ -65,6 +65,30 @@ Within a category, fix in this order:
 5. **Warnings / cosmetic issues** — defer until the higher tiers are
    green.
 
+## When logs aren't enough — interactive debugging
+
+For Workload-bucket failures where ``juju_debug_log`` and
+``loki_query`` leave the root cause unclear, fall back to interactive
+debugging tools before guessing at fixes:
+
+- **``ops.Framework.breakpoint()``** drops the running charm into pdb
+  on the next hook firing.  Add the call in the suspect handler, fire
+  the event with ``jhack utils fire`` (or wait for the natural
+  trigger), then ``juju debug-code <unit>`` attaches your terminal to
+  the pdb session.  Remove the breakpoint when done.
+- **``debugpy``** lets you attach a remote VS Code / IDE debugger
+  instead of a CLI pdb.  Add ``debugpy.listen()`` early in
+  ``__init__``, set the wait flag if you want the charm to pause on
+  startup, and forward the port from the unit.  See the upstream
+  ops debugging how-to for the exact wiring.
+- **``jhack scenario snapshot <unit>``** captures the live state
+  (relations, config, secrets) so you can reproduce the failure as a
+  Scenario unit test offline — often faster than re-running the full
+  deployment.
+
+These tools cost a deploy iteration each but *eliminate* guesswork —
+prefer them over a fourth speculative fix attempt.
+
 ## Retry budgets
 
 Infinite loops are the biggest risk in autonomous iteration.  Cantrip's

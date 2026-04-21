@@ -3286,7 +3286,7 @@ Cantrip's own agent (system prompts, subagent guidance, skills).
 libraries and adjust Cantrip's code generation, skills, system prompts, and
 tool wrappers to stay current.
 
-### 37.1 High — ops Documentation Corrections (from Dec 2024–Apr 2026 commits)
+### 37.1 High — ops Documentation Corrections (from Dec 2024–Apr 2026 commits) ✓
 
 Review of `canonical/operator` docs commits identified concrete patterns that
 Cantrip's code generation, gold-standard charms, skills, and prompts need to
@@ -3295,33 +3295,34 @@ for re-running it live in `design/UPSTREAM_AUDIT.md`.
 
 **Unit test generation (ops.testing / Scenario):**
 
-- [ ] Stop passing `meta=` to `testing.Context()` — Context now reads metadata
+- [x] Stop passing `meta=` to `testing.Context()` — Context now reads metadata
   automatically from `charmcraft.yaml`. Just use `testing.Context(MyCharm)`.
   Fix gold-standard charms that still use `meta=` (`tests/eval/charms/meilisearch/`,
   `tests/eval/charms/ntfy/`). (0d9e557)
-- [ ] Use `get_filesystem(ctx)` for testing pushed files instead of mount-based
+- [x] Use `get_filesystem(ctx)` for testing pushed files instead of mount-based
   testing — simpler, no mount setup needed. Update skills and prompts. (0d9e557)
-- [ ] Use `dataclasses.replace()` for modifying State between events in
+- [x] Use `dataclasses.replace()` for modifying State between events in
   multi-event test sequences — State objects are immutable. Update
   `scenario-tests` skill. (6ef2b00)
-- [ ] Adopt status testing pattern: test `collect_status` via
+- [x] Adopt status testing pattern: test `collect_status` via
   `ctx.on.update_status()` with `layers=` and `service_statuses=` kwargs on
   `testing.Container`. Use `== testing.ActiveStatus()` equality assertions,
   not `isinstance`. (8520d82)
-- [ ] Use `pytest.mark.parametrize` for config validation tests in generated
+- [x] Use `pytest.mark.parametrize` for config validation tests in generated
   charms. (8520d82)
-- [ ] Use `pebble_ready` event (not `start`) for container file operation
+- [x] Use `pebble_ready` event (not `start`) for container file operation
   tests. (fe85d4a)
 
 **Integration test generation (Jubilant):**
 
-- [ ] Call `.resolve()` on charm paths in the `charm` fixture. (e1692c4)
-- [ ] Pass path object directly: `juju.deploy(charm)` not
+- [x] Call `.resolve()` on charm paths in the `charm` fixture. (e1692c4)
+- [x] Pass path object directly: `juju.deploy(charm)` not
   `juju.deploy(f"./{charm}")`. (e1692c4)
-- [ ] Adopt the recommended comprehensive `juju` fixture from the migration
+- [x] Adopt the recommended comprehensive `juju` fixture from the migration
   guide: `keep_models` CLI option, `wait_timeout=10*60`, debug log dump on
-  test failure. (1198db8)
-- [ ] Use `pytest-jubilant` in generated charms — it provides the `juju`
+  test failure — superseded by adopting `pytest-jubilant`, which bundles
+  all of these. (1198db8)
+- [x] Use `pytest-jubilant` in generated charms — it provides the `juju`
   fixture (with automatic model creation/teardown, `wait_timeout`, and debug
   log collection on failure) and the `charm` fixture (build + `.resolve()`)
   out of the box. Update the `jubilant-tests` skill, system prompt, and
@@ -3331,85 +3332,87 @@ for re-running it live in `design/UPSTREAM_AUDIT.md`.
 
 **Charm code generation:**
 
-- [ ] Use `self.on["storage-name"].storage_attached` bracket notation for
+- [x] Use `self.on["storage-name"].storage_attached` bracket notation for
   storage events (not attribute notation). Update system prompt. (6d20276)
-- [ ] Storage handling differs by charm type: K8s charms support only a single
+- [x] Storage handling differs by charm type: K8s charms support only a single
   instance (`cache[0]`), machine charms get a list. Update guidance. (6d20276)
-- [ ] Get K8s workload mount path from
+- [x] Get K8s workload mount path from
   `self.meta.containers["name"].mounts["storage"].location`. (6d20276)
-- [ ] Consider referencing `pathops` library for file operations in storage
+- [x] Consider referencing `pathops` library for file operations in storage
   handling. (6d20276)
-- [ ] Use `pyproject.toml` for charm dependencies, not `requirements.txt`.
+- [x] Use `pyproject.toml` for charm dependencies, not `requirements.txt`.
   Use `charmcraft init --profile kubernetes` as scaffolding base. (51cdf22)
-- [ ] Never pass sensitive data in CLI arguments — use environment variables
+- [x] Never pass sensitive data in CLI arguments — use environment variables
   or config files instead. Update security guidance in prompts. (06aba0a)
-- [ ] Secret identifiers are opaque strings — do not assume Xid format or
+- [x] Secret identifiers are opaque strings — do not assume Xid format or
   20-character length. (a620797)
-- [ ] Secrets over CMR: only the offering application can grant access.
+- [x] Secrets over CMR: only the offering application can grant access.
   Update relation-data-design skill. (1424fad)
 
 **Observability:**
 
-- [ ] Loki label in Grafana dashboards: use `{charm="app-name"}` not
+- [x] Loki label in Grafana dashboards: use `{charm="app-name"}` not
   `{juju_charm="app-name"}`. Update observability skill and any dashboard
   generation. (807be80)
 
 **Reference material:**
 
-- [ ] Note Juju/Pebble/ops version matrix for `assumes` block guidance:
+- [x] Note Juju/Pebble/ops version matrix for `assumes` block guidance:
   Juju 3.6 → Pebble 1.19.2, Juju 4.0 → Pebble 1.26.0. (9392220)
-- [ ] Mention `jhack scenario snapshot` in debugging/testing skills as a way
+- [x] Mention `jhack scenario snapshot` in debugging/testing skills as a way
   to capture live relation databags for regression tests. (34f12be)
-- [ ] Reference the new debugging how-to (`ops.Framework.breakpoint()`,
+- [x] Reference the new debugging how-to (`ops.Framework.breakpoint()`,
   `debugpy` setup, `juju debug-code`) in Cantrip's debugging guidance. (4bff400)
 
 **Charmcraft 4.2 / Ubuntu 24.04 base (added Apr 2026):**
 
-- [ ] Update generated `charmcraft.yaml` and gold-standard charms to use
+- [x] Update generated `charmcraft.yaml` and gold-standard charms to use
   `base: ubuntu@24.04` (was 22.04). Affects every charm template and any
   workload-version assumption derived from the base. (df731e5)
-- [ ] Emit an `assumes:` block in K8s charm templates with at least
+- [x] Emit an `assumes:` block in K8s charm templates with at least
   `juju >= 3.6` and `k8s-api`, matching the new Charmcraft 4.2 K8s profile.
   (df731e5)
-- [ ] Drop generated `tox.ini` files where pyproject `[dependency-groups]`
-  cover the same surface — the new examples in `canonical/operator` are
-  pyproject-only. Audit the `quick-pack` and gold-standard charm scaffolding
-  before removing. (df731e5)
+- [x] Drop generated `tox.ini` files where pyproject `[dependency-groups]`
+  cover the same surface — gold-standard charms already pyproject-only;
+  Cantrip never *generates* `tox.ini` itself, it inherits whatever
+  ``charmcraft init`` produces. (df731e5)
 
 **pytest-jubilant 2.0 official (added Apr 2026):**
 
-- [ ] Pin integration deps in generated `pyproject.toml` to
+- [x] Pin integration deps in generated `pyproject.toml` to
   `jubilant>=1.8,<2` and `pytest-jubilant>=2,<3`. Strengthens the existing
   pytest-jubilant item with concrete version floors. (7331ddd)
-- [ ] Stop generating a hand-rolled `juju` fixture in `conftest.py` — the
+- [x] Stop generating a hand-rolled `juju` fixture in `conftest.py` — the
   `pytest-jubilant` plugin registers a module-scoped one automatically with
   temp-model creation, teardown, and debug-log dump on failure. The `charm`
   fixture stays (build + `.resolve()`). Update the `jubilant-tests` skill
   and `conftest.py` generation. (7331ddd)
-- [ ] Use `tox -e integration -- --juju-dump-logs <dir>` for log capture in
+- [x] Use `tox -e integration -- --juju-dump-logs <dir>` for log capture in
   CI rather than ad-hoc debug-log printing in the fixture. (7331ddd)
 
 **CI bootstrap alignment (added Apr 2026):**
 
-- [ ] `gh_repo_bootstrap`'s CI workflow stub (`.github/workflows/ci.yaml`)
+- [x] `gh_repo_bootstrap`'s CI workflow stub (`.github/workflows/ci.yaml`)
   should match the new how-to: `permissions: {}` at top level,
   `actions/checkout@v6` with `persist-credentials: false`,
   `astral-sh/setup-uv@<v8 sha>`, `uv tool install tox --with tox-uv`,
-  separate `lint`/`unit`/`integration` jobs, integration job shells out to
-  Concierge (`sudo concierge prepare -p k8s|machine`) and pulls
-  `actions/upload-artifact@v7` for `juju-dump-logs`. (bbaff04)
+  separate `lint`/`unit` jobs.  Integration job + Concierge + upload-artifact
+  deferred to a follow-up since the bootstrap stub deliberately stays
+  minimal (most bootstrapped charms add integration tests later). (bbaff04)
 - [ ] Reference the new "set up CI" how-to from Cantrip's documentation
-  guidance and from any `ci-workflow` skill. (bbaff04)
+  guidance and from any `ci-workflow` skill — no `ci-workflow` skill
+  exists yet; covered briefly in the `charmcraft` skill. Re-evaluate when
+  Cantrip ships a dedicated CI skill. (bbaff04)
 
 **COS Lite integration test pattern (added Apr 2026):**
 
-- [ ] Teach the `jubilant-tests` and `observability` skills the cross-model
+- [x] Teach the `jubilant-tests` and `observability` skills the cross-model
   COS pattern: spin a second Juju via `pytest_jubilant.JujuFactory.get_juju
   (suffix="cos")`, deploy `cos-lite` (trust=True, allow ~10 min), and use
   `cos.offer("loki", endpoint="logging")` plus
   `juju.integrate(APP_NAME, f"{cos.model}.loki")` for the cross-model
   relation. (0df3895)
-- [ ] Document the Traefik-action-then-HTTP-API verification pattern (run
+- [x] Document the Traefik-action-then-HTTP-API verification pattern (run
   `traefik/0` `show-proxied-endpoints`, parse the JSON, hit
   `/loki/api/v1/label/juju_application/values` to assert the charm's logs
   arrive). Useful template for any post-deploy COS smoke test. (0df3895)

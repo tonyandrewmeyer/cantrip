@@ -130,6 +130,24 @@ class MyCharm(ops.CharmBase):
 
 Place dashboard JSON files in `src/grafana_dashboards/`. The library picks them up automatically.
 
+### Loki labels in Grafana queries
+
+When a dashboard panel queries Pebble-forwarded workload logs, use the
+`charm` label (not `juju_charm`):
+
+```jsonc
+// Good — Pebble's log-forwarder sets `charm`.
+{ "expr": "{charm=\"my-charm\"} |= ``" }
+
+// Wrong — `juju_charm` is set by the Juju agent for hook logs, not by
+// Pebble's workload log forwarding. A dashboard using this filter will
+// look empty even when logs are arriving.
+{ "expr": "{juju_charm=\"my-charm\"} |= ``" }
+```
+
+`juju_application`, `juju_unit`, `juju_model`, and friends are still set
+on hook/agent logs and remain the right filter for those.
+
 ## Step 5: Deploy COS and Relate
 
 ### Single controller (K8s)
@@ -192,6 +210,25 @@ After deployment, verify:
 2. **Metrics** — check Prometheus targets to confirm scraping is active
 3. **Logs** — check Loki for workload log streams
 4. **Dashboards** — open Grafana and find the auto-provisioned dashboard
+
+### Smoke-testing COS integration from an integration test
+
+For a regression-proof check that telemetry actually flows, write a
+`pytest-jubilant` integration test that brings up COS Lite in a second
+model and asserts that logs / metrics / traces arrive. The pattern lives
+in the `jubilant-tests` skill under "Cross-model — COS Lite Integration":
+
+- `pytest_jubilant.JujuFactory.get_juju(suffix="cos")` for the COS Juju.
+- `cos.deploy("cos-lite", trust=True)` then `cos.wait(jubilant.all_active, timeout=10*60)`.
+- Cross-model integrate: `cos.offer("loki", endpoint="logging")` then
+  `juju.integrate(APP_NAME, f"{cos.model}.loki")`.
+- Verify: run Traefik's `show-proxied-endpoints` action, parse the JSON,
+  hit Loki/Prometheus/Tempo HTTP APIs to confirm the workload's labels
+  are present.
+
+This is worth adding once per charm — a single "logs reach Loki" test
+catches the broad class of label / dispatcher / forwarding regressions
+that don't show up in unit tests.
 
 ## Querying for Debugging
 

@@ -19,12 +19,16 @@ Scenario tests are **state-transition tests**: you declare an input `State`, fir
 
 ## Step 1: Set Up Test Dependencies
 
-Add `ops[testing]` to the charm's test dependencies in `pyproject.toml` or `tox.ini`:
+Add `ops[testing]` to the charm's `pyproject.toml` dependency groups:
 
 ```toml
-[project.optional-dependencies]
-dev = ["ops[testing]"]
+[dependency-groups]
+unit = ["ops[testing]", "pytest", "coverage"]
 ```
+
+Charm dependencies live in `pyproject.toml`, not `requirements.txt`. The
+`charmcraft init --profile kubernetes` (or `machine`) scaffolding produces
+the right layout.
 
 ## Step 2: Write a Basic Test
 
@@ -32,14 +36,7 @@ dev = ["ops[testing]"]
 import ops
 from ops import testing
 
-
-class MyCharm(ops.CharmBase):
-    def __init__(self, framework: ops.Framework):
-        super().__init__(framework)
-        self.framework.observe(self.on.start, self._on_start)
-
-    def _on_start(self, event: ops.StartEvent):
-        self.unit.status = ops.ActiveStatus("ready")
+from src.charm import MyCharm
 
 
 def test_start_sets_active():
@@ -48,6 +45,11 @@ def test_start_sets_active():
     out = ctx.run(ctx.on.start(), state)
     assert out.unit_status == testing.ActiveStatus("ready")
 ```
+
+`Context` reads metadata directly from `charmcraft.yaml` when handed the
+real charm class — **do not pass `meta=` or `config=` overrides**. Those
+kwargs are leftovers from older Scenario versions and are unnecessary
+once the test imports the actual charm class.
 
 ## Step 3: Test with Relations
 
@@ -66,33 +68,77 @@ def test_database_relation_joined():
 
 ## Step 4: Test with Config
 
+Use `pytest.mark.parametrize` for config-validation tests so each invalid
+value produces a clearly-named failure:
+
 ```python
-def test_config_changed():
-    state = testing.State(config={"log-level": "debug"})
+import pytest
+
+
+@pytest.mark.parametrize(
+    "log_level,expected",
+    [
+        ("debug", testing.ActiveStatus()),
+        ("info", testing.ActiveStatus()),
+        ("verbose", testing.BlockedStatus("invalid log-level")),
+    ],
+)
+def test_config_validation(log_level, expected):
+    state = testing.State(config={"log-level": log_level})
     ctx = testing.Context(MyCharm)
     out = ctx.run(ctx.on.config_changed(), state)
-    assert out.unit_status == testing.ActiveStatus()
+    assert out.unit_status == expected
 ```
 
-## Step 5: Test with Containers (K8s charms)
+## Step 5: Test Containers and Pushed Files (K8s charms)
+
+For tests that exercise files the charm pushes into a container, fire
+`pebble_ready` (not `start`) and read the result with `get_filesystem`:
 
 ```python
-def test_pebble_ready():
-    container = testing.Container(
-        name="workload",
-        can_connect=True,
-    )
-    state = testing.State(containers=[container])
+def test_pebble_ready_pushes_config():
+    container = testing.Container(name="workload", can_connect=True)
+    state = testing.State(containers={container})
     ctx = testing.Context(MyCharm)
+
     out = ctx.run(ctx.on.pebble_ready(container), state)
 
-    # Check the Pebble plan was set.
-    updated_container = out.get_container("workload")
-    plan = updated_container.plan
+    # Read pushed files via get_filesystem — no mount setup required.
+    root = testing.get_filesystem(ctx, "workload")
+    config = (root / "etc" / "workload" / "config.yaml").read_text()
+    assert "log-level: info" in config
+
+    plan = out.get_container("workload").plan
     assert "workload" in plan.services
 ```
 
-## Step 6: Test Actions
+`get_filesystem(ctx, container_name)` returns a real temporary directory
+populated with whatever the charm pushed. It avoids the older
+mount-based testing pattern entirely.
+
+## Step 6: Test `collect_status`
+
+For charms that compute their unit status in `collect_status`, drive the
+status by firing `update_status` with the relevant container layers and
+service statuses, and use equality (`==`) rather than `isinstance`:
+
+```python
+def test_collect_status_active_when_workload_running():
+    container = testing.Container(
+        name="workload",
+        can_connect=True,
+        layers={"workload": testing.Layer({"services": {"workload": {}}})},
+        service_statuses={"workload": ops.pebble.ServiceStatus.ACTIVE},
+    )
+    state = testing.State(containers={container})
+    ctx = testing.Context(MyCharm)
+
+    out = ctx.run(ctx.on.update_status(), state)
+
+    assert out.unit_status == testing.ActiveStatus()
+```
+
+## Step 7: Test Actions
 
 ```python
 def test_backup_action():
@@ -102,7 +148,7 @@ def test_backup_action():
     assert out.action_results == {"status": "success"}
 ```
 
-## Step 7: Test Secrets
+## Step 8: Test Secrets
 
 ```python
 def test_secret_changed():
@@ -116,11 +162,34 @@ def test_secret_changed():
     assert out.unit_status == testing.ActiveStatus()
 ```
 
+## Step 9: Multi-Event Sequences
+
+`State` is **immutable**. To carry state between events in a sequence,
+use `dataclasses.replace()` to derive a new state from the output of the
+previous event:
+
+```python
+import dataclasses
+
+
+def test_install_then_config_change():
+    ctx = testing.Context(MyCharm)
+    initial = testing.State()
+
+    after_start = ctx.run(ctx.on.start(), initial)
+    assert after_start.unit_status == testing.ActiveStatus()
+
+    # Carry forward whatever start() produced; tweak only the config.
+    next_state = dataclasses.replace(after_start, config={"log-level": "debug"})
+    final = ctx.run(ctx.on.config_changed(), next_state)
+    assert final.unit_status == testing.ActiveStatus()
+```
+
 ## Patterns and Best Practices
 
 1. **Test state transitions, not implementation.** Assert on the output `State` (status, relation data, config), not on internal charm attributes.
 
-2. **One event per test.** Each test fires exactly one event. If you need to simulate a sequence, chain multiple `ctx.run()` calls, feeding the output state of one into the next.
+2. **One event per test.** Each test fires exactly one event. To simulate a sequence, chain `ctx.run()` calls and use `dataclasses.replace()` between them — never mutate a `State` in place.
 
 3. **Use `ctx.on.<event>()`** to construct events — never instantiate event objects directly.
 
@@ -133,8 +202,21 @@ def test_secret_changed():
 
 6. **Deferred events.** Check `out.deferred` to verify events were deferred when expected.
 
+7. **Equality, not isinstance.** Compare statuses with `==` (e.g. `out.unit_status == testing.ActiveStatus("ready")`) so the message is checked too.
+
+## Capturing live state for regression tests
+
+When a deployed charm misbehaves and you want to write a regression test
+that reproduces the exact databag and storage state, use
+`jhack scenario snapshot <unit>` to dump the live state in
+Scenario-friendly form. Paste the snapshot into a test file as the input
+`State` and you have a deterministic reproduction of the production bug.
+
 ## Common Pitfalls
 
+- **Do not pass `meta=` or `config=` to `Context()`** — Scenario reads
+  these from `charmcraft.yaml` automatically.
 - **Do not use `unittest.mock.patch`** on Juju internals. Scenario handles all Juju interactions through the `State`.
 - **Do not import from `ops.testing` inside functions** — keep imports at module level.
 - **Container `can_connect=False`** is the default. Set it to `True` when testing Pebble interactions.
+- **Use `pebble_ready`, not `start`,** for tests that exercise container file operations or service plans.
