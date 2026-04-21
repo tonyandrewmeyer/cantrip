@@ -3827,7 +3827,7 @@ parity, based on findings from live testing with the Anthropic API (April 2025).
 
 ---
 
-## Phase 42: GitHub Integration
+## Phase 42: GitHub Integration ✓
 
 **Goal:** Close the loop between Cantrip and GitHub so that the agent can triage
 incoming issues, work on branches, open PRs, and — for new charms — bootstrap a
