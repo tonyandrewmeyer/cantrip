@@ -146,8 +146,14 @@ class TestRockcraftInitTool:
         assert call_kwargs["env"]["ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS"] == "true"
 
     @pytest.mark.asyncio
-    async def test_no_experimental_flag_for_flask(self, tool):
-        """Does not set ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS for flask-framework."""
+    async def test_experimental_flag_set_for_flask(self, tool):
+        """Sets ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS even for flask.
+
+        All rockcraft framework extensions (Flask, Django, FastAPI, Go,
+        ExpressJS, Spring Boot) are flagged experimental upstream, so the
+        wrapper sets the enable flag unconditionally — matching the shape
+        of ``RockcraftPackTool``.
+        """
         mock_result = mock.MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = ""
@@ -167,7 +173,7 @@ class TestRockcraftInitTool:
 
         assert result.success
         call_kwargs = mock_run.call_args[1]
-        assert "ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS" not in call_kwargs["env"]
+        assert call_kwargs["env"]["ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS"] == "true"
 
 
 class TestRockcraftPackTool:

@@ -3357,7 +3357,7 @@ Cantrip's own agent (system prompts, subagent guidance, skills).
 
 ---
 
-## Phase 37: Upstream Ecosystem Catch-Up
+## Phase 37: Upstream Ecosystem Catch-Up ✓
 
 **Goal:** Review recent changes (last ~3 months) in the core charm ecosystem
 libraries and adjust Cantrip's code generation, skills, system prompts, and
@@ -3589,13 +3589,45 @@ for re-running it live in `design/UPSTREAM_AUDIT.md`.
   still need charmcraft fetch-libs`).  Ingress skill's fetch-lib
   example gains an explicit "traefik_k8s is not on PyPI" note.
 
-### 37.5 Low — Charmcraft and Rockcraft Changes
+### 37.5 Low — Charmcraft and Rockcraft Changes ✓
 
-- [ ] Review `canonical/charmcraft` changelog — new `charmcraft.yaml` fields,
-  changed pack behaviour, new commands
-- [ ] Review `canonical/rockcraft` changelog — new `rockcraft.yaml` features,
-  changed base images, new extensions
-- [ ] Update charm and rock template generation if schemas have changed
+- [x] Review `canonical/charmcraft` changelog — new `charmcraft.yaml` fields,
+  changed pack behaviour, new commands.  Audited against release v4.2.1
+  (cutoff `fae9862`, recorded in `design/UPSTREAM_AUDIT.md`).  **Real bug
+  caught**: ``CharmcraftInitTool`` didn't set
+  ``CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS`` for the four
+  still-experimental profiles (fastapi, go, express, spring-boot), so
+  those inits would have failed at `charmcraft pack` time.  Fixed by
+  gating on a new ``_CHARMCRAFT_EXPERIMENTAL_PROFILES`` frozenset.
+  Other findings surfaced as skill/prompt updates — HTTP proxy /
+  OpenID Connect integrations in 12-factor, `src/workload.py` in
+  K8s/machine scaffolding, the `simple` → `kubernetes` profile
+  rename (already compliant), and the Ubuntu 25.10 stable / 26.04
+  devel base picture.
+- [x] Review `canonical/rockcraft` changelog — new `rockcraft.yaml`
+  features, changed base images, new extensions.  Audited against
+  release v1.18.0 (cutoff `e03ed9f`).  **Second real bug**:
+  ``RockcraftInitTool`` only set
+  ``ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS`` for a subset of profiles
+  — but every framework extension in rockcraft (including Flask and
+  Django) is still flagged experimental upstream, so Flask / Django /
+  Spring Boot inits would have errored out.  Fixed by setting the
+  flag unconditionally (matching `RockcraftPackTool`).  Notable new
+  surface: Flask/Django/FastAPI extensions default to a **bare** base
+  (`3fba20c`) — smaller rocks, no shell / apt; `entrypoint-command`
+  field available (`0f919f9`); uv/poetry plugins disabled on 25.10+
+  until usrmerge-ready.
+- [x] Update charm and rock template generation if schemas have changed
+  — ``twelve-factor`` skill table rewritten to reflect the per-tool
+  experimental status (Flask/Django stable in charmcraft, experimental
+  in rockcraft; FastAPI / Go / Express / Spring Boot experimental
+  everywhere).  HTTP proxy and OpenID Connect sections added with
+  ``charmcraft.yaml`` snippets.  Bare-base note added to the rockcraft
+  step of the workflow.  ``charmcraft`` skill's profile list expanded
+  to name all six profiles explicitly and flag which need the
+  experimental env var; workload module pattern documented.
+  ``rockcraft.py`` + ``charm.py`` tests updated; 19 rockcraft +
+  55 charm-tools tests still pass.
 
 **Exit criteria:** Cantrip's generated code, skills, and prompts reflect the
 current state of the ecosystem. No deprecated APIs used in generated charms.

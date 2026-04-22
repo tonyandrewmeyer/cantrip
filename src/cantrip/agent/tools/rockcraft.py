@@ -8,8 +8,10 @@ from typing import Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
 
-# Profiles that require the experimental extensions flag.
-_EXPERIMENTAL_PROFILES = frozenset({"go-framework", "express-framework", "fastapi-framework"})
+# All rockcraft framework extensions are flagged experimental upstream
+# (Flask, Django, FastAPI, Go, ExpressJS, Spring Boot all return
+# ``is_experimental() -> True``), so the wrapper unconditionally sets the
+# enable flag — same shape as ``RockcraftPackTool``.
 
 
 class RockcraftInitTool(Tool):
@@ -67,8 +69,7 @@ class RockcraftInitTool(Tool):
             target_path.mkdir(parents=True, exist_ok=True)
 
             env = os.environ.copy()
-            if profile in _EXPERIMENTAL_PROFILES:
-                env["ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS"] = "true"
+            env["ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS"] = "true"
 
             result = subprocess.run(
                 ["rockcraft", "init", f"--profile={profile}"],

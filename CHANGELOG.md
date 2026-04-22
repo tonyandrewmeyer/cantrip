@@ -177,6 +177,35 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   section of ``reference-cli.html``.
 
 ### Changed
+- **Charmcraft + Rockcraft catch-up — Phase 37.5 ✓ (closes Phase 37).**
+  Audited ``canonical/charmcraft`` (release v4.2.1, cutoff ``fae9862``)
+  and ``canonical/rockcraft`` (release v1.18.0, cutoff ``e03ed9f``).
+  Two real bugs caught:  (1) ``CharmcraftInitTool`` didn't set
+  ``CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS`` for the four profiles
+  still flagged experimental upstream (fastapi-, go-, express-,
+  spring-boot-framework) — inits would have scaffolded successfully
+  but ``charmcraft pack`` would have refused; fixed by gating on a
+  new ``_CHARMCRAFT_EXPERIMENTAL_PROFILES`` frozenset.  (2)
+  ``RockcraftInitTool`` only set
+  ``ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS`` for a subset of profiles,
+  but **every** rockcraft framework extension (including Flask and
+  Django) is still flagged experimental upstream; fixed by setting
+  the flag unconditionally (same shape as ``RockcraftPackTool``).
+  Skill updates: **``twelve-factor``** skill table redone with a
+  per-tool experimental column (Flask/Django stable in charmcraft,
+  experimental in rockcraft; FastAPI / Go / Express / Spring Boot
+  experimental everywhere); new HTTP proxy (``2d6022a``) and
+  OpenID Connect (``2b6a9cf``) integration sections with
+  ``charmcraft.yaml`` snippets; note that Flask / Django / FastAPI
+  rocks now default to a bare base (``3fba20c``) — smaller images,
+  no shell or apt; ``entrypoint-command`` field mentioned.
+  **``charmcraft``** skill's profile list now names all six profiles
+  explicitly with experimental flags and documents the
+  ``src/workload.py`` split that the ``kubernetes`` / ``machine``
+  templates scaffold.  Tests updated (rockcraft init now always sets
+  the flag; Flask test asserts the flag is set rather than absent).
+  ROADMAP §37.5 closed with per-item findings; Phase 37 header marked
+  ✓.
 - **Charm-library catch-up — Phase 37.4 ✓.**  Audited the PyPI
   ecosystem (including the `canonical/charmlibs` monorepo) and found
   that Cantrip's previous ``LIB001`` PyPI map was **mostly fictional**

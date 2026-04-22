@@ -1,5 +1,6 @@
 """Charm scaffolding and management tools."""
 
+import os
 import re
 import shutil
 import subprocess
@@ -331,6 +332,20 @@ def _inject_coverage_threshold(target_path: Path) -> list[str]:
     return [f"Set coverage fail_under = {_COVERAGE_THRESHOLD}% in pyproject.toml"]
 
 
+# Charmcraft framework extensions still flagged ``is_experimental() ->
+# True`` upstream as of charmcraft 4.2 — Flask and Django are stable, the
+# rest need ``CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS=true`` at both
+# init and pack time or the extension layer refuses to load.
+_CHARMCRAFT_EXPERIMENTAL_PROFILES = frozenset(
+    {
+        "fastapi-framework",
+        "go-framework",
+        "express-framework",
+        "spring-boot-framework",
+    }
+)
+
+
 class CharmcraftInitTool(Tool):
     """Tool to initialise a new charm with charmcraft."""
 
@@ -393,12 +408,17 @@ class CharmcraftInitTool(Tool):
             target_path = Path(path) / name
             target_path.mkdir(parents=True, exist_ok=True)
 
+            env = os.environ.copy()
+            if profile in _CHARMCRAFT_EXPERIMENTAL_PROFILES:
+                env["CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS"] = "true"
+
             result = subprocess.run(
                 ["charmcraft", "init", f"--profile={profile}", f"--name={name}"],
                 cwd=target_path,
                 capture_output=True,
                 text=True,
                 timeout=60,
+                env=env,
             )
 
             if result.returncode != 0:

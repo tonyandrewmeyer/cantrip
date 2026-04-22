@@ -9,16 +9,25 @@ This skill covers the complete workflow for building a Juju charm from a 12-fact
 
 ## Framework-to-Profile Mapping
 
-| Framework | Charmcraft Profile | Rockcraft Profile | Experimental? |
-|-----------|-------------------|-------------------|---------------|
-| Flask | `flask-framework` | `flask-framework` | No |
-| Django | `django-framework` | `django-framework` | No |
-| FastAPI | `fastapi-framework` | `fastapi-framework` | Yes |
-| Go | `go-framework` | `go-framework` | Yes |
-| Express | `express-framework` | `express-framework` | Yes |
-| Spring Boot | `spring-boot-framework` | `spring-boot-framework` | No |
+The "experimental" status differs between charmcraft and rockcraft.
+Cantrip's ``rockcraft_init`` and ``rockcraft_pack`` tools set
+``ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS=true`` unconditionally — every
+rockcraft framework extension is still experimental upstream as of
+April 2026, even for the long-stable Flask and Django profiles.
 
-**Experimental** means you must set `ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS=true` in the environment when running `rockcraft init` or `rockcraft pack` for that profile.
+| Framework   | Charmcraft Profile         | Rockcraft Profile          | Charmcraft Experimental? | Rockcraft Experimental? |
+|-------------|----------------------------|----------------------------|--------------------------|-------------------------|
+| Flask       | `flask-framework`          | `flask-framework`          | No                       | Yes                     |
+| Django      | `django-framework`         | `django-framework`         | No                       | Yes                     |
+| FastAPI     | `fastapi-framework`        | `fastapi-framework`        | Yes                      | Yes                     |
+| Go          | `go-framework`             | `go-framework`             | Yes                      | Yes                     |
+| Express     | `express-framework`        | `express-framework`        | Yes                      | Yes                     |
+| Spring Boot | `spring-boot-framework`    | `spring-boot-framework`    | Yes                      | Yes                     |
+
+To use a charmcraft-experimental extension you also need
+``CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS=true`` for ``charmcraft init``
+and ``charmcraft pack`` — Cantrip's ``charmcraft_init`` sets this for the
+relevant profiles.
 
 ## Step-by-Step Workflow
 
@@ -44,16 +53,28 @@ If you bring the application's own `requirements.txt` into the charm directory, 
 rockcraft init --profile=flask-framework
 ```
 
-Use the `rockcraft_init` tool. For Go, Express, and FastAPI profiles, the tool automatically sets the experimental extensions flag.
+Use the `rockcraft_init` tool.  It always sets
+``ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS=true`` — every framework
+extension still requires it.
 
-The generated `rockcraft.yaml` defines how the application is packed into an OCI image (a "rock").
+The generated `rockcraft.yaml` defines how the application is packed
+into an OCI image (a "rock").  As of rockcraft 1.18, the Flask, Django,
+and FastAPI extensions default to a **bare** base — the resulting rock
+contains only the application and its runtime dependencies, no Ubuntu
+shell or apt.  Smaller image, faster pulls, smaller attack surface.
+Override with an explicit ``base:`` only when the workload genuinely
+needs system packages.
 
 ### 4. Customise YAML Files
 
 **rockcraft.yaml** — typical edits:
 - Set `name`, `version`, `summary`, `description`
 - Add system packages under `stage-packages` if the workload needs them
+  (this also forces a non-bare base — keep the bare default unless you
+  actually need apt packages at runtime)
 - Adjust `platforms` (default is `amd64`)
+- Optional: ``entrypoint-command`` lets you override the OCI entrypoint
+  declaratively rather than via a Pebble layer
 
 **charmcraft.yaml** — typical edits:
 - Set `title`, `summary`, `description`
@@ -156,6 +177,42 @@ Or use Traefik:
 juju deploy traefik-k8s --trust
 juju integrate my-app:ingress traefik-k8s:ingress
 ```
+
+## HTTP Proxy
+
+Charmcraft 4.2+ ships an ``http-proxy`` integration for 12-factor charms
+that automatically wires charm config (or a related proxy charm) into
+the workload's ``http_proxy``/``https_proxy``/``no_proxy`` environment
+variables.  Add to ``charmcraft.yaml``:
+
+```yaml
+requires:
+  http-proxy:
+    interface: http_proxy
+    optional: true
+```
+
+Useful in restricted environments where the workload needs to reach
+external HTTP services through a corporate proxy.
+
+## OpenID Connect / SSO
+
+For 12-factor charms that need authentication, the OIDC integration
+adds an ``oidc`` relation that exposes the OpenID Connect provider's
+issuer URL, client ID, and client secret to the workload as
+environment variables.  Add to ``charmcraft.yaml``:
+
+```yaml
+requires:
+  oidc:
+    interface: oauth
+    optional: true
+    limit: 1
+```
+
+Deploy alongside an OIDC provider charm (Hydra, Keycloak, etc.) and
+integrate; the paas-charm base populates the env vars on the workload's
+behalf.
 
 ## Observability
 

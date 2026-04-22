@@ -13,11 +13,20 @@ Expert guidance for developing, building, testing, and publishing Juju charms us
 
 ```bash
 # Initialise new charm with profile
-charmcraft init --profile=kubernetes       # K8s charm (default)
-charmcraft init --profile=machine          # Machine charm
-charmcraft init --profile=django-framework # Django app
-charmcraft init --profile=fastapi-framework # FastAPI app
-charmcraft init --profile=flask-framework  # Flask app
+charmcraft init --profile=kubernetes            # K8s charm (default)
+charmcraft init --profile=machine               # Machine charm
+charmcraft init --profile=flask-framework       # Flask 12-factor (stable)
+charmcraft init --profile=django-framework      # Django 12-factor (stable)
+charmcraft init --profile=fastapi-framework     # FastAPI 12-factor (experimental)
+charmcraft init --profile=go-framework          # Go 12-factor (experimental)
+charmcraft init --profile=express-framework     # ExpressJS 12-factor (experimental)
+charmcraft init --profile=spring-boot-framework # Spring Boot 12-factor (experimental)
+
+# Experimental profiles need:
+#   CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS=true charmcraft init …
+#   CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS=true charmcraft pack
+# Cantrip's `charmcraft_init` tool sets the flag automatically for the
+# four experimental profiles.
 
 # With custom name and author
 charmcraft init --name=my-charm --author="Your Name"
@@ -32,8 +41,15 @@ If the directory is not empty (for example, there is a plan, `CLAUDE.md`, or a `
 **After init:**
 1. Customise `charmcraft.yaml` (metadata, bases, relations, config)
 2. Edit `README.md` (becomes Charmhub documentation)
-3. Implement `src/charm.py` (using Ops framework)
-4. Update tests in `tests/unit/` and `tests/integration/`
+3. Implement `src/charm.py` (using Ops framework).  Charmcraft 4.2's
+   `kubernetes` and `machine` profiles scaffold a `src/workload.py`
+   module alongside the charm so workload-specific logic stays out of
+   `src/charm.py`.  Keep this split when you grow the charm — the
+   charm class wires Juju events; the workload module talks to the
+   process or container.
+4. Update tests in `tests/unit/` and `tests/integration/`.  Templates
+   now use `pytest-jubilant` for integration tests out of the box (see
+   the `jubilant-tests` skill).
 
 ### Building and Packaging
 
