@@ -200,6 +200,29 @@ class TestSkillsIndexWithBundledSkills:
         ):
             assert anchor in body, f"find-bugs missing anchor: {anchor!r}"
 
+    def test_charm_library_skill_covers_authoring(self) -> None:
+        """The charm-library skill should cover the end-to-end authoring flow."""
+        index = SkillsIndex()
+        index.discover()
+        names = {s.name for s in index.list_skills()}
+        assert "charm-library" in names
+        body = index.load_skill("charm-library").lower()
+        for anchor in (
+            "libid",
+            "libapi",
+            "libpatch",
+            "pydeps",
+            "charmcraft create-lib",
+            "charmcraft register-lib",
+            "charmcraft publish-lib",
+            "charmcraft fetch-libs",
+            "charm-libs:",
+            "lib/charms/",
+            "scenario",
+            "charmlibs-",
+        ):
+            assert anchor in body, f"charm-library missing anchor: {anchor!r}"
+
 
 class TestLoadSkillTool:
     """Tests for the LoadSkillTool."""

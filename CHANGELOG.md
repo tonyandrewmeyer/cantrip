@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **``charm-library`` skill — Phase 33.4.**  New bundled skill teaching
+  the agent how to author a reusable charm library end-to-end: when to
+  create one (relation interfaces and cross-charm helpers) vs keep code
+  in-charm, the ``lib/charms/<charm>/v<N>/<library>.py`` path convention,
+  the four mandatory module-level constants (``LIBID``, ``LIBAPI``,
+  ``LIBPATCH``, ``PYDEPS``) and the rules for bumping each, provider /
+  requirer class design (validated with Pydantic, emitting high-level
+  events rather than raw relation events), a Scenario-based unit-test
+  harness that drives the library through a minimal test-only charm,
+  the module-docstring template Charmhub surfaces on the library page,
+  publishing via ``charmcraft register-lib`` / ``publish-lib`` and
+  consumption via ``charm-libs:`` or ``charmcraft fetch-libs``, and the
+  modern PyPI alternative (``charmlibs-*`` under
+  ``canonical/charmlibs``) for general-purpose helpers.  Pinned by a
+  new ``test_charm_library_skill_covers_authoring`` test that checks a
+  dozen required anchors are present so the skill can't drift away from
+  the authoring flow.
+
 - **Web UI design-quality pass — Phase 31.15.**  Applied the
   impeccable.style checklist (audit, critique, harden, clarify,
   distill, layout, polish) without the skills being invocable as

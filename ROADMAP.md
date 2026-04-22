@@ -3113,10 +3113,29 @@ many existing deployments use bundles, so Cantrip should be able to work with th
 
 ### 33.4 Medium — Charm Library Authoring
 
-- [ ] New `charm-library` skill for creating reusable charm libraries
-- [ ] Generate `lib/charms/<charm>/v0/<library>.py` with proper versioning
-- [ ] Include unit tests and documentation
-- [ ] Publish via charmcraft
+- [x] New `charm-library` skill for creating reusable charm libraries —
+  covers when to create a library vs in-charm code, the
+  `lib/charms/<charm>/v<N>/<library>.py` path convention, and the
+  publisher/consumer workflow end-to-end
+- [x] Generate `lib/charms/<charm>/v0/<library>.py` with proper versioning —
+  skill documents the four mandatory module-level constants (`LIBID`,
+  `LIBAPI`, `LIBPATCH`, `PYDEPS`) and the rules for bumping each
+  (patch every change, major only on breaking changes, new `v<N+1>/`
+  file for breakage so old consumers keep fetching the old file)
+- [x] Include unit tests and documentation — skill shows a Scenario
+  test harness for exercising a requirer library through a minimal
+  test-only charm, and defines the module-docstring template Charmhub
+  surfaces on the library page
+- [x] Publish via charmcraft — skill covers
+  `charmcraft register-lib` (first-time only, assigns `LIBID`),
+  `charmcraft publish-lib` (every release, requires `LIBPATCH` bump),
+  and the consumer's `charm-libs:` declaration; also points at the
+  modern PyPI alternative (`charmlibs-*` under
+  `canonical/charmlibs`) for general-purpose helpers
+- [x] Test coverage: new `test_charm_library_skill_covers_authoring`
+  check in `tests/unit/test_skills.py` pins a dozen required anchors
+  (LIBID/LIBAPI/LIBPATCH/PYDEPS, every `charmcraft` subcommand,
+  the on-disk path, Scenario, and the PyPI alternative)
 
 ### 33.5 Low — Interactive Debugging Mode
 
