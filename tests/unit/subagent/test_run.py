@@ -437,3 +437,60 @@ class TestSubagentPhaseReporting:
         label = subagent._tool_phase_label(["a", "b", "c", "d", "e"])
         assert "a, b, c" in label
         assert "(+2)" in label
+
+
+class TestSubagentHookVetoes:
+    """Phase 46.4a — subagent lifecycle and tool-call vetoes."""
+
+    @pytest.mark.asyncio
+    async def test_pre_subagent_veto_returns_blocked(self) -> None:
+        """A vetoed ``pre_subagent`` hook blocks the run before it starts."""
+        from cantrip.hooks import HookConfig, HookEvent, HookRunner
+
+        hook = HookConfig(
+            name="require-approval",
+            event=HookEvent.PRE_SUBAGENT,
+            run='sh -c "echo approval missing >&2; exit 1"',
+            continue_on_error=False,
+        )
+        provider = FakeProvider(responses=[Response(content="should not run")])
+        ctx = _make_context()
+        subagent = Subagent(ctx, tools=[], provider=provider, hook_runner=HookRunner([hook]))
+
+        result = await subagent.run()
+
+        assert result.exit_state is ExitState.BLOCKED
+        assert "require-approval" in result.summary
+        # The LLM was never called — the hook blocked the whole run.
+        assert provider._call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_pre_tool_call_veto_replaces_result_with_error(self) -> None:
+        """A vetoed tool call returns a synthesised error without running."""
+        from cantrip.hooks import HookConfig, HookEvent, HookRunner
+
+        hook = HookConfig(
+            name="block-write",
+            event=HookEvent.PRE_TOOL_CALL,
+            run='sh -c "echo writes are off >&2; exit 1"',
+            continue_on_error=False,
+            if_expr=None,  # Matches every tool call.
+        )
+        tool = _make_tool("write_file")
+        tool_call = ToolCall(id="tc1", name="write_file", arguments={"path": "x"})
+        provider = FakeProvider(
+            responses=[
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="OK."),
+            ]
+        )
+        ctx = _make_context()
+        subagent = Subagent(ctx, tools=[tool], provider=provider, hook_runner=HookRunner([hook]))
+        subagent._execute_tool = AsyncMock(  # type: ignore[method-assign]
+            return_value=ToolResult(success=True, output="wrote 42 bytes")
+        )
+
+        await subagent.run()
+
+        # The tool function never ran because the hook vetoed it.
+        subagent._execute_tool.assert_not_awaited()

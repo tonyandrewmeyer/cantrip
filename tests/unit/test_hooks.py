@@ -14,9 +14,11 @@ from cantrip.hooks import (
     HookConfig,
     HookConfigError,
     HookEvent,
+    HookResult,
     HookRunner,
     _FilterExpr,
     _parse_yaml,
+    first_veto,
     load_hooks,
 )
 
@@ -641,3 +643,270 @@ class TestHookRunnerSkipsFilteredHooks:
 
         await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "git_push"})
         assert log_file.read_text() == "always\ngit-only\n"
+
+
+# ---------------------------------------------------------------------------
+# Veto semantics — HookResult.vetoed + first_veto helper (Phase 46.4a)
+# ---------------------------------------------------------------------------
+
+
+class TestHookResultVetoed:
+    """``HookResult.vetoed`` reflects continue_on_error + exit_code."""
+
+    def _result(
+        self,
+        *,
+        exit_code: int | None = 0,
+        timed_out: bool = False,
+        continue_on_error: bool = True,
+    ) -> HookResult:
+        return HookResult(
+            name="h",
+            event=HookEvent.PRE_TOOL_CALL,
+            exit_code=exit_code,
+            stdout="",
+            stderr="",
+            duration_seconds=0.0,
+            timed_out=timed_out,
+            continue_on_error=continue_on_error,
+        )
+
+    def test_success_not_vetoed(self):
+        assert self._result(exit_code=0).vetoed is False
+
+    def test_failure_with_continue_on_error_not_vetoed(self):
+        """Default ``continue_on_error=true`` preserves 46.2 behaviour."""
+        assert self._result(exit_code=1, continue_on_error=True).vetoed is False
+
+    def test_failure_without_continue_on_error_vetoes(self):
+        assert self._result(exit_code=1, continue_on_error=False).vetoed is True
+
+    def test_timeout_vetoes_when_strict(self):
+        assert self._result(timed_out=True, continue_on_error=False).vetoed is True
+
+    def test_timeout_does_not_veto_when_lenient(self):
+        assert self._result(timed_out=True, continue_on_error=True).vetoed is False
+
+    def test_veto_reason_names_hook(self):
+        r = self._result(exit_code=2, continue_on_error=False)
+        r = HookResult(
+            name="require-clean",
+            event=HookEvent.PRE_TOOL_CALL,
+            exit_code=2,
+            stdout="",
+            stderr="uncommitted changes on main\n",
+            duration_seconds=0.1,
+            timed_out=False,
+            continue_on_error=False,
+        )
+        assert "require-clean" in r.veto_reason
+        assert "uncommitted" in r.veto_reason
+
+    def test_veto_reason_falls_back_to_exit_code_when_silent(self):
+        r = HookResult(
+            name="silent",
+            event=HookEvent.PRE_TOOL_CALL,
+            exit_code=7,
+            stdout="",
+            stderr="",
+            duration_seconds=0.0,
+            timed_out=False,
+            continue_on_error=False,
+        )
+        assert "exit 7" in r.veto_reason
+
+    def test_veto_reason_for_timeout(self):
+        r = HookResult(
+            name="slow",
+            event=HookEvent.PRE_TOOL_CALL,
+            exit_code=None,
+            stdout="",
+            stderr="",
+            duration_seconds=3.2,
+            timed_out=True,
+            continue_on_error=False,
+        )
+        assert "timed out" in r.veto_reason
+        assert "slow" in r.veto_reason
+
+
+class TestFirstVetoHelper:
+    """``first_veto`` returns the first vetoing result, in order."""
+
+    def _pair(self, exit_a: int, exit_b: int, strict_a: bool, strict_b: bool):
+        a = HookResult(
+            name="a",
+            event=HookEvent.PRE_TOOL_CALL,
+            exit_code=exit_a,
+            stdout="",
+            stderr="",
+            duration_seconds=0.0,
+            continue_on_error=not strict_a,
+        )
+        b = HookResult(
+            name="b",
+            event=HookEvent.PRE_TOOL_CALL,
+            exit_code=exit_b,
+            stdout="",
+            stderr="",
+            duration_seconds=0.0,
+            continue_on_error=not strict_b,
+        )
+        return [a, b]
+
+    def test_empty_list_returns_none(self):
+        assert first_veto([]) is None
+
+    def test_all_ok_returns_none(self):
+        results = self._pair(0, 0, False, False)
+        assert first_veto(results) is None
+
+    def test_first_veto_wins(self):
+        results = self._pair(1, 1, strict_a=True, strict_b=True)
+        veto = first_veto(results)
+        assert veto is not None and veto.name == "a"
+
+    def test_non_strict_failure_ignored(self):
+        """continue_on_error=true + failure still not a veto."""
+        results = self._pair(1, 1, strict_a=False, strict_b=True)
+        veto = first_veto(results)
+        assert veto is not None and veto.name == "b"
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: main agent respects tool-call vetoes (Phase 46.4a)
+# ---------------------------------------------------------------------------
+
+
+class TestAgentRespectsToolCallVeto:
+    """A ``pre_tool_call`` veto synthesises an error ToolResult."""
+
+    @pytest.mark.asyncio
+    async def test_veto_skips_tool_execution(self, tmp_path: pathlib.Path):
+        """The tool function is not called when a pre-hook vetoes."""
+        from unittest.mock import AsyncMock
+
+        from cantrip.agent.core import CantripAgent
+        from cantrip.agent.tools.base import ToolResult
+        from cantrip.llm.base import Response, ToolCall
+        from tests.conftest import FakeProvider
+
+        hooks = [
+            HookConfig(
+                name="block-git-push",
+                event=HookEvent.PRE_TOOL_CALL,
+                run='sh -c "echo not on my watch >&2; exit 1"',
+                continue_on_error=False,
+                if_expr=_FilterExpr('tool == "git_push"'),
+            ),
+        ]
+
+        tool_call = ToolCall(id="tc1", name="git_push", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="OK, I'll stop."),
+            ]
+        )
+        agent = CantripAgent(provider=provider, hook_runner=HookRunner(hooks))
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="pushed!"))
+
+        await agent.process_message("Push please")
+
+        # The tool was never called — the hook blocked it.
+        agent._execute_tool.assert_not_awaited()
+
+        # The LLM received a TOOL message explaining the veto.
+        tool_msg = next(m for m in agent.state.messages if m.role.name == "TOOL")
+        [tr] = tool_msg.tool_results
+        assert tr.is_error is True
+        assert "block-git-push" in tr.content
+        assert "not on my watch" in tr.content
+
+    @pytest.mark.asyncio
+    async def test_non_vetoing_failure_does_not_block(self, tmp_path: pathlib.Path):
+        """A failing hook with ``continue_on_error: true`` does NOT veto.
+
+        This protects 46.2 users from a surprise change of semantics.
+        """
+        from unittest.mock import AsyncMock
+
+        from cantrip.agent.core import CantripAgent
+        from cantrip.agent.tools.base import ToolResult
+        from cantrip.llm.base import Response, ToolCall
+        from tests.conftest import FakeProvider
+
+        hooks = [
+            HookConfig(
+                name="noisy",
+                event=HookEvent.PRE_TOOL_CALL,
+                run="false",  # Always fails, but lenient.
+                continue_on_error=True,
+            ),
+        ]
+
+        tool_call = ToolCall(id="tc1", name="juju_status", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Done."),
+            ]
+        )
+        agent = CantripAgent(provider=provider, hook_runner=HookRunner(hooks))
+        tool_mock = AsyncMock(return_value=ToolResult(success=True, output="active"))
+        agent._execute_tool = tool_mock
+
+        await agent.process_message("Check status")
+
+        # The tool DID run despite the hook failure.
+        tool_mock.assert_awaited_once()
+
+
+class TestAgentRespectsCompactionVeto:
+    """A ``pre_compact`` veto preserves the conversation context as-is."""
+
+    @pytest.mark.asyncio
+    async def test_compaction_blocked_by_hook(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from unittest.mock import AsyncMock
+
+        from cantrip.agent.core import CantripAgent
+        from cantrip.llm.base import Response
+        from tests.conftest import FakeProvider
+
+        hooks = [
+            HookConfig(
+                name="pin",
+                event=HookEvent.PRE_COMPACT,
+                run="false",
+                continue_on_error=False,
+            ),
+        ]
+
+        provider = FakeProvider([Response(content="hi")])
+        agent = CantripAgent(provider=provider, hook_runner=HookRunner(hooks))
+
+        # Force ``should_compact`` to trip on the next turn.
+        monkeypatch.setattr(agent._context_manager, "should_compact", lambda _msgs: True)
+        compact_mock = AsyncMock()
+        monkeypatch.setattr(agent._context_manager, "compact", compact_mock)
+
+        # Drive one turn with a tool call so the compaction-check site
+        # is reachable; but skip_compact because pre_compact vetoed.
+        from cantrip.agent.tools.base import ToolResult
+        from cantrip.llm.base import ToolCall
+
+        tool_call = ToolCall(id="tc1", name="juju_status", arguments={})
+        agent.provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Done."),
+            ]
+        )
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="active"))
+
+        await agent.process_message("status please")
+
+        # Compaction never ran — the pre-hook blocked it.
+        compact_mock.assert_not_awaited()

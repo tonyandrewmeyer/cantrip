@@ -72,7 +72,7 @@ from cantrip.agent.tools.planning import (
     detect_current_juju_model,
 )
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
-from cantrip.hooks import HookEvent, HookRunner
+from cantrip.hooks import HookEvent, HookRunner, first_veto
 from cantrip.llm import base as llm
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
 from cantrip.mcp import (
@@ -733,21 +733,40 @@ class CantripAgent:
             tool_results = []
             for tc in response.tool_calls:
                 self._publish_activity(f"\u27f3 running: {tc.name}")
-                await self._hook_runner.fire(
+                pre_results = await self._hook_runner.fire(
                     HookEvent.PRE_TOOL_CALL,
                     {"tool": tc.name, "arguments": tc.arguments, "source": "main"},
                 )
-                result = await self._execute_tool(tc.name, tc.arguments)
-                await self._hook_runner.fire(
-                    HookEvent.POST_TOOL_CALL,
-                    {
-                        "tool": tc.name,
-                        "arguments": tc.arguments,
-                        "success": result.success,
-                        "error": result.error,
-                        "source": "main",
-                    },
-                )
+                veto = first_veto(pre_results)
+                if veto is not None:
+                    # A pre-hook blocked the call \u2014 synthesise an error
+                    # ToolResult so the LLM sees the veto on its next turn
+                    # and can react (apologise, retry with different args,
+                    # ask the user).  ``post_tool_call`` still fires with
+                    # ``success: false`` and a ``vetoed_by`` field so
+                    # observability hooks see the full decision record.
+                    log.warning(
+                        "Tool call %r vetoed by %s",
+                        tc.name,
+                        veto.veto_reason,
+                    )
+                    result = ToolResult(
+                        success=False,
+                        output="",
+                        error=f"Blocked by {veto.veto_reason}",
+                    )
+                else:
+                    result = await self._execute_tool(tc.name, tc.arguments)
+                post_payload: dict[str, Any] = {
+                    "tool": tc.name,
+                    "arguments": tc.arguments,
+                    "success": result.success,
+                    "error": result.error,
+                    "source": "main",
+                }
+                if veto is not None:
+                    post_payload["vetoed_by"] = veto.name
+                await self._hook_runner.fire(HookEvent.POST_TOOL_CALL, post_payload)
                 self._publish_activity(f"\u27f3 {flavour.pick_activity_label()}...")
                 self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
@@ -776,35 +795,49 @@ class CantripAgent:
             if self._context_manager.should_compact(self.state.messages):
                 log.info("Compacting conversation context")
                 tokens_before = self._context_manager.estimate_tokens(self.state.messages)
-                await self._hook_runner.fire(
+                pre_compact_results = await self._hook_runner.fire(
                     HookEvent.PRE_COMPACT,
                     {"tokens_before": tokens_before, "source": "main"},
                 )
-                try:
-                    self.state.messages = await self._context_manager.compact(
-                        self.state.messages,
-                        system_prompt=self._build_system_prompt(),
-                        provider=self._get_provider("compaction"),
+                compact_veto = first_veto(pre_compact_results)
+                if compact_veto is not None:
+                    # A ``pre_compact`` veto preserves the context as-is —
+                    # users pin critical messages with this hook so they
+                    # survive the summary rewrite.  No ``post_compact``
+                    # fires because compaction didn't run.
+                    log.info(
+                        "Compaction blocked by %s; context preserved (%d tokens)",
+                        compact_veto.veto_reason,
+                        tokens_before,
                     )
-                except Exception:
-                    # Compaction is best-effort; fall back to crude truncation
-                    # so the conversation can continue.
-                    log.warning(
-                        "Compaction failed, falling back to emergency truncation",
-                        exc_info=True,
+                else:
+                    try:
+                        self.state.messages = await self._context_manager.compact(
+                            self.state.messages,
+                            system_prompt=self._build_system_prompt(),
+                            provider=self._get_provider("compaction"),
+                        )
+                    except Exception:
+                        # Compaction is best-effort; fall back to crude truncation
+                        # so the conversation can continue.
+                        log.warning(
+                            "Compaction failed, falling back to emergency truncation",
+                            exc_info=True,
+                        )
+                        self.state.messages = self._context_manager.emergency_truncate(
+                            self.state.messages
+                        )
+                    self._persist_compaction_state()
+                    await self._hook_runner.fire(
+                        HookEvent.POST_COMPACT,
+                        {
+                            "tokens_before": tokens_before,
+                            "tokens_after": self._context_manager.estimate_tokens(
+                                self.state.messages
+                            ),
+                            "source": "main",
+                        },
                     )
-                    self.state.messages = self._context_manager.emergency_truncate(
-                        self.state.messages
-                    )
-                self._persist_compaction_state()
-                await self._hook_runner.fire(
-                    HookEvent.POST_COMPACT,
-                    {
-                        "tokens_before": tokens_before,
-                        "tokens_after": self._context_manager.estimate_tokens(self.state.messages),
-                        "source": "main",
-                    },
-                )
 
             # Call the LLM again with the updated history.
             messages = self._build_llm_messages(include_budget=True)
@@ -913,21 +946,34 @@ class CantripAgent:
             tool_results = []
             for tc in response.tool_calls:
                 self._publish_activity(f"\u27f3 running: {tc.name}")
-                await self._hook_runner.fire(
+                pre_results = await self._hook_runner.fire(
                     HookEvent.PRE_TOOL_CALL,
                     {"tool": tc.name, "arguments": tc.arguments, "source": "main-stream"},
                 )
-                result = await self._execute_tool(tc.name, tc.arguments)
-                await self._hook_runner.fire(
-                    HookEvent.POST_TOOL_CALL,
-                    {
-                        "tool": tc.name,
-                        "arguments": tc.arguments,
-                        "success": result.success,
-                        "error": result.error,
-                        "source": "main-stream",
-                    },
-                )
+                veto = first_veto(pre_results)
+                if veto is not None:
+                    log.warning(
+                        "Tool call %r vetoed by %s",
+                        tc.name,
+                        veto.veto_reason,
+                    )
+                    result = ToolResult(
+                        success=False,
+                        output="",
+                        error=f"Blocked by {veto.veto_reason}",
+                    )
+                else:
+                    result = await self._execute_tool(tc.name, tc.arguments)
+                post_payload: dict[str, Any] = {
+                    "tool": tc.name,
+                    "arguments": tc.arguments,
+                    "success": result.success,
+                    "error": result.error,
+                    "source": "main-stream",
+                }
+                if veto is not None:
+                    post_payload["vetoed_by"] = veto.name
+                await self._hook_runner.fire(HookEvent.POST_TOOL_CALL, post_payload)
                 self._publish_activity(f"\u27f3 {flavour.pick_activity_label()}...")
                 self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
@@ -954,33 +1000,43 @@ class CantripAgent:
             if self._context_manager.should_compact(self.state.messages):
                 log.info("Compacting conversation context")
                 tokens_before = self._context_manager.estimate_tokens(self.state.messages)
-                await self._hook_runner.fire(
+                pre_compact_results = await self._hook_runner.fire(
                     HookEvent.PRE_COMPACT,
                     {"tokens_before": tokens_before, "source": "main-stream"},
                 )
-                try:
-                    self.state.messages = await self._context_manager.compact(
-                        self.state.messages,
-                        system_prompt=self._build_system_prompt(),
-                        provider=self._get_provider("compaction"),
+                compact_veto = first_veto(pre_compact_results)
+                if compact_veto is not None:
+                    log.info(
+                        "Compaction blocked by %s; context preserved (%d tokens)",
+                        compact_veto.veto_reason,
+                        tokens_before,
                     )
-                except Exception:
-                    log.warning(
-                        "Compaction failed, falling back to emergency truncation",
-                        exc_info=True,
+                else:
+                    try:
+                        self.state.messages = await self._context_manager.compact(
+                            self.state.messages,
+                            system_prompt=self._build_system_prompt(),
+                            provider=self._get_provider("compaction"),
+                        )
+                    except Exception:
+                        log.warning(
+                            "Compaction failed, falling back to emergency truncation",
+                            exc_info=True,
+                        )
+                        self.state.messages = self._context_manager.emergency_truncate(
+                            self.state.messages
+                        )
+                    self._persist_compaction_state()
+                    await self._hook_runner.fire(
+                        HookEvent.POST_COMPACT,
+                        {
+                            "tokens_before": tokens_before,
+                            "tokens_after": self._context_manager.estimate_tokens(
+                                self.state.messages
+                            ),
+                            "source": "main-stream",
+                        },
                     )
-                    self.state.messages = self._context_manager.emergency_truncate(
-                        self.state.messages
-                    )
-                self._persist_compaction_state()
-                await self._hook_runner.fire(
-                    HookEvent.POST_COMPACT,
-                    {
-                        "tokens_before": tokens_before,
-                        "tokens_after": self._context_manager.estimate_tokens(self.state.messages),
-                        "source": "main-stream",
-                    },
-                )
 
             # Separate this round's text from the previous round's, since
             # each round is an independent LLM response with no leading

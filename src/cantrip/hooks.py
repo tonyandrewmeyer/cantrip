@@ -142,6 +142,51 @@ class HookResult:
     stderr: str
     duration_seconds: float
     timed_out: bool = False
+    continue_on_error: bool = True
+
+    @property
+    def succeeded(self) -> bool:
+        """True when the hook exited cleanly (zero, and didn't time out)."""
+        return not self.timed_out and self.exit_code == 0
+
+    @property
+    def vetoed(self) -> bool:
+        """Whether this result vetoes the pending operation.
+
+        A ``pre_*`` hook vetoes when it failed *and* its config asked
+        Cantrip to treat failures as authoritative rather than
+        informational (``continue_on_error: false``).  ``post_*`` hooks
+        never veto — the operation has already completed — but the
+        property is still correct for them (it just has no effect on
+        the caller, which doesn't check ``vetoed`` on post events).
+        """
+        return not self.continue_on_error and not self.succeeded
+
+    @property
+    def veto_reason(self) -> str:
+        """One-line human-readable explanation of a veto.
+
+        Falls back to a stderr-free message if the hook was silent so
+        users aren't shown an empty reason string.  Used in error
+        surfacing when ``vetoed`` is True.
+        """
+        if self.timed_out:
+            return f"hook {self.name!r} timed out after {self.duration_seconds:.1f}s"
+        stderr = self.stderr.strip().splitlines()
+        detail = stderr[-1] if stderr else f"exit {self.exit_code}"
+        return f"hook {self.name!r}: {detail}"
+
+
+def first_veto(results: list[HookResult]) -> HookResult | None:
+    """Return the first vetoing hook result, or None when nothing blocks.
+
+    Convenience helper for agent call sites that fire ``pre_*`` events
+    and need to decide whether to proceed with the pending operation.
+    """
+    for result in results:
+        if result.vetoed:
+            return result
+    return None
 
 
 # Sentinel returned by the filter evaluator when a payload field is
@@ -582,6 +627,7 @@ class HookRunner:
                 stderr=str(exc),
                 duration_seconds=0.0,
                 timed_out=False,
+                continue_on_error=hook.continue_on_error,
             )
 
         timed_out = False
@@ -618,6 +664,7 @@ class HookRunner:
                 stderr=stderr,
                 duration_seconds=duration,
                 timed_out=True,
+                continue_on_error=hook.continue_on_error,
             )
 
         exit_code = proc.returncode
@@ -638,6 +685,7 @@ class HookRunner:
             stdout=stdout,
             stderr=stderr,
             duration_seconds=duration,
+            continue_on_error=hook.continue_on_error,
         )
 
 
@@ -650,5 +698,6 @@ __all__ = [
     "HookEvent",
     "HookResult",
     "HookRunner",
+    "first_veto",
     "load_hooks",
 ]

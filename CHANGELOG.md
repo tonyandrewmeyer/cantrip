@@ -5,6 +5,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Hook veto semantics — Phase 46.4a.**  A ``pre_*`` hook with
+  ``continue_on_error: false`` that exits non-zero (or times out)
+  now vetoes the pending operation: the tool doesn't run, the
+  compaction doesn't happen, the subagent doesn't start.  The LLM
+  sees a synthesised error ``ToolResult`` naming the hook and its
+  stderr so it can react (apologise, retry with different args).
+  The 46.2 default (``continue_on_error: true``) is unchanged —
+  failing lenient hooks log but don't block.  ``post_*`` hooks
+  still fire for vetoed operations with ``success: false`` and a
+  ``vetoed_by`` field so observability tooling sees every
+  decision, including blocked ones.  New ``HookResult.vetoed``
+  property and ``first_veto(results)`` helper;
+  ``HookResult.veto_reason`` formats a one-line explanation from
+  the hook name + last stderr line (or ``exit <code>`` / ``timed
+  out after Ns``).  Wired in all three tool-call paths
+  (main-agent sync, main-agent streaming, subagent gather),
+  both compaction paths, and the subagent lifecycle.
+  Stdout-to-payload mutation via JSON envelope is deferred to a
+  focused 46.4b follow-up.
 - **Conditional ``if:`` filters on hooks — Phase 46.3.**  Hook
   declarations gain an optional ``if:`` field that accepts a
   boolean expression evaluated against the event payload.  Only

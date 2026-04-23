@@ -69,10 +69,9 @@
       changing Cantrip itself.
     </p>
     <p>
-      The current release fires hooks in observer mode: the agent runs
-      them and records results, but a non-zero exit doesn&rsquo;t yet
-      block the agent. True veto semantics (where a pre-hook refuses
-      the operation) are planned for a follow-up sub-phase.
+      Hooks start in observer mode by default and can opt into
+      <em>veto</em> mode with <code>continue_on_error: false</code>
+      &mdash; see <a href="#veto">Vetoing operations</a> below.
     </p>
 
     <h2 id="where">Where to configure</h2>
@@ -141,8 +140,10 @@
       <li>
         <code>continue_on_error</code> (bool, optional, default
         <code>true</code>) &mdash; when <code>false</code>, a
-        non-zero exit logs at WARNING. (Veto semantics coming in a
-        future sub-phase.)
+        non-zero exit (or a timeout) <em>vetoes</em> the pending
+        operation: the tool doesn&rsquo;t run, compaction
+        doesn&rsquo;t happen, the subagent doesn&rsquo;t start.
+        See the <a href="#veto">Vetoing operations</a> section.
       </li>
     </ul>
 
@@ -299,6 +300,68 @@
       jq -r .tool | tee -a ~/.cache/cantrip/tool-counts
 </code></pre>
 
+    <h2 id="veto">Vetoing operations</h2>
+    <p>
+      A hook with <code>continue_on_error: false</code> can refuse
+      the pending operation by exiting non-zero (or by timing out).
+      Use it to enforce local policy:
+    </p>
+    <pre><code># Refuse git pushes when the working tree has uncommitted changes.
+- name: require-clean-tree
+  event: pre_tool_call
+  if: tool == "git_push"
+  continue_on_error: false
+  run: |
+    if ! git diff --quiet; then
+      echo "working tree dirty; refusing to push" &gt;&amp;2
+      exit 1
+    fi
+
+# Block compaction while a user-pinned session is in progress.
+- name: pin-context
+  event: pre_compact
+  continue_on_error: false
+  run: test ! -f ~/.cache/cantrip/pinned
+</code></pre>
+    <p>
+      What happens when a pre-hook vetoes:
+    </p>
+    <ul>
+      <li>
+        <code>pre_tool_call</code>: the tool isn&rsquo;t called. The
+        LLM receives an error <code>ToolResult</code> naming the hook
+        and its last stderr line, so its next turn can apologise,
+        retry with different arguments, or ask the user for help.
+        <code>post_tool_call</code> still fires with
+        <code>success: false</code> and a <code>vetoed_by</code>
+        field &mdash; observability hooks see the attempt.
+      </li>
+      <li>
+        <code>pre_compact</code>: compaction is skipped and the
+        context stays intact. The model gets no token-budget
+        summary message. <code>post_compact</code> does <em>not</em>
+        fire because compaction never ran.
+      </li>
+      <li>
+        <code>pre_subagent</code>: the whole task returns a
+        <code>BLOCKED</code> exit state without calling the LLM. The
+        executor records the block like any other blocked task.
+        <code>post_subagent</code> fires with the blocked exit
+        state and a <code>vetoed_by</code> field.
+      </li>
+    </ul>
+    <p>
+      Filter observability hooks on <code>if: vetoed_by != None</code>
+      to get a feed of blocked-only events.
+    </p>
+    <p>
+      The default (<code>continue_on_error: true</code>) is
+      unchanged from earlier releases &mdash; a failing lenient hook
+      logs at DEBUG and doesn&rsquo;t block anything. Only
+      <code>continue_on_error: false</code> turns a hook into an
+      enforcer.
+    </p>
+
     <h2 id="limits">Current limits</h2>
     <ul>
       <li>
@@ -312,8 +375,11 @@
         hooks mutate the pending payload via a JSON-patch envelope.)
       </li>
       <li>
-        A non-zero exit is recorded but does not block the operation.
-        True veto semantics land in a follow-up sub-phase.
+        Stdout from a <code>pre_tool_call</code> hook is captured
+        but not yet merged into the pending payload &mdash; a
+        follow-up sub-phase will document a JSON envelope so a hook
+        can redact a secret out of <code>arguments</code> before the
+        tool runs.
       </li>
     </ul>
   </main>

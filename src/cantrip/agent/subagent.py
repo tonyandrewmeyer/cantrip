@@ -17,7 +17,7 @@ from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool
-from cantrip.hooks import HookEvent, HookRunner
+from cantrip.hooks import HookEvent, HookRunner, first_veto
 from cantrip.llm import base as llm
 from cantrip.ui import flavour
 
@@ -780,7 +780,7 @@ class Subagent:
         self._context.task.subagent_started_at = datetime.datetime.now()
         self._set_phase(flavour.pick_activity_label())
         task = self._context.task
-        await self._hook_runner.fire(
+        pre_results = await self._hook_runner.fire(
             HookEvent.PRE_SUBAGENT,
             {
                 "task_id": task.id,
@@ -788,6 +788,36 @@ class Subagent:
                 "category": task.category.value,
             },
         )
+        veto = first_veto(pre_results)
+        if veto is not None:
+            # A ``pre_subagent`` veto maps cleanly onto an
+            # ``ExitState.BLOCKED`` result — the task didn't run, the
+            # executor will treat it like any other blocked task, and
+            # the ``post_subagent`` hook still fires so telemetry
+            # hooks see every attempted subagent invocation.
+            log.info(
+                "Subagent for task %r blocked by %s",
+                task.title,
+                veto.veto_reason,
+            )
+            self._context.task.subagent_started_at = None
+            self._set_phase("")
+            blocked = SubagentResult(
+                exit_state=ExitState.BLOCKED,
+                summary=f"Blocked by {veto.veto_reason}",
+                detail=veto.stderr.strip(),
+            )
+            await self._hook_runner.fire(
+                HookEvent.POST_SUBAGENT,
+                {
+                    "task_id": task.id,
+                    "title": task.title,
+                    "category": task.category.value,
+                    "exit_state": blocked.exit_state.value,
+                    "vetoed_by": veto.name,
+                },
+            )
+            return blocked
         result: SubagentResult | None = None
         try:
             result = await self._run_inner()
@@ -871,8 +901,12 @@ class Subagent:
             # a single round.  asyncio.gather() preserves order.
             self._set_phase(self._tool_phase_label([tc.name for tc in response.tool_calls]))
             category_value = self._context.task.category.value
+            # Fire pre-hooks sequentially and record a per-call veto.
+            # A vetoed tool is replaced with a synthetic error result;
+            # the rest of the batch still runs in parallel.
+            call_vetoes: list[tuple[Any, ...] | None] = []
             for tc in response.tool_calls:
-                await self._hook_runner.fire(
+                pre_results = await self._hook_runner.fire(
                     HookEvent.PRE_TOOL_CALL,
                     {
                         "tool": tc.name,
@@ -881,21 +915,46 @@ class Subagent:
                         "task_category": category_value,
                     },
                 )
+                call_vetoes.append(first_veto(pre_results))
+
+            async def _tool_or_veto(tc: llm.ToolCall, veto: Any) -> ToolResult:
+                if veto is not None:
+                    log.info(
+                        "Subagent tool call %r vetoed by %s",
+                        tc.name,
+                        veto.veto_reason,
+                    )
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error=f"Blocked by {veto.veto_reason}",
+                    )
+                return await self._execute_tool(tc.name, tc.arguments)
+
             raw_results = await asyncio.gather(
-                *(self._execute_tool(tc.name, tc.arguments) for tc in response.tool_calls)
-            )
-            for tc, tool_result in zip(response.tool_calls, raw_results, strict=True):
-                await self._hook_runner.fire(
-                    HookEvent.POST_TOOL_CALL,
-                    {
-                        "tool": tc.name,
-                        "arguments": tc.arguments,
-                        "success": tool_result.success,
-                        "error": tool_result.error,
-                        "source": "subagent",
-                        "task_category": category_value,
-                    },
+                *(
+                    _tool_or_veto(tc, veto)
+                    for tc, veto in zip(response.tool_calls, call_vetoes, strict=True)
                 )
+            )
+            # Only the un-vetoed calls actually fired; post_tool_call
+            # fires for every call (vetoed or not) so observability
+            # hooks see the full picture, with ``success`` reflecting
+            # the veto as a failure the same way the LLM does.
+            for tc, tool_result, veto in zip(
+                response.tool_calls, raw_results, call_vetoes, strict=True
+            ):
+                payload = {
+                    "tool": tc.name,
+                    "arguments": tc.arguments,
+                    "success": tool_result.success,
+                    "error": tool_result.error,
+                    "source": "subagent",
+                    "task_category": category_value,
+                }
+                if veto is not None:
+                    payload["vetoed_by"] = veto.name
+                await self._hook_runner.fire(HookEvent.POST_TOOL_CALL, payload)
             # Fresh flavour each time we return to the thinking phase so
             # a long turn that cycles through tools rolls a new label per
             # thinking leg rather than reading the same verb forever.

@@ -487,15 +487,64 @@ the watcher — this phase formalises them and opens them up.
   non-matching skips, ``event`` auto-field accessible, mixed
   filtered + unfiltered hooks on the same event).
 
-### 46.4 Medium — Hook result handling
+### 46.4 Medium — Hook result handling (46.4a landed; stdout mutation deferred to 46.4b)
 
-- [ ] Non-zero exit code from a hook on `pre_*` events is treated as a veto;
-  the executor reports the hook name and stderr to the conversation loop and
-  declines to proceed
-- [ ] Stdout from `pre_tool_call` hooks can mutate the pending payload (e.g.
-  redact secrets before the tool runs) via a documented JSON-patch envelope
-- [ ] Hooks on `pre_compact` can block compaction — matching Claude Code's
-  PreCompact hook behaviour — to protect pinned context
+- [x] Veto semantics live on ``HookResult``: new ``vetoed`` property
+  is True when ``continue_on_error=False`` and the hook either
+  exited non-zero or timed out.  ``continue_on_error=True``
+  (the 46.2 default) preserves the observer behaviour — a failing
+  lenient hook logs but doesn't block.  ``veto_reason`` synthesises
+  a one-line explanation with the hook name and the last stderr
+  line (falling back to ``exit <code>`` when stderr is empty and to
+  ``timed out after Ns`` for timeouts), so the operator gets an
+  actionable message without grepping logs.  New
+  ``first_veto(results)`` helper walks a result list and returns
+  the first vetoing hook, or ``None``.
+- [x] Tool-call veto wired in all three tool-call sites.
+  ``pre_tool_call`` results are scanned with ``first_veto``; a veto
+  synthesises ``ToolResult(success=False, error="Blocked by hook
+  'x': <reason>")`` so the LLM sees the veto verbatim on its next
+  turn and can react (apologise, retry with different args, ask
+  the user).  The tool function never runs.  ``post_tool_call``
+  still fires for vetoed calls with ``success: false`` and a
+  ``vetoed_by`` field so observability hooks see the full decision
+  record — they can filter with
+  ``if: vetoed_by != None`` to get just blocked events.
+- [x] Subagent tool-call veto works the same way, extended for
+  ``asyncio.gather`` concurrency: pre-hooks fire sequentially and
+  their vetoes are recorded per-call; the gather substitutes
+  vetoed tools with the synthesised error while un-vetoed tools
+  run in parallel as before.  Ordering is preserved so
+  ``post_tool_call`` hooks see results in LLM-declared order.
+- [x] Subagent-lifecycle veto: a ``pre_subagent`` veto returns
+  ``SubagentResult(exit_state=BLOCKED, summary="Blocked by hook
+  'x': <reason>")`` before ``_run_inner`` runs, so the whole task
+  is blocked (the LLM is never called, no tools execute, the
+  executor records the result like any other BLOCKED task).  The
+  ``post_subagent`` hook still fires with the exit state + a
+  ``vetoed_by`` field so auditors see the attempt.
+- [x] Compaction veto: a ``pre_compact`` veto skips the compact +
+  emergency-truncate paths entirely so the context stays intact —
+  exactly the Claude Code PreCompact behaviour the roadmap
+  referenced.  ``post_compact`` does not fire when compaction was
+  blocked.  Wired in both the synchronous ``_run_conversation_loop``
+  and the streaming ``process_message_streaming`` paths.
+- [x] 17 new unit tests: ``HookResult.vetoed`` across the four
+  exit-code / timeout / continue-on-error permutations;
+  ``veto_reason`` for stderr / empty / timeout cases;
+  ``first_veto`` ordering; main-agent tool-call veto (tool skipped,
+  LLM sees error) + non-vetoing failure preserved;
+  ``pre_compact`` veto skips ``context_manager.compact``; subagent
+  ``pre_subagent`` veto returns BLOCKED without calling the LLM;
+  subagent ``pre_tool_call`` veto synthesises error without
+  invoking the tool.
+- [ ] **46.4b (deferred):** stdout-to-payload mutation via a
+  documented JSON envelope (``pre_tool_call`` hook can redact
+  secrets from ``arguments`` before the tool runs).  Needs care
+  around the ``asyncio.gather`` subagent path (hooks must see the
+  previous hook's mutations in order) and a clear envelope spec —
+  ships as a focused follow-up commit rather than widening this
+  one.
 
 ### 46.5 Low — Hook telemetry and debugging
 
