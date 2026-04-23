@@ -67,7 +67,9 @@ custom linters you want to trigger before packing) without
 changing Cantrip itself.</p>
 <p>Hooks start in observer mode by default and can opt into
 <em>veto</em> mode with <code>continue_on_error: false</code>
-&mdash; see <a href="#veto">Vetoing operations</a> below.</p>
+&mdash; see <a href="#veto">Vetoing operations</a> below.  A <code>pre_tool_call</code>
+hook can also <em>rewrite</em> the pending tool arguments before the
+tool runs &mdash; see <a href="#mutate">Rewriting arguments</a>.</p>
 <h2 id="where">Where to configure</h2>
 <p>Cantrip reads two YAML files, in order:</p>
 <ol>
@@ -304,6 +306,48 @@ unchanged from earlier releases &mdash; a failing lenient hook
 logs at DEBUG and doesn&rsquo;t block anything. Only
 <code>continue_on_error: false</code> turns a hook into an
 enforcer.</p>
+<h2 id="mutate">Rewriting arguments</h2>
+<p>A <code>pre_tool_call</code> hook can rewrite the arguments a tool is
+about to receive by printing a JSON envelope to <strong>stdout</strong>:</p>
+<pre><code>{&quot;mutate&quot;: {&quot;arguments&quot;: {&quot;branch&quot;: &quot;main&quot;, &quot;token&quot;: &quot;[REDACTED]&quot;}}}
+</code></pre>
+<p>The <code>mutate.arguments</code> object, when present, wholly replaces
+the tool's arguments before the tool runs. Typical uses: strip
+secrets from a <code>run_shell</code> command, canonicalise a filename,
+normalise a branch name before <code>git_push</code>.</p>
+<pre><code># Redact anything that looks like a token before it hits run_shell.
+- name: redact-tokens
+  event: pre_tool_call
+  if: tool == &quot;run_shell&quot;
+  run: |
+    payload=$(cat)
+    echo &quot;$payload&quot; | jq '
+      .arguments as $args
+      | {&quot;mutate&quot;: {&quot;arguments&quot;: ($args | .command |= gsub(
+            &quot;ghp_[A-Za-z0-9]+&quot;; &quot;[REDACTED]&quot;
+        ))}}
+    '
+</code></pre>
+<p>Rules:</p>
+<ul>
+<li>Only <code>pre_tool_call</code> events honour the envelope. Other events
+parse and discard (so you can't accidentally rewrite things
+post-hoc).</li>
+<li>Hooks run sequentially for a given tool call, so a later hook
+in the chain sees the previous hook's mutation on stdin and
+can refine it further.</li>
+<li>A hook that <em>vetoes</em> (<code>continue_on_error: false</code> + non-zero
+exit) blocks the tool call outright; its envelope is ignored
+because the call will never run.</li>
+<li>Non-JSON stdout (e.g. a <code>logger</code> line or a <code>jq</code> error) is
+treated as a non-mutating log line. Existing hooks that print
+plain text keep working unchanged.</li>
+<li>Malformed envelopes (wrong types, unknown shape) log a
+WARNING and are ignored; they never break a tool call.</li>
+</ul>
+<p><code>post_tool_call</code> and the session transcript record the
+<strong>effective</strong> arguments &mdash; the ones that actually ran &mdash; so the
+audit trail reflects the mutated call.</p>
 <h2 id="inspecting">Inspecting hooks</h2>
 <p>Two debugging surfaces answer &ldquo;is my hook wired right?&rdquo;
 without having to trigger a real agent operation:</p>

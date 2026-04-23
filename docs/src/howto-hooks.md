@@ -19,7 +19,9 @@ changing Cantrip itself.
 
 Hooks start in observer mode by default and can opt into
 *veto* mode with `continue_on_error: false`
-— see [Vetoing operations](#veto) below.
+— see [Vetoing operations](#veto) below.  A `pre_tool_call`
+hook can also *rewrite* the pending tool arguments before the
+tool runs — see [Rewriting arguments](#mutate).
 
 {#where}
 ## Where to configure
@@ -265,6 +267,57 @@ unchanged from earlier releases — a failing lenient hook
 logs at DEBUG and doesn’t block anything. Only
 `continue_on_error: false` turns a hook into an
 enforcer.
+
+{#mutate}
+## Rewriting arguments
+
+A `pre_tool_call` hook can rewrite the arguments a tool is
+about to receive by printing a JSON envelope to **stdout**:
+
+```
+{"mutate": {"arguments": {"branch": "main", "token": "[REDACTED]"}}}
+```
+
+The `mutate.arguments` object, when present, wholly replaces
+the tool's arguments before the tool runs. Typical uses: strip
+secrets from a `run_shell` command, canonicalise a filename,
+normalise a branch name before `git_push`.
+
+```
+# Redact anything that looks like a token before it hits run_shell.
+- name: redact-tokens
+  event: pre_tool_call
+  if: tool == "run_shell"
+  run: |
+    payload=$(cat)
+    echo "$payload" | jq '
+      .arguments as $args
+      | {"mutate": {"arguments": ($args | .command |= gsub(
+            "ghp_[A-Za-z0-9]+"; "[REDACTED]"
+        ))}}
+    '
+```
+
+Rules:
+
+- Only `pre_tool_call` events honour the envelope. Other events
+  parse and discard (so you can't accidentally rewrite things
+  post-hoc).
+- Hooks run sequentially for a given tool call, so a later hook
+  in the chain sees the previous hook's mutation on stdin and
+  can refine it further.
+- A hook that *vetoes* (`continue_on_error: false` + non-zero
+  exit) blocks the tool call outright; its envelope is ignored
+  because the call will never run.
+- Non-JSON stdout (e.g. a `logger` line or a `jq` error) is
+  treated as a non-mutating log line. Existing hooks that print
+  plain text keep working unchanged.
+- Malformed envelopes (wrong types, unknown shape) log a
+  WARNING and are ignored; they never break a tool call.
+
+`post_tool_call` and the session transcript record the
+**effective** arguments — the ones that actually ran — so the
+audit trail reflects the mutated call.
 
 {#inspecting}
 ## Inspecting hooks

@@ -544,7 +544,7 @@ the watcher — this phase formalises them and opens them up.
   non-matching skips, ``event`` auto-field accessible, mixed
   filtered + unfiltered hooks on the same event).
 
-### 46.4 Medium — Hook result handling (46.4a landed; stdout mutation deferred to 46.4b)
+### 46.4 Medium — Hook result handling ✓
 
 - [x] Veto semantics live on ``HookResult``: new ``vetoed`` property
   is True when ``continue_on_error=False`` and the hook either
@@ -595,13 +595,35 @@ the watcher — this phase formalises them and opens them up.
   ``pre_subagent`` veto returns BLOCKED without calling the LLM;
   subagent ``pre_tool_call`` veto synthesises error without
   invoking the tool.
-- [ ] **46.4b (deferred):** stdout-to-payload mutation via a
-  documented JSON envelope (``pre_tool_call`` hook can redact
-  secrets from ``arguments`` before the tool runs).  Needs care
-  around the ``asyncio.gather`` subagent path (hooks must see the
-  previous hook's mutations in order) and a clear envelope spec —
-  ships as a focused follow-up commit rather than widening this
-  one.
+- [x] **46.4b — stdout-to-payload mutation landed.**  A
+  ``pre_tool_call`` hook can now rewrite the pending tool
+  arguments by printing a JSON envelope of the shape
+  ``{"mutate": {"arguments": {...}}}`` to stdout; the object
+  replaces ``tc.arguments`` before the tool runs.  Only
+  ``pre_tool_call`` honours the envelope — other events parse
+  and discard.  ``HookRunner.fire`` threads each successful
+  mutation into the next hook's stdin payload, so chained hooks
+  see the running composed state (``arguments.branch ==
+  "main"`` filters work against a rewritten branch).  Vetoing
+  hooks (``continue_on_error: false`` + non-zero exit) have
+  their envelopes ignored because the call won't run.
+  Malformed envelopes log at WARNING and are ignored; plain-text
+  stdout is untouched so existing hooks keep working.
+  ``HookResult`` gained a ``mutated_arguments: dict | None``
+  field (the composed state after this hook's turn); new
+  module-level ``final_arguments(results)`` walks a results list
+  in reverse to pull the final mutation.  All three
+  ``pre_tool_call`` sites wired (``core.py`` conversation +
+  streaming + ``subagent.py`` gather path) — the subagent path
+  records one ``call_arguments`` entry per tool call so the
+  parallel ``asyncio.gather`` substitutes the mutated form per
+  call.  ``post_tool_call`` receives the *effective* arguments
+  so the audit trail reflects what actually ran.  21 new unit
+  tests (``TestParseMutationEnvelope`` ×9,
+  ``TestFinalArgumentsHelper`` ×5,
+  ``TestHookRunnerAppliesMutations`` ×7).
+  ``docs/src/howto-hooks.md`` gains a *Rewriting arguments*
+  section with a ``run_shell`` token-redaction example.
 
 ### 46.5 Low — Hook telemetry and debugging ✓
 

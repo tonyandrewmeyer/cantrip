@@ -17,7 +17,7 @@ from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool
-from cantrip.hooks import HookEvent, HookRunner, first_veto
+from cantrip.hooks import HookEvent, HookRunner, final_arguments, first_veto
 from cantrip.llm import base as llm
 from cantrip.ui import flavour
 
@@ -901,10 +901,13 @@ class Subagent:
             # a single round.  asyncio.gather() preserves order.
             self._set_phase(self._tool_phase_label([tc.name for tc in response.tool_calls]))
             category_value = self._context.task.category.value
-            # Fire pre-hooks sequentially and record a per-call veto.
-            # A vetoed tool is replaced with a synthetic error result;
-            # the rest of the batch still runs in parallel.
+            # Fire pre-hooks sequentially and record a per-call veto
+            # plus any mutated arguments (Phase 46.4b).  A vetoed tool
+            # is replaced with a synthetic error result; the rest of
+            # the batch still runs in parallel, each with whatever
+            # arguments the pre-hook chain produced.
             call_vetoes: list[tuple[Any, ...] | None] = []
+            call_arguments: list[dict[str, Any]] = []
             for tc in response.tool_calls:
                 pre_results = await self._hook_runner.fire(
                     HookEvent.PRE_TOOL_CALL,
@@ -916,8 +919,11 @@ class Subagent:
                     },
                 )
                 call_vetoes.append(first_veto(pre_results))
+                call_arguments.append(final_arguments(pre_results) or tc.arguments)
 
-            async def _tool_or_veto(tc: llm.ToolCall, veto: Any) -> ToolResult:
+            async def _tool_or_veto(
+                tc: llm.ToolCall, veto: Any, arguments: dict[str, Any]
+            ) -> ToolResult:
                 if veto is not None:
                     log.info(
                         "Subagent tool call %r vetoed by %s",
@@ -929,24 +935,35 @@ class Subagent:
                         output="",
                         error=f"Blocked by {veto.veto_reason}",
                     )
-                return await self._execute_tool(tc.name, tc.arguments)
+                return await self._execute_tool(tc.name, arguments)
 
             raw_results = await asyncio.gather(
                 *(
-                    _tool_or_veto(tc, veto)
-                    for tc, veto in zip(response.tool_calls, call_vetoes, strict=True)
+                    _tool_or_veto(tc, veto, args)
+                    for tc, veto, args in zip(
+                        response.tool_calls,
+                        call_vetoes,
+                        call_arguments,
+                        strict=True,
+                    )
                 )
             )
             # Only the un-vetoed calls actually fired; post_tool_call
             # fires for every call (vetoed or not) so observability
             # hooks see the full picture, with ``success`` reflecting
-            # the veto as a failure the same way the LLM does.
-            for tc, tool_result, veto in zip(
-                response.tool_calls, raw_results, call_vetoes, strict=True
+            # the veto as a failure the same way the LLM does.  The
+            # ``arguments`` payload uses the mutated form so audit
+            # hooks see what actually ran (or would have).
+            for tc, tool_result, veto, args in zip(
+                response.tool_calls,
+                raw_results,
+                call_vetoes,
+                call_arguments,
+                strict=True,
             ):
                 payload = {
                     "tool": tc.name,
-                    "arguments": tc.arguments,
+                    "arguments": args,
                     "success": tool_result.success,
                     "error": tool_result.error,
                     "source": "subagent",

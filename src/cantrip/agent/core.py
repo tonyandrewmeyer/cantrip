@@ -72,7 +72,14 @@ from cantrip.agent.tools.planning import (
     detect_current_juju_model,
 )
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
-from cantrip.hooks import HookEvent, HookResult, HookRunner, HookStats, first_veto
+from cantrip.hooks import (
+    HookEvent,
+    HookResult,
+    HookRunner,
+    HookStats,
+    final_arguments,
+    first_veto,
+)
 from cantrip.llm import base as llm
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
 from cantrip.mcp import (
@@ -784,6 +791,10 @@ class CantripAgent:
                     {"tool": tc.name, "arguments": tc.arguments, "source": "main"},
                 )
                 veto = first_veto(pre_results)
+                # Hook-rewritten arguments (Phase 46.4b) flow into both
+                # the tool invocation and the post_tool_call payload so
+                # audit logs reflect what actually ran.
+                effective_arguments = final_arguments(pre_results) or tc.arguments
                 if veto is not None:
                     # A pre-hook blocked the call \u2014 synthesise an error
                     # ToolResult so the LLM sees the veto on its next turn
@@ -802,10 +813,10 @@ class CantripAgent:
                         error=f"Blocked by {veto.veto_reason}",
                     )
                 else:
-                    result = await self._execute_tool(tc.name, tc.arguments)
+                    result = await self._execute_tool(tc.name, effective_arguments)
                 post_payload: dict[str, Any] = {
                     "tool": tc.name,
-                    "arguments": tc.arguments,
+                    "arguments": effective_arguments,
                     "success": result.success,
                     "error": result.error,
                     "source": "main",
@@ -997,6 +1008,7 @@ class CantripAgent:
                     {"tool": tc.name, "arguments": tc.arguments, "source": "main-stream"},
                 )
                 veto = first_veto(pre_results)
+                effective_arguments = final_arguments(pre_results) or tc.arguments
                 if veto is not None:
                     log.warning(
                         "Tool call %r vetoed by %s",
@@ -1009,10 +1021,10 @@ class CantripAgent:
                         error=f"Blocked by {veto.veto_reason}",
                     )
                 else:
-                    result = await self._execute_tool(tc.name, tc.arguments)
+                    result = await self._execute_tool(tc.name, effective_arguments)
                 post_payload: dict[str, Any] = {
                     "tool": tc.name,
-                    "arguments": tc.arguments,
+                    "arguments": effective_arguments,
                     "success": result.success,
                     "error": result.error,
                     "source": "main-stream",

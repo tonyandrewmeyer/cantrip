@@ -1,4 +1,4 @@
-"""Tests for the user-configurable hooks subsystem (Phase 46.1 + 46.2 + 46.3)."""
+"""Tests for the user-configurable hooks subsystem (Phase 46.1 + 46.2 + 46.3 + 46.4b)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,9 @@ from cantrip.hooks import (
     HookRunner,
     HookStats,
     _FilterExpr,
+    _parse_mutation_envelope,
     _parse_yaml,
+    final_arguments,
     first_veto,
     load_hooks,
 )
@@ -1263,3 +1265,286 @@ class TestHooksTestCLI:
         rc = _hooks_test(args)
         assert rc == 2
         assert "JSON object" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Mutation envelope (Phase 46.4b)
+# ---------------------------------------------------------------------------
+
+
+class TestParseMutationEnvelope:
+    """Unit tests for the stdout envelope parser."""
+
+    def test_empty_stdout_returns_none(self):
+        assert _parse_mutation_envelope("", "h") is None
+        assert _parse_mutation_envelope("   \n", "h") is None
+
+    def test_plain_text_stdout_returns_none(self):
+        # A logging hook that prints a human-readable line should not
+        # be treated as a mutation — and should not produce a warning.
+        assert _parse_mutation_envelope("pushing main", "h") is None
+
+    def test_json_without_mutate_key_returns_none(self):
+        assert _parse_mutation_envelope('{"status": "ok"}', "h") is None
+
+    def test_top_level_non_object_returns_none(self):
+        assert _parse_mutation_envelope("[1, 2, 3]", "h") is None
+        assert _parse_mutation_envelope('"hello"', "h") is None
+
+    def test_mutate_non_object_warns_and_returns_none(self, caplog: pytest.LogCaptureFixture):
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="cantrip.hooks")
+        assert _parse_mutation_envelope('{"mutate": "no"}', "redactor") is None
+        assert "redactor" in caplog.text
+        assert "mutate" in caplog.text
+
+    def test_mutate_arguments_non_object_warns(self, caplog: pytest.LogCaptureFixture):
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="cantrip.hooks")
+        assert _parse_mutation_envelope('{"mutate": {"arguments": 42}}', "h") is None
+        assert "arguments" in caplog.text
+
+    def test_mutate_without_arguments_key_returns_none(self):
+        # An envelope that carries unrelated mutate keys (reserved for
+        # future extensions) is silently ignored — not an error.
+        assert _parse_mutation_envelope('{"mutate": {"future_field": "x"}}', "h") is None
+
+    def test_valid_envelope_returns_arguments_dict(self):
+        envelope = '{"mutate": {"arguments": {"branch": "main", "force": false}}}'
+        assert _parse_mutation_envelope(envelope, "h") == {
+            "branch": "main",
+            "force": False,
+        }
+
+    def test_envelope_tolerates_surrounding_whitespace(self):
+        envelope = '  \n  {"mutate": {"arguments": {"k": "v"}}}\n\n'
+        assert _parse_mutation_envelope(envelope, "h") == {"k": "v"}
+
+
+class TestFinalArgumentsHelper:
+    """``final_arguments`` picks the last mutated_arguments in the chain."""
+
+    def _result(self, name: str, mutated: dict | None) -> HookResult:
+        return HookResult(
+            name=name,
+            event=HookEvent.PRE_TOOL_CALL,
+            exit_code=0,
+            stdout="",
+            stderr="",
+            duration_seconds=0.01,
+            mutated_arguments=mutated,
+        )
+
+    def test_empty_list_returns_none(self):
+        assert final_arguments([]) is None
+
+    def test_no_mutations_returns_none(self):
+        results = [self._result("a", None), self._result("b", None)]
+        assert final_arguments(results) is None
+
+    def test_single_mutation_returns_it(self):
+        results = [self._result("a", {"k": "v"})]
+        assert final_arguments(results) == {"k": "v"}
+
+    def test_last_mutation_wins(self):
+        # In the chain, the later hook's mutated_arguments carries the
+        # composed state (hook B saw hook A's mutation on its stdin).
+        results = [
+            self._result("a", {"k": 1}),
+            self._result("b", {"k": 2}),
+        ]
+        assert final_arguments(results) == {"k": 2}
+
+    def test_later_non_mutating_hook_preserves_earlier_mutation(self):
+        # If a later hook doesn't mutate, the last-mutating hook's
+        # value is returned.
+        results = [
+            self._result("a", {"k": 1}),
+            self._result("b", None),
+        ]
+        assert final_arguments(results) == {"k": 1}
+
+
+class TestHookRunnerAppliesMutations:
+    """``HookRunner.fire`` applies the envelope and threads it forward."""
+
+    @pytest.mark.asyncio
+    async def test_single_hook_mutates_arguments(self):
+        hook = HookConfig(
+            name="redact",
+            event=HookEvent.PRE_TOOL_CALL,
+            run='echo \'{"mutate": {"arguments": {"token": "[REDACTED]"}}}\'',
+            timeout=5,
+        )
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(
+            HookEvent.PRE_TOOL_CALL,
+            {"tool": "run_shell", "arguments": {"token": "secret123"}},
+        )
+        assert result.succeeded
+        assert result.mutated_arguments == {"token": "[REDACTED]"}
+
+    @pytest.mark.asyncio
+    async def test_non_mutating_hook_leaves_field_none(self):
+        hook = HookConfig(
+            name="logger",
+            event=HookEvent.PRE_TOOL_CALL,
+            run="echo just-a-log-line",
+            timeout=5,
+        )
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(HookEvent.PRE_TOOL_CALL, {"arguments": {}})
+        assert result.succeeded
+        assert result.mutated_arguments is None
+
+    @pytest.mark.asyncio
+    async def test_chain_threads_mutation_into_next_hook_stdin(self, tmp_path: pathlib.Path):
+        """Hook B must see hook A's mutated arguments on its own stdin.
+
+        This is the asyncio.gather-safe ordering invariant called out
+        in the Phase 46.4b spec: hooks are sequential *per call* so
+        later hooks always see the running composed state.
+        """
+        captured = tmp_path / "B-saw.json"
+        hook_a = HookConfig(
+            name="a-redact",
+            event=HookEvent.PRE_TOOL_CALL,
+            run='echo \'{"mutate": {"arguments": {"stage": "first"}}}\'',
+            timeout=5,
+        )
+        hook_b = HookConfig(
+            name="b-capture",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"cat > {captured}",
+            timeout=5,
+        )
+        runner = HookRunner([hook_a, hook_b])
+
+        results = await runner.fire(
+            HookEvent.PRE_TOOL_CALL,
+            {"tool": "x", "arguments": {"stage": "zero"}},
+        )
+        payload = json.loads(captured.read_text())
+        assert payload["arguments"] == {"stage": "first"}
+        # ``final_arguments`` returns hook A's mutation because B didn't
+        # emit one of its own.
+        assert final_arguments(results) == {"stage": "first"}
+
+    @pytest.mark.asyncio
+    async def test_chain_second_hook_can_refine_first(self):
+        """Later-in-chain hook overrides the earlier hook's mutation."""
+        hook_a = HookConfig(
+            name="a-set",
+            event=HookEvent.PRE_TOOL_CALL,
+            run='echo \'{"mutate": {"arguments": {"k": 1}}}\'',
+            timeout=5,
+        )
+        hook_b = HookConfig(
+            name="b-override",
+            event=HookEvent.PRE_TOOL_CALL,
+            run='echo \'{"mutate": {"arguments": {"k": 2, "extra": true}}}\'',
+            timeout=5,
+        )
+        runner = HookRunner([hook_a, hook_b])
+
+        results = await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "x", "arguments": {"k": 0}})
+        assert final_arguments(results) == {"k": 2, "extra": True}
+
+    @pytest.mark.asyncio
+    async def test_vetoing_hook_envelope_is_ignored(self):
+        """A hook that vetoes does not contribute a mutation.
+
+        ``continue_on_error: false`` + non-zero exit blocks the call
+        entirely, so even if the hook writes an envelope it won't run.
+        Keeps the audit log honest: we only record mutations that will
+        take effect.
+        """
+        hook = HookConfig(
+            name="veto-with-envelope",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=('echo \'{"mutate": {"arguments": {"k": "changed"}}}\'; exit 1'),
+            timeout=5,
+            continue_on_error=False,
+        )
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(
+            HookEvent.PRE_TOOL_CALL, {"tool": "x", "arguments": {"k": "orig"}}
+        )
+        assert result.vetoed
+        assert result.mutated_arguments is None
+
+    @pytest.mark.asyncio
+    async def test_non_pre_tool_call_events_ignore_envelope(self):
+        """Mutation envelope is only honoured for ``pre_tool_call``.
+
+        A hook on another event that happens to emit an envelope-shaped
+        JSON blob is treated as regular stdout — we don't silently
+        rewrite things on events where the agent isn't looking.
+        """
+        hook = HookConfig(
+            name="post-chatter",
+            event=HookEvent.POST_TOOL_CALL,
+            run='echo \'{"mutate": {"arguments": {"k": "no-op"}}}\'',
+            timeout=5,
+        )
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(HookEvent.POST_TOOL_CALL, {"tool": "x"})
+        assert result.succeeded
+        assert result.mutated_arguments is None
+
+    @pytest.mark.asyncio
+    async def test_filter_sees_mutated_payload(self, tmp_path: pathlib.Path):
+        """A later hook's ``if:`` filter evaluates against the mutated payload.
+
+        If hook A rewrites ``arguments.branch``, a filter like
+        ``arguments.branch == "main"`` on hook B should see the new
+        value — the filter is about the state at the hook's turn, not
+        the original call.
+        """
+        marker = tmp_path / "B-ran"
+        hook_a = HookConfig(
+            name="a-rewrite",
+            event=HookEvent.PRE_TOOL_CALL,
+            run='echo \'{"mutate": {"arguments": {"branch": "main"}}}\'',
+            timeout=5,
+        )
+        hook_b = HookConfig(
+            name="b-conditional",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"touch {marker}",
+            timeout=5,
+            if_expr=_FilterExpr('arguments.branch == "main"'),
+        )
+        runner = HookRunner([hook_a, hook_b])
+
+        await runner.fire(
+            HookEvent.PRE_TOOL_CALL,
+            {"tool": "git_push", "arguments": {"branch": "feature"}},
+        )
+        assert marker.exists(), "hook B should have run after A rewrote branch"
+
+    @pytest.mark.asyncio
+    async def test_malformed_envelope_does_not_break_call(self, caplog: pytest.LogCaptureFixture):
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="cantrip.hooks")
+        hook = HookConfig(
+            name="malformed",
+            event=HookEvent.PRE_TOOL_CALL,
+            run='echo \'{"mutate": {"arguments": "not-a-dict"}}\'',
+            timeout=5,
+        )
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(
+            HookEvent.PRE_TOOL_CALL, {"tool": "x", "arguments": {"k": "v"}}
+        )
+        assert result.succeeded
+        assert result.mutated_arguments is None
+        assert "arguments" in caplog.text

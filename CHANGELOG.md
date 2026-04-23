@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Hook stdout-to-payload mutation — Phase 46.4b.**  A
+  ``pre_tool_call`` hook can rewrite the pending tool arguments by
+  printing a JSON envelope of the shape
+  ``{"mutate": {"arguments": {...}}}`` to stdout; the object wholly
+  replaces ``tc.arguments`` before the tool runs.  Chained hooks run
+  sequentially so a later hook sees the previous hook's mutation on
+  stdin and can refine it further — ``arguments.branch == "main"``
+  filters evaluate against the running composed state.  Vetoing
+  hooks' envelopes are ignored (the call won't run), non-JSON stdout
+  is a non-mutating log line (existing hooks keep working), and
+  malformed envelopes log at WARNING rather than breaking the call.
+  ``post_tool_call`` and the session transcript record the
+  **effective** arguments, so the audit trail reflects what actually
+  ran.  Wired in all three ``pre_tool_call`` sites (main
+  conversation loop, streaming loop, subagent gather).  Closes
+  Phase 46 entirely.  See ``docs/docs/howto-hooks.html`` for a
+  redact-secrets example.
 - **Agent Client Protocol research findings — Phase 39.**
   `design/ACP_RESEARCH.md` records the protocol concepts (JSON-RPC
   over stdio, `session/prompt` turn flow, `tool_call` semantics,

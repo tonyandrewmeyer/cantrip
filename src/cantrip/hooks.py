@@ -55,6 +55,35 @@ Each hook declares:
 Repo scope overrides user scope on name collision: a ``.yaml`` in
 the charm directory is authoritative for the charm, and the user
 config acts as a fallback for every charm the user works on.
+
+Mutation envelope (``pre_tool_call`` only, Phase 46.4b)
+-------------------------------------------------------
+
+A ``pre_tool_call`` hook can rewrite the pending tool arguments by
+printing a JSON envelope to **stdout** with the shape::
+
+    {"mutate": {"arguments": {"branch": "main", "token": "[REDACTED]"}}}
+
+The ``mutate.arguments`` object — if present and an object — wholly
+replaces the tool's arguments before it runs.  Typical uses:
+
+* strip secrets from a command line before they hit ``run_shell``
+* canonicalise a filename a user wrote relative to a worktree
+* normalise a branch name pattern before ``git_push``
+
+Rules:
+
+* Only ``pre_tool_call`` events honour the envelope; other events
+  parse and discard.
+* Hooks run sequentially for one tool call, so a later hook sees the
+  previous hook's mutation on stdin and can refine it further.
+* A hook that fails (``continue_on_error: false`` + non-zero exit)
+  vetoes the tool call; its envelope is ignored because the call
+  will not run.
+* Non-JSON stdout, or JSON without a ``mutate`` key, is treated as
+  a non-mutating log line — existing hooks keep working unchanged.
+* Invalid envelope shapes log a warning and are ignored; they do
+  not break the tool call.
 """
 
 from __future__ import annotations
@@ -134,7 +163,17 @@ class HookConfig:
 
 @dataclasses.dataclass(frozen=True)
 class HookResult:
-    """Outcome of one hook invocation.  Used for logs and transcript events."""
+    """Outcome of one hook invocation.  Used for logs and transcript events.
+
+    ``mutated_arguments`` captures a ``pre_tool_call`` hook's successful
+    request to rewrite the tool arguments (see the module docstring for
+    the envelope spec).  It holds the composed state as of *after* this
+    hook ran — because :class:`HookRunner` threads each hook's
+    mutation into the next hook's stdin, the final value in a chain
+    is the ``arguments`` dict that will actually be passed to the
+    tool.  ``None`` when the hook did not emit a mutation envelope, or
+    for any event other than ``pre_tool_call``.
+    """
 
     name: str
     event: HookEvent
@@ -144,6 +183,7 @@ class HookResult:
     duration_seconds: float
     timed_out: bool = False
     continue_on_error: bool = True
+    mutated_arguments: dict[str, Any] | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -188,6 +228,69 @@ def first_veto(results: list[HookResult]) -> HookResult | None:
         if result.vetoed:
             return result
     return None
+
+
+def final_arguments(results: list[HookResult]) -> dict[str, Any] | None:
+    """Return the composed tool arguments after a ``pre_tool_call`` chain.
+
+    Walks *results* in reverse and returns the first hook's
+    ``mutated_arguments``.  Because :class:`HookRunner` threads each
+    hook's mutation into the next hook's stdin, the last non-``None``
+    entry carries the final composed state — earlier hooks' edits
+    have already been folded into it.
+
+    Returns ``None`` when no hook requested a mutation; callers
+    typically pair this with ``or`` to fall back to the original
+    arguments::
+
+        effective = final_arguments(pre_results) or tc.arguments
+    """
+    for result in reversed(results):
+        if result.mutated_arguments is not None:
+            return result.mutated_arguments
+    return None
+
+
+def _parse_mutation_envelope(stdout: str, hook_name: str) -> dict[str, Any] | None:
+    """Extract the ``mutate.arguments`` block from a hook's stdout.
+
+    Returns the replacement arguments dict, or ``None`` when stdout is
+    empty, non-JSON, JSON without a ``mutate`` key, or a malformed
+    envelope.  Malformed shapes log at WARNING but never raise — a
+    misbehaving hook must not break a tool call.
+    """
+    stripped = stdout.strip()
+    if not stripped:
+        return None
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        # Plain-text stdout (e.g. a logger line) is a perfectly valid
+        # non-mutating hook output.  Don't warn.
+        return None
+    if not isinstance(payload, dict):
+        return None
+    mutate = payload.get("mutate")
+    if mutate is None:
+        return None
+    if not isinstance(mutate, dict):
+        log.warning(
+            "Hook %r: `mutate` must be an object, got %s — ignored",
+            hook_name,
+            type(mutate).__name__,
+        )
+        return None
+    arguments = mutate.get("arguments")
+    if arguments is None:
+        return None
+    if not isinstance(arguments, dict):
+        log.warning(
+            "Hook %r: `mutate.arguments` must be an object, got %s — ignored",
+            hook_name,
+            type(arguments).__name__,
+        )
+        return None
+    return arguments
 
 
 # Sentinel returned by the filter evaluator when a payload field is
@@ -694,13 +797,24 @@ class HookRunner:
         enriched = dict(payload or {})
         enriched["event"] = event.value
         enriched.setdefault("timestamp", datetime.datetime.now().isoformat())
-        stdin_bytes = json.dumps(enriched, default=str).encode("utf-8")
+
+        # Only ``pre_tool_call`` honours the mutation envelope, so for
+        # every other event we serialise stdin once and reuse it — the
+        # payload cannot change between hooks in the same fire() call.
+        mutations_enabled = event == HookEvent.PRE_TOOL_CALL
+        static_stdin: bytes | None = (
+            None if mutations_enabled else json.dumps(enriched, default=str).encode("utf-8")
+        )
 
         results: list[HookResult] = []
         for hook in hooks:
             # ``if:`` filters are evaluated against the enriched
             # payload so ``event`` and ``timestamp`` are available
-            # even though the caller didn't pass them.
+            # even though the caller didn't pass them.  For
+            # pre_tool_call chains, the filter sees any prior hook's
+            # mutations too — that's the right behaviour, a filter like
+            # ``arguments.branch == "main"`` should skip a hook if an
+            # earlier hook rewrote the branch.
             if hook.if_expr is not None and not hook.if_expr.matches(enriched):
                 log.debug(
                     "Hook %r (%s) skipped by if-filter %r",
@@ -709,7 +823,21 @@ class HookRunner:
                     hook.if_expr.source,
                 )
                 continue
+            stdin_bytes = (
+                static_stdin
+                if static_stdin is not None
+                else json.dumps(enriched, default=str).encode("utf-8")
+            )
             result = await self._run_one(hook, stdin_bytes)
+            # Apply mutation only when enabled *and* the hook
+            # succeeded: a vetoing hook (non-zero exit,
+            # ``continue_on_error: false``) blocks the call so its
+            # envelope can't influence a run that won't happen.
+            if mutations_enabled and result.succeeded:
+                mutation = _parse_mutation_envelope(result.stdout, hook.name)
+                if mutation is not None:
+                    enriched["arguments"] = mutation
+                    result = dataclasses.replace(result, mutated_arguments=mutation)
             results.append(result)
             if self._listener is not None:
                 try:
@@ -812,6 +940,7 @@ __all__ = [
     "HookResultListener",
     "HookRunner",
     "HookStats",
+    "final_arguments",
     "first_veto",
     "load_hooks",
 ]
