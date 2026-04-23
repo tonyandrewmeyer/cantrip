@@ -3087,16 +3087,42 @@ dependencies. Watcher events all route to tasks. `make check` passes throughout.
 **Goal:** Expand what Cantrip can do beyond basic charm building — charm migration,
 existing bundle management, and deeper ecosystem integration.
 
-### 33.1 Medium — Existing Bundle Management
+### 33.1 Medium — Existing Bundle Management ✓
 
 **Note:** Juju bundles are deprecated — new bundles should not be created. However,
 many existing deployments use bundles, so Cantrip should be able to work with them.
 
-- [ ] New `bundle` skill covering how to read, modify, and deploy existing bundles
-- [ ] `bundle_deploy` tool: deploy an existing `bundle.yaml` to a Juju model
-- [ ] Understand bundle overlay syntax for modifying existing bundles
-- [ ] When proposing multi-charm deployments, use individual `juju deploy` + `juju relate`
-  commands rather than generating new bundle files
+- [x] New `bundle` skill (`src/cantrip/skills/bundle/SKILL.md`) covering
+  how to read an existing `bundle.yaml`, lay on overlays, deploy the
+  result, and migrate a bundle-based deployment to individual
+  `juju_deploy` + `juju_relate` (or Terraform) commands.  The skill
+  opens by explaining why bundles are deprecated and ends with an
+  explicit "do not create new bundles" section so the agent pushes
+  back on bundle-authoring requests.
+- [x] `bundle_deploy` tool (`src/cantrip/agent/tools/juju.py::BundleDeployTool`):
+  wraps `jubilant.Juju.deploy(bundle_path, overlays=[...])` with
+  early fail-fast validation of the bundle path and every overlay
+  path, a 10-minute timeout suited to bundle deploys, and
+  structured output reporting how many overlays applied.  Surfaces
+  `jubilant.CLIError` / `TaskError` as unsuccessful ToolResults.
+  Registered in `build_tools` next to `JujuDeployTool`.
+- [x] Overlay syntax: the `bundle` skill documents precedence rules
+  (scalar replace, relation add, `null` removal, last-overlay-wins
+  for scalar collisions) with worked examples for channel/scale
+  pinning, removing an upstream app, and adding a cross-model offer.
+- [x] Multi-charm deployments use `juju_deploy` + `juju_relate`
+  (or Terraform) instead of writing bundles — the system prompt's
+  "Default Integrations" section carries a new "Multi-charm
+  deployments — do not write new bundles" note that names the
+  `bundle` skill and `bundle_deploy` tool as the legacy-consumption
+  escape hatch.
+- [x] Test coverage: six `TestBundleDeployTool` cases pin the
+  not-installed path, missing-bundle / missing-overlay fail-fast
+  behaviour, successful dispatch, overlay + trust passthrough, and
+  `CLIError` surfacing.  A new `test_bundle_skill_covers_*` pin
+  protects the skill's "do not create new bundles" stance, its
+  tool/structure anchors, and the overlay section.  `reference-tools.html`
+  lists `bundle_deploy` with a "legacy consumption only" annotation.
 
 ### 33.2 High — Charm Migration Skill ✓
 

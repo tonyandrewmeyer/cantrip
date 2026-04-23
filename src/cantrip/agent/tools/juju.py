@@ -265,6 +265,142 @@ class JujuDeployTool(Tool):
                 temp_copy.unlink(missing_ok=True)
 
 
+class BundleDeployTool(Tool):
+    """Deploy an existing Juju bundle.yaml, optionally with overlays.
+
+    Juju bundles are deprecated — this tool exists so Cantrip can work
+    with the many legacy deployments that still ship as bundles.  For
+    new multi-charm deployments, use ``juju_deploy`` + ``juju_relate``
+    to generate a series of individual commands rather than authoring
+    a new bundle.
+    """
+
+    @property
+    def name(self) -> str:
+        return "bundle_deploy"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Deploy an existing Juju bundle.yaml (optionally with one or "
+            "more overlay files).  Use this for legacy bundle-based "
+            "deployments only; prefer juju_deploy + juju_relate for new "
+            "multi-charm deployments."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the bundle.yaml file.",
+                },
+                "overlays": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Optional list of overlay-bundle files applied on "
+                        "top of the base bundle, in order.  Each overlay "
+                        "may add, remove, or modify applications, "
+                        "relations, machines, or the model's config."
+                    ),
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified).",
+                },
+                "trust": {
+                    "type": "boolean",
+                    "description": (
+                        "Grant trust to every application in the bundle "
+                        "that requests it (maps to ``--trust``)."
+                    ),
+                    "default": False,
+                },
+            },
+            "required": ["path"],
+        }
+
+    async def execute(
+        self,
+        path: str,
+        overlays: list[str] | None = None,
+        model: str | None = None,
+        trust: bool = False,
+    ) -> ToolResult:
+        """Deploy a bundle."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        # Resolve the bundle path first so we can fail early with a
+        # clear error rather than passing a missing path to Juju.
+        bundle_path = Path(path)
+        if not bundle_path.is_absolute():
+            bundle_path = (Path.cwd() / bundle_path).resolve()
+        if not bundle_path.is_file():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Bundle file not found: {bundle_path}",
+            )
+
+        overlay_paths: list[Path] = []
+        for overlay in overlays or []:
+            overlay_path = Path(overlay)
+            if not overlay_path.is_absolute():
+                overlay_path = (Path.cwd() / overlay_path).resolve()
+            if not overlay_path.is_file():
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"Overlay file not found: {overlay_path}",
+                )
+            overlay_paths.append(overlay_path)
+
+        try:
+            juju = jubilant.Juju(model=model)
+
+            deploy_args: dict[str, Any] = {"charm": str(bundle_path)}
+            if overlay_paths:
+                deploy_args["overlays"] = [str(p) for p in overlay_paths]
+            if trust:
+                deploy_args["trust"] = True
+
+            await asyncio.wait_for(
+                asyncio.to_thread(functools.partial(juju.deploy, **deploy_args)),
+                timeout=600,
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="bundle deploy timed out — the operation is taking too long.",
+            )
+        except (jubilant.CLIError, jubilant.TaskError, OSError, ValueError) as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=str(e),
+            )
+
+        overlay_note = f" with {len(overlay_paths)} overlay(s)" if overlay_paths else ""
+        return ToolResult(
+            success=True,
+            output=f"Deployed bundle {bundle_path}{overlay_note}",
+            data={
+                "bundle_path": str(bundle_path),
+                "overlays": [str(p) for p in overlay_paths],
+                "trust": trust,
+            },
+        )
+
+
 class JujuTrustTool(Tool):
     """Tool to grant or revoke trust for a deployed application.
 

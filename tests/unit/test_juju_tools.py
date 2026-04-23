@@ -6,6 +6,7 @@ import jubilant
 import pytest
 
 from cantrip.agent.tools.juju import (
+    BundleDeployTool,
     CharmSyncTool,
     JujuAddModelTool,
     JujuConfigTool,
@@ -342,6 +343,112 @@ class TestJujuDeployTool:
         call_kwargs = mock_juju.deploy.call_args[1]
         assert "resources" not in call_kwargs
         assert "trust" not in call_kwargs
+
+
+class TestBundleDeployTool:
+    """Tests for BundleDeployTool — legacy bundle consumption path."""
+
+    @pytest.fixture
+    def tool(self):
+        return BundleDeployTool()
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool, tmp_path):
+        bundle = tmp_path / "bundle.yaml"
+        bundle.write_text("bundle: kubernetes\napplications: {}\n")
+        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+            result = await tool.execute(path=str(bundle))
+        assert not result.success
+        assert "Juju CLI not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_missing_bundle_fails_fast(self, tool, tmp_path):
+        """The tool refuses to dispatch if the bundle path does not exist."""
+        missing = tmp_path / "does-not-exist.yaml"
+        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True):
+            result = await tool.execute(path=str(missing))
+        assert not result.success
+        assert "Bundle file not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_missing_overlay_fails_fast(self, tool, tmp_path):
+        """A missing overlay path is reported before dispatching deploy."""
+        bundle = tmp_path / "bundle.yaml"
+        bundle.write_text("bundle: kubernetes\napplications: {}\n")
+        missing_overlay = tmp_path / "overlays" / "missing.yaml"
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(path=str(bundle), overlays=[str(missing_overlay)])
+        assert not result.success
+        assert "Overlay file not found" in result.error
+        mock_juju.deploy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_bundle_deploy_success(self, tool, tmp_path):
+        """A valid bundle is passed through to ``jubilant.Juju.deploy``."""
+        bundle = tmp_path / "bundle.yaml"
+        bundle.write_text("bundle: kubernetes\napplications: {}\n")
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(path=str(bundle))
+        assert result.success
+        mock_juju.deploy.assert_called_once()
+        call_kwargs = mock_juju.deploy.call_args[1]
+        assert call_kwargs["charm"] == str(bundle.resolve())
+        assert "overlays" not in call_kwargs
+        assert "trust" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_bundle_deploy_with_overlays_and_trust(self, tool, tmp_path):
+        """Overlay paths and trust flow through to ``Juju.deploy``."""
+        bundle = tmp_path / "bundle.yaml"
+        bundle.write_text("bundle: kubernetes\napplications: {}\n")
+        overlay_a = tmp_path / "overlay-a.yaml"
+        overlay_a.write_text("applications: {}\n")
+        overlay_b = tmp_path / "overlay-b.yaml"
+        overlay_b.write_text("applications: {}\n")
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(
+                path=str(bundle),
+                overlays=[str(overlay_a), str(overlay_b)],
+                trust=True,
+            )
+        assert result.success
+        call_kwargs = mock_juju.deploy.call_args[1]
+        assert call_kwargs["trust"] is True
+        assert call_kwargs["overlays"] == [
+            str(overlay_a.resolve()),
+            str(overlay_b.resolve()),
+        ]
+        # Output should mention the overlay count so the user sees both applied.
+        assert "2 overlay" in result.output
+
+    @pytest.mark.asyncio
+    async def test_bundle_deploy_cli_error_surfaces(self, tool, tmp_path):
+        """Jubilant CLI errors surface as an unsuccessful ToolResult."""
+        bundle = tmp_path / "bundle.yaml"
+        bundle.write_text("bundle: kubernetes\napplications: {}\n")
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.deploy.side_effect = jubilant.CLIError(
+            returncode=1, cmd=["juju", "deploy"], stderr="bundle syntax error"
+        )
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(path=str(bundle))
+        assert not result.success
+        assert "bundle syntax error" in result.error
 
 
 class TestJujuDeploySnapConfinement:

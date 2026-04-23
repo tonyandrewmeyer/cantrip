@@ -87,6 +87,7 @@ def build_tools(
     from cantrip.agent.tools.grep import GrepTool
     from cantrip.agent.tools.inference import ListInferenceSnapsTool
     from cantrip.agent.tools.juju import (
+        BundleDeployTool,
         CharmSyncTool,
         JujuAddModelTool,
         JujuConfigTool,
@@ -227,6 +228,7 @@ def build_tools(
         # Juju operations
         JujuStatusTool(),
         JujuDeployTool(),
+        BundleDeployTool(),
         JujuRefreshTool(),
         JujuRelateTool(),
         JujuTrustTool(),

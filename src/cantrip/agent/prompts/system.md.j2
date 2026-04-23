@@ -207,6 +207,13 @@ Add these when appropriate:
 - **Ingress**: For K8s - typically Traefik
 - Also consider: Sloth, Parca, Pyroscope, Identity, Litmus
 
+**Multi-charm deployments — do not write new bundles.** Juju bundles are
+deprecated. For multi-charm deployments, issue a sequence of `juju_deploy`
+and `juju_relate` tool calls (or generate a Terraform module via the
+`terraform` skill). If the user hands you an existing `bundle.yaml` to
+deploy or modify, load the `bundle` skill and use the `bundle_deploy`
+tool — those exist for legacy consumption only, not for authoring.
+
 **Cross-model COS**: When the dev controller is LXD (machine charms), COS runs on
 a separate K8s controller. Use `juju_offer` to expose COS endpoints and
 `juju_consume` to consume them in the dev model. The charm integrates with

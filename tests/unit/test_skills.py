@@ -200,6 +200,31 @@ class TestSkillsIndexWithBundledSkills:
         ):
             assert anchor in body, f"find-bugs missing anchor: {anchor!r}"
 
+    def test_bundle_skill_covers_read_modify_deploy_and_refuses_new(self) -> None:
+        """The bundle skill must cover existing-bundle consumption *and*
+        actively steer the agent away from authoring new bundles."""
+        index = SkillsIndex()
+        index.discover()
+        names = {s.name for s in index.list_skills()}
+        assert "bundle" in names
+        body = index.load_skill("bundle").lower()
+        # Explicit deprecation + migration stance.
+        for anchor in ("deprecated", "do not", "do not create new bundles"):
+            assert anchor in body, f"bundle missing anti-authoring anchor: {anchor!r}"
+        # Tooling pointers — bundle_deploy + juju_deploy/juju_relate fallback.
+        for anchor in ("bundle_deploy", "juju_deploy", "juju_relate"):
+            assert anchor in body, f"bundle missing tool anchor: {anchor!r}"
+        # Structure and overlay coverage.
+        for anchor in (
+            "bundle: kubernetes",
+            "applications:",
+            "relations:",
+            "overlay",
+            "offers",
+            "trust",
+        ):
+            assert anchor in body, f"bundle missing structure anchor: {anchor!r}"
+
     def test_charm_migration_skill_covers_all_four_migrations(self) -> None:
         """The charm-migration skill must cover all four legacy patterns end-to-end."""
         index = SkillsIndex()

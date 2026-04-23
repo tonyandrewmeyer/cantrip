@@ -5,6 +5,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **``bundle`` skill + ``bundle_deploy`` tool — Phase 33.1.**  New
+  bundled skill for working with **existing** Juju bundles: reading a
+  `bundle.yaml` the user hands you, applying overlays to modify it,
+  deploying via the new tool, and migrating a bundle-based deployment
+  off the bundle onto individual `juju_deploy` / `juju_relate` calls
+  (or a Terraform module).  The skill opens with a deprecation notice
+  and ends with an explicit "do not create new bundles" section so the
+  agent pushes back when asked to author one.  New `BundleDeployTool`
+  wraps `jubilant.Juju.deploy()` with fail-fast validation of the
+  bundle path and every overlay path, a 10-minute timeout suited to
+  full-stack bundles, and structured output reporting the overlay
+  count.  The system prompt's "Default Integrations" section now
+  carries a "Multi-charm deployments — do not write new bundles"
+  anchor that points at `juju_deploy` + `juju_relate` (or Terraform)
+  for new work and at the `bundle` skill / `bundle_deploy` tool for
+  legacy consumption.  `reference-tools.html` lists `bundle_deploy`
+  with a "legacy consumption only" annotation.  Covered by six
+  `TestBundleDeployTool` cases plus a new skill-pinning anchor test
+  that protects the deprecation stance and the overlay documentation.
 - **``charm-migration`` skill — Phase 33.2.**  New bundled skill that
   covers all four legacy-pattern migrations as a single umbrella
   workflow: reactive-framework → ops (decorator-to-``framework.observe``
