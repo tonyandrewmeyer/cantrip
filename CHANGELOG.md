@@ -2100,6 +2100,12 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Juju tools** — Jubilant is now imported directly (hard dependency); tools check for the `juju` CLI instead
 - **Jubilant status types** — replaced hand-rolled `juju/status.py` dataclasses with `jubilant.statustypes`; TUI and tools now use upstream types directly
 - Migrated Gemini provider from deprecated `google-generativeai` to `google-genai` SDK
+- **``ROADMAP.md`` split into active + archive.** Completed phases (51 of
+  them, plus the legacy Phases 0–3 summary) moved verbatim into a new
+  ``ROADMAP_ARCHIVE.md``; ``ROADMAP.md`` now contains only open work
+  (~2.5k lines vs. ~8.7k previously). Preamble, open phases, and the
+  ``Dependencies and Blockers`` / ``Milestones`` sections stay in place.
+  ``AGENTS.md`` and ``README.md`` updated to point at both files.
 
 ## 0.0.1 — Phase 0
 

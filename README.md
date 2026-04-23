@@ -126,7 +126,7 @@ make coverage   # unit tests with coverage report
 - [PLAN.md](design/PLAN.md) — Architecture decisions and design philosophy
 - [AGENT.md](design/AGENT.md) — Agent architecture (two-loop design, subagents, work queue)
 - [UI.md](design/UI.md) — Shared UI design (TUI + Web), event bus, layout, shortcuts
-- [ROADMAP.md](ROADMAP.md) — Implementation phases
+- [ROADMAP.md](ROADMAP.md) — Implementation phases (active work); [ROADMAP_ARCHIVE.md](ROADMAP_ARCHIVE.md) for completed phases
 - [CHANGELOG.md](CHANGELOG.md) — Notable changes
 
 ## Licence
