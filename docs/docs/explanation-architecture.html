@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How Cantrip works — Cantrip</title>
+<title>How Cantrip works &mdash; Cantrip</title>
 <meta name="description" content="The two-loop architecture, work queue, subagents, and autonomous operation in Cantrip.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>Explanation</h4>
@@ -64,155 +63,103 @@
 
     <h1>How Cantrip works</h1>
     <p class="subtitle">
-      Understanding the architecture helps you use Cantrip more effectively
-      and interpret its behaviour when things go wrong.
+      Understanding the architecture helps you use Cantrip more effectively and interpret its behaviour when things go wrong.
     </p>
 
-    <h2 id="two-loops">Two concurrent loops</h2>
-    <p>
-      Most AI coding tools operate as chatbots: you send a message, the
-      tool responds, you send another. Cantrip is different. It runs two
-      loops concurrently:
-    </p>
-    <ul>
-      <li>
-        <strong>The conversation loop</strong> handles your messages. When
-        you type something, the agent processes it, may call tools, and
-        responds. This is the familiar chat pattern.
-      </li>
-      <li>
-        <strong>The autonomous work loop</strong> picks tasks from a work
-        queue and executes them in the background without waiting for your
-        input. It runs concurrently with the conversation loop.
-      </li>
-    </ul>
-    <p>
-      This means the agent keeps working while you are reading its output,
-      thinking, or not interacting at all. You steer; the agent drives.
-    </p>
-
-    <h3>Why two loops?</h3>
-    <p>
-      Building a charm involves many steps that do not require human input:
-      reading documentation, scaffolding files, running tests, diagnosing
-      failures. Waiting for the user between each step would waste time.
-      The two-loop design lets the agent be autonomous where it can and
-      interactive where it must (design confirmation, domain questions,
-      steering).
-    </p>
-
-    <h2 id="work-queue">The work queue</h2>
-    <p>
-      The work queue is the coordination layer between the two loops. It
-      holds <strong>AgentTask</strong> objects, each with:
-    </p>
-    <ul>
-      <li>
-        <strong>Status</strong> &mdash; pending, active, done, failed, or
-        blocked.
-      </li>
-      <li>
-        <strong>Category</strong> &mdash; research, build, deploy, test,
-        debug, infrastructure, or confirm.
-      </li>
-      <li>
-        <strong>Dependencies</strong> &mdash; tasks that must complete
-        before this one can start.
-      </li>
-    </ul>
-    <p>
-      The executor picks the next ready task (one whose dependencies are
-      all satisfied), spawns a subagent to handle it, and records the
-      result. When a task completes, it unblocks any tasks that depend on
-      it.
-    </p>
-    <p>
-      Tasks are created by the <strong>planner</strong>, which uses the LLM
-      to decompose a high-level intent ("build a Redis charm") into
-      concrete tasks with dependencies. The user's conversation loop can
-      also create tasks &mdash; for example, when you say "add backup
-      support", the agent plans new tasks and adds them to the queue.
-    </p>
-
-    <h3>Concurrency</h3>
-    <p>
-      By default, up to three subagents run concurrently
-      (<code>--concurrency</code> flag). This means the agent can research
-      documentation while scaffolding files while running tests, as long
-      as there are no dependency conflicts.
-    </p>
-
-    <h2 id="subagents">Subagents</h2>
-    <p>
-      Each background task runs in a <strong>subagent</strong> &mdash; an
-      isolated LLM conversation with its own context and a focused set
-      of tools. Subagents are important for two reasons:
-    </p>
-    <ol>
-      <li>
-        <strong>Context isolation.</strong> A research subagent reading
-        hundreds of lines of documentation does not pollute the main
-        conversation's context window. The subagent summarises its findings
-        into a compact result.
-      </li>
-      <li>
-        <strong>Focused tools.</strong> A research subagent does not need
-        Juju deployment tools. A deploy subagent does not need web search.
-        Limiting the tool set reduces confusion and cost.
-      </li>
-    </ol>
-    <p>
-      Subagents have a limited number of rounds (typically 8&ndash;12 tool
-      calls) and category-specific timeouts. If a subagent exceeds its
-      budget, it is terminated and the task is marked as failed, which can
-      trigger a retry or diagnostic task.
-    </p>
-
-    <h3>Cost routing</h3>
-    <p>
-      Tasks are routed to different models based on their category.
-      Research and log analysis go to the light model (cheaper, faster).
-      Code generation and design go to the primary model (more capable).
-      See <a href="howto-light-models.html">Configure light models</a>.
-    </p>
-
-    <h2 id="context">Context management</h2>
-    <p>
-      Long sessions accumulate a lot of context: conversation messages,
-      tool results, research findings. Cantrip manages this in two ways:
-    </p>
-    <ul>
-      <li>
-        <strong>Context compaction</strong> &mdash; when the conversation
-        approaches the model's context window limit, older messages are
-        summarised into a compact form by the LLM. Recent messages are
-        preserved verbatim.
-      </li>
-      <li>
-        <strong>Virtual files</strong> &mdash; large bodies of text (code
-        files, documentation pages, research summaries) are stored in a
-        virtual file store and referenced by name. The agent can read
-        them on demand without keeping them in the active context.
-      </li>
-    </ul>
-
-    <h2 id="sessions">Session persistence</h2>
-    <p>
-      All state is saved to a <code>.cantrip</code> SQLite file in the
-      charm directory. This includes conversation history, task queue,
-      design decisions, and token usage metrics. If Cantrip crashes or
-      you stop it, you can resume by running <code>cantrip</code> in the
-      same directory. The agent picks up where it left off, with the work
-      queue intact.
-    </p>
-    <p>
-      See also:
-    </p>
-    <ul>
-      <li><a href="explanation-charm-paths.html">The three charm paths</a></li>
-      <li><a href="explanation-observability.html">Observability and debugging</a></li>
-      <li><a href="reference-tools.html">Agent tools</a></li>
-    </ul>
+<h2 id="two-loops">Two concurrent loops</h2>
+<p>Most AI coding tools operate as chatbots: you send a message, the
+tool responds, you send another. Cantrip is different. It runs two
+loops concurrently:</p>
+<ul>
+<li><strong>The conversation loop</strong> handles your messages. When
+you type something, the agent processes it, may call tools, and
+responds. This is the familiar chat pattern.</li>
+<li><strong>The autonomous work loop</strong> picks tasks from a work
+queue and executes them in the background without waiting for your
+input. It runs concurrently with the conversation loop.</li>
+</ul>
+<p>This means the agent keeps working while you are reading its output,
+thinking, or not interacting at all. You steer; the agent drives.</p>
+<h3>Why two loops?</h3>
+<p>Building a charm involves many steps that do not require human input:
+reading documentation, scaffolding files, running tests, diagnosing
+failures. Waiting for the user between each step would waste time.
+The two-loop design lets the agent be autonomous where it can and
+interactive where it must (design confirmation, domain questions,
+steering).</p>
+<h2 id="work-queue">The work queue</h2>
+<p>The work queue is the coordination layer between the two loops. It
+holds <strong>AgentTask</strong> objects, each with:</p>
+<ul>
+<li><strong>Status</strong> &mdash; pending, active, done, failed, or
+blocked.</li>
+<li><strong>Category</strong> &mdash; research, build, deploy, test,
+debug, infrastructure, or confirm.</li>
+<li><strong>Dependencies</strong> &mdash; tasks that must complete
+before this one can start.</li>
+</ul>
+<p>The executor picks the next ready task (one whose dependencies are
+all satisfied), spawns a subagent to handle it, and records the
+result. When a task completes, it unblocks any tasks that depend on
+it.</p>
+<p>Tasks are created by the <strong>planner</strong>, which uses the LLM
+to decompose a high-level intent (&quot;build a Redis charm&quot;) into
+concrete tasks with dependencies. The user's conversation loop can
+also create tasks &mdash; for example, when you say &quot;add backup
+support&quot;, the agent plans new tasks and adds them to the queue.</p>
+<h3>Concurrency</h3>
+<p>By default, up to three subagents run concurrently
+(<code>--concurrency</code> flag). This means the agent can research
+documentation while scaffolding files while running tests, as long
+as there are no dependency conflicts.</p>
+<h2 id="subagents">Subagents</h2>
+<p>Each background task runs in a <strong>subagent</strong> &mdash; an
+isolated LLM conversation with its own context and a focused set
+of tools. Subagents are important for two reasons:</p>
+<ol>
+<li><strong>Context isolation.</strong> A research subagent reading
+hundreds of lines of documentation does not pollute the main
+conversation's context window. The subagent summarises its findings
+into a compact result.</li>
+<li><strong>Focused tools.</strong> A research subagent does not need
+Juju deployment tools. A deploy subagent does not need web search.
+Limiting the tool set reduces confusion and cost.</li>
+</ol>
+<p>Subagents have a limited number of rounds (typically 8&ndash;12 tool
+calls) and category-specific timeouts. If a subagent exceeds its
+budget, it is terminated and the task is marked as failed, which can
+trigger a retry or diagnostic task.</p>
+<h3>Cost routing</h3>
+<p>Tasks are routed to different models based on their category.
+Research and log analysis go to the light model (cheaper, faster).
+Code generation and design go to the primary model (more capable).
+See <a href="howto-light-models.html">Configure light models</a>.</p>
+<h2 id="context">Context management</h2>
+<p>Long sessions accumulate a lot of context: conversation messages,
+tool results, research findings. Cantrip manages this in two ways:</p>
+<ul>
+<li><strong>Context compaction</strong> &mdash; when the conversation
+approaches the model's context window limit, older messages are
+summarised into a compact form by the LLM. Recent messages are
+preserved verbatim.</li>
+<li><strong>Virtual files</strong> &mdash; large bodies of text (code
+files, documentation pages, research summaries) are stored in a
+virtual file store and referenced by name. The agent can read
+them on demand without keeping them in the active context.</li>
+</ul>
+<h2 id="sessions">Session persistence</h2>
+<p>All state is saved to a <code>.cantrip</code> SQLite file in the
+charm directory. This includes conversation history, task queue,
+design decisions, and token usage metrics. If Cantrip crashes or
+you stop it, you can resume by running <code>cantrip</code> in the
+same directory. The agent picks up where it left off, with the work
+queue intact.</p>
+<p>See also:</p>
+<ul>
+<li><a href="explanation-charm-paths.html">The three charm paths</a></li>
+<li><a href="explanation-observability.html">Observability and debugging</a></li>
+<li><a href="reference-tools.html">Agent tools</a></li>
+</ul>
   </main>
 </div>
 

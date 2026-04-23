@@ -34,10 +34,31 @@
   </div>
 </nav>
 
+{%- if layout == "index" %}
+<div class="doc-layout" style="max-width: var(--max-w); padding-top: 6rem;">
+  <main id="main" class="doc-content">
+    <h1>{{ h1 }}</h1>
+    <p class="subtitle">
+      {{ subtitle }}
+    </p>
+
+{{ body }}
+  </main>
+</div>
+{%- else %}
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>{{ sidebar_heading }}</h4>
     <ul>
+{%- if primary_list == "on_this_page" %}
+{%- for entry in on_this_page %}
+{%- if loop.first %}
+      <li><a href="#{{ entry.anchor }}" class="current">{{ entry.label }}</a></li>
+{%- else %}
+      <li><a href="#{{ entry.anchor }}">{{ entry.label }}</a></li>
+{%- endif %}
+{%- endfor %}
+{%- else %}
 {%- for page in section_pages %}
 {%- if page.slug == slug %}
       <li><a href="{{ page.slug }}.html" class="current">{{ page.label }}</a></li>
@@ -45,8 +66,9 @@
       <li><a href="{{ page.slug }}.html">{{ page.label }}</a></li>
 {%- endif %}
 {%- endfor %}
+{%- endif %}
     </ul>
-{%- if on_this_page %}
+{%- if primary_list != "on_this_page" and on_this_page %}
     <h4>On this page</h4>
     <ul>
 {%- for entry in on_this_page %}
@@ -72,7 +94,11 @@
 
   <main id="main" class="doc-content">
     <div class="breadcrumb">
+{%- if breadcrumb_label %}
       <a href="index.html">Docs</a><span class="sep">/</span>{{ section_label }}<span class="sep">/</span>{{ breadcrumb_label }}
+{%- else %}
+      <a href="index.html">Docs</a><span class="sep">/</span>{{ section_label }}
+{%- endif %}
     </div>
 
     <h1>{{ h1 }}</h1>
@@ -83,6 +109,7 @@
 {{ body }}
   </main>
 </div>
+{%- endif %}
 
 <footer class="doc-footer">
   <div class="doc-footer-inner">

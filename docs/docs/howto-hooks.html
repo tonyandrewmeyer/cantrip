@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to configure hooks — Cantrip</title>
-<meta name="description" content="Declare user hooks in YAML that run at lifecycle points — pre/post tool calls, compaction, subagent start/stop.">
+<title>How to configure hooks &mdash; Cantrip</title>
+<meta name="description" content="Declare user hooks in YAML that run at lifecycle points &mdash; pre/post tool calls, compaction, subagent start/stop.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>How-to guides</h4>
@@ -59,108 +58,81 @@
       Run small scripts at lifecycle points without forking Cantrip.
     </p>
 
-    <h2 id="what">What hooks are for</h2>
-    <p>
-      A <em>hook</em> is a shell command Cantrip runs at a specific
-      event &mdash; every tool call, every compaction, every subagent
-      start &mdash; with a JSON payload piped to the hook&rsquo;s
-      stdin. Use them for local policy (audit logs, Slack notifications,
-      custom linters you want to trigger before packing) without
-      changing Cantrip itself.
-    </p>
-    <p>
-      Hooks start in observer mode by default and can opt into
-      <em>veto</em> mode with <code>continue_on_error: false</code>
-      &mdash; see <a href="#veto">Vetoing operations</a> below.
-    </p>
-
-    <h2 id="where">Where to configure</h2>
-    <p>Cantrip reads two YAML files, in order:</p>
-    <ol>
-      <li>
-        <strong>User scope:</strong>
-        <code>~/.config/cantrip/hooks.yaml</code> (override via
-        <code>CANTRIP_HOOKS_USER_CONFIG</code>) &mdash; the right place
-        for personal audits, experiments, or shared tooling you want
-        on every charm.
-      </li>
-      <li>
-        <strong>Repo scope:</strong>
-        <code>cantrip.hooks.yaml</code> next to your charm directory
-        &mdash; for project-specific hooks that should be committed.
-        Repo hooks with a matching <code>name</code> override
-        user-scope hooks.
-      </li>
-    </ol>
-    <p>
-      A malformed file is logged at WARNING and skipped rather than
-      crashing the agent, so a typo in one place never takes the other
-      down.
-    </p>
-
-    <h2 id="schema">Schema</h2>
-    <pre><code>hooks:
+<h2 id="what">What hooks are for</h2>
+<p>A <em>hook</em> is a shell command Cantrip runs at a specific
+event &mdash; every tool call, every compaction, every subagent
+start &mdash; with a JSON payload piped to the hook&rsquo;s
+stdin. Use them for local policy (audit logs, Slack notifications,
+custom linters you want to trigger before packing) without
+changing Cantrip itself.</p>
+<p>Hooks start in observer mode by default and can opt into
+<em>veto</em> mode with <code>continue_on_error: false</code>
+&mdash; see <a href="#veto">Vetoing operations</a> below.</p>
+<h2 id="where">Where to configure</h2>
+<p>Cantrip reads two YAML files, in order:</p>
+<ol>
+<li><strong>User scope:</strong>
+<code>~/.config/cantrip/hooks.yaml</code> (override via
+<code>CANTRIP_HOOKS_USER_CONFIG</code>) &mdash; the right place
+for personal audits, experiments, or shared tooling you want
+on every charm.</li>
+<li><strong>Repo scope:</strong>
+<code>cantrip.hooks.yaml</code> next to your charm directory
+&mdash; for project-specific hooks that should be committed.
+Repo hooks with a matching <code>name</code> override
+user-scope hooks.</li>
+</ol>
+<p>A malformed file is logged at WARNING and skipped rather than
+crashing the agent, so a typo in one place never takes the other
+down.</p>
+<h2 id="schema">Schema</h2>
+<pre><code>hooks:
   - name: log-git-pushes
     event: pre_tool_call
-    if: tool == "git_push"
-    run: logger -t cantrip "pushing $(jq -r .arguments.branch)"
+    if: tool == &quot;git_push&quot;
+    run: logger -t cantrip &quot;pushing $(jq -r .arguments.branch)&quot;
     timeout: 5
     continue_on_error: true
 </code></pre>
-    <p>Fields:</p>
-    <ul>
-      <li>
-        <code>name</code> (string, optional) &mdash; label used in
-        logs and the future <code>/hooks</code> slash command.
-        Defaults to the first word of <code>run</code>.
-      </li>
-      <li>
-        <code>event</code> (string, required) &mdash; one of the
-        event names below. (The field is named <code>event</code>
-        rather than <code>on</code> because unquoted <code>on:</code>
-        in YAML 1.1 parses as a boolean <code>True</code> key, which
-        would silently break configs.)
-      </li>
-      <li>
-        <code>run</code> (string, required) &mdash; the command line
-        to invoke. Passed to <code>/bin/sh -c</code> so pipes,
-        redirection, and env-var expansion all work.
-      </li>
-      <li>
-        <code>if</code> (string, optional) &mdash; a boolean
-        expression evaluated against the event payload. The hook
-        only fires when the expression is truthy. See
-        <a href="#filters">Conditional filters</a> below.
-      </li>
-      <li>
-        <code>timeout</code> (number, optional, default 30) &mdash;
-        seconds before the hook is killed. A slow hook blocks the
-        agent sequentially, so keep it short.
-      </li>
-      <li>
-        <code>continue_on_error</code> (bool, optional, default
-        <code>true</code>) &mdash; when <code>false</code>, a
-        non-zero exit (or a timeout) <em>vetoes</em> the pending
-        operation: the tool doesn&rsquo;t run, compaction
-        doesn&rsquo;t happen, the subagent doesn&rsquo;t start.
-        See the <a href="#veto">Vetoing operations</a> section.
-      </li>
-    </ul>
-
-    <h2 id="filters">Conditional filters</h2>
-    <p>
-      The optional <code>if:</code> expression gates a hook on
-      payload shape so you don&rsquo;t need to write shell guards in
-      every <code>run:</code>. Common patterns:
-    </p>
-    <pre><code># Only audit git pushes, not every tool call.
+<p>Fields:</p>
+<ul>
+<li><code>name</code> (string, optional) &mdash; label used in
+logs and the future <code>/hooks</code> slash command.
+Defaults to the first word of <code>run</code>.</li>
+<li><code>event</code> (string, required) &mdash; one of the
+event names below. (The field is named <code>event</code>
+rather than <code>on</code> because unquoted <code>on:</code>
+in YAML 1.1 parses as a boolean <code>True</code> key, which
+would silently break configs.)</li>
+<li><code>run</code> (string, required) &mdash; the command line
+to invoke. Passed to <code>/bin/sh -c</code> so pipes,
+redirection, and env-var expansion all work.</li>
+<li><code>if</code> (string, optional) &mdash; a boolean
+expression evaluated against the event payload. The hook
+only fires when the expression is truthy. See
+<a href="#filters">Conditional filters</a> below.</li>
+<li><code>timeout</code> (number, optional, default 30) &mdash;
+seconds before the hook is killed. A slow hook blocks the
+agent sequentially, so keep it short.</li>
+<li><code>continue_on_error</code> (bool, optional, default
+<code>true</code>) &mdash; when <code>false</code>, a
+non-zero exit (or a timeout) <em>vetoes</em> the pending
+operation: the tool doesn&rsquo;t run, compaction
+doesn&rsquo;t happen, the subagent doesn&rsquo;t start.
+See the <a href="#veto">Vetoing operations</a> section.</li>
+</ul>
+<h2 id="filters">Conditional filters</h2>
+<p>The optional <code>if:</code> expression gates a hook on
+payload shape so you don&rsquo;t need to write shell guards in
+every <code>run:</code>. Common patterns:</p>
+<pre><code># Only audit git pushes, not every tool call.
 - event: pre_tool_call
-  if: tool == "git_push"
+  if: tool == &quot;git_push&quot;
   run: ...
 
 # Only react to builds the agent actually finished.
 - event: post_subagent
-  if: category == "BUILD" and exit_state == "completed"
+  if: category == &quot;BUILD&quot; and exit_state == &quot;completed&quot;
   run: ...
 
 # Don't notify for fast compactions.
@@ -170,150 +142,133 @@
 
 # Multiple values: set membership.
 - event: pre_tool_call
-  if: tool in ["git_push", "git_commit", "charmcraft_upload"]
+  if: tool in [&quot;git_push&quot;, &quot;git_commit&quot;, &quot;charmcraft_upload&quot;]
   run: ...
 
 # Nested fields walk through the payload.
 - event: pre_tool_call
-  if: tool == "juju_deploy" and arguments.channel == "edge"
-  run: ...</code></pre>
-    <p>
-      <strong>What the expression language supports:</strong>
-      comparisons (<code>==</code>, <code>!=</code>, <code>&lt;</code>,
-      <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>,
-      <code>in</code>, <code>not in</code>), boolean combinators
-      (<code>and</code>, <code>or</code>, <code>not</code>), nested
-      field access (<code>arguments.branch</code>,
-      <code>task.category</code>), subscripts
-      (<code>arguments["branch"]</code>), and string / number / list
-      literals.
-    </p>
-    <p>
-      <strong>What it doesn&rsquo;t support:</strong> function calls,
-      method calls (<code>tool.startswith(&hellip;)</code>),
-      comprehensions, lambdas, imports &mdash; rejected at
-      config-load time with a clear error. Substring checks work via
-      <code>"git" in tool</code>.
-    </p>
-    <p>
-      <strong>Missing fields are safe.</strong> If a filter
-      references a payload key the event doesn&rsquo;t carry (e.g.
-      <code>task.category</code> on a <code>pre_compact</code>
-      event), the comparison evaluates to <code>False</code> and the
-      hook is skipped. You can write one hook config that targets
-      fields from several event shapes without worrying about
-      KeyError crashes.
-    </p>
-
-    <h2 id="events">Events</h2>
-    <p>The following events are fired today:</p>
-    <table>
-      <thead>
-        <tr><th>Event</th><th>Fires when</th><th>Payload keys (in addition to <code>event</code> and <code>timestamp</code>)</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>pre_tool_call</code></td>
-          <td>Before every tool invocation (main agent or subagent).</td>
-          <td><code>tool</code>, <code>arguments</code>, <code>source</code> (<code>main</code>, <code>main-stream</code>, or <code>subagent</code>), <code>task_category</code> (subagent only)</td>
-        </tr>
-        <tr>
-          <td><code>post_tool_call</code></td>
-          <td>After every tool invocation completes or errors.</td>
-          <td><code>tool</code>, <code>arguments</code>, <code>success</code>, <code>error</code>, <code>source</code>, <code>task_category</code></td>
-        </tr>
-        <tr>
-          <td><code>pre_compact</code></td>
-          <td>Just before context compaction runs.</td>
-          <td><code>tokens_before</code>, <code>source</code></td>
-        </tr>
-        <tr>
-          <td><code>post_compact</code></td>
-          <td>After compaction completes (even if it falls back to truncation).</td>
-          <td><code>tokens_before</code>, <code>tokens_after</code>, <code>source</code></td>
-        </tr>
-        <tr>
-          <td><code>pre_subagent</code></td>
-          <td>Before a subagent starts a task.</td>
-          <td><code>task_id</code>, <code>title</code>, <code>category</code></td>
-        </tr>
-        <tr>
-          <td><code>post_subagent</code></td>
-          <td>After the subagent returns (even on failure).</td>
-          <td><code>task_id</code>, <code>title</code>, <code>category</code>, <code>exit_state</code></td>
-        </tr>
-      </tbody>
-    </table>
-    <p>
-      The following event names are reserved for future sub-phases:
-      <code>pre_pack</code>, <code>pre_push</code>, <code>pre_pr</code>,
-      <code>on_task_complete</code>, <code>on_session_end</code>.
-      You can register hooks for them today &mdash; they will just
-      never fire until the matching agent code lands.
-    </p>
-
-    <h2 id="payload">Payload shape</h2>
-    <p>
-      Every hook receives a JSON object on stdin with at least two
-      fields:
-    </p>
-    <ul>
-      <li><code>event</code> &mdash; the event name (mirrors the hook&rsquo;s <code>event:</code> field).</li>
-      <li><code>timestamp</code> &mdash; ISO-8601 local time of the event.</li>
-    </ul>
-    <p>
-      The remaining fields vary by event, as listed above. Parse with
-      <code>jq</code>, or <code>python -c 'import json, sys;
-      d = json.load(sys.stdin)'</code>, or whatever your hook prefers.
-    </p>
-
-    <h2 id="examples">Examples</h2>
-
-    <h3>Audit every tool call to a log file</h3>
-    <pre><code>hooks:
+  if: tool == &quot;juju_deploy&quot; and arguments.channel == &quot;edge&quot;
+  run: ...
+</code></pre>
+<p><strong>What the expression language supports:</strong>
+comparisons (<code>==</code>, <code>!=</code>, <code>&lt;</code>,
+<code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>,
+<code>in</code>, <code>not in</code>), boolean combinators
+(<code>and</code>, <code>or</code>, <code>not</code>), nested
+field access (<code>arguments.branch</code>,
+<code>task.category</code>), subscripts
+(<code>arguments[&quot;branch&quot;]</code>), and string / number / list
+literals.</p>
+<p><strong>What it doesn&rsquo;t support:</strong> function calls,
+method calls (<code>tool.startswith(&hellip;)</code>),
+comprehensions, lambdas, imports &mdash; rejected at
+config-load time with a clear error. Substring checks work via
+<code>&quot;git&quot; in tool</code>.</p>
+<p><strong>Missing fields are safe.</strong> If a filter
+references a payload key the event doesn&rsquo;t carry (e.g.
+<code>task.category</code> on a <code>pre_compact</code>
+event), the comparison evaluates to <code>False</code> and the
+hook is skipped. You can write one hook config that targets
+fields from several event shapes without worrying about
+KeyError crashes.</p>
+<h2 id="events">Events</h2>
+<p>The following events are fired today:</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Fires when</th>
+<th>Payload keys (in addition to <code>event</code> and <code>timestamp</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pre_tool_call</code></td>
+<td>Before every tool invocation (main agent or subagent).</td>
+<td><code>tool</code>, <code>arguments</code>, <code>source</code> (<code>main</code>, <code>main-stream</code>, or <code>subagent</code>), <code>task_category</code> (subagent only)</td>
+</tr>
+<tr>
+<td><code>post_tool_call</code></td>
+<td>After every tool invocation completes or errors.</td>
+<td><code>tool</code>, <code>arguments</code>, <code>success</code>, <code>error</code>, <code>source</code>, <code>task_category</code></td>
+</tr>
+<tr>
+<td><code>pre_compact</code></td>
+<td>Just before context compaction runs.</td>
+<td><code>tokens_before</code>, <code>source</code></td>
+</tr>
+<tr>
+<td><code>post_compact</code></td>
+<td>After compaction completes (even if it falls back to truncation).</td>
+<td><code>tokens_before</code>, <code>tokens_after</code>, <code>source</code></td>
+</tr>
+<tr>
+<td><code>pre_subagent</code></td>
+<td>Before a subagent starts a task.</td>
+<td><code>task_id</code>, <code>title</code>, <code>category</code></td>
+</tr>
+<tr>
+<td><code>post_subagent</code></td>
+<td>After the subagent returns (even on failure).</td>
+<td><code>task_id</code>, <code>title</code>, <code>category</code>, <code>exit_state</code></td>
+</tr>
+</tbody>
+</table>
+<p>The following event names are reserved for future sub-phases:
+<code>pre_pack</code>, <code>pre_push</code>, <code>pre_pr</code>,
+<code>on_task_complete</code>, <code>on_session_end</code>.
+You can register hooks for them today &mdash; they will just
+never fire until the matching agent code lands.</p>
+<h2 id="payload">Payload shape</h2>
+<p>Every hook receives a JSON object on stdin with at least two
+fields:</p>
+<ul>
+<li><code>event</code> &mdash; the event name (mirrors the hook&rsquo;s <code>event:</code> field).</li>
+<li><code>timestamp</code> &mdash; ISO-8601 local time of the event.</li>
+</ul>
+<p>The remaining fields vary by event, as listed above. Parse with
+<code>jq</code>, or <code>python -c 'import json, sys; d = json.load(sys.stdin)'</code>, or whatever your hook prefers.</p>
+<h2 id="examples">Examples</h2>
+<h3>Audit every tool call to a log file</h3>
+<pre><code>hooks:
   - name: audit-tools
     event: post_tool_call
     run: |
       python3 -c 'import json, sys, datetime
       d = json.load(sys.stdin)
-      with open("/tmp/cantrip-tools.log", "a") as f:
-          f.write(f"{datetime.datetime.now().isoformat()} {d[\"tool\"]} ok={d[\"success\"]}\n")'
+      with open(&quot;/tmp/cantrip-tools.log&quot;, &quot;a&quot;) as f:
+          f.write(f&quot;{datetime.datetime.now().isoformat()} {d[\&quot;tool\&quot;]} ok={d[\&quot;success\&quot;]}\n&quot;)'
     timeout: 5
 </code></pre>
-
-    <h3>Slack notification when compaction fires</h3>
-    <pre><code>hooks:
+<h3>Slack notification when compaction fires</h3>
+<pre><code>hooks:
   - name: slack-compact
     event: post_compact
     run: |
-      jq -c '{text: "Cantrip compacted: \(.tokens_before) -&gt; \(.tokens_after) tokens"}' \
+      jq -c '{text: &quot;Cantrip compacted: \(.tokens_before) -&gt; \(.tokens_after) tokens&quot;}' \
         | curl -s -X POST -H 'Content-Type: application/json' \
           -d @- https://hooks.slack.com/services/XXX/YYY/ZZZ
     timeout: 10
 </code></pre>
-
-    <h3>Count how often each tool is called, per session</h3>
-    <pre><code>hooks:
+<h3>Count how often each tool is called, per session</h3>
+<pre><code>hooks:
   - name: tool-counter
     event: pre_tool_call
     run: |
       jq -r .tool | tee -a ~/.cache/cantrip/tool-counts
 </code></pre>
-
-    <h2 id="veto">Vetoing operations</h2>
-    <p>
-      A hook with <code>continue_on_error: false</code> can refuse
-      the pending operation by exiting non-zero (or by timing out).
-      Use it to enforce local policy:
-    </p>
-    <pre><code># Refuse git pushes when the working tree has uncommitted changes.
+<h2 id="veto">Vetoing operations</h2>
+<p>A hook with <code>continue_on_error: false</code> can refuse
+the pending operation by exiting non-zero (or by timing out).
+Use it to enforce local policy:</p>
+<pre><code># Refuse git pushes when the working tree has uncommitted changes.
 - name: require-clean-tree
   event: pre_tool_call
-  if: tool == "git_push"
+  if: tool == &quot;git_push&quot;
   continue_on_error: false
   run: |
     if ! git diff --quiet; then
-      echo "working tree dirty; refusing to push" &gt;&amp;2
+      echo &quot;working tree dirty; refusing to push&quot; &gt;&amp;2
       exit 1
     fi
 
@@ -323,66 +278,48 @@
   continue_on_error: false
   run: test ! -f ~/.cache/cantrip/pinned
 </code></pre>
-    <p>
-      What happens when a pre-hook vetoes:
-    </p>
-    <ul>
-      <li>
-        <code>pre_tool_call</code>: the tool isn&rsquo;t called. The
-        LLM receives an error <code>ToolResult</code> naming the hook
-        and its last stderr line, so its next turn can apologise,
-        retry with different arguments, or ask the user for help.
-        <code>post_tool_call</code> still fires with
-        <code>success: false</code> and a <code>vetoed_by</code>
-        field &mdash; observability hooks see the attempt.
-      </li>
-      <li>
-        <code>pre_compact</code>: compaction is skipped and the
-        context stays intact. The model gets no token-budget
-        summary message. <code>post_compact</code> does <em>not</em>
-        fire because compaction never ran.
-      </li>
-      <li>
-        <code>pre_subagent</code>: the whole task returns a
-        <code>BLOCKED</code> exit state without calling the LLM. The
-        executor records the block like any other blocked task.
-        <code>post_subagent</code> fires with the blocked exit
-        state and a <code>vetoed_by</code> field.
-      </li>
-    </ul>
-    <p>
-      Filter observability hooks on <code>if: vetoed_by != None</code>
-      to get a feed of blocked-only events.
-    </p>
-    <p>
-      The default (<code>continue_on_error: true</code>) is
-      unchanged from earlier releases &mdash; a failing lenient hook
-      logs at DEBUG and doesn&rsquo;t block anything. Only
-      <code>continue_on_error: false</code> turns a hook into an
-      enforcer.
-    </p>
-
-    <h2 id="inspecting">Inspecting hooks</h2>
-    <p>
-      Two debugging surfaces answer &ldquo;is my hook wired right?&rdquo;
-      without having to trigger a real agent operation:
-    </p>
-
-    <h3 id="slash"><code>/hooks</code> slash command</h3>
-    <p>
-      Available in the TUI, CLI REPL, and Web chat. Lists every
-      configured hook grouped by event with its <code>if:</code>
-      filter and (when <code>continue_on_error: false</code>) a
-      <strong>veto-capable</strong> badge; for hooks that have fired
-      this session, shows per-hook counts (invocations, successes,
-      failures, vetoes, timeouts), average duration, and last-seen
-      time:
-    </p>
-    <pre><code>/hooks
+<p>What happens when a pre-hook vetoes:</p>
+<ul>
+<li><code>pre_tool_call</code>: the tool isn&rsquo;t called. The
+LLM receives an error <code>ToolResult</code> naming the hook
+and its last stderr line, so its next turn can apologise,
+retry with different arguments, or ask the user for help.
+<code>post_tool_call</code> still fires with
+<code>success: false</code> and a <code>vetoed_by</code>
+field &mdash; observability hooks see the attempt.</li>
+<li><code>pre_compact</code>: compaction is skipped and the
+context stays intact. The model gets no token-budget
+summary message. <code>post_compact</code> does <em>not</em>
+fire because compaction never ran.</li>
+<li><code>pre_subagent</code>: the whole task returns a
+<code>BLOCKED</code> exit state without calling the LLM. The
+executor records the block like any other blocked task.
+<code>post_subagent</code> fires with the blocked exit
+state and a <code>vetoed_by</code> field.</li>
+</ul>
+<p>Filter observability hooks on <code>if: vetoed_by != None</code>
+to get a feed of blocked-only events.</p>
+<p>The default (<code>continue_on_error: true</code>) is
+unchanged from earlier releases &mdash; a failing lenient hook
+logs at DEBUG and doesn&rsquo;t block anything. Only
+<code>continue_on_error: false</code> turns a hook into an
+enforcer.</p>
+<h2 id="inspecting">Inspecting hooks</h2>
+<p>Two debugging surfaces answer &ldquo;is my hook wired right?&rdquo;
+without having to trigger a real agent operation:</p>
+<h3 id="slash"><code>/hooks</code> slash command</h3>
+<p>Available in the TUI, CLI REPL, and Web chat. Lists every
+configured hook grouped by event with its <code>if:</code>
+filter and (when <code>continue_on_error: false</code>) a
+<strong>veto-capable</strong> badge; for hooks that have fired
+this session, shows per-hook counts (invocations, successes,
+failures, vetoes, timeouts), average duration, and last-seen
+time:</p>
+<pre><code>/hooks
   Configured: 3 hook(s).
 
   pre_tool_call
-    - `require-clean-tree`  if `tool == "git_push"`  veto-capable
+    - `require-clean-tree`  if `tool == &quot;git_push&quot;`  veto-capable
         5 invocations (4 ok, 1 failed, 1 vetoed) · avg 23ms · last at 14:12:03
     - `audit-tools`
         147 invocations (147 ok, 0 failed) · avg 8ms · last at 14:12:04
@@ -391,73 +328,58 @@
     - `slack-compact`
         not invoked yet
 
-  Transcript logging: on — hook_invocation events carry per-call detail
-  in the session store.</code></pre>
-
-    <h3 id="cli-test"><code>cantrip hooks test &lt;event&gt;</code></h3>
-    <p>
-      Fires a synthetic event against the current hook config and
-      prints results — great for authoring a new hook config before
-      letting it touch a live session. Exit code is 0 on success,
-      2 on argument / JSON errors:
-    </p>
-    <pre><code>$ cantrip hooks test pre_tool_call --payload '{"tool": "git_push"}'
+  Transcript logging: on &mdash; hook_invocation events carry per-call detail
+  in the session store.
+</code></pre>
+<h3 id="cli-test"><code>cantrip hooks test &lt;event&gt;</code></h3>
+<p>Fires a synthetic event against the current hook config and
+prints results &mdash; great for authoring a new hook config before
+letting it touch a live session. Exit code is 0 on success,
+2 on argument / JSON errors:</p>
+<pre><code>$ cantrip hooks test pre_tool_call --payload '{&quot;tool&quot;: &quot;git_push&quot;}'
 Firing `pre_tool_call` against 2 matching hook(s).
-  ✓ audit-tools — exit 0 in 5ms
+  ✓ audit-tools &mdash; exit 0 in 5ms
       stdout: saw git_push at 14:12:09
-  ∅ require-clean-tree — exit 1 in 12ms (VETO)
-      stderr: working tree dirty; refusing to push</code></pre>
-    <p>
-      <code>--path DIR</code> overrides the repo root for
-      <code>cantrip.hooks.yaml</code> discovery
-      (defaults to CWD). <code>--payload</code> is merged into the
-      auto-added <code>event</code> + <code>timestamp</code> fields
-      so your <code>if:</code> filter evaluates against realistic
-      input.
-    </p>
-
-    <h3 id="transcript">Transcript events</h3>
-    <p>
-      Every executed hook records a
-      <code>hook_invocation</code> event in the session store with
-      <code>hook_name</code>, <code>event</code>,
-      <code>exit_code</code>, <code>duration_seconds</code>,
-      <code>vetoed</code>, <code>timed_out</code>,
-      <code>continue_on_error</code>, and (when stderr isn&rsquo;t
-      empty) a 200-char <code>stderr_excerpt</code>. Skipped hooks
-      (rejected by their <code>if:</code> filter) do <em>not</em>
-      record events &mdash; the transcript is an audit log of real
-      executions, not an attempt log.
-    </p>
-
-    <h2 id="limits">Current limits</h2>
-    <ul>
-      <li>
-        Hooks run <em>sequentially</em> per event in declaration order.
-        A slow hook blocks the next one and the agent itself. Keep
-        <code>timeout</code> aggressive.
-      </li>
-      <li>
-        Hook stdout is captured but not yet injected into the agent
-        conversation. (A future sub-phase will let <code>pre_*</code>
-        hooks mutate the pending payload via a JSON-patch envelope.)
-      </li>
-      <li>
-        Stdout from a <code>pre_tool_call</code> hook is captured
-        but not yet merged into the pending payload &mdash; a
-        follow-up sub-phase will document a JSON envelope so a hook
-        can redact a secret out of <code>arguments</code> before the
-        tool runs.
-      </li>
-    </ul>
+  ∅ require-clean-tree &mdash; exit 1 in 12ms (VETO)
+      stderr: working tree dirty; refusing to push
+</code></pre>
+<p><code>--path DIR</code> overrides the repo root for
+<code>cantrip.hooks.yaml</code> discovery
+(defaults to CWD). <code>--payload</code> is merged into the
+auto-added <code>event</code> + <code>timestamp</code> fields
+so your <code>if:</code> filter evaluates against realistic
+input.</p>
+<h3 id="transcript">Transcript events</h3>
+<p>Every executed hook records a
+<code>hook_invocation</code> event in the session store with
+<code>hook_name</code>, <code>event</code>,
+<code>exit_code</code>, <code>duration_seconds</code>,
+<code>vetoed</code>, <code>timed_out</code>,
+<code>continue_on_error</code>, and (when stderr isn&rsquo;t
+empty) a 200-char <code>stderr_excerpt</code>. Skipped hooks
+(rejected by their <code>if:</code> filter) do <em>not</em>
+record events &mdash; the transcript is an audit log of real
+executions, not an attempt log.</p>
+<h2 id="limits">Current limits</h2>
+<ul>
+<li>Hooks run <em>sequentially</em> per event in declaration order.
+A slow hook blocks the next one and the agent itself. Keep
+<code>timeout</code> aggressive.</li>
+<li>Hook stdout is captured but not yet injected into the agent
+conversation. (A future sub-phase will let <code>pre_*</code>
+hooks mutate the pending payload via a JSON-patch envelope.)</li>
+<li>Stdout from a <code>pre_tool_call</code> hook is captured
+but not yet merged into the pending payload &mdash; a
+follow-up sub-phase will document a JSON envelope so a hook
+can redact a secret out of <code>arguments</code> before the
+tool runs.</li>
+</ul>
   </main>
 </div>
 
 <footer class="doc-footer">
   <div class="doc-footer-inner">
-    <div>
-      <strong>Cantrip</strong> &mdash; autonomous charm builder.
-    </div>
+    <span>Cantrip &mdash; free &amp; open source</span>
     <div>
       <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
     </div>

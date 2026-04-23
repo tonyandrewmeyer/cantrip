@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to configure MCP servers — Cantrip</title>
+<title>How to configure MCP servers &mdash; Cantrip</title>
 <meta name="description" content="Attach third-party MCP servers to Cantrip: cantrip.mcp.yaml, stdio and HTTP transports, OAuth, and marketplaces.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>How-to guides</h4>
@@ -66,110 +65,78 @@
       Attach third-party tools to Cantrip via the Model Context Protocol.
     </p>
 
-    <h2 id="what">What MCP gives you</h2>
-    <p>
-      MCP is the cross-vendor standard (Claude Code, Cursor, Codex,
-      Copilot) for exposing tools to an agent over a wire protocol. A
-      <em>server</em> publishes tool descriptors and handles
-      invocations; Cantrip is the <em>client</em>. Configured servers
-      appear alongside Cantrip&rsquo;s built-in tools as
-      <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> &mdash; the agent
-      calls them the same way it calls
-      <code>read_file</code> or <code>juju_status</code>.
-    </p>
-    <p>
-      Useful MCP servers for a Juju-charm agent: Charmhub search,
-      Grafana PromQL/LogQL wrappers, GitHub org context, Launchpad bug
-      lookup, workload-specific introspection. See
-      <a href="https://github.com/tonyandrewmeyer/cantrip/blob/main/design/MCP_SERVERS.md" target="_blank" rel="noopener">design/MCP_SERVERS.md</a>
-      if you want to author one.
-    </p>
-
-    <h2 id="config-file">Where to configure</h2>
-    <p>
-      Cantrip reads two YAML files, in order:
-    </p>
-    <ol>
-      <li>
-        <strong>User scope:</strong> <code>~/.config/cantrip/mcp.yaml</code>
-        (override via <code>CANTRIP_MCP_USER_CONFIG</code>) &mdash; the
-        right place for personal servers you want across every charm.
-      </li>
-      <li>
-        <strong>Repo scope:</strong> <code>cantrip.mcp.yaml</code> next
-        to your charm directory &mdash; for project-specific servers
-        that should be committed. Repo-scope values override user-scope
-        on a name collision.
-      </li>
-    </ol>
-    <p>
-      A malformed file is logged and skipped rather than crashing the
-      agent, so a typo in one place never takes the other down.
-    </p>
-
-    <h2 id="stdio">Add a stdio server</h2>
-    <p>
-      Stdio is the common case &mdash; Cantrip spawns the server as a
-      subprocess and talks to it over pipes. Example
-      <code>cantrip.mcp.yaml</code>:
-    </p>
-    <pre><code>servers:
+<h2 id="what">What MCP gives you</h2>
+<p>MCP is the cross-vendor standard (Claude Code, Cursor, Codex,
+Copilot) for exposing tools to an agent over a wire protocol. A
+<em>server</em> publishes tool descriptors and handles
+invocations; Cantrip is the <em>client</em>. Configured servers
+appear alongside Cantrip&rsquo;s built-in tools as
+<code>mcp__&lt;server&gt;__&lt;tool&gt;</code> &mdash; the agent
+calls them the same way it calls
+<code>read_file</code> or <code>juju_status</code>.</p>
+<p>Useful MCP servers for a Juju-charm agent: Charmhub search,
+Grafana PromQL/LogQL wrappers, GitHub org context, Launchpad bug
+lookup, workload-specific introspection. See
+<a href="https://github.com/tonyandrewmeyer/cantrip/blob/main/design/MCP_SERVERS.md" target="_blank" rel="noopener">design/MCP_SERVERS.md</a>
+if you want to author one.</p>
+<h2 id="config-file">Where to configure</h2>
+<p>Cantrip reads two YAML files, in order:</p>
+<ol>
+<li><strong>User scope:</strong> <code>~/.config/cantrip/mcp.yaml</code>
+(override via <code>CANTRIP_MCP_USER_CONFIG</code>) &mdash; the
+right place for personal servers you want across every charm.</li>
+<li><strong>Repo scope:</strong> <code>cantrip.mcp.yaml</code> next
+to your charm directory &mdash; for project-specific servers
+that should be committed. Repo-scope values override user-scope
+on a name collision.</li>
+</ol>
+<p>A malformed file is logged and skipped rather than crashing the
+agent, so a typo in one place never takes the other down.</p>
+<h2 id="stdio">Add a stdio server</h2>
+<p>Stdio is the common case &mdash; Cantrip spawns the server as a
+subprocess and talks to it over pipes. Example
+<code>cantrip.mcp.yaml</code>:</p>
+<pre><code>servers:
   charmhub:
     command: uvx
-    args: ["charmhub-mcp"]
+    args: [&quot;charmhub-mcp&quot;]
     env:
       CHARMHUB_TOKEN: ${CHARMHUB_TOKEN}
     timeout_seconds: 30
-    allowed_tools: ["search", "info"]</code></pre>
-    <p>
-      Every field is validated at load time:
-    </p>
-    <ul>
-      <li>
-        <code>command</code> is required for stdio.
-        <code>args</code>, <code>env</code>, <code>cwd</code> are
-        optional.
-      </li>
-      <li>
-        <code>timeout_seconds</code> caps the per-call timeout. Default
-        <code>30</code>.
-      </li>
-      <li>
-        <code>allowed_tools</code> is a per-server allowlist. Empty
-        means &ldquo;expose every tool the server publishes&rdquo;; a
-        non-empty list surfaces only those names. This is the
-        authoritative gate for MCP exposure &mdash; operators tighten
-        access by editing the YAML, no code change needed.
-      </li>
-    </ul>
-    <p>
-      Cantrip auto-starts every configured server on boot. Failures
-      land in per-server status (see <a href="#mcp-command"><code>/mcp</code></a>)
-      so one broken server never blocks the healthy ones.
-    </p>
-
-    <h2 id="http">Add an HTTP server</h2>
-    <p>
-      For remote servers, use the streamable-HTTP transport:
-    </p>
-    <pre><code>servers:
+    allowed_tools: [&quot;search&quot;, &quot;info&quot;]
+</code></pre>
+<p>Every field is validated at load time:</p>
+<ul>
+<li><code>command</code> is required for stdio.
+<code>args</code>, <code>env</code>, <code>cwd</code> are
+optional.</li>
+<li><code>timeout_seconds</code> caps the per-call timeout. Default
+<code>30</code>.</li>
+<li><code>allowed_tools</code> is a per-server allowlist. Empty
+means &ldquo;expose every tool the server publishes&rdquo;; a
+non-empty list surfaces only those names. This is the
+authoritative gate for MCP exposure &mdash; operators tighten
+access by editing the YAML, no code change needed.</li>
+</ul>
+<p>Cantrip auto-starts every configured server on boot. Failures
+land in per-server status (see <a href="#mcp-command"><code>/mcp</code></a>)
+so one broken server never blocks the healthy ones.</p>
+<h2 id="http">Add an HTTP server</h2>
+<p>For remote servers, use the streamable-HTTP transport:</p>
+<pre><code>servers:
   grafana:
     transport: http
     url: https://grafana.example.com/mcp
     headers:
-      Authorization: "Bearer ${GRAFANA_TOKEN}"
-    timeout_seconds: 60</code></pre>
-    <p>
-      <code>url</code> is required for HTTP. <code>headers</code> are
-      sent with every request. For servers that require OAuth rather
-      than a pre-shared token, see <a href="#oauth">OAuth</a>.
-    </p>
-
-    <h2 id="mcp-command">Inspect running servers with <code>/mcp</code></h2>
-    <p>
-      Type slash commands directly in the chat (TUI or Web):
-    </p>
-    <pre><code><span class="comment"># Overview of every configured server:</span>
+      Authorization: &quot;Bearer ${GRAFANA_TOKEN}&quot;
+    timeout_seconds: 60
+</code></pre>
+<p><code>url</code> is required for HTTP. <code>headers</code> are
+sent with every request. For servers that require OAuth rather
+than a pre-shared token, see <a href="#oauth">OAuth</a>.</p>
+<h2 id="mcp-command">Inspect running servers with <code>/mcp</code></h2>
+<p>Type slash commands directly in the chat (TUI or Web):</p>
+<pre><code><span class="comment"># Overview of every configured server:</span>
 /mcp
 
 <span class="comment"># Per-server tool list, with descriptions:</span>
@@ -177,86 +144,68 @@
 
 <span class="comment"># Full syntax help:</span>
 /mcp help</code></pre>
-    <p>
-      Status markers:
-    </p>
-    <ul>
-      <li><code>[ok]</code> &mdash; connected, tools available.</li>
-      <li><code>[!!]</code> &mdash; failed to start or connect; hover for the error.</li>
-      <li><code>[--]</code> &mdash; stopped (after <code>stop_mcp</code>).</li>
-      <li><code>[..]</code> &mdash; pending (startup still in flight).</li>
-    </ul>
-
-    <h2 id="oauth">OAuth 2.1 for HTTP servers</h2>
-    <p>
-      Servers that require a user login use the SDK&rsquo;s
-      <code>OAuthClientProvider</code>. Cantrip handles PKCE, dynamic
-      client registration, RFC 9728 Protected Resource Metadata
-      discovery, and token refresh &mdash; you just declare the server:
-    </p>
-    <pre><code>servers:
+<p>Status markers:</p>
+<ul>
+<li><code>[ok]</code> &mdash; connected, tools available.</li>
+<li><code>[!!]</code> &mdash; failed to start or connect; hover for the error.</li>
+<li><code>[--]</code> &mdash; stopped (after <code>stop_mcp</code>).</li>
+<li><code>[..]</code> &mdash; pending (startup still in flight).</li>
+</ul>
+<h2 id="oauth">OAuth 2.1 for HTTP servers</h2>
+<p>Servers that require a user login use the SDK&rsquo;s
+<code>OAuthClientProvider</code>. Cantrip handles PKCE, dynamic
+client registration, RFC 9728 Protected Resource Metadata
+discovery, and token refresh &mdash; you just declare the server:</p>
+<pre><code>servers:
   charmhub-oauth:
     transport: http
     url: https://charmhub.example.com/mcp
     oauth:
       client_name: cantrip-prod
-      scopes: ["repo", "publish"]
-      redirect_port: 9876</code></pre>
-    <p>
-      On first connection Cantrip opens the authorisation URL in your
-      browser (via <code>webbrowser.open</code>) and binds a
-      single-purpose listener to
-      <code>http://127.0.0.1:&lt;redirect_port&gt;/callback</code>. The
-      listener captures one OAuth redirect, returns the
-      <code>code</code> and <code>state</code> to the SDK, and shuts
-      down. Successful authorisations store the tokens at
-      <code>~/.config/cantrip/mcp_tokens/&lt;server&gt;/</code>
-      (override with <code>CANTRIP_MCP_TOKEN_DIR</code>) at
-      <code>0600</code> so only your user can read them.
-    </p>
-    <p>
-      Want encryption at rest? Set
-      <code>CANTRIP_MCP_GPG_TOKENS=1</code> and Cantrip wraps every
-      write in <code>gpg --symmetric</code>. You need a configured
-      <code>gpg-agent</code> so writes don&rsquo;t block on a passphrase
-      prompt.
-    </p>
-    <p>
-      If the OAuth provider uses its own published metadata document
-      (some servers don&rsquo;t support dynamic client registration),
-      add <code>client_metadata_url:</code> to the <code>oauth</code>
-      block.
-    </p>
-
-    <h2 id="elicitation">Mid-task elicitation</h2>
-    <p>
-      Some MCP servers can pause a tool call to ask the user for
-      structured input &mdash; &ldquo;which database name should I
-      create?&rdquo;, &ldquo;paste the verification code from your
-      email&rdquo;. Cantrip bridges these through the UI event bus.
-      When a server requests elicitation:
-    </p>
-    <ol>
-      <li>Cantrip emits an <code>MCP_ELICITATION_REQUEST</code> event.</li>
-      <li>The TUI / Web renders the prompt.</li>
-      <li>Your answer flows back through
-          <code>complete_mcp_elicitation</code>.</li>
-    </ol>
-    <p>
-      A bounded 600-second timeout auto-declines runaway requests so
-      a server can&rsquo;t park the conversation forever.
-      <em>Interactive form rendering in the TUI/Web is still a
-      work-in-progress &mdash; the event is emitted today; the prompt
-      widget is a follow-up.</em>
-    </p>
-
-    <h2 id="marketplace">Discover servers via marketplaces</h2>
-    <p>
-      A marketplace is a catalogue of available MCP servers. Cantrip
-      reads <code>marketplace.json</code> files from three source kinds,
-      declared at the top level of <code>cantrip.mcp.yaml</code>:
-    </p>
-    <pre><code>marketplaces:
+      scopes: [&quot;repo&quot;, &quot;publish&quot;]
+      redirect_port: 9876
+</code></pre>
+<p>On first connection Cantrip opens the authorisation URL in your
+browser (via <code>webbrowser.open</code>) and binds a
+single-purpose listener to
+<code>http://127.0.0.1:&lt;redirect_port&gt;/callback</code>. The
+listener captures one OAuth redirect, returns the
+<code>code</code> and <code>state</code> to the SDK, and shuts
+down. Successful authorisations store the tokens at
+<code>~/.config/cantrip/mcp_tokens/&lt;server&gt;/</code>
+(override with <code>CANTRIP_MCP_TOKEN_DIR</code>) at
+<code>0600</code> so only your user can read them.</p>
+<p>Want encryption at rest? Set
+<code>CANTRIP_MCP_GPG_TOKENS=1</code> and Cantrip wraps every
+write in <code>gpg --symmetric</code>. You need a configured
+<code>gpg-agent</code> so writes don&rsquo;t block on a passphrase
+prompt.</p>
+<p>If the OAuth provider uses its own published metadata document
+(some servers don&rsquo;t support dynamic client registration),
+add <code>client_metadata_url:</code> to the <code>oauth</code>
+block.</p>
+<h2 id="elicitation">Mid-task elicitation</h2>
+<p>Some MCP servers can pause a tool call to ask the user for
+structured input &mdash; &ldquo;which database name should I
+create?&rdquo;, &ldquo;paste the verification code from your
+email&rdquo;. Cantrip bridges these through the UI event bus.
+When a server requests elicitation:</p>
+<ol>
+<li>Cantrip emits an <code>MCP_ELICITATION_REQUEST</code> event.</li>
+<li>The TUI / Web renders the prompt.</li>
+<li>Your answer flows back through
+<code>complete_mcp_elicitation</code>.</li>
+</ol>
+<p>A bounded 600-second timeout auto-declines runaway requests so
+a server can&rsquo;t park the conversation forever.
+<em>Interactive form rendering in the TUI/Web is still a
+work-in-progress &mdash; the event is emitted today; the prompt
+widget is a follow-up.</em></p>
+<h2 id="marketplace">Discover servers via marketplaces</h2>
+<p>A marketplace is a catalogue of available MCP servers. Cantrip
+reads <code>marketplace.json</code> files from three source kinds,
+declared at the top level of <code>cantrip.mcp.yaml</code>:</p>
+<pre><code>marketplaces:
   <span class="comment"># Fetch from a GitHub repo's main branch:</span>
   - github: anthropic-ai/mcp-servers
 
@@ -265,97 +214,64 @@
 
   <span class="comment"># Arbitrary URL:</span>
   - url: https://example.com/marketplace.json</code></pre>
-    <p>
-      List what&rsquo;s available:
-    </p>
-    <pre><code><span class="comment"># Show every server from every configured marketplace:</span>
+<p>List what&rsquo;s available:</p>
+<pre><code><span class="comment"># Show every server from every configured marketplace:</span>
 /mcp marketplace
 
 <span class="comment"># Bypass the 24-hour cache and re-fetch:</span>
 /mcp marketplace refresh</code></pre>
-    <p>
-      Each entry shows its description, install hint, required env
-      vars, and OAuth scopes. <strong>Cantrip never auto-installs a
-      server</strong> &mdash; you copy the descriptor into your own
-      <code>cantrip.mcp.yaml</code> after reviewing it. This is
-      intentional: marketplaces are discovery surfaces, not trust
-      surfaces.
-    </p>
-    <p>
-      Override the marketplace cache directory with
-      <code>CANTRIP_MCP_MARKETPLACE_CACHE</code>. The default cache
-      sits at <code>~/.cache/cantrip/marketplaces/</code> with a 24-hour
-      TTL.
-    </p>
-
-    <h2 id="security">Security notes</h2>
-    <ul>
-      <li>
-        <strong>Token files live at <code>0600</code> in a <code>0700</code>
-        directory.</strong> Add <code>CANTRIP_MCP_GPG_TOKENS=1</code>
-        when you want encryption at rest.
-      </li>
-      <li>
-        <strong>Per-server allowlists are the authoritative MCP gate.</strong>
-        The agent&rsquo;s task-category gate lets every
-        <code>mcp__*</code> through by default; control exposure by
-        editing <code>allowed_tools</code> in the YAML.
-      </li>
-      <li>
-        <strong>Marketplaces are read-only.</strong> Nothing installs
-        automatically &mdash; you review descriptors before copying
-        them in.
-      </li>
-      <li>
-        <strong>Mid-task elicitation has a bounded timeout</strong>
-        (600 seconds by default). A runaway server can&rsquo;t park
-        your conversation.
-      </li>
-    </ul>
-
-    <h2 id="troubleshooting">Troubleshooting</h2>
-
-    <h3>&ldquo;Server shows <code>[!!]</code> failed&rdquo;</h3>
-    <p>
-      Run <code>/mcp</code> to see the failure reason. Common causes:
-    </p>
-    <ul>
-      <li>
-        Stdio command not on <code>PATH</code> &mdash; check with
-        <code>which &lt;command&gt;</code>.
-      </li>
-      <li>
-        Environment variable referenced with <code>${VAR}</code> is
-        unset &mdash; Cantrip substitutes at spawn time and will log
-        the blank.
-      </li>
-      <li>
-        HTTP URL unreachable (DNS, firewall) &mdash; try
-        <code>curl</code> first.
-      </li>
-      <li>
-        OAuth redirect port already in use &mdash; set a different
-        <code>redirect_port</code> in the <code>oauth</code> block.
-      </li>
-    </ul>
-
-    <h3>&ldquo;Tools from a connected server aren&rsquo;t visible to the agent&rdquo;</h3>
-    <p>
-      Check the per-server <code>allowed_tools</code> list &mdash; a
-      non-empty list filters the exposed set. Empty means &ldquo;allow
-      every tool the server publishes&rdquo;. After editing the YAML
-      restart Cantrip; tool registration happens at boot.
-    </p>
-
-    <h3>&ldquo;OAuth hung on the redirect&rdquo;</h3>
-    <p>
-      The localhost listener waits up to 5 minutes for the browser
-      callback. Check that a browser tab actually opened
-      (<code>webbrowser.open</code> silently fails on some headless
-      systems &mdash; Cantrip logs the authorisation URL so you can
-      copy it manually). Re-running the connection after a failure
-      starts a fresh flow.
-    </p>
+<p>Each entry shows its description, install hint, required env
+vars, and OAuth scopes. <strong>Cantrip never auto-installs a
+server</strong> &mdash; you copy the descriptor into your own
+<code>cantrip.mcp.yaml</code> after reviewing it. This is
+intentional: marketplaces are discovery surfaces, not trust
+surfaces.</p>
+<p>Override the marketplace cache directory with
+<code>CANTRIP_MCP_MARKETPLACE_CACHE</code>. The default cache
+sits at <code>~/.cache/cantrip/marketplaces/</code> with a 24-hour
+TTL.</p>
+<h2 id="security">Security notes</h2>
+<ul>
+<li><strong>Token files live at <code>0600</code> in a <code>0700</code>
+directory.</strong> Add <code>CANTRIP_MCP_GPG_TOKENS=1</code>
+when you want encryption at rest.</li>
+<li><strong>Per-server allowlists are the authoritative MCP gate.</strong>
+The agent&rsquo;s task-category gate lets every
+<code>mcp__*</code> through by default; control exposure by
+editing <code>allowed_tools</code> in the YAML.</li>
+<li><strong>Marketplaces are read-only.</strong> Nothing installs
+automatically &mdash; you review descriptors before copying
+them in.</li>
+<li><strong>Mid-task elicitation has a bounded timeout</strong>
+(600 seconds by default). A runaway server can&rsquo;t park
+your conversation.</li>
+</ul>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3>&ldquo;Server shows <code>[!!]</code> failed&rdquo;</h3>
+<p>Run <code>/mcp</code> to see the failure reason. Common causes:</p>
+<ul>
+<li>Stdio command not on <code>PATH</code> &mdash; check with
+<code>which &lt;command&gt;</code>.</li>
+<li>Environment variable referenced with <code>${VAR}</code> is
+unset &mdash; Cantrip substitutes at spawn time and will log
+the blank.</li>
+<li>HTTP URL unreachable (DNS, firewall) &mdash; try
+<code>curl</code> first.</li>
+<li>OAuth redirect port already in use &mdash; set a different
+<code>redirect_port</code> in the <code>oauth</code> block.</li>
+</ul>
+<h3>&ldquo;Tools from a connected server aren&rsquo;t visible to the agent&rdquo;</h3>
+<p>Check the per-server <code>allowed_tools</code> list &mdash; a
+non-empty list filters the exposed set. Empty means &ldquo;allow
+every tool the server publishes&rdquo;. After editing the YAML
+restart Cantrip; tool registration happens at boot.</p>
+<h3>&ldquo;OAuth hung on the redirect&rdquo;</h3>
+<p>The localhost listener waits up to 5 minutes for the browser
+callback. Check that a browser tab actually opened
+(<code>webbrowser.open</code> silently fails on some headless
+systems &mdash; Cantrip logs the authorisation URL so you can
+copy it manually). Re-running the connection after a failure
+starts a fresh flow.</p>
   </main>
 </div>
 

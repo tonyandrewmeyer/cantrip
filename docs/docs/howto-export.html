@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to export transcripts — Cantrip</title>
+<title>How to export transcripts &mdash; Cantrip</title>
 <meta name="description" content="Export Cantrip session transcripts as HTML, Markdown, or JSONL.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>How-to guides</h4>
@@ -60,94 +59,75 @@
 
     <h1>Export transcripts</h1>
     <p class="subtitle">
-      Export a session's conversation history and task log for
-      documentation, review, or analysis.
+      Export a session's conversation history and task log for documentation, review, or analysis.
     </p>
 
-    <h2 id="mid-session">Export mid-session with <code>/export</code></h2>
-    <p>
-      The <code>/export</code> slash command writes the current session's
-      transcript without leaving Cantrip. It works the same way in the TUI,
-      CLI REPL, and Web UI:
-    </p>
-    <pre><code><span class="prompt">›</span> /export
+<h2 id="mid-session">Export mid-session with <code>/export</code></h2>
+<p>The <code>/export</code> slash command writes the current session's
+transcript without leaving Cantrip. It works the same way in the TUI,
+CLI REPL, and Web UI:</p>
+<pre><code><span class="prompt">›</span> /export
 <span class="prompt">›</span> /export markdown
 <span class="prompt">›</span> /export jsonl /tmp/session.jsonl</code></pre>
-    <p>
-      Syntax: <code>/export [html|jsonl|markdown] [path]</code>. Both
-      arguments are optional &mdash; without them Cantrip writes
-      <code>transcript.html</code> into the charm directory. The first
-      positional argument selects the format; a trailing token becomes the
-      output path. The command runs against the live <code>.cantrip</code>
-      store, so you can grab a snapshot at any point without pausing work.
-    </p>
-
-    <h2 id="basic">Export from the command line</h2>
-    <p>
-      Outside a session, export the full transcript as an HTML page:
-    </p>
-    <pre><code><span class="prompt">$</span> cantrip export-transcript /path/to/my-charm</code></pre>
-    <p>
-      This creates <code>transcript.html</code> in the charm directory.
-      Open it in a browser to see the complete conversation, tool calls,
-      and task results.
-    </p>
-
-    <h2 id="formats">Choose a format</h2>
-    <p>Three output formats are available:</p>
-    <table>
-      <thead>
-        <tr><th>Format</th><th>Flag</th><th>Use case</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>HTML</td>
-          <td><code>--format html</code> (default)</td>
-          <td>Human-readable, shareable reports</td>
-        </tr>
-        <tr>
-          <td>Markdown</td>
-          <td><code>--format markdown</code></td>
-          <td>Documentation, wikis, READMEs</td>
-        </tr>
-        <tr>
-          <td>JSONL</td>
-          <td><code>--format jsonl</code></td>
-          <td>Programmatic analysis, data pipelines</td>
-        </tr>
-      </tbody>
-    </table>
-    <pre><code><span class="prompt">$</span> cantrip export-transcript /path/to/my-charm --format markdown
+<p>Syntax: <code>/export [html|jsonl|markdown] [path]</code>. Both
+arguments are optional &mdash; without them Cantrip writes
+<code>transcript.html</code> into the charm directory. The first
+positional argument selects the format; a trailing token becomes the
+output path. The command runs against the live <code>.cantrip</code>
+store, so you can grab a snapshot at any point without pausing work.</p>
+<h2 id="basic">Export from the command line</h2>
+<p>Outside a session, export the full transcript as an HTML page:</p>
+<pre><code><span class="prompt">$</span> cantrip export-transcript /path/to/my-charm</code></pre>
+<p>This creates <code>transcript.html</code> in the charm directory.
+Open it in a browser to see the complete conversation, tool calls,
+and task results.</p>
+<h2 id="formats">Choose a format</h2>
+<p>Three output formats are available:</p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Flag</th>
+<th>Use case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HTML</td>
+<td><code>--format html</code> (default)</td>
+<td>Human-readable, shareable reports</td>
+</tr>
+<tr>
+<td>Markdown</td>
+<td><code>--format markdown</code></td>
+<td>Documentation, wikis, READMEs</td>
+</tr>
+<tr>
+<td>JSONL</td>
+<td><code>--format jsonl</code></td>
+<td>Programmatic analysis, data pipelines</td>
+</tr>
+</tbody>
+</table>
+<pre><code><span class="prompt">$</span> cantrip export-transcript /path/to/my-charm --format markdown
 <span class="prompt">$</span> cantrip export-transcript /path/to/my-charm --format jsonl</code></pre>
-
-    <h2 id="filter">Filter the transcript</h2>
-    <p>
-      For long sessions, filter the export to focus on what matters:
-    </p>
-
-    <h3>By task</h3>
-    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --task build_charm_code</code></pre>
-
-    <h3>By phase</h3>
-    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --phase research
+<h2 id="filter">Filter the transcript</h2>
+<p>For long sessions, filter the export to focus on what matters:</p>
+<h3>By task</h3>
+<pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --task build_charm_code</code></pre>
+<h3>By phase</h3>
+<pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --phase research
 <span class="comment"># Options: research, build, deploy, test</span></code></pre>
-
-    <h3>By timestamp</h3>
-    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --since 2026-04-15T10:00:00Z</code></pre>
-
-    <h2 id="pagination">Paginate HTML output</h2>
-    <p>
-      For very long sessions, split the HTML output into multiple pages:
-    </p>
-    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --page-size 50</code></pre>
-    <p>
-      This creates <code>transcript_1.html</code>,
-      <code>transcript_2.html</code>, etc., each containing 50 conversation
-      messages. Navigation links connect the pages.
-    </p>
-
-    <h2 id="output-path">Custom output path</h2>
-    <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --output /tmp/my-report.html</code></pre>
+<h3>By timestamp</h3>
+<pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --since 2026-04-15T10:00:00Z</code></pre>
+<h2 id="pagination">Paginate HTML output</h2>
+<p>For very long sessions, split the HTML output into multiple pages:</p>
+<pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --page-size 50</code></pre>
+<p>This creates <code>transcript_1.html</code>,
+<code>transcript_2.html</code>, etc., each containing 50 conversation
+messages. Navigation links connect the pages.</p>
+<h2 id="output-path">Custom output path</h2>
+<pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --output /tmp/my-report.html</code></pre>
   </main>
 </div>
 

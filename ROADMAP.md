@@ -1373,18 +1373,44 @@ that matters, then commit to it.
   (callouts, prompt-styled code, `<dl>`, doc-cards), entity handling,
   build behaviour, and the pilot findings.
 
-### 54.2 High — Convert every page and reconcile
+### 54.2 High — Convert every page and reconcile ✓
 
-- [ ] Convert all 13 pages under `docs/docs/` to markdown in the
-  chosen flavour
-- [ ] Manually reconcile anything the converter dropped: admonition
-  boxes, syntax-highlighted code-block languages, anchor IDs linked
-  from other pages, footnote numbering, image paths
-- [ ] Preserve the Diátaxis filename convention
-  (`tutorial.md`, `howto-*.md`, `reference-*.md`, `explanation-*.md`)
-- [ ] Place the new markdown under `docs/src/` (or similar) so the
-  already-built HTML in `docs/docs/` keeps working until the build
-  system lands in 54.3
+- [x] All 20 pages under `docs/docs/` (the Diátaxis tree plus the
+  landing `index.html`) now have markdown sources under `docs/src/`
+  in the CommonMark + raw-HTML flavour chosen in 54.1.  The pages
+  break down as one tutorial, eight how-tos, two references, eight
+  explanations, and the landing index.
+- [x] Custom chrome handled by the template: the landing index uses
+  a no-sidebar / no-breadcrumb layout with an inline-style
+  `doc-layout`; the tutorial uses its own on-this-page anchor list
+  as the primary sidebar block (`primary_list: on_this_page` in
+  frontmatter); reference and explanation pages render both the
+  section-nav list and an on-this-page list.
+- [x] Raw-HTML patterns used where CommonMark falls short: callouts
+  (`<div class="callout">` / `<div class="callout-warn callout">`),
+  prompt-styled code blocks (`<pre><code><span class="prompt">…`),
+  definition lists (`<dl><dt><dd>`), the landing-page doc-cards
+  grid, and a handful of inline `<code>&nbsp;--&nbsp;</code> spans
+  that need entity references inside.  All of it round-trips through
+  the semantic-DOM check to zero differences.
+- [x] Automatic external-link attribute rewriting: the build script
+  adds `target="_blank" rel="noopener"` to any `<a>` with an
+  `http(s)` href that doesn't already carry `target`, so authors
+  write plain `[label](url)` markdown.
+- [x] One intentional normalisation: `howto-hooks.html` had a
+  bespoke footer (`<strong>Cantrip</strong> — autonomous charm
+  builder.`) while every other page used the shared footer
+  (`Cantrip — free & open source`).  The rebuild normalises to the
+  shared footer.  Committed `design/DOCS_REBUILD.md` under the
+  "Intentional normalisations" section so future authors see why.
+- [x] Committed HTML regenerated from markdown sources so the build
+  output is now byte-identical to what lives in `docs/docs/` —
+  `make docs` (once 54.3 lands) will be a no-op diff-wise and any
+  future drift shows up immediately in `--check --strict`.
+- [x] Diátaxis filename convention preserved: `tutorial.md`,
+  `howto-*.md`, `reference-*.md`, `explanation-*.md`, `index.md`.
+  Section metadata and page ordering live in `docs/src/_site.yaml`
+  so section-nav derivation stays data-driven.
 
 ### 54.3 Medium — Set up a markdown-to-HTML build system
 

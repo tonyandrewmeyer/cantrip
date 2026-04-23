@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Best-of-N racing and Arena mode — Cantrip</title>
+<title>Best-of-N racing and Arena mode &mdash; Cantrip</title>
 <meta name="description" content="Why Cantrip runs multiple models on the same task, how the scoring rubric ranks them, and how blind A/B Arena captures preferences.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>Explanation</h4>
@@ -68,444 +67,369 @@
 
     <h1>Best-of-N racing and Arena mode</h1>
     <p class="subtitle">
-      Two ways to pit models against one another: an objective
-      Best-of-N race scored by measurable charm quality, and a blind
-      A/B <code>/arena</code> that captures human preference.
+      Two ways to pit models against one another: an objective Best-of-N race scored by measurable charm quality, and a blind A/B <code>/arena</code> that captures human preference.
     </p>
 
-    <div class="callout-warn callout">
-      <p>
-        <strong>Library-only surface for objective racing.</strong>
-        <code>/arena</code> is fully user-facing, but the Best-of-N
-        race coordinator is wired into the executor behind a
-        <code>RaceConfig</code> that has no CLI flag or environment
-        variable yet. Racing runs only when a caller constructs an
-        executor with a non-default config &mdash; see
-        <a href="#limits">Current limits</a>. This page documents the
-        design so you can read race events in transcripts and anticipate
-        the surface when it lands.
-      </p>
-    </div>
-
-    <h2 id="why-race">Why race at all</h2>
-    <p>
-      Charm building has an unusually clean success signal. A generated
-      charm can be packed, linted with <a href="explanation-charmlint-rs.html">charmlint</a>,
-      unit-tested, and scored against an operational-readiness
-      checklist. Unlike open-ended writing tasks, the output is
-      <em>measurable</em>: a charm with zero charmlint errors and 95 %
-      readiness is objectively better than one with six errors and
-      60 % readiness, regardless of how either got there.
-    </p>
-    <p>
-      Given a measurable output and an embarrassingly parallel work
-      pattern (each candidate runs in its own git worktree &mdash; see
-      <a href="explanation-architecture.html">How Cantrip works</a>),
-      running several models on the same task and picking the winner
-      is a natural fit. It also sidesteps the &ldquo;which model is
-      best today&rdquo; argument: you don&rsquo;t have to choose in
-      advance if you race them and let the rubric decide.
-    </p>
-
-    <h2 id="two-mechanisms">Two mechanisms, same goal</h2>
-    <p>
-      Cantrip exposes two racing shapes. They share the name, but the
-      implementations and intended uses are distinct.
-    </p>
-    <table>
-      <thead>
-        <tr>
-          <th></th>
-          <th>Best-of-N race</th>
-          <th>Blind A/B Arena</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><strong>Module</strong></td>
-          <td><code>cantrip.agent.race</code></td>
-          <td><code>cantrip.agent.arena</code></td>
-        </tr>
-        <tr>
-          <td><strong>Per candidate</strong></td>
-          <td>Full subagent loop with tools</td>
-          <td>Single provider completion, no tools</td>
-        </tr>
-        <tr>
-          <td><strong>Scope</strong></td>
-          <td>Per <code>TaskCategory</code> (BUILD, DESIGN, &hellip;)</td>
-          <td>One-off, user-triggered</td>
-        </tr>
-        <tr>
-          <td><strong>Winner</strong></td>
-          <td>Rubric score against charm outputs</td>
-          <td>You pick, blind to model names</td>
-        </tr>
-        <tr>
-          <td><strong>Outcome</strong></td>
-          <td>Winner&rsquo;s worktree merged back</td>
-          <td>Preference written to global memory</td>
-        </tr>
-        <tr>
-          <td><strong>Trigger</strong></td>
-          <td>Automatic, per <code>RaceConfig</code></td>
-          <td><code>/arena &lt;prompt&gt;</code></td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h2 id="scoring">The scoring rubric</h2>
-    <p>
-      Four signals combine into a single total in <code>[0.0, 1.0]</code>.
-      Weights sum to one so scores are directly comparable across a
-      pool, even when candidates happen to run different test counts
-      or produce different diff sizes.
-    </p>
-    <table>
-      <thead>
-        <tr><th>Signal</th><th>Weight</th><th>Why this weight</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Charmlint violations (weighted by severity)</td>
-          <td><strong>30 %</strong></td>
-          <td>Errors are usually spec violations that break the charm</td>
-        </tr>
-        <tr>
-          <td>Operational-readiness percentage</td>
-          <td><strong>30 %</strong></td>
-          <td>Captures whether the charm has the moving parts a real operator needs</td>
-        </tr>
-        <tr>
-          <td>Unit-test pass ratio</td>
-          <td><strong>25 %</strong></td>
-          <td>High-signal but the other two lead for &ldquo;shippable&rdquo;</td>
-        </tr>
-        <tr>
-          <td>Diff size (smaller is better)</td>
-          <td><strong>15 %</strong></td>
-          <td>Tie-breaker that nudges toward focused changes</td>
-        </tr>
-      </tbody>
-    </table>
-    <p>
-      Each signal is scored into <code>[0, 1]</code> independently, then
-      the total is a weighted sum. The constants all live in
-      <code>src/cantrip/agent/race.py</code>; tune them in one place
-      rather than scattering magic numbers.
-    </p>
-
-    <h2 id="signals">What each signal measures</h2>
-
-    <h3>Charmlint &mdash; exponential decay on weighted violations</h3>
-    <p>
-      Each violation is weighted by severity: <code>error</code> &times; 3,
-      <code>warning</code> &times; 1, <code>info</code> &times; 0.1.
-      The weighted total feeds an exponential decay with a constant of
-      10, so a clean charm scores 1.0, one error drops to ~0.74, and
-      a charm with three errors and several warnings falls below 0.25.
-      Errors dominate because they block shipping; warnings are a
-      speed bump; infos are advisory.
-    </p>
-    <p>
-      The scorer calls the same
-      <a href="explanation-charmlint-rs.html">charmlint tool</a> the
-      agent uses elsewhere, so the Rust-vs-Python backend selection
-      stays in one place. A tool failure degrades to zeroed counts
-      rather than crashing the race.
-    </p>
-
-    <h3>Readiness &mdash; linear on the overall score</h3>
-    <p>
-      The operational-readiness tool produces an overall percentage
-      between 0 and 100. The scorer normalises it to <code>[0, 1]</code>.
-      When the tool can&rsquo;t evaluate the directory (for example, no
-      <code>charmcraft.yaml</code>), the signal returns 0 rather than
-      0.5: a candidate that isn&rsquo;t actually a charm should lose to
-      one that is. The readiness tool writes an
-      <code>OPERATIONAL_READINESS.md</code> report into the worktree as
-      a side effect &mdash; the scorer measures diff <em>before</em>
-      running readiness so the uncommitted report doesn&rsquo;t inflate
-      diff-size counts.
-    </p>
-
-    <h3>Tests &mdash; normalised pass ratio</h3>
-    <p>
-      The test signal is <code>passed / total</code> when any tests exist,
-      and 1.0 when none do &mdash; a candidate shouldn&rsquo;t be
-      penalised for working in a test-free area. Integration test
-      counts are a follow-up; the current rubric scores unit tests
-      only. Baseline-aware scoring (&ldquo;this candidate ran fewer
-      tests than the others; penalise it proportionally&rdquo;) is not
-      yet implemented.
-    </p>
-
-    <h3>Diff size &mdash; linear penalty, capped at 2000 lines</h3>
-    <p>
-      Smaller diffs score higher. The decay is linear up to a cap of
-      2000 lines; anything above the cap scores 0 for this signal.
-      A zero-line diff is suspicious (the candidate may have committed
-      nothing) and gets a middling 0.5 so charmlint and readiness
-      decide the winner rather than rewarding inaction.
-    </p>
-    <p>
-      The diff is taken against the worktree&rsquo;s <code>base_sha</code>
-      via <code>git diff --numstat base_sha..HEAD</code>, so only
-      <em>committed</em> changes count. Binary files are skipped.
-      Git errors fall through to <code>(0, 0)</code> rather than
-      crashing &mdash; a broken measurement shouldn&rsquo;t sink a race.
-    </p>
-
-    <h2 id="viability">Viability and tie-breaking</h2>
-    <p>
-      A candidate&rsquo;s <code>ExitState</code> short-circuits the
-      rubric before subscores are combined:
-    </p>
-    <ul>
-      <li>
-        <code>COMPLETED</code> and <code>BLOCKED</code> are <em>viable</em>
-        &mdash; blocked runs can still be worth merging if they produced
-        partial progress while the user resolves the block.
-      </li>
-      <li>
-        <code>FAILED</code> and <code>NOOP</code> force a total of
-        <code>0.0</code> regardless of the other signals. A failed
-        candidate with clean charmlint (because it never changed
-        anything) is not a win.
-      </li>
-    </ul>
-    <p>
-      Ties break on lower <code>diff_lines</code> (smaller change wins)
-      and then on lexicographic <code>candidate_id</code>, so repeated
-      races with the same pool produce the same winner when the
-      underlying measurements agree. A <code>is_perfect</code> threshold
-      of 0.999 exists as a hook for early cancellation
-      (<code>RaceConfig.cancel_on_perfect</code>), but early cancel
-      isn&rsquo;t implemented yet &mdash; the coordinator waits for every
-      candidate.
-    </p>
-
-    <h2 id="config">RaceConfig and cost gates</h2>
-    <p>
-      <code>RaceConfig</code> is the opt-in surface. The default
-      disables racing entirely &mdash; <code>enabled_categories</code>
-      is an empty frozenset, so <code>should_race</code> always returns
-      False and the executor falls through to a single-subagent run.
-    </p>
-    <dl>
-      <dt><code>enabled_categories</code> (default: empty)</dt>
-      <dd>
-        The <code>TaskCategory</code> values that are allowed to race.
-        Typical values are <code>{BUILD, DESIGN}</code>: objectively
-        measurable work where Best-of-N pays off.
-      </dd>
-
-      <dt><code>max_candidates</code> (default: 3)</dt>
-      <dd>
-        Upper bound on race width. <code>clamp_candidates</code>
-        trims any pool larger than this. A setting of 0 or less
-        disables racing even for enabled categories.
-      </dd>
-
-      <dt><code>budget_tokens</code> (default: 500 000)</dt>
-      <dd>
-        Hard cap on estimated total tokens. Races whose pre-run
-        estimate exceeds this budget downgrade silently to a
-        single-subagent run. Set to 0 or a negative value to disable
-        the cap.
-      </dd>
-
-      <dt><code>confirm_threshold_tokens</code> (default: 200 000)</dt>
-      <dd>
-        Soft gate. Estimates above this threshold but below the
-        hard budget surface a <code>CONFIRM</code> task so you can
-        approve or decline the spend. Tuned so a two-way race on a
-        typical BUILD task fires the gate but a cheap DESIGN race
-        doesn&rsquo;t.
-      </dd>
-
-      <dt><code>baseline_tokens_per_run</code> (default: 75 000)</dt>
-      <dd>
-        Per-candidate token estimate used to multiply out the
-        pre-race cost. Deliberately low so the CONFIRM gate fires
-        early for racy tasks. Once streaming-usage aggregation lands
-        (Phase 41.6), mid-flight accounting will replace this
-        static estimate.
-      </dd>
-
-      <dt><code>cancel_on_perfect</code> (default: True)</dt>
-      <dd>
-        Reserved for early cancellation when a candidate hits the
-        perfect-score threshold. Not yet implemented; the
-        coordinator waits for every candidate today.
-      </dd>
-    </dl>
-
-    <h3>The three-way gate</h3>
-    <p>
-      At dispatch time the executor classifies every would-be race
-      into one of three outcomes:
-    </p>
-    <table>
-      <thead>
-        <tr><th>Outcome</th><th>Condition</th><th>What happens</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>RACE</code></td>
-          <td>Estimate &le; <code>confirm_threshold_tokens</code></td>
-          <td>Race runs silently</td>
-        </tr>
-        <tr>
-          <td><code>CONFIRM</code></td>
-          <td>Threshold &lt; estimate &le; <code>budget_tokens</code></td>
-          <td>A <code>CONFIRM</code> task gates the parent; reply <em>yes</em> or <em>no</em></td>
-        </tr>
-        <tr>
-          <td><code>DOWNGRADE</code></td>
-          <td>Estimate &gt; <code>budget_tokens</code> <em>or</em> user declined</td>
-          <td>Falls through to a single-subagent run</td>
-        </tr>
-      </tbody>
-    </table>
-    <p>
-      User decisions persist on the task (<code>task.race_decision</code>)
-      so a task that re-enters the executor for any reason is not
-      re-prompted. The CONFIRM task id is
-      <code>race-confirm-&lt;parent-task-id&gt;</code>; the executor
-      reuses an existing CONFIRM rather than creating duplicates.
-    </p>
-
-    <h2 id="arena">Blind A/B Arena</h2>
-    <p>
-      <code>/arena &lt;prompt&gt;</code> sends the same prompt to both
-      the primary and light providers concurrently, shuffles the two
-      replies into labels <code>A</code> and <code>B</code> (hiding
-      model names), and asks you to pick. Responses are capped at
-      2 000 tokens so the A/B block stays readable side-by-side.
-    </p>
-    <p>
-      Recognised replies are forgiving and case-insensitive:
-    </p>
-    <ul>
-      <li><code>A</code>, <code>pick A</code>, <code>left</code></li>
-      <li><code>B</code>, <code>pick B</code>, <code>right</code></li>
-      <li><code>tie</code>, <code>equal</code>, <code>both</code>, <code>neither</code>, <code>t</code></li>
-      <li><code>skip</code>, <code>cancel</code>, <code>abort</code>, <code>never mind</code></li>
-    </ul>
-    <p>
-      Unrecognised replies fall through to normal chat &mdash; you
-      aren&rsquo;t locked out of talking to the agent while an arena is
-      pending. The TUI, CLI, and Web frontends all intercept pending
-      picks before routing the reply to the LLM.
-    </p>
-    <p>
-      Picks and ties write a <code>fact</code> memory at
-      <code>global</code> scope (so the preference carries across
-      charms), tagged <code>arena</code> and <code>model-preference</code>,
-      with <code>source=&quot;arena&quot;</code> and a
-      <code>arena-preference-&lt;8-hex&gt;</code> title. The body
-      names both models and includes a 200-character excerpt of the
-      prompt so the preference is attributable to a specific ask.
-      <code>skip</code> clears the session without writing. See
-      <a href="howto-memory.html">the memory how-to</a> for the
-      full memory model and
-      <a href="reference-cli.html#slash-commands">the CLI reference</a>
-      for the exact command syntax.
-    </p>
-    <p>
-      Arena refuses to start when both sides would resolve to the
-      same <code>(provider, model)</code> pair &mdash; a blind A/B
-      against identical configurations produces no signal and wastes
-      tokens. It also requires a configured light provider
-      (<code>--light-provider</code> or
-      <code>CANTRIP_LIGHT_PROVIDER</code>).
-    </p>
-
-    <h2 id="events">Transcript events</h2>
-    <p>
-      Races and arenas emit structured events alongside the regular
-      task updates. They land in the session transcript so a reviewer
-      can reconstruct what happened after the fact.
-    </p>
-    <dl>
-      <dt><code>race_confirm_requested</code></dt>
-      <dd>
-        Emitted when the soft gate fires. Payload carries
-        <code>task_id</code>, <code>confirm_task_id</code>,
-        <code>estimate_tokens</code>, <code>threshold_tokens</code>, and
-        the candidate id list.
-      </dd>
-
-      <dt><code>race_downgraded</code></dt>
-      <dd>
-        Emitted when a would-be race runs as a single subagent
-        instead. The <code>reason</code> field is either
-        <code>over_budget</code> (hard cap) or <code>user_declined</code>
-        (answered <em>no</em> to a CONFIRM). Over-budget downgrades
-        include <code>estimate_tokens</code> and
-        <code>budget_tokens</code> so you can see why.
-      </dd>
-
-      <dt><code>race_finished</code></dt>
-      <dd>
-        One row per race. Carries the winner&rsquo;s
-        <code>candidate_id</code> and <code>score</code>, the candidate
-        list, and <code>elapsed_s</code>. Empty winner fields mean every
-        candidate failed.
-      </dd>
-
-      <dt><code>race_candidate</code></dt>
-      <dd>
-        One row per candidate, winner or loser. Includes the
-        candidate&rsquo;s <code>exit_state</code>, <code>total</code> score,
-        and <code>transcript_task_id</code>. The transcript task id is
-        <code>&lt;parent_task_id&gt;__&lt;candidate_id&gt;</code>
-        &mdash; join against <code>subagent_messages</code> on that key
-        to read any loser&rsquo;s full tool-call trace, not just the
-        winner&rsquo;s.
-      </dd>
-    </dl>
-
-    <h2 id="limits">Current limits and planned work</h2>
-    <ul>
-      <li>
-        <strong>No user-facing surface for <code>RaceConfig</code> yet.</strong>
-        The executor accepts a programmatic <code>RaceConfig</code>
-        argument, but there are no CLI flags or environment variables
-        to set <code>enabled_categories</code> and friends. Racing is
-        reachable today through the Python API only; a proper surface
-        lands with the next iteration of Phase 47.
-      </li>
-      <li>
-        <strong>No early cancellation.</strong>
-        <code>cancel_on_perfect</code> is a config knob but the
-        coordinator waits for every candidate before scoring. A
-        perfect score doesn&rsquo;t short-circuit the others yet.
-      </li>
-      <li>
-        <strong>Static cost estimate.</strong>
-        <code>baseline_tokens_per_run</code> is a rough guess, not
-        measured usage. Mid-flight budget accounting (&ldquo;cancel
-        once we&rsquo;ve burned through the budget&rdquo;) is deferred
-        until streaming-usage aggregation lands in Phase 41.6.
-      </li>
-      <li>
-        <strong>Unit tests only.</strong> The test subscore measures
-        unit-test pass/total. Integration test counts are not yet
-        surfaced to the rubric.
-      </li>
-    </ul>
-
-    <p>
-      See also:
-    </p>
-    <ul>
-      <li><a href="reference-cli.html#slash-commands">CLI reference &mdash; slash commands</a></li>
-      <li><a href="howto-memory.html">Using durable memory</a></li>
-      <li><a href="explanation-charmlint-rs.html">Charmlint Rust backend</a></li>
-      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
-    </ul>
+<div class="callout-warn callout">
+  <p>
+    <strong>Library-only surface for objective racing.</strong>
+    <code>/arena</code> is fully user-facing, but the Best-of-N
+    race coordinator is wired into the executor behind a
+    <code>RaceConfig</code> that has no CLI flag or environment
+    variable yet. Racing runs only when a caller constructs an
+    executor with a non-default config &mdash; see
+    <a href="#limits">Current limits</a>. This page documents the
+    design so you can read race events in transcripts and anticipate
+    the surface when it lands.
+  </p>
+</div>
+<h2 id="why-race">Why race at all</h2>
+<p>Charm building has an unusually clean success signal. A generated
+charm can be packed, linted with <a href="explanation-charmlint-rs.html">charmlint</a>,
+unit-tested, and scored against an operational-readiness
+checklist. Unlike open-ended writing tasks, the output is
+<em>measurable</em>: a charm with zero charmlint errors and 95 %
+readiness is objectively better than one with six errors and
+60 % readiness, regardless of how either got there.</p>
+<p>Given a measurable output and an embarrassingly parallel work
+pattern (each candidate runs in its own git worktree &mdash; see
+<a href="explanation-architecture.html">How Cantrip works</a>),
+running several models on the same task and picking the winner
+is a natural fit. It also sidesteps the &ldquo;which model is
+best today&rdquo; argument: you don&rsquo;t have to choose in
+advance if you race them and let the rubric decide.</p>
+<h2 id="two-mechanisms">Two mechanisms, same goal</h2>
+<p>Cantrip exposes two racing shapes. They share the name, but the
+implementations and intended uses are distinct.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Best-of-N race</th>
+<th>Blind A/B Arena</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Module</strong></td>
+<td><code>cantrip.agent.race</code></td>
+<td><code>cantrip.agent.arena</code></td>
+</tr>
+<tr>
+<td><strong>Per candidate</strong></td>
+<td>Full subagent loop with tools</td>
+<td>Single provider completion, no tools</td>
+</tr>
+<tr>
+<td><strong>Scope</strong></td>
+<td>Per <code>TaskCategory</code> (BUILD, DESIGN, &hellip;)</td>
+<td>One-off, user-triggered</td>
+</tr>
+<tr>
+<td><strong>Winner</strong></td>
+<td>Rubric score against charm outputs</td>
+<td>You pick, blind to model names</td>
+</tr>
+<tr>
+<td><strong>Outcome</strong></td>
+<td>Winner&rsquo;s worktree merged back</td>
+<td>Preference written to global memory</td>
+</tr>
+<tr>
+<td><strong>Trigger</strong></td>
+<td>Automatic, per <code>RaceConfig</code></td>
+<td><code>/arena &lt;prompt&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="scoring">The scoring rubric</h2>
+<p>Four signals combine into a single total in <code>[0.0, 1.0]</code>.
+Weights sum to one so scores are directly comparable across a
+pool, even when candidates happen to run different test counts
+or produce different diff sizes.</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Weight</th>
+<th>Why this weight</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Charmlint violations (weighted by severity)</td>
+<td><strong>30 %</strong></td>
+<td>Errors are usually spec violations that break the charm</td>
+</tr>
+<tr>
+<td>Operational-readiness percentage</td>
+<td><strong>30 %</strong></td>
+<td>Captures whether the charm has the moving parts a real operator needs</td>
+</tr>
+<tr>
+<td>Unit-test pass ratio</td>
+<td><strong>25 %</strong></td>
+<td>High-signal but the other two lead for &ldquo;shippable&rdquo;</td>
+</tr>
+<tr>
+<td>Diff size (smaller is better)</td>
+<td><strong>15 %</strong></td>
+<td>Tie-breaker that nudges toward focused changes</td>
+</tr>
+</tbody>
+</table>
+<p>Each signal is scored into <code>[0, 1]</code> independently, then
+the total is a weighted sum. The constants all live in
+<code>src/cantrip/agent/race.py</code>; tune them in one place
+rather than scattering magic numbers.</p>
+<h2 id="signals">What each signal measures</h2>
+<h3>Charmlint &mdash; exponential decay on weighted violations</h3>
+<p>Each violation is weighted by severity: <code>error</code> &times; 3,
+<code>warning</code> &times; 1, <code>info</code> &times; 0.1.
+The weighted total feeds an exponential decay with a constant of
+10, so a clean charm scores 1.0, one error drops to ~0.74, and
+a charm with three errors and several warnings falls below 0.25.
+Errors dominate because they block shipping; warnings are a
+speed bump; infos are advisory.</p>
+<p>The scorer calls the same
+<a href="explanation-charmlint-rs.html">charmlint tool</a> the
+agent uses elsewhere, so the Rust-vs-Python backend selection
+stays in one place. A tool failure degrades to zeroed counts
+rather than crashing the race.</p>
+<h3>Readiness &mdash; linear on the overall score</h3>
+<p>The operational-readiness tool produces an overall percentage
+between 0 and 100. The scorer normalises it to <code>[0, 1]</code>.
+When the tool can&rsquo;t evaluate the directory (for example, no
+<code>charmcraft.yaml</code>), the signal returns 0 rather than
+0.5: a candidate that isn&rsquo;t actually a charm should lose to
+one that is. The readiness tool writes an
+<code>OPERATIONAL_READINESS.md</code> report into the worktree as
+a side effect &mdash; the scorer measures diff <em>before</em>
+running readiness so the uncommitted report doesn&rsquo;t inflate
+diff-size counts.</p>
+<h3>Tests &mdash; normalised pass ratio</h3>
+<p>The test signal is <code>passed / total</code> when any tests exist,
+and 1.0 when none do &mdash; a candidate shouldn&rsquo;t be
+penalised for working in a test-free area. Integration test
+counts are a follow-up; the current rubric scores unit tests
+only. Baseline-aware scoring (&ldquo;this candidate ran fewer
+tests than the others; penalise it proportionally&rdquo;) is not
+yet implemented.</p>
+<h3>Diff size &mdash; linear penalty, capped at 2000 lines</h3>
+<p>Smaller diffs score higher. The decay is linear up to a cap of
+2000 lines; anything above the cap scores 0 for this signal.
+A zero-line diff is suspicious (the candidate may have committed
+nothing) and gets a middling 0.5 so charmlint and readiness
+decide the winner rather than rewarding inaction.</p>
+<p>The diff is taken against the worktree&rsquo;s <code>base_sha</code>
+via <code>git diff --numstat base_sha..HEAD</code>, so only
+<em>committed</em> changes count. Binary files are skipped.
+Git errors fall through to <code>(0, 0)</code> rather than
+crashing &mdash; a broken measurement shouldn&rsquo;t sink a race.</p>
+<h2 id="viability">Viability and tie-breaking</h2>
+<p>A candidate&rsquo;s <code>ExitState</code> short-circuits the
+rubric before subscores are combined:</p>
+<ul>
+<li><code>COMPLETED</code> and <code>BLOCKED</code> are <em>viable</em>
+&mdash; blocked runs can still be worth merging if they produced
+partial progress while the user resolves the block.</li>
+<li><code>FAILED</code> and <code>NOOP</code> force a total of
+<code>0.0</code> regardless of the other signals. A failed
+candidate with clean charmlint (because it never changed
+anything) is not a win.</li>
+</ul>
+<p>Ties break on lower <code>diff_lines</code> (smaller change wins)
+and then on lexicographic <code>candidate_id</code>, so repeated
+races with the same pool produce the same winner when the
+underlying measurements agree. A <code>is_perfect</code> threshold
+of 0.999 exists as a hook for early cancellation
+(<code>RaceConfig.cancel_on_perfect</code>), but early cancel
+isn&rsquo;t implemented yet &mdash; the coordinator waits for every
+candidate.</p>
+<h2 id="config">RaceConfig and cost gates</h2>
+<p><code>RaceConfig</code> is the opt-in surface. The default
+disables racing entirely &mdash; <code>enabled_categories</code>
+is an empty frozenset, so <code>should_race</code> always returns
+False and the executor falls through to a single-subagent run.</p>
+<dl>
+  <dt><code>enabled_categories</code> (default: empty)</dt>
+  <dd>
+    The <code>TaskCategory</code> values that are allowed to race.
+    Typical values are <code>{BUILD, DESIGN}</code>: objectively
+    measurable work where Best-of-N pays off.
+  </dd>
+  <dt><code>max_candidates</code> (default: 3)</dt>
+  <dd>
+    Upper bound on race width. <code>clamp_candidates</code>
+    trims any pool larger than this. A setting of 0 or less
+    disables racing even for enabled categories.
+  </dd>
+  <dt><code>budget_tokens</code> (default: 500 000)</dt>
+  <dd>
+    Hard cap on estimated total tokens. Races whose pre-run
+    estimate exceeds this budget downgrade silently to a
+    single-subagent run. Set to 0 or a negative value to disable
+    the cap.
+  </dd>
+  <dt><code>confirm_threshold_tokens</code> (default: 200 000)</dt>
+  <dd>
+    Soft gate. Estimates above this threshold but below the
+    hard budget surface a <code>CONFIRM</code> task so you can
+    approve or decline the spend. Tuned so a two-way race on a
+    typical BUILD task fires the gate but a cheap DESIGN race
+    doesn&rsquo;t.
+  </dd>
+  <dt><code>baseline_tokens_per_run</code> (default: 75 000)</dt>
+  <dd>
+    Per-candidate token estimate used to multiply out the
+    pre-race cost. Deliberately low so the CONFIRM gate fires
+    early for racy tasks. Once streaming-usage aggregation lands
+    (Phase 41.6), mid-flight accounting will replace this
+    static estimate.
+  </dd>
+  <dt><code>cancel_on_perfect</code> (default: True)</dt>
+  <dd>
+    Reserved for early cancellation when a candidate hits the
+    perfect-score threshold. Not yet implemented; the
+    coordinator waits for every candidate today.
+  </dd>
+</dl>
+<h3>The three-way gate</h3>
+<p>At dispatch time the executor classifies every would-be race
+into one of three outcomes:</p>
+<table>
+<thead>
+<tr>
+<th>Outcome</th>
+<th>Condition</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RACE</code></td>
+<td>Estimate &le; <code>confirm_threshold_tokens</code></td>
+<td>Race runs silently</td>
+</tr>
+<tr>
+<td><code>CONFIRM</code></td>
+<td>Threshold &lt; estimate &le; <code>budget_tokens</code></td>
+<td>A <code>CONFIRM</code> task gates the parent; reply <em>yes</em> or <em>no</em></td>
+</tr>
+<tr>
+<td><code>DOWNGRADE</code></td>
+<td>Estimate &gt; <code>budget_tokens</code> <em>or</em> user declined</td>
+<td>Falls through to a single-subagent run</td>
+</tr>
+</tbody>
+</table>
+<p>User decisions persist on the task (<code>task.race_decision</code>)
+so a task that re-enters the executor for any reason is not
+re-prompted. The CONFIRM task id is
+<code>race-confirm-&lt;parent-task-id&gt;</code>; the executor
+reuses an existing CONFIRM rather than creating duplicates.</p>
+<h2 id="arena">Blind A/B Arena</h2>
+<p><code>/arena &lt;prompt&gt;</code> sends the same prompt to both
+the primary and light providers concurrently, shuffles the two
+replies into labels <code>A</code> and <code>B</code> (hiding
+model names), and asks you to pick. Responses are capped at
+2 000 tokens so the A/B block stays readable side-by-side.</p>
+<p>Recognised replies are forgiving and case-insensitive:</p>
+<ul>
+<li><code>A</code>, <code>pick A</code>, <code>left</code></li>
+<li><code>B</code>, <code>pick B</code>, <code>right</code></li>
+<li><code>tie</code>, <code>equal</code>, <code>both</code>, <code>neither</code>, <code>t</code></li>
+<li><code>skip</code>, <code>cancel</code>, <code>abort</code>, <code>never mind</code></li>
+</ul>
+<p>Unrecognised replies fall through to normal chat &mdash; you
+aren&rsquo;t locked out of talking to the agent while an arena is
+pending. The TUI, CLI, and Web frontends all intercept pending
+picks before routing the reply to the LLM.</p>
+<p>Picks and ties write a <code>fact</code> memory at
+<code>global</code> scope (so the preference carries across
+charms), tagged <code>arena</code> and <code>model-preference</code>,
+with <code>source=&quot;arena&quot;</code> and a
+<code>arena-preference-&lt;8-hex&gt;</code> title. The body
+names both models and includes a 200-character excerpt of the
+prompt so the preference is attributable to a specific ask.
+<code>skip</code> clears the session without writing. See
+<a href="howto-memory.html">the memory how-to</a> for the
+full memory model and
+<a href="reference-cli.html#slash-commands">the CLI reference</a>
+for the exact command syntax.</p>
+<p>Arena refuses to start when both sides would resolve to the
+same <code>(provider, model)</code> pair &mdash; a blind A/B
+against identical configurations produces no signal and wastes
+tokens. It also requires a configured light provider
+(<code>--light-provider</code> or
+<code>CANTRIP_LIGHT_PROVIDER</code>).</p>
+<h2 id="events">Transcript events</h2>
+<p>Races and arenas emit structured events alongside the regular
+task updates. They land in the session transcript so a reviewer
+can reconstruct what happened after the fact.</p>
+<dl>
+  <dt><code>race_confirm_requested</code></dt>
+  <dd>
+    Emitted when the soft gate fires. Payload carries
+    <code>task_id</code>, <code>confirm_task_id</code>,
+    <code>estimate_tokens</code>, <code>threshold_tokens</code>, and
+    the candidate id list.
+  </dd>
+  <dt><code>race_downgraded</code></dt>
+  <dd>
+    Emitted when a would-be race runs as a single subagent
+    instead. The <code>reason</code> field is either
+    <code>over_budget</code> (hard cap) or <code>user_declined</code>
+    (answered <em>no</em> to a CONFIRM). Over-budget downgrades
+    include <code>estimate_tokens</code> and
+    <code>budget_tokens</code> so you can see why.
+  </dd>
+  <dt><code>race_finished</code></dt>
+  <dd>
+    One row per race. Carries the winner&rsquo;s
+    <code>candidate_id</code> and <code>score</code>, the candidate
+    list, and <code>elapsed_s</code>. Empty winner fields mean every
+    candidate failed.
+  </dd>
+  <dt><code>race_candidate</code></dt>
+  <dd>
+    One row per candidate, winner or loser. Includes the
+    candidate&rsquo;s <code>exit_state</code>, <code>total</code> score,
+    and <code>transcript_task_id</code>. The transcript task id is
+    <code>&lt;parent_task_id&gt;__&lt;candidate_id&gt;</code>
+    &mdash; join against <code>subagent_messages</code> on that key
+    to read any loser&rsquo;s full tool-call trace, not just the
+    winner&rsquo;s.
+  </dd>
+</dl>
+<h2 id="limits">Current limits and planned work</h2>
+<ul>
+<li><strong>No user-facing surface for <code>RaceConfig</code> yet.</strong>
+The executor accepts a programmatic <code>RaceConfig</code>
+argument, but there are no CLI flags or environment variables
+to set <code>enabled_categories</code> and friends. Racing is
+reachable today through the Python API only; a proper surface
+lands with the next iteration of Phase 47.</li>
+<li><strong>No early cancellation.</strong>
+<code>cancel_on_perfect</code> is a config knob but the
+coordinator waits for every candidate before scoring. A
+perfect score doesn&rsquo;t short-circuit the others yet.</li>
+<li><strong>Static cost estimate.</strong>
+<code>baseline_tokens_per_run</code> is a rough guess, not
+measured usage. Mid-flight budget accounting (&ldquo;cancel
+once we&rsquo;ve burned through the budget&rdquo;) is deferred
+until streaming-usage aggregation lands in Phase 41.6.</li>
+<li><strong>Unit tests only.</strong> The test subscore measures
+unit-test pass/total. Integration test counts are not yet
+surfaced to the rubric.</li>
+</ul>
+<p>See also:</p>
+<ul>
+<li><a href="reference-cli.html#slash-commands">CLI reference &mdash; slash commands</a></li>
+<li><a href="howto-memory.html">Using durable memory</a></li>
+<li><a href="explanation-charmlint-rs.html">Charmlint Rust backend</a></li>
+<li><a href="explanation-architecture.html">How Cantrip works</a></li>
+</ul>
   </main>
 </div>
 

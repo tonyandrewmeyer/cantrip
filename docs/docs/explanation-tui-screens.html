@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TUI screens and shortcuts — Cantrip</title>
+<title>TUI screens and shortcuts &mdash; Cantrip</title>
 <meta name="description" content="The function-key screens and status panes that make up the Cantrip terminal UI.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>Explanation</h4>
@@ -67,210 +66,155 @@
 
     <h1>TUI screens and shortcuts</h1>
     <p class="subtitle">
-      The Cantrip TUI layers modal screens on top of the chat panel so you
-      can inspect Juju state, tail logs, and open files without breaking
-      the session. This page catalogues them.
+      The Cantrip TUI layers modal screens on top of the chat panel so you can inspect Juju state, tail logs, and open files without breaking the session. This page catalogues them.
     </p>
 
-    <h2 id="overview">Overview</h2>
-    <p>
-      The main TUI view is a chat panel for talking to the agent, flanked
-      by status panes and a file tree. Function keys open modal screens
-      over the chat; <kbd>Esc</kbd> always closes the current modal.
-      Every modal shares a common chrome: a title bar, a scrollable body,
-      and a footer listing its screen-specific shortcuts.
-    </p>
-
-    <h2 id="function-keys">Function-key screens</h2>
-    <table>
-      <thead>
-        <tr><th>Key</th><th>Screen</th><th>What it shows</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><kbd>F1</kbd></td>
-          <td>Help</td>
-          <td>Keyboard shortcuts and slash-command reference.</td>
-        </tr>
-        <tr>
-          <td><kbd>F2</kbd></td>
-          <td>Status toggle</td>
-          <td>Show or hide the Dev / COS status panes on the right.</td>
-        </tr>
-        <tr>
-          <td><kbd>F3</kbd></td>
-          <td>Logs</td>
-          <td>
-            Tail <code>juju debug-log</code> for the dev model &mdash; see
-            <a href="#logs">Logs</a> for filters.
-          </td>
-        </tr>
-        <tr>
-          <td><kbd>F4</kbd></td>
-          <td>Debug / Traces</td>
-          <td>
-            COS endpoint URLs with Grafana deep-links &mdash; see
-            <a href="#traces">Traces and COS endpoints</a>.
-          </td>
-        </tr>
-        <tr>
-          <td><kbd>F5</kbd></td>
-          <td>Watcher toggle</td>
-          <td>
-            Toggle the always-on Juju event watcher; when on, the task
-            pane surfaces recent hook and unit events inline.
-          </td>
-        </tr>
-        <tr>
-          <td><kbd>F6</kbd></td>
-          <td>Files toggle</td>
-          <td>
-            Show or hide the charm file tree. Click a file to open the
-            <a href="#file-detail">File detail</a> modal.
-          </td>
-        </tr>
-        <tr>
-          <td><kbd>F7</kbd></td>
-          <td>Model info</td>
-          <td>Current primary and light model, cost, and token usage.</td>
-        </tr>
-        <tr>
-          <td><kbd>F8</kbd></td>
-          <td>Integration graph</td>
-          <td>
-            Deployed apps and their relations &mdash; see
-            <a href="#graph">Integration graph</a>.
-          </td>
-        </tr>
-        <tr>
-          <td><kbd>F9</kbd></td>
-          <td>Transcript</td>
-          <td>Browse the persisted conversation history.</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h2 id="file-detail">File detail</h2>
-    <p>
-      Clicking a file in the <kbd>F6</kbd> file tree opens the
-      <strong>File detail</strong> modal. It shows the path, size,
-      modification time, a best-effort summary of the file&rsquo;s
-      purpose derived from its contents, the five most recent
-      <code>git log</code> entries that touched the file, and a syntax-
-      highlighted preview rendered via Rich&rsquo;s <code>Syntax</code>.
-    </p>
-    <p>
-      Shortcut: <kbd>R</kbd> refreshes the modal against the current
-      working tree so you can re-open after a subagent writes to the
-      file. <kbd>Esc</kbd> closes.
-    </p>
-
-    <h2 id="logs">Logs</h2>
-    <p>
-      The <kbd>F3</kbd> <strong>Logs</strong> screen tails
-      <code>juju debug-log</code> for the dev model. Three shortcuts
-      re-scope the view without leaving the modal:
-    </p>
-    <ul>
-      <li>
-        <kbd>L</kbd> cycles the level filter through
-        <code>WARNING</code>, <code>INFO</code>, <code>DEBUG</code>,
-        <code>ERROR</code>.
-      </li>
-      <li>
-        <kbd>M</kbd> cycles through the deployed apps and their units so
-        you can focus on one workload at a time.
-      </li>
-      <li>
-        <kbd>T</kbd> toggles streaming: off fetches the last 200 lines
-        once; on subscribes to live updates.
-      </li>
-    </ul>
-
-    <h2 id="graph">Integration graph</h2>
-    <p>
-      The <kbd>F8</kbd> <strong>Integration graph</strong> shows deployed
-      apps and their relations. <kbd>F</kbd> cycles a status filter
-      through four states: all apps, only <code>blocked</code>, only
-      <code>waiting</code>, or both &mdash; useful for zeroing in on
-      apps that need attention when the model has a lot going on.
-      <kbd>R</kbd> refreshes against the live status.
-    </p>
-
-    <h2 id="traces">Traces and COS endpoints</h2>
-    <p>
-      The <kbd>F4</kbd> <strong>Debug</strong> screen lists the URLs the
-      agent uses to inspect the COS stack &mdash; Prometheus, Loki, Tempo,
-      and Grafana &mdash; and builds Grafana deep-links pre-populated with
-      the dev model and time range so one click opens the right dashboard.
-      Each endpoint shows a reachability indicator derived from a live
-      probe so an unreachable endpoint isn&rsquo;t hidden behind a broken
-      link.
-    </p>
-
-    <h2 id="status-panes">Dev and COS status panes</h2>
-    <p>
-      The right-hand side of the TUI shows two always-on panes, toggled
-      together with <kbd>F2</kbd>:
-    </p>
-    <ul>
-      <li>
-        <strong>Dev model</strong> &mdash; controller, model name, and a
-        short summary of each deployed app&rsquo;s status.
-      </li>
-      <li>
-        <strong>COS model</strong> &mdash; labelled summary (units,
-        relations, offers) of the COS model backing observability, plus
-        an explicit list of cross-model offers so you can see at a glance
-        which apps are consuming the stack.
-      </li>
-    </ul>
-    <p>
-      Both panes refresh from the event watcher, so they stay current
-      without polling. Expanding either pane scrolls rather than
-      clipping when the app or offer list grows past the pane height.
-    </p>
-
-    <h2 id="confirmations">Confirmation prompts</h2>
-    <p>
-      Work that affects the outside world &mdash; pushing a branch,
-      creating a GitHub repo, working on a triaged issue, spending a
-      Best-of-N racing budget &mdash; is never done silently. Instead,
-      Cantrip emits a <strong>CONFIRM task</strong> that appears in the
-      task panel as a blocked row and prints a framed
-      &ldquo;&hellip; confirmation&rdquo; prompt in the chat log. The
-      task stays blocked until the user replies <code>approve</code> or
-      <code>skip</code>, so the prompt never disappears off-screen.
-    </p>
-    <p>
-      The most common confirmation is the <strong>repo bootstrap</strong>
-      offer, which fires when Cantrip finishes a build inside a directory
-      that has no GitHub remote and <code>gh</code> is available. The
-      default repository name follows the Canonical upstream convention
-      &mdash; if the charm is <code>foo</code>, the suggested name is
-      <code>foo-operator</code>. Names that already end in
-      <code>-operator</code>, <code>-charm</code>, <code>-k8s</code>, or
-      <code>-machine</code> are kept as-is.
-    </p>
-    <p>
-      Reply tokens for the bootstrap prompt:
-    </p>
-    <ul>
-      <li><code>approve</code> (or <code>yes</code>) &mdash; create the
-      repo with the suggested name, privately by default.</li>
-      <li><code>skip</code> (or <code>no</code>) &mdash; dismiss the
-      offer; Cantrip does not re-ask for the rest of the session.</li>
-      <li><code>public</code> anywhere in the reply flips the repo to
-      public visibility.</li>
-      <li><code>name=my-repo</code> overrides the suggested name.</li>
-      <li><code>org=canonical</code> creates the repo under that
-      organisation instead of your personal account.</li>
-      <li><code>desc=My charm</code> sets the repository description.</li>
-    </ul>
-    <p>
-      Tokens can be combined: <code>approve public org=canonical
-      name=my-charm-operator desc=Runs my charm</code>.
-    </p>
+<h2 id="overview">Overview</h2>
+<p>The main TUI view is a chat panel for talking to the agent, flanked
+by status panes and a file tree. Function keys open modal screens
+over the chat; <kbd>Esc</kbd> always closes the current modal.
+Every modal shares a common chrome: a title bar, a scrollable body,
+and a footer listing its screen-specific shortcuts.</p>
+<h2 id="function-keys">Function-key screens</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Screen</th>
+<th>What it shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><kbd>F1</kbd></td>
+<td>Help</td>
+<td>Keyboard shortcuts and slash-command reference.</td>
+</tr>
+<tr>
+<td><kbd>F2</kbd></td>
+<td>Status toggle</td>
+<td>Show or hide the Dev / COS status panes on the right.</td>
+</tr>
+<tr>
+<td><kbd>F3</kbd></td>
+<td>Logs</td>
+<td>Tail <code>juju debug-log</code> for the dev model &mdash; see <a href="#logs">Logs</a> for filters.</td>
+</tr>
+<tr>
+<td><kbd>F4</kbd></td>
+<td>Debug / Traces</td>
+<td>COS endpoint URLs with Grafana deep-links &mdash; see <a href="#traces">Traces and COS endpoints</a>.</td>
+</tr>
+<tr>
+<td><kbd>F5</kbd></td>
+<td>Watcher toggle</td>
+<td>Toggle the always-on Juju event watcher; when on, the task pane surfaces recent hook and unit events inline.</td>
+</tr>
+<tr>
+<td><kbd>F6</kbd></td>
+<td>Files toggle</td>
+<td>Show or hide the charm file tree. Click a file to open the <a href="#file-detail">File detail</a> modal.</td>
+</tr>
+<tr>
+<td><kbd>F7</kbd></td>
+<td>Model info</td>
+<td>Current primary and light model, cost, and token usage.</td>
+</tr>
+<tr>
+<td><kbd>F8</kbd></td>
+<td>Integration graph</td>
+<td>Deployed apps and their relations &mdash; see <a href="#graph">Integration graph</a>.</td>
+</tr>
+<tr>
+<td><kbd>F9</kbd></td>
+<td>Transcript</td>
+<td>Browse the persisted conversation history.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="file-detail">File detail</h2>
+<p>Clicking a file in the <kbd>F6</kbd> file tree opens the
+<strong>File detail</strong> modal. It shows the path, size,
+modification time, a best-effort summary of the file&rsquo;s
+purpose derived from its contents, the five most recent
+<code>git log</code> entries that touched the file, and a syntax-
+highlighted preview rendered via Rich&rsquo;s <code>Syntax</code>.</p>
+<p>Shortcut: <kbd>R</kbd> refreshes the modal against the current
+working tree so you can re-open after a subagent writes to the
+file. <kbd>Esc</kbd> closes.</p>
+<h2 id="logs">Logs</h2>
+<p>The <kbd>F3</kbd> <strong>Logs</strong> screen tails
+<code>juju debug-log</code> for the dev model. Three shortcuts
+re-scope the view without leaving the modal:</p>
+<ul>
+<li><kbd>L</kbd> cycles the level filter through
+<code>WARNING</code>, <code>INFO</code>, <code>DEBUG</code>,
+<code>ERROR</code>.</li>
+<li><kbd>M</kbd> cycles through the deployed apps and their units so
+you can focus on one workload at a time.</li>
+<li><kbd>T</kbd> toggles streaming: off fetches the last 200 lines
+once; on subscribes to live updates.</li>
+</ul>
+<h2 id="graph">Integration graph</h2>
+<p>The <kbd>F8</kbd> <strong>Integration graph</strong> shows deployed
+apps and their relations. <kbd>F</kbd> cycles a status filter
+through four states: all apps, only <code>blocked</code>, only
+<code>waiting</code>, or both &mdash; useful for zeroing in on
+apps that need attention when the model has a lot going on.
+<kbd>R</kbd> refreshes against the live status.</p>
+<h2 id="traces">Traces and COS endpoints</h2>
+<p>The <kbd>F4</kbd> <strong>Debug</strong> screen lists the URLs the
+agent uses to inspect the COS stack &mdash; Prometheus, Loki, Tempo,
+and Grafana &mdash; and builds Grafana deep-links pre-populated with
+the dev model and time range so one click opens the right dashboard.
+Each endpoint shows a reachability indicator derived from a live
+probe so an unreachable endpoint isn&rsquo;t hidden behind a broken
+link.</p>
+<h2 id="status-panes">Dev and COS status panes</h2>
+<p>The right-hand side of the TUI shows two always-on panes, toggled
+together with <kbd>F2</kbd>:</p>
+<ul>
+<li><strong>Dev model</strong> &mdash; controller, model name, and a
+short summary of each deployed app&rsquo;s status.</li>
+<li><strong>COS model</strong> &mdash; labelled summary (units,
+relations, offers) of the COS model backing observability, plus
+an explicit list of cross-model offers so you can see at a glance
+which apps are consuming the stack.</li>
+</ul>
+<p>Both panes refresh from the event watcher, so they stay current
+without polling. Expanding either pane scrolls rather than
+clipping when the app or offer list grows past the pane height.</p>
+<h2 id="confirmations">Confirmation prompts</h2>
+<p>Work that affects the outside world &mdash; pushing a branch,
+creating a GitHub repo, working on a triaged issue, spending a
+Best-of-N racing budget &mdash; is never done silently. Instead,
+Cantrip emits a <strong>CONFIRM task</strong> that appears in the
+task panel as a blocked row and prints a framed
+&ldquo;&hellip; confirmation&rdquo; prompt in the chat log. The
+task stays blocked until the user replies <code>approve</code> or
+<code>skip</code>, so the prompt never disappears off-screen.</p>
+<p>The most common confirmation is the <strong>repo bootstrap</strong>
+offer, which fires when Cantrip finishes a build inside a directory
+that has no GitHub remote and <code>gh</code> is available. The
+default repository name follows the Canonical upstream convention
+&mdash; if the charm is <code>foo</code>, the suggested name is
+<code>foo-operator</code>. Names that already end in
+<code>-operator</code>, <code>-charm</code>, <code>-k8s</code>, or
+<code>-machine</code> are kept as-is.</p>
+<p>Reply tokens for the bootstrap prompt:</p>
+<ul>
+<li><code>approve</code> (or <code>yes</code>) &mdash; create the
+repo with the suggested name, privately by default.</li>
+<li><code>skip</code> (or <code>no</code>) &mdash; dismiss the
+offer; Cantrip does not re-ask for the rest of the session.</li>
+<li><code>public</code> anywhere in the reply flips the repo to
+public visibility.</li>
+<li><code>name=my-repo</code> overrides the suggested name.</li>
+<li><code>org=canonical</code> creates the repo under that
+organisation instead of your personal account.</li>
+<li><code>desc=My charm</code> sets the repository description.</li>
+</ul>
+<p>Tokens can be combined: <code>approve public org=canonical name=my-charm-operator desc=Runs my charm</code>.</p>
   </main>
 </div>
 

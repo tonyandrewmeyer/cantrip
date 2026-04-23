@@ -18,6 +18,7 @@ import argparse
 import difflib
 import html.parser
 import pathlib
+import re
 import sys
 import tempfile
 
@@ -86,6 +87,22 @@ def _apply_entity_rewrites(text: str) -> str:
     return text
 
 
+_EXTERNAL_LINK_RE = re.compile(
+    r'<a href="(https?://[^"]+)"(?![^>]*\btarget=)>',
+)
+
+
+def _mark_external_links(html_text: str) -> str:
+    """Add ``target="_blank" rel="noopener"`` to any `<a>` with an http(s)
+    href that doesn't already carry a target attribute.  Matches the
+    hand-authored style where external links consistently open in a new
+    tab."""
+    return _EXTERNAL_LINK_RE.sub(
+        lambda m: f'<a href="{m.group(1)}" target="_blank" rel="noopener">',
+        html_text,
+    )
+
+
 def _render_page(
     src: pathlib.Path, site: dict, env: jinja2.Environment, md: markdown_it.MarkdownIt
 ) -> str:
@@ -93,10 +110,15 @@ def _render_page(
     meta, body_md = _split_frontmatter(raw)
 
     section = meta["section"]
-    section_cfg = site["sections"][section]
-    section_label = site["section_breadcrumb_label"][section]
+    section_cfg = site["sections"].get(section, {})
+    section_label = site["section_breadcrumb_label"].get(section, "")
 
     body_html = md.render(body_md).rstrip()
+    body_html = _mark_external_links(body_html)
+
+    layout = meta.get("layout")
+    if layout is None:
+        layout = "index" if section == "index" else "page"
 
     template = env.get_template("page.html.j2")
     rendered = template.render(
@@ -107,11 +129,13 @@ def _render_page(
         slug=meta.get("slug", src.stem),
         section=section,
         section_label=section_label,
-        sidebar_heading=section_cfg["heading"],
-        section_pages=section_cfg["pages"],
-        breadcrumb_label=meta["breadcrumb_label"],
+        sidebar_heading=section_cfg.get("heading", ""),
+        section_pages=section_cfg.get("pages", []),
+        breadcrumb_label=meta.get("breadcrumb_label", ""),
         see_also=meta.get("see_also"),
         on_this_page=meta.get("on_this_page"),
+        primary_list=meta.get("primary_list", "section"),
+        layout=layout,
         body=body_html,
     )
     return _apply_entity_rewrites(rendered)

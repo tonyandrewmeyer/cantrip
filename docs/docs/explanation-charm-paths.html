@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The three charm paths — Cantrip</title>
+<title>The three charm paths &mdash; Cantrip</title>
 <meta name="description" content="Why Cantrip has three approaches to charm building and how it selects the right one for your workload.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>Explanation</h4>
@@ -64,134 +63,97 @@
 
     <h1>The three charm paths</h1>
     <p class="subtitle">
-      Not all workloads are the same. Cantrip recognises three distinct
-      categories and uses a different approach for each.
+      Not all workloads are the same. Cantrip recognises three distinct categories and uses a different approach for each.
     </p>
 
-    <h2 id="why-three">Why three paths?</h2>
-    <p>
-      A Flask web application and a PostgreSQL cluster have fundamentally
-      different operational requirements. A Flask app needs a container,
-      an ingress, and maybe a database relation. PostgreSQL needs
-      replication, failover, backup, point-in-time recovery, and careful
-      upgrade management.
-    </p>
-    <p>
-      Treating them the same would mean either over-engineering simple
-      applications or under-engineering complex ones. Cantrip addresses
-      this by selecting a charm path during the research phase, before
-      any code is written.
-    </p>
-
-    <h2 id="path-a">Path A: 12-factor PaaS applications</h2>
-    <p>
-      Path A is for stateless web applications that follow the
-      <a href="https://12factor.net/" target="_blank" rel="noopener">twelve-factor</a> methodology:
-      Flask, Django, FastAPI, Go HTTP servers, Express, Spring Boot.
-    </p>
-    <p>
-      These applications share a common pattern: they are containerised,
-      configured via environment variables, and fronted by a reverse
-      proxy. Canonical's <code>paas-charm</code> base handles all of
-      this with minimal custom code.
-    </p>
-    <p>
-      Path A is fast. The agent generates a <code>rockcraft.yaml</code>
-      to build the OCI image, configures the paas-charm base, wires up
-      ingress and COS, and deploys. For a simple application, this takes
-      under two minutes from description to active/idle.
-    </p>
-    <h3>What you get</h3>
-    <ul>
-      <li>OCI image via Rockcraft</li>
-      <li>paas-charm base with framework-specific configuration</li>
-      <li>Ingress integration</li>
-      <li>COS integration (traces, metrics)</li>
-      <li>Config options mapped from environment variables</li>
-    </ul>
-
-    <h2 id="path-b">Path B: Custom applications</h2>
-    <p>
-      Path B handles applications that do not fit the 12-factor model but
-      are not infrastructure software either. Examples include legacy
-      monoliths, applications with custom lifecycle management, or
-      workloads with unusual deployment requirements.
-    </p>
-    <p>
-      The agent scaffolds a full charm from scratch using the ops
-      framework, analyses the application's requirements, and generates
-      custom event handlers for install, config-changed, start, stop, and
-      any relations the application needs.
-    </p>
-    <h3>What you get</h3>
-    <ul>
-      <li>Full ops framework charm with custom handlers</li>
-      <li>Application-specific config options and actions</li>
-      <li>Relations tailored to the application's needs</li>
-      <li>COS integration</li>
-      <li>Unit and integration tests</li>
-    </ul>
-
-    <h2 id="path-c">Path C: Infrastructure software</h2>
-    <p>
-      Path C is for databases, message queues, caches, and other
-      stateful infrastructure. These workloads have complex operational
-      requirements: clustering, replication, leader election, failover,
-      backup and restore, scaling, and upgrade strategies.
-    </p>
-    <p>
-      Before writing any code, the agent checks Charmhub for existing
-      charms. If a production-quality charm already exists, the agent
-      recommends using it instead of building a new one. When a new charm
-      is warranted, the agent researches the software's operational
-      patterns in depth and proposes a comprehensive design covering
-      day-2 operations.
-    </p>
-    <h3>What you get</h3>
-    <ul>
-      <li>Full ops framework charm with operational complexity</li>
-      <li>Clustering and replication support</li>
-      <li>Backup and restore actions</li>
-      <li>Scaling policies</li>
-      <li>Upgrade and rollback procedures</li>
-      <li>Comprehensive COS integration</li>
-      <li>Extensive testing (unit, integration, chaos, scaling, upgrade)</li>
-    </ul>
-
-    <h2 id="selection">How the agent chooses</h2>
-    <p>
-      Path selection happens during the research phase. The agent:
-    </p>
-    <ol>
-      <li>
-        Searches the web for information about the workload.
-      </li>
-      <li>
-        Uses the <code>analyse_framework</code> tool to detect the
-        application type if source code is available.
-      </li>
-      <li>
-        Checks Charmhub for existing charms.
-      </li>
-      <li>
-        Evaluates the workload against path criteria: Does it follow
-        12-factor patterns? Is it stateful infrastructure? Does it
-        need custom operational logic?
-      </li>
-    </ol>
-    <p>
-      The selected path is included in the design proposal. You can
-      override the choice &mdash; for example, telling the agent to use
-      Path B instead of Path A if you need more control over the charm's
-      event handlers.
-    </p>
-    <p>
-      See also:
-    </p>
-    <ul>
-      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
-      <li><a href="explanation-observability.html">Observability and debugging</a></li>
-    </ul>
+<h2 id="why-three">Why three paths?</h2>
+<p>A Flask web application and a PostgreSQL cluster have fundamentally
+different operational requirements. A Flask app needs a container,
+an ingress, and maybe a database relation. PostgreSQL needs
+replication, failover, backup, point-in-time recovery, and careful
+upgrade management.</p>
+<p>Treating them the same would mean either over-engineering simple
+applications or under-engineering complex ones. Cantrip addresses
+this by selecting a charm path during the research phase, before
+any code is written.</p>
+<h2 id="path-a">Path A: 12-factor PaaS applications</h2>
+<p>Path A is for stateless web applications that follow the
+<a href="https://12factor.net/" target="_blank" rel="noopener">twelve-factor</a> methodology:
+Flask, Django, FastAPI, Go HTTP servers, Express, Spring Boot.</p>
+<p>These applications share a common pattern: they are containerised,
+configured via environment variables, and fronted by a reverse
+proxy. Canonical's <code>paas-charm</code> base handles all of
+this with minimal custom code.</p>
+<p>Path A is fast. The agent generates a <code>rockcraft.yaml</code>
+to build the OCI image, configures the paas-charm base, wires up
+ingress and COS, and deploys. For a simple application, this takes
+under two minutes from description to active/idle.</p>
+<h3>What you get</h3>
+<ul>
+<li>OCI image via Rockcraft</li>
+<li>paas-charm base with framework-specific configuration</li>
+<li>Ingress integration</li>
+<li>COS integration (traces, metrics)</li>
+<li>Config options mapped from environment variables</li>
+</ul>
+<h2 id="path-b">Path B: Custom applications</h2>
+<p>Path B handles applications that do not fit the 12-factor model but
+are not infrastructure software either. Examples include legacy
+monoliths, applications with custom lifecycle management, or
+workloads with unusual deployment requirements.</p>
+<p>The agent scaffolds a full charm from scratch using the ops
+framework, analyses the application's requirements, and generates
+custom event handlers for install, config-changed, start, stop, and
+any relations the application needs.</p>
+<h3>What you get</h3>
+<ul>
+<li>Full ops framework charm with custom handlers</li>
+<li>Application-specific config options and actions</li>
+<li>Relations tailored to the application's needs</li>
+<li>COS integration</li>
+<li>Unit and integration tests</li>
+</ul>
+<h2 id="path-c">Path C: Infrastructure software</h2>
+<p>Path C is for databases, message queues, caches, and other
+stateful infrastructure. These workloads have complex operational
+requirements: clustering, replication, leader election, failover,
+backup and restore, scaling, and upgrade strategies.</p>
+<p>Before writing any code, the agent checks Charmhub for existing
+charms. If a production-quality charm already exists, the agent
+recommends using it instead of building a new one. When a new charm
+is warranted, the agent researches the software's operational
+patterns in depth and proposes a comprehensive design covering
+day-2 operations.</p>
+<h3>What you get</h3>
+<ul>
+<li>Full ops framework charm with operational complexity</li>
+<li>Clustering and replication support</li>
+<li>Backup and restore actions</li>
+<li>Scaling policies</li>
+<li>Upgrade and rollback procedures</li>
+<li>Comprehensive COS integration</li>
+<li>Extensive testing (unit, integration, chaos, scaling, upgrade)</li>
+</ul>
+<h2 id="selection">How the agent chooses</h2>
+<p>Path selection happens during the research phase. The agent:</p>
+<ol>
+<li>Searches the web for information about the workload.</li>
+<li>Uses the <code>analyse_framework</code> tool to detect the
+application type if source code is available.</li>
+<li>Checks Charmhub for existing charms.</li>
+<li>Evaluates the workload against path criteria: Does it follow
+12-factor patterns? Is it stateful infrastructure? Does it
+need custom operational logic?</li>
+</ol>
+<p>The selected path is included in the design proposal. You can
+override the choice &mdash; for example, telling the agent to use
+Path B instead of Path A if you need more control over the charm's
+event handlers.</p>
+<p>See also:</p>
+<ul>
+<li><a href="explanation-architecture.html">How Cantrip works</a></li>
+<li><a href="explanation-observability.html">Observability and debugging</a></li>
+</ul>
   </main>
 </div>
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tutorial: Build your first charm — Cantrip</title>
+<title>Tutorial: Build your first charm &mdash; Cantrip</title>
 <meta name="description" content="A step-by-step tutorial to build and deploy your first Juju charm with Cantrip.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>Tutorial</h4>
@@ -64,159 +63,114 @@
 
     <h1>Build your first charm</h1>
     <p class="subtitle">
-      Go from zero to a deployed, tested Juju charm in a single sitting.
-      This tutorial takes about 15 minutes.
+      Go from zero to a deployed, tested Juju charm in a single sitting. This tutorial takes about 15 minutes.
     </p>
 
-    <h2 id="overview">What you will learn</h2>
-    <p>
-      By the end of this tutorial you will have:
-    </p>
-    <ul>
-      <li>Installed Cantrip and connected it to an LLM provider.</li>
-      <li>Described a workload and reviewed the agent's design proposal.</li>
-      <li>Watched the agent build, deploy, and test a charm autonomously.</li>
-      <li>Verified that the charm is running and observable.</li>
-    </ul>
-
-    <div class="callout">
-      <p>
-        This tutorial uses a simple Flask application as the example workload.
-        Cantrip handles it via <strong>Path A</strong> (12-factor PaaS), which
-        is the fastest charm path. The same workflow applies to more complex
-        workloads &mdash; only the design proposal and build time differ.
-      </p>
-    </div>
-
-    <h2 id="prerequisites">Prerequisites</h2>
-    <p>Before you begin, make sure you have:</p>
-    <ul>
-      <li>
-        <strong>Ubuntu 22.04+</strong> (or another Linux distribution with
-        snap support).
-      </li>
-      <li>
-        <strong>Juju 3.x</strong> installed and bootstrapped with at least
-        one controller. If you need to set up Juju, see the
-        <a href="https://juju.is/docs/juju/get-started-with-juju" target="_blank" rel="noopener">Juju getting started guide</a>.
-      </li>
-      <li>
-        <strong>Python 3.12+</strong> and <strong>uv</strong> installed.
-        Install uv with: <code>curl -LsSf https://astral.sh/uv/install.sh | sh</code>
-      </li>
-      <li>
-        A <strong>Gemini API key</strong> (free tier is sufficient). Get one
-        at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>.
-        You can also use Claude or a local inference snap &mdash; see
-        <a href="howto-provider.html">Choose an LLM provider</a>.
-      </li>
-    </ul>
-
-    <h2 id="install">1. Install Cantrip</h2>
-    <p>Install Cantrip as a standalone tool using <code>uv</code>:</p>
-    <pre><code><span class="prompt">$</span> uv tool install cantrip</code></pre>
-    <p>
-      Verify the installation:
-    </p>
-    <pre><code><span class="prompt">$</span> cantrip --version
+<h2 id="overview">What you will learn</h2>
+<p>By the end of this tutorial you will have:</p>
+<ul>
+<li>Installed Cantrip and connected it to an LLM provider.</li>
+<li>Described a workload and reviewed the agent's design proposal.</li>
+<li>Watched the agent build, deploy, and test a charm autonomously.</li>
+<li>Verified that the charm is running and observable.</li>
+</ul>
+<div class="callout">
+  <p>
+    This tutorial uses a simple Flask application as the example workload.
+    Cantrip handles it via <strong>Path A</strong> (12-factor PaaS), which
+    is the fastest charm path. The same workflow applies to more complex
+    workloads &mdash; only the design proposal and build time differ.
+  </p>
+</div>
+<h2 id="prerequisites">Prerequisites</h2>
+<p>Before you begin, make sure you have:</p>
+<ul>
+<li><strong>Ubuntu 22.04+</strong> (or another Linux distribution with
+snap support).</li>
+<li><strong>Juju 3.x</strong> installed and bootstrapped with at least
+one controller. If you need to set up Juju, see the
+<a href="https://juju.is/docs/juju/get-started-with-juju" target="_blank" rel="noopener">Juju getting started guide</a>.</li>
+<li><strong>Python 3.12+</strong> and <strong>uv</strong> installed.
+Install uv with: <code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></li>
+<li>A <strong>Gemini API key</strong> (free tier is sufficient). Get one
+at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>.
+You can also use Claude or a local inference snap &mdash; see
+<a href="howto-provider.html">Choose an LLM provider</a>.</li>
+</ul>
+<h2 id="install">1. Install Cantrip</h2>
+<p>Install Cantrip as a standalone tool using <code>uv</code>:</p>
+<pre><code><span class="prompt">$</span> uv tool install cantrip</code></pre>
+<p>Verify the installation:</p>
+<pre><code><span class="prompt">$</span> cantrip --version
 <span class="dim">cantrip 0.x.y</span></code></pre>
-
-    <h2 id="api-key">2. Set up your API key</h2>
-    <p>
-      Export your Gemini API key so Cantrip can access the model:
-    </p>
-    <pre><code><span class="prompt">$</span> export GEMINI_API_KEY="your-key-here"</code></pre>
-    <p>
-      Add this to your shell profile (<code>~/.bashrc</code> or
-      <code>~/.zshrc</code>) so it persists across sessions.
-    </p>
-
-    <h2 id="create-project">3. Create a project directory</h2>
-    <p>
-      Cantrip works inside a charm project directory. Create one and move
-      into it:
-    </p>
-    <pre><code><span class="prompt">$</span> mkdir my-flask-charm &amp;&amp; cd my-flask-charm</code></pre>
-
-    <h2 id="launch">4. Launch Cantrip</h2>
-    <p>Start Cantrip in the default TUI mode:</p>
-    <pre><code><span class="prompt">$</span> cantrip</code></pre>
-    <p>
-      The terminal UI opens with three panels: a task checklist on the left,
-      Juju status in the centre, and a chat panel on the right. Your cursor
-      is in the chat input area, ready for your first message.
-    </p>
-    <div class="callout">
-      <p>
-        If you prefer a browser interface, launch with
-        <code>cantrip --web</code> instead. For a minimal command-line REPL,
-        use <code>cantrip --no-tui</code>.
-      </p>
-    </div>
-
-    <h2 id="describe">5. Describe your workload</h2>
-    <p>
-      In the chat panel, type a description of what you want to charm:
-    </p>
-    <pre><code>Build a charm for a Flask hello-world application</code></pre>
-    <p>
-      Press Enter. The agent begins its research phase &mdash; you will see
-      tasks appearing in the checklist on the left as it searches the web,
-      checks Charmhub for existing charms, and analyses the workload.
-    </p>
-
-    <h2 id="review-design">6. Review the design proposal</h2>
-    <p>
-      After a few moments the agent presents a structured design proposal
-      in the chat. It looks something like this:
-    </p>
-    <pre><code><span class="comment">Substrate:</span>      Kubernetes
+<h2 id="api-key">2. Set up your API key</h2>
+<p>Export your Gemini API key so Cantrip can access the model:</p>
+<pre><code><span class="prompt">$</span> export GEMINI_API_KEY="your-key-here"</code></pre>
+<p>Add this to your shell profile (<code>~/.bashrc</code> or
+<code>~/.zshrc</code>) so it persists across sessions.</p>
+<h2 id="create-project">3. Create a project directory</h2>
+<p>Cantrip works inside a charm project directory. Create one and move
+into it:</p>
+<pre><code><span class="prompt">$</span> mkdir my-flask-charm &amp;&amp; cd my-flask-charm</code></pre>
+<h2 id="launch">4. Launch Cantrip</h2>
+<p>Start Cantrip in the default TUI mode:</p>
+<pre><code><span class="prompt">$</span> cantrip</code></pre>
+<p>The terminal UI opens with three panels: a task checklist on the left,
+Juju status in the centre, and a chat panel on the right. Your cursor
+is in the chat input area, ready for your first message.</p>
+<div class="callout">
+  <p>
+    If you prefer a browser interface, launch with
+    <code>cantrip --web</code> instead. For a minimal command-line REPL,
+    use <code>cantrip --no-tui</code>.
+  </p>
+</div>
+<h2 id="describe">5. Describe your workload</h2>
+<p>In the chat panel, type a description of what you want to charm:</p>
+<pre><code>Build a charm for a Flask hello-world application
+</code></pre>
+<p>Press Enter. The agent begins its research phase &mdash; you will see
+tasks appearing in the checklist on the left as it searches the web,
+checks Charmhub for existing charms, and analyses the workload.</p>
+<h2 id="review-design">6. Review the design proposal</h2>
+<p>After a few moments the agent presents a structured design proposal
+in the chat. It looks something like this:</p>
+<pre><code><span class="comment">Substrate:</span>      Kubernetes
 <span class="comment">Charm path:</span>     A (12-Factor PaaS)
 <span class="comment">Base:</span>           paas-charm (Flask)
 <span class="comment">Integrations:</span>   ingress, COS
 <span class="comment">Config:</span>         app-port (default 8080)
 <span class="comment">Observability:</span>  ops-tracing, Prometheus metrics</code></pre>
-    <p>
-      The agent waits for your confirmation. Read through the proposal. If
-      it looks right, reply:
-    </p>
-    <pre><code>Looks good, go ahead</code></pre>
-    <p>
-      If you want changes, tell the agent what to adjust &mdash; for example,
-      "add a database integration" or "use machine substrate instead".
-    </p>
-
-    <h2 id="watch-build">7. Watch the build</h2>
-    <p>
-      Once confirmed, the agent enters the autonomous work loop. Watch the
-      task checklist update as subagents work through the plan:
-    </p>
-    <ul>
-      <li>Scaffolding the charm project with <code>charmcraft init</code></li>
-      <li>Generating a <code>rockcraft.yaml</code> for the OCI image</li>
-      <li>Writing integration tests</li>
-      <li>Writing the charm code</li>
-      <li>Packing and deploying</li>
-      <li>Running acceptance tests</li>
-    </ul>
-    <p>
-      You do not need to type anything during this phase. The agent handles
-      errors automatically &mdash; if a build fails, it diagnoses the issue
-      using traces and logs and creates a fix task.
-    </p>
-    <div class="callout">
-      <p>
-        For a simple Flask charm, the build typically completes in under
-        two minutes. More complex workloads (Path B or C) take longer.
-      </p>
-    </div>
-
-    <h2 id="verify">8. Verify the deployment</h2>
-    <p>
-      When all tasks show a tick in the checklist, your charm is deployed
-      and tested. Verify it with Juju:
-    </p>
-    <pre><code><span class="prompt">$</span> juju status
+<p>The agent waits for your confirmation. Read through the proposal. If
+it looks right, reply:</p>
+<pre><code>Looks good, go ahead
+</code></pre>
+<p>If you want changes, tell the agent what to adjust &mdash; for example,
+&quot;add a database integration&quot; or &quot;use machine substrate instead&quot;.</p>
+<h2 id="watch-build">7. Watch the build</h2>
+<p>Once confirmed, the agent enters the autonomous work loop. Watch the
+task checklist update as subagents work through the plan:</p>
+<ul>
+<li>Scaffolding the charm project with <code>charmcraft init</code></li>
+<li>Generating a <code>rockcraft.yaml</code> for the OCI image</li>
+<li>Writing integration tests</li>
+<li>Writing the charm code</li>
+<li>Packing and deploying</li>
+<li>Running acceptance tests</li>
+</ul>
+<p>You do not need to type anything during this phase. The agent handles
+errors automatically &mdash; if a build fails, it diagnoses the issue
+using traces and logs and creates a fix task.</p>
+<div class="callout">
+  <p>
+    For a simple Flask charm, the build typically completes in under
+    two minutes. More complex workloads (Path B or C) take longer.
+  </p>
+</div>
+<h2 id="verify">8. Verify the deployment</h2>
+<p>When all tasks show a tick in the checklist, your charm is deployed
+and tested. Verify it with Juju:</p>
+<pre><code><span class="prompt">$</span> juju status
 <span class="dim">Model    Controller  Cloud/Region        Version  ...
 default  lxd         localhost/localhost  3.x.y    ...
 
@@ -225,36 +179,23 @@ my-flask-charm            active      1  my-flask-charm              0
 
 Unit                  Workload  Agent  Machine  ...
 my-flask-charm/0*     active    idle   0        ...</span></code></pre>
-    <p>
-      The charm should be in <code>active/idle</code> status. Observability
-      is automatically wired up via COS &mdash; traces and metrics are
-      flowing.
-    </p>
-
-    <h2 id="next-steps">Next steps</h2>
-    <p>You have built and deployed your first charm with Cantrip. From here:</p>
-    <ul>
-      <li>
-        <a href="howto-improve.html">Improve an existing charm</a> &mdash;
-        point Cantrip at a charm you have already written.
-      </li>
-      <li>
-        <a href="howto-provider.html">Choose an LLM provider</a> &mdash;
-        try Claude or local inference snaps.
-      </li>
-      <li>
-        <a href="explanation-charm-paths.html">The three charm paths</a> &mdash;
-        understand how Cantrip handles different workload types.
-      </li>
-      <li>
-        <a href="explanation-architecture.html">How Cantrip works</a> &mdash;
-        learn about the two-loop architecture and subagents.
-      </li>
-      <li>
-        <a href="reference-cli.html">CLI reference</a> &mdash;
-        explore all available flags and commands.
-      </li>
-    </ul>
+<p>The charm should be in <code>active/idle</code> status. Observability
+is automatically wired up via COS &mdash; traces and metrics are
+flowing.</p>
+<h2 id="next-steps">Next steps</h2>
+<p>You have built and deployed your first charm with Cantrip. From here:</p>
+<ul>
+<li><a href="howto-improve.html">Improve an existing charm</a> &mdash;
+point Cantrip at a charm you have already written.</li>
+<li><a href="howto-provider.html">Choose an LLM provider</a> &mdash;
+try Claude or local inference snaps.</li>
+<li><a href="explanation-charm-paths.html">The three charm paths</a> &mdash;
+understand how Cantrip handles different workload types.</li>
+<li><a href="explanation-architecture.html">How Cantrip works</a> &mdash;
+learn about the two-loop architecture and subagents.</li>
+<li><a href="reference-cli.html">CLI reference</a> &mdash;
+explore all available flags and commands.</li>
+</ul>
   </main>
 </div>
 

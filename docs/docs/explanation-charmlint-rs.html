@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Charmlint Rust backend — Cantrip</title>
+<title>Charmlint Rust backend &mdash; Cantrip</title>
 <meta name="description" content="Why charmlint has a Rust implementation, how Cantrip selects it, and measured performance.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>Explanation</h4>
@@ -66,164 +65,153 @@
 
     <h1>Charmlint Rust backend</h1>
     <p class="subtitle">
-      A compiled alternative to the Python charmlint that completes a
-      full lint run in under 30&nbsp;ms.
+      A compiled alternative to the Python charmlint that completes a full lint run in under 30&nbsp;ms.
     </p>
 
-    <h2 id="background">Background</h2>
-    <p>
-      <strong>Charmlint</strong> is Cantrip's deterministic charm linter.
-      It checks charms against 40+ rules across 12 categories &mdash;
-      metadata completeness, COS integration, testing, deprecated APIs,
-      actions, config quality, security, structure, documentation,
-      libraries, charmcraft compatibility, and status reporting.
-    </p>
-    <p>
-      Unlike quickpack, charmlint is a pure CPU tool with no subprocess
-      calls.  All the work is YAML parsing, regex matching, and file
-      traversal &mdash; exactly the kind of workload where Rust excels.
-      The Rust implementation (<code>src/charmlint-rs/</code>) delivers
-      the full speedup with no bottleneck to cap it.
-    </p>
-
-    <h2 id="architecture">Architecture</h2>
-    <p>
-      The Rust binary mirrors the Python package:
-    </p>
-    <table>
-      <thead>
-        <tr><th>Python module</th><th>Rust module</th><th>Responsibility</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>cli.py</code></td><td><code>main.rs</code></td><td>CLI argument parsing (clap), output formatting</td></tr>
-        <tr><td><code>linter.py</code></td><td><code>linter.rs</code></td><td>Rule filtering, severity overrides, min-severity</td></tr>
-        <tr><td><code>rules/*.py</code></td><td><code>rules.rs</code></td><td>All 40+ rules (single file, grouped by category)</td></tr>
-        <tr><td><code>models.py</code></td><td><code>models.rs</code></td><td>Diagnostic, Severity, CharmContext, LintReport</td></tr>
-        <tr><td><code>config.py</code></td><td><code>config.rs</code></td><td><code>.charmlint.yaml</code> loader</td></tr>
-        <tr><td>&mdash;</td><td><code>context.rs</code></td><td>Charm context builder (YAML, Python sources, tests)</td></tr>
-      </tbody>
-    </table>
-    <p>
-      Both implementations share the same command-line interface:
-    </p>
-    <pre><code>charmlint [path] [--format text|json] [--select CATS] [--ignore RULES]
-         [--severity LEVEL] [--config PATH] [--strict] [--no-color]</code></pre>
-    <p>
-      The Rust version produces identical JSON output structure, identical
-      rule IDs and messages, and identical exit codes (0&nbsp;=&nbsp;clean,
-      1&nbsp;=&nbsp;errors, 2&nbsp;=&nbsp;warnings in strict mode).
-    </p>
-
-    <h2 id="selection">How the backend is selected</h2>
-    <p>
-      When the agent's <code>charmlint</code> tool is invoked, it checks
-      for the Rust binary in two locations:
-    </p>
-    <ol>
-      <li>
-        <code>charmlint-rs</code> on <code>$PATH</code>.
-      </li>
-      <li>
-        The in-tree build artefact at
-        <code>src/charmlint-rs/target/release/charmlint</code>.
-      </li>
-    </ol>
-    <p>
-      If found, the tool invokes the binary with <code>--format json</code>,
-      parses the output, and returns it to the agent.  If neither location
-      has a binary, it falls back to the Python <code>charmlint</code>
-      library transparently.  The <code>backend</code> field in the tool
-      result data indicates which implementation was used.
-    </p>
-    <p>
-      The <code>charm_audit</code> tool always uses the Python library
-      directly because it needs to inspect individual
-      <code>Diagnostic</code> objects for structured report generation.
-    </p>
-
-    <h2 id="performance">Performance</h2>
-    <p>
-      Benchmarks on an Ubuntu 24.04 machine (x86_64), linting a minimal
-      charm project:
-    </p>
-    <table>
-      <thead>
-        <tr><th>Metric</th><th>Rust</th><th>Python</th><th>Speedup</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Startup (<code>--help</code>)</td>
-          <td>~33 ms</td>
-          <td>~177 ms</td>
-          <td><strong>5.4&times;</strong></td>
-        </tr>
-        <tr>
-          <td>Full lint (all rules)</td>
-          <td>~27 ms</td>
-          <td>~181 ms</td>
-          <td><strong>6.7&times;</strong></td>
-        </tr>
-      </tbody>
-    </table>
-    <p>
-      The full lint run in Rust is actually faster than Python&rsquo;s
-      startup alone.  Since charmlint is a pure CPU tool &mdash; YAML
-      parsing, regex matching, and filesystem stat calls &mdash; there is
-      no subprocess bottleneck to limit the speedup.
-    </p>
-    <p>
-      In the agent's build&ndash;test&ndash;debug loop, charmlint typically
-      runs after every code change.  At 27&nbsp;ms, it adds negligible
-      latency to the iteration cycle.
-    </p>
-
-    <h2 id="building">Building from source</h2>
-    <p>
-      The Rust toolchain (1.70+) is required.  From the repository root:
-    </p>
-    <pre><code>cd src/charmlint-rs
-cargo build --release</code></pre>
-    <p>
-      The binary is written to
-      <code>src/charmlint-rs/target/release/charmlint</code>.  Cantrip
-      will find it automatically at this location.  To install system-wide:
-    </p>
-    <pre><code>sudo cp src/charmlint-rs/target/release/charmlint /usr/local/bin/charmlint-rs</code></pre>
-
-    <h2 id="testing">Running the tests</h2>
-    <p>
-      The Rust implementation has its own spread test suite at
-      <code>tests/spread/charmlint-rs/task.yaml</code>.  It runs 43 of
-      the 45 tests from the Python suite (excluding the
-      <code>python&nbsp;-m&nbsp;charmlint</code> test).  To run locally:
-    </p>
-    <pre><code>spread tests/spread/charmlint-rs</code></pre>
-
-    <h2 id="limitations">Limitations</h2>
-    <ul>
-      <li>
-        The <code>charm_audit</code> tool still uses the Python library
-        because it processes <code>Diagnostic</code> objects directly.
-        This means audit runs do not benefit from the Rust speedup.
-      </li>
-      <li>
-        The Rust binary does not expose a library API &mdash; it is a
-        standalone CLI tool only.
-      </li>
-      <li>
-        New rules added to the Python version must be ported manually to
-        the Rust implementation.
-      </li>
-    </ul>
-
-    <p>
-      See also:
-    </p>
-    <ul>
-      <li><a href="explanation-quickpack-rs.html">Quickpack Rust backend</a></li>
-      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
-      <li><a href="reference-tools.html">Agent tools</a></li>
-    </ul>
+<h2 id="background">Background</h2>
+<p><strong>Charmlint</strong> is Cantrip's deterministic charm linter.
+It checks charms against 40+ rules across 12 categories &mdash;
+metadata completeness, COS integration, testing, deprecated APIs,
+actions, config quality, security, structure, documentation,
+libraries, charmcraft compatibility, and status reporting.</p>
+<p>Unlike quickpack, charmlint is a pure CPU tool with no subprocess
+calls.  All the work is YAML parsing, regex matching, and file
+traversal &mdash; exactly the kind of workload where Rust excels.
+The Rust implementation (<code>src/charmlint-rs/</code>) delivers
+the full speedup with no bottleneck to cap it.</p>
+<h2 id="architecture">Architecture</h2>
+<p>The Rust binary mirrors the Python package:</p>
+<table>
+<thead>
+<tr>
+<th>Python module</th>
+<th>Rust module</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cli.py</code></td>
+<td><code>main.rs</code></td>
+<td>CLI argument parsing (clap), output formatting</td>
+</tr>
+<tr>
+<td><code>linter.py</code></td>
+<td><code>linter.rs</code></td>
+<td>Rule filtering, severity overrides, min-severity</td>
+</tr>
+<tr>
+<td><code>rules/*.py</code></td>
+<td><code>rules.rs</code></td>
+<td>All 40+ rules (single file, grouped by category)</td>
+</tr>
+<tr>
+<td><code>models.py</code></td>
+<td><code>models.rs</code></td>
+<td>Diagnostic, Severity, CharmContext, LintReport</td>
+</tr>
+<tr>
+<td><code>config.py</code></td>
+<td><code>config.rs</code></td>
+<td><code>.charmlint.yaml</code> loader</td>
+</tr>
+<tr>
+<td>&mdash;</td>
+<td><code>context.rs</code></td>
+<td>Charm context builder (YAML, Python sources, tests)</td>
+</tr>
+</tbody>
+</table>
+<p>Both implementations share the same command-line interface:</p>
+<pre><code>charmlint [path] [--format text|json] [--select CATS] [--ignore RULES]
+         [--severity LEVEL] [--config PATH] [--strict] [--no-color]
+</code></pre>
+<p>The Rust version produces identical JSON output structure, identical
+rule IDs and messages, and identical exit codes (0&nbsp;=&nbsp;clean,
+1&nbsp;=&nbsp;errors, 2&nbsp;=&nbsp;warnings in strict mode).</p>
+<h2 id="selection">How the backend is selected</h2>
+<p>When the agent's <code>charmlint</code> tool is invoked, it checks
+for the Rust binary in two locations:</p>
+<ol>
+<li><code>charmlint-rs</code> on <code>$PATH</code>.</li>
+<li>The in-tree build artefact at
+<code>src/charmlint-rs/target/release/charmlint</code>.</li>
+</ol>
+<p>If found, the tool invokes the binary with <code>--format json</code>,
+parses the output, and returns it to the agent.  If neither location
+has a binary, it falls back to the Python <code>charmlint</code>
+library transparently.  The <code>backend</code> field in the tool
+result data indicates which implementation was used.</p>
+<p>The <code>charm_audit</code> tool always uses the Python library
+directly because it needs to inspect individual
+<code>Diagnostic</code> objects for structured report generation.</p>
+<h2 id="performance">Performance</h2>
+<p>Benchmarks on an Ubuntu 24.04 machine (x86_64), linting a minimal
+charm project:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Rust</th>
+<th>Python</th>
+<th>Speedup</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Startup (<code>--help</code>)</td>
+<td>~33 ms</td>
+<td>~177 ms</td>
+<td><strong>5.4&times;</strong></td>
+</tr>
+<tr>
+<td>Full lint (all rules)</td>
+<td>~27 ms</td>
+<td>~181 ms</td>
+<td><strong>6.7&times;</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The full lint run in Rust is actually faster than Python&rsquo;s
+startup alone.  Since charmlint is a pure CPU tool &mdash; YAML
+parsing, regex matching, and filesystem stat calls &mdash; there is
+no subprocess bottleneck to limit the speedup.</p>
+<p>In the agent's build&ndash;test&ndash;debug loop, charmlint typically
+runs after every code change.  At 27&nbsp;ms, it adds negligible
+latency to the iteration cycle.</p>
+<h2 id="building">Building from source</h2>
+<p>The Rust toolchain (1.70+) is required.  From the repository root:</p>
+<pre><code>cd src/charmlint-rs
+cargo build --release
+</code></pre>
+<p>The binary is written to
+<code>src/charmlint-rs/target/release/charmlint</code>.  Cantrip
+will find it automatically at this location.  To install system-wide:</p>
+<pre><code>sudo cp src/charmlint-rs/target/release/charmlint /usr/local/bin/charmlint-rs
+</code></pre>
+<h2 id="testing">Running the tests</h2>
+<p>The Rust implementation has its own spread test suite at
+<code>tests/spread/charmlint-rs/task.yaml</code>.  It runs 43 of
+the 45 tests from the Python suite (excluding the
+<code>python&nbsp;-m&nbsp;charmlint</code> test).  To run locally:</p>
+<pre><code>spread tests/spread/charmlint-rs
+</code></pre>
+<h2 id="limitations">Limitations</h2>
+<ul>
+<li>The <code>charm_audit</code> tool still uses the Python library
+because it processes <code>Diagnostic</code> objects directly.
+This means audit runs do not benefit from the Rust speedup.</li>
+<li>The Rust binary does not expose a library API &mdash; it is a
+standalone CLI tool only.</li>
+<li>New rules added to the Python version must be ported manually to
+the Rust implementation.</li>
+</ul>
+<p>See also:</p>
+<ul>
+<li><a href="explanation-quickpack-rs.html">Quickpack Rust backend</a></li>
+<li><a href="explanation-architecture.html">How Cantrip works</a></li>
+<li><a href="reference-tools.html">Agent tools</a></li>
+</ul>
   </main>
 </div>
 

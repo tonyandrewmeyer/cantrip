@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Emotion subagents — Cantrip</title>
+<title>Emotion subagents &mdash; Cantrip</title>
 <meta name="description" content="Why Cantrip has five personality-driven review subagents, how they're scoped to avoid overlap, and the tradeoffs involved.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>Explanation</h4>
@@ -65,235 +64,176 @@
 
     <h1>Emotion subagents</h1>
     <p class="subtitle">
-      Five personality-driven review lenses &mdash; Joy, Fear, Anger,
-      Disgust, Sadness &mdash; each reviewing your charm through a
-      distinct prompt. A small, deliberately odd experiment in
-      structured second opinions.
+      Five personality-driven review lenses &mdash; Joy, Fear, Anger, Disgust, Sadness &mdash; each reviewing your charm through a distinct prompt. A small, deliberately odd experiment in structured second opinions.
     </p>
 
-    <div class="callout-warn callout">
-      <p>
-        <strong>Experimental.</strong> This feature is a proof of
-        concept. It may produce generic or theatrical output; the
-        design may change or be removed entirely based on experience.
-        See <a href="howto-feelings.html">Convene the inner
-        parliament</a> for the how-to.
-      </p>
-    </div>
-
-    <h2 id="why-lenses">Why different lenses</h2>
-    <p>
-      A monolithic reviewer &mdash; one LLM prompt asked to &ldquo;spot
-      everything wrong with this charm&rdquo; &mdash; tends to produce
-      a flattened average: a handful of bland, catch-all suggestions
-      that skim every concern without committing to any. Large models
-      are especially prone to this when a single prompt pulls them in
-      many directions at once.
-    </p>
-    <p>
-      The inner parliament takes the opposite approach: <strong>split
-      the review into narrow lenses, each with a strong prior</strong>.
-      A prompt that exists only to spot security risks commits to
-      security. A prompt that exists only to find papercuts commits to
-      papercuts. The cost is some duplication across lenses; the
-      benefit is that each lens produces something sharper than a
-      generalist would.
-    </p>
-    <p>
-      Personality framing is the carrier. &ldquo;You are Fear&rdquo; is
-      a compact way to encode a review prior that &ldquo;focus only on
-      security and failure modes&rdquo; describes less memorably. The
-      framing also makes the output read as opinion rather than
-      adjudication &mdash; a useful tone for a feature whose output is
-      advisory.
-    </p>
-
-    <h2 id="the-cast">The cast of five</h2>
-    <p>
-      The five emotions are borrowed from Pixar&apos;s <em>Inside
-      Out</em>, and chosen for coverage rather than narrative
-      completeness. Together they span the dimensions a thorough
-      reviewer would visit:
-    </p>
-    <table>
-      <thead>
-        <tr>
-          <th>Emotion</th>
-          <th>Review dimension</th>
-          <th>What it sounds like</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><strong>Joy</strong></td>
-          <td>Delight &mdash; what could spark joy?</td>
-          <td>&ldquo;A <code>dump-status</code> action would save the
-          operator a chore.&rdquo;</td>
-        </tr>
-        <tr>
-          <td><strong>Fear</strong></td>
-          <td>Risk &mdash; what could go wrong?</td>
-          <td>&ldquo;The admin password is stored in plaintext config;
-          use a Juju secret.&rdquo;</td>
-        </tr>
-        <tr>
-          <td><strong>Anger</strong></td>
-          <td>Friction &mdash; what will annoy the operator?</td>
-          <td>&ldquo;The <code>reload</code> action has no progress
-          output; it looks hung.&rdquo;</td>
-        </tr>
-        <tr>
-          <td><strong>Disgust</strong></td>
-          <td>Taste &mdash; what looks ugly?</td>
-          <td>&ldquo;Four files mix snake_case and camelCase; pick
-          one.&rdquo;</td>
-        </tr>
-        <tr>
-          <td><strong>Sadness</strong></td>
-          <td>Empathy &mdash; what happens in the unloved cases?</td>
-          <td>&ldquo;Missing relation throws a traceback; a
-          <code>BlockedStatus</code> with a clear message would be
-          kinder.&rdquo;</td>
-        </tr>
-      </tbody>
-    </table>
-    <p>
-      Joy and Anger form one axis (delight vs friction, both
-      user-facing). Fear and Sadness form another (preventing failure
-      vs handling it gracefully). Disgust is a distinct axis: code
-      taste, not user experience. The default pair when you run
-      <code>/feelings</code> with no arguments is Joy and Fear,
-      chosen as the most differentiated across axes.
-    </p>
-
-    <h2 id="scope">Scope boundaries</h2>
-    <p>
-      The biggest risk with a parliament is overlap: five prompts all
-      pointing at the same concerns, each adding only noise. The
-      prompts defend against this explicitly.
-    </p>
-    <ul>
-      <li>
-        <strong>Anger &ne; Disgust.</strong> Anger covers
-        <em>user-visible</em> friction (bad error messages, cryptic
-        actions, slow feedback). Disgust covers <em>code</em>
-        aesthetics (dead code, Harness-style tests, inconsistent
-        naming). A confusing action name is Anger&apos;s problem; a
-        messy function body is Disgust&apos;s.
-      </li>
-      <li>
-        <strong>Fear &ne; Sadness.</strong> Fear wants to
-        <em>prevent</em> failures (add TLS, validate inputs, require
-        auth). Sadness wants failures to be <em>gentle</em> when they
-        happen (meaningful <code>BlockedStatus</code>, graceful
-        degradation on missing relations, a clean teardown path). The
-        same incident can provoke both, but from different angles.
-      </li>
-      <li>
-        <strong>Joy stays positive.</strong> Joy ignores problems
-        entirely. Its job is to name the missing treat, not to
-        double-count concerns that other emotions already cover.
-      </li>
-    </ul>
-
-    <h2 id="how-it-runs">How a parliament runs</h2>
-    <p>
-      Running <code>/feelings</code> in the TUI triggers a small
-      pipeline:
-    </p>
-    <ol>
-      <li>
-        The requested emotion names are validated against the known
-        cast. Unknown names reject the command with a list of valid
-        options.
-      </li>
-      <li>
-        A <strong>context snapshot</strong> is assembled from
-        <code>AgentState</code>: charm name, type, framework, recent
-        decisions, and the contents of up to six key files
-        (<code>charmcraft.yaml</code>, <code>metadata.yaml</code>,
-        <code>config.yaml</code>, <code>actions.yaml</code>,
-        <code>README.md</code>, <code>src/charm.py</code>) if they are
-        present and under a small size limit.
-      </li>
-      <li>
-        Each enabled emotion is launched in parallel as a single LLM
-        call on the <a href="howto-light-models.html">light
-        provider</a>, with the emotion&apos;s prompt as the system
-        message and the snapshot as the user message. No tools are
-        offered, so each call is one request and one response.
-      </li>
-      <li>
-        Each response is parsed as a JSON array of suggestion objects.
-        Responses that cannot be parsed, or whose provider call
-        errored, are recorded as <em>failed emotions</em>; they do
-        not fail the whole run.
-      </li>
-      <li>
-        The surviving suggestions are grouped by emotion, formatted as
-        markdown, and posted back to the chat as a system message. The
-        main agent&apos;s conversation state is not touched.
-      </li>
-    </ol>
-    <p>
-      The emotions never call tools, never write files, and never add
-      work-queue tasks. This is a deliberate constraint &mdash; a
-      parliament should be a mirror, not a builder.
-    </p>
-
-    <h2 id="tradeoffs">Tradeoffs</h2>
-    <p>
-      Several tensions shape the design. None are fully resolved.
-    </p>
-    <h3>Theatrics versus substance</h3>
-    <p>
-      Personality framing can produce prose that sounds evocative but
-      says little (&ldquo;I worry that the charm feels cold to a new
-      user&rdquo;). The prompts push back by requiring a JSON output
-      with a concrete <code>suggested_change</code> field &mdash; no
-      suggestion is valid without a named edit. In practice,
-      suggestions are only as useful as the model behind them; a
-      weaker light model is more likely to drift into theatre.
-    </p>
-    <h3>Coverage versus cost</h3>
-    <p>
-      Five LLM calls per invocation is more expensive than one. The
-      light provider mitigates this: the parliament uses the cheap
-      model, not the primary. Running the default pair
-      (<code>joy</code> + <code>fear</code>) is two light-model calls
-      &mdash; cheaper than many of Cantrip&apos;s routine subagents
-      and comparable to a single compaction pass.
-    </p>
-    <h3>Independence versus agreement</h3>
-    <p>
-      The emotions do not talk to each other. They cannot debate or
-      reach a verdict. That keeps the design simple and preserves each
-      lens&apos; distinctness, but it means the user is the
-      aggregator: two emotions pointing at similar things is a signal
-      to take seriously; a single emotion&apos;s suggestion may or may
-      not be worth acting on. A future version could add a moderator
-      pass that de-duplicates and ranks, at the cost of another LLM
-      call and a risk of flattening back into monolithic review.
-    </p>
-    <h3>Advisory versus actionable</h3>
-    <p>
-      The parliament does not write to the work queue. This is a
-      choice: premature automation would turn cute suggestions into
-      expensive side-effects. A user who wants to act on a suggestion
-      simply paraphrases it as a normal request and the main agent
-      handles it. This keeps the user&apos;s judgment in the loop.
-    </p>
-
-    <h2 id="experimental">Experimental status</h2>
-    <p>
-      The inner parliament ships as a proof of concept, not a
-      polished feature. Its future depends on whether, in practice,
-      the personality framing produces better suggestions than a plain
-      checklist would &mdash; or just the same suggestions, dressed up.
-      The feature may stay, change shape, or be removed. If you try
-      it, what you notice about the quality of the output is the
-      interesting data.
-    </p>
+<div class="callout-warn callout">
+  <p>
+    <strong>Experimental.</strong> This feature is a proof of
+    concept. It may produce generic or theatrical output; the
+    design may change or be removed entirely based on experience.
+    See <a href="howto-feelings.html">Convene the inner
+    parliament</a> for the how-to.
+  </p>
+</div>
+<h2 id="why-lenses">Why different lenses</h2>
+<p>A monolithic reviewer &mdash; one LLM prompt asked to &ldquo;spot
+everything wrong with this charm&rdquo; &mdash; tends to produce
+a flattened average: a handful of bland, catch-all suggestions
+that skim every concern without committing to any. Large models
+are especially prone to this when a single prompt pulls them in
+many directions at once.</p>
+<p>The inner parliament takes the opposite approach: <strong>split
+the review into narrow lenses, each with a strong prior</strong>.
+A prompt that exists only to spot security risks commits to
+security. A prompt that exists only to find papercuts commits to
+papercuts. The cost is some duplication across lenses; the
+benefit is that each lens produces something sharper than a
+generalist would.</p>
+<p>Personality framing is the carrier. &ldquo;You are Fear&rdquo; is
+a compact way to encode a review prior that &ldquo;focus only on
+security and failure modes&rdquo; describes less memorably. The
+framing also makes the output read as opinion rather than
+adjudication &mdash; a useful tone for a feature whose output is
+advisory.</p>
+<h2 id="the-cast">The cast of five</h2>
+<p>The five emotions are borrowed from Pixar's <em>Inside
+Out</em>, and chosen for coverage rather than narrative
+completeness. Together they span the dimensions a thorough
+reviewer would visit:</p>
+<table>
+<thead>
+<tr>
+<th>Emotion</th>
+<th>Review dimension</th>
+<th>What it sounds like</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Joy</strong></td>
+<td>Delight &mdash; what could spark joy?</td>
+<td>&ldquo;A <code>dump-status</code> action would save the operator a chore.&rdquo;</td>
+</tr>
+<tr>
+<td><strong>Fear</strong></td>
+<td>Risk &mdash; what could go wrong?</td>
+<td>&ldquo;The admin password is stored in plaintext config; use a Juju secret.&rdquo;</td>
+</tr>
+<tr>
+<td><strong>Anger</strong></td>
+<td>Friction &mdash; what will annoy the operator?</td>
+<td>&ldquo;The <code>reload</code> action has no progress output; it looks hung.&rdquo;</td>
+</tr>
+<tr>
+<td><strong>Disgust</strong></td>
+<td>Taste &mdash; what looks ugly?</td>
+<td>&ldquo;Four files mix snake_case and camelCase; pick one.&rdquo;</td>
+</tr>
+<tr>
+<td><strong>Sadness</strong></td>
+<td>Empathy &mdash; what happens in the unloved cases?</td>
+<td>&ldquo;Missing relation throws a traceback; a <code>BlockedStatus</code> with a clear message would be kinder.&rdquo;</td>
+</tr>
+</tbody>
+</table>
+<p>Joy and Anger form one axis (delight vs friction, both
+user-facing). Fear and Sadness form another (preventing failure
+vs handling it gracefully). Disgust is a distinct axis: code
+taste, not user experience. The default pair when you run
+<code>/feelings</code> with no arguments is Joy and Fear,
+chosen as the most differentiated across axes.</p>
+<h2 id="scope">Scope boundaries</h2>
+<p>The biggest risk with a parliament is overlap: five prompts all
+pointing at the same concerns, each adding only noise. The
+prompts defend against this explicitly.</p>
+<ul>
+<li><strong>Anger &ne; Disgust.</strong> Anger covers
+<em>user-visible</em> friction (bad error messages, cryptic
+actions, slow feedback). Disgust covers <em>code</em>
+aesthetics (dead code, Harness-style tests, inconsistent
+naming). A confusing action name is Anger's problem; a
+messy function body is Disgust's.</li>
+<li><strong>Fear &ne; Sadness.</strong> Fear wants to
+<em>prevent</em> failures (add TLS, validate inputs, require
+auth). Sadness wants failures to be <em>gentle</em> when they
+happen (meaningful <code>BlockedStatus</code>, graceful
+degradation on missing relations, a clean teardown path). The
+same incident can provoke both, but from different angles.</li>
+<li><strong>Joy stays positive.</strong> Joy ignores problems
+entirely. Its job is to name the missing treat, not to
+double-count concerns that other emotions already cover.</li>
+</ul>
+<h2 id="how-it-runs">How a parliament runs</h2>
+<p>Running <code>/feelings</code> in the TUI triggers a small
+pipeline:</p>
+<ol>
+<li>The requested emotion names are validated against the known
+cast. Unknown names reject the command with a list of valid
+options.</li>
+<li>A <strong>context snapshot</strong> is assembled from
+<code>AgentState</code>: charm name, type, framework, recent
+decisions, and the contents of up to six key files
+(<code>charmcraft.yaml</code>, <code>metadata.yaml</code>,
+<code>config.yaml</code>, <code>actions.yaml</code>,
+<code>README.md</code>, <code>src/charm.py</code>) if they are
+present and under a small size limit.</li>
+<li>Each enabled emotion is launched in parallel as a single LLM
+call on the <a href="howto-light-models.html">light
+provider</a>, with the emotion's prompt as the system
+message and the snapshot as the user message. No tools are
+offered, so each call is one request and one response.</li>
+<li>Each response is parsed as a JSON array of suggestion objects.
+Responses that cannot be parsed, or whose provider call
+errored, are recorded as <em>failed emotions</em>; they do
+not fail the whole run.</li>
+<li>The surviving suggestions are grouped by emotion, formatted as
+markdown, and posted back to the chat as a system message. The
+main agent's conversation state is not touched.</li>
+</ol>
+<p>The emotions never call tools, never write files, and never add
+work-queue tasks. This is a deliberate constraint &mdash; a
+parliament should be a mirror, not a builder.</p>
+<h2 id="tradeoffs">Tradeoffs</h2>
+<p>Several tensions shape the design. None are fully resolved.</p>
+<h3>Theatrics versus substance</h3>
+<p>Personality framing can produce prose that sounds evocative but
+says little (&ldquo;I worry that the charm feels cold to a new
+user&rdquo;). The prompts push back by requiring a JSON output
+with a concrete <code>suggested_change</code> field &mdash; no
+suggestion is valid without a named edit. In practice,
+suggestions are only as useful as the model behind them; a
+weaker light model is more likely to drift into theatre.</p>
+<h3>Coverage versus cost</h3>
+<p>Five LLM calls per invocation is more expensive than one. The
+light provider mitigates this: the parliament uses the cheap
+model, not the primary. Running the default pair
+(<code>joy</code> + <code>fear</code>) is two light-model calls
+&mdash; cheaper than many of Cantrip's routine subagents
+and comparable to a single compaction pass.</p>
+<h3>Independence versus agreement</h3>
+<p>The emotions do not talk to each other. They cannot debate or
+reach a verdict. That keeps the design simple and preserves each
+lens' distinctness, but it means the user is the
+aggregator: two emotions pointing at similar things is a signal
+to take seriously; a single emotion's suggestion may or may
+not be worth acting on. A future version could add a moderator
+pass that de-duplicates and ranks, at the cost of another LLM
+call and a risk of flattening back into monolithic review.</p>
+<h3>Advisory versus actionable</h3>
+<p>The parliament does not write to the work queue. This is a
+choice: premature automation would turn cute suggestions into
+expensive side-effects. A user who wants to act on a suggestion
+simply paraphrases it as a normal request and the main agent
+handles it. This keeps the user's judgment in the loop.</p>
+<h2 id="experimental">Experimental status</h2>
+<p>The inner parliament ships as a proof of concept, not a
+polished feature. Its future depends on whether, in practice,
+the personality framing produces better suggestions than a plain
+checklist would &mdash; or just the same suggestions, dressed up.
+The feature may stay, change shape, or be removed. If you try
+it, what you notice about the quality of the output is the
+interesting data.</p>
   </main>
 </div>
 

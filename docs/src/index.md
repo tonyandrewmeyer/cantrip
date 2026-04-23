@@ -1,44 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Documentation &mdash; Cantrip</title>
-<meta name="description" content="Cantrip documentation: tutorials, how-to guides, reference, and explanations for the AI-powered Juju charm builder.">
-<link rel="icon" href="../favicon.png" type="image/png">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
-<link rel="stylesheet" href="docs.css">
-</head>
-<body>
-
-<a href="#main" class="skip-link">Skip to content</a>
-
-<nav class="doc-nav" aria-label="Main">
-  <div class="doc-nav-inner">
-    <a href="../index.html" class="doc-nav-logo">
-      <picture>
-        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
-      <span>Cantrip</span>
-    </a>
-    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="doc-nav-links" id="nav-menu">
-      <a href="index.html" class="current">Docs</a>
-      <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</nav>
-<div class="doc-layout" style="max-width: var(--max-w); padding-top: 6rem;">
-  <main id="main" class="doc-content">
-    <h1>Cantrip Documentation</h1>
-    <p class="subtitle">
-      Learn how to use Cantrip to build production-quality Juju charms with AI.
-    </p>
+---
+title: "Documentation — Cantrip"
+description: "Cantrip documentation: tutorials, how-to guides, reference, and explanations for the AI-powered Juju charm builder."
+h1: "Cantrip Documentation"
+subtitle: "Learn how to use Cantrip to build production-quality Juju charms with AI."
+section: index
+---
 
 <p>
   This documentation follows the
@@ -46,7 +12,9 @@
   content by what you need: learning, solving problems, looking things
   up, or understanding how the system works.
 </p>
+
 <div class="doc-cards">
+
   <a href="tutorial.html" class="doc-card">
     <span class="doc-card-label">Tutorial</span>
     <h3>Build your first charm</h3>
@@ -55,6 +23,7 @@
       No prior Cantrip experience required.
     </p>
   </a>
+
   <a href="howto-provider.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Choose an LLM provider</h3>
@@ -63,6 +32,7 @@
       API, local inference, or hybrid.
     </p>
   </a>
+
   <a href="howto-improve.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Improve an existing charm</h3>
@@ -71,6 +41,7 @@
       gaps, modernise deprecated APIs.
     </p>
   </a>
+
   <a href="howto-export.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Export transcripts</h3>
@@ -79,6 +50,7 @@
       documentation or review.
     </p>
   </a>
+
   <a href="howto-light-models.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Configure light models</h3>
@@ -87,6 +59,7 @@
       sacrificing output quality.
     </p>
   </a>
+
   <a href="howto-memory.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Use durable memory</h3>
@@ -97,6 +70,7 @@
       revalidation and TTL.
     </p>
   </a>
+
   <a href="howto-mcp.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Configure MCP servers</h3>
@@ -106,6 +80,7 @@
       elicitation, and marketplace discovery.
     </p>
   </a>
+
   <a href="howto-hooks.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Configure hooks</h3>
@@ -116,6 +91,7 @@
       to stdin.
     </p>
   </a>
+
   <a href="howto-feelings.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Convene the inner parliament</h3>
@@ -124,6 +100,7 @@
       &mdash; delight, risk, friction, taste, empathy.
     </p>
   </a>
+
   <a href="reference-cli.html" class="doc-card">
     <span class="doc-card-label">Reference</span>
     <h3>CLI reference</h3>
@@ -131,6 +108,7 @@
       Complete listing of all commands, flags, and environment variables.
     </p>
   </a>
+
   <a href="reference-tools.html" class="doc-card">
     <span class="doc-card-label">Reference</span>
     <h3>Agent tools</h3>
@@ -139,6 +117,7 @@
       descriptions and parameters.
     </p>
   </a>
+
   <a href="explanation-architecture.html" class="doc-card">
     <span class="doc-card-label">Explanation</span>
     <h3>How Cantrip works</h3>
@@ -147,6 +126,7 @@
       autonomous operation matters.
     </p>
   </a>
+
   <a href="explanation-charm-paths.html" class="doc-card">
     <span class="doc-card-label">Explanation</span>
     <h3>The three charm paths</h3>
@@ -155,6 +135,7 @@
       the agent selects the right one.
     </p>
   </a>
+
   <a href="explanation-observability.html" class="doc-card">
     <span class="doc-card-label">Explanation</span>
     <h3>Observability and debugging</h3>
@@ -163,6 +144,7 @@
       autonomously.
     </p>
   </a>
+
   <a href="explanation-quickpack-rs.html" class="doc-card">
     <span class="doc-card-label">Explanation</span>
     <h3>Quickpack Rust backend</h3>
@@ -171,6 +153,7 @@
       and measured performance.
     </p>
   </a>
+
   <a href="explanation-charmlint-rs.html" class="doc-card">
     <span class="doc-card-label">Explanation</span>
     <h3>Charmlint Rust backend</h3>
@@ -179,6 +162,7 @@
       and measured performance.
     </p>
   </a>
+
   <a href="explanation-emotions.html" class="doc-card">
     <span class="doc-card-label">Explanation</span>
     <h3>Emotion subagents</h3>
@@ -187,6 +171,7 @@
       they&apos;re scoped to avoid overlap, and the tradeoffs.
     </p>
   </a>
+
   <a href="explanation-race.html" class="doc-card">
     <span class="doc-card-label">Explanation</span>
     <h3>Racing and Arena</h3>
@@ -196,6 +181,7 @@
       preferences.
     </p>
   </a>
+
   <a href="explanation-tui-screens.html" class="doc-card">
     <span class="doc-card-label">Explanation</span>
     <h3>TUI screens and shortcuts</h3>
@@ -204,40 +190,5 @@
       detail &mdash; and the Dev and COS status panes.
     </p>
   </a>
+
 </div>
-  </main>
-</div>
-
-<footer class="doc-footer">
-  <div class="doc-footer-inner">
-    <span>Cantrip &mdash; free &amp; open source</span>
-    <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</footer>
-
-<script>
-(function() {
-  var toggle = document.querySelector('.doc-nav-toggle');
-  var links = document.querySelector('.doc-nav-links');
-  if (!toggle || !links) return;
-  toggle.addEventListener('click', function() {
-    var open = links.classList.toggle('open');
-    toggle.classList.toggle('open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-  });
-  links.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      links.classList.remove('open');
-      toggle.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open menu');
-    });
-  });
-})();
-</script>
-
-</body>
-</html>

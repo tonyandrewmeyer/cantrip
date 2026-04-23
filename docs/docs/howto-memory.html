@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to use durable memory — Cantrip</title>
+<title>How to use durable memory &mdash; Cantrip</title>
 <meta name="description" content="Record and manage durable lessons across Cantrip sessions: /memory, /remember, /forget, export/import, TTL, auto-capture.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
@@ -33,7 +33,6 @@
     </div>
   </div>
 </nav>
-
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>How-to guides</h4>
@@ -61,45 +60,33 @@
 
     <h1>Use durable memory</h1>
     <p class="subtitle">
-      Record lessons once, carry them forward across every session and
-      every charm Cantrip touches.
+      Record lessons once, carry them forward across every session and every charm Cantrip touches.
     </p>
 
-    <h2 id="overview">What Cantrip remembers</h2>
-    <p>
-      Cantrip&rsquo;s memory layer is separate from its conversation
-      history. Individual chats forget everything on exit; memory
-      survives. Two scopes exist:
-    </p>
-    <ul>
-      <li>
-        <strong>Charm-scope</strong> &mdash; specific to one charm.
-        Stored inside the charm&rsquo;s <code>.cantrip</code> SQLite
-        database alongside the session.
-      </li>
-      <li>
-        <strong>Global-scope</strong> &mdash; shared across every
-        charm. Stored under
-        <code>~/.config/cantrip/memory/</code> as Markdown files with
-        YAML frontmatter (override via <code>CANTRIP_MEMORY_DIR</code>).
-      </li>
-    </ul>
-    <p>
-      Each memory has a <em>kind</em>:
-    </p>
-    <ul>
-      <li><strong><code>fact</code></strong> &mdash; neutral information (&ldquo;this charm uses Postgres 16&rdquo;).</li>
-      <li><strong><code>rule</code></strong> &mdash; a constraint the user expects Cantrip to follow (&ldquo;never push to main without approval&rdquo;).</li>
-      <li><strong><code>lesson</code></strong> &mdash; something learned from a past mistake or recovery (&ldquo;<code>charmcraft pack</code> fails when <code>uv.lock</code> is stale; run <code>uv lock</code> first&rdquo;).</li>
-    </ul>
-
-    <h2 id="manual">Record a memory manually</h2>
-    <p>
-      Type a <code>/remember</code> command directly into the chat.
-      The <code>&nbsp;--&nbsp;</code> separator (space dash dash space)
-      lets titles and bodies contain any punctuation:
-    </p>
-    <pre><code><span class="comment"># A lesson, scoped to this charm:</span>
+<h2 id="overview">What Cantrip remembers</h2>
+<p>Cantrip&rsquo;s memory layer is separate from its conversation
+history. Individual chats forget everything on exit; memory
+survives. Two scopes exist:</p>
+<ul>
+<li><strong>Charm-scope</strong> &mdash; specific to one charm.
+Stored inside the charm&rsquo;s <code>.cantrip</code> SQLite
+database alongside the session.</li>
+<li><strong>Global-scope</strong> &mdash; shared across every
+charm. Stored under
+<code>~/.config/cantrip/memory/</code> as Markdown files with
+YAML frontmatter (override via <code>CANTRIP_MEMORY_DIR</code>).</li>
+</ul>
+<p>Each memory has a <em>kind</em>:</p>
+<ul>
+<li><strong><code>fact</code></strong> &mdash; neutral information (&ldquo;this charm uses Postgres 16&rdquo;).</li>
+<li><strong><code>rule</code></strong> &mdash; a constraint the user expects Cantrip to follow (&ldquo;never push to main without approval&rdquo;).</li>
+<li><strong><code>lesson</code></strong> &mdash; something learned from a past mistake or recovery (&ldquo;<code>charmcraft pack</code> fails when <code>uv.lock</code> is stale; run <code>uv lock</code> first&rdquo;).</li>
+</ul>
+<h2 id="manual">Record a memory manually</h2>
+<p>Type a <code>/remember</code> command directly into the chat.
+The <code>&nbsp;--&nbsp;</code> separator (space dash dash space)
+lets titles and bodies contain any punctuation:</p>
+<pre><code><span class="comment"># A lesson, scoped to this charm:</span>
 /remember lesson -- uv-lock-stale -- Run `uv lock` before charmcraft pack.
 
 <span class="comment"># A rule, shared globally across every future charm:</span>
@@ -107,35 +94,27 @@
 
 <span class="comment"># A fact, charm-scoped (the default):</span>
 /remember fact -- postgres-version -- Workload pins Postgres 16.</code></pre>
-    <p>
-      Cantrip confirms with a line in chat:
-      <code>Wrote rule memory: never-force-push (global)</code>.
-      The memory is immediately available in the next prompt.
-    </p>
-
-    <h2 id="auto">Let the auto-writer capture corrections</h2>
-    <p>
-      When you correct Cantrip&rsquo;s approach (&ldquo;actually, use
-      postgres instead&rdquo;, &ldquo;don&rsquo;t run charmcraft pack
-      again&rdquo;), Cantrip&rsquo;s auto-writer detects the correction,
-      consults the LLM to decide whether the event is worth remembering,
-      and &mdash; if so &mdash; writes a memory automatically. You
-      don&rsquo;t need to call <code>/remember</code> for every
-      correction.
-    </p>
-    <p>
-      The writer applies a
-      <em>&ldquo;would this save &ge;5 minutes next time?&rdquo;</em>
-      gate, so most trivial events correctly collapse to a skip.
-      Successful writes appear inline as
-      <code>Wrote rule memory: &hellip; (charm)</code> so you can see
-      what was captured. File paths Cantrip touched while the event
-      unfolded are recorded as SHA-256 citations &mdash; more on that
-      in <a href="#revalidation">Revalidation</a>.
-    </p>
-
-    <h2 id="list">List and search</h2>
-    <pre><code><span class="comment"># List every memory across both scopes:</span>
+<p>Cantrip confirms with a line in chat:
+<code>Wrote rule memory: never-force-push (global)</code>.
+The memory is immediately available in the next prompt.</p>
+<h2 id="auto">Let the auto-writer capture corrections</h2>
+<p>When you correct Cantrip&rsquo;s approach (&ldquo;actually, use
+postgres instead&rdquo;, &ldquo;don&rsquo;t run charmcraft pack
+again&rdquo;), Cantrip&rsquo;s auto-writer detects the correction,
+consults the LLM to decide whether the event is worth remembering,
+and &mdash; if so &mdash; writes a memory automatically. You
+don&rsquo;t need to call <code>/remember</code> for every
+correction.</p>
+<p>The writer applies a
+<em>&ldquo;would this save &ge;5 minutes next time?&rdquo;</em>
+gate, so most trivial events correctly collapse to a skip.
+Successful writes appear inline as
+<code>Wrote rule memory: &hellip; (charm)</code> so you can see
+what was captured. File paths Cantrip touched while the event
+unfolded are recorded as SHA-256 citations &mdash; more on that
+in <a href="#revalidation">Revalidation</a>.</p>
+<h2 id="list">List and search</h2>
+<pre><code><span class="comment"># List every memory across both scopes:</span>
 /memory
 
 <span class="comment"># Just charm-scope:</span>
@@ -143,14 +122,11 @@
 
 <span class="comment"># Just global:</span>
 /memory global</code></pre>
-    <p>
-      Output renders as a Markdown bullet list with the title, kind,
-      scope, and any tags. Bodies are not included &mdash; ask the
-      agent to read a memory by title if you want the content.
-    </p>
-
-    <h2 id="forget">Forget a memory</h2>
-    <pre><code><span class="comment"># Exact-title delete:</span>
+<p>Output renders as a Markdown bullet list with the title, kind,
+scope, and any tags. Bodies are not included &mdash; ask the
+agent to read a memory by title if you want the content.</p>
+<h2 id="forget">Forget a memory</h2>
+<pre><code><span class="comment"># Exact-title delete:</span>
 /forget uv-lock-stale
 
 <span class="comment"># Multi-word titles need quotes:</span>
@@ -158,149 +134,102 @@
 
 <span class="comment"># Disambiguate when the same title exists in both scopes:</span>
 /forget "shared title" charm</code></pre>
-    <p>
-      If the same title exists in both charm- and global-scope and you
-      don&rsquo;t specify which, Cantrip refuses with an
-      <em>ambiguous</em> message rather than guessing.
-    </p>
-
-    <h2 id="revalidation">Revalidation &mdash; self-quarantine when the source drifts</h2>
-    <p>
-      Auto-captured memories store SHA-256 hashes of the files Cantrip
-      touched while the event unfolded. When the agent calls
-      <code>memory_revalidate</code> (either explicitly or via a
-      follow-up on the same charm), every citation is re-checked
-      against the current file contents:
-    </p>
-    <ul>
-      <li>If the SHA still matches, the memory stays <code>active</code>.</li>
-      <li>
-        If the SHA has drifted (or the file is gone), the memory is
-        marked <code>quarantined</code> and no longer surfaces in the
-        system prompt. This prevents Cantrip from acting on stale
-        guidance after the code has moved on.
-      </li>
-      <li>
-        Quarantined memories can recover automatically &mdash; a later
-        revalidation that passes flips them back to <code>active</code>.
-      </li>
-    </ul>
-
-    <h2 id="ttl">TTL &mdash; archive stale memories, purge ancient ones</h2>
-    <p>
-      Two thresholds keep the memory index focused:
-    </p>
-    <ul>
-      <li>
-        <strong>Soft expiry (60 days)</strong> &mdash; memories with no
-        access or validation activity for this long are archived
-        (<code>status = archived</code>) by
-        <code>memory_sweep</code>. Archived memories are hidden from
-        the prompt but remain on disk.
-      </li>
-      <li>
-        <strong>Hard prompt (180 days)</strong> &mdash; archived memories
-        older than this surface as deletion candidates via
-        <code>memory_purge_check</code>, letting the agent ask you
-        whether to delete or refresh.
-      </li>
-    </ul>
-    <p>
-      Override the defaults per deployment with
-      <code>CANTRIP_MEMORY_SOFT_EXPIRY_DAYS</code> and
-      <code>CANTRIP_MEMORY_HARD_EXPIRY_DAYS</code>.
-    </p>
-
-    <h2 id="export">Export a memory bundle</h2>
-    <p>
-      Turn a set of memories into a portable
-      <code>SKILL.md</code> the skills loader can consume:
-    </p>
-    <pre><code><span class="prompt">$</span> <span class="comment"># In the chat:</span>
+<p>If the same title exists in both charm- and global-scope and you
+don&rsquo;t specify which, Cantrip refuses with an
+<em>ambiguous</em> message rather than guessing.</p>
+<h2 id="revalidation">Revalidation &mdash; self-quarantine when the source drifts</h2>
+<p>Auto-captured memories store SHA-256 hashes of the files Cantrip
+touched while the event unfolded. When the agent calls
+<code>memory_revalidate</code> (either explicitly or via a
+follow-up on the same charm), every citation is re-checked
+against the current file contents:</p>
+<ul>
+<li>If the SHA still matches, the memory stays <code>active</code>.</li>
+<li>If the SHA has drifted (or the file is gone), the memory is
+marked <code>quarantined</code> and no longer surfaces in the
+system prompt. This prevents Cantrip from acting on stale
+guidance after the code has moved on.</li>
+<li>Quarantined memories can recover automatically &mdash; a later
+revalidation that passes flips them back to <code>active</code>.</li>
+</ul>
+<h2 id="ttl">TTL &mdash; archive stale memories, purge ancient ones</h2>
+<p>Two thresholds keep the memory index focused:</p>
+<ul>
+<li><strong>Soft expiry (60 days)</strong> &mdash; memories with no
+access or validation activity for this long are archived
+(<code>status = archived</code>) by
+<code>memory_sweep</code>. Archived memories are hidden from
+the prompt but remain on disk.</li>
+<li><strong>Hard prompt (180 days)</strong> &mdash; archived memories
+older than this surface as deletion candidates via
+<code>memory_purge_check</code>, letting the agent ask you
+whether to delete or refresh.</li>
+</ul>
+<p>Override the defaults per deployment with
+<code>CANTRIP_MEMORY_SOFT_EXPIRY_DAYS</code> and
+<code>CANTRIP_MEMORY_HARD_EXPIRY_DAYS</code>.</p>
+<h2 id="export">Export a memory bundle</h2>
+<p>Turn a set of memories into a portable
+<code>SKILL.md</code> the skills loader can consume:</p>
+<pre><code><span class="prompt">$</span> <span class="comment"># In the chat:</span>
 /memory export my-charmhub-lessons ~/exports global</code></pre>
-    <p>
-      This writes <code>~/exports/my-charmhub-lessons/SKILL.md</code>
-      containing every global-scope memory as a
-      <code>## Memory: &lt;title&gt;</code> section under YAML
-      frontmatter. Before writing Cantrip runs the export through a
-      sanitiser:
-    </p>
-    <ul>
-      <li>
-        Charm-specific paths are replaced with <code>&lt;CHARM_PATH&gt;</code>
-        so the bundle is portable.
-      </li>
-      <li>
-        Local SHA-256 citations are stripped (they only make sense on
-        the machine that wrote them).
-      </li>
-      <li>
-        Obvious secrets are scrubbed: GitHub tokens (<code>ghp_</code>,
-        <code>gho_</code>, <code>ghs_</code>, <code>github_pat_</code>),
-        AWS access keys (<code>AKIA&hellip;</code>), Bearer tokens,
-        <code>password=</code>/<code>password: </code> assignments,
-        Slack tokens (<code>xox*-&hellip;</code>). False positives are
-        intentional &mdash; a wrongly scrubbed body can be re-edited; a
-        leaked credential cannot.
-      </li>
-    </ul>
-    <p>
-      The response message notes the count:
-      <code>Exported 7 memories to &hellip; (2 secret redactions)</code>.
-      Review the output before sharing it.
-    </p>
-
-    <h3>Plain-Markdown dump</h3>
-    <p>
-      If the recipient expects one file per memory (gist, PR diff),
-      use <code>export-md</code> instead:
-    </p>
-    <pre><code>/memory export-md ~/dump global</code></pre>
-
-    <h2 id="import">Import someone else&rsquo;s bundle</h2>
-    <pre><code><span class="comment"># Default target scope is global:</span>
+<p>This writes <code>~/exports/my-charmhub-lessons/SKILL.md</code>
+containing every global-scope memory as a
+<code>## Memory: &lt;title&gt;</code> section under YAML
+frontmatter. Before writing Cantrip runs the export through a
+sanitiser:</p>
+<ul>
+<li>Charm-specific paths are replaced with <code>&lt;CHARM_PATH&gt;</code>
+so the bundle is portable.</li>
+<li>Local SHA-256 citations are stripped (they only make sense on
+the machine that wrote them).</li>
+<li>Obvious secrets are scrubbed: GitHub tokens (<code>ghp_</code>,
+<code>gho_</code>, <code>ghs_</code>, <code>github_pat_</code>),
+AWS access keys (<code>AKIA&hellip;</code>), Bearer tokens,
+<code>password=</code>/<code>password: </code> assignments,
+Slack tokens (<code>xox*-&hellip;</code>). False positives are
+intentional &mdash; a wrongly scrubbed body can be re-edited; a
+leaked credential cannot.</li>
+</ul>
+<p>The response message notes the count:
+<code>Exported 7 memories to &hellip; (2 secret redactions)</code>.
+Review the output before sharing it.</p>
+<h3>Plain-Markdown dump</h3>
+<p>If the recipient expects one file per memory (gist, PR diff),
+use <code>export-md</code> instead:</p>
+<pre><code>/memory export-md ~/dump global
+</code></pre>
+<h2 id="import">Import someone else&rsquo;s bundle</h2>
+<pre><code><span class="comment"># Default target scope is global:</span>
 /memory import ~/downloaded/SKILL.md
 
 <span class="comment"># Or pull into the current charm:</span>
 /memory import ~/downloaded/SKILL.md charm</code></pre>
-    <p>
-      Auto-detects the format &mdash; a single <code>SKILL.md</code>
-      with <code>## Memory:</code> sections, or a directory of
-      one-memory-per-file Markdown. Duplicate titles in the target
-      scope are skipped by default so re-importing is safe.
-    </p>
-
-    <h2 id="troubleshooting">Troubleshooting</h2>
-
-    <h3>&ldquo;Memory not appearing in the system prompt&rdquo;</h3>
-    <p>
-      The prompt index only surfaces <code>active</code> memories.
-      Check with:
-    </p>
-    <pre><code><span class="comment"># Ask the agent to inspect a title:</span>
+<p>Auto-detects the format &mdash; a single <code>SKILL.md</code>
+with <code>## Memory:</code> sections, or a directory of
+one-memory-per-file Markdown. Duplicate titles in the target
+scope are skipped by default so re-importing is safe.</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3>&ldquo;Memory not appearing in the system prompt&rdquo;</h3>
+<p>The prompt index only surfaces <code>active</code> memories.
+Check with:</p>
+<pre><code><span class="comment"># Ask the agent to inspect a title:</span>
 is there a memory called "uv-lock-stale"?
 <span class="comment"># or in chat:</span>
 /memory</code></pre>
-    <p>
-      If the memory shows a <code>quarantined</code> status, a
-      citation SHA no longer matches its source &mdash; update the body
-      to reflect current state and re-save, or delete it.
-    </p>
-
-    <h3>&ldquo;Forgot a memory with the wrong scope&rdquo;</h3>
-    <p>
-      Recover by importing the bundle you exported before the mistake:
-    </p>
-    <pre><code>/memory import ~/backups/last-good-bundle/SKILL.md charm</code></pre>
-
-    <h3>&ldquo;Auto-writer is capturing too much&rdquo;</h3>
-    <p>
-      The auto-writer runs an LLM-side gate (&ldquo;would this save
-      &ge;5 minutes next time?&rdquo;) so most trivial corrections
-      collapse to skip. If a memory is captured you don&rsquo;t want,
-      <code>/forget</code> it &mdash; the detection heuristic
-      won&rsquo;t re-fire on the same trigger.
-    </p>
+<p>If the memory shows a <code>quarantined</code> status, a
+citation SHA no longer matches its source &mdash; update the body
+to reflect current state and re-save, or delete it.</p>
+<h3>&ldquo;Forgot a memory with the wrong scope&rdquo;</h3>
+<p>Recover by importing the bundle you exported before the mistake:</p>
+<pre><code>/memory import ~/backups/last-good-bundle/SKILL.md charm
+</code></pre>
+<h3>&ldquo;Auto-writer is capturing too much&rdquo;</h3>
+<p>The auto-writer runs an LLM-side gate (&ldquo;would this save
+&ge;5 minutes next time?&rdquo;) so most trivial corrections
+collapse to skip. If a memory is captured you don&rsquo;t want,
+<code>/forget</code> it &mdash; the detection heuristic
+won&rsquo;t re-fire on the same trigger.</p>
   </main>
 </div>
 

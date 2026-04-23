@@ -173,6 +173,43 @@ The build script therefore has two check modes:
 Through 54.2 the semantic check is authoritative. After 54.4 retires
 hand-authored HTML, the strict check becomes CI-gated.
 
+## Intentional normalisations
+
+Cases where the rebuilt HTML deliberately differs from the hand-authored
+original (and the committed file is overwritten with the rebuild):
+
+- **`howto-hooks.html` footer** — the page had a bespoke footer
+  (`<strong>Cantrip</strong> — autonomous charm builder.`) while every
+  other page used the shared footer
+  (`Cantrip — free & open source`). Normalised to the shared form.
+- **`&mdash;` in `<title>` tags** — several pages used literal
+  Unicode `—` in the title while the body used `&mdash;`. Normalised
+  to `&mdash;` everywhere.
+- **Possessive apostrophes** — the hand-authored pages mix `&apos;`
+  (ASCII) and `&rsquo;` (curly) for possessives. The markdown source
+  uses the original form per-occurrence, but the default in future
+  authoring is the curly `’`.
+
+## Authoring patterns
+
+Lessons from converting the how-to section that future authors should
+follow:
+
+- **Curly quotes in prose** use Unicode `“ ” ‘ ’` directly.
+  `&ldquo;` / `&rdquo;` round-trip through `convert_charrefs=True` to
+  the same character.
+- **ASCII apostrophes inside prose** (`Fear's`) are preserved as ASCII
+  `'`. Write them literally; the build doesn't touch ASCII
+  apostrophes. Curly `’` for possessives is also fine, just pick one
+  per document.
+- **Inline `<code>` containing an entity** (e.g.
+  `<code>&nbsp;--&nbsp;</code>`) must be written as raw HTML, not a
+  backtick span — markdown-it escapes `&` inside a code span to
+  `&amp;` and the entity stops being one.
+- **External links** automatically get `target="_blank"
+  rel="noopener"` added by the build, so the author writes plain
+  `[label](https://…)`.
+
 ## Pilot findings (howto-export.html)
 
 - Zero semantic-DOM differences between the rebuilt HTML and the

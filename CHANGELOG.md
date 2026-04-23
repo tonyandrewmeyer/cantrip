@@ -5,6 +5,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Authored-markdown sources for every docs page — Phase 54.2.**
+  All 20 pages under `docs/docs/` now have markdown sources at
+  `docs/src/*.md`: one tutorial, eight how-tos, two references,
+  eight explanations, and the landing `index.html`.  The template
+  gained two layout branches (no-sidebar for the landing page,
+  on-this-page-as-primary for the tutorial) and a frontmatter flag
+  `breadcrumb_label: ""` for pages whose breadcrumb has only the
+  section label.  The build script automatically adds
+  `target="_blank" rel="noopener"` to external `<a href="http…">`
+  links.  The committed HTML under `docs/docs/` is now the
+  regenerated build output — `--check --strict` passes byte-for-byte
+  and any future drift (hand-edit, wrong regenerate path) surfaces
+  immediately.  One one-off normalisation: `howto-hooks.html`'s
+  bespoke footer was replaced with the shared footer that every
+  other page uses.  Phase 54.3 (make-docs target + CI wiring)
+  follows.
 - **Docs rebuild groundwork — Phase 54.1.**  First step of
   reverse-engineering `docs/docs/*.html` into authored markdown.
   Chose markdown-it-py + `mdit_py_plugins.attrs` + Jinja2 + PyYAML
