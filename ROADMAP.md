@@ -3285,6 +3285,261 @@ on a user-specified predicate, distinct from Ralph Loop.
 
 ---
 
+## Phase 74: Populated Charm Documentation — From Scaffold to Substance
+
+**Goal:** Cantrip already generates a Diátaxis docs scaffold for
+every charm it builds (``GenerateDocsTool`` in
+``src/cantrip/agent/tools/publishing.py:1115``, archived under
+Phase 7).  The output is a complete Sphinx + canonical-sphinx
+build with ``tutorial/``, ``how-to/``, ``reference/``,
+``explanation/``, ``Makefile``, ``conf.py``,
+``.readthedocs.yaml``, and ``.custom_wordlist.txt`` — a
+publishable site on day one.
+
+The gap is *substance*: most pages are templated stubs derived
+from ``charmcraft.yaml`` metadata, the tutorial uses a generic
+``juju deploy <charm>`` invocation rather than the deploy
+sequence we *know* works because we just ran it, the
+explanation/architecture page doesn't capture the design
+decisions the agent made during the build, and there's no
+troubleshooting page even though the agent has a complete
+record of every error it hit and how it resolved it.
+
+Phase 13 (archived ✓) generates ``DEMO.md``, ``TUTORIAL.md``,
+and ``architecture.md`` at the *charm root* via Showboat.
+These don't currently flow into the ``docs/`` tree, so a charm
+ends up with two parallel documentation surfaces.  74.1
+bridges them; 74.2–74.4 mine the agent's own audit trail
+(transcripts, acceptance-test runs, debug history) to fill
+the rest.
+
+Four candidates, in rough priority order:
+
+1. **Bridge Phase 13's root files into the ``docs/`` tree.**
+   ``TUTORIAL.md`` content belongs in
+   ``docs/tutorial/getting-started.md``; ``architecture.md``
+   in ``docs/explanation/architecture.md``; ``DEMO.md``
+   command sequences in a new
+   ``docs/how-to/deploy-and-verify.md``.  Today the
+   scaffold's templated stubs co-exist with — and contradict
+   — the Showboat-captured root files.  Bridging them means
+   the docs site reflects what the agent actually did, not
+   a generic placeholder.
+2. **Populate tutorial and how-to with captured commands +
+   output from Phase 17 acceptance tests.**  Acceptance
+   testing (Phase 17, archived ✓) runs Jubilant integration
+   tests against a real model.  Each test step is a
+   command-output pair we can drop into a how-to page
+   verbatim.  Tutorial gets the canonical happy-path:
+   bootstrap → deploy → integrate → action → status.  How-to
+   pages get focused recipes per relation/action.  All with
+   real captured output, not placeholder stubs.
+3. **Populate ``explanation/architecture.md`` from the
+   transcript's design decisions.**  The transcript
+   (Phase 14) records every architectural turn — "we chose a
+   sidecar Pebble layer because the upstream OCI image
+   doesn't include the metrics endpoint".  Mine the
+   research-phase tasks (Phase 5) and the build-phase
+   commits for the *why*, render as a chronological design
+   log with citations to the transcript turn IDs.
+   Distinct from the metadata-driven reference pages: this
+   is the human-readable rationale.
+4. **Generate a ``troubleshooting.md`` from the agent's
+   debug history.**  Every time the agent hit an error
+   during build/test and recovered, that's a candidate
+   "common pitfall" entry: the symptom, the cause, the fix.
+   Filter to errors that recurred or required non-trivial
+   diagnosis (skip "typo, fixed it") so the page stays
+   useful.  Lives at ``docs/how-to/troubleshooting.md``.
+
+Three candidate ideas are explicitly **out of scope or
+deferred**:
+
+- **API-doc generation from the charm's Python source.**
+  The ``ops`` library has its own published reference; the
+  charm's classes are typically thin wrappers.  Sphinx
+  autodoc is a one-flag addition to ``conf.py`` if a charm
+  team wants it — not worth a roadmap bullet.
+- **Charmhub listing copy as a separate document.**  The
+  long-form description that lands on Charmhub is the same
+  copy as the README's intro paragraph; ``GenerateReadmeTool``
+  already produces it.  No second generator needed.
+- **Multi-version docs.**  Charms publish to Charmhub
+  channels (``latest/edge``, ``2/stable``…), but doc-
+  versioning is a Sphinx/readthedocs concern.  Defer until
+  a real demand surfaces.
+
+### 74.1 High — Bridge root files into the Diátaxis tree
+
+- [ ] Update ``GenerateDocsTool`` (or add a sibling
+  ``populate_docs`` tool) to detect ``TUTORIAL.md``,
+  ``DEMO.md``, ``architecture.md`` at the charm root and,
+  when present, prefer their content over the stub
+  templates currently emitted by ``generate_docs_scaffold``
+  for the corresponding ``docs/`` pages.
+- [ ] When bridging, rewrite top-level headings so the
+  Sphinx ``toctree`` still resolves (e.g. ``# Tutorial``
+  → ``# Get started with <display-name>``) and adjust any
+  inter-document links to use the docs/ tree's relative
+  paths.
+- [ ] After bridging, leave a one-line stub at the root
+  (``# Tutorial moved to docs/tutorial/getting-started.md``)
+  so existing links don't 404.  Or delete the root files,
+  with a CONFIRM prompt (Phase 64) — user picks once,
+  remembered per-charm.
+- [ ] ``GenerateReadmeTool`` (``publishing.py:236``) — already
+  links ``DEMO.md`` / ``TUTORIAL.md`` / ``architecture.md``
+  by name — gets updated to point at the new
+  ``docs/tutorial/`` etc. paths instead.
+- [ ] ``tests/unit/test_docs_bridge.py`` — root files
+  present → bridged content; root files absent → stubs
+  used (current behaviour); README links updated.
+
+### 74.2 High — Populate tutorial and how-to from acceptance-test runs
+
+- [ ] When ``GenerateDocsTool`` runs after Phase 17 has
+  produced acceptance results, read the test transcript
+  (the per-test command and captured stdout/stderr/juju-
+  status sequence) from wherever Phase 17 stores it and
+  use it as the source for:
+  - ``docs/tutorial/getting-started.md`` — the canonical
+    happy path: bootstrap → ``juju add-model`` → ``juju
+    deploy`` → first ``juju integrate`` → ``juju run``
+    action → ``juju status`` showing active.  Each step
+    is a fenced ``console`` block with the *real* command
+    and the *real* output the test recorded.
+  - ``docs/how-to/deploy-and-verify.md`` — the same
+    deploy sequence as a focused recipe (no narrative
+    framing).
+  - ``docs/how-to/<relation-name>.md`` — one per
+    requires/provides relation in ``metadata.yaml``,
+    showing the actual ``juju integrate`` invocation
+    that was tested plus the post-integration
+    ``juju status`` excerpt.
+  - ``docs/how-to/run-actions.md`` — one section per
+    action, with the action signature, the
+    ``juju run <unit> <action>`` invocation, and the
+    captured action output.
+- [ ] When acceptance tests have *not* run, fall back to
+  the current templated stubs and emit a docstring at the
+  top of each affected page noting that the content is
+  generic until tests run.  Keep the build green either
+  way.
+- [ ] Sanitise captured output before embedding: strip
+  cluster-specific data (model UUIDs, IP addresses, unit
+  hostnames) and replace with placeholders
+  (``<model-uuid>``, ``<unit-ip>``).  Reuse Phase 16
+  redaction patterns where they exist.
+- [ ] ``tests/unit/test_docs_from_acceptance.py`` — fixture
+  acceptance-test bundle drives doc population; sanitised
+  output excludes IPs/UUIDs; absent acceptance run
+  preserves stub content.
+
+### 74.3 Medium — Architecture explanation from transcript-extracted decisions
+
+- [ ] New tool ``extract_design_decisions`` that walks the
+  transcript (Phase 14 SQLite store) for the active charm
+  and pulls user→agent turns whose subject is a design
+  choice.  Heuristics: research-phase tasks (Phase 5)
+  whose conclusion was "we will do X because Y", build-
+  phase commits whose message starts with ``feat:`` or
+  ``refactor:``, oracle-consult turns (Phase 70.2) that
+  influenced a decision.
+- [ ] Render as ``docs/explanation/architecture.md`` with
+  one section per decision: *Decision* (the choice made),
+  *Context* (what alternatives were considered),
+  *Rationale* (the why), *Citation* (transcript turn ID
+  + a deep link if the Phase 14 viewer supports them).
+  Chronological ordering — the doc reads as a build log.
+- [ ] Inline the existing scaffold's static
+  ``architecture.md`` content as an introduction (charm
+  shape, paths, container layout from
+  ``charmcraft.yaml``).  Decisions follow.
+- [ ] Charm-author override: a ``docs/explanation/_intro.md``
+  (or an explicit ``docs/explanation/architecture.md``
+  that already exists and isn't a Cantrip-generated file)
+  is preserved and prepended; only the auto-generated
+  decision log gets refreshed on re-run.
+- [ ] ``tests/unit/test_extract_decisions.py`` — fixture
+  transcript yields the expected decision set; ordering
+  is chronological; user-authored intro is preserved.
+
+### 74.4 Medium — Troubleshooting page from debug history
+
+- [ ] New tool ``extract_troubleshooting`` that walks the
+  transcript for error→fix pairs.  An entry qualifies
+  when:
+  - The agent encountered a non-trivial error (subprocess
+    non-zero exit with a stderr block, exception
+    traceback, ``juju status`` showing ``error``,
+    Jubilant assertion failure)
+  - It then took action that resolved the error (the
+    next turn's verification check passed)
+  - The error wasn't a trivial syntax fix (filter by
+    minimum diagnostic-output length, e.g. > 5 lines, or
+    by category — keep relation, hook, secret, storage,
+    image-pull, network errors; drop typos)
+- [ ] Render as ``docs/how-to/troubleshooting.md`` with one
+  entry per qualifying pair: *Symptom* (the error
+  excerpt), *Cause* (the agent's diagnosis as recorded in
+  its self-reflection), *Resolution* (the fix), *See also*
+  (transcript turn ID).
+- [ ] Group by category — relation, hook, secret, image,
+  network, observability — using a small classifier
+  (regex on stderr keywords is fine; this is
+  generation-time, no LLM call needed unless the regex
+  fails).
+- [ ] Preserve charm-author additions: an existing
+  ``docs/how-to/troubleshooting.md`` that contains a
+  ``<!-- cantrip-generated below -->`` marker has the
+  generated section replaced; everything before the
+  marker is preserved.  No marker → fully overwrite (with
+  CONFIRM via Phase 64).
+- [ ] ``tests/unit/test_extract_troubleshooting.py`` —
+  fixture transcript yields expected entries; trivial
+  errors filtered out; existing user content preserved
+  via marker.
+
+### What this phase is *not*
+
+- Not a redesign of the Diátaxis scaffold.  74 builds *on*
+  ``generate_docs_scaffold`` (``publishing.py:680``); the
+  layout and Sphinx config stay as they are.
+- Not a replacement for ``GenerateReadmeTool``.  README is
+  the project-root entry point; the docs site is the
+  longer-form companion.  74.1 makes them point at each
+  other consistently.
+- Not API-doc / autodoc.  Out of scope above.
+- Not a docs-writing LLM workflow with no charm context.
+  Every populated page is grounded in something Cantrip
+  *did* — an acceptance test, a design decision, a
+  resolved error.  No hallucinated tutorials.
+- Not a Charmhub-publishing surface.  Publishing the docs
+  site to readthedocs / Charmhub is the user's choice;
+  Cantrip generates the source tree and stops there.
+
+**Exit criteria:** (a) running ``generate_docs`` after
+Phase 17 acceptance tests have completed produces a
+tutorial whose every command is one the agent actually
+ran and whose every output block is what the agent
+actually saw; (b) the ``docs/`` tree and the root
+``TUTORIAL.md`` / ``DEMO.md`` / ``architecture.md`` no
+longer disagree; (c) ``docs/explanation/architecture.md``
+contains a chronological log of design decisions with
+transcript citations; (d) ``docs/how-to/troubleshooting.md``
+contains the agent's own resolved-error catalogue,
+filtered to non-trivial pairs.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Bridge root files (74.1) | Phase 7 (``generate_docs``), Phase 13 (root files), Phase 64 (CONFIRM for delete) | Plumbing fix; lands first so 74.2–74.4 don't write into a tree that fights with the root files |
+| From acceptance tests (74.2) | Phase 17 (acceptance results), Phase 16 (redaction) | Biggest substance win; needs Phase 17 output format documented |
+| Architecture from transcript (74.3) | Phase 14 (transcript store), Phase 5 (research-phase task structure), Phase 70.2 (oracle exchange capture) | Mining work over existing data |
+| Troubleshooting from debug history (74.4) | Phase 14 (transcript store), Phase 16 (error categorisation if it exists) | Same data source as 74.3, different filter |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -3354,4 +3609,5 @@ on a user-specified predicate, distinct from Ralph Loop.
 | M71: Aider Engineering Hygiene | 71 | Tree-sitter-backed repo-map with graph-ranked symbols, architect/editor two-model mode, auto-commit-per-turn with dirty-commit separation, and a per-edit ruff/ty/charmlint feedback loop |
 | M72: Continue Context Providers | 72 | Indexed charm-ecosystem docs (``@docs juju|ops|charmcraft|rockcraft``), an ``@``-mention context-provider registry, ``embed`` and ``rerank`` model roles, and ``@problems`` diagnostics-as-pre-turn-context |
 | M73: Goose Workflow Packaging | 73 | Parameterised retryable Recipes with sub-recipes, MCP Apps rendered as sandboxed iframes in the Web UI, JSON-schema-enforced structured responses, and declarative retry with shell validators |
+| M74: Populated Charm Docs | 74 | Generated ``docs/`` tree is bridged with the Phase 13 root files, populated from real Phase 17 acceptance-test command/output capture, with an architecture page extracted from transcript design decisions and a troubleshooting page mined from the agent's resolved-error history |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
