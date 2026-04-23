@@ -1,5 +1,6 @@
 """Anthropic Claude LLM provider."""
 
+import base64
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ import anthropic
 
 from cantrip.llm.base import (
     Chunk,
+    Image,
     LLMProvider,
     Message,
     ProviderError,
@@ -38,6 +40,11 @@ _DEFAULT_CONTEXT_WINDOW = 200_000
 _CACHE_MIN_TOKENS_OPUS = 2048
 _CACHE_MIN_TOKENS_DEFAULT = 1024
 
+# Anthropic's documented per-image cap is 5 MB of raw bytes; larger
+# payloads are rejected server-side.  We enforce the same limit client-
+# side so the caller gets a fast, clear error.
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
 
 class ClaudeProvider(LLMProvider):
     """Anthropic Claude implementation."""
@@ -51,6 +58,11 @@ class ClaudeProvider(LLMProvider):
     def context_window_tokens(self) -> int:
         """Maximum context window size in tokens for the current model."""
         return _CONTEXT_WINDOWS.get(self.model_name, _DEFAULT_CONTEXT_WINDOW)
+
+    @property
+    def supports_vision(self) -> bool:
+        """Claude 3+ models all accept image content blocks."""
+        return True
 
     def __init__(
         self,
@@ -91,12 +103,41 @@ class ClaudeProvider(LLMProvider):
             )
         self._cache_warning_logged = True
 
+    @staticmethod
+    def _image_blocks(images: list[Image]) -> list[dict]:
+        """Build Anthropic ``image`` content blocks from ``Image`` payloads.
+
+        Enforces the 5 MB per-image cap client-side and base64-encodes
+        the raw bytes for the ``source.data`` field.
+        """
+        blocks: list[dict] = []
+        for img in images:
+            if len(img.data) > _MAX_IMAGE_BYTES:
+                raise ProviderError(
+                    f"Image exceeds Claude's {_MAX_IMAGE_BYTES}-byte per-image "
+                    f"limit: {len(img.data)} bytes ({img.mime})"
+                )
+            blocks.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": img.mime,
+                        "data": base64.b64encode(img.data).decode("ascii"),
+                    },
+                }
+            )
+        return blocks
+
     def _convert_messages(self, messages: list[Message]) -> list[dict]:
         """Convert messages to Anthropic API format.
 
         SYSTEM messages are excluded here (passed separately).
         ASSISTANT messages with tool_calls produce content blocks.
         TOOL messages produce tool_result content blocks.
+        USER messages with image attachments produce mixed image + text
+        content blocks (images first so the model sees the visual
+        before the instruction).
         """
         result = []
         for msg in messages:
@@ -104,7 +145,13 @@ class ClaudeProvider(LLMProvider):
                 continue
 
             elif msg.role == Role.USER:
-                result.append({"role": "user", "content": msg.content})
+                if msg.images:
+                    content = self._image_blocks(msg.images)
+                    if msg.content:
+                        content.append({"type": "text", "text": msg.content})
+                    result.append({"role": "user", "content": content})
+                else:
+                    result.append({"role": "user", "content": msg.content})
 
             elif msg.role == Role.ASSISTANT:
                 if msg.tool_calls:

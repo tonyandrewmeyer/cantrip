@@ -35,13 +35,37 @@ class ToolResult:
 
 
 @dataclass
+class Image:
+    """An image attachment for a multimodal message.
+
+    ``data`` holds raw image bytes (not base64).  ``mime`` is the
+    IANA media type the provider expects — ``image/png``,
+    ``image/jpeg``, ``image/gif``, ``image/webp``.  Providers handle
+    conversion to their native wire format (Anthropic content blocks,
+    Gemini ``Part.inline_data``, OpenAI ``image_url`` with a
+    ``data:`` URI).
+    """
+
+    data: bytes
+    mime: str
+
+
+@dataclass
 class Message:
-    """A conversation message."""
+    """A conversation message.
+
+    ``images`` attaches image payloads to a user-role message.  They
+    are sent verbatim to providers whose ``supports_vision`` property
+    is True; vision-blind providers raise ``NotImplementedError`` when
+    they see images so callers notice rather than silently dropping
+    the attachment.
+    """
 
     role: Role
     content: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_results: list[ToolResult] = field(default_factory=list)
+    images: list[Image] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -166,6 +190,22 @@ class LLMProvider(ABC):
     def max_tools(self) -> int | None:
         """Maximum number of tools the provider can handle, or None for no limit."""
         return None
+
+    @property
+    def supports_vision(self) -> bool:
+        """Whether this provider accepts image attachments on user messages.
+
+        Callers that want to hand the model a screenshot or a rendered
+        panel should gate on this property — vision-blind providers
+        raise ``NotImplementedError`` when they see an ``Image`` they
+        can't forward.
+        """
+        return False
+
+    @staticmethod
+    def _messages_have_images(messages: list["Message"]) -> bool:
+        """Return True when any message carries an image attachment."""
+        return any(msg.images for msg in messages)
 
     @staticmethod
     def _get_system_prompt(messages: list[Message]) -> str | None:

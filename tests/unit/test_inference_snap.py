@@ -1,12 +1,13 @@
 """Tests for the inference snap LLM provider."""
 
+import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from cantrip.llm.base import Message, Role, Tool, ToolCall
+from cantrip.llm.base import Image, Message, ProviderError, Role, Tool, ToolCall
 from cantrip.llm.base import ToolResult as LLMToolResult
 from cantrip.llm.inference_snap import (
     InferenceSnapProvider,
@@ -286,6 +287,102 @@ class TestMessageConversion:
         assert result[0]["role"] == "tool"
         assert result[0]["tool_call_id"] == "tc_1"
         assert result[0]["content"] == "active: Ready"
+
+
+class TestInferenceSnapVision:
+    """Phase 48.1: vision detection + image handling for inference snaps."""
+
+    def _make_provider(self, snap_name: str = "qwen-vl"):
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(
+                snap_name=snap_name,
+                model="test-model",
+                base_url=f"http://test-{snap_name}:8326/v1",
+            )
+
+    def test_qwen_vl_is_vision_by_default(self):
+        """qwen-vl is on the static vision allowlist."""
+        assert self._make_provider("qwen-vl").supports_vision is True
+
+    def test_gemma3_is_vision_by_default(self):
+        """gemma3 is on the static vision allowlist."""
+        assert self._make_provider("gemma3").supports_vision is True
+
+    def test_deepseek_r1_is_not_vision(self):
+        """A text-only snap does not advertise vision support."""
+        assert self._make_provider("deepseek-r1").supports_vision is False
+
+    def test_unknown_snap_is_not_vision_without_metadata(self):
+        """An unrecognised snap without a capability flag stays vision-blind."""
+        assert self._make_provider("some-new-snap").supports_vision is False
+
+    def test_capability_flag_upgrades_non_allowlist_snap(self):
+        """A ``/models`` response advertising ``vision`` upgrades the flag."""
+        provider = self._make_provider("some-new-snap")
+        assert provider.supports_vision is False
+        provider._apply_model_metadata(
+            {"data": [{"id": "new-vl", "capabilities": ["vision", "tool_use"]}]}
+        )
+        assert provider.supports_vision is True
+
+    def test_allowlist_snap_stays_vision_without_capability(self):
+        """A snap on the allowlist keeps vision=True even if metadata omits it.
+
+        Not every backend populates ``capabilities`` reliably, so we
+        never downgrade from the static seed.
+        """
+        provider = self._make_provider("qwen-vl")
+        provider._apply_model_metadata({"data": [{"id": "qwen-vl", "capabilities": ["tool_use"]}]})
+        assert provider.supports_vision is True
+
+    def test_vision_snap_converts_user_image_to_data_uri(self):
+        """A user message with an image produces OpenAI multi-part content."""
+        provider = self._make_provider("qwen-vl")
+        img_bytes = b"\x89PNG\r\n\x1a\nbody"
+        msg = Message(
+            role=Role.USER,
+            content="caption",
+            images=[Image(data=img_bytes, mime="image/png")],
+        )
+
+        _, api_messages = provider._convert_messages([msg])
+
+        [entry] = api_messages
+        assert entry["role"] == "user"
+        image_part, text_part = entry["content"]
+        assert image_part["type"] == "image_url"
+        expected_uri = f"data:image/png;base64,{base64.b64encode(img_bytes).decode('ascii')}"
+        assert image_part["image_url"]["url"] == expected_uri
+        assert text_part == {"type": "text", "text": "caption"}
+
+    def test_non_vision_snap_rejects_images_with_clear_error(self):
+        """A vision-blind snap raises NotImplementedError, not silent drop."""
+        provider = self._make_provider("deepseek-r1")
+        msg = Message(
+            role=Role.USER,
+            content="what's in this?",
+            images=[Image(data=b"x", mime="image/png")],
+        )
+        with pytest.raises(NotImplementedError, match="does not support image"):
+            provider._convert_messages([msg])
+
+    def test_oversized_image_raises_provider_error(self):
+        """Images over the per-image cap fail client-side."""
+        provider = self._make_provider("qwen-vl")
+        oversized = b"\x00" * (20 * 1024 * 1024 + 1)
+        msg = Message(
+            role=Role.USER,
+            content="huge",
+            images=[Image(data=oversized, mime="image/png")],
+        )
+        with pytest.raises(ProviderError, match="exceeds the"):
+            provider._convert_messages([msg])
+
+    def test_plain_user_message_on_vision_snap_still_uses_string_content(self):
+        """Vision capability does not change the wire format for text-only turns."""
+        provider = self._make_provider("qwen-vl")
+        _, api_messages = provider._convert_messages([Message(role=Role.USER, content="hi")])
+        assert api_messages == [{"role": "user", "content": "hi"}]
 
 
 class TestToolConversion:

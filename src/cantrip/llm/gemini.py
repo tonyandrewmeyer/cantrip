@@ -15,6 +15,7 @@ from google.genai import types as genai_types
 
 from cantrip.llm.base import (
     Chunk,
+    Image,
     LLMProvider,
     Message,
     ProviderError,
@@ -36,6 +37,10 @@ _DEFAULT_CONTEXT_WINDOW = 1_048_576
 # Gemini 3 strongly recommends temperature 1.0 (lower values cause looping).
 _GEMINI_3_TEMPERATURE = 1.0
 
+# Gemini's documented inline-data cap is 20 MB per request; we apply it
+# per-image to keep the limit comprehensible and fail fast.
+_MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
 
 class GeminiProvider(LLMProvider):
     """Google Gemini implementation."""
@@ -49,6 +54,11 @@ class GeminiProvider(LLMProvider):
     def context_window_tokens(self) -> int:
         """Maximum context window size in tokens for the current model."""
         return _CONTEXT_WINDOWS.get(self.model_name, _DEFAULT_CONTEXT_WINDOW)
+
+    @property
+    def supports_vision(self) -> bool:
+        """Gemini 1.5+ models all accept inline image parts."""
+        return True
 
     def __init__(
         self,
@@ -120,12 +130,35 @@ class GeminiProvider(LLMProvider):
         return result
 
     @staticmethod
+    def _image_parts(images: list[Image]) -> list[genai_types.Part]:
+        """Build Gemini inline-data image parts from ``Image`` payloads.
+
+        Enforces the 20 MB per-image cap so oversized payloads fail
+        with a clear error before hitting the API.
+        """
+        parts: list[genai_types.Part] = []
+        for img in images:
+            if len(img.data) > _MAX_IMAGE_BYTES:
+                raise ProviderError(
+                    f"Image exceeds Gemini's {_MAX_IMAGE_BYTES}-byte per-image "
+                    f"limit: {len(img.data)} bytes ({img.mime})"
+                )
+            parts.append(genai_types.Part.from_bytes(data=img.data, mime_type=img.mime))
+        return parts
+
+    @staticmethod
     def _convert_user_message(msg: Message) -> genai_types.Content:
-        """Convert a USER message to Gemini format."""
-        return genai_types.Content(
-            role="user",
-            parts=[genai_types.Part(text=msg.content)],
-        )
+        """Convert a USER message to Gemini format.
+
+        Image parts precede the text part so the model sees the visual
+        context before the instruction that references it.
+        """
+        parts: list[genai_types.Part] = []
+        if msg.images:
+            parts.extend(GeminiProvider._image_parts(msg.images))
+        if msg.content or not parts:
+            parts.append(genai_types.Part(text=msg.content))
+        return genai_types.Content(role="user", parts=parts)
 
     @staticmethod
     def _convert_assistant_message(msg: Message) -> genai_types.Content | None:

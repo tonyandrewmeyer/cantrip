@@ -63,7 +63,19 @@ class TestDataclasses:
         msg = llm.Message(role=llm.Role.USER, content="hi")
         assert msg.tool_calls == []
         assert msg.tool_results == []
+        assert msg.images == []
         assert msg.metadata == {}
+
+    def test_image_dataclass(self):
+        img = llm.Image(data=b"\x89PNG\r\n", mime="image/png")
+        assert img.data == b"\x89PNG\r\n"
+        assert img.mime == "image/png"
+
+    def test_message_carries_images(self):
+        img = llm.Image(data=b"\x89PNG", mime="image/png")
+        msg = llm.Message(role=llm.Role.USER, content="describe", images=[img])
+        assert len(msg.images) == 1
+        assert msg.images[0].mime == "image/png"
 
     def test_response_defaults(self):
         resp = llm.Response(content="hello")
@@ -132,6 +144,41 @@ class TestExceptions:
 
 class TestLLMProviderInterface:
     """Tests for the abstract LLMProvider interface."""
+
+    def test_default_supports_vision_is_false(self):
+        """Providers that don't opt in are assumed vision-blind."""
+
+        class StubProvider(llm.LLMProvider):
+            @property
+            def name(self):
+                return "stub"
+
+            @property
+            def context_window_tokens(self):
+                return 100000
+
+            async def complete(
+                self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
+            ):  # noqa: ARG002
+                return llm.Response(content="ok")
+
+            async def stream(
+                self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
+            ):  # noqa: ARG002
+                yield llm.Chunk(content="ok", is_final=True)
+
+        assert StubProvider().supports_vision is False
+
+    def test_messages_have_images_helper(self):
+        """The helper flags messages that carry at least one image."""
+        img = llm.Image(data=b"x", mime="image/png")
+        no_images = [llm.Message(role=llm.Role.USER, content="hi")]
+        with_images = [
+            llm.Message(role=llm.Role.USER, content="earlier"),
+            llm.Message(role=llm.Role.USER, content="describe", images=[img]),
+        ]
+        assert llm.LLMProvider._messages_have_images(no_images) is False
+        assert llm.LLMProvider._messages_have_images(with_images) is True
 
     def test_default_max_tools_is_none(self):
         """Default max_tools returns None (no limit)."""

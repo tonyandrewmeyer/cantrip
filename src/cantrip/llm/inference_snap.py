@@ -6,6 +6,7 @@ a local model at ``http://localhost:<port>/v1`` and supports chat
 completions, streaming, and tool calling — no API key required.
 """
 
+import base64
 import contextlib
 import json
 import logging
@@ -17,6 +18,7 @@ import httpx
 
 from cantrip.llm.base import (
     Chunk,
+    Image,
     LLMProvider,
     Message,
     ProviderError,
@@ -41,6 +43,16 @@ _SNAP_DEFAULTS: dict[str, int] = {
 # Small local models have limited context windows.  The training context
 # may be larger, but practical limits with quantised weights are lower.
 _DEFAULT_CONTEXT_WINDOW = 8_192
+
+# Known vision-capable inference snaps.  ``qwen-vl`` is explicitly
+# vision-language; Gemma 3 (4B and larger) accepts images through the
+# snap's OpenAI-compatible endpoint.  The ``/models`` capability probe
+# extends this at runtime when a server advertises a vision flag.
+_VISION_SNAP_NAMES: frozenset[str] = frozenset({"qwen-vl", "gemma3"})
+
+# Sensible upper bound for base64-encoded image_url payloads posted to
+# a local inference snap.  Matches Gemini's 20 MB cap.
+_MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 
 def discover_snap_endpoint(snap_name: str) -> str:
@@ -107,6 +119,16 @@ class InferenceSnapProvider(LLMProvider):
         """Local models have limited context; restrict tools to a core set."""
         return 12
 
+    @property
+    def supports_vision(self) -> bool:
+        """Whether this snap can accept image attachments.
+
+        True for known vision snaps (``qwen-vl``, ``gemma3``) and for
+        any snap whose ``/models`` metadata advertises a vision
+        capability; otherwise False.
+        """
+        return self._supports_vision
+
     def __init__(
         self,
         snap_name: str = "gemma3",
@@ -131,6 +153,10 @@ class InferenceSnapProvider(LLMProvider):
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=300.0)
         self._context_window = _DEFAULT_CONTEXT_WINDOW
         self._supports_tools = True
+        # Seed from the static allowlist; ``_apply_model_metadata`` may
+        # upgrade this to True if the server advertises a vision
+        # capability at runtime.
+        self._supports_vision = snap_name in _VISION_SNAP_NAMES
 
         # Always auto-detect the model from the /models endpoint.  The snap
         # name (e.g. "gemma3") is NOT a valid model ID — the actual served
@@ -218,10 +244,41 @@ class InferenceSnapProvider(LLMProvider):
                 meta.get("id", self.snap_name),
             )
 
+        # Vision support: a runtime-advertised capability upgrades the
+        # seed from the static allowlist.  Never downgrade — a snap in
+        # the allowlist stays vision-capable even if the server omits
+        # the flag (not every backend populates ``capabilities`` fully).
+        if capabilities and ("vision" in capabilities or "image" in capabilities):
+            self._supports_vision = True
+
     # -- Message conversion (to OpenAI chat format) -----------------------
 
     @staticmethod
-    def _convert_messages(messages: list[Message]) -> tuple[str | None, list[dict]]:
+    def _image_content_parts(images: list[Image]) -> list[dict[str, Any]]:
+        """Build OpenAI multi-part ``image_url`` entries from ``Image`` payloads.
+
+        Images are base64-encoded and wrapped in a ``data:`` URI, the
+        format all the OpenAI-compatible snap backends accept.
+        Enforces the 20 MB per-image cap.
+        """
+        parts: list[dict[str, Any]] = []
+        for img in images:
+            if len(img.data) > _MAX_IMAGE_BYTES:
+                raise ProviderError(
+                    f"Image exceeds the {_MAX_IMAGE_BYTES}-byte per-image "
+                    f"limit for inference snaps: {len(img.data)} bytes "
+                    f"({img.mime})"
+                )
+            encoded = base64.b64encode(img.data).decode("ascii")
+            parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{img.mime};base64,{encoded}"},
+                }
+            )
+        return parts
+
+    def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict]]:
         """Convert messages to OpenAI chat API format.
 
         Returns a (system_prompt, messages) tuple.  The system prompt is
@@ -231,8 +288,18 @@ class InferenceSnapProvider(LLMProvider):
         Consecutive user or assistant messages are merged into a single
         message because some local model backends (e.g. Mediapipe in the
         gemma3 snap) reject conversations with consecutive same-role
-        messages.
+        messages.  Once a user message carries images the content becomes
+        a multi-part list, which the backend treats as a distinct turn —
+        subsequent plain-text user messages do not merge into a
+        list-valued content field.
         """
+        if self._messages_have_images(messages) and not self._supports_vision:
+            raise NotImplementedError(
+                f"Inference snap '{self.snap_name}' does not support image "
+                f"input. Switch to a vision-capable snap (e.g. qwen-vl or "
+                f"gemma3) or drop the image attachments."
+            )
+
         system_prompt: str | None = None
         result: list[dict[str, Any]] = []
 
@@ -242,8 +309,19 @@ class InferenceSnapProvider(LLMProvider):
                 continue
 
             if msg.role == Role.USER:
-                # Merge with previous user message if consecutive.
-                if result and result[-1]["role"] == "user":
+                if msg.images:
+                    content_parts: list[dict[str, Any]] = self._image_content_parts(msg.images)
+                    if msg.content:
+                        content_parts.append({"type": "text", "text": msg.content})
+                    result.append({"role": "user", "content": content_parts})
+                # Merge with previous user message if consecutive and
+                # both use plain-string content; a list-valued previous
+                # turn (images) stays distinct.
+                elif (
+                    result
+                    and result[-1]["role"] == "user"
+                    and isinstance(result[-1]["content"], str)
+                ):
                     if msg.content:
                         result[-1]["content"] += "\n\n" + msg.content
                 else:

@@ -426,17 +426,42 @@ Gemini SDKs already support image input. This phase adds the rendering tools
 and provider-level plumbing so the agent can debug operationally, not just
 textually.
 
-### 48.1 High — Image-input support in providers
+### 48.1 High — Image-input support in providers ✓
 
-- [ ] Extend `LLMProvider` with `complete_with_images()` /
-  `stream_with_images()` that accept a list of `Image(bytes, mime)` alongside
-  the prompt
-- [ ] `ClaudeProvider` and `GeminiProvider` implement the method against their
-  respective SDKs (both already support image blocks)
-- [ ] `InferenceSnapProvider` raises a clear `NotImplementedError` when images
-  are supplied, falling back to a text description if present
-- [ ] Unit tests cover happy path, oversized images (rejected with a clear
-  error), and unsupported providers
+- [x] Images ride inside ``Message`` (new ``Image(data: bytes, mime:
+  str)`` dataclass + ``Message.images: list[Image]`` field) rather
+  than through a separate method — this mirrors the SDK wire formats
+  (Anthropic content blocks, Gemini ``Part.inline_data``, OpenAI
+  ``image_url`` multi-part content), lets images attach to any user
+  turn in a multi-turn conversation, and keeps ``complete()`` /
+  ``stream()`` as the only provider entry points. ``LLMProvider``
+  gained a ``supports_vision`` property (default False) so callers
+  can gate vision-dependent tools.
+- [x] ``ClaudeProvider`` sets ``supports_vision = True`` and converts
+  ``Image`` attachments to ``image`` / ``source: {type: base64, …}``
+  content blocks inside the user message.  Enforces a 5 MB per-image
+  cap client-side (matches Anthropic's documented limit).
+- [x] ``GeminiProvider`` sets ``supports_vision = True`` and converts
+  ``Image`` attachments to ``Part.inline_data`` parts inside the
+  user ``Content``.  Image parts precede the text part so the model
+  reads the visual before the instruction.  20 MB per-image cap.
+- [x] ``InferenceSnapProvider`` grew a runtime-detected
+  ``supports_vision`` property — static allowlist of known vision
+  snaps (``qwen-vl``, ``gemma3``), plus a capability-flag upgrade
+  from the ``/models`` response (``"vision"`` or ``"image"`` in the
+  ``capabilities`` array).  Static seed is never downgraded by the
+  probe.  Vision snaps convert images to OpenAI multi-part
+  ``image_url`` entries with ``data:<mime>;base64,<…>`` URIs;
+  non-vision snaps raise ``NotImplementedError`` with a message
+  naming ``qwen-vl`` / ``gemma3`` as the recommended switch.  20 MB
+  per-image cap mirrors Gemini.
+- [x] 29 new unit tests across ``test_llm_base`` (3),
+  ``test_claude`` (5), ``test_gemini`` (5), and
+  ``test_inference_snap`` (10 including the five vision-detection
+  cases for allowlist / capability-flag / no-downgrade invariants),
+  plus two base-interface tests (``supports_vision`` default,
+  ``_messages_have_images`` helper). Happy-path + oversize-reject +
+  non-vision-reject paths all covered.
 
 ### 48.2 High — Grafana screenshot tool
 

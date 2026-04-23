@@ -6,7 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from cantrip.llm.base import (
+    Image,
     Message,
+    ProviderError,
     ProviderRateLimitError,
     Role,
     ToolCall,
@@ -197,6 +199,69 @@ class TestGeminiProviderMessageConversion:
         part = result[0].parts[0]
         # Non-JSON content should be wrapped in {"result": ...}.
         assert part.function_response is not None
+
+
+class TestGeminiProviderVision:
+    """Phase 48.1: Gemini accepts image attachments on user messages."""
+
+    def test_supports_vision_is_true(self):
+        """Gemini 1.5+ models all advertise vision support."""
+        provider, _ = _make_provider()
+        assert provider.supports_vision is True
+
+    def test_user_message_with_image_produces_image_and_text_parts(self):
+        """A user message with an image converts to image + text parts."""
+        provider, _ = _make_provider()
+        img_bytes = b"\x89PNG\r\n\x1a\nfake-png-body"
+        msg = Message(
+            role=Role.USER,
+            content="describe this",
+            images=[Image(data=img_bytes, mime="image/png")],
+        )
+
+        [content] = provider._convert_messages([msg])
+
+        assert content.role == "user"
+        # Image part precedes the text part so the model sees the
+        # visual before the instruction referencing it.
+        image_part, text_part = content.parts
+        # Gemini parts wrap bytes in ``inline_data`` under the hood;
+        # this assertion is lenient across SDK internals.
+        assert getattr(image_part, "inline_data", None) is not None
+        assert image_part.inline_data.mime_type == "image/png"
+        assert image_part.inline_data.data == img_bytes
+        assert text_part.text == "describe this"
+
+    def test_user_message_with_image_only_skips_text_part(self):
+        """Image-only messages produce just the image part — no empty text."""
+        provider, _ = _make_provider()
+        msg = Message(
+            role=Role.USER,
+            content="",
+            images=[Image(data=b"jpgbytes", mime="image/jpeg")],
+        )
+        [content] = provider._convert_messages([msg])
+        assert len(content.parts) == 1
+        assert content.parts[0].inline_data.mime_type == "image/jpeg"
+
+    def test_user_message_empty_still_gets_text_part(self):
+        """An empty plain user message keeps the legacy shape — one text part."""
+        provider, _ = _make_provider()
+        [content] = provider._convert_messages([Message(role=Role.USER, content="")])
+        assert len(content.parts) == 1
+        assert content.parts[0].text == ""
+
+    def test_oversized_image_raises_provider_error(self):
+        """Images over 20 MB fail client-side with a clear error."""
+        provider, _ = _make_provider()
+        oversized = b"\x00" * (20 * 1024 * 1024 + 1)
+        msg = Message(
+            role=Role.USER,
+            content="too big",
+            images=[Image(data=oversized, mime="image/png")],
+        )
+        with pytest.raises(ProviderError, match="exceeds Gemini's"):
+            provider._convert_messages([msg])
 
 
 class TestGeminiProviderToolConversion:

@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Image input across LLM providers — Phase 48.1.** ``Message`` grew
+  an ``images: list[Image]`` field (with a new
+  ``Image(data: bytes, mime: str)`` dataclass), and ``LLMProvider``
+  grew a ``supports_vision`` property.  ``ClaudeProvider`` and
+  ``GeminiProvider`` both advertise ``supports_vision = True`` and
+  forward attachments as native image content (Anthropic ``image``
+  blocks / Gemini ``Part.inline_data``) with per-image byte caps
+  that match each vendor's limits (Claude 5 MB, Gemini 20 MB).
+  ``InferenceSnapProvider`` now detects vision capability at
+  runtime: a static allowlist (``qwen-vl``, ``gemma3``) seeds the
+  flag, and a ``/models`` capability probe (``"vision"`` /
+  ``"image"``) can upgrade a non-allowlisted snap to vision-capable
+  — the static seed never gets downgraded.  Vision snaps build
+  OpenAI multi-part ``image_url`` content with ``data:…;base64,…``
+  URIs; non-vision snaps raise ``NotImplementedError`` with a
+  message pointing to ``qwen-vl`` / ``gemma3`` instead of silently
+  dropping the attachment.  Unblocks Phase 48.2–48.5 (Grafana,
+  Tempo waterfall, Juju-status-tree, workload-screenshot tools).
 - **macOS ``sandbox-exec`` + sandbox observability — Phase 49.4 + 49.5.**
   The ``SandboxedRunner`` now supports a ``"sandbox-exec"`` mechanism
   on macOS — detected via ``shutil.which`` and driven by a Lisp-like

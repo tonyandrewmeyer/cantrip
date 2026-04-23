@@ -1,10 +1,18 @@
 """Tests for Claude LLM provider."""
 
+import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cantrip.llm.base import Message, ProviderRateLimitError, Role, ToolCall
+from cantrip.llm.base import (
+    Image,
+    Message,
+    ProviderError,
+    ProviderRateLimitError,
+    Role,
+    ToolCall,
+)
 from cantrip.llm.base import ToolResult as LLMToolResult
 
 
@@ -314,6 +322,78 @@ class TestClaudeProviderMessageConversion:
 
         system = provider._get_system_prompt(messages)
         assert system is None
+
+
+class TestClaudeProviderVision:
+    """Phase 48.1: Claude accepts image attachments on user messages."""
+
+    def _make_provider(self):
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            from cantrip.llm.claude import ClaudeProvider
+
+            return ClaudeProvider(api_key="test-key")
+
+    def test_supports_vision_is_true(self):
+        """Claude models all advertise vision support."""
+        assert self._make_provider().supports_vision is True
+
+    def test_user_message_with_image_produces_content_blocks(self):
+        """A user message with an image converts to image + text blocks."""
+        provider = self._make_provider()
+        img_bytes = b"\x89PNG\r\n\x1a\nfake-png-body"
+        msg = Message(
+            role=Role.USER,
+            content="describe this",
+            images=[Image(data=img_bytes, mime="image/png")],
+        )
+
+        [entry] = provider._convert_messages([msg])
+
+        assert entry["role"] == "user"
+        # Image block precedes the text block so the model sees the
+        # visual before the instruction referencing it.
+        [image_block, text_block] = entry["content"]
+        assert image_block["type"] == "image"
+        assert image_block["source"]["type"] == "base64"
+        assert image_block["source"]["media_type"] == "image/png"
+        assert base64.b64decode(image_block["source"]["data"]) == img_bytes
+        assert text_block == {"type": "text", "text": "describe this"}
+
+    def test_user_message_with_image_only_omits_text_block(self):
+        """An image-only user message produces just the image block."""
+        provider = self._make_provider()
+        msg = Message(
+            role=Role.USER,
+            content="",
+            images=[Image(data=b"jpgbytes", mime="image/jpeg")],
+        )
+
+        [entry] = provider._convert_messages([msg])
+
+        assert len(entry["content"]) == 1
+        assert entry["content"][0]["type"] == "image"
+        assert entry["content"][0]["source"]["media_type"] == "image/jpeg"
+
+    def test_oversized_image_raises_provider_error(self):
+        """Images over 5 MB fail client-side with a clear error."""
+        provider = self._make_provider()
+        # 5 MB + one byte.
+        oversized = b"\x00" * (5 * 1024 * 1024 + 1)
+        msg = Message(
+            role=Role.USER,
+            content="too big",
+            images=[Image(data=oversized, mime="image/png")],
+        )
+
+        with pytest.raises(ProviderError, match="exceeds Claude's"):
+            provider._convert_messages([msg])
+
+    def test_plain_user_message_still_uses_string_content(self):
+        """No-image user messages are unchanged — preserves old wire format."""
+        provider = self._make_provider()
+        [entry] = provider._convert_messages([Message(role=Role.USER, content="hi")])
+        assert entry == {"role": "user", "content": "hi"}
 
 
 class TestClaudeProviderToolConversion:
