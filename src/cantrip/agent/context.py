@@ -335,6 +335,7 @@ class ContextManager:
                         tool_call_id=tr.tool_call_id,
                         content=new_content,
                         is_error=tr.is_error,
+                        images=list(tr.images),
                     )
                 )
                 changed = True

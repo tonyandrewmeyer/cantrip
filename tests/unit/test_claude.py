@@ -395,6 +395,66 @@ class TestClaudeProviderVision:
         [entry] = provider._convert_messages([Message(role=Role.USER, content="hi")])
         assert entry == {"role": "user", "content": "hi"}
 
+    def test_tool_result_with_images_emits_image_content_blocks(self):
+        """Phase 48.2b: tool results with images emit image + text blocks."""
+        provider = self._make_provider()
+        img_bytes = b"\x89PNGrendered-bytes"
+        tool_msg = Message(
+            role=Role.TOOL,
+            content="",
+            tool_results=[
+                LLMToolResult(
+                    tool_call_id="tc_42",
+                    content="Rendered panel 7.",
+                    images=[Image(data=img_bytes, mime="image/png")],
+                )
+            ],
+        )
+
+        [entry] = provider._convert_messages([tool_msg])
+
+        assert entry["role"] == "user"
+        [block] = entry["content"]
+        assert block["type"] == "tool_result"
+        assert block["tool_use_id"] == "tc_42"
+        # Image block precedes the text caption inside the tool_result
+        # content list so the model sees the visual before the caption.
+        image_block, text_block = block["content"]
+        assert image_block["type"] == "image"
+        assert image_block["source"]["media_type"] == "image/png"
+        assert base64.b64decode(image_block["source"]["data"]) == img_bytes
+        assert text_block == {"type": "text", "text": "Rendered panel 7."}
+
+    def test_tool_result_without_images_still_uses_string_content(self):
+        """Image-free tool results keep the plain-string content format."""
+        provider = self._make_provider()
+        tool_msg = Message(
+            role=Role.TOOL,
+            content="",
+            tool_results=[LLMToolResult(tool_call_id="tc_1", content="plain text")],
+        )
+        [entry] = provider._convert_messages([tool_msg])
+        [block] = entry["content"]
+        assert block["content"] == "plain text"
+
+    def test_tool_result_image_enforces_size_cap(self):
+        """Oversize images in tool results fail the same client-side check."""
+        provider = self._make_provider()
+        oversized = b"\x00" * (5 * 1024 * 1024 + 1)
+        tool_msg = Message(
+            role=Role.TOOL,
+            content="",
+            tool_results=[
+                LLMToolResult(
+                    tool_call_id="tc_1",
+                    content="too big",
+                    images=[Image(data=oversized, mime="image/png")],
+                )
+            ],
+        )
+        with pytest.raises(ProviderError, match="exceeds Claude's"):
+            provider._convert_messages([tool_msg])
+
 
 class TestClaudeProviderToolConversion:
     """Tests for ClaudeProvider._convert_tools."""

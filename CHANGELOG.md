@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Tool-result images threaded through to vision-capable providers —
+  Phase 48.2b.**  Agent ``ToolResult`` and ``llm.ToolResult`` each
+  grew an ``images: list[Image]`` field; the conversation loop
+  (``core.py`` synchronous and streaming paths + ``subagent.py``)
+  now forwards those images into the TOOL message.  Context
+  virtualisation preserves attachments when it rewrites a giant
+  text caption into a virtual-file pointer.  ``ClaudeProvider``
+  renders a mixed image + text content list inside
+  ``tool_result`` blocks — the model sees the visual before the
+  caption.  ``GrafanaScreenshotTool`` now attaches the rendered
+  PNG so an agent on Claude can reason about the panel visually
+  end-to-end, not just get a file path.  Gemini and inference
+  snaps drop images (their tool-role messages are text-only by
+  spec) and rely on the caption, which always carries enough
+  diagnostic context to be useful on its own.
 - **Grafana screenshot tool — Phase 48.2a.** New
   ``grafana_screenshot`` tool renders a Grafana panel or dashboard
   as a PNG via Grafana's ``/render`` endpoint, using the same

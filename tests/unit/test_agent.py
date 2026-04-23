@@ -8,7 +8,7 @@ import pytest
 from cantrip.agent.core import CantripAgent, _infer_gaps_from_audit
 from cantrip.agent.tools.base import ToolResult
 from cantrip.agent.watcher import WatcherEvent
-from cantrip.llm.base import Message, Response, Role, ToolCall
+from cantrip.llm.base import Image, Message, Response, Role, ToolCall
 from tests.conftest import FakeProvider
 
 
@@ -58,9 +58,7 @@ class TestCantripAgent:
         )
         agent = CantripAgent(provider=provider)
 
-        agent._execute_tool = AsyncMock(
-            return_value=type("R", (), {"success": True, "output": "active", "error": None})()
-        )
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="active"))
 
         result = await agent.process_message("Show juju status")
 
@@ -87,9 +85,7 @@ class TestCantripAgent:
             ]
         )
         agent = CantripAgent(provider=provider)
-        agent._execute_tool = AsyncMock(
-            return_value=type("R", (), {"success": True, "output": "ok", "error": None})()
-        )
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="ok"))
 
         captured: list[dict] = []
         agent.event_bus.subscribe(
@@ -168,9 +164,7 @@ class TestCantripAgent:
             ]
         )
         agent = CantripAgent(provider=provider)
-        agent._execute_tool = AsyncMock(
-            return_value=type("R", (), {"success": True, "output": "active", "error": None})()
-        )
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="active"))
 
         chunks = []
         async for chunk in agent.process_message_streaming("Show status"):
@@ -200,9 +194,7 @@ class TestCantripAgent:
             ]
         )
         agent = CantripAgent(provider=provider)
-        agent._execute_tool = AsyncMock(
-            return_value=type("R", (), {"success": True, "output": "active", "error": None})()
-        )
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="active"))
 
         chunks = []
         async for chunk in agent.process_message_streaming("Show status"):
@@ -220,9 +212,7 @@ class TestCantripAgent:
         responses = [Response(content="", tool_calls=[tool_call])] * 25
         provider = FakeProvider(responses)
         agent = CantripAgent(provider=provider)
-        agent._execute_tool = AsyncMock(
-            return_value=type("R", (), {"success": True, "output": "ok", "error": None})()
-        )
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="ok"))
 
         await agent.process_message("loop")
 
@@ -265,9 +255,7 @@ class TestUsageRecording:
             ]
         )
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
-        agent._execute_tool = AsyncMock(
-            return_value=type("R", (), {"success": True, "output": "ok", "error": None})()
-        )
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="ok"))
 
         await agent.process_message("go")
 
@@ -360,9 +348,7 @@ class TestContextManagement:
 
         # Return a large result (>10k tokens = >40k chars).
         big_output = "X" * 50_000
-        agent._execute_tool = AsyncMock(
-            return_value=type("R", (), {"success": True, "output": big_output, "error": None})()
-        )
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output=big_output))
 
         await agent.process_message("Read big.py")
 
@@ -423,9 +409,7 @@ class TestContextManagement:
         ]
         provider._call_count = 0
 
-        agent._execute_tool = AsyncMock(
-            return_value=type("R", (), {"success": True, "output": "ok", "error": None})()
-        )
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="ok"))
 
         await agent.process_message("Check status")
 
@@ -554,6 +538,40 @@ class TestTestResultsCapture:
         await agent.process_message("Run tests")
 
         assert agent.state.test_results is None
+
+
+class TestToolResultImageForwarding:
+    """Phase 48.2b: images flow agent ToolResult → llm.ToolResult → TOOL msg."""
+
+    @pytest.mark.asyncio
+    async def test_images_propagate_into_tool_message(self):
+        """A tool that returns images produces a TOOL message carrying them."""
+        tool_call = ToolCall(id="tc1", name="grafana_screenshot", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Looked at the panel."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+
+        img = Image(data=b"\x89PNGdiagnostic", mime="image/png")
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(
+                success=True,
+                output="Rendered latency panel.",
+                images=[img],
+            )
+        )
+
+        await agent.process_message("Render the latency panel.")
+
+        tool_msgs = [m for m in agent.state.messages if m.role == Role.TOOL]
+        assert tool_msgs, "no TOOL message recorded"
+        [llm_tr] = tool_msgs[-1].tool_results
+        assert len(llm_tr.images) == 1
+        assert llm_tr.images[0].mime == "image/png"
+        assert llm_tr.images[0].data == b"\x89PNGdiagnostic"
 
 
 class TestWatcherIntegration:

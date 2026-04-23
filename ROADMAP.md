@@ -463,7 +463,7 @@ textually.
   ``_messages_have_images`` helper). Happy-path + oversize-reject +
   non-vision-reject paths all covered.
 
-### 48.2 High — Grafana screenshot tool (48.2a landed; image threading deferred to 48.2b)
+### 48.2 High — Grafana screenshot tool ✓
 
 - [x] ``GrafanaScreenshotTool`` (``grafana_screenshot``) renders a
   panel or full dashboard as PNG via Grafana's ``/render`` endpoint.
@@ -508,13 +508,35 @@ textually.
   endpoint routing (d-solo vs d), auth-header inclusion, missing-
   password degradation, non-PNG error surfacing, password-hint copy,
   and the three client-side validation paths.
-- [ ] **48.2b (deferred, separate sub-item):** thread the rendered
-  PNG bytes into the ``tool_result`` message so vision-capable
-  providers (Phase 48.1) can reason about the panel visually.
-  Blocks across all 48 tools that produce images (48.3, 48.4, 48.5)
-  and needs a ``ToolResult.images`` / ``llm.ToolResult.images``
-  extension plus provider-specific rendering of image content blocks
-  — one shared design shipped once, three tools benefit.
+- [x] **48.2b — images threaded through tool results.** Agent
+  ``ToolResult`` and ``llm.ToolResult`` each grew an
+  ``images: list[Image]`` field.  ``core.py`` (both synchronous and
+  streaming loops) and ``subagent.py`` forward images from the
+  agent result into the ``llm.ToolResult`` they build, and
+  ``ContextManager._virtualise_tool_message`` now preserves images
+  when it rewrites the text content into a virtual-file pointer —
+  so even a huge caption doesn't orphan the diagnostic picture.
+  ``ClaudeProvider._convert_messages`` emits an image + text
+  content-block list inside a ``tool_result`` block when the result
+  carries images (images first, caption last, matching the Anthropic
+  doc pattern) and falls back to the plain-string shape when it
+  doesn't.  The same 5 MB per-image cap from 48.1 catches oversize
+  payloads early.  ``GrafanaScreenshotTool`` now attaches the
+  rendered PNG to its ``ToolResult.images`` so the plumbing lights
+  up end-to-end for the one shipping tool.  Gemini and inference
+  snaps drop images (their ``FunctionResponse`` / ``role: tool``
+  messages are text-only by spec) and rely on the caption alone —
+  the caption always carries panel id, time range, dimensions, and
+  the local file path so nothing is lost operationally.  6 new unit
+  tests across ``test_llm_base`` (ToolResult defaults),
+  ``test_claude`` (tool_result image blocks, plain-string fallback,
+  5 MB cap), ``test_context`` (image survival through
+  virtualisation), ``test_agent`` (core forwards images agent →
+  llm.ToolResult into the TOOL message), and ``test_observability_tools``
+  (GrafanaScreenshotTool populates images).  Fixed 8 pre-existing
+  test_agent mocks that used ad-hoc ``type("R", ...)`` objects —
+  they now use the real ``ToolResult`` dataclass, so future
+  additions to the dataclass don't silently break those tests.
 
 ### 48.3 Medium — Tempo trace waterfall rendering
 

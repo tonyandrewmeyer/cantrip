@@ -103,6 +103,18 @@ class TestDataclasses:
         tr = llm.ToolResult(tool_call_id="tc1", content="failed", is_error=True)
         assert tr.is_error is True
 
+    def test_tool_result_defaults_empty_images(self):
+        """Tool results have an empty images list by default."""
+        tr = llm.ToolResult(tool_call_id="tc1", content="ok")
+        assert tr.images == []
+
+    def test_tool_result_carries_images(self):
+        """Images attach to a tool result alongside the text caption."""
+        img = llm.Image(data=b"\x89PNG", mime="image/png")
+        tr = llm.ToolResult(tool_call_id="tc1", content="caption", images=[img])
+        assert len(tr.images) == 1
+        assert tr.images[0].mime == "image/png"
+
 
 class TestRole:
     """Tests for the Role enum."""

@@ -6,17 +6,29 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from cantrip.llm.base import Image
+
 log = logging.getLogger(__name__)
 
 
 @dataclass
 class ToolResult:
-    """Result of a tool execution."""
+    """Result of a tool execution.
+
+    ``images`` attaches image payloads produced by the tool.  The
+    conversation loop forwards them into the next ``tool_result``
+    message so vision-capable providers can reason about the image
+    alongside the text caption in ``output``.  The caption should
+    still carry enough information to be useful on its own —
+    providers whose tool-role messages are text-only (Gemini,
+    OpenAI-compatible) drop the images.
+    """
 
     success: bool
     output: str
     data: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    images: list[Image] = field(default_factory=list)
 
 
 class Tool(ABC):

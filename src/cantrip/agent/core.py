@@ -734,6 +734,7 @@ class CantripAgent:
                         tool_call_id=tc.id,
                         content=content,
                         is_error=not result.success,
+                        images=list(result.images),
                     )
                 )
 
@@ -885,6 +886,7 @@ class CantripAgent:
                         tool_call_id=tc.id,
                         content=content,
                         is_error=not result.success,
+                        images=list(result.images),
                     )
                 )
 

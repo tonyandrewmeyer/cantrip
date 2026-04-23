@@ -174,14 +174,33 @@ class ClaudeProvider(LLMProvider):
             elif msg.role == Role.TOOL:
                 content = []
                 for tr in msg.tool_results:
-                    content.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tr.tool_call_id,
-                            "content": tr.content,
-                            "is_error": tr.is_error,
-                        }
-                    )
+                    if tr.images:
+                        # When a tool result carries images, the
+                        # ``content`` field becomes a list of content
+                        # blocks with the images first and the text
+                        # caption last — same ordering Anthropic docs
+                        # use so the model sees the visual before the
+                        # caption that describes it.
+                        tr_blocks = self._image_blocks(tr.images)
+                        if tr.content:
+                            tr_blocks.append({"type": "text", "text": tr.content})
+                        content.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tr.tool_call_id,
+                                "content": tr_blocks,
+                                "is_error": tr.is_error,
+                            }
+                        )
+                    else:
+                        content.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tr.tool_call_id,
+                                "content": tr.content,
+                                "is_error": tr.is_error,
+                            }
+                        )
                 result.append({"role": "user", "content": content})
 
         return result

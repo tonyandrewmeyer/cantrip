@@ -639,6 +639,11 @@ class TestGrafanaScreenshotTool:
         assert "my-dash" in result.output
         assert "panel 7" in result.output
         assert "now-6h" in result.output
+        # 48.2b: image bytes are attached so vision-capable providers
+        # can reason about the panel alongside the caption.
+        assert len(result.images) == 1
+        assert result.images[0].mime == "image/png"
+        assert result.images[0].data == png_payload
 
     @pytest.mark.asyncio
     async def test_uses_d_solo_endpoint_for_panel(self, tool, tmp_path, png_payload, monkeypatch):

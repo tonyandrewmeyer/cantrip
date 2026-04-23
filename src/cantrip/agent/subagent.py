@@ -860,6 +860,7 @@ class Subagent:
                         result.output if result.success else (result.error or "Unknown error")
                     ),
                     is_error=not result.success,
+                    images=list(result.images),
                 )
                 for tc, result in zip(response.tool_calls, raw_results, strict=True)
             ]

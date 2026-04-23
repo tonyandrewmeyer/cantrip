@@ -27,11 +27,21 @@ class ToolCall:
 
 @dataclass
 class ToolResult:
-    """Result of a tool call."""
+    """Result of a tool call.
+
+    ``images`` attaches image payloads to the tool result.  Providers
+    that understand image content blocks in ``tool_result`` (Anthropic
+    today) forward them inline alongside the text caption.  Providers
+    whose tool-role messages are text-only (OpenAI-compatible,
+    Gemini's ``FunctionResponse``) drop the images and keep the
+    caption — the caption should always carry enough information to
+    be useful on its own.
+    """
 
     tool_call_id: str
     content: str
     is_error: bool = False
+    images: list["Image"] = field(default_factory=list)
 
 
 @dataclass

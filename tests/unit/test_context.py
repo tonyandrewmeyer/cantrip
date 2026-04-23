@@ -5,7 +5,7 @@ import re
 import pytest
 
 from cantrip.agent.context import ContextManager, VirtualFileStore
-from cantrip.llm.base import Message, Response, Role, ToolCall
+from cantrip.llm.base import Image, Message, Response, Role, ToolCall
 from cantrip.llm.base import ToolResult as LLMToolResult
 from tests.conftest import FakeProvider
 
@@ -251,6 +251,32 @@ class TestContextManagerVirtualisation:
         result = cm.virtualise_message(msg)
 
         assert result is msg
+
+    def test_virtualisation_preserves_tool_result_images(self):
+        """Phase 48.2b: images survive when a tool result is virtualised."""
+        store = VirtualFileStore()
+        cm = ContextManager(
+            store,
+            context_window_tokens=100_000,
+            virtualisation_threshold=100,
+            virtualisation_preview=25,
+        )
+
+        img = Image(data=b"\x89PNGbytes", mime="image/png")
+        msg = Message(
+            role=Role.TOOL,
+            content="",
+            tool_results=[
+                LLMToolResult(tool_call_id="tc1", content="Y" * 2000, images=[img]),
+            ],
+        )
+        result = cm.virtualise_message(msg)
+
+        # The text content was virtualised but the image attachment
+        # survived so the LLM still sees the diagnostic picture.
+        assert "vf_" in result.tool_results[0].content
+        assert len(result.tool_results[0].images) == 1
+        assert result.tool_results[0].images[0].data == b"\x89PNGbytes"
 
 
 class TestContextManagerBudget:

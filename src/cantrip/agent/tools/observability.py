@@ -14,6 +14,7 @@ import jubilant
 
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.tools.juju_subprocess import juju_available as _juju_available
+from cantrip.llm.base import Image
 
 log = logging.getLogger(__name__)
 
@@ -635,12 +636,14 @@ class GrafanaScreenshotTool(Tool):
     renderer the host it expects.  Requires the Grafana image-renderer
     plugin, which ships with the grafana-k8s charm by default.
 
-    The PNG is saved to ``~/.cache/cantrip/screenshots/`` and the path
-    is returned to the caller alongside a human-readable caption.  A
-    follow-up phase (48.2b) will thread the PNG bytes into the
-    tool-result message so vision-capable providers can reason about
-    the panel visually; until then the caption alone is still useful
-    and the file is on disk for manual attachment.
+    The PNG is saved to ``~/.cache/cantrip/screenshots/`` and its bytes
+    are also attached to the :class:`ToolResult` as an ``Image`` so
+    vision-capable providers (Anthropic today) can reason about the
+    panel visually alongside the text caption.  Providers whose
+    tool-role messages are text-only (Gemini ``FunctionResponse``,
+    OpenAI-compatible ``role: tool``) drop the attachment and fall
+    back to the caption, which always carries panel id, time range,
+    dimensions, and the local file path.
     """
 
     @property
@@ -843,4 +846,5 @@ class GrafanaScreenshotTool(Tool):
                 "height": height,
                 "bytes": len(payload),
             },
+            images=[Image(data=payload, mime="image/png")],
         )
