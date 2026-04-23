@@ -5185,17 +5185,49 @@ on Linux (2.1.98) and deny-rule hardening for `env`/`sudo`/`watch` wrappers
 (2.1.113) during the review window. The recipe is well-understood and directly
 applicable to Cantrip.
 
-### 49.1 High — Linux PID and mount namespace isolation
+### 49.1 High — Linux PID and mount namespace isolation ✓
 
-- [ ] A `SandboxedRunner` in `src/cantrip/agent/sandbox.py` wraps subprocess
-  invocations with `unshare --pid --mount --net=none` (with opt-out for tools
-  that legitimately need network, e.g. `JujuDeployTool`)
-- [ ] Separate mount namespace with read-only bind mounts for system paths,
-  read-write only for the working tree (or worktree, per Phase 44)
-- [ ] Opt-out whitelist is per-tool, not per-command, and declared in the tool
-  dataclass
-- [ ] Unit tests verify the sandboxed command cannot read files outside the
-  bind-mounted working tree
+- [x] A `SandboxedRunner` in `src/cantrip/agent/sandbox.py` wraps
+  subprocess invocations with Linux user-namespace isolation.  Three
+  mechanisms are probed in order of preference by
+  `sandbox_available()` — ``bwrap`` (full filesystem + PID +
+  network + namespace isolation, canonical), ``unshare`` (PID +
+  network-only fallback when bwrap isn't installed), and ``none``
+  (non-Linux / missing both; logs a one-time warning and runs the
+  command unchanged so tests and non-Linux users aren't blocked).
+- [x] Separate mount namespace with read-only bind mounts for
+  system paths, read-write for the working tree — the ``bwrap``
+  path mounts ``/usr`` / ``/bin`` / ``/sbin`` / ``/lib*`` / ``/etc``
+  / ``/opt`` read-only via ``--ro-bind-try``, binds ``cwd``
+  read-write, adds every ``SandboxPolicy.read_write_paths`` entry
+  read-write and every ``SandboxPolicy.read_only_paths`` entry
+  read-only, and provides a fresh tmpfs ``/tmp``.  Missing policy
+  paths are logged at debug level and skipped so stale config
+  doesn't break the run; cwd isn't double-bound if the caller
+  lists it in ``read_write_paths``.  The ``unshare`` fallback
+  drops the filesystem isolation but still provides PID and
+  optional network isolation (the single most valuable sandbox
+  property for exfiltration defence).
+- [x] Opt-out whitelist is per-tool, not per-command — the policy
+  is expressed as a frozen `SandboxPolicy(network=..., read_write_paths=..., read_only_paths=...)`
+  dataclass that each tool constructs for its own invocation.
+  `RunCommandTool` now uses `network=False` + `read_write_paths=(cwd,)`
+  as its conservative default.  Other tools (`JujuDeployTool`,
+  `GitPushTool`, …) keep the direct ``jubilant`` / ``subprocess``
+  path until they adopt the runner in a follow-up — the sandbox is
+  additive, not mandatory.
+- [x] Unit tests: 16 cases in ``tests/unit/test_sandbox.py``
+  covering mechanism selection (bwrap > unshare > none, non-Linux
+  forced to none), bwrap command construction (namespace flags,
+  network opt-out, rw/ro bind-mount pass-through, missing-path
+  skipping, no-double-bind invariant), unshare fallback
+  construction (same namespace / network flags), no-sandbox
+  pass-through (argv unchanged, one-shot warning), and real-exec
+  smoke test through whichever mechanism this host provides.
+  ``test_run_command.py`` gains `TestRunCommandSandbox` with three
+  cases proving the tool delegates to the injected runner with a
+  no-network / cwd-rw policy, constructs its own runner by default,
+  and preserves the `SandboxPolicy` defaults.
 
 ### 49.2 High — Deny-rule hardening ✓
 
@@ -7599,6 +7631,183 @@ in the commit message.
 
 ---
 
+## Phase 67: Pi-Inspired Session and Scripting Features
+
+**Goal:** Pi (``pi.dev``) is a minimal, extension-first coding agent.
+Its core is deliberately small; features other agents bake in
+(MCP, subagents, plan mode, permission gates) are packages.  A
+walk of its landing page and command reference surfaces four
+capabilities that Cantrip does not have today and that fit the
+existing architecture cleanly.  Cantrip is not going to become a
+general-purpose agent — we keep the charm focus — but each of the
+items below addresses a gap a charm author already hits.
+
+Four candidates, in rough priority order:
+
+1. **Tree-structured sessions with rewind and branch.**  Pi stores
+   each session as a tree and exposes ``/tree`` to navigate back
+   to any prior node and branch from it.  Cantrip today stores a
+   linear transcript in SQLite (Phase 14) and supports resume
+   (Phase 31).  Rewind/branch is the single most useful missing
+   piece: when the agent goes down the wrong path after a bad
+   steering message, the only recovery today is to start over.
+   With a tree, the user jumps back to the message before the
+   bad turn and re-steers.  This reuses the existing transcript
+   schema; the addition is parent-pointer metadata on each turn,
+   a ``/branch`` or ``/rewind <turn-id>`` command, and a TUI
+   view that lets the user pick a node.
+2. **Mid-session model switching.**  Pi exposes ``/model``,
+   ``Ctrl+L`` (switch), and ``Ctrl+P`` (cycle favourites).
+   Cantrip already supports many providers (Phase 27, 41) and
+   ``/arena`` for A/B, but has no way to say "finish this session
+   on a cheaper model" without quitting and restarting.  The
+   provider layer is already pluggable; this is a ``/model``
+   command plus a hotkey in the TUI chat widget and a ``favorite
+   models`` config list.
+3. **Non-interactive print mode with JSON event stream.**  Pi's
+   ``pi -p "query"`` returns a single-shot answer and
+   ``--mode json`` streams events to stdout for scripts.
+   Cantrip's CLI (``src/cantrip/cli.py``) is a REPL; there is no
+   ``cantrip run --print "charm this flask app"`` for CI or
+   shell pipelines.  The event bus (``cantrip.ui.events``) already
+   carries typed events; a ``--json`` flag that serialises those
+   to stdout gives scripting parity with the TUI.
+4. **Session share to GitHub gist.**  Pi's ``/share`` uploads the
+   exported session as a secret gist and returns a URL.  Cantrip
+   already has ``/export`` (HTML, Markdown, JSONL).  Adding
+   ``/share`` is a thin wrapper around the existing HTML exporter
+   plus ``gh gist create`` — the GitHub integration (Phase 42)
+   already authenticates ``gh`` for PR work, so credentials are
+   in place.  Small and high-leverage for "look at what the
+   agent just did" conversations.
+
+Two Pi features are explicitly **out of scope**:
+
+- **Extension package install** (``pi install npm:@foo/…`` /
+  ``pi install git:…``).  Cantrip has the skills system
+  (Phase 33, 50) and MCP servers (Phase 45); adding a third
+  extension surface would fragment the ecosystem.  If the skill
+  system ever needs a git-based install path, that belongs in
+  Phase 50 (Skills Ecosystem Interop), not here.
+- **Full SDK / RPC embedding mode.**  Pi is a library as much as
+  a CLI; Cantrip is an app.  Exposing a public SDK is a much
+  bigger commitment than the print-mode event stream covers, and
+  we have no use case yet.
+
+### 67.1 High — Session tree: rewind and branch
+
+- [ ] Audit ``src/cantrip/transcripts/`` (or the equivalent SQLite
+  layer from Phase 14) for the assumptions that sessions are
+  linear.  Likely candidates: resume logic in
+  ``src/cantrip/agent/core.py`` that loads messages in insertion
+  order, and any summariser that walks ``state.messages`` as a
+  list.  Write the findings into the phase before changing code.
+- [ ] Add a ``parent_turn_id`` column (nullable; ``NULL`` means
+  "root") to the turn table.  Backfill existing rows to form a
+  degenerate linear tree.  Add an index on ``(session_id,
+  parent_turn_id)``.
+- [ ] Add ``/branch [turn-id]`` — forks from the given turn (or
+  the one before the last user message, if omitted) and makes
+  the forked branch active.  ``state.messages`` is rebuilt from
+  the new active path.
+- [ ] Add ``/tree`` — opens a TUI modal that renders the session
+  as an indented tree with timestamps and the first line of each
+  user message; ``Enter`` activates a node.  Non-destructive —
+  the original branch stays in the DB.
+- [ ] Export already operates per-session; update
+  ``export-transcript`` to take an optional ``--branch
+  <turn-id>`` filter so a branched session exports only the
+  active path (default: the currently active branch).
+- [ ] ``tests/unit/test_transcript_branching.py`` — round-trip
+  branch/rewind, assert the original branch is still reachable,
+  resume picks the last active branch.
+
+### 67.2 Medium — Mid-session model switching
+
+- [ ] Add ``/model [provider/name]`` to the slash-command
+  catalogue (``src/cantrip/agent/slash_commands.py``).  With no
+  argument: print the current model and list configured
+  alternatives.  With an argument: call ``create_provider`` and
+  atomically swap ``agent.provider``; continue the conversation.
+- [ ] Add ``Ctrl+L`` binding in the TUI chat widget to open a
+  model picker.  Re-use the arena model list plumbing where
+  possible.
+- [ ] Add a ``favorite_models`` list to settings (CLI flag +
+  config) and ``Ctrl+P`` to cycle through them without opening
+  the picker.
+- [ ] Emit a ``model_switched`` event on the event bus so the
+  transcript, status bar, and cost tracker all reflect the
+  change.  Per-model cost breakdown (already in ``cantrip/cli.py``
+  line ~581) continues to work because we already group by model
+  name in the usage store.
+- [ ] Document in ``docs/docs/reference-cli.html`` and
+  ``docs/docs/howto-providers.html``.
+
+### 67.3 Medium — Non-interactive print mode
+
+- [ ] Add ``cantrip run --print "<goal>"`` (or equivalent flag) to
+  the existing ``run`` subparser.  Runs the autonomous loop
+  without a TUI; prints the final agent summary and exits when
+  the work queue drains or the goal is marked done.
+- [ ] Add ``--json`` to stream the existing
+  ``cantrip.ui.events`` payloads as newline-delimited JSON on
+  stdout, one event per line.  Document the event schema in
+  ``docs/docs/reference-cli.html`` — it becomes a supported
+  public surface once we ship this.
+- [ ] Decide how user confirmations behave in print mode: the
+  existing CONFIRM tasks (Phase 64) need an ``--auto-approve``
+  flag *or* the print-mode entrypoint refuses to run when
+  unapproved confirmations exist.  Default to "refuse and exit
+  non-zero with a list of the pending confirmations" so scripts
+  don't accidentally deploy.
+- [ ] ``tests/unit/test_cli_print_mode.py`` — fake provider, assert
+  the JSON stream is well-formed, final exit code reflects
+  task success/failure, pending confirmations block the run.
+
+### 67.4 Low — Session share to gist
+
+- [ ] Add ``/share`` to the slash-command catalogue.  Runs the
+  existing HTML exporter, pipes the result to ``gh gist create
+  --public=false --desc "Cantrip session <timestamp>"``, and
+  prints the returned URL.
+- [ ] Fail gracefully when ``gh`` is not authenticated — print
+  the local export path and the exact ``gh`` command the user
+  can run manually.  Never block the session.
+- [ ] Document in ``docs/docs/howto-export-sessions.html``
+  (create if it doesn't exist; otherwise add a section).
+
+### What this phase is *not*
+
+- Not a rewrite of the transcript layer.  67.1 adds one column
+  and one relationship; everything else stays.
+- Not a public Cantrip SDK.  67.3 ships a stable event-stream
+  format *on stdout* for scripts.  Embedding Cantrip as a library
+  is a separate decision.
+- Not a plugin marketplace.  Skill and MCP install paths stay
+  where they are.
+- Not "match Pi's UX".  Cantrip stays domain-specific; we cherry-
+  pick what charm authors benefit from.
+
+**Exit criteria:** (a) a user can rewind a session to before a
+bad steering message and branch a new path, with the original
+branch still reachable; (b) ``/model`` swaps the active provider
+mid-session and the cost tracker keeps accurate per-model
+totals; (c) ``cantrip run --print --json "<goal>"`` runs
+unattended, emits a documented event stream, and refuses to
+bypass pending confirmations; (d) ``/share`` uploads the current
+session as a secret gist in one step, with a clean fallback
+when ``gh`` is unavailable.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Session tree (67.1) | Phase 14 (transcripts), Phase 31 (resume) | Biggest item; land first so later items use branched sessions |
+| Model switching (67.2) | Phase 27, 41 (multi-provider), Phase 47 (arena plumbing) | Independent of 67.1 |
+| Print mode (67.3) | Phase 64 (CONFIRM tasks) | Needs the confirmation model to decide the block-or-approve rule |
+| Share to gist (67.4) | Phase 14 (export), Phase 42 (``gh`` auth) | Thin wrapper; last |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -7661,4 +7870,5 @@ in the commit message.
 | M64: Polite Repo Bootstrap | 64 ✓ | Create-GitHub-repo offer moved out of the main chat and suggests ``<workload>-operator`` by default |
 | M65: Right-Panel Tidy | 65 | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
 | M66: Transcript/Log Visible | 66 ✓ | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
+| M67: Pi-Inspired Sessions | 67 | Session tree rewind/branch, mid-session ``/model``, ``cantrip run --print --json`` for scripts, and ``/share`` to secret gist — four gaps the Pi coding agent fills that charm authors also hit |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

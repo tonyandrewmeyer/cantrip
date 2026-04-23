@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from cantrip.agent.sandbox import SandboxedRunner, SandboxPolicy
 from cantrip.agent.tools.base import Tool, ToolResult
 
 # Default commands the agent is allowed to run.
@@ -100,9 +101,17 @@ class RunCommandTool(Tool):
         *,
         allowlist: frozenset[str] | None = None,
         base_path: Path | None = None,
+        sandbox_runner: SandboxedRunner | None = None,
     ) -> None:
         self._allowlist = allowlist if allowlist is not None else DEFAULT_ALLOWLIST
         self._base_path = base_path
+        # The sandbox is the belt + braces in addition to the allowlist /
+        # wrapper denylist / shell-metacharacter checks above — even if a
+        # prompt injection or hallucination smuggles past every gate, the
+        # resulting subprocess still can't reach the network or write
+        # outside its working directory.  Lazily create a default runner
+        # on first use so import-time side effects stay minimal.
+        self._sandbox_runner = sandbox_runner
 
     @property
     def name(self) -> str:
@@ -227,13 +236,17 @@ class RunCommandTool(Tool):
                     error=f"Working directory '{cwd}' is outside the project tree.",
                 )
 
+        runner = self._sandbox_runner or SandboxedRunner()
+        policy = SandboxPolicy(
+            network=False,
+            read_write_paths=(Path(cwd).resolve(),),
+        )
         try:
-            result = subprocess.run(
+            result = runner.run(
                 parts,
-                capture_output=True,
-                text=True,
+                cwd=Path(cwd),
+                policy=policy,
                 timeout=timeout,
-                cwd=cwd,
             )
         except subprocess.TimeoutExpired:
             return ToolResult(

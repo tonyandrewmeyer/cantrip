@@ -5,6 +5,7 @@ from unittest import mock
 
 import pytest
 
+from cantrip.agent.sandbox import SandboxedRunner, SandboxPolicy
 from cantrip.agent.tools.run_command import (
     _DEFAULT_TIMEOUT,
     _MAX_OUTPUT_CHARS,
@@ -324,3 +325,62 @@ class TestShellMetacharacters:
         ):
             result = await custom_tool.execute(command="echo hello world")
         assert result.success
+
+
+class TestRunCommandSandbox:
+    """The tool runs commands through :class:`SandboxedRunner` (Phase 49.1)."""
+
+    @pytest.mark.anyio
+    async def test_uses_injected_sandbox_runner(self, tmp_path):
+        """RunCommandTool delegates to the sandbox runner with a policy
+        that blocks network and bind-mounts cwd."""
+        captured: dict = {}
+
+        class _SpyRunner(SandboxedRunner):
+            def run(self, argv, *, cwd, policy=None, timeout=None, **kwargs):  # type: ignore[override]
+                captured["argv"] = list(argv)
+                captured["cwd"] = cwd
+                captured["policy"] = policy
+                captured["timeout"] = timeout
+                result = mock.MagicMock()
+                result.returncode = 0
+                result.stdout = "ok\n"
+                result.stderr = ""
+                return result
+
+        spy = _SpyRunner(mechanism="none")
+        tool = RunCommandTool(
+            allowlist=frozenset({"echo"}),
+            sandbox_runner=spy,
+        )
+        result = await tool.execute(command="echo hello", cwd=str(tmp_path))
+        assert result.success
+        assert captured["argv"] == ["echo", "hello"]
+        assert captured["policy"] is not None
+        assert captured["policy"].network is False
+        # cwd must be listed among the read-write paths so the command
+        # can actually write to its working tree.
+        rw_paths = {str(p) for p in captured["policy"].read_write_paths}
+        assert str(tmp_path.resolve()) in rw_paths
+
+    @pytest.mark.anyio
+    async def test_default_tool_creates_its_own_runner(self, tmp_path):
+        """Without explicit injection, the tool constructs a SandboxedRunner
+        internally — verified by patching the class."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "ok\n"
+        mock_result.stderr = ""
+        with mock.patch(
+            "cantrip.agent.tools.run_command.SandboxedRunner",
+            return_value=mock.MagicMock(run=mock.MagicMock(return_value=mock_result)),
+        ) as runner_class:
+            tool = RunCommandTool(allowlist=frozenset({"echo"}))
+            await tool.execute(command="echo hi", cwd=str(tmp_path))
+        runner_class.assert_called_once()
+
+    def test_sandbox_policy_construction_defaults_to_no_network(self):
+        """Sanity check on the default SandboxPolicy shape used by the tool."""
+        policy = SandboxPolicy()
+        assert policy.network is False
+        assert policy.read_write_paths == ()

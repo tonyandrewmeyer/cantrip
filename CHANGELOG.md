@@ -5,6 +5,39 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **``SandboxedRunner`` + ``run_command`` namespace isolation —
+  Phase 49.1.**  New ``cantrip.agent.sandbox`` module wraps
+  subprocess invocations with Linux user-namespace isolation so a
+  hallucinated or compromised shell command can't reach files or
+  processes outside its intended scope.  ``sandbox_available()``
+  probes for ``bwrap`` (full filesystem + PID + network + namespace
+  isolation, canonical) and falls back to ``unshare`` (PID +
+  optional network isolation, no filesystem bind mounts — but the
+  network block still blocks credential exfiltration).  On non-Linux
+  or when neither tool is installed the runner logs a one-time
+  warning and runs the command unchanged so tests and non-Linux
+  users aren't locked out.  Per-invocation policy is a frozen
+  ``SandboxPolicy`` dataclass (``network``, ``read_write_paths``,
+  ``read_only_paths``) — callers describe what the command needs
+  rather than juggling CLI flags.  ``bwrap`` binds ``/usr`` /
+  ``/bin`` / ``/sbin`` / ``/lib*`` / ``/etc`` / ``/opt`` read-only
+  (via ``--ro-bind-try`` so missing paths don't break the run),
+  ``cwd`` read-write, each policy ``read_write_paths`` entry
+  read-write, each ``read_only_paths`` entry read-only, and adds a
+  tmpfs ``/tmp`` + fresh ``/proc`` / ``/dev`` + ``--new-session`` /
+  ``--die-with-parent`` for blast-radius containment.
+  ``RunCommandTool`` now runs every allowlisted command through the
+  sandbox with ``network=False`` by default and ``cwd`` bound
+  read-write — this is defence in depth on top of the existing
+  allowlist + wrapper denylist + shell-metacharacter checks, so a
+  prompt injection that bypassed every existing gate still can't
+  reach the network.  Other subprocess tools (``JujuDeployTool``,
+  git, charmcraft) keep their direct paths for now; the sandbox is
+  additive and they can adopt it per-tool in follow-up work.
+  Covered by 16 new sandbox-module tests (mechanism selection, bwrap
+  and unshare argv construction, no-sandbox pass-through, one-shot
+  warning, real-exec smoke test) plus 3 ``RunCommandTool`` sandbox
+  wiring tests.
 - **``charm-debug`` skill — Phase 33.5.**  New bundled skill that
   gives the agent a deterministic diagnostic workflow for stuck,
   misbehaving, or slow-to-reach-``active`` charms.  Shipped as a
