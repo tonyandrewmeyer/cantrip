@@ -360,12 +360,16 @@ class TestRunDelegation:
         assert call_kwargs["cwd"] == str(tmp_path.resolve())
 
     @pytest.mark.skipif(
-        sys.platform != "linux",
-        reason="sandbox mechanisms only apply on Linux",
+        sys.platform not in {"linux", "darwin"},
+        reason="no sandbox mechanism on this platform",
     )
     def test_real_execution_under_available_mechanism(self, tmp_path: pathlib.Path):
         """Smoke test: run a trivial command through whatever mechanism
-        this host provides and confirm it exits cleanly."""
+        this host provides and confirm it exits cleanly.
+
+        On Linux this exercises bwrap (if installed) or unshare; on
+        macOS it exercises sandbox-exec.  Both platforms are covered
+        by CI so regressions in either branch are caught."""
         runner = SandboxedRunner()
         result = runner.run(
             ["/bin/sh", "-c", "echo hi"],

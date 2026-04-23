@@ -54,10 +54,15 @@ jobs:
         run: uv run ty check src
 
   test:
-    name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      # Surface a macOS failure separately from a Linux failure instead
+      # of cancelling the survivor — Phase 49.4 adds a macOS-only
+      # ``sandbox-exec`` branch whose only enforcement is CI.
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.12"]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
