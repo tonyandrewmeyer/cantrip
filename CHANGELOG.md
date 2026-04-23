@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **User-configurable hooks — Phase 46.1 + 46.2.**  New
+  ``cantrip.hooks`` module lets users declare shell commands that
+  run at lifecycle events: ``pre_tool_call`` / ``post_tool_call``
+  (main agent + subagent), ``pre_compact`` / ``post_compact``,
+  ``pre_subagent`` / ``post_subagent``.  Config lives at
+  ``~/.config/cantrip/hooks.yaml`` (user, overridable via
+  ``$CANTRIP_HOOKS_USER_CONFIG``) and ``cantrip.hooks.yaml`` in
+  the charm directory (repo wins on name collision) — same
+  two-scope pattern as the MCP config.  Hooks run as subprocesses
+  with a JSON payload on stdin.  Schema uses ``event:`` not ``on:``
+  to dodge YAML 1.1's boolean-key trap.  Reserved event names
+  (``pre_pack``, ``pre_push``, ``pre_pr``, ``on_task_complete``,
+  ``on_session_end``) accept hook declarations today and start
+  firing when later sub-phases wire them up.  Full docs at
+  ``docs/docs/howto-hooks.html``.  The upcoming 46.3 adds ``if:``
+  conditional filters; 46.4 upgrades non-zero exit from pre-hooks
+  into a real veto.
 - **Tempo trace waterfall rendering — Phase 48.3.**  New
   ``tempo_waterfall`` tool fetches a trace from Tempo (same in-unit
   SSH pattern as ``tempo_query``), flattens the OpenTelemetry

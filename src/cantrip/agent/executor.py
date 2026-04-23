@@ -34,6 +34,7 @@ from cantrip.agent.subagent import (
 from cantrip.agent.tools.base import Tool
 from cantrip.agent.tools.git import _gpg_sign_enabled
 from cantrip.agent.worktree import WorktreeHandle, _DefaultWorktreeAllocator
+from cantrip.hooks import HookRunner
 from cantrip.llm import base as llm
 
 log = logging.getLogger(__name__)
@@ -337,6 +338,7 @@ class BackgroundExecutor:
         worktree_allocator: WorktreeAllocator | None = None,
         race_config: race.RaceConfig | None = None,
         extra_providers: list[llm.LLMProvider] | None = None,
+        hook_runner: HookRunner | None = None,
     ) -> None:
         self._queue = queue
         self._tools = tools
@@ -347,6 +349,7 @@ class BackgroundExecutor:
         self._on_task_done = on_task_done
         self._on_task_failed = on_task_failed
         self._max_concurrency = max(1, max_concurrency)
+        self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
 
         # Injected services — fall back to defaults when not provided.
         self._git: GitService = git_service or _DefaultGitService()
@@ -833,6 +836,7 @@ class BackgroundExecutor:
             throttle=self._throttle,
             store=self._store,
             on_phase_change=self._queue.notify_task,
+            hook_runner=self._hook_runner,
             **({"max_rounds": max_rounds} if max_rounds is not None else {}),
         )
         t0 = time.monotonic()
@@ -1077,6 +1081,7 @@ class BackgroundExecutor:
                 throttle=self._throttle,
                 store=self._store,
                 on_phase_change=self._queue.notify_task,
+                hook_runner=self._hook_runner,
                 **extra,
             )
 

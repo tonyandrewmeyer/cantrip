@@ -1,0 +1,405 @@
+"""Tests for the user-configurable hooks subsystem (Phase 46.1 + 46.2)."""
+
+from __future__ import annotations
+
+import json
+import pathlib
+
+import pytest
+import yaml
+
+from cantrip.hooks import (
+    DEFAULT_HOOK_TIMEOUT,
+    REPO_CONFIG_FILENAME,
+    HookConfig,
+    HookConfigError,
+    HookEvent,
+    HookRunner,
+    _parse_yaml,
+    load_hooks,
+)
+
+# ---------------------------------------------------------------------------
+# Config parsing
+# ---------------------------------------------------------------------------
+
+
+class TestParseYaml:
+    """Tests for the low-level YAML parser."""
+
+    def test_empty_file_returns_no_hooks(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("")
+        assert _parse_yaml(path) == []
+
+    def test_file_without_hooks_key(self, tmp_path: pathlib.Path):
+        """A YAML document with no ``hooks`` key is a no-op, not an error."""
+        path = tmp_path / "hooks.yaml"
+        path.write_text("servers: {}\n")
+        assert _parse_yaml(path) == []
+
+    def test_top_level_must_be_mapping(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("- just\n- a\n- list\n")
+        with pytest.raises(HookConfigError, match="must be a mapping"):
+            _parse_yaml(path)
+
+    def test_hooks_must_be_a_list(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("hooks:\n  not-a: list\n")
+        with pytest.raises(HookConfigError, match="must be a list"):
+            _parse_yaml(path)
+
+    def test_unknown_event_rejected(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("hooks:\n  - event: maybe_tool_call\n    run: echo\n")
+        with pytest.raises(HookConfigError, match="unknown event"):
+            _parse_yaml(path)
+
+    def test_missing_run_rejected(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("hooks:\n  - event: pre_tool_call\n")
+        with pytest.raises(HookConfigError, match="`run`"):
+            _parse_yaml(path)
+
+    def test_bad_timeout_type_rejected(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("hooks:\n  - event: pre_tool_call\n    run: echo\n    timeout: nope\n")
+        with pytest.raises(HookConfigError, match="must be a number"):
+            _parse_yaml(path)
+
+    def test_negative_timeout_rejected(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("hooks:\n  - event: pre_tool_call\n    run: echo\n    timeout: -1\n")
+        with pytest.raises(HookConfigError, match="must be positive"):
+            _parse_yaml(path)
+
+    def test_bad_continue_on_error_type_rejected(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text(
+            "hooks:\n  - event: pre_tool_call\n    run: echo\n    continue_on_error: yes-please\n"
+        )
+        with pytest.raises(HookConfigError, match="true or false"):
+            _parse_yaml(path)
+
+    def test_name_defaults_to_first_word_of_run(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("hooks:\n  - event: pre_tool_call\n    run: jq -r .tool\n")
+        [hook] = _parse_yaml(path)
+        assert hook.name == "jq"
+
+    def test_explicit_name_honoured(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("hooks:\n  - name: my-hook\n    event: pre_tool_call\n    run: echo\n")
+        [hook] = _parse_yaml(path)
+        assert hook.name == "my-hook"
+
+    def test_default_timeout_is_used_when_omitted(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("hooks:\n  - event: pre_tool_call\n    run: echo\n")
+        [hook] = _parse_yaml(path)
+        assert hook.timeout == DEFAULT_HOOK_TIMEOUT
+        # continue_on_error default is True — matches the docstring.
+        assert hook.continue_on_error is True
+
+    def test_parses_all_known_events(self, tmp_path: pathlib.Path):
+        """Every ``HookEvent`` value is accepted by the parser."""
+        hooks_yaml = "hooks:\n" + "".join(
+            f"  - event: {e.value}\n    run: echo {e.value}\n    name: {e.value}\n"
+            for e in HookEvent
+        )
+        path = tmp_path / "hooks.yaml"
+        path.write_text(hooks_yaml)
+        parsed = _parse_yaml(path)
+        assert {h.event for h in parsed} == set(HookEvent)
+
+
+# ---------------------------------------------------------------------------
+# Config discovery / merging
+# ---------------------------------------------------------------------------
+
+
+class TestLoadHooks:
+    """Tests for ``load_hooks`` user + repo scope merging."""
+
+    def test_returns_empty_when_no_configs(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Missing files yield an empty list — not an error."""
+        monkeypatch.setenv("CANTRIP_HOOKS_USER_CONFIG", str(tmp_path / "nonexistent.yaml"))
+        assert load_hooks(repo_root=tmp_path) == []
+
+    def test_repo_overrides_user_on_name_collision(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """When both scopes define a hook with the same name, repo wins."""
+        user_cfg = tmp_path / "user.yaml"
+        user_cfg.write_text(
+            "hooks:\n  - name: shared\n    event: pre_tool_call\n    run: echo user-scope\n"
+        )
+        repo_cfg = tmp_path / REPO_CONFIG_FILENAME
+        repo_cfg.write_text(
+            "hooks:\n  - name: shared\n    event: post_tool_call\n    run: echo repo-scope\n"
+        )
+        monkeypatch.setenv("CANTRIP_HOOKS_USER_CONFIG", str(user_cfg))
+
+        hooks = load_hooks(repo_root=tmp_path)
+        [shared] = hooks
+        assert shared.run == "echo repo-scope"
+        assert shared.event is HookEvent.POST_TOOL_CALL
+
+    def test_user_and_repo_hooks_both_included(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Different-named hooks from both scopes contribute to the result."""
+        user_cfg = tmp_path / "user.yaml"
+        user_cfg.write_text(
+            "hooks:\n  - name: user-only\n    event: pre_tool_call\n    run: echo\n"
+        )
+        repo_cfg = tmp_path / REPO_CONFIG_FILENAME
+        repo_cfg.write_text(
+            "hooks:\n  - name: repo-only\n    event: post_tool_call\n    run: echo\n"
+        )
+        monkeypatch.setenv("CANTRIP_HOOKS_USER_CONFIG", str(user_cfg))
+
+        names = {h.name for h in load_hooks(repo_root=tmp_path)}
+        assert names == {"user-only", "repo-only"}
+
+    def test_malformed_yaml_logs_warning_and_returns_others(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """A broken user config doesn't take out the repo config (or the agent)."""
+        import logging
+
+        user_cfg = tmp_path / "user.yaml"
+        # Syntactically malformed YAML.
+        user_cfg.write_text("hooks:\n  - [missing colon\n")
+        repo_cfg = tmp_path / REPO_CONFIG_FILENAME
+        repo_cfg.write_text(
+            "hooks:\n  - name: survivor\n    event: pre_tool_call\n    run: echo\n"
+        )
+        monkeypatch.setenv("CANTRIP_HOOKS_USER_CONFIG", str(user_cfg))
+
+        with caplog.at_level(logging.WARNING, logger="cantrip.hooks"):
+            hooks = load_hooks(repo_root=tmp_path)
+
+        assert {h.name for h in hooks} == {"survivor"}
+        assert any("malformed" in rec.getMessage() for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# HookRunner execution
+# ---------------------------------------------------------------------------
+
+
+class TestHookRunner:
+    """Tests for ``HookRunner.fire`` — the event dispatch path."""
+
+    @pytest.mark.asyncio
+    async def test_fire_on_empty_runner_is_noop(self):
+        results = await HookRunner().fire(HookEvent.PRE_TOOL_CALL, {})
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_fire_runs_matching_hooks_with_json_payload(self, tmp_path: pathlib.Path):
+        """The hook receives the payload as JSON on stdin and echoes it out."""
+        out = tmp_path / "captured.json"
+        hook = HookConfig(
+            name="capture",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"cat > {out}",
+            timeout=10,
+        )
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(
+            HookEvent.PRE_TOOL_CALL, {"tool": "juju_status", "arguments": {}}
+        )
+        assert result.exit_code == 0
+        assert result.timed_out is False
+
+        payload = json.loads(out.read_text())
+        assert payload["tool"] == "juju_status"
+        assert payload["event"] == "pre_tool_call"
+        # Timestamp is added automatically so hooks can tell invocations apart.
+        assert "timestamp" in payload
+
+    @pytest.mark.asyncio
+    async def test_non_matching_hook_does_not_run(self, tmp_path: pathlib.Path):
+        marker = tmp_path / "ran"
+        # Only registers for ``post_tool_call``.
+        hook = HookConfig(
+            name="marker",
+            event=HookEvent.POST_TOOL_CALL,
+            run=f"touch {marker}",
+        )
+        runner = HookRunner([hook])
+
+        results = await runner.fire(HookEvent.PRE_TOOL_CALL, {})
+        assert results == []
+        assert not marker.exists()
+
+    @pytest.mark.asyncio
+    async def test_multiple_hooks_same_event_all_fire_sequentially(self, tmp_path: pathlib.Path):
+        """Two hooks on the same event both run, in declaration order."""
+        log_file = tmp_path / "order.log"
+        hook_a = HookConfig(
+            name="a",
+            event=HookEvent.PRE_COMPACT,
+            run=f"echo A >> {log_file}",
+        )
+        hook_b = HookConfig(
+            name="b",
+            event=HookEvent.PRE_COMPACT,
+            run=f"echo B >> {log_file}",
+        )
+        runner = HookRunner([hook_a, hook_b])
+
+        results = await runner.fire(HookEvent.PRE_COMPACT, {})
+        assert [r.name for r in results] == ["a", "b"]
+        assert log_file.read_text() == "A\nB\n"
+
+    @pytest.mark.asyncio
+    async def test_timeout_is_enforced(self):
+        """A hook that exceeds its timeout is marked ``timed_out`` and killed."""
+        hook = HookConfig(
+            name="slow",
+            event=HookEvent.PRE_TOOL_CALL,
+            run="sleep 5",
+            timeout=0.3,
+        )
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(HookEvent.PRE_TOOL_CALL, {})
+        assert result.timed_out is True
+        # Exit code will be non-zero (negative when killed by signal).
+        assert result.exit_code != 0
+
+    @pytest.mark.asyncio
+    async def test_failing_hook_does_not_raise(self):
+        """A non-zero exit is reported on the result, not raised."""
+        hook = HookConfig(
+            name="fail",
+            event=HookEvent.PRE_TOOL_CALL,
+            run="false",
+            timeout=5,
+        )
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(HookEvent.PRE_TOOL_CALL, {})
+        assert result.exit_code == 1
+        assert result.timed_out is False
+
+    @pytest.mark.asyncio
+    async def test_hook_stderr_is_captured(self):
+        hook = HookConfig(
+            name="complain",
+            event=HookEvent.PRE_TOOL_CALL,
+            run="echo something-went-wrong >&2; exit 3",
+            timeout=5,
+        )
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(HookEvent.PRE_TOOL_CALL, {})
+        assert result.exit_code == 3
+        assert "something-went-wrong" in result.stderr
+
+    def test_hooks_for_returns_only_matching_event(self):
+        """``hooks_for`` is a read-only view for diagnostics."""
+        hook_a = HookConfig(name="a", event=HookEvent.PRE_TOOL_CALL, run="true")
+        hook_b = HookConfig(name="b", event=HookEvent.POST_TOOL_CALL, run="true")
+        runner = HookRunner([hook_a, hook_b])
+
+        pre = runner.hooks_for(HookEvent.PRE_TOOL_CALL)
+        assert [h.name for h in pre] == ["a"]
+
+        # Mutating the returned list does not affect the runner.
+        pre.clear()
+        assert runner.hooks_for(HookEvent.PRE_TOOL_CALL) == [hook_a]
+
+    def test_hook_count_sums_all_events(self):
+        hooks = [
+            HookConfig(name="a", event=HookEvent.PRE_TOOL_CALL, run="true"),
+            HookConfig(name="b", event=HookEvent.POST_TOOL_CALL, run="true"),
+            HookConfig(name="c", event=HookEvent.PRE_TOOL_CALL, run="true"),
+        ]
+        assert HookRunner(hooks).hook_count == 3
+        assert HookRunner([]).hook_count == 0
+
+    def test_from_disk_builds_runner_from_yaml(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        user_cfg = tmp_path / "user.yaml"
+        user_cfg.write_text(
+            yaml.safe_dump(
+                {
+                    "hooks": [
+                        {"name": "x", "event": "pre_tool_call", "run": "true"},
+                    ]
+                }
+            )
+        )
+        monkeypatch.setenv("CANTRIP_HOOKS_USER_CONFIG", str(user_cfg))
+
+        runner = HookRunner.from_disk(repo_root=tmp_path)
+        assert runner.hook_count == 1
+        assert [h.name for h in runner.hooks_for(HookEvent.PRE_TOOL_CALL)] == ["x"]
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: main agent fires hooks at lifecycle events
+# ---------------------------------------------------------------------------
+
+
+class TestAgentFiresHooks:
+    """Phase 46.2: main-agent lifecycle integration."""
+
+    @pytest.mark.asyncio
+    async def test_tool_call_fires_pre_and_post_hooks(self, tmp_path: pathlib.Path):
+        """Every main-agent tool call fires pre_tool_call + post_tool_call."""
+        # Deferred imports keep this test file cheap to collect.
+        from unittest.mock import AsyncMock
+
+        from cantrip.agent.core import CantripAgent
+        from cantrip.agent.tools.base import ToolResult
+        from cantrip.llm.base import Response, ToolCall
+        from tests.conftest import FakeProvider
+
+        log_file = tmp_path / "events.log"
+        hooks = [
+            HookConfig(
+                name="pre",
+                event=HookEvent.PRE_TOOL_CALL,
+                run=f"echo pre >> {log_file}",
+            ),
+            HookConfig(
+                name="post",
+                event=HookEvent.POST_TOOL_CALL,
+                run=f"echo post >> {log_file}",
+            ),
+        ]
+
+        tool_call = ToolCall(id="tc1", name="juju_status", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Done."),
+            ]
+        )
+        agent = CantripAgent(provider=provider, hook_runner=HookRunner(hooks))
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="ok"))
+
+        await agent.process_message("Check status")
+
+        assert log_file.read_text() == "pre\npost\n"

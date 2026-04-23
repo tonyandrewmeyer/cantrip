@@ -72,6 +72,7 @@ from cantrip.agent.tools.planning import (
     detect_current_juju_model,
 )
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
+from cantrip.hooks import HookEvent, HookRunner
 from cantrip.llm import base as llm
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
 from cantrip.mcp import (
@@ -169,6 +170,7 @@ class CantripAgent:
         provider: LLMProvider,
         charm_path: Path | None = None,
         light_provider: LLMProvider | None = None,
+        hook_runner: HookRunner | None = None,
     ):
         """Initialise the agent.
 
@@ -177,6 +179,13 @@ class CantripAgent:
 
         When *light_provider* is given it is used for internal tasks
         like context compaction, saving cost on the primary model.
+
+        When *hook_runner* is given, its registered hooks are fired
+        at the lifecycle events documented on :class:`HookEvent`.
+        Callers that want config-driven hooks should build the
+        runner with ``HookRunner.from_disk(charm_path)``; tests and
+        internal callers can pass a custom runner or let this default
+        to an empty runner (a no-op).
         """
         self.provider = provider
         self._light_provider = light_provider
@@ -189,6 +198,7 @@ class CantripAgent:
         self._work_queue = WorkQueue()
         self._event_bus = ui_events.EventBus()
         self._preflight = PreflightRunner(self.state)
+        self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
 
         # Context window management.
         self._virtual_store = VirtualFileStore()
@@ -723,7 +733,21 @@ class CantripAgent:
             tool_results = []
             for tc in response.tool_calls:
                 self._publish_activity(f"\u27f3 running: {tc.name}")
+                await self._hook_runner.fire(
+                    HookEvent.PRE_TOOL_CALL,
+                    {"tool": tc.name, "arguments": tc.arguments, "source": "main"},
+                )
                 result = await self._execute_tool(tc.name, tc.arguments)
+                await self._hook_runner.fire(
+                    HookEvent.POST_TOOL_CALL,
+                    {
+                        "tool": tc.name,
+                        "arguments": tc.arguments,
+                        "success": result.success,
+                        "error": result.error,
+                        "source": "main",
+                    },
+                )
                 self._publish_activity(f"\u27f3 {flavour.pick_activity_label()}...")
                 self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
@@ -751,6 +775,11 @@ class CantripAgent:
             # Compact if the context window is getting full.
             if self._context_manager.should_compact(self.state.messages):
                 log.info("Compacting conversation context")
+                tokens_before = self._context_manager.estimate_tokens(self.state.messages)
+                await self._hook_runner.fire(
+                    HookEvent.PRE_COMPACT,
+                    {"tokens_before": tokens_before, "source": "main"},
+                )
                 try:
                     self.state.messages = await self._context_manager.compact(
                         self.state.messages,
@@ -768,6 +797,14 @@ class CantripAgent:
                         self.state.messages
                     )
                 self._persist_compaction_state()
+                await self._hook_runner.fire(
+                    HookEvent.POST_COMPACT,
+                    {
+                        "tokens_before": tokens_before,
+                        "tokens_after": self._context_manager.estimate_tokens(self.state.messages),
+                        "source": "main",
+                    },
+                )
 
             # Call the LLM again with the updated history.
             messages = self._build_llm_messages(include_budget=True)
@@ -876,7 +913,21 @@ class CantripAgent:
             tool_results = []
             for tc in response.tool_calls:
                 self._publish_activity(f"\u27f3 running: {tc.name}")
+                await self._hook_runner.fire(
+                    HookEvent.PRE_TOOL_CALL,
+                    {"tool": tc.name, "arguments": tc.arguments, "source": "main-stream"},
+                )
                 result = await self._execute_tool(tc.name, tc.arguments)
+                await self._hook_runner.fire(
+                    HookEvent.POST_TOOL_CALL,
+                    {
+                        "tool": tc.name,
+                        "arguments": tc.arguments,
+                        "success": result.success,
+                        "error": result.error,
+                        "source": "main-stream",
+                    },
+                )
                 self._publish_activity(f"\u27f3 {flavour.pick_activity_label()}...")
                 self._capture_test_results(tc.name, result)
                 content = result.output if result.success else (result.error or "Unknown error")
@@ -902,6 +953,11 @@ class CantripAgent:
             # Compact if the context window is getting full.
             if self._context_manager.should_compact(self.state.messages):
                 log.info("Compacting conversation context")
+                tokens_before = self._context_manager.estimate_tokens(self.state.messages)
+                await self._hook_runner.fire(
+                    HookEvent.PRE_COMPACT,
+                    {"tokens_before": tokens_before, "source": "main-stream"},
+                )
                 try:
                     self.state.messages = await self._context_manager.compact(
                         self.state.messages,
@@ -917,6 +973,14 @@ class CantripAgent:
                         self.state.messages
                     )
                 self._persist_compaction_state()
+                await self._hook_runner.fire(
+                    HookEvent.POST_COMPACT,
+                    {
+                        "tokens_before": tokens_before,
+                        "tokens_after": self._context_manager.estimate_tokens(self.state.messages),
+                        "source": "main-stream",
+                    },
+                )
 
             # Separate this round's text from the previous round's, since
             # each round is an independent LLM response with no leading
@@ -1968,6 +2032,7 @@ class CantripAgent:
             "state": self.state,
             "store": self._store,
             "light_provider": self._light_provider,
+            "hook_runner": self._hook_runner,
         }
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency

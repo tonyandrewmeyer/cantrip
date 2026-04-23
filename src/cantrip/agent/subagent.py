@@ -17,6 +17,7 @@ from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool
+from cantrip.hooks import HookEvent, HookRunner
 from cantrip.llm import base as llm
 from cantrip.ui import flavour
 
@@ -734,6 +735,7 @@ class Subagent:
         store: SessionStore | None = None,
         max_rounds: int = MAX_SUBAGENT_ROUNDS,
         on_phase_change: PhaseChangeCallback = None,
+        hook_runner: HookRunner | None = None,
     ) -> None:
         self._context = context
         self._provider = _select_provider(
@@ -750,6 +752,7 @@ class Subagent:
         self._store = store
         self._max_rounds = max_rounds
         self._on_phase_change = on_phase_change
+        self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
 
     def _set_phase(self, phase: str) -> None:
         """Update the task's transient subagent phase and notify listeners."""
@@ -776,13 +779,33 @@ class Subagent:
         # counters agree.
         self._context.task.subagent_started_at = datetime.datetime.now()
         self._set_phase(flavour.pick_activity_label())
+        task = self._context.task
+        await self._hook_runner.fire(
+            HookEvent.PRE_SUBAGENT,
+            {
+                "task_id": task.id,
+                "title": task.title,
+                "category": task.category.value,
+            },
+        )
+        result: SubagentResult | None = None
         try:
-            return await self._run_inner()
+            result = await self._run_inner()
+            return result
         finally:
             # Clear transient state so the task pane doesn't show a stale
             # phase on a DONE / FAILED / BLOCKED task.
             self._context.task.subagent_started_at = None
             self._set_phase("")
+            await self._hook_runner.fire(
+                HookEvent.POST_SUBAGENT,
+                {
+                    "task_id": task.id,
+                    "title": task.title,
+                    "category": task.category.value,
+                    "exit_state": (result.exit_state.value if result is not None else "unknown"),
+                },
+            )
 
     async def _run_inner(self) -> SubagentResult:
         """Real body of ``run`` — phase stamping happens in the wrapper."""
@@ -847,9 +870,32 @@ class Subagent:
             # Execute tool calls concurrently — they are independent within
             # a single round.  asyncio.gather() preserves order.
             self._set_phase(self._tool_phase_label([tc.name for tc in response.tool_calls]))
+            category_value = self._context.task.category.value
+            for tc in response.tool_calls:
+                await self._hook_runner.fire(
+                    HookEvent.PRE_TOOL_CALL,
+                    {
+                        "tool": tc.name,
+                        "arguments": tc.arguments,
+                        "source": "subagent",
+                        "task_category": category_value,
+                    },
+                )
             raw_results = await asyncio.gather(
                 *(self._execute_tool(tc.name, tc.arguments) for tc in response.tool_calls)
             )
+            for tc, tool_result in zip(response.tool_calls, raw_results, strict=True):
+                await self._hook_runner.fire(
+                    HookEvent.POST_TOOL_CALL,
+                    {
+                        "tool": tc.name,
+                        "arguments": tc.arguments,
+                        "success": tool_result.success,
+                        "error": tool_result.error,
+                        "source": "subagent",
+                        "task_category": category_value,
+                    },
+                )
             # Fresh flavour each time we return to the thinking phase so
             # a long turn that cycles through tools rolls a new label per
             # thinking leg rather than reading the same verb forever.

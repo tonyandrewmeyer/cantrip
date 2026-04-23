@@ -351,26 +351,92 @@ conditional `if:` hooks and a PreCompact hook in the review window; Windsurf
 shipped Cascade Hooks. Cantrip already has internal hooks in `planner.py` and
 the watcher — this phase formalises them and opens them up.
 
-### 46.1 High — Hook event taxonomy
+### 46.1 High — Hook event taxonomy ✓
 
-- [ ] Enumerate the executor lifecycle points worth hooking: `pre_tool_call`,
-  `post_tool_call`, `pre_subagent`, `post_subagent`, `pre_compact`,
-  `post_compact`, `pre_pack`, `pre_push`, `pre_pr`, `on_task_complete`,
-  `on_session_end`
-- [ ] Document the payload shape for each event (tool name, arguments, task
-  category, working directory, provider, token cost-so-far)
-- [ ] Events are emitted through the Phase 15.1 shared event bus so TUI, Web,
-  and hooks all observe the same stream
+- [x] Full taxonomy declared in ``cantrip.hooks.HookEvent`` (StrEnum):
+  ``pre_tool_call``, ``post_tool_call``, ``pre_subagent``,
+  ``post_subagent``, ``pre_compact``, ``post_compact``, plus
+  reserved-for-later ``pre_pack``, ``pre_push``, ``pre_pr``,
+  ``on_task_complete``, ``on_session_end``.  The reserved names
+  accept hook declarations today but don't fire until later
+  sub-phases wire up the call sites — users can pre-write configs
+  without breakage when the switch flips.
+- [x] Wired to agent lifecycle:
+  ``pre_tool_call`` / ``post_tool_call`` fire in both main-agent
+  paths (synchronous ``core.py`` loop and streaming
+  ``process_message_streaming``) and in the subagent gather loop
+  (with a ``source`` field of ``main`` / ``main-stream`` /
+  ``subagent`` so hooks can tell callers apart).
+  ``pre_compact`` / ``post_compact`` fire in both compaction call
+  sites, with ``tokens_before`` + ``tokens_after`` carrying the
+  headline metric.  ``pre_subagent`` / ``post_subagent`` fire in
+  ``Subagent.run()``'s try/finally so ``post_subagent`` runs even
+  on failure, with the ``exit_state`` of the run.
+- [x] Payloads documented on the new
+  ``docs/docs/howto-hooks.html`` page — tool events carry
+  ``tool`` + ``arguments`` + ``success`` (post) + ``error``;
+  subagent events carry ``task_id`` + ``title`` + ``category``;
+  compact events carry ``tokens_before`` + ``tokens_after``;
+  every payload auto-includes ``event`` + ``timestamp``.
+- [x] Decision: hooks do **not** ride the Phase 15.1 UI event bus.
+  That bus is fire-and-forget (``_deliver()`` uses
+  ``ensure_future``) — listeners can't block the publisher, which
+  would break the future veto semantics in 46.4.  Instead hooks go
+  through a dedicated ``HookRunner.fire()`` that awaits each
+  subprocess sequentially, so the 46.4 upgrade is a small local
+  change rather than a bus-redesign.
 
-### 46.2 High — Hook config format and discovery
+### 46.2 High — Hook config format and discovery ✓
 
-- [ ] `hooks.yaml` at `.cantrip/hooks.yaml` (repo scope) and
-  `~/.config/cantrip/hooks.yaml` (user scope), merged with repo taking
-  precedence on conflict
-- [ ] Each hook declares: `on:` event name, `run:` command or inline script,
-  `timeout:` seconds, and `continue_on_error:` bool
-- [ ] Hooks run as subprocesses with a JSON payload on stdin; stdout/stderr
-  are captured into the transcript
+- [x] Two YAML config scopes, matching the MCP convention
+  (``cantrip.mcp.yaml``) for consistency:
+  ``~/.config/cantrip/hooks.yaml`` (user, overridable via
+  ``$CANTRIP_HOOKS_USER_CONFIG``) and ``cantrip.hooks.yaml`` in
+  the charm directory (repo).  Repo hooks with the same ``name``
+  override user-scope hooks; a malformed file logs at WARNING and
+  contributes nothing so a broken user config can't take out the
+  repo's hooks or the agent itself.
+- [x] Deviation from the roadmap wording: the schema key is
+  ``event:`` not ``on:``.  Unquoted ``on:`` in YAML 1.1 parses as
+  a boolean ``True`` key (PyYAML's default), which would silently
+  break every user config — surfacing a very poor error message to
+  a non-expert user.  ``event:`` dodges the trap and reads just as
+  well.  The ``HookConfig`` dataclass field name follows the
+  schema: ``HookConfig.event``, not ``HookConfig.on``.
+- [x] Schema:
+  ``name`` (optional; default: first word of ``run``),
+  ``event`` (required; one of ``HookEvent``),
+  ``run`` (required; ``/bin/sh -c``-style command),
+  ``timeout`` (optional; default 30 s, must be positive),
+  ``continue_on_error`` (optional; default True).  Every field has
+  strict type checking; unknown ``event`` values list the valid set
+  so the error points at the fix.
+- [x] Hooks run as subprocesses via
+  ``asyncio.create_subprocess_shell`` with the JSON payload on
+  stdin.  ``HookResult`` captures exit code, stdout, stderr,
+  duration, and a ``timed_out`` flag.  Execution is sequential per
+  event in declaration order — deterministic ordering matters for
+  the future veto path and gives a cleaner audit log.
+- [x] CLI + TUI construct the agent with
+  ``HookRunner.from_disk(repo_root=charm_path)`` so loaded hooks
+  take effect from session start; tests construct an empty runner
+  by default (no I/O, no YAML).  ``HookRunner`` is threaded through
+  the ``BackgroundExecutor`` → ``Subagent`` path so subagent events
+  fire the same hooks.
+- [x] 28 unit tests in ``tests/unit/test_hooks.py`` covering YAML
+  parse (empty file, missing ``hooks`` key, bad top-level type,
+  bad list type, unknown event, missing ``run``, bad timeout type,
+  negative timeout, bad ``continue_on_error`` type, default-name
+  derivation, explicit name, default timeout, all-events-parse),
+  config discovery (empty, repo-wins, both-included, malformed
+  user config survives), and runner execution (no-op on empty,
+  JSON payload on stdin, non-matching skipped, multiple hooks fire
+  in order, timeout enforced, failing hook doesn't raise, stderr
+  captured, ``hooks_for`` / ``hook_count`` diagnostics,
+  ``from_disk`` smoke test).  Plus an end-to-end
+  ``TestAgentFiresHooks`` case proving the main-agent tool-call
+  loop fires ``pre_tool_call`` + ``post_tool_call`` on every
+  invocation.
 
 ### 46.3 Medium — Conditional filters
 

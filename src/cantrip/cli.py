@@ -11,6 +11,7 @@ from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import TaskStatus
+from cantrip.hooks import HookRunner
 from cantrip.llm import create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.ui import events as ui_events
@@ -156,6 +157,7 @@ def run_cli(args: argparse.Namespace) -> int:
         provider=provider,
         charm_path=args.path,
         light_provider=light_provider,
+        hook_runner=HookRunner.from_disk(repo_root=args.path),
     )
 
     # Set improvement mode if --improve was passed.

@@ -22,6 +22,7 @@ from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.race import RACE_CONFIRM_PREFIX
+from cantrip.hooks import HookRunner
 from cantrip.llm import LLMProvider, create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
 from cantrip.tui.widgets import chat as chat_widget
@@ -264,6 +265,7 @@ class CantripApp(App):
                 provider=llm_provider,
                 charm_path=self.charm_path,
                 light_provider=light_provider,
+                hook_runner=HookRunner.from_disk(repo_root=self.charm_path),
             )
 
             # Set improvement mode if --improve was passed.
