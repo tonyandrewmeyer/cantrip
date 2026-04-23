@@ -116,6 +116,7 @@ def build_tools(
     from cantrip.agent.tools.memory import build_memory_tools
     from cantrip.agent.tools.multi_edit import MultiEditTool
     from cantrip.agent.tools.observability import (
+        GrafanaScreenshotTool,
         JujuDebugLogTool,
         JujuStreamLogsTool,
         LokiQueryTool,
@@ -255,6 +256,7 @@ def build_tools(
         JujuStreamLogsTool(),
         TempoQueryTool(),
         LokiQueryTool(),
+        GrafanaScreenshotTool(),
         # Inference snaps
         ListInferenceSnapsTool(),
         # Testing

@@ -463,13 +463,58 @@ textually.
   ``_messages_have_images`` helper). Happy-path + oversize-reject +
   non-vision-reject paths all covered.
 
-### 48.2 High — Grafana screenshot tool
+### 48.2 High — Grafana screenshot tool (48.2a landed; image threading deferred to 48.2b)
 
-- [ ] `GrafanaScreenshotTool` renders a panel or a dashboard as PNG via
-  Grafana's `/render` endpoint, using the existing COS configuration
-- [ ] Tool returns both the PNG bytes (for image-input) and a text caption
-  (panel title, time range, unit axes) so text-only providers still benefit
-- [ ] Works against the cross-model COS integration from Phase 22.2
+- [x] ``GrafanaScreenshotTool`` (``grafana_screenshot``) renders a
+  panel or full dashboard as PNG via Grafana's ``/render`` endpoint.
+  Mirrors the in-unit SSH-fetch pattern that
+  ``TempoQueryTool`` / ``LokiQueryTool`` already use — requests hit
+  ``http://localhost:3000`` inside the Grafana unit, side-stepping
+  ingress / TLS and giving the image-renderer plugin the host it
+  expects.  Supports ``dashboard_uid``, optional ``panel_id``,
+  ``time_range`` (Grafana duration syntax), ``width`` / ``height``
+  (1–4000 px), and ``cos_model``.  Uses ``/render/d-solo/<uid>``
+  with a ``panelId`` query for single panels and ``/render/d/<uid>``
+  for the full dashboard.
+- [x] Fetches the Grafana admin password via the charm's
+  ``get-admin-password`` action and passes it as ``Basic`` auth on
+  the in-unit HTTP request.  When the action is unavailable or
+  returns no usable key, falls back to an unauthenticated request
+  and prints a targeted hint (``run get-admin-password manually``)
+  if Grafana answers with a non-PNG body — typically a 401 or the
+  renderer-plugin error page.  The PNG magic-byte check flags HTML
+  error pages so the agent doesn't store an HTML blob as a ``.png``.
+- [x] A new ``_ssh_fetch_binary`` helper carries the existing
+  shell-safe base64-encoded-script pattern into binary territory —
+  the unit b64-encodes the response before printing to stdout so
+  ``juju ssh`` (which returns ``str``) transports PNG bytes
+  losslessly.  ``auth_header`` is optional and escaped through the
+  same single-quote replacement the URL uses.
+- [x] PNGs are saved to ``~/.cache/cantrip/screenshots/`` with a
+  deterministic filename (``grafana-<uid>[-p<panel>]-<timestamp>.png``).
+  The tool returns a rich text caption (dashboard UID, panel id,
+  time range, dimensions, bytes, file path) plus a ``data`` dict so
+  48.2b and the TUI can locate the image.
+- [x] Client-side validation: ``dashboard_uid`` matches
+  ``[A-Za-z0-9_.-]+`` (blocks path-traversal attempts before they
+  hit the URL), ``time_range`` matches the Grafana duration regex
+  (``\d+[smhdwMy]``), ``width`` / ``height`` clamped to 1–4000.
+- [x] Registered in ``build_tools()`` and added to the ``DEBUG``
+  subagent allowlist so debug subagents can grab screenshots when
+  diagnosing a live deployment.  ``reference-tools.html`` updated.
+- [x] 16 new unit tests in ``tests/unit/test_observability_tools.py``:
+  ``_grafana_admin_password`` across four result-shapes,
+  ``GrafanaScreenshotTool`` happy path (cache-dir write + caption),
+  endpoint routing (d-solo vs d), auth-header inclusion, missing-
+  password degradation, non-PNG error surfacing, password-hint copy,
+  and the three client-side validation paths.
+- [ ] **48.2b (deferred, separate sub-item):** thread the rendered
+  PNG bytes into the ``tool_result`` message so vision-capable
+  providers (Phase 48.1) can reason about the panel visually.
+  Blocks across all 48 tools that produce images (48.3, 48.4, 48.5)
+  and needs a ``ToolResult.images`` / ``llm.ToolResult.images``
+  extension plus provider-specific rendering of image content blocks
+  — one shared design shipped once, three tools benefit.
 
 ### 48.3 Medium — Tempo trace waterfall rendering
 

@@ -5,6 +5,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Grafana screenshot tool — Phase 48.2a.** New
+  ``grafana_screenshot`` tool renders a Grafana panel or dashboard
+  as a PNG via Grafana's ``/render`` endpoint, using the same
+  in-unit SSH-fetch pattern as ``tempo_query`` / ``loki_query``.
+  Fetches the admin password via the ``get-admin-password`` action
+  (degrades gracefully when it's unavailable), saves the PNG to
+  ``~/.cache/cantrip/screenshots/`` with a deterministic filename,
+  and returns a caption plus a structured ``data`` dict with the
+  file path.  Registered in the DEBUG subagent allowlist.
+  A follow-up sub-item (48.2b) will thread the PNG bytes into the
+  tool-result message so vision-capable providers can reason about
+  the panel visually; until then the caption + file path are the
+  handoff.  Ships a reusable ``_ssh_fetch_binary`` helper for the
+  PNG transport that Phase 48.3 / 48.4 will also use.
 - **Image input across LLM providers — Phase 48.1.** ``Message`` grew
   an ``images: list[Image]`` field (with a new
   ``Image(data: bytes, mime: str)`` dataclass), and ``LLMProvider``

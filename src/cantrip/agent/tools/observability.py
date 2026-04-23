@@ -2,7 +2,10 @@
 
 import asyncio
 import base64
+import datetime
 import json
+import logging
+import pathlib
 import re
 import urllib.parse
 from typing import Any
@@ -12,11 +15,25 @@ import jubilant
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.tools.juju_subprocess import juju_available as _juju_available
 
+log = logging.getLogger(__name__)
+
 # Cap tool output to avoid overwhelming LLM context.
 _MAX_OUTPUT_CHARS = 10000
 
 # Timeout for urllib requests executed inside SSH sessions.
 _HTTP_TIMEOUT_SECONDS = 10
+
+# Grafana ``/render`` calls can take tens of seconds on busy dashboards.
+_RENDER_TIMEOUT_SECONDS = 60
+
+# Cache directory for rendered artefacts (Grafana screenshots today;
+# Tempo waterfalls and Juju status renders once 48.3 / 48.4 land).
+_SCREENSHOT_CACHE_DIR = pathlib.Path.home() / ".cache" / "cantrip" / "screenshots"
+
+# PNG magic bytes used to tell a rendered image apart from an HTML
+# error page Grafana returns when the dashboard is missing or the
+# renderer plugin isn't installed.
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
 def _find_cos_unit(cos_model: str, app_hint: str) -> tuple[jubilant.Juju, str]:
@@ -66,6 +83,43 @@ def _ssh_fetch_url(juju: jubilant.Juju, unit_name: str, url: str, timeout: int) 
         unit_name,
         f"python3 -c \"import base64,sys;exec(base64.b64decode('{encoded}'))\"",
     )
+
+
+def _ssh_fetch_binary(
+    juju: jubilant.Juju,
+    unit_name: str,
+    url: str,
+    timeout: int,
+    auth_header: str | None = None,
+) -> bytes:
+    """Fetch a URL from inside a Juju unit and return the raw bytes.
+
+    Mirrors :func:`_ssh_fetch_url` but base64-encodes the response
+    inside the unit before printing to stdout, so we can reliably
+    transport binary payloads (PNGs in particular) across the SSH
+    channel — ``juju ssh`` returns a ``str`` and would otherwise
+    mangle non-UTF-8 bytes.
+    """
+    safe_url = url.replace("'", "%27")
+    header_line = ""
+    if auth_header is not None:
+        safe_header = auth_header.replace("'", "%27")
+        header_line = f"req.add_header('Authorization', '{safe_header}'); "
+    script = (
+        "import urllib.request, sys, base64; "
+        f"req = urllib.request.Request('{safe_url}'); "
+        f"{header_line}"
+        f"resp = urllib.request.urlopen(req, timeout={timeout}); "
+        "sys.stdout.write(base64.b64encode(resp.read()).decode('ascii'))"
+    )
+    encoded = base64.b64encode(script.encode()).decode()
+    raw = juju.ssh(
+        unit_name,
+        f"python3 -c \"import base64,sys;exec(base64.b64decode('{encoded}'))\"",
+    )
+    # ``juju ssh`` occasionally appends trailing whitespace; strip it
+    # before b64-decoding.
+    return base64.b64decode(raw.strip())
 
 
 class JujuDebugLogTool(Tool):
@@ -536,4 +590,257 @@ class LokiQueryTool(Tool):
             success=True,
             output=_truncate(output),
             data={"count": len(lines)},
+        )
+
+
+def _grafana_admin_password(juju: jubilant.Juju) -> str | None:
+    """Fetch the Grafana admin password via the ``get-admin-password`` action.
+
+    Returns ``None`` when the action isn't available or produces no
+    usable ``admin-password`` key — the caller falls back to an
+    unauthenticated request so the tool still returns a targeted error
+    instead of silently failing.
+    """
+    try:
+        task = juju.run("grafana/leader", "get-admin-password")
+    except (jubilant.TaskError, ValueError, jubilant.CLIError) as exc:
+        log.debug("Grafana get-admin-password action failed: %s", exc)
+        return None
+    results = getattr(task, "results", {}) or {}
+    for key in ("admin-password", "password"):
+        value = results.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _screenshot_path(dashboard_uid: str, panel_id: int | None) -> pathlib.Path:
+    """Build the target cache path for a freshly rendered screenshot."""
+    _SCREENSHOT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # Dashboard UIDs are alphanumeric-ish; sanitise defensively for a
+    # filename without depending on the Grafana server's conventions.
+    safe_uid = re.sub(r"[^A-Za-z0-9_.-]+", "_", dashboard_uid)[:32] or "dashboard"
+    panel_suffix = f"-p{panel_id}" if panel_id is not None else ""
+    return _SCREENSHOT_CACHE_DIR / f"grafana-{safe_uid}{panel_suffix}-{ts}.png"
+
+
+class GrafanaScreenshotTool(Tool):
+    """Render a Grafana panel or dashboard as a PNG via the ``/render`` endpoint.
+
+    Uses the same in-unit SSH-fetch pattern as :class:`TempoQueryTool`
+    and :class:`LokiQueryTool` so the request hits Grafana at
+    ``http://localhost:3000`` from inside the Grafana unit itself —
+    which sidesteps ingress and TLS complexity and gives the remote
+    renderer the host it expects.  Requires the Grafana image-renderer
+    plugin, which ships with the grafana-k8s charm by default.
+
+    The PNG is saved to ``~/.cache/cantrip/screenshots/`` and the path
+    is returned to the caller alongside a human-readable caption.  A
+    follow-up phase (48.2b) will thread the PNG bytes into the
+    tool-result message so vision-capable providers can reason about
+    the panel visually; until then the caption alone is still useful
+    and the file is on disk for manual attachment.
+    """
+
+    @property
+    def name(self) -> str:
+        return "grafana_screenshot"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Render a Grafana panel or dashboard as a PNG using Grafana's "
+            "/render endpoint. Requires a COS model with Grafana deployed "
+            "and its image-renderer plugin (bundled with grafana-k8s by "
+            "default). Saves the PNG to ~/.cache/cantrip/screenshots/ and "
+            "returns the file path plus a caption (dashboard UID, panel id, "
+            "time range, dimensions). Useful for visual diagnostics — "
+            "latency spikes, failing-rate graphs, dashboards worth sharing "
+            "with the user."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "dashboard_uid": {
+                    "type": "string",
+                    "description": (
+                        "Grafana dashboard UID (the short alphanumeric "
+                        "identifier shown in the URL, not the numeric id)."
+                    ),
+                },
+                "panel_id": {
+                    "type": "integer",
+                    "description": (
+                        "Specific panel ID to render (default: full "
+                        "dashboard). Find this in a panel's share URL."
+                    ),
+                },
+                "time_range": {
+                    "type": "string",
+                    "description": (
+                        "Grafana duration for the ``from=now-<range>`` "
+                        "query (default ``1h``; accepts ``30m``, ``6h``, "
+                        "``24h``, ``7d``, etc.)."
+                    ),
+                    "default": "1h",
+                },
+                "width": {
+                    "type": "integer",
+                    "description": "Output width in pixels (default 1000).",
+                    "default": 1000,
+                },
+                "height": {
+                    "type": "integer",
+                    "description": "Output height in pixels (default 500).",
+                    "default": 500,
+                },
+                "cos_model": {
+                    "type": "string",
+                    "description": "Name of the COS model (default 'cos').",
+                    "default": "cos",
+                },
+            },
+            "required": ["dashboard_uid"],
+        }
+
+    async def execute(
+        self,
+        dashboard_uid: str,
+        panel_id: int | None = None,
+        time_range: str = "1h",
+        width: int = 1000,
+        height: int = 500,
+        cos_model: str = "cos",
+    ) -> ToolResult:
+        """Render a Grafana panel or dashboard and return the file path."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        # Reject unreasonable inputs before making a long-running
+        # render call: very large canvases tax the image renderer and
+        # often hit its per-request memory cap.
+        if not 1 <= width <= 4000 or not 1 <= height <= 4000:
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"width/height must be between 1 and 4000 pixels; "
+                    f"got width={width}, height={height}"
+                ),
+            )
+        if not re.fullmatch(r"\d+[smhdwMy]", time_range):
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"time_range must be a Grafana duration like '1h', "
+                    f"'30m', '7d'; got {time_range!r}"
+                ),
+            )
+        # Dashboard UIDs are alphanumeric + a few punctuation chars —
+        # reject anything else before it reaches the URL to block
+        # even theoretical path-traversal attempts.
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", dashboard_uid):
+            return ToolResult(
+                success=False,
+                output="",
+                error=(f"dashboard_uid must match [A-Za-z0-9_.-]+; got {dashboard_uid!r}"),
+            )
+
+        try:
+            juju, unit_name = _find_cos_unit(cos_model, "grafana")
+        except ValueError as exc:
+            return ToolResult(success=False, output="", error=str(exc))
+
+        password = _grafana_admin_password(juju)
+        auth_header: str | None = None
+        if password is not None:
+            creds = base64.b64encode(f"admin:{password}".encode()).decode("ascii")
+            auth_header = f"Basic {creds}"
+
+        endpoint = "d-solo" if panel_id is not None else "d"
+        params = {
+            "from": f"now-{time_range}",
+            "to": "now",
+            "width": str(width),
+            "height": str(height),
+        }
+        if panel_id is not None:
+            params["panelId"] = str(panel_id)
+        url = (
+            f"http://localhost:3000/render/{endpoint}/{dashboard_uid}"
+            f"?{urllib.parse.urlencode(params)}"
+        )
+
+        try:
+            payload = _ssh_fetch_binary(
+                juju,
+                unit_name,
+                url,
+                _RENDER_TIMEOUT_SECONDS,
+                auth_header=auth_header,
+            )
+        except jubilant.CLIError as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"SSH to {unit_name} failed: {exc}",
+            )
+        except (ValueError, OSError) as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Could not decode Grafana /render response: {exc}",
+            )
+
+        if not payload.startswith(_PNG_MAGIC):
+            # Surface the first 500 chars of whatever Grafana returned —
+            # typically an HTML error page from the renderer plugin.
+            try:
+                snippet = payload.decode("utf-8", errors="replace")[:500]
+            except UnicodeDecodeError:
+                snippet = repr(payload[:200])
+            hint = ""
+            if password is None:
+                hint = (
+                    " Tip: run `juju run grafana/leader get-admin-password` "
+                    "manually to confirm the Grafana charm exposes the action."
+                )
+            return ToolResult(
+                success=False,
+                output="",
+                error=(f"Grafana did not return a PNG. Response begins:\n{snippet}{hint}"),
+            )
+
+        path = _screenshot_path(dashboard_uid, panel_id)
+        path.write_bytes(payload)
+
+        panel_desc = f"panel {panel_id}" if panel_id is not None else "full dashboard"
+        caption_lines = [
+            f"Rendered Grafana {panel_desc} from dashboard ``{dashboard_uid}``.",
+            f"Time range: now-{time_range} to now.",
+            f"Dimensions: {width}x{height}.",
+            f"Saved to: {path}",
+            f"Size: {len(payload):,} bytes.",
+        ]
+        return ToolResult(
+            success=True,
+            output="\n".join(caption_lines),
+            data={
+                "path": str(path),
+                "dashboard_uid": dashboard_uid,
+                "panel_id": panel_id,
+                "time_range": time_range,
+                "width": width,
+                "height": height,
+                "bytes": len(payload),
+            },
         )

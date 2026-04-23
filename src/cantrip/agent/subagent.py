@@ -335,6 +335,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "juju_stream_logs",
             "tempo_query",
             "loki_query",
+            "grafana_screenshot",
             "juju_status",
             "juju_ssh",
             "juju_config",
