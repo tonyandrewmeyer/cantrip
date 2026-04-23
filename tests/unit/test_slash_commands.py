@@ -465,6 +465,62 @@ class TestUpdateFollowup:
         assert "no network" in text
 
 
+class TestSandbox:
+    """Phase 49.5 — ``/sandbox`` shows current mechanism + policy."""
+
+    def test_sandbox_without_tool_returns_none_mechanism(
+        self, memory_manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cantrip.agent import sandbox
+
+        monkeypatch.setattr(sandbox, "sandbox_available", lambda: "none")
+        monkeypatch.setattr(sandbox, "get_event_sink", lambda: None)
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/sandbox")
+        assert result is not None
+        assert "none" in result.text
+        assert "run_command" in result.text
+        assert "off" in result.text  # transcript-logging line
+
+    def test_sandbox_with_bwrap_mentions_full_isolation(
+        self, memory_manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cantrip.agent import sandbox
+
+        monkeypatch.setattr(sandbox, "sandbox_available", lambda: "bwrap")
+        monkeypatch.setattr(sandbox, "get_event_sink", lambda: None)
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/sandbox")
+        assert result is not None
+        assert "bwrap" in result.text
+        assert "full filesystem" in result.text
+
+    def test_sandbox_with_unshare_mentions_bubblewrap_upgrade_path(
+        self, memory_manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cantrip.agent import sandbox
+
+        monkeypatch.setattr(sandbox, "sandbox_available", lambda: "unshare")
+        monkeypatch.setattr(sandbox, "get_event_sink", lambda: None)
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/sandbox")
+        assert result is not None
+        assert "unshare" in result.text
+        assert "bubblewrap" in result.text
+
+    def test_sandbox_with_sink_registered_shows_on(
+        self, memory_manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cantrip.agent import sandbox
+
+        monkeypatch.setattr(sandbox, "sandbox_available", lambda: "bwrap")
+        monkeypatch.setattr(sandbox, "get_event_sink", lambda: lambda *_a: None)
+        agent = _fake_agent(memory_manager)
+        result = dispatch(agent, "/sandbox")
+        assert result is not None
+        assert "Transcript logging:** on" in result.text
+
+
 class TestCommandCatalogue:
     """The shared catalogue drives UI autocomplete and must stay in sync."""
 

@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cantrip import update as update_module
-from cantrip.agent import mcp_commands, memory_commands
+from cantrip.agent import mcp_commands, memory_commands, sandbox
 from cantrip.llm import pricing
 
 if TYPE_CHECKING:
@@ -61,6 +61,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/arena", "Blind A/B compare two models"),
     CommandInfo("/export", "Export the live session transcript"),
     CommandInfo("/update", "Check PyPI for a newer release"),
+    CommandInfo("/sandbox", "Show subprocess sandbox status"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -143,6 +144,8 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=export_transcript(agent, args))
     if verb == "/update":
         return _handle_update(args)
+    if verb == "/sandbox":
+        return SlashResult(text=format_sandbox_status())
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     return None
@@ -227,8 +230,58 @@ def help_text() -> str:
         "- `/update` — check PyPI for a newer Cantrip release right"
         " now (cache-bypassing).  `/update --no-check` disables the"
         " auto-check; `/update --check` re-enables it.\n"
+        "- `/sandbox` — show which subprocess sandbox mechanism is"
+        " active on this host and what `run_command` enforces.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
+
+
+def format_sandbox_status() -> str:
+    """Render the current subprocess-sandbox configuration for ``/sandbox``.
+
+    Reports the mechanism the host is actually using, the default
+    policy ``RunCommandTool`` enforces, and a short note on how to
+    strengthen isolation (install bubblewrap if unshare-only).
+    """
+    mechanism = sandbox.sandbox_available()
+
+    lines = ["**Subprocess sandbox**", ""]
+
+    if mechanism == "bwrap":
+        lines.append(
+            "- Mechanism: **bwrap** — full filesystem + PID + network + namespace isolation."
+        )
+    elif mechanism == "unshare":
+        lines.append(
+            "- Mechanism: **unshare** — PID + optional network isolation. "
+            "No filesystem bind mounts (install `bubblewrap` for full "
+            "isolation)."
+        )
+    elif mechanism == "sandbox-exec":
+        lines.append(
+            "- Mechanism: **sandbox-exec** — macOS SBPL profile enforces "
+            "a read-only root with read-write access to the working tree."
+        )
+    else:
+        lines.append(
+            "- Mechanism: **none** — no sandbox available on this host. Commands run unsandboxed."
+        )
+
+    lines.append("")
+    lines.append("**Per-tool overrides**")
+    lines.append("")
+    lines.append(
+        "- `run_command`: network **off**, working tree bound read-write, "
+        "system paths bound read-only."
+    )
+
+    sink_state = "on" if sandbox.get_event_sink() is not None else "off"
+    lines.append("")
+    lines.append(
+        f"**Transcript logging:** {sink_state} — `sandbox_policy` events "
+        "are recorded in the session store when a sink is registered."
+    )
+    return "\n".join(lines)
 
 
 def format_cost(agent: CantripAgent) -> str:

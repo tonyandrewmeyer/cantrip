@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
-from cantrip.agent import arena
+from cantrip.agent import arena, sandbox
 from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.design import parse_design_from_result
@@ -393,6 +393,19 @@ class CantripAgent:
                 old_dir.rename(backup)
 
         self._store = SessionStore(db_path)
+
+        # Route sandbox policy decisions into the transcript so reviewers
+        # can audit which bind mounts and network settings every
+        # subprocess actually saw (Phase 49.5).  Safe to install even if
+        # this agent later shuts down — the sink drops writes when the
+        # store is None, and it's replaced per-init so there's at most
+        # one live sink.
+        def _sandbox_event_sink(name: str, data: dict[str, object]) -> None:
+            store = self._store
+            if store is not None:
+                store.record_event(name, data)
+
+        sandbox.set_event_sink(_sandbox_event_sink)
 
     def _ensure_claude_md(self, charm_path: Path) -> None:
         """Write a CLAUDE.md into the charm directory if one does not exist."""

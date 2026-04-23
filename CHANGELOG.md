@@ -5,6 +5,43 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **macOS ``sandbox-exec`` + sandbox observability — Phase 49.4 + 49.5.**
+  The ``SandboxedRunner`` now supports a ``"sandbox-exec"`` mechanism
+  on macOS — detected via ``shutil.which`` and driven by a Lisp-like
+  SBPL profile that denies everything by default and then allows
+  ``process-exec`` / ``process-fork`` / ``sysctl-read`` / ``mach-lookup``
+  / ``ipc-posix-sem``, ``file-read*`` on the standard system paths
+  (``/usr``, ``/bin``, ``/System``, ``/Library``, ``/private/etc``,
+  …), ``file-read*`` + ``file-write*`` on the working tree and any
+  policy ``read_write_paths``, and ``network*`` gated on
+  ``policy.network``.  Falls back to ``"none"`` with a one-shot warning
+  when ``sandbox-exec`` is missing — future macOS releases may remove
+  the Apple-deprecated tool entirely, which the warning anticipates.
+
+  For observability, ``cantrip.agent.sandbox`` gained a module-level
+  event-sink slot (``set_event_sink`` / ``get_event_sink``, thread-safe
+  via a lock).  When a sink is registered, ``SandboxedRunner.run``
+  emits a ``sandbox_policy`` event with the argv, mechanism, cwd,
+  network setting, and bind-mount lists *before* the subprocess
+  spawns.  ``CantripAgent._init_store`` installs a sink that routes
+  into ``SessionStore.record_event`` so every sandbox decision is
+  durably audit-logged alongside tool calls.  Sink exceptions are
+  swallowed so a misbehaving sink can never break the run.
+
+  A new ``/sandbox`` slash command reports the active mechanism
+  (bwrap / unshare / sandbox-exec / none, each with a one-line
+  summary including the upgrade path when relevant), the
+  ``run_command`` default policy, and whether transcript logging is
+  currently on.  Covered by 5 new ``TestSandboxExecWrap`` cases + 4
+  ``TestEventSink`` cases + 4 ``TestSandbox`` dispatcher cases; the
+  catalogue drift guards continue to hold.
+
+  Phase 49.3 (per-tool seccomp-bpf allowlists) remains deferred —
+  rolling hand-crafted BPF without a ``libseccomp`` dep is more
+  risk than value, and the phase's own exit clause sanctions
+  falling back to the namespace-only sandbox when seccomp is
+  unavailable.  Re-open when a tool presents a concrete
+  syscall-level attack surface.
 - **``SandboxedRunner`` + ``run_command`` namespace isolation —
   Phase 49.1.**  New ``cantrip.agent.sandbox`` module wraps
   subprocess invocations with Linux user-namespace isolation so a

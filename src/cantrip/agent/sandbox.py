@@ -38,10 +38,40 @@ import pathlib
 import shutil
 import subprocess
 import sys
-from collections.abc import Sequence
-from typing import Literal
+import threading
+from collections.abc import Callable, Sequence
+from typing import Any, Literal
 
 log = logging.getLogger(__name__)
+
+# Event-sink hook — the agent optionally registers a callable here to
+# persist sandbox decisions into the session transcript (Phase 49.5).
+# Keeping it as a module-level slot avoids threading a store reference
+# through every caller; the hook is off by default so unit tests of the
+# sandbox itself stay hermetic.
+_EventSink = Callable[[str, dict[str, Any]], None]
+_event_sink: _EventSink | None = None
+_event_sink_lock = threading.Lock()
+
+
+def set_event_sink(sink: _EventSink | None) -> None:
+    """Install (or clear) the event sink.
+
+    The sandbox runner calls the registered sink with an event name and
+    a structured payload whenever a command is wrapped, so reviewers can
+    audit which bind mounts and network settings a subprocess actually
+    saw.  Passing ``None`` clears the hook.
+    """
+    global _event_sink
+    with _event_sink_lock:
+        _event_sink = sink
+
+
+def get_event_sink() -> _EventSink | None:
+    """Return the currently-registered event sink (``None`` if unset)."""
+    with _event_sink_lock:
+        return _event_sink
+
 
 # System paths we always bind read-only inside the bwrap sandbox.  These
 # give the command access to installed binaries, shared libraries, locale
@@ -58,7 +88,7 @@ _SYSTEM_READ_ONLY_PATHS: tuple[pathlib.Path, ...] = (
     pathlib.Path("/opt"),
 )
 
-Mechanism = Literal["bwrap", "unshare", "none"]
+Mechanism = Literal["bwrap", "unshare", "sandbox-exec", "none"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -90,15 +120,21 @@ class SandboxPolicy:
 def sandbox_available() -> Mechanism:
     """Return the best sandbox mechanism available on this host.
 
-    Probes ``PATH`` for ``bwrap`` first, then ``unshare``.  Non-Linux
-    hosts always return ``"none"`` — macOS support lives in Phase 49.4.
+    On Linux, probes ``PATH`` for ``bwrap`` first, then ``unshare``.
+    On macOS, probes for ``sandbox-exec`` — deprecated by Apple but
+    still present on current releases and the only shipping option.
+    Returns ``"none"`` on other platforms or when no tool is present.
     """
-    if sys.platform != "linux":
+    if sys.platform == "linux":
+        if shutil.which("bwrap"):
+            return "bwrap"
+        if shutil.which("unshare"):
+            return "unshare"
         return "none"
-    if shutil.which("bwrap"):
-        return "bwrap"
-    if shutil.which("unshare"):
-        return "unshare"
+    if sys.platform == "darwin":
+        if shutil.which("sandbox-exec"):
+            return "sandbox-exec"
+        return "none"
     return "none"
 
 
@@ -142,6 +178,7 @@ class SandboxedRunner:
         policy = policy or SandboxPolicy()
         cwd_path = pathlib.Path(cwd).resolve()
         wrapped = self.wrap(argv, cwd=cwd_path, policy=policy)
+        self._record_decision(argv=list(argv), cwd=cwd_path, policy=policy)
         return subprocess.run(
             wrapped,
             cwd=str(cwd_path),
@@ -150,6 +187,35 @@ class SandboxedRunner:
             timeout=timeout,
             check=False,
         )
+
+    def _record_decision(
+        self,
+        *,
+        argv: list[str],
+        cwd: pathlib.Path,
+        policy: SandboxPolicy,
+    ) -> None:
+        """Emit a ``sandbox_policy`` event if an event sink is registered.
+
+        Phase 49.5 observability — gives reviewers an audit trail of which
+        bind mounts and network settings every subprocess actually saw.
+        Never raises: a misbehaving sink must not break the command.
+        """
+        sink = get_event_sink()
+        if sink is None:
+            return
+        payload = {
+            "mechanism": self._mechanism,
+            "argv": argv,
+            "cwd": str(cwd),
+            "network": policy.network,
+            "read_write_paths": [str(p) for p in policy.read_write_paths],
+            "read_only_paths": [str(p) for p in policy.read_only_paths],
+        }
+        try:
+            sink("sandbox_policy", payload)
+        except Exception as exc:  # noqa: BLE001 - sink errors must not propagate
+            log.debug("sandbox event sink raised %r; ignoring", exc)
 
     def wrap(
         self,
@@ -167,6 +233,8 @@ class SandboxedRunner:
             return self._wrap_bwrap(argv, cwd=cwd, policy=policy)
         if self._mechanism == "unshare":
             return self._wrap_unshare(argv, policy=policy)
+        if self._mechanism == "sandbox-exec":
+            return self._wrap_sandbox_exec(argv, cwd=cwd, policy=policy)
         self._warn_once_about_fallback()
         return list(argv)
 
@@ -268,11 +336,97 @@ class SandboxedRunner:
         cmd.extend(argv)
         return cmd
 
+    def _wrap_sandbox_exec(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: pathlib.Path,
+        policy: SandboxPolicy,
+    ) -> list[str]:
+        """Build a ``sandbox-exec -p <profile> -- argv`` command for macOS.
+
+        macOS ``sandbox-exec`` consumes a SBPL profile (a Lisp-like DSL).
+        Apple has deprecated the profile grammar, but it is the only
+        shipping mechanism on current macOS and Claude Code's own
+        sandbox is built on it.  The profile we emit:
+
+        - Denies everything by default.
+        - Allows process-exec and process-fork so the command can run.
+        - Allows file-read on the standard system paths plus any
+          ``read_only_paths``.
+        - Allows file-read* and file-write* on ``cwd`` plus any
+          ``read_write_paths``.
+        - Allows ``mach-lookup`` / ``ipc-posix-sem`` / ``sysctl-read``
+          so stock Apple tooling runs.
+        - Denies ``network*`` when ``policy.network`` is False;
+          otherwise allows the standard network operations.
+        """
+        profile = self._build_sandbox_exec_profile(cwd=cwd, policy=policy)
+        cmd: list[str] = ["sandbox-exec", "-p", profile]
+        cmd.extend(argv)
+        return cmd
+
+    @staticmethod
+    def _build_sandbox_exec_profile(
+        *,
+        cwd: pathlib.Path,
+        policy: SandboxPolicy,
+    ) -> str:
+        """Render the SBPL profile string for ``sandbox-exec -p``."""
+        read_write: list[pathlib.Path] = [cwd]
+        for path in policy.read_write_paths:
+            resolved = pathlib.Path(path).resolve()
+            if not resolved.exists() or resolved == cwd:
+                continue
+            read_write.append(resolved)
+
+        read_only: list[pathlib.Path] = []
+        for path in policy.read_only_paths:
+            resolved = pathlib.Path(path).resolve()
+            if resolved.exists():
+                read_only.append(resolved)
+
+        lines: list[str] = [
+            "(version 1)",
+            "(deny default)",
+            "(allow process-exec)",
+            "(allow process-fork)",
+            "(allow signal (target same-sandbox))",
+            "(allow sysctl-read)",
+            "(allow mach-lookup)",
+            "(allow ipc-posix-sem)",
+            "(allow file-read*",
+            '  (subpath "/usr")',
+            '  (subpath "/bin")',
+            '  (subpath "/sbin")',
+            '  (subpath "/System")',
+            '  (subpath "/Library")',
+            '  (subpath "/private/etc")',
+            '  (subpath "/private/var/db")',
+            '  (subpath "/dev")',
+            ")",
+        ]
+
+        if read_only:
+            ro_lines = "".join(f'  (subpath "{p}")\n' for p in read_only)
+            lines.append("(allow file-read*\n" + ro_lines + ")")
+
+        rw_lines = "".join(f'  (subpath "{p}")\n' for p in read_write)
+        lines.append("(allow file-read* file-write*\n" + rw_lines + ")")
+
+        if policy.network:
+            lines.append("(allow network*)")
+        else:
+            lines.append("(deny network*)")
+
+        return "\n".join(lines)
+
     def _warn_once_about_fallback(self) -> None:
         if not SandboxedRunner._warned_about_fallback:
             log.warning(
-                "sandbox: neither 'bwrap' nor 'unshare' available — "
-                "subprocess commands will run unsandboxed. "
-                "Install bubblewrap for full isolation."
+                "sandbox: no isolation mechanism available (bwrap / unshare "
+                "on Linux, sandbox-exec on macOS) — subprocess commands "
+                "will run unsandboxed. On Linux, install bubblewrap for "
+                "full isolation."
             )
             SandboxedRunner._warned_about_fallback = True

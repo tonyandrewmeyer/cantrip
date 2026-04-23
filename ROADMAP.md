@@ -5255,27 +5255,69 @@ applicable to Cantrip.
   metacharacter forms, 1 distinctness assertion, 1 happy-path
   regression check, 2 positive sanity checks.
 
-### 49.3 Medium — Per-tool syscall allowlists
+### 49.3 Medium — Per-tool syscall allowlists (deferred)
 
-- [ ] Seccomp-bpf allowlists for tools with constrained syscall needs (e.g.
-  `CharmcraftPackTool` does not need network beyond PyPI; `git_log` does not
-  write files)
-- [ ] Allowlists are opt-in per tool and fall back to the namespace-only
-  sandbox when seccomp is unavailable
+- [ ] Seccomp-bpf allowlists for tools with constrained syscall needs.
+  **Deferred** — Cantrip has no `libseccomp` dependency and hand-rolling
+  BPF without it is error-prone enough to risk more harm than it
+  mitigates.  Phase 49.1's `bwrap` layer already delivers what this
+  phase's exit clause requires ("fall back to the namespace-only
+  sandbox when seccomp is unavailable"): network blocking,
+  filesystem isolation, and PID isolation.  Seccomp adds defence in
+  depth against sandbox-escape syscalls (`mount`, `ptrace`, `bpf`,
+  `setns`) but should be driven by a specific attack model — not
+  shipped speculatively.  Re-open when a tool presents a concrete
+  syscall-level attack surface or when a libseccomp binding becomes
+  a transitive dep.
 
-### 49.4 Medium — macOS path hardening
+### 49.4 Medium — macOS path hardening ✓
 
-- [ ] On macOS, apply the `sandbox-exec` profile pattern Claude Code uses to
-  restrict filesystem access to the working tree and Cantrip config directory
-- [ ] Fall back to a warning (no hard enforcement) on older macOS where
-  `sandbox-exec` is deprecated
+- [x] On macOS, apply the `sandbox-exec` profile pattern — new
+  ``"sandbox-exec"`` mechanism in ``cantrip.agent.sandbox``.  The
+  runner detects ``sandbox-exec`` on ``darwin`` via ``shutil.which``
+  and falls back to ``"none"`` when absent (Apple's deprecation
+  notice means future macOS releases may remove it entirely, which
+  the exit clause anticipates).  The emitted SBPL profile denies
+  everything by default, then explicitly allows ``process-exec`` /
+  ``process-fork`` / intra-sandbox signals / ``sysctl-read`` /
+  ``mach-lookup`` / ``ipc-posix-sem``; ``file-read*`` on ``/usr``,
+  ``/bin``, ``/sbin``, ``/System``, ``/Library``, ``/private/etc``,
+  ``/private/var/db``, and ``/dev``; ``file-read*`` +
+  ``file-write*`` on the working directory and every
+  ``SandboxPolicy.read_write_paths`` entry that exists; and
+  ``network*`` gated on ``policy.network``.  Missing rw paths are
+  silently dropped as on Linux.
+- [x] Fallback to a warning (no hard enforcement) where
+  ``sandbox-exec`` is missing — ``sandbox_available()`` returns
+  ``"none"`` and ``SandboxedRunner`` logs a one-shot warning naming
+  ``sandbox-exec`` in the macOS message (unified with the Linux
+  ``bwrap``/``unshare`` message).  5 new ``TestSandboxExecWrap``
+  cases cover the profile scaffolding, network gate, rw/ro path
+  injection, cwd coverage, and the missing-path skip.
 
-### 49.5 Low — Sandbox observability
+### 49.5 Low — Sandbox observability ✓
 
-- [ ] Log sandbox policy decisions (bind mounts, denied syscalls) to the
-  transcript so reviewers can audit them
-- [ ] `/sandbox status` command shows current sandbox mode and per-tool
-  overrides
+- [x] Log sandbox policy decisions (argv, mechanism, cwd, network,
+  bind mounts) to the transcript — ``cantrip.agent.sandbox`` gained
+  a module-level event-sink slot (``set_event_sink`` /
+  ``get_event_sink``, thread-safe via a lock).  When a sink is
+  registered, ``SandboxedRunner.run`` emits a ``sandbox_policy``
+  event with the full decision record before the subprocess spawns.
+  ``CantripAgent._init_store`` installs a sink that routes events
+  into ``SessionStore.record_event`` so every sandbox decision is
+  durably audit-logged alongside tool calls and agent events.  Sink
+  exceptions are swallowed at debug level so a misbehaving sink can
+  never break the run.
+- [x] ``/sandbox`` slash command shows current sandbox mode and
+  per-tool overrides — new verb in the shared dispatcher that
+  reports the active mechanism (bwrap / unshare / sandbox-exec /
+  none, each with a one-line summary including the upgrade path
+  when relevant), the ``run_command`` default policy (network off,
+  working tree bound rw, system paths bound ro), and whether
+  transcript logging is on (sink registered) or off.  4 dispatcher
+  tests cover the four mechanism paths plus sink-registered
+  reporting; catalogue-drift guards in ``test_slash_commands``
+  continue to pass.
 
 **Exit criteria:** Untrusted subprocess execution runs under PID/mount
 namespace isolation with a per-tool network opt-out and deny-rule hardening
@@ -7808,6 +7850,441 @@ when ``gh`` is unavailable.
 
 ---
 
+## Phase 68: OpenCode-Inspired Safety Rails — Undo, Plan Mode, Permissions, User Commands
+
+**Goal:** OpenCode (``opencode.ai``, ~140k GitHub stars) is a
+general-purpose open-source coding agent.  A walk of its docs
+surfaces four safety/UX patterns that are absent from Cantrip and
+that map cleanly onto existing infrastructure.  Charm authoring
+is higher-stakes than typical coding (a bad change can tear down
+a running model) so the recovery and guardrail features are a
+particularly good fit.
+
+Four candidates, in rough priority order:
+
+1. **Snapshot-backed ``/undo`` and ``/redo``.**  OpenCode keeps an
+   *internal* git repository that snapshots every file the agent
+   touches before a turn.  ``/undo`` rewinds the last user
+   message *plus every file change that came from it*;
+   ``/redo`` re-applies.  Cantrip has worktree isolation for
+   parallel subagents (Phase 44) and git_commit tools (Phase 30)
+   but no per-turn file-level rollback in the user's tree.  When
+   the agent makes a mess in ``src/charm.py``, the only recovery
+   today is ``git stash`` / ``git restore`` by hand.  Phase 67.1
+   addresses rewinding the *conversation*; this addresses
+   rewinding the *working tree*.  The two compose.
+2. **Declarative ask / allow / deny permission config.**
+   OpenCode's ``permission:`` block in ``opencode.json`` takes
+   glob patterns per tool, per bash command, and per agent:
+   ``{"bash": {"*": "ask", "git *": "allow", "rm *": "deny"}}``.
+   Cantrip has three relevant but distinct pieces: category tool
+   allowlists (BUILD/TEST/RESEARCH), Phase 46 hooks (pre/post
+   events), and Phase 49 subprocess sandboxing.  None of them
+   is a user-editable permission config with three-way outcomes
+   and glob patterns.  A permission layer sits between hooks
+   and sandboxing and gives operators a readable policy file
+   they can check into a charm repo.
+3. **User-defined slash commands from markdown.**  OpenCode reads
+   ``.opencode/commands/<name>.md`` with YAML frontmatter
+   (``description``, ``agent``, ``model``, ``subtask``) and
+   ``$ARGUMENTS`` / ``$1`` / ``$2`` placeholders; the markdown
+   body is the prompt template.  Shell output (``!`cmd` ``) and
+   file references (``@path``) interpolate at invocation time.
+   Cantrip's slash commands are hardcoded in
+   ``src/cantrip/agent/slash_commands.py``.  Opening them up
+   lets a charm team drop ``/relation-check``,
+   ``/upgrade-libs``, ``/triage`` into a repo without touching
+   Cantrip source.
+4. **Plan mode — a session-level "review before executing"
+   toggle.**  OpenCode has two modes (Plan, Build), toggled with
+   Tab.  In Plan mode the agent proposes actions but cannot
+   edit, write, or run bash.  Cantrip's CONFIRM tasks
+   (Phase 64) gate individual irreversible actions; Plan mode
+   would gate *the whole session* so a user can walk through
+   an entire build without any side effects, then flip to Build.
+   Useful for demos, design reviews, and "what *would* you do?"
+   conversations.
+
+Four OpenCode features are explicitly **out of scope**:
+
+- **Plugins in JS/TS with ``tool.execute.before/after`` hooks.**
+  Cantrip is Python; a JS plugin runtime would be a heavy
+  addition and Phase 46 already covers the hook niche.
+- **Hosted session share at ``opncd.ai/s/<id>``.**  Phase 67.4
+  already proposes ``/share`` via ``gh gist create``, which
+  stays on infrastructure the user already trusts and doesn't
+  require a Cantrip-run server.
+- **ACP (Agent Client Protocol) support.**  Phase 39 already
+  tracks this as a research item.  Reference here, don't
+  duplicate.
+- **LSP autoloading.**  Nice-to-have (pyright / ty for Python,
+  yaml-language-server for ``charmcraft.yaml``) but non-trivial;
+  out of scope for this phase.  If the idea has legs, it lives
+  as its own follow-up phase.
+
+### 68.1 High — Snapshot-backed undo/redo for file changes
+
+- [ ] Audit which Cantrip tools mutate the working tree
+  (``fs_write``, ``fs_edit``, ``fs_patch``, the various charm-
+  init and pack tools, ``git_*`` tools).  List them in the
+  phase before coding; this is the allowlist the snapshotter
+  has to cover.
+- [ ] Add a snapshot layer that, before a user turn completes,
+  commits the relevant paths into a hidden git repo under
+  ``.cantrip/snapshots/`` (or ``$XDG_STATE_HOME/cantrip/…``
+  for the user's global path).  Use ``git`` directly — do not
+  invent a new format.  Commit message is
+  ``snapshot: turn <turn-id>``.
+- [ ] ``/undo`` — walks back one user turn: restores files to
+  the prior snapshot *and* removes that turn and its
+  subsequent assistant messages from ``state.messages``.
+  Running ``/undo`` repeatedly walks further back.
+- [ ] ``/redo`` — re-applies the most recently undone turn if
+  no new user turn has arrived since the undo.
+- [ ] Clear boundary with Phase 44 (worktrees): worktrees
+  isolate concurrent subagents; snapshots capture the main
+  working tree across user turns.  Document the relationship
+  in ``design/AGENT.md``.
+- [ ] Disable flag for large monorepos: ``snapshot: false`` in
+  ``cantrip.yaml`` (mirroring OpenCode's escape hatch).  When
+  disabled, ``/undo`` prints a clear message and exits non-
+  zero rather than silently doing nothing.
+- [ ] ``tests/unit/test_snapshots.py`` — mutate a temp tree,
+  undo, assert content restored; redo, assert mutation back;
+  multi-level undo; disabled-mode message; snapshot skipped
+  for paths outside the repo root.
+
+### 68.2 High — Declarative permission config
+
+- [ ] ``.cantrip/permissions.yaml`` (repo) and
+  ``~/.config/cantrip/permissions.yaml`` (user), merged with
+  repo taking precedence.  Three outcomes: ``allow``, ``ask``,
+  ``deny``.  Glob patterns on tool name and on bash command
+  string.  Last matching pattern wins (match OpenCode's rule
+  so the config transfers).
+- [ ] Sensible defaults shipped as a built-in fallback:
+  ``bash: rm -rf *`` → ``deny``; ``.env`` reads → ``deny``;
+  ``git push *`` → ``ask``; everything else → ``allow`` (i.e.
+  today's behaviour).
+- [ ] Enforcement sits *before* tool dispatch, *after* Phase 46
+  pre-tool hooks.  A ``deny`` raises a tool-refused result to
+  the agent; an ``ask`` prompts the user via the existing
+  CONFIRM-task pathway (Phase 64) so the UX matches what the
+  user already sees.
+- [ ] Per-agent and per-subagent overrides: the policy block
+  can be nested under ``agent: <name>`` to tighten or loosen
+  rules for a specific (sub)agent.  Mirrors OpenCode's
+  per-agent permission blocks.
+- [ ] Emit a ``permission_decided`` event on the event bus so
+  the transcript records *why* a call was blocked or approved;
+  feeds the audit log from Phase 14.
+- [ ] Document in ``docs/docs/howto-permissions.html`` (new
+  page) and link from ``docs/docs/reference-cli.html``.
+- [ ] ``tests/unit/test_permissions.py`` — last-match-wins,
+  glob semantics, per-agent override merge, ``ask`` routes
+  through CONFIRM task, default-safe fallbacks.
+
+### 68.3 Medium — User-defined slash commands
+
+- [ ] Loader that discovers ``.cantrip/commands/*.md`` (repo)
+  and ``~/.config/cantrip/commands/*.md`` (user).  Filename
+  → command name (``debug-relation.md`` → ``/debug-relation``).
+  Repo beats user on name conflict.
+- [ ] YAML frontmatter: ``description``, ``agent`` (one of the
+  existing subagent names, or ``primary``), ``model`` (optional
+  override), ``subtask`` (bool — route via the work queue
+  instead of the primary agent).  Body is the prompt template.
+- [ ] Placeholders in the body:
+  - ``$ARGUMENTS`` — everything after the command verb as a
+    single string
+  - ``$1``, ``$2``, … — positional args
+  - ``@path`` — substitute the contents of ``path`` (reject
+    absolute paths and paths outside the repo unless the path
+    is allowed by ``external_directory`` permission)
+  - ``` !`shell cmd` ``` — run the shell command at expansion
+    time and substitute its stdout.  Must flow through the
+    Phase 68.2 permission layer so an unsafe command is
+    blocked or asked about.
+- [ ] Catalogue the loaded commands in
+  ``src/cantrip/agent/slash_commands.py``'s registry so the
+  Phase 61 autocomplete and help text pick them up for free.
+- [ ] Document in ``docs/docs/howto-custom-commands.html`` with
+  a working example (``/relation-check <charm>`` that runs
+  ``juju show-unit`` and feeds the output back into the agent).
+- [ ] ``tests/unit/test_custom_commands.py`` — frontmatter
+  parse, placeholder substitution, repo-beats-user precedence,
+  shell and file-ref expansion paths, permission gate
+  respected.
+
+### 68.4 Medium — Plan mode
+
+- [ ] ``/plan`` and ``/build`` slash commands toggle session
+  mode.  Default on startup is ``build`` (current behaviour).
+  ``plan`` mode is sticky for the session.
+- [ ] Plan mode implementation: enforce a narrow tool allowlist
+  (``fs_read``, ``glob``, ``grep``, ``git_log``, ``git_diff``,
+  Juju read-only tools, websearch, webfetch).  Everything else
+  returns a tool-refused result with a clear "plan mode —
+  switch to /build to execute" message.
+- [ ] Reuse the Phase 68.2 permission layer rather than
+  inventing a parallel gate — plan mode is just a stricter
+  permission set pushed onto the stack for the duration.
+- [ ] Status bar shows the current mode; plan mode uses a
+  distinct theme colour so the user never mistakes one for the
+  other.
+- [ ] In plan mode, the agent's summary includes an explicit
+  "Proposed changes" section listing file edits and commands
+  it *would* run.  Flipping to ``/build`` re-sends that summary
+  as context so the agent doesn't re-plan from scratch.
+- [ ] Document in ``docs/docs/howto-plan-mode.html``.
+
+### What this phase is *not*
+
+- Not a replacement for Phase 46 hooks or Phase 49 subprocess
+  sandboxing.  Hooks run external policy code; permissions
+  declare policy inline; sandboxing is a kernel-level
+  backstop.  All three layer.
+- Not a conversation-branching feature.  That's Phase 67.1 —
+  they are complementary (67.1 rewinds dialogue; 68.1 rewinds
+  files).
+- Not a JS/TS plugin runtime.  68.3 opens the door for user
+  commands in markdown; a programmable plugin layer is a
+  separate and much larger question.
+- Not ACP / LSP.  Tracked elsewhere.
+- Not "match OpenCode's UX".  Cantrip stays charm-focused; we
+  cherry-pick the guardrails that fit.
+
+**Exit criteria:** (a) ``/undo`` restores files to the state
+before the last user turn and walks back further on repeat;
+(b) ``permissions.yaml`` decides allow/ask/deny for every tool
+call, with per-agent overrides and a documented rules-transfer
+from OpenCode; (c) a markdown command in ``.cantrip/commands/``
+shows up in ``/help``, autocompletes, and runs with
+``$ARGUMENTS`` and file/shell interpolation; (d) ``/plan``
+switches the session into a read-only stance with a coloured
+status indicator and produces a concrete "Proposed changes"
+summary that ``/build`` can resume from.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Snapshots (68.1) | Phase 14 (transcript), Phase 30 (git tools), Phase 44 (worktrees) | Composes with 67.1 — 67.1 rewinds messages, 68.1 rewinds files |
+| Permissions (68.2) | Phase 46 (hooks order), Phase 49 (sandbox), Phase 64 (CONFIRM UX) | Sits between 46 and 49; reuses 64 for the ``ask`` prompt |
+| Custom commands (68.3) | Phase 61 (slash autocomplete), 68.2 (permission gate on ``!`` and ``@``) | Loader independent; permission integration needs 68.2 landed |
+| Plan mode (68.4) | 68.2 | Implemented as a permission preset, not a parallel code path |
+
+---
+
+## Phase 69: Kimi-Inspired Workflow Features — Ralph Loop, Shell Mode, Flow Skills, Yolo
+
+**Goal:** Kimi Code CLI (MoonshotAI's Python-based terminal agent)
+ships a handful of patterns the charm-authoring workflow stands
+to benefit from.  Four stand out as distinct additions — not
+already delivered, and not covered by Phase 67 (Pi) or Phase 68
+(OpenCode) — that map cleanly onto Cantrip's existing event bus,
+skill system, and autonomous loop.
+
+Four candidates, in rough priority order:
+
+1. **Ralph Loop — bounded iterate-until-green.**  Kimi's
+   ``--max-ralph-iterations`` re-feeds the same prompt to the
+   agent until it emits ``STOP`` (or the iteration cap trips),
+   with convergence detection to stop when nothing's changing.
+   Cantrip already has red/green TDD (Phase 12) and the
+   autonomous work loop, but the *explicit bounded refinement*
+   pattern — "keep building-and-testing this charm until
+   ``make check`` is green and integration tests pass, capped
+   at N iterations" — is not a first-class primitive.  Ralph
+   Loop fits as an opt-in outer loop above the existing work
+   queue.  Particularly useful in ``cantrip run --print``
+   (Phase 67.3) unattended mode.
+2. **``--yolo`` unattended-mode switch.**  Kimi's
+   ``--yolo`` / ``--auto-approve`` / ``-y`` globally suppresses
+   approval prompts for a session.  Cantrip has CONFIRM tasks
+   (Phase 64) and the Phase 68.2 permission layer, but no
+   single switch to say "this is a CI run, auto-approve
+   anything that's not ``deny``."  Phase 67.3 already flags
+   this as a gap for print mode; Phase 69 resolves it.
+3. **Shell command mode (``Ctrl-X``).**  Kimi toggles the prompt
+   into a direct shell mode with ``Ctrl-X``: users run
+   ``juju status``, ``kubectl get pods``, ``git log`` without
+   leaving the session.  Cantrip has a ``bash`` tool, but
+   invoking it goes through the agent — slow and costs tokens
+   for a read-only peek.  A direct shell toggle in the TUI
+   chat input is a genuine UX win for charm authors who
+   juggle ``juju`` / ``microk8s`` / ``charmcraft`` CLIs all
+   day.
+4. **Flow skills — declarative workflow diagrams.**  Kimi's
+   Flow skills embed Mermaid or D2 diagrams with decision
+   nodes that the agent traverses step-by-step.  Cantrip has
+   a skill system (Phase 33, 50) and a planner (Phase 32) but
+   no "this is the canonical diagram for this workflow,
+   follow it."  Flow skills fit charm lifecycle shapes
+   precisely: reactive→ops migration decision tree, COS
+   enablement flow, relation-broken debug ladder, upgrade
+   path A→B→C with rollback branches.  The diagram *is* the
+   documentation.
+
+Four Kimi features are explicitly **out of scope**:
+
+- **VS Code extension and zsh plugin.**  Cantrip's interface
+  strategy is TUI + Web UI (Phase 15).  An IDE extension is a
+  separate product-shape decision, not a roadmap item for this
+  phase.
+- **ACP server mode (``kimi acp``).**  Phase 39 already tracks
+  ACP as a research item.  Defer.
+- **Plugin.json language-agnostic executable tools.**  Phase 45
+  MCP already covers "tools outside the agent process via
+  stdio".  Adding a second, parallel plugin protocol would
+  fragment Cantrip's extension surface.
+- **Okabe agent's ``SendDMail`` checkpoint rollback as an
+  agent-invocable tool.**  Phase 68.1 already gives users
+  ``/undo``; letting the agent rewind itself is a much more
+  speculative loop-control question and belongs in a research
+  phase if ever.
+
+### 69.1 High — Ralph Loop: bounded iterate-until-green
+
+- [ ] Add a ``ralph`` config block to the existing session /
+  run configuration with ``max_iterations`` (default 0 =
+  disabled; ``-1`` = unlimited matching Kimi semantics) and
+  ``convergence``:  a short string the agent must emit to
+  declare the loop complete (default ``STOP``).
+- [ ] Integrate at the *outer* loop boundary: after the work
+  queue drains and ``make check`` + integration tests have
+  been attempted, if a Ralph goal is active and neither the
+  convergence signal nor the iteration cap has been reached,
+  re-seed the queue from the original goal prompt plus a
+  short "last iteration's results" summary and run again.
+- [ ] Convergence detection: if two consecutive iterations
+  produce the same test outcome, same failing test set, and
+  the agent makes no file edits, surface a "Ralph stalled"
+  event and exit the loop — don't burn tokens on no-ops.
+  This mirrors what Kimi's convergence detection guards
+  against.
+- [ ] Wire into ``cantrip run --print`` (Phase 67.3) as
+  ``--ralph N`` so unattended runs can iterate without
+  prompting.  Interactive TUI gets ``/ralph <N>`` to enable
+  mid-session.
+- [ ] Emit ``ralph_iteration_started`` / ``ralph_converged`` /
+  ``ralph_stalled`` / ``ralph_exhausted`` events so the TUI
+  status bar and transcript audit trail show iteration N/M.
+- [ ] ``tests/unit/test_ralph_loop.py`` — happy-path
+  convergence, iteration cap trip, stall detection, re-seeding
+  preserves the original user goal verbatim (don't corrupt
+  the prompt across iterations).
+
+### 69.2 High — ``/yolo`` and ``--yolo`` unattended mode
+
+- [ ] ``--yolo`` / ``--auto-approve`` / ``-y`` flag on the CLI
+  (both top-level and on the ``run`` subcommand) globally
+  suppresses ``ask`` → CONFIRM prompts for the session.  Any
+  rule that resolves to ``deny`` still blocks.
+- [ ] ``/yolo`` slash command toggles the mode mid-session.
+  When enabling, the TUI shows a prominent banner
+  (``YOLO MODE — confirmations off``) in the same theme
+  colour as plan mode (68.4) but distinct, so the state is
+  unmistakable.
+- [ ] Per-call overrides survive yolo: a tool that the
+  Phase 68.2 config marks ``deny`` stays denied.  Only the
+  ``ask`` outcomes flip to auto-allow.  Document the escape
+  hatch explicitly — the point is CI runs, not a footgun.
+- [ ] Audit log: every auto-approval emits a
+  ``permission_auto_approved`` event with the rule that
+  would otherwise have prompted.  Phase 14's transcript
+  captures it.
+- [ ] Document in ``docs/docs/howto-unattended.html`` (new
+  page) alongside the Phase 67.3 print-mode guidance — both
+  are pieces of the same "run Cantrip in CI" story.
+
+### 69.3 Medium — Shell command mode
+
+- [ ] ``Ctrl-X`` keybind on the chat input toggles between
+  "send to agent" and "send to shell" mode.  The prompt
+  glyph changes (``» `` → ``$ ``) and the input field gets
+  a distinct border/colour.
+- [ ] Shell-mode submissions run through the same subprocess
+  machinery the ``bash`` tool uses (Phase 30, Phase 49
+  sandboxing still applies) but bypass the agent: the output
+  is streamed into the chat panel as a ``$ cmd`` /
+  ``<output>`` block, *not* as a tool call, and is cheap — no
+  tokens consumed.
+- [ ] The shell-mode block is still captured in the
+  transcript (Phase 14) so audit history is complete.
+- [ ] Built-in shell features limited to what ``subprocess``
+  can handle — match Kimi's stance and document that ``cd``,
+  shell aliases, and shell variables are not supported.
+  Users who need them should drop to an actual shell.
+- [ ] TUI help (``?``) lists the ``Ctrl-X`` toggle and its
+  limits.
+
+### 69.4 Medium — Flow skills
+
+- [ ] Extend the skill frontmatter schema (Phase 33) with a
+  ``type: flow`` variant.  Body contains a fenced Mermaid or
+  D2 diagram plus per-node annotations in a standard comment
+  format (``%% node id: description``) that the runtime
+  can parse out.
+- [ ] ``/flow:<name>`` slash command: loads the flow, seeds
+  the agent with the diagram *and* the first node's
+  instructions, and tracks current-node state as the agent
+  progresses.  Decision nodes with multiple outgoing edges
+  force the agent to pick a branch before continuing.
+- [ ] Ship three charm-relevant flows as built-ins:
+  - ``charm-reactive-to-ops`` — reactive→ops migration
+    decision tree (already a Phase 33.2 skill — port)
+  - ``charm-cos-enable`` — add COS observability to an
+    existing charm (metrics, logs, dashboards, tracing)
+  - ``charm-upgrade-ladder`` — SUPPORTED→DEPRECATED→REMOVED
+    upgrade paths with rollback branches
+- [ ] TUI renders the flow diagram in the right-panel skill
+  pane (or a modal) with the active node highlighted.  The
+  Web UI does the same via its Mermaid renderer.
+- [ ] ``design/SKILLS.md`` gains a "Flow skills" section
+  covering the frontmatter extension, diagram syntax, and the
+  node-tracking protocol.
+- [ ] ``tests/unit/test_flow_skills.py`` — diagram parse,
+  branch selection, happy-path completion, aborted flow
+  leaves a clean state.
+
+### What this phase is *not*
+
+- Not a new agent architecture.  Ralph Loop is an outer
+  wrapper on the existing autonomous loop; it doesn't
+  replace the work queue.
+- Not a relaxation of the permission model.  ``--yolo``
+  still respects ``deny`` rules; it toggles only the ``ask``
+  tier.
+- Not a full shell emulation.  69.3 is a convenience
+  pass-through to ``subprocess``, not tmux-in-Cantrip.
+- Not a redesign of the skill loader.  Flow skills extend
+  the existing schema with one new ``type`` value; ordinary
+  skills keep working unchanged.
+- Not a VS Code / zsh / JetBrains integration.  Tracked
+  elsewhere or explicitly out of scope.
+
+**Exit criteria:** (a) ``cantrip run --print --ralph 5 "charm
+this flask app"`` iterates up to five refinement passes,
+stopping early on convergence or stall; (b) ``--yolo`` makes
+a fresh session non-blocking for ``ask`` rules while still
+enforcing ``deny``, with every auto-approval audited; (c)
+pressing ``Ctrl-X`` in the TUI drops into a visually-distinct
+shell mode whose output lands in the transcript but not the
+token stream; (d) ``/flow:charm-cos-enable`` walks a user
+through adding COS to a charm via a Mermaid diagram rendered
+in the right panel, with node transitions observable in the
+event bus.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Ralph Loop (69.1) | Phase 12 (red/green), Phase 40 (safe compaction), Phase 67.3 (print mode) | Outer-loop wrapper; land after 67.3 so unattended Ralph is possible |
+| Yolo mode (69.2) | Phase 64 (CONFIRM), 68.2 (permissions) | Flips only the ``ask`` tier; ``deny`` remains authoritative |
+| Shell mode (69.3) | Phase 30 (bash tool), Phase 49 (sandbox), Phase 14 (transcript capture) | UX-only on top of existing subprocess plumbing |
+| Flow skills (69.4) | Phase 33 (skills), Phase 50 (skill interop), Phase 15 (Web UI Mermaid) | Schema extension + TUI/Web diagram rendering |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -7871,4 +8348,6 @@ when ``gh`` is unavailable.
 | M65: Right-Panel Tidy | 65 | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
 | M66: Transcript/Log Visible | 66 ✓ | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
 | M67: Pi-Inspired Sessions | 67 | Session tree rewind/branch, mid-session ``/model``, ``cantrip run --print --json`` for scripts, and ``/share`` to secret gist — four gaps the Pi coding agent fills that charm authors also hit |
+| M68: OpenCode Safety Rails | 68 | Snapshot-backed ``/undo``/``/redo`` for file changes, declarative ask/allow/deny permissions, markdown-defined user slash commands, and a session-level plan mode — four guardrails adopted from OpenCode that map onto Cantrip's existing subsystems |
+| M69: Kimi Workflow Features | 69 | Bounded Ralph-Loop iterate-until-green, ``--yolo`` unattended switch, ``Ctrl-X`` shell mode, and Mermaid/D2 Flow skills — four Kimi CLI patterns that fit Cantrip's autonomous loop, skill system, and CI story |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
