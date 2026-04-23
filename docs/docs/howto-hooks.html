@@ -362,6 +362,74 @@
       enforcer.
     </p>
 
+    <h2 id="inspecting">Inspecting hooks</h2>
+    <p>
+      Two debugging surfaces answer &ldquo;is my hook wired right?&rdquo;
+      without having to trigger a real agent operation:
+    </p>
+
+    <h3 id="slash"><code>/hooks</code> slash command</h3>
+    <p>
+      Available in the TUI, CLI REPL, and Web chat. Lists every
+      configured hook grouped by event with its <code>if:</code>
+      filter and (when <code>continue_on_error: false</code>) a
+      <strong>veto-capable</strong> badge; for hooks that have fired
+      this session, shows per-hook counts (invocations, successes,
+      failures, vetoes, timeouts), average duration, and last-seen
+      time:
+    </p>
+    <pre><code>/hooks
+  Configured: 3 hook(s).
+
+  pre_tool_call
+    - `require-clean-tree`  if `tool == "git_push"`  veto-capable
+        5 invocations (4 ok, 1 failed, 1 vetoed) · avg 23ms · last at 14:12:03
+    - `audit-tools`
+        147 invocations (147 ok, 0 failed) · avg 8ms · last at 14:12:04
+
+  post_compact
+    - `slack-compact`
+        not invoked yet
+
+  Transcript logging: on — hook_invocation events carry per-call detail
+  in the session store.</code></pre>
+
+    <h3 id="cli-test"><code>cantrip hooks test &lt;event&gt;</code></h3>
+    <p>
+      Fires a synthetic event against the current hook config and
+      prints results — great for authoring a new hook config before
+      letting it touch a live session. Exit code is 0 on success,
+      2 on argument / JSON errors:
+    </p>
+    <pre><code>$ cantrip hooks test pre_tool_call --payload '{"tool": "git_push"}'
+Firing `pre_tool_call` against 2 matching hook(s).
+  ✓ audit-tools — exit 0 in 5ms
+      stdout: saw git_push at 14:12:09
+  ∅ require-clean-tree — exit 1 in 12ms (VETO)
+      stderr: working tree dirty; refusing to push</code></pre>
+    <p>
+      <code>--path DIR</code> overrides the repo root for
+      <code>cantrip.hooks.yaml</code> discovery
+      (defaults to CWD). <code>--payload</code> is merged into the
+      auto-added <code>event</code> + <code>timestamp</code> fields
+      so your <code>if:</code> filter evaluates against realistic
+      input.
+    </p>
+
+    <h3 id="transcript">Transcript events</h3>
+    <p>
+      Every executed hook records a
+      <code>hook_invocation</code> event in the session store with
+      <code>hook_name</code>, <code>event</code>,
+      <code>exit_code</code>, <code>duration_seconds</code>,
+      <code>vetoed</code>, <code>timed_out</code>,
+      <code>continue_on_error</code>, and (when stderr isn&rsquo;t
+      empty) a 200-char <code>stderr_excerpt</code>. Skipped hooks
+      (rejected by their <code>if:</code> filter) do <em>not</em>
+      record events &mdash; the transcript is an audit log of real
+      executions, not an attempt log.
+    </p>
+
     <h2 id="limits">Current limits</h2>
     <ul>
       <li>

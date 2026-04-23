@@ -72,7 +72,7 @@ from cantrip.agent.tools.planning import (
     detect_current_juju_model,
 )
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
-from cantrip.hooks import HookEvent, HookRunner, first_veto
+from cantrip.hooks import HookEvent, HookResult, HookRunner, HookStats, first_veto
 from cantrip.llm import base as llm
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
 from cantrip.mcp import (
@@ -199,6 +199,12 @@ class CantripAgent:
         self._event_bus = ui_events.EventBus()
         self._preflight = PreflightRunner(self.state)
         self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
+        self._hook_stats = HookStats()
+        # Every hook execution flows through ``_on_hook_result`` so
+        # the stats accumulator and the transcript stay in sync;
+        # listener exceptions are swallowed inside the runner so a
+        # misconfigured session store can never break the agent.
+        self._hook_runner.set_listener(self._on_hook_result)
 
         # Context window management.
         self._virtual_store = VirtualFileStore()
@@ -252,6 +258,46 @@ class CantripAgent:
     def context_manager(self) -> ContextManager:
         """The agent's context manager, for TUI status display."""
         return self._context_manager
+
+    @property
+    def hook_runner(self) -> HookRunner:
+        """The agent's hook runner, for slash commands and tests."""
+        return self._hook_runner
+
+    @property
+    def hook_stats(self) -> HookStats:
+        """Per-hook telemetry aggregator feeding the ``/hooks`` command."""
+        return self._hook_stats
+
+    def _on_hook_result(self, result: HookResult) -> None:
+        """Listener fired by :class:`HookRunner` after each hook run.
+
+        Feeds the result into :class:`HookStats` and writes a
+        ``hook_invocation`` transcript event so the ``/hooks``
+        slash command can show running totals and ``cantrip hooks
+        test`` debugging matches what the agent actually did.
+        """
+        self._hook_stats.record(result)
+        if self._store is None:
+            return
+        detail = {
+            "hook_name": result.name,
+            "event": result.event.value,
+            "exit_code": result.exit_code,
+            "duration_seconds": round(result.duration_seconds, 4),
+            "vetoed": result.vetoed,
+            "timed_out": result.timed_out,
+            "continue_on_error": result.continue_on_error,
+        }
+        # Only the first 200 chars of stderr — a failing hook's
+        # backtrace can be arbitrarily long and we don't want to
+        # balloon the transcript database.
+        if result.stderr:
+            detail["stderr_excerpt"] = result.stderr.strip()[:200]
+        try:
+            self._store.record_event("hook_invocation", detail)
+        except sqlite3.Error:
+            log.debug("Failed to record hook_invocation transcript event", exc_info=True)
 
     @property
     def _skills_index(self) -> SkillsIndex:

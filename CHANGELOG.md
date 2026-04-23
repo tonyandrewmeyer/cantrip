@@ -5,6 +5,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Hook telemetry + `/hooks` command + `cantrip hooks test` — Phase 46.5.**
+  Every hook execution now feeds a ``HookStats`` accumulator on the
+  agent and writes a ``hook_invocation`` transcript event into the
+  session store, so audit logs survive the session.  New ``/hooks``
+  slash command (shared across CLI, TUI, Web) lists configured
+  hooks grouped by event, shows ``if:`` filter source, flags
+  veto-capable hooks, and displays per-hook counts (invocations,
+  successes, failures, vetoes, timeouts) + average duration + last
+  seen time.  New ``cantrip hooks test <event>`` argparse
+  subcommand fires a synthetic event against the loaded config
+  with an optional ``--payload JSON`` and prints per-hook results
+  with exit code, duration, and stdout/stderr — useful while
+  authoring hook configs without standing up a live agent session.
+  ``HookRunner.set_listener`` drives the wiring; listener
+  exceptions are swallowed so a broken telemetry sink can't abort
+  the agent.
 - **Hook veto semantics — Phase 46.4a.**  A ``pre_*`` hook with
   ``continue_on_error: false`` that exits non-zero (or times out)
   now vetoes the pending operation: the tool doesn't run, the

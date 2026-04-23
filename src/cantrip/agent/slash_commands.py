@@ -62,6 +62,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/export", "Export the live session transcript"),
     CommandInfo("/update", "Check PyPI for a newer release"),
     CommandInfo("/sandbox", "Show subprocess sandbox status"),
+    CommandInfo("/hooks", "List configured hooks and invocation stats"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -146,6 +147,8 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return _handle_update(args)
     if verb == "/sandbox":
         return SlashResult(text=format_sandbox_status())
+    if verb == "/hooks":
+        return SlashResult(text=format_hooks_status(agent))
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     return None
@@ -280,6 +283,84 @@ def format_sandbox_status() -> str:
     lines.append(
         f"**Transcript logging:** {sink_state} — `sandbox_policy` events "
         "are recorded in the session store when a sink is registered."
+    )
+    return "\n".join(lines)
+
+
+def format_hooks_status(agent: CantripAgent) -> str:
+    """Render the configured-hook roster and running stats for ``/hooks``.
+
+    Three sections:
+
+    * **Configured hooks** — one line per hook with event, filter, and
+      its ``continue_on_error`` / veto-capable flag.  Lists hooks that
+      haven't run yet so users can tell "zero invocations" from "not
+      loaded".
+    * **Invocation stats** — per-hook counts (invocations, successes,
+      vetoes, failures), average duration, and last-seen timestamp.
+      Reads :class:`HookStats` which the agent populates via the
+      ``HookRunner`` listener — so the numbers here and the
+      ``hook_invocation`` transcript events always agree.
+    * **Transcript logging** — one-line note on whether the session
+      store is wired up so operators know where the audit trail lives.
+    """
+    runner = agent.hook_runner
+    stats = agent.hook_stats
+
+    lines = ["**Hooks**", ""]
+
+    if runner.hook_count == 0:
+        lines.append(
+            "No hooks configured. Drop a `hooks.yaml` into "
+            "`~/.config/cantrip/` or next to your charm as "
+            "`cantrip.hooks.yaml`."
+        )
+        return "\n".join(lines)
+
+    lines.append(f"Configured: **{runner.hook_count}** hook(s).")
+    lines.append("")
+
+    # Walk events in declaration order so pre_tool_call / post_tool_call
+    # / pre_compact / ... line up with how operators reason about the
+    # lifecycle.
+    from cantrip.hooks import HookEvent
+
+    for event in HookEvent:
+        hooks = runner.hooks_for(event)
+        if not hooks:
+            continue
+        lines.append(f"**{event.value}**")
+        for hook in hooks:
+            parts = [f"  - `{hook.name}`"]
+            if hook.if_expr is not None:
+                parts.append(f"if `{hook.if_expr.source}`")
+            if not hook.continue_on_error:
+                parts.append("**veto-capable**")
+            lines.append("  ".join(parts))
+            history = stats.for_hook(hook.name)
+            if history is None or history.invocations == 0:
+                lines.append("      not invoked yet")
+                continue
+            last_seen = (
+                history.last_invoked_at.strftime("%H:%M:%S")
+                if history.last_invoked_at is not None
+                else "—"
+            )
+            veto_frag = f", {history.vetoes} vetoed" if history.vetoes else ""
+            timeout_frag = f", {history.timeouts} timed out" if history.timeouts else ""
+            lines.append(
+                f"      {history.invocations} invocations "
+                f"({history.successes} ok, {history.failures} failed"
+                f"{veto_frag}{timeout_frag}) · "
+                f"avg {history.avg_duration_seconds * 1000:.0f}ms · "
+                f"last at {last_seen}"
+            )
+        lines.append("")
+
+    transcript_state = "on" if agent._store is not None else "off"
+    lines.append(
+        f"**Transcript logging:** {transcript_state} — `hook_invocation` "
+        "events carry per-call detail in the session store."
     )
     return "\n".join(lines)
 

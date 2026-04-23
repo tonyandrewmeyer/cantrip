@@ -16,6 +16,7 @@ from cantrip.hooks import (
     HookEvent,
     HookResult,
     HookRunner,
+    HookStats,
     _FilterExpr,
     _parse_yaml,
     first_veto,
@@ -910,3 +911,355 @@ class TestAgentRespectsCompactionVeto:
 
         # Compaction never ran — the pre-hook blocked it.
         compact_mock.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# HookStats + HookRunner listener (Phase 46.5)
+# ---------------------------------------------------------------------------
+
+
+class TestHookStats:
+    """Per-hook telemetry accumulator feeding the ``/hooks`` slash command."""
+
+    def _result(
+        self,
+        *,
+        name: str = "h",
+        event: HookEvent = HookEvent.PRE_TOOL_CALL,
+        exit_code: int | None = 0,
+        duration_seconds: float = 0.01,
+        timed_out: bool = False,
+        continue_on_error: bool = True,
+    ) -> HookResult:
+        return HookResult(
+            name=name,
+            event=event,
+            exit_code=exit_code,
+            stdout="",
+            stderr="",
+            duration_seconds=duration_seconds,
+            timed_out=timed_out,
+            continue_on_error=continue_on_error,
+        )
+
+    def test_empty_stats(self):
+        assert len(HookStats()) == 0
+        assert HookStats().for_hook("anything") is None
+        assert HookStats().snapshot() == []
+
+    def test_record_success_increments_counters(self):
+        stats = HookStats()
+        stats.record(self._result(exit_code=0, duration_seconds=0.05))
+        history = stats.for_hook("h")
+        assert history is not None
+        assert history.invocations == 1
+        assert history.successes == 1
+        assert history.failures == 0
+        assert history.vetoes == 0
+        assert history.avg_duration_seconds == pytest.approx(0.05)
+        assert history.last_exit_code == 0
+        assert history.last_vetoed is False
+
+    def test_record_failure_counts_as_failure_not_success(self):
+        stats = HookStats()
+        stats.record(self._result(exit_code=1))
+        h = stats.for_hook("h")
+        assert h is not None and h.failures == 1 and h.successes == 0
+
+    def test_record_veto_counts_as_veto_and_failure(self):
+        """A strict hook that exits non-zero vetoes AND fails."""
+        stats = HookStats()
+        stats.record(self._result(exit_code=2, continue_on_error=False))
+        h = stats.for_hook("h")
+        assert h is not None
+        assert h.failures == 1
+        assert h.vetoes == 1
+        assert h.last_vetoed is True
+
+    def test_record_timeout_counts_as_timeout(self):
+        stats = HookStats()
+        stats.record(self._result(timed_out=True, continue_on_error=False))
+        h = stats.for_hook("h")
+        assert h is not None
+        assert h.timeouts == 1
+        assert h.last_timed_out is True
+
+    def test_avg_duration_across_multiple_invocations(self):
+        stats = HookStats()
+        stats.record(self._result(duration_seconds=0.10))
+        stats.record(self._result(duration_seconds=0.30))
+        h = stats.for_hook("h")
+        assert h is not None
+        assert h.avg_duration_seconds == pytest.approx(0.20)
+
+    def test_snapshot_is_sorted_by_name(self):
+        stats = HookStats()
+        stats.record(self._result(name="zz"))
+        stats.record(self._result(name="aa"))
+        stats.record(self._result(name="mm"))
+        assert [h.name for h in stats.snapshot()] == ["aa", "mm", "zz"]
+
+
+class TestHookRunnerListener:
+    """HookRunner.set_listener feeds each execution to the callback."""
+
+    @pytest.mark.asyncio
+    async def test_listener_called_per_hook(self):
+        runner = HookRunner(
+            [
+                HookConfig(name="a", event=HookEvent.PRE_TOOL_CALL, run="true"),
+                HookConfig(name="b", event=HookEvent.PRE_TOOL_CALL, run="true"),
+            ]
+        )
+        captured: list[HookResult] = []
+        runner.set_listener(captured.append)
+        await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "x"})
+        assert [r.name for r in captured] == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_listener_not_called_for_filtered_hooks(self):
+        """A hook skipped by its ``if:`` filter does NOT feed the listener."""
+        runner = HookRunner(
+            [
+                HookConfig(
+                    name="git-only",
+                    event=HookEvent.PRE_TOOL_CALL,
+                    run="true",
+                    if_expr=_FilterExpr('tool == "git_push"'),
+                ),
+            ]
+        )
+        captured: list[HookResult] = []
+        runner.set_listener(captured.append)
+        await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "read_file"})
+        assert captured == []
+
+    @pytest.mark.asyncio
+    async def test_listener_exception_does_not_break_the_run(self, caplog):
+        import logging
+
+        def boom(_: HookResult) -> None:
+            raise RuntimeError("listener exploded")
+
+        runner = HookRunner([HookConfig(name="a", event=HookEvent.PRE_TOOL_CALL, run="true")])
+        runner.set_listener(boom)
+        with caplog.at_level(logging.DEBUG, logger="cantrip.hooks"):
+            results = await runner.fire(HookEvent.PRE_TOOL_CALL, {})
+        # Hook still ran; listener failure was swallowed to DEBUG.
+        assert len(results) == 1
+        assert results[0].succeeded
+        assert any("listener raised" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_detaching_listener_silences_callbacks(self):
+        runner = HookRunner([HookConfig(name="a", event=HookEvent.PRE_TOOL_CALL, run="true")])
+        captured: list[HookResult] = []
+        runner.set_listener(captured.append)
+        runner.set_listener(None)
+        await runner.fire(HookEvent.PRE_TOOL_CALL, {})
+        assert captured == []
+
+
+class TestAgentWiresHookListener:
+    """The agent plumbs HookStats + transcript events through the listener."""
+
+    @pytest.mark.asyncio
+    async def test_agent_stats_updated_on_tool_call(self, tmp_path: pathlib.Path):
+        from unittest.mock import AsyncMock
+
+        from cantrip.agent.core import CantripAgent
+        from cantrip.agent.tools.base import ToolResult
+        from cantrip.llm.base import Response, ToolCall
+        from tests.conftest import FakeProvider
+
+        hooks = [HookConfig(name="always-log", event=HookEvent.PRE_TOOL_CALL, run="true")]
+        tool_call = ToolCall(id="tc1", name="juju_status", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Done."),
+            ]
+        )
+        agent = CantripAgent(provider=provider, hook_runner=HookRunner(hooks))
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="ok"))
+
+        await agent.process_message("Check status")
+
+        history = agent.hook_stats.for_hook("always-log")
+        assert history is not None
+        assert history.invocations == 1
+        assert history.successes == 1
+
+
+# ---------------------------------------------------------------------------
+# `/hooks` slash command formatter (Phase 46.5)
+# ---------------------------------------------------------------------------
+
+
+class TestFormatHooksStatus:
+    """The ``/hooks`` slash command renders a readable report."""
+
+    def _agent(self, hook_runner: HookRunner):
+        from unittest.mock import MagicMock
+
+        from cantrip.hooks import HookStats
+
+        agent = MagicMock()
+        agent.hook_runner = hook_runner
+        agent.hook_stats = HookStats()
+        agent._store = None
+        return agent
+
+    def test_empty_runner_shows_empty_message(self):
+        from cantrip.agent.slash_commands import format_hooks_status
+
+        text = format_hooks_status(self._agent(HookRunner([])))
+        assert "No hooks configured" in text
+        assert "cantrip.hooks.yaml" in text
+
+    def test_lists_hooks_grouped_by_event(self):
+        from cantrip.agent.slash_commands import format_hooks_status
+
+        hooks = [
+            HookConfig(
+                name="log-git",
+                event=HookEvent.PRE_TOOL_CALL,
+                run="true",
+                if_expr=_FilterExpr('tool == "git_push"'),
+            ),
+            HookConfig(
+                name="block-force",
+                event=HookEvent.PRE_TOOL_CALL,
+                run="true",
+                continue_on_error=False,
+            ),
+            HookConfig(name="after-compact", event=HookEvent.POST_COMPACT, run="true"),
+        ]
+        text = format_hooks_status(self._agent(HookRunner(hooks)))
+        assert "pre_tool_call" in text
+        assert "post_compact" in text
+        assert "log-git" in text
+        assert 'tool == "git_push"' in text
+        assert "veto-capable" in text  # block-force has continue_on_error=False
+        assert "not invoked yet" in text
+
+    def test_invoked_hook_shows_stats(self):
+        from cantrip.agent.slash_commands import format_hooks_status
+
+        hooks = [HookConfig(name="gofer", event=HookEvent.PRE_TOOL_CALL, run="true")]
+        agent = self._agent(HookRunner(hooks))
+        # Prime the stats as if it had run twice: one success, one failure.
+        agent.hook_stats.record(
+            HookResult(
+                name="gofer",
+                event=HookEvent.PRE_TOOL_CALL,
+                exit_code=0,
+                stdout="",
+                stderr="",
+                duration_seconds=0.02,
+            )
+        )
+        agent.hook_stats.record(
+            HookResult(
+                name="gofer",
+                event=HookEvent.PRE_TOOL_CALL,
+                exit_code=1,
+                stdout="",
+                stderr="",
+                duration_seconds=0.04,
+            )
+        )
+        text = format_hooks_status(agent)
+        assert "2 invocations" in text
+        assert "1 ok, 1 failed" in text
+        # Average duration: (20+40)/2 = 30 ms.
+        assert "avg 30ms" in text
+
+
+# ---------------------------------------------------------------------------
+# `cantrip hooks test` CLI subcommand (Phase 46.5)
+# ---------------------------------------------------------------------------
+
+
+class TestHooksTestCLI:
+    """``cantrip hooks test <event>`` fires a synthetic event."""
+
+    def test_unknown_event_exits_nonzero(self, capsys: pytest.CaptureFixture[str]):
+        import argparse
+
+        from cantrip.main import _hooks_test
+
+        args = argparse.Namespace(event="not_a_real_event", payload=None, charm_path=None)
+        rc = _hooks_test(args)
+        assert rc == 2
+        captured = capsys.readouterr()
+        assert "Unknown event" in captured.err
+
+    def test_empty_config_prints_help_location(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        import argparse
+
+        from cantrip.main import _hooks_test
+
+        monkeypatch.setenv("CANTRIP_HOOKS_USER_CONFIG", str(tmp_path / "does-not-exist.yaml"))
+        args = argparse.Namespace(event="pre_tool_call", payload=None, charm_path=tmp_path)
+        rc = _hooks_test(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "No hooks are configured" in out
+        assert "cantrip.hooks.yaml" in out
+
+    def test_happy_path_runs_hook(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        import argparse
+
+        from cantrip.main import _hooks_test
+
+        cfg = tmp_path / "cantrip.hooks.yaml"
+        cfg.write_text(
+            "hooks:\n"
+            "  - name: greeter\n"
+            "    event: pre_tool_call\n"
+            "    run: 'echo hello from hook'\n"
+        )
+        # Isolate from the real user config.
+        monkeypatch.setenv("CANTRIP_HOOKS_USER_CONFIG", str(tmp_path / "no-user-config.yaml"))
+        args = argparse.Namespace(
+            event="pre_tool_call",
+            payload='{"tool": "juju_status"}',
+            charm_path=tmp_path,
+        )
+        rc = _hooks_test(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "greeter" in out
+        assert "exit 0" in out
+        assert "hello from hook" in out
+
+    def test_invalid_payload_json_exits_nonzero(self, capsys: pytest.CaptureFixture[str]):
+        import argparse
+
+        from cantrip.main import _hooks_test
+
+        args = argparse.Namespace(event="pre_tool_call", payload="not valid json", charm_path=None)
+        rc = _hooks_test(args)
+        assert rc == 2
+        assert "must be valid JSON" in capsys.readouterr().err
+
+    def test_payload_not_an_object_exits_nonzero(self, capsys: pytest.CaptureFixture[str]):
+        import argparse
+
+        from cantrip.main import _hooks_test
+
+        args = argparse.Namespace(event="pre_tool_call", payload="[1,2,3]", charm_path=None)
+        rc = _hooks_test(args)
+        assert rc == 2
+        assert "JSON object" in capsys.readouterr().err

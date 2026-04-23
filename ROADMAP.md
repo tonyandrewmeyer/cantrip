@@ -546,13 +546,60 @@ the watcher — this phase formalises them and opens them up.
   ships as a focused follow-up commit rather than widening this
   one.
 
-### 46.5 Low — Hook telemetry and debugging
+### 46.5 Low — Hook telemetry and debugging ✓
 
-- [ ] `/hooks` slash command lists configured hooks, last invocation, last
-  outcome, average duration
-- [ ] Hook invocations appear in the transcript as a dedicated event type
-- [ ] `cantrip hooks test <event-name>` CLI subcommand fires a synthetic event
-  against the configured hooks for debugging
+- [x] ``HookStats`` accumulator in ``cantrip.hooks`` tracks per-hook
+  invocations, successes, failures, vetoes, timeouts, total + average
+  duration, and last-invoked timestamp.  ``HookRunner`` gained a
+  ``set_listener(callback)`` method that fires after each executed
+  hook (skipped-by-filter hooks don't feed the listener, keeping
+  stats focused on actual executions).  Listener exceptions are
+  swallowed at DEBUG so a broken telemetry sink can never abort the
+  agent loop.
+- [x] ``CantripAgent`` wires a listener at construction time that
+  does two things on each executed hook: folds the result into its
+  ``HookStats`` (exposed as ``agent.hook_stats``) and writes a
+  ``hook_invocation`` transcript event into the session store via
+  ``record_event("hook_invocation", detail)``.  Detail carries
+  ``hook_name``, ``event``, ``exit_code``, ``duration_seconds``
+  (rounded to 4 decimals), ``vetoed``, ``timed_out``,
+  ``continue_on_error``, and a stderr excerpt (first 200 chars) when
+  present — enough to reconstruct a failure without bloating the
+  transcript with long stack traces.  ``sqlite3.Error`` during
+  recording is logged at DEBUG.
+- [x] ``/hooks`` slash command added to the shared dispatcher
+  (``COMMAND_CATALOGUE`` + ``dispatch``), identical surface on CLI,
+  TUI, and Web.  Three-section renderer: "no hooks configured"
+  empty-state with config-path hints; grouped-by-event listing with
+  ``if:`` filter source, **veto-capable** flag for
+  ``continue_on_error: false`` hooks, and per-hook stats
+  (invocations, successes/failures/vetoes/timeouts, avg duration,
+  last-seen time) from ``HookStats.for_hook``; transcript-logging
+  footer mirroring the ``/sandbox`` pattern.
+- [x] ``cantrip hooks test <event> [--payload JSON] [--path DIR]``
+  new argparse subcommand in ``cantrip.main``.  Validates the event
+  name + ``--payload`` shape before loading config (so CLI errors
+  surface the same way regardless of whether hooks happen to be
+  configured), discovers via the same
+  ``HookRunner.from_disk(repo_root=...)`` path as the live agent,
+  and prints a per-hook summary with checkmarks (``✓`` success,
+  ``∅`` veto, ``✗`` failure), duration, stdout/stderr excerpts.
+  Useful while authoring a hook config: confirms the ``if:`` filter
+  matches, the command exits cleanly, and how long it takes — no
+  need to spin up an agent session.
+- [x] 20 new unit tests: ``HookStats`` counter semantics (empty /
+  success / failure / veto / timeout / avg-duration / sorted-
+  snapshot); ``HookRunner.set_listener`` (called per hook / skipped
+  for filtered / exception swallowed / detachable); end-to-end
+  agent wiring (tool call feeds the stats accumulator);
+  ``format_hooks_status`` renderer (empty runner, grouped listing,
+  invoked-hook stats); ``_hooks_test`` CLI (unknown event, empty
+  config, happy path, invalid JSON payload, non-object payload).
+- [x] ``docs/docs/howto-hooks.html`` gets a new "Inspecting hooks"
+  section describing ``/hooks`` and ``cantrip hooks test``, plus
+  a pointer to the ``hook_invocation`` transcript event.  The
+  "Current limits" item about stdout-capture-but-no-mutation
+  stays — that's 46.4b territory, still open.
 
 **Exit criteria:** Users can configure hooks via YAML, filter them with `if:`
 expressions, and see their invocations in the transcript and `/hooks` view;

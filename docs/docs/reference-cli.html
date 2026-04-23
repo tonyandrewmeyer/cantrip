@@ -46,6 +46,7 @@
       <li><a href="#run">cantrip run</a></li>
       <li><a href="#compare">cantrip compare</a></li>
       <li><a href="#export-transcript">export-transcript</a></li>
+      <li><a href="#hooks">cantrip hooks</a></li>
       <li><a href="#slash-commands">Slash commands</a></li>
       <li><a href="#env-vars">Environment variables</a></li>
       <li><a href="#session-file">Session file</a></li>
@@ -66,6 +67,7 @@
     <pre><code>cantrip [run] [OPTIONS] [PATH]
 cantrip compare CHARM_A CHARM_B
 cantrip export-transcript PATH [OPTIONS]
+cantrip hooks test EVENT [--payload JSON] [--path DIR]
 cantrip --version
 cantrip --help</code></pre>
     <p>
@@ -262,6 +264,53 @@ cantrip --help</code></pre>
         Split HTML output into pages of N conversation messages each.
         Creates numbered files (<code>transcript_1.html</code>,
         <code>transcript_2.html</code>, etc.) with navigation links.
+      </dd>
+    </dl>
+
+    <h2 id="hooks">cantrip hooks</h2>
+    <p>
+      Manage user-defined hooks configured in
+      <code>~/.config/cantrip/hooks.yaml</code> or
+      <code>cantrip.hooks.yaml</code>. See
+      <a href="howto-hooks.html">How to configure hooks</a> for the
+      schema.
+    </p>
+
+    <h3 id="hooks-test">cantrip hooks test</h3>
+    <p>
+      Fires a synthetic event against the loaded hook config and
+      prints per-hook results &mdash; exit code, duration,
+      stdout/stderr excerpts, veto / timeout status. Useful while
+      authoring a config to check an <code>if:</code> filter
+      matches and a <code>run:</code> command exits cleanly. Exits
+      0 on success, 2 on argument / JSON errors.
+    </p>
+    <pre><code>cantrip hooks test EVENT [--payload JSON] [--path DIR]</code></pre>
+    <dl>
+      <dt><code>EVENT</code> <span class="arg-req">required</span></dt>
+      <dd>
+        One of the <a href="howto-hooks.html#events">hook event
+        names</a>: <code>pre_tool_call</code>,
+        <code>post_tool_call</code>, <code>pre_compact</code>,
+        <code>post_compact</code>, <code>pre_subagent</code>,
+        <code>post_subagent</code>, plus the reserved-for-later
+        names.
+      </dd>
+      <dt><code>--payload JSON</code></dt>
+      <dd>
+        Optional JSON object merged into the synthetic event
+        alongside the auto-added <code>event</code> and
+        <code>timestamp</code> fields. Your <code>if:</code>
+        filter evaluates against the merged payload. Must be a
+        JSON object; lists and scalars are rejected with exit 2.
+      </dd>
+      <dt><code>--path DIR</code></dt>
+      <dd>
+        Repo root for <code>cantrip.hooks.yaml</code> discovery.
+        Defaults to the current working directory. The user-scope
+        config at <code>~/.config/cantrip/hooks.yaml</code> is
+        always loaded; repo hooks with a colliding
+        <code>name</code> override user hooks.
       </dd>
     </dl>
 

@@ -68,6 +68,7 @@ import json
 import logging
 import os
 import pathlib
+import typing
 from typing import Any
 
 import yaml
@@ -535,6 +536,96 @@ def _parse_hook(spec: dict[str, Any], path: pathlib.Path, index: int) -> HookCon
     )
 
 
+# Callback signature for ``HookRunner`` telemetry — the agent hooks
+# this to route every execution through ``HookStats`` and the session
+# store's transcript events.  Invoked after the subprocess completes
+# (so ``duration_seconds`` is final) and only for hooks that actually
+# ran — skipped hooks (by ``if:`` filter) don't feed the callback
+# because they'd just noise up the stats.
+HookResultListener = typing.Callable[[HookResult], None]
+
+
+@dataclasses.dataclass
+class _HookHistory:
+    """Mutable per-hook accumulator tracked by :class:`HookStats`.
+
+    Fields are public rather than properties so the ``/hooks`` slash
+    command can read them directly without juggling a separate view
+    object.  Private to :class:`HookStats` — callers outside the
+    module should use :meth:`HookStats.for_hook` to fetch snapshots.
+    """
+
+    name: str
+    event: HookEvent
+    invocations: int = 0
+    successes: int = 0
+    failures: int = 0
+    vetoes: int = 0
+    timeouts: int = 0
+    total_duration_seconds: float = 0.0
+    last_invoked_at: datetime.datetime | None = None
+    last_exit_code: int | None = None
+    last_vetoed: bool = False
+    last_timed_out: bool = False
+
+    @property
+    def avg_duration_seconds(self) -> float:
+        """Average wall-clock duration across every invocation."""
+        if self.invocations == 0:
+            return 0.0
+        return self.total_duration_seconds / self.invocations
+
+
+class HookStats:
+    """Running telemetry for every hook executed in the current session.
+
+    Owned by :class:`CantripAgent` and fed by the
+    ``HookResultListener`` the agent registers on its ``HookRunner``.
+    Drives the ``/hooks`` slash command.
+
+    Kept small and in-memory: one ``_HookHistory`` per hook name, no
+    per-invocation log — the transcript's ``hook_invocation`` events
+    cover that, and re-scanning them from SQLite when the slash
+    command runs is cheap.  The stats accumulator is the hot-path
+    summary; transcript is the audit record.
+    """
+
+    def __init__(self) -> None:
+        self._by_name: dict[str, _HookHistory] = {}
+
+    def record(self, result: HookResult) -> None:
+        """Fold *result* into the per-hook accumulator."""
+        history = self._by_name.get(result.name)
+        if history is None:
+            history = _HookHistory(name=result.name, event=result.event)
+            self._by_name[result.name] = history
+        history.invocations += 1
+        history.total_duration_seconds += result.duration_seconds
+        history.last_invoked_at = datetime.datetime.now()
+        history.last_exit_code = result.exit_code
+        history.last_vetoed = result.vetoed
+        history.last_timed_out = result.timed_out
+        if result.succeeded:
+            history.successes += 1
+        else:
+            history.failures += 1
+        if result.vetoed:
+            history.vetoes += 1
+        if result.timed_out:
+            history.timeouts += 1
+
+    def for_hook(self, name: str) -> _HookHistory | None:
+        """Return the history for *name*, or None if the hook never ran."""
+        return self._by_name.get(name)
+
+    def snapshot(self) -> list[_HookHistory]:
+        """Return every known hook history in deterministic order."""
+        return sorted(self._by_name.values(), key=lambda h: h.name)
+
+    def __len__(self) -> int:
+        return len(self._by_name)
+
+
 class HookRunner:
     """Dispatches events to configured hooks.
 
@@ -549,11 +640,26 @@ class HookRunner:
         self._by_event: dict[HookEvent, list[HookConfig]] = {}
         for hook in hooks or []:
             self._by_event.setdefault(hook.event, []).append(hook)
+        self._listener: HookResultListener | None = None
 
     @classmethod
     def from_disk(cls, repo_root: pathlib.Path | str | None = None) -> HookRunner:
         """Convenience constructor that loads ``hooks.yaml`` from disk."""
         return cls(load_hooks(repo_root=repo_root))
+
+    def set_listener(self, listener: HookResultListener | None) -> None:
+        """Register (or clear) a per-result callback.
+
+        The agent uses this to thread every execution through its
+        :class:`HookStats` accumulator and record a ``hook_invocation``
+        transcript event.  Listener exceptions are logged and
+        swallowed at DEBUG so a misbehaving listener can never break
+        the agent loop.
+
+        Use ``None`` to detach — handy in tests that reuse the same
+        runner for multiple agents.
+        """
+        self._listener = listener
 
     @property
     def hook_count(self) -> int:
@@ -605,6 +711,12 @@ class HookRunner:
                 continue
             result = await self._run_one(hook, stdin_bytes)
             results.append(result)
+            if self._listener is not None:
+                try:
+                    self._listener(result)
+                except Exception:
+                    # Telemetry failure must never abort the agent.
+                    log.debug("HookRunner listener raised", exc_info=True)
         return results
 
     async def _run_one(self, hook: HookConfig, stdin_bytes: bytes) -> HookResult:
@@ -697,7 +809,9 @@ __all__ = [
     "HookConfigError",
     "HookEvent",
     "HookResult",
+    "HookResultListener",
     "HookRunner",
+    "HookStats",
     "first_veto",
     "load_hooks",
 ]
