@@ -1338,21 +1338,40 @@ This phase is **investigation-heavy** up front: pick a conversion
 path that survives round-tripping, verify it preserves everything
 that matters, then commit to it.
 
-### 54.1 High — Audit the existing HTML and pick a conversion path
+### 54.1 High — Audit the existing HTML and pick a conversion path ✓
 
-- [ ] Inventory every `docs/docs/*.html` page: headings, code blocks,
-  callouts, admonitions, cross-links, images, anchor IDs used by
-  external links, and any custom classes from `docs.css`
-- [ ] Pick a conversion tool (candidates: `pandoc`, `html2markdown`,
-  `markdownify`) and a target flavour (CommonMark vs MyST vs
-  MkDocs-Material-flavoured markdown); prefer the flavour that round-
-  trips back to HTML byte-identical or close to it
-- [ ] Convert one representative page end-to-end as a pilot and diff
-  the rebuilt HTML against the original — document what the tool
-  handles losslessly vs what needs manual fix-up
-- [ ] Write up the decision in `design/DOCS_REBUILD.md` so the
-  conversion rationale is preserved even if this phase spans many
-  sessions
+- [x] Inventory complete: 19 HTML pages under `docs/docs/`.  Chrome
+  (nav / sidebar / footer / skip-link / mobile-nav script) is identical
+  across all pages and belongs in a Jinja2 template.  Content-side
+  custom markup: `<p class="subtitle">`, `<div class="breadcrumb">` with
+  `<span class="sep">/</span>`, ~130 heading anchor IDs, `<div class="callout">`
+  and `<div class="callout-warn callout">` admonitions (7 pages),
+  `<pre><code>` with `<span class="prompt">` / `<span class="comment">` /
+  `<span class="dim">` styling (7 pages), `<dl><dt><dd>` definition
+  lists with optional `<span class="arg-req">required</span>`, the
+  landing-page `<div class="doc-cards">` grid, tables (12 pages), and a
+  handful of HTML entities.
+- [x] Conversion path chosen: **markdown-it-py + mdit_py_plugins.attrs
+  + Jinja2 + PyYAML**, all already in the dependency tree.  Rejected
+  pandoc (not installed, heavy), MkDocs-Material (fights existing
+  hand-crafted CSS), and one-shot markdownify (can't round-trip
+  prompt-styled spans and would duplicate chrome into every source
+  file).  See `design/DOCS_REBUILD.md` for the full rationale.
+- [x] Pilot round-trip on `howto-export.html`: zero semantic-DOM
+  differences between the rebuilt HTML and the committed file (every
+  tag, attribute, text node, and character reference matches).  Byte-
+  for-byte parity with the hand-authored HTML is infeasible — the
+  author wrapped paragraphs and deeply indented tags, while the
+  markdown renderer emits flush-left compact blocks.  The build script
+  therefore runs a **semantic DOM diff** in `--check` mode (entity
+  references normalised against Unicode, whitespace runs collapsed)
+  and reserves `--check --strict` for once the committed HTML has been
+  regenerated from markdown.
+- [x] `design/DOCS_REBUILD.md` written: captures the rejected
+  alternatives, the chosen stack, file layout (`docs/src/`),
+  frontmatter schema, manual-reconciliation rules for raw-HTML cases
+  (callouts, prompt-styled code, `<dl>`, doc-cards), entity handling,
+  build behaviour, and the pilot findings.
 
 ### 54.2 High — Convert every page and reconcile
 

@@ -1,0 +1,48 @@
+# Global site configuration consumed by _build.py.
+#
+# `sections` declares the order and titles of each Diátaxis section and its
+# pages. The build script uses this to render the primary section-nav list
+# in the sidebar (with `class="current"` on the active page).
+
+sections:
+  howto:
+    heading: "How-to guides"
+    pages:
+      - { slug: howto-provider, label: "Choose an LLM provider" }
+      - { slug: howto-improve, label: "Improve an existing charm" }
+      - { slug: howto-export, label: "Export transcripts" }
+      - { slug: howto-light-models, label: "Configure light models" }
+      - { slug: howto-memory, label: "Use durable memory" }
+      - { slug: howto-mcp, label: "Configure MCP servers" }
+      - { slug: howto-hooks, label: "Configure hooks" }
+      - { slug: howto-feelings, label: "Convene the inner parliament" }
+
+  reference:
+    heading: "Reference"
+    pages:
+      - { slug: reference-cli, label: "CLI reference" }
+      - { slug: reference-tools, label: "Agent tools" }
+
+  explanation:
+    heading: "Explanation"
+    pages:
+      - { slug: explanation-architecture, label: "How Cantrip works" }
+      - { slug: explanation-charm-paths, label: "The three charm paths" }
+      - { slug: explanation-observability, label: "Observability and debugging" }
+      - { slug: explanation-quickpack-rs, label: "Quickpack Rust backend" }
+      - { slug: explanation-charmlint-rs, label: "Charmlint Rust backend" }
+      - { slug: explanation-emotions, label: "Emotion subagents" }
+      - { slug: explanation-race, label: "Racing and Arena" }
+      - { slug: explanation-tui-screens, label: "TUI screens and shortcuts" }
+
+  tutorial:
+    heading: "Tutorial"
+    pages:
+      - { slug: tutorial, label: "Build your first charm" }
+
+# Breadcrumb label used when a page's frontmatter says `section: <key>`.
+section_breadcrumb_label:
+  howto: "How-to guides"
+  reference: "Reference"
+  explanation: "Explanation"
+  tutorial: "Tutorial"

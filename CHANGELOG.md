@@ -5,6 +5,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Docs rebuild groundwork — Phase 54.1.**  First step of
+  reverse-engineering `docs/docs/*.html` into authored markdown.
+  Chose markdown-it-py + `mdit_py_plugins.attrs` + Jinja2 + PyYAML
+  (all already in the dependency tree) over pandoc, MkDocs-Material,
+  and one-shot markdownify.  Landed: `design/DOCS_REBUILD.md` (audit
+  findings, rationale, manual-reconciliation rules, entity handling,
+  build behaviour), `docs/src/_build.py` (pure-Python builder with
+  semantic-DOM `--check` mode that tolerates whitespace/wrapping
+  differences but catches content drift), `docs/src/_templates/page.html.j2`,
+  `docs/src/_site.yaml` (section nav / page order), and a pilot
+  markdown source `docs/src/howto-export.md` that rebuilds to DOM-
+  identical output against the committed `howto-export.html`.  Phase
+  54.2 (convert the remaining 18 pages) follows.
 - **Hook telemetry + `/hooks` command + `cantrip hooks test` — Phase 46.5.**
   Every hook execution now feeds a ``HookStats`` accumulator on the
   agent and writes a ``hook_invocation`` transcript event into the
