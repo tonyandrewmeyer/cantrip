@@ -200,6 +200,34 @@ class TestSkillsIndexWithBundledSkills:
         ):
             assert anchor in body, f"find-bugs missing anchor: {anchor!r}"
 
+    def test_charm_migration_skill_covers_all_four_migrations(self) -> None:
+        """The charm-migration skill must cover all four legacy patterns end-to-end."""
+        index = SkillsIndex()
+        index.discover()
+        names = {s.name for s in index.list_skills()}
+        assert "charm-migration" in names
+        body = index.load_skill("charm-migration").lower()
+        # Audit rule IDs the skill maps migrations to.
+        for rule_id in ("dep001", "dep002", "dep003", "dep004", "lib001", "lib002"):
+            assert rule_id in body, f"charm-migration missing rule mapping: {rule_id!r}"
+        # Reactive framework anchors.
+        for anchor in ("charms.reactive", "@when", "framework.observe", "_reconcile"):
+            assert anchor in body, f"charm-migration missing reactive anchor: {anchor!r}"
+        # StoredState replacement anchors — decision tree keywords.
+        for anchor in (
+            "storedstate",
+            "peer relation data",
+            "juju secret",
+            "instance attribute",
+        ):
+            assert anchor in body, f"charm-migration missing StoredState anchor: {anchor!r}"
+        # Harness and its delegation to the companion skill.
+        for anchor in ("harness", "scenario", "harness-migration"):
+            assert anchor in body, f"charm-migration missing Harness anchor: {anchor!r}"
+        # fetch-libs → PyPI anchors.
+        for anchor in ("fetch-libs", "charmlibs-", "from charmlibs"):
+            assert anchor in body, f"charm-migration missing fetch-libs anchor: {anchor!r}"
+
     def test_charm_library_skill_covers_authoring(self) -> None:
         """The charm-library skill should cover the end-to-end authoring flow."""
         index = SkillsIndex()

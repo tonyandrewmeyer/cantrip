@@ -3098,12 +3098,37 @@ many existing deployments use bundles, so Cantrip should be able to work with th
 - [ ] When proposing multi-charm deployments, use individual `juju deploy` + `juju relate`
   commands rather than generating new bundle files
 
-### 33.2 High — Charm Migration Skill
+### 33.2 High — Charm Migration Skill ✓
 
-- [ ] New `charm-migration` skill for migrating legacy charms to modern patterns
-- [ ] Detect and replace: reactive framework → ops, Harness → Scenario,
-  StoredState → peer relation data, fetch-libs → PyPI imports
-- [ ] Integrate with `--improve` mode: `cantrip run --improve legacy-charm/`
+- [x] New `charm-migration` skill for migrating legacy charms to modern
+  patterns — covers reactive-framework → ops, StoredState → modern
+  storage, Harness → Scenario, fetch-libs → PyPI as one umbrella
+  workflow, with per-migration decision trees and recipes.  Delegates
+  the test-file half to the existing `harness-migration` skill and the
+  PyPI-authoring half to `charm-library`.
+- [x] Detect and replace: all four migrations are detectable from
+  charmlint diagnostics.  `DEP001` covers StoredState, `DEP002` covers
+  Harness, `LIB001`/`LIB002` cover fetch-libs; added new `DEP004`
+  (``uses-reactive-framework``) that flags ``charms.reactive`` imports
+  and ``@when`` / ``@when_not`` / ``@when_any`` / ``@when_all`` /
+  ``@hook`` decorators.
+- [x] Integrate with `--improve` mode: `_infer_gaps_from_audit` now
+  recognises the reactive-framework keywords in the audit report;
+  `plan_improvement_fixes` treats the new `reactive_framework` gap as
+  a modernisation trigger and prepends an explicit
+  "Load the `charm-migration` skill first" step to the modernise-code
+  task description whenever any deprecated-API or reactive-framework
+  gap is set.
+- [x] Test coverage:
+  `tests/unit/test_skills.py::test_charm_migration_skill_covers_all_four_migrations`
+  pins a dozen required anchors (every audit rule ID, reactive-framework
+  patterns, StoredState decision-tree keywords, Harness delegation,
+  fetch-libs / charmlibs anchors).  `TestDeprecatedRules` gains two
+  tests for DEP004 (import form + bare decorator form).
+  `TestInferGapsFromAudit` gains tests for both reactive-framework
+  keyword branches.  `TestPlanImprovementFixes` gains tests that the
+  modernise task actually names the `charm-migration` skill and the
+  ``framework.observe`` anchor whenever reactive-framework gaps fire.
 
 ### 33.3 Medium — Multi-Charm Workspace
 

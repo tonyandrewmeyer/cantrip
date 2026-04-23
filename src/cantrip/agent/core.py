@@ -2380,6 +2380,10 @@ def _infer_gaps_from_audit(text: str) -> dict[str, bool]:
         "deprecated_apis": any(
             kw in text.lower() for kw in ("deprecated", "storedstate", "harness", "fetch-libs")
         ),
+        "reactive_framework": any(
+            kw in text.lower()
+            for kw in ("reactive framework", "charms.reactive", "@when", "@hook")
+        ),
         "readme": _gap("readme", (*_missing, "no readme")),
         "licence": _gap("licen", (*_missing, "no licen")),
         "listing_metadata": _gap("listing", (*_missing, "incomplete")),

@@ -29,6 +29,13 @@ _DEPRECATED_CHECKS: list[tuple[str, str, str, str, str]] = [
         "Uses removed framework.breakpoint()",
         "Use standard Python breakpoint() or debugger",
     ),
+    (
+        r"from\s+charms\.reactive\b|@(?:when|when_not|when_any|when_all|hook)\(",
+        "DEP004",
+        "uses-reactive-framework",
+        "Uses legacy reactive framework (charms.reactive / @when / @hook decorators)",
+        "Rewrite as an ops.CharmBase subclass with framework.observe() event handlers",
+    ),
 ]
 
 

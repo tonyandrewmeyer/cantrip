@@ -5,6 +5,31 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **``charm-migration`` skill — Phase 33.2.**  New bundled skill that
+  covers all four legacy-pattern migrations as a single umbrella
+  workflow: reactive-framework → ops (decorator-to-``framework.observe``
+  mapping plus the ``_reconcile()`` discipline that replaces
+  flag-driven handler chains), ``StoredState`` → modern storage
+  (decision tree between instance attributes, peer relation data, and
+  Juju secrets — with worked examples of the peer-data and secret
+  replacements), Harness → Scenario (delegates the per-file workflow
+  to the existing ``harness-migration`` skill), and ``fetch-libs`` →
+  PyPI (current ``charmlibs-*`` mapping table plus the authoring
+  escape-hatch via ``charm-library``).  The skill maps every
+  migration onto the charmlint rule IDs that detect it so the agent
+  can walk the audit report straight into the relevant section.  A new
+  charmlint rule ``DEP004`` (``uses-reactive-framework``) detects
+  ``charms.reactive`` imports and the ``@when`` / ``@when_not`` /
+  ``@when_any`` / ``@when_all`` / ``@hook`` decorators.  The
+  ``--improve`` planner wires this through: the audit gap inferencer
+  recognises reactive-framework keywords, ``plan_improvement_fixes``
+  treats the new ``reactive_framework`` gap as a modernisation
+  trigger, and the generated ``modernise-code`` task description now
+  tells the agent to load the ``charm-migration`` skill first when any
+  deprecated-API or reactive-framework gap fires.  Pinned by a new
+  ``test_charm_migration_skill_covers_all_four_migrations`` anchor
+  test plus unit coverage on the new rule, gap inference, and planner
+  behaviour.
 - **``charm-library`` skill — Phase 33.4.**  New bundled skill teaching
   the agent how to author a reusable charm library end-to-end: when to
   create one (relation interfaces and cross-charm helpers) vs keep code

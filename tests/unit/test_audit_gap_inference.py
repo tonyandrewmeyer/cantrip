@@ -71,6 +71,18 @@ class TestInferGapsFromAudit:
         gaps = _infer_gaps_from_audit(text)
         assert gaps["deprecated_apis"] is True
 
+    def test_reactive_framework_by_name(self):
+        """The phrase 'reactive framework' trips the dedicated gap."""
+        text = "The charm still uses the reactive framework and layer.yaml."
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["reactive_framework"] is True
+
+    def test_reactive_framework_by_decorator(self):
+        """A mention of @when or @hook decorators also trips the gap."""
+        text = "Handlers still use @when decorators; needs rewrite."
+        gaps = _infer_gaps_from_audit(text)
+        assert gaps["reactive_framework"] is True
+
     def test_missing_readme(self):
         text = "README is missing from the project."
         gaps = _infer_gaps_from_audit(text)
@@ -208,6 +220,25 @@ class TestPlanImprovementFixes:
         tasks = plan_improvement_fixes(self._context(), gaps)
         ids = [t.id for t in tasks]
         assert any(i.startswith("modernise-code-") for i in ids)
+
+    def test_reactive_framework_creates_modernise_task_with_skill_hint(self):
+        """Reactive-framework gap triggers modernisation and names the skill."""
+        gaps = {"reactive_framework": True}
+        tasks = plan_improvement_fixes(self._context(), gaps)
+        modernise = [t for t in tasks if t.id.startswith("modernise-code-")]
+        assert len(modernise) == 1
+        description = modernise[0].description
+        assert "charm-migration" in description
+        assert "framework.observe" in description
+
+    def test_deprecated_apis_modernise_task_loads_charm_migration(self):
+        """When deprecated_apis is set, the task prompts the agent to load
+        the charm-migration skill (not just name the old APIs)."""
+        gaps = {"deprecated_apis": True}
+        tasks = plan_improvement_fixes(self._context(), gaps)
+        modernise = [t for t in tasks if t.id.startswith("modernise-code-")]
+        assert len(modernise) == 1
+        assert "charm-migration" in modernise[0].description
 
     def test_fix_tasks_are_build_category(self):
         """The actual fix tasks are in the BUILD category."""

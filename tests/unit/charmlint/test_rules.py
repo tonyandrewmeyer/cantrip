@@ -92,6 +92,28 @@ class TestDeprecatedRules:
         dep_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("DEP")}
         assert not dep_ids
 
+    def test_reactive_framework_import_detected(self, tmp_charm: Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "from charms.reactive import when, set_flag\n\n"
+            "@when('config.changed')\ndef configure():\n    set_flag('configured')\n",
+        )
+        report = lint(tmp_charm)
+        dep_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("DEP")}
+        assert "DEP004" in dep_ids
+
+    def test_reactive_decorator_detected(self, tmp_charm: Path):
+        """``@when(...)`` on its own (no explicit charms.reactive import) still flags."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "@when('db.available')\ndef on_db_available():\n    pass\n",
+        )
+        report = lint(tmp_charm)
+        dep_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("DEP")}
+        assert "DEP004" in dep_ids
+
 
 class TestLibraryRules:
     """Tests for fetch-libs PyPI checks."""

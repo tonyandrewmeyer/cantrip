@@ -376,13 +376,33 @@ def plan_improvement_fixes(
 
     # Code modernisation (deprecated APIs, type annotations, modern patterns).
     needs_modernise = (
-        gaps.get("deprecated_apis") or gaps.get("type_annotations") or gaps.get("modern_patterns")
+        gaps.get("deprecated_apis")
+        or gaps.get("type_annotations")
+        or gaps.get("modern_patterns")
+        or gaps.get("reactive_framework")
     )
     if needs_modernise:
         steps = []
+        if gaps.get("reactive_framework") or gaps.get("deprecated_apis"):
+            steps.append(
+                "- Load the `charm-migration` skill first — it covers the "
+                "reactive-framework rewrite, StoredState replacement, Harness "
+                "→ Scenario test migration, and fetch-libs → PyPI swap as a "
+                "single workflow with per-pattern recipes."
+            )
+        if gaps.get("reactive_framework"):
+            steps.append(
+                "- Rewrite the reactive layer as an `ops.CharmBase` subclass: "
+                "replace `@when`/`@when_not`/`@hook` decorators with "
+                "`framework.observe(...)` handlers; drop `charms.reactive` "
+                "imports; convert flag state to Juju relation data, config, "
+                "or peer relation data as appropriate."
+            )
         if gaps.get("deprecated_apis"):
             steps.append(
-                "- Replace StoredState with instance attributes or Juju secrets.\n"
+                "- Replace StoredState with instance attributes, peer relation "
+                "data, or Juju secrets (see the charm-migration skill for the "
+                "decision tree).\n"
                 "- Replace Harness test imports with Scenario.\n"
                 "- Replace charmcraft fetch-libs imports with PyPI equivalents "
                 "where available."

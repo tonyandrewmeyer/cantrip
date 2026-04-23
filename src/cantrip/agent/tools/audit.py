@@ -153,6 +153,7 @@ def _charmlint_to_audit_report(
         "icon": "STR002" in rule_ids,
         "type_annotations": "STR003" in rule_ids,
         "modern_patterns": any(not v for v in modern_patterns.values()),
+        "reactive_framework": "DEP004" in rule_ids,
     }
 
     # Build deprecated_apis list from DEP diagnostics.
