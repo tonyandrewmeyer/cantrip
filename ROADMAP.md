@@ -3082,7 +3082,7 @@ dependencies. Watcher events all route to tasks. `make check` passes throughout.
 
 ---
 
-## Phase 33: New Skills and Capabilities
+## Phase 33: New Skills and Capabilities ✓
 
 **Goal:** Expand what Cantrip can do beyond basic charm building — charm migration,
 existing bundle management, and deeper ecosystem integration.
@@ -3230,18 +3230,59 @@ many existing deployments use bundles, so Cantrip should be able to work with th
   (LIBID/LIBAPI/LIBPATCH/PYDEPS, every `charmcraft` subcommand,
   the on-disk path, Scenario, and the PyPI alternative)
 
-### 33.5 Low — Interactive Debugging Mode
+### 33.5 Low — Interactive Debugging Mode ✓
 
-- [ ] `cantrip debug <charm-path>` — connect to a running deployment and
-  investigate issues interactively
-- [ ] Automatically check status, logs, relation data, config, and secrets
-- [ ] Propose fixes based on observed symptoms
+- [x] Connect to a running deployment and investigate issues
+  interactively — shipped as a new `charm-debug` skill that channels
+  the agent's existing Juju read-only tools (`juju_status`,
+  `juju_debug_log`, `juju_stream_logs`, `juju_read_relation_data`,
+  `juju_get_app_config`, `juju_list_secrets`, `juju_show_secret`)
+  into a deterministic five-step inspection.  No new CLI subcommand:
+  the skill activates on diagnostic phrasing ("stuck", "crashloop",
+  "relation not working", …) and the agent already has every tool
+  it needs.  Skill advertises itself as read-only so the agent won't
+  accidentally mutate state during diagnosis.
+- [x] Automatically check status, logs, relation data, config, and
+  secrets — the skill's inspection order is literal: status first
+  (including the charm's own status message, which encodes the
+  author's self-diagnosis), then logs, then relation data for the
+  endpoints status mentions, then config vs. defaults, then secret
+  ownership / grants / revision freshness.
+- [x] Propose fixes based on observed symptoms — a 12-row
+  symptom → likely-cause → next-action table maps common
+  inspection findings onto concrete tool calls or code-level
+  directions, and a structured report template pins the agent's
+  write-up so the user sees the same shape every time.
 
-### 33.6 Low — Charm Benchmarking
+### 33.6 Low — Charm Benchmarking ✓
 
-- [ ] New `benchmark` skill for measuring charm performance
-- [ ] Hook execution time profiling via `juju_dispatch` timing
-- [ ] Comparison across charm versions (before/after optimisation)
+- [x] New `benchmark` skill for measuring charm performance —
+  covers when to load, what `hook_benchmark` measures (and does
+  not measure — actions, workload latency, cold-start CPU), and
+  interpretation rules of thumb per hook type with ceilings for
+  "good enough".
+- [x] Hook execution time profiling via `juju_dispatch` timing —
+  the existing `hook_benchmark` tool reads `juju debug-log`,
+  parses the `ran "<hook>" hook (<ms>ms)` lines, and reports
+  per-hook count/min/max/avg with a threshold callout.  The skill
+  documents how to exercise every hook with `juju_dispatch`
+  before sampling (`update-status` on demand is the canonical
+  example).
+- [x] Comparison across charm versions (before/after optimisation)
+  — the skill prescribes the baseline → optimise → candidate →
+  delta-report pattern with a 10% / 100 ms noise guard, a
+  Markdown table format for the write-up, and a durable
+  `tests/perf/baseline.json` pattern for charms that want to guard
+  against regressions in CI.  For workspaces, run the comparison
+  per-charm (cross-charm timings don't add up cleanly).
+- [x] Skill anchor tests: `test_charm_debug_skill_covers_diagnostic_workflow`
+  pins the six read-only tools the skill sequences, the diagnostic
+  vocabulary ("symptom", "likely cause", "next action", "pebble"),
+  and the read-only advertisement.
+  `test_benchmark_skill_covers_hook_benchmark_and_comparison`
+  pins the `hook_benchmark` / `threshold_ms` / `data.timings`
+  anchors, the before/after vocabulary (`baseline`, `candidate`,
+  `delta`), and the hook names the skill prescribes exercising.
 
 **Exit criteria:** Existing bundle management working. Migration skill handles
 the three most common legacy patterns. `make check` passes throughout.
@@ -7592,7 +7633,7 @@ in the commit message.
 | M30: Complete Toolbox | 30 | Shell injection fixed; missing Juju/git tools available; existing tools hardened |
 | M31: Great UX | 31 ✓ | Streaming responses; chat search; session resume; cost tracking visible |
 | M32: Smart Planning | 32 | Compact prompt complete; dependency validation; watcher events all routed |
-| M33: Expanded Skills | 33 | Existing bundle management; charm migration; multi-charm workspaces |
+| M33: Expanded Skills | 33 ✓ | Existing bundle management; charm migration; multi-charm workspaces; interactive debug; benchmarking |
 | M39: ACP Research | 39 | Written assessment of Agent Client Protocol as an alternative to direct LLM provider calls |
 | M40: Safe Compaction | 40 | Compaction has cycle detection, retry budgets, and size validation — no infinite loops possible |
 | M41: Provider Parity | 41 | All providers capture streaming usage; extended thinking available for Claude; accurate token counting; cost visibility; compaction monitoring |

@@ -5,6 +5,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **``charm-debug`` skill — Phase 33.5.**  New bundled skill that
+  gives the agent a deterministic diagnostic workflow for stuck,
+  misbehaving, or slow-to-reach-``active`` charms.  Shipped as a
+  read-only skill (no CLI subcommand — the agent already has every
+  tool it needs).  Prescribes a fixed five-step inspection
+  (``juju_status`` → ``juju_debug_log`` → ``juju_read_relation_data``
+  on endpoints status mentions → ``juju_get_app_config`` diffed
+  against charmcraft defaults → ``juju_list_secrets`` /
+  ``juju_show_secret`` for grants / rotation freshness) and a
+  12-row symptom → likely-cause → next-action table that translates
+  what the inspection finds into concrete tool calls.  Ends with a
+  fixed report template so the user sees the same shape every time.
+- **``benchmark`` skill — Phase 33.6.**  New bundled skill wrapping
+  the existing ``hook_benchmark`` tool with interpretation guidance
+  (what it measures, what it does not — actions, workload latency,
+  cold-start CPU) and rules of thumb per hook type with "good
+  enough" ceilings.  Documents the full before/after comparison
+  pattern for optimisation work: baseline snapshot →
+  ``tests/perf/baseline.json`` → optimisation commit → candidate
+  snapshot → delta report with a 10% / 100 ms noise guard, table
+  format spelled out.  For ``cantrip.workspace.yaml`` repos, run the
+  comparison per-charm (cross-charm timings don't add up cleanly).
 - **Multi-charm workspace manifest + ``workspace`` skill +
   ``workspace_info`` tool — Phase 33.3.**  Cantrip can now reason
   about monorepos that hold more than one related charm.  A new

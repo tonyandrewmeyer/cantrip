@@ -200,6 +200,51 @@ class TestSkillsIndexWithBundledSkills:
         ):
             assert anchor in body, f"find-bugs missing anchor: {anchor!r}"
 
+    def test_charm_debug_skill_covers_diagnostic_workflow(self) -> None:
+        """The charm-debug skill must prescribe the five-step inspection
+        and the symptom → cause → action table."""
+        index = SkillsIndex()
+        index.discover()
+        names = {s.name for s in index.list_skills()}
+        assert "charm-debug" in names
+        body = index.load_skill("charm-debug").lower()
+        # Five-step inspection anchors.
+        for anchor in (
+            "juju_status",
+            "juju_debug_log",
+            "juju_read_relation_data",
+            "juju_get_app_config",
+            "juju_list_secrets",
+            "juju_show_secret",
+        ):
+            assert anchor in body, f"charm-debug missing inspection tool anchor: {anchor!r}"
+        # Symptom / cause / action coverage — table must be present.
+        for anchor in ("symptom", "likely cause", "next action", "pebble"):
+            assert anchor in body, f"charm-debug missing diagnostic anchor: {anchor!r}"
+        # Must stay read-only — no write tools.
+        assert "read-only" in body, "charm-debug must advertise itself as read-only"
+
+    def test_benchmark_skill_covers_hook_benchmark_and_comparison(self) -> None:
+        """The benchmark skill must wrap hook_benchmark and prescribe the
+        before/after comparison pattern."""
+        index = SkillsIndex()
+        index.discover()
+        names = {s.name for s in index.list_skills()}
+        assert "benchmark" in names
+        body = index.load_skill("benchmark").lower()
+        for anchor in (
+            "hook_benchmark",
+            "threshold_ms",
+            "data.timings",
+            "baseline",
+            "candidate",
+            "delta",
+            "before/after",
+            "update-status",
+            "config-changed",
+        ):
+            assert anchor in body, f"benchmark missing anchor: {anchor!r}"
+
     def test_workspace_skill_covers_multi_charm_work(self) -> None:
         """The workspace skill must cover the manifest, cross-charm relation
         design, and coordinated integration tests — and actively discourage
