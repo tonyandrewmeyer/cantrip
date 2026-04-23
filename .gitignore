@@ -63,9 +63,11 @@ Thumbs.db
 .cantrip-shm
 .cantrip-wal
 
-# Claude Code local worktrees (experimental branches) and runtime locks
+# Claude Code local worktrees (experimental branches), runtime locks, and
+# per-user settings overrides (tool/command permissions specific to one dev)
 .claude/worktrees/
 .claude/*.lock
+.claude/settings.local.json
 
 # Charms built during development
 *.charm
