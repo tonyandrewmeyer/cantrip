@@ -438,14 +438,54 @@ the watcher — this phase formalises them and opens them up.
   loop fires ``pre_tool_call`` + ``post_tool_call`` on every
   invocation.
 
-### 46.3 Medium — Conditional filters
+### 46.3 Medium — Conditional filters ✓
 
-- [ ] `if:` expression support: simple comparisons against payload fields
-  (e.g. `tool == "git_push"`, `task.category == "BUILD"`,
-  `path.matches("charm.py")`)
-- [ ] Pattern syntax mirrors Claude Code's `if:` filter
-- [ ] Unit tests cover matching, non-matching, malformed expressions, and
-  missing fields
+- [x] New ``if:`` key on each hook declaration accepts a boolean
+  expression evaluated against the event payload before the hook
+  runs — examples from the doc page: ``tool == "git_push"``,
+  ``category == "BUILD" and exit_state == "completed"``,
+  ``tool in ["git_push", "git_commit", "charmcraft_upload"]``,
+  ``arguments.channel == "edge"``.
+- [x] Expression language built on Python's own ``ast`` module
+  instead of a handwritten grammar or ``eval()``: allows
+  ``BoolOp`` / ``UnaryOp`` / ``Compare`` / ``Constant`` / ``Name`` /
+  ``Attribute`` / ``Subscript`` / ``List`` / ``Tuple`` and rejects
+  everything else at compile time.  That covers the common cases
+  (``==``, ``!=``, ``<=``, ``>=``, ``in``, ``not in``, ``and``,
+  ``or``, ``not``, nested field access, subscript access, list
+  literals) and keeps function calls, method calls, lambdas,
+  comprehensions, and imports out of the config completely.
+- [x] Deviation from the roadmap's example: ``path.matches("charm.py")``
+  isn't supported because method calls are rejected by the
+  validator on purpose — a user who can write
+  ``tool.startswith(...)`` in their config can also write
+  ``__import__('os').system(...)``.  Substring checks work via
+  ``"git" in tool``; regex matching is left for a future
+  skill-style extension.
+- [x] Compiled at config-load time inside ``_parse_hook`` — bad
+  expressions fail with a ``HookConfigError`` that names the hook
+  and points at the broken line, not at fire-time when the
+  operator is already waiting on a tool call.
+- [x] Missing payload fields are evaluated through a
+  ``_Missing`` sentinel that makes every comparison (except ``==``
+  / ``!=`` against itself) return ``False`` — so a hook with
+  ``if: task.category == "BUILD"`` against a payload without a
+  ``task`` field simply skips rather than raising.  Users can
+  write one hook config that targets fields from several event
+  shapes without KeyError crashes.
+- [x] ``HookRunner.fire`` evaluates ``hook.if_expr`` against the
+  *enriched* payload (so the auto-added ``event`` + ``timestamp``
+  fields are available to filters) and skips the hook without
+  spawning a subprocess when the filter rejects the event.  31 new
+  unit tests cover parse-time rejection (syntax error, function
+  call, method call, lambda, comprehension, statement-shape),
+  evaluation (all operators, ``in``, ``not in``, nested attribute,
+  subscript, numeric comparison, list literals), missing-field
+  semantics (missing at top + nested levels, ``!=`` vs missing,
+  ordering op vs missing), YAML parse (accepted, missing, empty,
+  malformed-name-surfaced), and runner dispatch (matching fires,
+  non-matching skips, ``event`` auto-field accessible, mixed
+  filtered + unfiltered hooks on the same event).
 
 ### 46.4 Medium — Hook result handling
 

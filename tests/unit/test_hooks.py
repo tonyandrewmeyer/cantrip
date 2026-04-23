@@ -1,4 +1,4 @@
-"""Tests for the user-configurable hooks subsystem (Phase 46.1 + 46.2)."""
+"""Tests for the user-configurable hooks subsystem (Phase 46.1 + 46.2 + 46.3)."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from cantrip.hooks import (
     HookConfigError,
     HookEvent,
     HookRunner,
+    _FilterExpr,
     _parse_yaml,
     load_hooks,
 )
@@ -403,3 +404,240 @@ class TestAgentFiresHooks:
         await agent.process_message("Check status")
 
         assert log_file.read_text() == "pre\npost\n"
+
+
+# ---------------------------------------------------------------------------
+# _FilterExpr — if: expression compiler + evaluator (Phase 46.3)
+# ---------------------------------------------------------------------------
+
+
+class TestFilterExprParsing:
+    """Parse-time validation: bad expressions fail with a clear error."""
+
+    def test_syntax_error_rejected(self):
+        with pytest.raises(HookConfigError, match="invalid `if:`"):
+            _FilterExpr("tool ==")
+
+    def test_function_call_rejected(self):
+        with pytest.raises(HookConfigError, match="disallowed"):
+            _FilterExpr("print('hi')")
+
+    def test_method_call_rejected(self):
+        """Attribute access is allowed; calling that attribute is not."""
+        with pytest.raises(HookConfigError, match="disallowed"):
+            _FilterExpr("tool.startswith('git_')")
+
+    def test_lambda_rejected(self):
+        with pytest.raises(HookConfigError, match="disallowed"):
+            _FilterExpr("lambda x: x")
+
+    def test_comprehension_rejected(self):
+        with pytest.raises(HookConfigError, match="disallowed"):
+            _FilterExpr("[x for x in [1,2]]")
+
+    def test_augmented_assignment_rejected(self):
+        """Statements (not expressions) fail at the ``ast.parse`` step."""
+        with pytest.raises(HookConfigError, match="invalid `if:`"):
+            _FilterExpr("x = 1")
+
+
+class TestFilterExprEvaluation:
+    """Runtime: ``matches()`` against real payload shapes."""
+
+    def test_eq_true(self):
+        assert _FilterExpr('tool == "git_push"').matches({"tool": "git_push"}) is True
+
+    def test_eq_false(self):
+        assert _FilterExpr('tool == "git_push"').matches({"tool": "read_file"}) is False
+
+    def test_neq(self):
+        expr = _FilterExpr('tool != "git_push"')
+        assert expr.matches({"tool": "read_file"}) is True
+        assert expr.matches({"tool": "git_push"}) is False
+
+    def test_and_short_circuits(self):
+        expr = _FilterExpr('tool == "git_push" and source == "main"')
+        assert expr.matches({"tool": "git_push", "source": "main"}) is True
+        assert expr.matches({"tool": "git_push", "source": "subagent"}) is False
+        assert expr.matches({"tool": "read_file", "source": "main"}) is False
+
+    def test_or(self):
+        expr = _FilterExpr('tool == "git_push" or tool == "git_pull"')
+        assert expr.matches({"tool": "git_pull"}) is True
+        assert expr.matches({"tool": "juju_status"}) is False
+
+    def test_not(self):
+        expr = _FilterExpr('not source == "subagent"')
+        assert expr.matches({"source": "main"}) is True
+        assert expr.matches({"source": "subagent"}) is False
+
+    def test_in_membership(self):
+        expr = _FilterExpr('tool in ["git_push", "git_pull", "git_commit"]')
+        assert expr.matches({"tool": "git_push"}) is True
+        assert expr.matches({"tool": "juju_status"}) is False
+
+    def test_not_in(self):
+        expr = _FilterExpr('tool not in ["read_file", "list_directory"]')
+        assert expr.matches({"tool": "git_push"}) is True
+        assert expr.matches({"tool": "read_file"}) is False
+
+    def test_substring_via_in(self):
+        expr = _FilterExpr('"git" in tool')
+        assert expr.matches({"tool": "git_push"}) is True
+        assert expr.matches({"tool": "juju_status"}) is False
+
+    def test_nested_attribute_access(self):
+        """Dotted names walk through nested dicts."""
+        expr = _FilterExpr('arguments.branch == "main"')
+        payload = {"arguments": {"branch": "main", "remote": "origin"}}
+        assert expr.matches(payload) is True
+        payload = {"arguments": {"branch": "feat-42"}}
+        assert expr.matches(payload) is False
+
+    def test_subscript_access(self):
+        expr = _FilterExpr('arguments["branch"] == "main"')
+        payload = {"arguments": {"branch": "main"}}
+        assert expr.matches(payload) is True
+
+    def test_numeric_comparison(self):
+        expr = _FilterExpr("tokens_before > 100000")
+        assert expr.matches({"tokens_before": 150000}) is True
+        assert expr.matches({"tokens_before": 50000}) is False
+
+    def test_missing_field_returns_false(self):
+        """References to absent fields don't raise — the filter rejects."""
+        expr = _FilterExpr('tool == "git_push"')
+        assert expr.matches({}) is False
+
+    def test_missing_nested_field_returns_false(self):
+        """Nested access through a missing root also rejects gracefully."""
+        expr = _FilterExpr('task.category == "BUILD"')
+        assert expr.matches({}) is False
+        # And the reverse: ``task`` present, ``category`` missing.
+        assert expr.matches({"task": {}}) is False
+
+    def test_missing_field_inequality(self):
+        """``!=`` against a missing field is True (field != concrete value)."""
+        expr = _FilterExpr('tool != "git_push"')
+        assert expr.matches({}) is True
+
+    def test_ordering_op_against_missing_is_false(self):
+        """``>`` / ``<`` against missing return False rather than raising."""
+        expr = _FilterExpr("tokens_before > 100")
+        assert expr.matches({}) is False
+
+    def test_list_literal_of_mixed_types(self):
+        expr = _FilterExpr("code in [200, 201, 204]")
+        assert expr.matches({"code": 200}) is True
+        assert expr.matches({"code": 500}) is False
+
+
+class TestLoadHooksParsesIfFilter:
+    """End-to-end: ``if:`` YAML entries become compiled ``_FilterExpr``."""
+
+    def test_filter_accepted(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text(
+            'hooks:\n  - event: pre_tool_call\n    if: tool == "git_push"\n    run: echo\n'
+        )
+        [hook] = _parse_yaml(path)
+        assert hook.if_expr is not None
+        assert hook.if_expr.source == 'tool == "git_push"'
+
+    def test_missing_if_is_none(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text("hooks:\n  - event: pre_tool_call\n    run: echo\n")
+        [hook] = _parse_yaml(path)
+        assert hook.if_expr is None
+
+    def test_empty_if_rejected(self, tmp_path: pathlib.Path):
+        path = tmp_path / "hooks.yaml"
+        path.write_text('hooks:\n  - event: pre_tool_call\n    if: ""\n    run: echo\n')
+        with pytest.raises(HookConfigError, match="`if`"):
+            _parse_yaml(path)
+
+    def test_malformed_if_surfaces_hook_name(self, tmp_path: pathlib.Path):
+        """A bad filter message names the hook so the operator finds it."""
+        path = tmp_path / "hooks.yaml"
+        path.write_text(
+            "hooks:\n  - name: my-hook\n    event: pre_tool_call\n    if: print()\n    run: echo\n"
+        )
+        with pytest.raises(HookConfigError, match="my-hook"):
+            _parse_yaml(path)
+
+
+class TestHookRunnerSkipsFilteredHooks:
+    """HookRunner.fire respects ``if:`` filters."""
+
+    @pytest.mark.asyncio
+    async def test_matching_filter_runs_hook(self, tmp_path: pathlib.Path):
+        marker = tmp_path / "ran"
+        hook = HookConfig(
+            name="git-only",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"touch {marker}",
+            if_expr=_FilterExpr('tool == "git_push"'),
+        )
+        runner = HookRunner([hook])
+
+        results = await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "git_push"})
+        assert len(results) == 1
+        assert marker.exists()
+
+    @pytest.mark.asyncio
+    async def test_non_matching_filter_skips_hook(self, tmp_path: pathlib.Path):
+        marker = tmp_path / "ran"
+        hook = HookConfig(
+            name="git-only",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"touch {marker}",
+            if_expr=_FilterExpr('tool == "git_push"'),
+        )
+        runner = HookRunner([hook])
+
+        results = await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "juju_status"})
+        assert results == []
+        assert not marker.exists()
+
+    @pytest.mark.asyncio
+    async def test_filter_can_reference_auto_added_event_field(self, tmp_path: pathlib.Path):
+        """``event`` is injected into the payload and filters can read it."""
+        marker = tmp_path / "ran"
+        hook = HookConfig(
+            name="pre-only",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"touch {marker}",
+            if_expr=_FilterExpr('event == "pre_tool_call"'),
+        )
+        runner = HookRunner([hook])
+
+        await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "x"})
+        assert marker.exists()
+
+    @pytest.mark.asyncio
+    async def test_filtered_and_unfiltered_hooks_on_same_event(self, tmp_path: pathlib.Path):
+        """Multiple hooks: filtered ones skip, unfiltered fire, preserving order."""
+        log_file = tmp_path / "log"
+        hooks = [
+            HookConfig(
+                name="always",
+                event=HookEvent.PRE_TOOL_CALL,
+                run=f"echo always >> {log_file}",
+            ),
+            HookConfig(
+                name="git-only",
+                event=HookEvent.PRE_TOOL_CALL,
+                run=f"echo git-only >> {log_file}",
+                if_expr=_FilterExpr('tool == "git_push"'),
+            ),
+            HookConfig(
+                name="read-only",
+                event=HookEvent.PRE_TOOL_CALL,
+                run=f"echo read-only >> {log_file}",
+                if_expr=_FilterExpr('tool == "read_file"'),
+            ),
+        ]
+        runner = HookRunner(hooks)
+
+        await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "git_push"})
+        assert log_file.read_text() == "always\ngit-only\n"

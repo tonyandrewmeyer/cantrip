@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Conditional ``if:`` filters on hooks — Phase 46.3.**  Hook
+  declarations gain an optional ``if:`` field that accepts a
+  boolean expression evaluated against the event payload.  Only
+  hooks whose filter is truthy fire for a given event — so you can
+  say ``if: tool == "git_push"`` without writing shell guards in
+  every ``run:``.  Expressions are parsed via Python's ``ast``
+  module (no ``eval()``) with a strict allowlist: comparisons,
+  boolean combinators, nested field access, subscripts, list /
+  string / number literals.  Function calls, method calls,
+  lambdas, imports, and comprehensions are rejected at
+  config-load time.  Missing payload fields evaluate to a
+  ``_Missing`` sentinel so ``if: task.category == "BUILD"`` on a
+  ``pre_compact`` event silently skips instead of raising — handy
+  when one config targets multiple event shapes.  Bad expressions
+  surface a ``HookConfigError`` with the hook name, not a runtime
+  crash.  Docs at ``docs/docs/howto-hooks.html`` have a new
+  "Conditional filters" section.
 - **User-configurable hooks — Phase 46.1 + 46.2.**  New
   ``cantrip.hooks`` module lets users declare shell commands that
   run at lifecycle events: ``pre_tool_call`` / ``post_tool_call``

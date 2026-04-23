@@ -101,9 +101,10 @@
 
     <h2 id="schema">Schema</h2>
     <pre><code>hooks:
-  - name: log-tool-calls
+  - name: log-git-pushes
     event: pre_tool_call
-    run: bash -c 'jq -r .tool &gt;&gt; /tmp/cantrip-tools.log'
+    if: tool == "git_push"
+    run: logger -t cantrip "pushing $(jq -r .arguments.branch)"
     timeout: 5
     continue_on_error: true
 </code></pre>
@@ -127,6 +128,12 @@
         redirection, and env-var expansion all work.
       </li>
       <li>
+        <code>if</code> (string, optional) &mdash; a boolean
+        expression evaluated against the event payload. The hook
+        only fires when the expression is truthy. See
+        <a href="#filters">Conditional filters</a> below.
+      </li>
+      <li>
         <code>timeout</code> (number, optional, default 30) &mdash;
         seconds before the hook is killed. A slow hook blocks the
         agent sequentially, so keep it short.
@@ -138,6 +145,64 @@
         future sub-phase.)
       </li>
     </ul>
+
+    <h2 id="filters">Conditional filters</h2>
+    <p>
+      The optional <code>if:</code> expression gates a hook on
+      payload shape so you don&rsquo;t need to write shell guards in
+      every <code>run:</code>. Common patterns:
+    </p>
+    <pre><code># Only audit git pushes, not every tool call.
+- event: pre_tool_call
+  if: tool == "git_push"
+  run: ...
+
+# Only react to builds the agent actually finished.
+- event: post_subagent
+  if: category == "BUILD" and exit_state == "completed"
+  run: ...
+
+# Don't notify for fast compactions.
+- event: post_compact
+  if: tokens_before &gt; 100000
+  run: ...
+
+# Multiple values: set membership.
+- event: pre_tool_call
+  if: tool in ["git_push", "git_commit", "charmcraft_upload"]
+  run: ...
+
+# Nested fields walk through the payload.
+- event: pre_tool_call
+  if: tool == "juju_deploy" and arguments.channel == "edge"
+  run: ...</code></pre>
+    <p>
+      <strong>What the expression language supports:</strong>
+      comparisons (<code>==</code>, <code>!=</code>, <code>&lt;</code>,
+      <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>,
+      <code>in</code>, <code>not in</code>), boolean combinators
+      (<code>and</code>, <code>or</code>, <code>not</code>), nested
+      field access (<code>arguments.branch</code>,
+      <code>task.category</code>), subscripts
+      (<code>arguments["branch"]</code>), and string / number / list
+      literals.
+    </p>
+    <p>
+      <strong>What it doesn&rsquo;t support:</strong> function calls,
+      method calls (<code>tool.startswith(&hellip;)</code>),
+      comprehensions, lambdas, imports &mdash; rejected at
+      config-load time with a clear error. Substring checks work via
+      <code>"git" in tool</code>.
+    </p>
+    <p>
+      <strong>Missing fields are safe.</strong> If a filter
+      references a payload key the event doesn&rsquo;t carry (e.g.
+      <code>task.category</code> on a <code>pre_compact</code>
+      event), the comparison evaluates to <code>False</code> and the
+      hook is skipped. You can write one hook config that targets
+      fields from several event shapes without worrying about
+      KeyError crashes.
+    </p>
 
     <h2 id="events">Events</h2>
     <p>The following events are fired today:</p>
@@ -245,12 +310,6 @@
         Hook stdout is captured but not yet injected into the agent
         conversation. (A future sub-phase will let <code>pre_*</code>
         hooks mutate the pending payload via a JSON-patch envelope.)
-      </li>
-      <li>
-        There is no <code>if:</code> conditional filter yet &mdash;
-        every hook matching an event fires every time. Use
-        <code>run:</code> shell logic to early-exit on payloads you
-        don&rsquo;t care about.
       </li>
       <li>
         A non-zero exit is recorded but does not block the operation.
