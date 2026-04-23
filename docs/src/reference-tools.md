@@ -120,6 +120,7 @@ on_this_page:
 | `loki_query` | Query logs from Loki |
 | `grafana_screenshot` | Render a Grafana panel or dashboard as a PNG (via `/render`); saves the image to `~/.cache/cantrip/screenshots/` and returns a caption plus the file path |
 | `tempo_waterfall` | Render a Tempo trace as a waterfall PNG — one bar per span along a time axis, slowest spans highlighted; vision-capable providers see the image alongside the caption |
+| `juju_status_render` | Render the current `juju status` as a coloured tree PNG — apps grouped with their units, status glyphs per node, relations listed below; saves to `~/.cache/cantrip/screenshots/` and attaches the image for vision-capable providers |
 
 {#git-github}
 ## Git and GitHub

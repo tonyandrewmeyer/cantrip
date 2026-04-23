@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import datetime
+import functools
 import io
 import json
 import logging
@@ -12,6 +13,7 @@ import urllib.parse
 from typing import Any
 
 import jubilant
+from jubilant import statustypes
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
 
@@ -1249,6 +1251,396 @@ class TempoWaterfallTool(Tool):
                 "trace_id": trace_id,
                 "span_count": len(spans),
                 "duration_ns": trace_span,
+                "bytes": len(png_bytes),
+            },
+            images=[Image(data=png_bytes, mime="image/png")],
+        )
+
+
+# ---------------------------------------------------------------------------
+# Juju status tree rendering (Phase 48.4)
+# ---------------------------------------------------------------------------
+
+# Status → (indicator, fill colour, label colour).  The fill is used for
+# the coloured block beside each node; the label colour matches the
+# headline text when we want to colour an individual word.
+_STATUS_GLYPH: dict[str, str] = {
+    "active": "●",
+    "waiting": "○",
+    "blocked": "◌",
+    "maintenance": "◐",
+    "unknown": "○",
+    "error": "✗",
+    "terminated": "✗",
+}
+
+_STATUS_COLOUR: dict[str, tuple[int, int, int]] = {
+    "active": (46, 160, 67),
+    "waiting": (210, 153, 34),
+    "blocked": (215, 58, 73),
+    "maintenance": (31, 111, 235),
+    "unknown": (130, 130, 130),
+    "error": (215, 58, 73),
+    "terminated": (120, 45, 56),
+}
+
+# The render canvas has a title bar and then a list of text lines.
+_STATUS_WIDTH = 1200
+_STATUS_LINE_HEIGHT = 18
+_STATUS_HEADER_HEIGHT = 36
+_STATUS_PADDING = 12
+_STATUS_INDICATOR_WIDTH = 18
+
+# Cap rendered rows so a 200-app model doesn't blow up into a 4000-pixel
+# image.  The caption still reports the full counts; the underlying
+# :class:`JujuStatusTool` produces the full text list when that matters.
+_STATUS_MAX_LINES = 140
+
+# Bullet characters for the tree structure.  Using the same glyphs as
+# the TUI graph so screenshots are instantly recognisable.
+_TREE_BRANCH = "├─"
+_TREE_LAST = "└─"
+_TREE_VERTICAL = "│ "
+_TREE_SPACE = "  "
+
+
+def _status_glyph(status: str) -> str:
+    return _STATUS_GLYPH.get(status, "○")
+
+
+def _status_colour(status: str) -> tuple[int, int, int]:
+    return _STATUS_COLOUR.get(status, _COLOUR_TEXT)
+
+
+def _truncate_label(label: str, max_chars: int) -> str:
+    """Trim *label* to *max_chars*, appending an ellipsis when cut."""
+    if len(label) <= max_chars:
+        return label
+    if max_chars <= 1:
+        return label[:max_chars]
+    return label[: max_chars - 1] + "…"
+
+
+def _juju_status_tree_lines(
+    status: statustypes.Status,
+) -> list[dict[str, Any]]:
+    """Convert a :class:`jubilant.statustypes.Status` into tree line specs.
+
+    Each line is a dict with ``text`` (what to draw), ``indicator`` (a
+    status glyph rendered in colour at the start of the line), ``status``
+    (used to pick the indicator colour), and ``kind`` (``app``, ``unit``,
+    ``message``, ``relation``, ``heading``).  The renderer treats every
+    line the same, just with different text and colours — so the logic
+    that decides what to show stays testable without Pillow.
+    """
+    lines: list[dict[str, Any]] = []
+
+    if not status.apps:
+        lines.append(
+            {
+                "text": "(no applications deployed)",
+                "indicator": "",
+                "status": "unknown",
+                "kind": "message",
+            }
+        )
+        return lines
+
+    app_names = sorted(status.apps.keys())
+    for app_index, app_name in enumerate(app_names):
+        app = status.apps[app_name]
+        is_last_app = app_index == len(app_names) - 1
+        app_branch = _TREE_LAST if is_last_app else _TREE_BRANCH
+        app_status_name = app.app_status.current or "unknown"
+        unit_count = len(app.units)
+        unit_word = "unit" if unit_count == 1 else "units"
+        headline = f"{app_branch} {app_name} ({app_status_name}) — {unit_count} {unit_word}"
+        lines.append(
+            {
+                "text": headline,
+                "indicator": _status_glyph(app_status_name),
+                "status": app_status_name,
+                "kind": "app",
+            }
+        )
+
+        app_message = (app.app_status.message or "").strip()
+        child_prefix = (_TREE_SPACE if is_last_app else _TREE_VERTICAL) + " "
+        if app_message:
+            lines.append(
+                {
+                    "text": f"{child_prefix}{_TREE_BRANCH} {app_message}",
+                    "indicator": "",
+                    "status": app_status_name,
+                    "kind": "message",
+                }
+            )
+
+        unit_names = sorted(app.units.keys())
+        for unit_index, unit_name in enumerate(unit_names):
+            unit = app.units[unit_name]
+            is_last_unit = unit_index == len(unit_names) - 1
+            unit_branch = _TREE_LAST if is_last_unit else _TREE_BRANCH
+            unit_status_name = unit.workload_status.current or "unknown"
+            leader_marker = " (leader)" if unit.leader else ""
+            lines.append(
+                {
+                    "text": (
+                        f"{child_prefix}{unit_branch} {unit_name} "
+                        f"({unit_status_name}){leader_marker}"
+                    ),
+                    "indicator": _status_glyph(unit_status_name),
+                    "status": unit_status_name,
+                    "kind": "unit",
+                }
+            )
+
+    relation_entries = _collect_relation_entries(status)
+    if relation_entries:
+        lines.append({"text": "", "indicator": "", "status": "", "kind": "spacer"})
+        lines.append(
+            {
+                "text": f"Relations ({len(relation_entries)}):",
+                "indicator": "",
+                "status": "",
+                "kind": "heading",
+            }
+        )
+        for source, endpoint, target, interface in relation_entries:
+            lines.append(
+                {
+                    "text": (f"  {source}:{endpoint} ── [{interface}] ──▸ {target}"),
+                    "indicator": "",
+                    "status": "",
+                    "kind": "relation",
+                }
+            )
+
+    return lines
+
+
+def _collect_relation_entries(
+    status: statustypes.Status,
+) -> list[tuple[str, str, str, str]]:
+    """Return deduplicated relation tuples (source, endpoint, target, interface).
+
+    Jubilant's ``AppStatus.relations`` reports both sides of every
+    relation — we keep the single deterministic (alphabetically first
+    source) rendering so a peer relation doesn't print twice.
+    """
+    seen: set[tuple[str, str, str]] = set()
+    out: list[tuple[str, str, str, str]] = []
+    for app_name in sorted(status.apps.keys()):
+        app = status.apps[app_name]
+        for endpoint, related_list in sorted(app.relations.items()):
+            for rel in related_list:
+                other = rel.related_app
+                pair = tuple(sorted([app_name, other]))
+                key = (pair[0], pair[1], rel.interface)
+                if key in seen:
+                    continue
+                seen.add(key)
+                # Always print the alphabetically-first app as the
+                # "source" so the output is deterministic — and pick the
+                # endpoint from *that* side, not the side we happen to
+                # be iterating.
+                if app_name == pair[0]:
+                    out.append((app_name, endpoint, other, rel.interface))
+                else:
+                    # Look up the other side's endpoint for this interface.
+                    other_app = status.apps.get(other)
+                    if other_app is None:
+                        out.append((other, "?", app_name, rel.interface))
+                        continue
+                    other_endpoint = next(
+                        (
+                            ep
+                            for ep, rels in other_app.relations.items()
+                            for r in rels
+                            if r.related_app == app_name and r.interface == rel.interface
+                        ),
+                        "?",
+                    )
+                    out.append((other, other_endpoint, app_name, rel.interface))
+    return out
+
+
+def _render_status_png(lines: list[dict[str, Any]], model_name: str, cloud: str | None) -> bytes:
+    """Render *lines* as a coloured tree PNG.
+
+    Each line draws a status indicator (where set) in its status colour
+    and then the line text in the default text colour; ``app`` and
+    ``unit`` lines also recolour the parenthesised status word so the
+    status label stands out to a reader scanning the image.
+    """
+    shown = lines[:_STATUS_MAX_LINES]
+    total_lines = len(shown) + (1 if len(lines) > _STATUS_MAX_LINES else 0)
+    height = _STATUS_HEADER_HEIGHT + _STATUS_LINE_HEIGHT * total_lines + _STATUS_PADDING * 2
+    img = PILImage.new("RGB", (_STATUS_WIDTH, height), _COLOUR_BG)
+    draw = ImageDraw.Draw(img)
+
+    font = _load_mono_font(12)
+    font_header = _load_mono_font(14)
+
+    cloud_suffix = f" ({cloud})" if cloud else ""
+    header = f"Model: {model_name}{cloud_suffix}"
+    draw.text(
+        (_STATUS_PADDING, _STATUS_PADDING),
+        header,
+        font=font_header,
+        fill=_COLOUR_TEXT,
+    )
+
+    body_top = _STATUS_HEADER_HEIGHT + _STATUS_PADDING
+    for index, line in enumerate(shown):
+        y = body_top + index * _STATUS_LINE_HEIGHT
+        indicator = line.get("indicator", "")
+        if indicator:
+            draw.text(
+                (_STATUS_PADDING, y),
+                indicator,
+                font=font,
+                fill=_status_colour(line.get("status", "")),
+            )
+        text_x = _STATUS_PADDING + _STATUS_INDICATOR_WIDTH
+        text = line.get("text", "")
+        max_chars = (_STATUS_WIDTH - text_x - _STATUS_PADDING) // 7
+        draw.text(
+            (text_x, y),
+            _truncate_label(text, max_chars),
+            font=font,
+            fill=_COLOUR_TEXT,
+        )
+
+    if len(lines) > _STATUS_MAX_LINES:
+        y = body_top + len(shown) * _STATUS_LINE_HEIGHT
+        truncated = len(lines) - _STATUS_MAX_LINES
+        draw.text(
+            (_STATUS_PADDING + _STATUS_INDICATOR_WIDTH, y),
+            f"… ({truncated} more lines omitted — run juju_status for the full view)",
+            font=font,
+            fill=_COLOUR_MUTED,
+        )
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _status_cache_path(model_name: str) -> pathlib.Path:
+    """Build the cache path for a rendered Juju status PNG."""
+    _SCREENSHOT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    safe_model = re.sub(r"[^A-Za-z0-9_-]+", "", model_name)[:32] or "model"
+    return _SCREENSHOT_CACHE_DIR / f"juju-status-{safe_model}-{ts}.png"
+
+
+class JujuStatusRenderTool(Tool):
+    """Render the current ``juju status`` as a coloured tree PNG.
+
+    Useful when the text output from :class:`JujuStatusTool` runs off
+    the screen or loses structure — the image lays out model, apps,
+    units, and relations in a fixed tree with status-coloured glyphs,
+    so a vision-capable provider can read the model shape at a glance.
+    Saves the PNG to ``~/.cache/cantrip/screenshots/`` and attaches the
+    image bytes to the :class:`ToolResult` for providers that support
+    image input (Phase 48.1).
+    """
+
+    @property
+    def name(self) -> str:
+        return "juju_status_render"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Render the current juju status as a coloured tree PNG. "
+            "Apps are grouped with their units; each node carries a "
+            "status-coloured glyph (● active, ○ waiting, ◌ blocked, "
+            "◐ maintenance, ✗ error). Relations are listed below. "
+            "Saves the PNG to ~/.cache/cantrip/screenshots/ and "
+            "returns a caption (model, app count, unit count, blocked "
+            "apps) plus the image bytes. Useful when a long status "
+            "table would lose structure in a text response."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string",
+                    "description": "Model name (uses current model if not specified).",
+                },
+            },
+        }
+
+    async def execute(self, model: str | None = None) -> ToolResult:
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+            status = await asyncio.wait_for(
+                asyncio.to_thread(functools.partial(juju.status)),
+                timeout=_HTTP_TIMEOUT_SECONDS * 3,
+            )
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju status timed out — the controller may be unavailable.",
+            )
+        except (jubilant.CLIError, jubilant.TaskError, OSError, ValueError) as exc:
+            return ToolResult(success=False, output="", error=str(exc))
+
+        lines = _juju_status_tree_lines(status)
+        try:
+            png_bytes = _render_status_png(lines, status.model.name, status.model.cloud)
+        except (OSError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Could not render status PNG: {exc}",
+            )
+
+        path = _status_cache_path(status.model.name)
+        path.write_bytes(png_bytes)
+
+        app_count = len(status.apps)
+        unit_count = sum(len(app.units) for app in status.apps.values())
+        blocked_apps = sorted(
+            name
+            for name, app in status.apps.items()
+            if (app.app_status.current or "") in {"blocked", "error"}
+        )
+        relation_count = len(_collect_relation_entries(status))
+
+        caption_parts = [
+            f"Rendered status for model ``{status.model.name}``.",
+            f"Apps: {app_count}. Units: {unit_count}. Relations: {relation_count}.",
+            f"Saved to: {path}",
+            f"Size: {len(png_bytes):,} bytes.",
+        ]
+        if blocked_apps:
+            caption_parts.append("Blocked or errored apps: " + ", ".join(blocked_apps) + ".")
+        caption = "\n".join(caption_parts)
+
+        return ToolResult(
+            success=True,
+            output=caption,
+            data={
+                "path": str(path),
+                "model": status.model.name,
+                "apps": app_count,
+                "units": unit_count,
+                "relations": relation_count,
+                "blocked_apps": blocked_apps,
                 "bytes": len(png_bytes),
             },
             images=[Image(data=png_bytes, mime="image/png")],

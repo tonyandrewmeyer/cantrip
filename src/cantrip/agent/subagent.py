@@ -339,6 +339,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "grafana_screenshot",
             "tempo_waterfall",
             "juju_status",
+            "juju_status_render",
             "juju_ssh",
             "juju_config",
             "juju_dispatch",

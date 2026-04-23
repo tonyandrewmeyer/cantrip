@@ -11,15 +11,20 @@ import pytest
 
 from cantrip.agent.tools.observability import (
     _PNG_MAGIC,
+    _STATUS_MAX_LINES,
     GrafanaScreenshotTool,
     JujuDebugLogTool,
+    JujuStatusRenderTool,
     LokiQueryTool,
     TempoQueryTool,
     TempoWaterfallTool,
+    _collect_relation_entries,
     _collect_spans_from_trace,
     _find_cos_unit,
     _format_duration,
     _grafana_admin_password,
+    _juju_status_tree_lines,
+    _render_status_png,
     _render_waterfall_png,
 )
 
@@ -1079,3 +1084,339 @@ class TestTempoWaterfallTool:
 
         assert not result.success
         assert "ssh" in result.error.lower()
+
+
+# ---------------------------------------------------------------------------
+# Juju status tree rendering helpers
+# ---------------------------------------------------------------------------
+
+
+def _fake_unit(workload: str = "active", leader: bool = False):
+    unit = mock.MagicMock()
+    unit.workload_status = mock.MagicMock(current=workload)
+    unit.leader = leader
+    return unit
+
+
+def _fake_app(
+    status: str = "active",
+    message: str = "",
+    units: dict[str, object] | None = None,
+    relations: dict[str, list] | None = None,
+):
+    app = mock.MagicMock()
+    app.app_status = mock.MagicMock(current=status, message=message)
+    app.units = units or {}
+    app.relations = relations or {}
+    return app
+
+
+def _fake_relation(related_app: str, interface: str):
+    return mock.MagicMock(related_app=related_app, interface=interface, scope="global")
+
+
+def _fake_status(
+    apps: dict[str, object] | None = None,
+    model_name: str = "mymodel",
+    cloud: str | None = "microk8s-cloud",
+):
+    status = mock.MagicMock()
+    status.apps = apps or {}
+    status.model = mock.MagicMock()
+    status.model.name = model_name
+    status.model.cloud = cloud
+    return status
+
+
+class TestJujuStatusTreeLines:
+    """Tests for the pure line-building helper."""
+
+    def test_empty_model_reports_no_apps(self):
+        lines = _juju_status_tree_lines(_fake_status(apps={}))
+        assert len(lines) == 1
+        assert "no applications" in lines[0]["text"].lower()
+
+    def test_single_app_with_one_unit(self):
+        status = _fake_status(
+            apps={
+                "web": _fake_app(
+                    status="active",
+                    units={"web/0": _fake_unit(workload="active", leader=True)},
+                ),
+            }
+        )
+        lines = _juju_status_tree_lines(status)
+        kinds = [ln["kind"] for ln in lines]
+        assert kinds == ["app", "unit"]
+        # Last app uses └─; its child uses the "space" prefix.
+        assert lines[0]["text"].startswith("└─ web (active)")
+        assert "(leader)" in lines[1]["text"]
+        assert lines[1]["indicator"] == "●"
+
+    def test_multiple_apps_use_correct_branches(self):
+        status = _fake_status(
+            apps={
+                "alpha": _fake_app(units={"alpha/0": _fake_unit()}),
+                "beta": _fake_app(units={"beta/0": _fake_unit()}),
+            }
+        )
+        lines = _juju_status_tree_lines(status)
+        apps = [ln for ln in lines if ln["kind"] == "app"]
+        assert apps[0]["text"].startswith("├─ alpha")
+        assert apps[1]["text"].startswith("└─ beta")
+
+    def test_app_message_is_rendered_as_child_line(self):
+        status = _fake_status(
+            apps={
+                "web": _fake_app(
+                    status="blocked",
+                    message="waiting for database",
+                    units={"web/0": _fake_unit(workload="blocked")},
+                ),
+            }
+        )
+        lines = _juju_status_tree_lines(status)
+        assert any(
+            ln["kind"] == "message" and "waiting for database" in ln["text"] for ln in lines
+        )
+
+    def test_status_indicator_colour_carries_through(self):
+        status = _fake_status(
+            apps={
+                "broken": _fake_app(
+                    status="blocked",
+                    units={"broken/0": _fake_unit(workload="blocked")},
+                ),
+            }
+        )
+        lines = _juju_status_tree_lines(status)
+        app_line = next(ln for ln in lines if ln["kind"] == "app")
+        assert app_line["status"] == "blocked"
+        assert app_line["indicator"] == "◌"
+
+    def test_relations_are_deduplicated(self):
+        status = _fake_status(
+            apps={
+                "web": _fake_app(
+                    units={"web/0": _fake_unit()},
+                    relations={"db": [_fake_relation("postgres", "postgresql_client")]},
+                ),
+                "postgres": _fake_app(
+                    units={"postgres/0": _fake_unit()},
+                    relations={
+                        "database": [_fake_relation("web", "postgresql_client")],
+                    },
+                ),
+            }
+        )
+        lines = _juju_status_tree_lines(status)
+        relation_lines = [ln for ln in lines if ln["kind"] == "relation"]
+        # The peer relation is reported by both AppStatus.relations entries;
+        # the renderer prints it exactly once, from the alphabetically-first
+        # source ("postgres" < "web").
+        assert len(relation_lines) == 1
+        assert "postgres:database" in relation_lines[0]["text"]
+        assert "postgresql_client" in relation_lines[0]["text"]
+        assert "▸ web" in relation_lines[0]["text"]
+
+    def test_relation_heading_reports_count(self):
+        status = _fake_status(
+            apps={
+                "a": _fake_app(
+                    units={"a/0": _fake_unit()},
+                    relations={
+                        "peer": [_fake_relation("b", "i1")],
+                        "bond": [_fake_relation("c", "i2")],
+                    },
+                ),
+                "b": _fake_app(units={"b/0": _fake_unit()}),
+                "c": _fake_app(units={"c/0": _fake_unit()}),
+            }
+        )
+        lines = _juju_status_tree_lines(status)
+        heading = next(ln for ln in lines if ln["kind"] == "heading")
+        assert heading["text"] == "Relations (2):"
+
+
+class TestCollectRelationEntries:
+    """Edge cases for the relation deduplicator."""
+
+    def test_returns_empty_when_no_apps(self):
+        assert _collect_relation_entries(_fake_status(apps={})) == []
+
+    def test_handles_unknown_remote_app_gracefully(self):
+        status = _fake_status(
+            apps={
+                "a": _fake_app(
+                    units={"a/0": _fake_unit()},
+                    relations={"db": [_fake_relation("missing", "foo")]},
+                ),
+            }
+        )
+        # Remote app isn't in status.apps — renderer still picks *a* as the
+        # alphabetically-first source and uses its endpoint.
+        entries = _collect_relation_entries(status)
+        assert entries == [("a", "db", "missing", "foo")]
+
+
+class TestRenderStatusPng:
+    """Tests for the Pillow status renderer."""
+
+    def test_produces_valid_png_bytes(self):
+        status = _fake_status(
+            apps={
+                "web": _fake_app(units={"web/0": _fake_unit(leader=True)}),
+            }
+        )
+        lines = _juju_status_tree_lines(status)
+        png = _render_status_png(lines, "mymodel", "microk8s-cloud")
+        assert png.startswith(_PNG_MAGIC)
+        assert len(png) > 500
+
+    def test_truncates_to_max_lines(self):
+        # Build more apps than the render cap so truncation kicks in.
+        apps = {
+            f"a{i:03}": _fake_app(units={f"a{i:03}/0": _fake_unit()})
+            for i in range(_STATUS_MAX_LINES)
+        }
+        status = _fake_status(apps=apps)
+        lines = _juju_status_tree_lines(status)
+        # Two lines per app (header + unit), so we definitely exceed the cap.
+        assert len(lines) > _STATUS_MAX_LINES
+        png = _render_status_png(lines, "huge", None)
+        assert png.startswith(_PNG_MAGIC)
+
+    def test_renders_without_cloud(self):
+        lines = _juju_status_tree_lines(_fake_status(apps={}))
+        png = _render_status_png(lines, "mymodel", None)
+        assert png.startswith(_PNG_MAGIC)
+
+
+class TestJujuStatusRenderTool:
+    """End-to-end tests for the JujuStatusRenderTool agent tool."""
+
+    @pytest.fixture
+    def tool(self):
+        return JujuStatusRenderTool()
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool):
+        with _mock_juju_unavailable():
+            result = await tool.execute()
+        assert not result.success
+        assert "juju" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_timeout_surfaces_clean_error(self, tool):
+        with (
+            _mock_juju_available(),
+            mock.patch(
+                "cantrip.agent.tools.observability.asyncio.wait_for",
+                side_effect=_raise_timeout,
+            ),
+            mock.patch("cantrip.agent.tools.observability.jubilant.Juju"),
+        ):
+            result = await tool.execute()
+        assert not result.success
+        assert "timed out" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_cli_error_surfaces_clean_error(self, tool):
+        fake_juju = mock.MagicMock()
+        fake_juju.status.side_effect = jubilant.CLIError(1, "juju status", "no controller")
+        with (
+            _mock_juju_available(),
+            mock.patch(
+                "cantrip.agent.tools.observability.jubilant.Juju",
+                return_value=fake_juju,
+            ),
+        ):
+            result = await tool.execute()
+        assert not result.success
+        assert "no controller" in result.error
+
+    @pytest.mark.asyncio
+    async def test_happy_path_renders_and_saves_png(self, tool, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            tmp_path,
+        )
+        status = _fake_status(
+            apps={
+                "web": _fake_app(
+                    status="active",
+                    units={"web/0": _fake_unit(leader=True)},
+                    relations={"db": [_fake_relation("postgres", "postgresql_client")]},
+                ),
+                "postgres": _fake_app(
+                    status="blocked",
+                    message="awaiting peer",
+                    units={"postgres/0": _fake_unit(workload="blocked")},
+                    relations={
+                        "database": [_fake_relation("web", "postgresql_client")],
+                    },
+                ),
+            },
+            model_name="dev",
+        )
+        fake_juju = mock.MagicMock()
+        fake_juju.status.return_value = status
+
+        with (
+            _mock_juju_available(),
+            mock.patch(
+                "cantrip.agent.tools.observability.jubilant.Juju",
+                return_value=fake_juju,
+            ),
+        ):
+            result = await tool.execute(model="dev")
+
+        assert result.success, result.error
+        path = pathlib.Path(result.data["path"])
+        assert path.exists()
+        assert path.read_bytes().startswith(_PNG_MAGIC)
+        # Caption carries the useful diagnostic signal.
+        assert "dev" in result.output
+        assert "Apps: 2" in result.output
+        assert "Units: 2" in result.output
+        assert "Relations: 1" in result.output
+        assert "postgres" in result.output  # Listed as a blocked app.
+        # Image bytes attached for vision-capable providers.
+        assert len(result.images) == 1
+        assert result.images[0].mime == "image/png"
+        assert result.images[0].data.startswith(_PNG_MAGIC)
+        # Structured data makes the result machine-consumable.
+        assert result.data["model"] == "dev"
+        assert result.data["apps"] == 2
+        assert result.data["units"] == 2
+        assert result.data["relations"] == 1
+        assert result.data["blocked_apps"] == ["postgres"]
+
+    @pytest.mark.asyncio
+    async def test_empty_model_still_renders(self, tool, tmp_path, monkeypatch):
+        """An empty model renders cleanly — the tool exists to diagnose
+        sparse models, so zero apps is a legitimate happy path."""
+        monkeypatch.setattr(
+            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            tmp_path,
+        )
+        status = _fake_status(apps={}, model_name="empty", cloud=None)
+        fake_juju = mock.MagicMock()
+        fake_juju.status.return_value = status
+
+        with (
+            _mock_juju_available(),
+            mock.patch(
+                "cantrip.agent.tools.observability.jubilant.Juju",
+                return_value=fake_juju,
+            ),
+        ):
+            result = await tool.execute()
+
+        assert result.success, result.error
+        assert result.data["apps"] == 0
+        assert result.data["units"] == 0
+        assert result.data["relations"] == 0
+        assert result.data["blocked_apps"] == []
+        path = pathlib.Path(result.data["path"])
+        assert path.read_bytes().startswith(_PNG_MAGIC)

@@ -866,13 +866,43 @@ textually.
   trace, happy path with caption + data + image attachment, SSH
   failure).
 
-### 48.4 Medium — Juju status tree rendering
+### 48.4 Medium — Juju status tree rendering ✓
 
-- [ ] `JujuStatusRenderTool` captures the current `juju status` output and
-  renders it as a coloured tree PNG (using `rich` offscreen rendering already
-  available in the TUI)
-- [ ] Useful for diagnosing status tables that are long enough to lose
-  structure in a text response
+- [x] `JujuStatusRenderTool` (``juju_status_render``) fetches the current
+  ``juju status`` via Jubilant and renders it as a coloured tree PNG.
+  Layout: apps grouped with their units using the same ``├─`` / ``└─`` /
+  ``│`` tree glyphs the TUI graph screen uses; each app or unit carries
+  a status-coloured indicator (● active, ○ waiting, ◌ blocked, ◐
+  maintenance, ✗ error) rendered in its status colour; app messages
+  surface as child lines; a ``Relations (N):`` heading introduces the
+  deduplicated relation list below.  Pillow drives the PNG directly —
+  same pattern as the Tempo waterfall renderer (48.3), so no new
+  dependency on cairosvg / resvg.
+- [x] Saves the PNG to ``~/.cache/cantrip/screenshots/juju-status-<model>-
+  <timestamp>.png`` via ``_status_cache_path`` and attaches the bytes to
+  ``ToolResult.images`` so vision-capable providers (48.1 / 48.2b) see
+  the image alongside the caption.  Caption summarises model name, app
+  / unit / relation counts, and names any blocked-or-errored apps so
+  the agent can act on the visual diagnosis without re-running
+  ``juju_status``.
+- [x] Pure line-building (``_juju_status_tree_lines``) and relation
+  deduplication (``_collect_relation_entries``) are split out from the
+  Pillow drawing helper (``_render_status_png``) so the rendering logic
+  is unit-testable without a PNG decoder in the test suite.  The
+  renderer caps rendered rows at 140 (``_STATUS_MAX_LINES``) so a
+  200-app model produces a 2400-pixel image with a "… N more lines
+  omitted" footer rather than a 4000-pixel one.
+- [x] Registered in ``build_tools()`` and in the DEBUG subagent
+  allowlist (``subagent.py``); ``reference-tools.md`` / HTML updated.
+  15 new unit tests across ``test_observability_tools.py``:
+  ``_juju_status_tree_lines`` (7 covering empty model, single-app, two-
+  app branch glyphs, app messages, status-indicator colour, relation
+  deduplication, relation heading count), ``_collect_relation_entries``
+  (2 covering empty model and unknown-remote-app), ``_render_status_png``
+  (3 — valid PNG bytes, truncation cap, no-cloud path), and
+  ``JujuStatusRenderTool`` (5 — juju-not-installed, wait-for timeout,
+  CLIError surfaces cleanly, happy path with caption / data / image
+  attachment / blocked-apps highlighting, empty model still renders).
 
 ### 48.5 Low — Headless browser integration
 

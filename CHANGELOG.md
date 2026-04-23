@@ -5,6 +5,30 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **``juju_status_render`` tool — Phase 48.4.**  New observability tool
+  that fetches the current ``juju status`` via Jubilant and renders it
+  as a coloured tree PNG.  Layout follows the TUI graph screen: apps
+  grouped with their units using ``├─`` / ``└─`` / ``│`` glyphs; each
+  app or unit carries a status-coloured indicator (● active, ○ waiting,
+  ◌ blocked, ◐ maintenance, ✗ error) rendered in its status colour;
+  app messages surface as child lines; a deduplicated relation list
+  prints below as ``source:endpoint ── [interface] ──▸ target``.  PNGs
+  save to ``~/.cache/cantrip/screenshots/juju-status-<model>-<timestamp>
+  .png`` and the bytes attach to ``ToolResult.images`` so vision-capable
+  providers (Phase 48.1 / 48.2b) see the image inline with a caption
+  summarising app / unit / relation counts and naming any blocked or
+  errored apps.  Uses the same Pillow-direct rendering pattern as the
+  Tempo waterfall (48.3) so there's no new dependency.  Line-building
+  (``_juju_status_tree_lines``) and relation deduplication
+  (``_collect_relation_entries``) are split out from the Pillow drawing
+  helper so the rendering logic is unit-testable without a PNG decoder.
+  Rendered rows are capped at 140 so a 200-app model produces a
+  reasonable-height image with a "… N more lines omitted" footer
+  instead of a 4000-pixel one.  Registered in ``build_tools()`` and in
+  the DEBUG subagent allowlist.  15 new unit tests across line
+  building, relation deduplication, PNG rendering, and end-to-end
+  tool execution.
+
 - **Hook stdout-to-payload mutation — Phase 46.4b.**  A
   ``pre_tool_call`` hook can rewrite the pending tool arguments by
   printing a JSON envelope of the shape

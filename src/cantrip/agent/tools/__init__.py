@@ -118,6 +118,7 @@ def build_tools(
     from cantrip.agent.tools.observability import (
         GrafanaScreenshotTool,
         JujuDebugLogTool,
+        JujuStatusRenderTool,
         JujuStreamLogsTool,
         LokiQueryTool,
         TempoQueryTool,
@@ -259,6 +260,7 @@ def build_tools(
         LokiQueryTool(),
         GrafanaScreenshotTool(),
         TempoWaterfallTool(),
+        JujuStatusRenderTool(),
         # Inference snaps
         ListInferenceSnapsTool(),
         # Testing
