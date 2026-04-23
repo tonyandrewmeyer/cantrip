@@ -2479,6 +2479,787 @@ Phase 68.2 gains one follow-up from this review:
 
 ---
 
+## Phase 71: Aider-Inspired Engineering Hygiene — Repo-Map, Architect/Editor, Commit Discipline, Edit Loop
+
+**Goal:** Aider (``aider.chat``) is a long-running open-source
+terminal coding agent with a distinct engineering aesthetic:
+every turn is a git commit, every edit runs the linter, and
+the agent never operates without a compressed "map" of the
+repository's most-referenced symbols.  A walk of its docs
+surfaces four patterns that aren't covered by Phases 67–70 and
+that would directly cut the rework cost on Cantrip's BUILD
+phase.
+
+Four candidates, in rough priority order:
+
+1. **Repo-map with graph-ranked symbols.**  Aider parses every
+   source file with tree-sitter, builds a dependency graph
+   where nodes are files and edges are symbol references, and
+   runs a PageRank-style ranking to surface the most-cited
+   classes and functions.  The map is rendered as a compact
+   symbol list with signatures, injected into every turn
+   under a configurable token budget (default 1000 tokens,
+   dynamically resized).  Cantrip currently hands the agent
+   whatever the planner mentioned plus whatever the agent
+   reads on-turn — no persistent bird's-eye view.  Charms are
+   small individually but often pull in several charmlibs,
+   COS dashboards, and terraform modules; a repo-map lets the
+   agent jump to the right file without grep-and-guess.
+2. **Architect / Editor two-model split as a first-class
+   mode.**  Aider's ``/architect`` routes each turn through two
+   models: a strong reasoning model ("architect") proposes
+   the change, then a cheap edit-specialist model ("editor")
+   emits the concrete diff.  Distinct from Phase 70.2 Oracle
+   (one prompt, on-demand, pure reasoning) — Architect is
+   *every turn* of a session and covers the full
+   propose→apply loop.  Cantrip has per-task ``ModelHint``
+   (Phase 4.x) and a resolved-light-provider
+   (``resolve_light_provider``) for small tasks, but not a
+   stable two-model-per-turn pairing.  Cost savings in BUILD
+   can be substantial: the expensive model does the thinking
+   once; the cheap model does the mechanical edits.
+3. **Auto-commit-per-turn with dirty-commit separation.**
+   Aider commits the agent's edits as their own git commit
+   with a weak-model-generated message on every turn, and if
+   the working tree is dirty *before* the agent edits, it
+   commits the user's pre-existing changes separately first.
+   Attribution (``(aider)``) makes the split visible in
+   ``git log``.  The result: ``/undo`` is literally
+   ``git revert`` of the last aider commit — simpler than
+   Phase 68.1's snapshot store.  Cantrip has ``git_commit``
+   tools but doesn't enforce per-turn commits; it tends to
+   batch.  Formalising this cuts audit ambiguity and gives
+   a second, git-native undo path.
+4. **Per-edit lint/test feedback loop.**  Aider's
+   ``--auto-lint`` and ``--auto-test`` run the configured
+   linter/test command after *every* edit, capture failures,
+   and feed them back to the agent to self-correct before
+   committing.  Distinct from Phase 69.1 Ralph Loop (outer,
+   per-goal) and Phase 12 red/green (integration-level):
+   this is inner, per-edit.  On charm work, the fastest
+   failure signal is ``ruff check`` / ``ty`` / ``charmlint``;
+   routing them through the same loop tightens correctness
+   at the cost of a few extra subprocess calls per turn.
+
+Five Aider features are explicitly **out of scope or
+deferred**:
+
+- **Edit-format selection per model** (``whole`` / ``diff`` /
+  ``diff-fenced`` / ``udiff`` / ``editblock``).  Genuinely
+  interesting — different models emit better diffs in
+  different formats — but Cantrip's edit tools are already
+  standardised.  Revisit if a specific provider in Phase 41
+  shows a quality delta that edit format would close.
+- **``/read-only`` reference-file pinning.**  "Add this file
+  as context, don't edit it" is a useful affordance; fold into
+  Phase 30 (tool completeness) as a one-liner on
+  ``fs_read`` rather than its own bullet here.
+- **``/voice`` — spoken prompt input.**  Niche for charm
+  authoring; revisit if a user asks.
+- **``/copy-context`` — copy chat as markdown for pasting
+  into a web LLM.**  Overlaps with Phase 67.4 ``/share`` to
+  gist and Phase 14 export.  Small win if it shows up, not
+  worth its own item.
+- **Aider's ``/help`` mode backed by a dedicated vector
+  index of Aider's own docs.**  Cantrip's equivalent is the
+  ``docs/docs/`` pages plus the system prompt; no
+  vector-index build required.
+
+### 71.1 High — Repo-map with graph-ranked symbols
+
+- [ ] New subsystem under ``src/cantrip/repomap/`` that parses
+  a charm repo with ``tree-sitter`` (Python, YAML, TOML,
+  Rockcraft/Charmcraft YAML via the generic YAML parser,
+  plus Markdown for hook scripts) and extracts class,
+  function, and top-level config-key symbols with their
+  signatures.  Use the existing ``tree-sitter-languages``
+  Python bindings — don't build our own parser.
+- [ ] Build a reference graph: edges run from callers to
+  callees, from config keys to their consumers, and from
+  ``metadata.yaml`` interface names to the charmlibs that
+  provide them.  Rank nodes with a PageRank pass (NetworkX
+  is already available or trivial to add).  Cache to
+  ``.cantrip/repomap.json``; invalidate on file mtime
+  changes.
+- [ ] Render as a compact text block (symbol + one-line
+  signature, grouped by file) fitting a configurable token
+  budget (default 1500 for charm-sized repos; Aider's 1000
+  default is tuned for larger codebases but charms pull in
+  charmlib interfaces and dashboards worth indexing).
+- [ ] Inject into the system prompt on every turn, *under*
+  the Phase 32 planner context so the agent sees the map
+  consistently.  When a file is in the chat, its full text
+  takes precedence — no need for a map entry to duplicate
+  what's already in context.
+- [ ] ``/map`` slash command prints the current map;
+  ``/map-refresh`` forces a rebuild.  Transparency for
+  "what does the agent think this repo looks like?"
+- [ ] Dynamic sizing: when the chat context is tight
+  (Phase 40 compaction threshold approaching), shrink the
+  map budget.  When the chat is fresh, allow it to expand.
+  Mirror Aider's behaviour.
+- [ ] ``tests/unit/test_repomap.py`` — parse a fixture charm,
+  assert symbol extraction, assert ranking order stable for
+  a known graph, assert cache invalidates on file change.
+
+### 71.2 High — Architect / Editor two-model split
+
+- [ ] New session mode ``architect`` alongside the Phase 68.4
+  plan/build modes.  In architect mode, every agent turn
+  runs in two phases:
+  1. *Architect pass* on the configured main model
+     (``settings.architect.model``, default the session's
+     current model): emits a structured proposal in plain
+     prose — "change X in file Y because Z", no diffs.
+  2. *Editor pass* on the editor model
+     (``settings.architect.editor_model``, default
+     ``claude-haiku-4-5`` or the provider's cheapest edit-
+     capable model): consumes the architect's proposal plus
+     the cited files and emits the concrete
+     ``fs_edit`` / ``fs_write`` tool calls.
+- [ ] ``/architect`` slash command toggles the mode.  CLI
+  flag ``--architect`` sets it for the session.
+- [ ] Cost accounting already splits by model name
+  (``src/cantrip/cli.py`` ~line 581); ensure both passes
+  surface in the per-model breakdown.  Transcript
+  (Phase 14) records both passes as separate turn events so
+  the architect's reasoning is auditable.
+- [ ] Fall-through: if the editor model returns an
+  unapplyable patch twice in a row, escalate that one turn
+  back to the architect model as the editor.  Avoids a
+  stuck loop where a weak model can't parse the proposal.
+- [ ] Document the cost-vs-quality trade-off in
+  ``docs/docs/howto-architect-mode.html``.  Compare to
+  Phase 70.2 Oracle (on-demand one-shot) and Phase 47
+  best-of-N (racing).
+- [ ] ``tests/unit/test_architect_mode.py`` — stubbed two-
+  model run emits correct tool calls, fall-through on
+  repeated editor failure, cost tracked per pass.
+
+### 71.3 Medium — Auto-commit-per-turn with dirty-commit separation
+
+- [ ] ``settings.git.auto_commit`` (default true) — after
+  each turn that made file edits, stage the changed files
+  and commit with a message generated by the Phase 67.2
+  light provider (``resolve_light_provider``) from the diff
+  plus the user message.  Co-author line ``Co-Authored-By:
+  Cantrip <noreply@canonical.com>`` matches the existing
+  convention.
+- [ ] Dirty-commit separation: before the agent touches
+  anything, if ``git status`` shows uncommitted changes in
+  files Cantrip is about to edit, commit those first with a
+  message like ``chore(pre-cantrip): save in-progress work``.
+  User's work stays distinct from the agent's.  Attribution
+  only on committer (not author) in this pre-commit.
+- [ ] ``/undo`` (new alias, separate from Phase 68.1 snapshot
+  undo) runs ``git revert --no-commit`` of the last Cantrip
+  commit.  Document the relationship: 68.1 is for file
+  changes made *without* commits (granular, turn-level);
+  71.3 ``/undo`` is for reverting a completed Cantrip
+  commit.  Both coexist — different use cases.
+- [ ] Opt-out: ``settings.git.auto_commit: false`` restores
+  current batched-commit behaviour for users who dislike
+  the per-turn cadence.
+- [ ] ``tests/unit/test_autocommit.py`` — agent-only commit
+  flow, dirty-separation flow, opt-out, commit-message
+  generation hits the light provider, ``/undo`` reverts
+  only Cantrip-authored commits.
+
+### 71.4 Medium — Per-edit lint/test feedback loop
+
+- [ ] After each ``fs_edit`` / ``fs_write`` that touches a
+  Python file, run ``ruff check --output-format=json`` and
+  ``ty check --output-format json`` on the touched paths
+  (not the whole repo — incremental).  If either reports
+  errors, feed them back as a tool result the agent can
+  react to before the turn completes.
+- [ ] For YAML files (``metadata.yaml``, ``charmcraft.yaml``,
+  ``actions.yaml``, etc.), run ``charmlint`` on the touched
+  files (Phase 24).  Same feedback path.
+- [ ] For charm test files (``tests/**/*.py``), optionally
+  run the touched test file with ``pytest --collect-only``
+  to catch import errors cheaply before a full run.
+- [ ] ``settings.auto_lint`` (default true) and
+  ``settings.auto_test.collect_only`` (default true) —
+  escape hatches.  A failing lint doesn't block the turn;
+  the agent sees the diagnostics and may or may not
+  choose to fix, same as Aider's UX.
+- [ ] Distinct from Phase 12 red/green (goal-level test
+  gating) and Phase 69.1 Ralph Loop (outer iterate-until-
+  green).  This is a *within-turn* quality signal.
+- [ ] ``tests/unit/test_auto_lint.py`` — touching a Python
+  file surfaces ruff errors; touching ``metadata.yaml``
+  surfaces a charmlint warning; opt-out skips the run.
+
+### What this phase is *not*
+
+- Not a replacement for Phase 68.1 snapshot undo.  71.3
+  operates on git commits; 68.1 operates on working-tree
+  snapshots.  Both land.
+- Not a replacement for Phase 69.1 Ralph Loop or Phase 12
+  red/green.  71.4 is the inner edit-level signal; the
+  outer loops stay.
+- Not a fork of Aider's repo-map code.  Cantrip re-implements
+  the idea against its own tool surface — the charm-specific
+  interface/charmlib graph edges (71.1) have no analogue in
+  Aider.
+- Not a mandatory cost increase.  Architect mode (71.2) is
+  opt-in; default behaviour stays single-model.
+- Not a voice/web-chat affordance.  Tracked in the deferred
+  list above.
+
+**Exit criteria:** (a) ``/map`` prints a ranked, bounded
+symbol list for the current charm repo, refreshing on file
+change and shrinking under compaction pressure; (b)
+``/architect`` runs each turn through a configurable
+architect model and editor model with per-pass cost
+breakdown in ``/cost``; (c) every turn that touches files
+produces a discrete, attributed git commit, with any pre-
+existing dirty work preserved as a separate commit; (d)
+editing a ``src/charm.py`` surfaces ``ruff`` / ``ty``
+diagnostics in the same turn so the agent can self-correct
+before moving on.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Repo-map (71.1) | Phase 32 (prompt structure) | New subsystem; minimal integration surface |
+| Architect mode (71.2) | Phase 27, 41 (multi-provider), Phase 47 (cost accounting), Phase 68.4 (mode infrastructure) | Reuses plan-mode's mode machinery |
+| Auto-commit (71.3) | Phase 30 (git tools), Phase 67.2 (light provider for messages) | Composes with Phase 68.1 — 68.1 is snapshot-based, 71.3 is commit-based; ``/undo`` routes to the right one |
+| Auto-lint (71.4) | Phase 24 (charmlint), Phase 30 (tool surface) | Inner loop; coexists with Phase 12 and Phase 69.1 |
+
+---
+
+## Phase 72: Continue-Inspired Context Providers — @-Mentions, Indexed Docs, Model Roles, Diagnostics Priming
+
+**Goal:** Continue (``continue.dev``) centres its UX on
+*context providers* — structured fragments a user injects into
+a prompt by typing ``@<name>``.  Eighteen-plus built-in
+providers (``@file``, ``@codebase``, ``@docs``, ``@diff``,
+``@tree``, ``@terminal``, ``@problems``, ``@url`` …) turn the
+``@`` into a vocabulary for "here's what the agent should look
+at."  Four of Continue's ideas transplant cleanly onto
+Cantrip and aren't covered by Phases 67–71.
+
+Four candidates, in rough priority order:
+
+1. **Indexed charm-ecosystem documentation (``@docs``).**
+   Continue's ``@docs`` crawls a documentation site, embeds
+   it, and serves relevant passages when the user mentions
+   the site's name.  Charm authoring has a fixed,
+   authoritative documentation surface — Juju docs, the
+   ``ops`` reference, ``charmcraft.yaml`` reference, Rockcraft
+   docs, Jubilant docs, Charmhub guidelines — and "the agent
+   hallucinated a ``config-changed`` hook that doesn't exist"
+   is a real and recurring failure.  A charm-scoped
+   ``@docs <juju|ops|charmcraft|rockcraft|jubilant|charmhub>
+   <query>`` that returns cited excerpts from the *canonical*
+   source cuts that failure mode in half.
+2. **Context-provider abstraction with ``@`` mentions.**  The
+   pattern — user types ``@foo`` in the input and structured
+   context is injected — is a generally useful input-layer
+   primitive that Cantrip lacks.  Phase 68.3 uses ``@path``
+   inside *command template bodies*, and Phase 67.1 adds
+   ``@@`` for thread references, but a first-class
+   ``@``-provider registry in the chat input is new.  Ship
+   a baseline set that maps to existing tools: ``@file``,
+   ``@diff``, ``@tree``, ``@terminal``, ``@url``, plus the
+   charm-specific ``@charm <name>`` (fetch charm source from
+   Charmhub via Phase 70.1 Librarian) and
+   ``@juju <show-unit|status|config>``.
+3. **Model roles — embed and rerank as first-class.**
+   Continue's model config assigns *roles* (``chat``,
+   ``edit``, ``apply``, ``embed``, ``rerank``,
+   ``autocomplete``, ``summarize``) to each model so the
+   system routes each request type appropriately.  Cantrip
+   has ``create_provider`` / ``resolve_light_provider`` plus
+   Phase 71.2 architect/editor, but no ``embed`` or
+   ``rerank`` role — which means no infrastructure for
+   RAG-style retrieval.  Both 72.1 ``@docs`` and a future
+   memory-retrieval layer (Phase 43) need embed; rerank
+   improves retrieval quality.  Define the roles now, even
+   if only a subset of providers supply them.
+4. **``@problems`` — diagnostics-as-pre-turn-context.**
+   Continue's ``@problems`` pulls the IDE's lint/type errors
+   as context; no IDE required if the agent just runs the
+   linter itself.  A ``/diagnostics`` (or ``@problems``)
+   that injects the current output of
+   ``ruff check --output-format=json``,
+   ``ty check --output-format json``, and
+   ``charmlint --format json`` *before* the agent plans an
+   edit primes the agent with the existing failure set —
+   complementary to Phase 71.4 (which runs *after* each
+   edit).  The agent starts a turn knowing what's broken and
+   plans accordingly.
+
+Five Continue features are explicitly **out of scope or
+deferred**:
+
+- **Inline autocomplete** (QwenCoder / Codestral small-model
+  tab completion).  Cantrip isn't an IDE extension; the
+  edit path is agent-tool-driven, not type-to-complete.
+  Revisit only if an IDE surface ships.
+- **``@debugger`` — live-debugger local variables.**  No
+  live-debugger integration in Cantrip; `juju debug-hooks`
+  and `pytest --pdb` are the relevant surfaces and they
+  produce output the agent already reads.
+- **Continue Hub (``uses: org/rules-name``) — central
+  registry of shared rules and prompts.**  Overlaps with
+  Phase 50 (Skills Ecosystem Interop).  If Canonical wants
+  a registry of charm skills, Phase 50 is the place —
+  don't spin up a parallel authority.
+- **``data:`` config block — dev-data collection for
+  fine-tuning.**  Cantrip's transcript (Phase 14) plus the
+  observability work already underway cover the analytics
+  use case.  No separate dev-data pipe.
+- **Prompt files and Rules files as ``uses:``-referenced
+  hub blocks.**  Prompt files already covered by Phase 68.3
+  (markdown custom commands).  Rules files already covered
+  by Phase 70.3 (glob-conditional guidance).  Don't
+  duplicate — point the user at both from docs.
+
+### 72.1 High — Indexed charm-ecosystem documentation (``@docs``)
+
+- [ ] New subsystem ``src/cantrip/docs_index/`` with a crawl
+  + embed + local vector-store pipeline.  Target sites, all
+  opt-in via config:
+  - Juju documentation (``juju.is/docs`` and
+    ``canonical-juju.readthedocs-hosted.com``)
+  - Ops reference (``ops.readthedocs.io``)
+  - Charmcraft reference
+    (``canonical-charmcraft.readthedocs-hosted.com``)
+  - Rockcraft reference
+    (``canonical-rockcraft.readthedocs-hosted.com``)
+  - Jubilant docs (``canonical-jubilant.readthedocs-hosted.com``)
+  - Charmhub charm-guidelines page
+- [ ] Storage: SQLite + ``sqlite-vec`` (or ``faiss`` if it's
+  already in the dependency tree) at
+  ``~/.cache/cantrip/docs-index/<site-hash>/``.  Chunk size
+  ~500 tokens; overlap 50.  Embed with the provider's
+  ``embed``-role model (72.3) — fall back to a local
+  sentence-transformer model if no remote embed provider
+  is configured.
+- [ ] ``cantrip docs index [--site <name> | --all]``
+  subcommand triggers a crawl; ``cantrip docs refresh``
+  updates incrementally.  Transparent caching: docs older
+  than ``settings.docs.max_age_days`` (default 14) get
+  re-crawled.
+- [ ] Retrieval surface: a new ``docs_search`` tool the
+  agent can invoke, and the 72.2 ``@docs`` mention for
+  user-initiated lookups.  Both return ``{site, url,
+  excerpt, score}`` tuples so every citation is
+  traceable — never paraphrase.
+- [ ] Prompt guidance (``src/cantrip/agent/prompts/system.py``)
+  teaches the agent to consult ``docs_search`` before
+  answering "how do I …" questions about the charm
+  ecosystem.
+- [ ] Document in ``docs/docs/howto-docs-index.html``
+  (new page).
+- [ ] ``tests/unit/test_docs_index.py`` — crawl a fixture
+  tree, embed with stub provider, query and assert
+  top-k ordering.
+
+### 72.2 High — ``@``-mention context-provider registry
+
+- [ ] Central registry in
+  ``src/cantrip/agent/context_providers.py`` with a
+  ``ContextProvider`` protocol: ``name``, ``description``,
+  ``expand(args: str) -> list[ContextBlock]``.  Tab-complete
+  integrates with Phase 61 autocomplete.
+- [ ] Baseline providers:
+  - ``@file <path>`` — inline file contents (existing
+    ``fs_read`` under new surface)
+  - ``@diff`` — ``git diff`` since last commit
+  - ``@tree [path]`` — directory tree (respects
+    ``.gitignore``)
+  - ``@terminal`` — last N lines of the Phase 69.3 shell-
+    mode output buffer
+  - ``@url <url>`` — ``webfetch`` result, markdownified
+  - ``@problems`` — see 72.4
+  - ``@docs <site> <query>`` — see 72.1
+  - ``@charm <name>`` — fetch charm metadata + source index
+    via Phase 70.1 Librarian
+  - ``@juju <show-unit <app/0> | status | config <app>>`` —
+    inline juju read-only output
+- [ ] Expansion happens in the TUI/Web input layer before
+  the message reaches the agent, so the agent sees a fully-
+  expanded prompt (one fewer tool call needed) and the
+  transcript records both the typed form and the expanded
+  form.
+- [ ] Bounded: each provider has a token budget
+  (``settings.context_providers.<name>.max_tokens``,
+  reasonable defaults per provider).  Over-budget content
+  is truncated with a summary line ("file truncated; use
+  ``@file <path> --full`` to override").
+- [ ] Third-party providers registered via Phase 46 hooks
+  or MCP (Phase 45) — don't lock this to built-ins.
+  Document the protocol in
+  ``design/CONTEXT_PROVIDERS.md`` (new).
+- [ ] ``tests/unit/test_context_providers.py`` — parsing
+  ``@foo bar baz`` correctly, expansion + token-budget
+  enforcement, unknown-provider graceful handling, transcript
+  records both forms.
+
+### 72.3 Medium — Model roles: embed and rerank
+
+- [ ] Extend the provider-config schema (``cantrip.yaml``)
+  to let a provider declare ``roles: [chat, edit, apply,
+  embed, rerank, summarize]``.  Default for an unnamed
+  provider is ``[chat, edit]`` — today's behaviour, no
+  migration required.
+- [ ] Provider-layer hook: ``provider.embed(texts: list[str])
+  -> list[list[float]]`` and ``provider.rerank(query: str,
+  docs: list[str]) -> list[int]``.  Not every provider has
+  to implement these; the layer raises a clean "no embed
+  provider configured" error with a pointer to the docs.
+- [ ] Concrete implementations: Anthropic/Voyage for
+  ``embed``; Anthropic/Voyage for ``rerank``; OpenAI for
+  both; a local ``sentence-transformers`` fallback shipped
+  as an optional dependency for offline use.
+- [ ] Retrieval-using callers (72.1 ``@docs``, future
+  Phase 43 memory retrieval) depend on this — land it
+  first in this phase so those features have infrastructure.
+- [ ] Cost accounting: embed and rerank calls enter the
+  same ``/cost`` breakdown as chat/edit, under distinct
+  role labels so it's clear where the spend is.
+- [ ] ``tests/unit/test_provider_roles.py`` — role routing,
+  fallback behaviour, cost tracking per role, missing-role
+  error path.
+
+### 72.4 Medium — Diagnostics-as-pre-turn-context (``@problems``)
+
+- [ ] ``@problems`` context provider (registered in 72.2)
+  runs, on expansion:
+  - ``ruff check --output-format=json .`` (or just the
+    charm's ``src/`` and ``tests/`` to keep it cheap)
+  - ``ty check --output-format json .``
+  - ``charmlint --format json`` (from Phase 24)
+  and emits a compact block grouping issues by severity and
+  file, capped at 1500 tokens (longer reports get
+  summarised with a "N more issues suppressed; run
+  ``cantrip lint`` for the full list").
+- [ ] Caching: run results cached for 30 seconds so
+  repeated ``@problems`` in the same turn doesn't re-run
+  the linters.
+- [ ] ``/diagnostics`` slash command for the same output
+  without an inline context-provider mention — a focused
+  "what's the state of things?" view.
+- [ ] Autonomous-loop integration: when the planner
+  (Phase 32) starts a new BUILD task, it calls the same
+  diagnostics aggregator and includes the result in the
+  task briefing — so the agent starts knowing what's
+  broken.  Different entry point, same output format.
+- [ ] ``tests/unit/test_diagnostics_context.py`` — JSON
+  parse per linter, aggregation, truncation, cache TTL.
+
+### What this phase is *not*
+
+- Not an IDE extension.  Autocomplete, ``@debugger``, and
+  the live-LSP integration stay out of scope until Cantrip
+  ships an IDE surface.
+- Not a vector-store product.  72.1 ships the minimum
+  viable crawl+embed+query for *charm ecosystem docs*;
+  indexing the whole charm repo is Phase 71.1 repo-map's
+  job, not this phase's.
+- Not a replacement for Phase 68.3 custom commands or
+  Phase 70.3 conditional guidance.  Continue's ``prompt
+  files`` and ``rules files`` as hub-hosted ``uses:``
+  blocks overlap with those phases; we adopt the ``@``-
+  provider pattern, not the hub pattern.
+- Not a telemetry pipeline.  ``data:`` dev-data collection
+  is out of scope.
+
+**Exit criteria:** (a) ``@docs juju secrets`` returns
+cited passages from the indexed Juju docs in under a
+second; (b) typing ``@diff`` in the TUI input expands to
+the current ``git diff`` before the message reaches the
+agent, with both forms in the transcript; (c) a provider
+can declare ``roles: [embed, rerank]`` and the ``docs_search``
+tool uses that provider for retrieval, with embed+rerank
+costs appearing in ``/cost``; (d) typing ``@problems`` (or
+running ``/diagnostics``) injects ``ruff``/``ty``/``charmlint``
+JSON output as a compact issues block the agent can plan
+against before it edits.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| ``@docs`` index (72.1) | 72.3 (embed role), Phase 45 (MCP optional), Phase 67.3 (print-mode parity) | Biggest item; infra for retrieval |
+| ``@``-provider registry (72.2) | Phase 61 (autocomplete), Phase 68.3 (file-ref semantics) | Input-layer expansion; fans out to providers |
+| Model roles (72.3) | Phase 27, 41 (multi-provider) | Schema change on provider config |
+| Diagnostics (72.4) | Phase 24 (charmlint JSON), Phase 71.4 (lint tool surface) | Reuses 71.4's subprocess plumbing |
+
+---
+
+## Phase 73: Goose-Inspired Workflow Packaging — Recipes, MCP Apps, Retry, Structured Output
+
+**Goal:** Goose (Block's open-source agent, part of the Agentic
+AI Foundation at the Linux Foundation) treats agent work as
+*packageable*: a recipe is a YAML bundle of parameters,
+extensions, settings, retry policy, and response schema that a
+team can check in, share, and re-run.  A walk of the Goose
+docs surfaces four patterns distinct from Phases 67–72 and
+from what Cantrip already has.
+
+Four candidates, in rough priority order:
+
+1. **Recipes — parameterised, retryable, schema-enforced
+   workflows.**  Goose's recipe YAML schema bundles
+   ``parameters`` (typed: string/number/boolean/date/file/
+   select, with required/optional/prompted requirement), a
+   Jinja-templated ``instructions`` or ``prompt``, required
+   ``extensions`` (MCP servers with ``available_tools``
+   filtering), ``settings`` (model/temperature/max_turns),
+   ``sub_recipes`` (composable nested invocations with value
+   overrides, sequential or parallel), plus ``response``
+   (JSON-schema-enforced output) and ``retry`` (max_retries,
+   timeout, shell validators, on_failure hook).  Template
+   inheritance via ``{% extends "parent.yaml" %}``.  Distinct
+   from Phase 69.4 Flow skills (visual decision diagrams)
+   and Phase 33 skills (knowledge bundles): a Recipe is a
+   *parameterised repeatable execution* — "upgrade this
+   charm from reactive to ops with ``charm_name=``,
+   ``target_framework=ops>=2.16``, retry if tests fail, emit
+   a validated JSON upgrade report."
+2. **MCP Apps — interactive HTML UIs in the chat.**  A
+   2026-01 MCP extension standard (now supported by Claude
+   Desktop, VS Code Copilot, Goose, Postman, MCPJam): MCP
+   servers can return HTML in a sandboxed iframe, rendered
+   inline in the conversation.  Charm-relevant examples: a
+   relation-databag inspector, a Pebble-layer visual
+   editor, a bundle-topology graph, a COS dashboard-preview
+   form.  Cantrip's Web UI (Phase 15) can host the iframe;
+   the TUI falls back to a text link.  Makes complex
+   configuration a form rather than a JSON blob.
+3. **Structured JSON response with schema enforcement.**
+   Goose's ``response: {json_schema: …}`` forces the final
+   agent output into a validated JSON shape.  Independent of
+   recipes, usable anywhere structure matters: planner
+   briefings, acceptance-test reports (Phase 17), Phase 70.4
+   Checks output, the oracle's reply (Phase 70.2).  Most
+   modern providers support structured outputs natively;
+   surfacing the primitive as a per-call option is the
+   value.
+4. **Declarative retry with shell validators.**  Goose's
+   ``retry: { max_retries, timeout_seconds, checks: [{type:
+   shell, command: …}], on_failure }`` lets a recipe (or
+   any task) declare its own success predicate — a shell
+   command that must exit zero — rather than trusting the
+   agent's self-report.  Complements Phase 12 red/green
+   (goal-level), Phase 69.1 Ralph Loop (outer per-goal),
+   and Phase 71.4 per-edit lint: this is *per-task*,
+   user-specified, and deterministic.
+
+Five Goose features are explicitly **out of scope or
+deferred**:
+
+- **Rust rewrite of Cantrip's core.**  Goose's Rust
+  implementation is a product-shape choice; Cantrip's
+  Python/Rust split is already tuned for its own needs.
+- **Desktop app as a parallel surface to TUI/Web.**
+  Phase 15 Web UI plus the TUI cover Cantrip's interface
+  matrix; adding a Tauri/Electron desktop is a separate
+  decision.
+- **Parallel subagent dispatch triggered by conversational
+  keywords** ("parallel", "simultaneously").  Phase 44
+  worktrees + Phase 32 planner already dispatch parallel
+  work; the *keyword-as-trigger* UX is a small planner
+  prompt tweak rather than a new subsystem.  Folding the
+  idea into Phase 32 as a one-line prompt guidance note.
+- **``.goosehints`` with keyword-tagged conditional retrieval.**
+  Overlaps with Phase 70.3 glob-conditional guidance.
+  Glob-on-paths is Cantrip's primary axis; keyword-tagged
+  retrieval would be a second axis with questionable
+  marginal value.  Skip unless users ask for tag-based
+  filtering specifically.
+- **ACP bidirectional (Goose as client of Claude Code /
+  Codex).**  Phase 39 covers ACP research.
+
+### 73.1 High — Recipes: parameterised repeatable workflows
+
+- [ ] Recipe schema in ``.cantrip/recipes/*.yaml`` (repo) and
+  ``~/.config/cantrip/recipes/*.yaml`` (user).  Top-level
+  fields: ``version``, ``title``, ``description``,
+  ``parameters`` (list), ``instructions`` (Jinja-templated
+  prompt), ``settings`` (provider/model/temperature/
+  max_turns, all optional — inherit session defaults),
+  ``extensions`` (list of required MCP servers or Phase 30
+  tool names), ``response`` (see 73.3), ``retry`` (see
+  73.4), ``sub_recipes`` (list of nested invocations).
+- [ ] Parameter types: ``string``, ``number``, ``boolean``,
+  ``date``, ``file``, ``select`` (with ``options``).
+  Requirement: ``required`` / ``optional`` / ``prompted``
+  (interactive ask-at-invocation).  Defaults supported.
+- [ ] Invocation surface: ``/recipe <name> [key=value …]``
+  slash command.  Unknown required params trigger an
+  interactive prompt (or fail with a clear list in print
+  mode, Phase 67.3).  Sub-recipes invoke the same way from
+  within a parent's template.
+- [ ] Sub-recipes support ``sequential_when_repeated`` like
+  Goose; default is parallel when the parent runs them in a
+  loop, sequential when invoked once.  Uses Phase 44
+  worktree dispatch for parallel sub-recipes.
+- [ ] Template engine: reuse Cantrip's existing Jinja2
+  integration (Phase 32 planner / Phase 53 prompt templates)
+  with the same template-injection guard.  ``{{
+  recipe_dir }}`` and the parent's scope available.
+- [ ] Ship three charm-relevant built-in recipes:
+  - ``charm-new`` — parameterised "create a new charm for
+    workload X" wrapping the Phase 1 research→scaffold flow
+  - ``charm-cos-add`` — adds COS observability to an
+    existing charm
+  - ``charm-reactive-to-ops`` — upgrades a reactive charm
+    to ops (overlaps with Phase 69.4 Flow skill; they
+    compose — the Flow diagram is the decision tree,
+    the Recipe is the parameterised execution)
+- [ ] Document in ``docs/docs/howto-recipes.html`` and
+  ``design/RECIPES.md`` (new — recipe schema reference,
+  authoring guide, worked examples).
+- [ ] ``tests/unit/test_recipes.py`` — schema parse,
+  parameter validation, template expansion (including
+  escape sequences), sub-recipe invocation, interactive-
+  prompt path, failure on missing required param.
+
+### 73.2 Medium — MCP Apps: interactive HTML in the chat
+
+- [ ] Adopt the MCP Apps extension spec
+  (``modelcontextprotocol.io/extensions/apps/overview``) in
+  Cantrip's MCP client (Phase 45).  When a tool result
+  includes an ``ui`` block with ``mime: text/html``, route
+  it to the UI layer as an app-render event.
+- [ ] Web UI (Phase 15) renders the HTML in a sandboxed
+  iframe with ``sandbox="allow-scripts allow-forms"`` (no
+  ``allow-same-origin`` — must communicate only via
+  ``postMessage``).  Size constraints, no parent-DOM
+  access, no cookie/storage access — match the MCP Apps
+  security model verbatim.
+- [ ] ``postMessage`` bridge: the app can emit structured
+  events (``{type: 'tool_call', name, arguments}``) that
+  Cantrip routes back through the agent's tool pipeline
+  (with the Phase 68.2 permission layer gating them
+  normally).  App events are audited in the transcript.
+- [ ] TUI fallback: an MCP-App tool result renders as a
+  one-line summary (``[MCP App: <title>; open in web UI
+  at <url>]``) plus the text-form of any fallback content
+  the server provides.
+- [ ] Document one worked example — a "pebble-layer
+  editor" MCP server (out of tree, reference only) that
+  takes a layer YAML, renders a form in the Web UI, and
+  returns the edited YAML.  Belongs in
+  ``docs/docs/explanation-mcp-apps.html``.
+- [ ] ``tests/unit/test_mcp_apps.py`` — sandbox attrs
+  correct, postMessage round-trip, permission gate
+  applied to emitted tool calls, TUI fallback.
+
+### 73.3 Medium — Structured JSON response with schema enforcement
+
+- [ ] New per-call option ``response_schema: dict`` on the
+  primary-agent turn API and every subagent-dispatch call.
+  When set, the provider is asked to return output
+  conforming to the JSON schema (using Anthropic's
+  structured output, OpenAI's ``response_format``, or the
+  equivalent per provider).  Validation runs in Cantrip
+  regardless — provider-native enforcement is an
+  optimisation, not a security boundary.
+- [ ] Built-in schemas shipped for common outputs:
+  - ``cantrip.schemas.planner_briefing`` — what the
+    planner returns to task dispatch
+  - ``cantrip.schemas.check_result`` — Phase 70.4 Checks
+    output (``pass | fail``, severity, evidence, message)
+  - ``cantrip.schemas.oracle_answer`` — Phase 70.2 Oracle
+    return shape
+  - ``cantrip.schemas.acceptance_report`` — Phase 17
+    acceptance-test report
+- [ ] Recipes (73.1) surface the primitive via their
+  ``response`` block.  Direct tool callers use
+  ``response_schema=`` on the provider call.
+- [ ] On validation failure after one provider retry,
+  surface the malformed output plus the schema to the
+  agent and ask for correction — a tool-result-shaped
+  error the agent can react to.
+- [ ] Document in ``docs/docs/reference-response-schemas.html``.
+- [ ] ``tests/unit/test_structured_response.py`` — happy
+  path, schema violation retry, final-failure shape,
+  provider-native vs. Cantrip-side validation parity.
+
+### 73.4 Medium — Declarative retry with shell validators
+
+- [ ] Retry block schema, usable inside recipes (73.1) and
+  standalone on ``/task`` invocations:
+  ```
+  retry:
+    max_retries: 3
+    timeout_seconds: 600
+    checks:
+      - type: shell
+        command: "uv run pytest tests/unit -q"
+      - type: file_exists
+        path: "src/charm.py"
+    on_failure: "echo 'rolled back'"
+  ```
+- [ ] Check types: ``shell`` (command runs, exit 0 = pass),
+  ``file_exists`` (path check), ``json_schema`` (apply
+  73.3 to the task's final output).  Extensible — register
+  new check types via Phase 46 hooks.
+- [ ] Retry semantics: after the task completes, run
+  ``checks``.  If all pass → done.  If any fail → increment
+  retry count, re-run the task with the previous failure
+  summary prepended to context, until ``max_retries`` or
+  ``timeout_seconds`` exhausted.  ``on_failure`` shell
+  command runs once on final failure for cleanup.
+- [ ] Checks run through the Phase 68.2 permission layer,
+  Phase 49 sandbox, and Phase 69.3 shell-mode subprocess
+  plumbing — not a new execution path.
+- [ ] Distinct from Phase 69.1 Ralph Loop: Ralph is "keep
+  iterating the goal until the *agent* says STOP", 73.4
+  is "keep iterating this task until *my shell command*
+  says yes".  User-specified success predicate.
+- [ ] ``tests/unit/test_declarative_retry.py`` — check
+  types, retry count, timeout trip, on_failure runs on
+  final failure only, permission gate respected.
+
+### What this phase is *not*
+
+- Not a second UI.  Desktop app, Rust rewrite, parallel
+  dispatch keywords — all out of scope or already covered.
+- Not a replacement for Phase 69.4 Flow skills.  Flows are
+  visual decision trees; Recipes are parameterised
+  execution bundles.  They compose.
+- Not a plugin runtime.  MCP Apps (73.2) renders an HTML
+  payload from an existing MCP server — no new plugin
+  protocol, no Python-side sandboxing, no JS runtime
+  inside Cantrip.
+- Not a generic structured-output framework with
+  Pydantic/attrs bindings.  73.3 uses plain dict JSON
+  schemas — same surface as the provider APIs we already
+  call.
+- Not ``.goosehints``.  Phase 70.3 already covers the
+  "conditional guidance" axis on file globs; keyword
+  tagging doesn't earn a second mechanism.
+
+**Exit criteria:** (a) ``/recipe charm-cos-add
+charm_name=myapp metrics_endpoint=/metrics`` runs a
+parameterised workflow with validated JSON output and
+retries on Jubilant test failure; (b) an MCP server
+returning an ``ui: text/html`` block renders as an
+interactive form in the Web UI with postMessage-bridged
+tool calls audited in the transcript; (c) Phase 70.4
+Check output is JSON-schema-validated before aggregation,
+with a documented malformed-output retry path; (d) a
+recipe's ``retry.checks: [{type: shell, command: "uv run
+pytest tests/unit -q"}]`` drives the task to convergence
+on a user-specified predicate, distinct from Ralph Loop.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Recipes (73.1) | Phase 32 (Jinja templates), Phase 33 (skill-adjacent discovery), Phase 44 (worktree dispatch for sub-recipes), 73.3/73.4 (response and retry blocks) | Largest item; recipes compose 73.3 and 73.4 |
+| MCP Apps (73.2) | Phase 45 (MCP client), Phase 15 (Web UI), Phase 68.2 (permission gate on app-emitted tool calls) | Follows the MCP Apps spec verbatim; no Cantrip extensions to the protocol |
+| Structured response (73.3) | Phase 27, 41 (multi-provider) | Provider-call option; can land standalone, consumed by 73.1 and 70.4 |
+| Declarative retry (73.4) | Phase 49 (sandbox), Phase 68.2 (permission gate on check commands), Phase 69.3 (subprocess plumbing) | Standalone; consumed by 73.1 |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -2545,4 +3326,7 @@ Phase 68.2 gains one follow-up from this review:
 | M68: OpenCode Safety Rails | 68 | Snapshot-backed ``/undo``/``/redo`` for file changes, declarative ask/allow/deny permissions, markdown-defined user slash commands, and a session-level plan mode — four guardrails adopted from OpenCode that map onto Cantrip's existing subsystems |
 | M69: Kimi Workflow Features | 69 | Bounded Ralph-Loop iterate-until-green, ``--yolo`` unattended switch, ``Ctrl-X`` shell mode, and Mermaid/D2 Flow skills — four Kimi CLI patterns that fit Cantrip's autonomous loop, skill system, and CI story |
 | M70: Amp-Inspired Depth | 70 | Librarian subagent that searches Charmhub and Launchpad, Oracle tool for on-demand second-opinion reasoning, glob-conditional guidance in AGENTS.md / skills, prompt-based review Checks that layer on top of charmlint, and a Painter tool that generates a Charmhub-style ``icon.svg`` |
+| M71: Aider Engineering Hygiene | 71 | Tree-sitter-backed repo-map with graph-ranked symbols, architect/editor two-model mode, auto-commit-per-turn with dirty-commit separation, and a per-edit ruff/ty/charmlint feedback loop |
+| M72: Continue Context Providers | 72 | Indexed charm-ecosystem docs (``@docs juju|ops|charmcraft|rockcraft``), an ``@``-mention context-provider registry, ``embed`` and ``rerank`` model roles, and ``@problems`` diagnostics-as-pre-turn-context |
+| M73: Goose Workflow Packaging | 73 | Parameterised retryable Recipes with sub-recipes, MCP Apps rendered as sandboxed iframes in the Web UI, JSON-schema-enforced structured responses, and declarative retry with shell validators |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
