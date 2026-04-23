@@ -538,12 +538,52 @@ textually.
   they now use the real ``ToolResult`` dataclass, so future
   additions to the dataclass don't silently break those tests.
 
-### 48.3 Medium — Tempo trace waterfall rendering
+### 48.3 Medium — Tempo trace waterfall rendering ✓
 
-- [ ] `TempoWaterfallTool` takes a trace id, fetches the trace from Tempo
-  (Phase 2.2), and renders a waterfall PNG using a lightweight SVG-to-PNG
-  pipeline
-- [ ] Caption includes the slowest spans and total duration in text
+- [x] ``TempoWaterfallTool`` (``tempo_waterfall``) fetches a trace
+  from Tempo using the existing in-unit SSH pattern
+  (``_ssh_fetch_url`` / ``_find_cos_unit``), flattens the
+  OpenTelemetry ``batches[].scopeSpans[]`` structure into span dicts
+  with ``service``, ``name``, ``start_ns``, ``end_ns``,
+  ``duration_ns``, and renders a PNG waterfall using Pillow.
+  Accepts the legacy ``instrumentationLibrarySpans`` shape for
+  older Tempo deployments.  Trace IDs are hex-validated client-side
+  to block URL-smuggling attempts.
+- [x] Chose Pillow over cairosvg / rich's ``export_svg()`` +
+  rasteriser path: the waterfall is a small set of rectangles and
+  text, easier to hand-draw than to template-through-SVG and
+  convert.  Added ``pillow>=11.0`` to the core dependencies — new
+  dep, broad wheels, widely maintained.
+- [x] Renderer (``_render_waterfall_png``) draws a 1400px-wide canvas
+  with a fixed-width label column (``service · span.name``) and a
+  timeline column.  Faint grid lines at 0/25/50/75/100% anchor the
+  reader's eye; bars use a light-blue default with the top-3
+  longest spans recoloured warmer so they stand out without needing
+  to read every number.  Durations are formatted with the most
+  readable unit (ns / µs / ms / s).  Monospace font resolved via a
+  fallback chain of standard Linux / macOS paths, dropping to
+  Pillow's bitmap default if nothing else works.
+- [x] Caps rendered spans at 80 to keep the image legible — the
+  slowest-N highlighting is computed across the *full* span list
+  before truncation, so even a truncated waterfall draws attention
+  to the interesting bars that survived.  Caption reports ``N shown
+  of M total`` and points the reader at ``tempo_query`` when the
+  full list matters.
+- [x] PNG saved to ``~/.cache/cantrip/screenshots/`` with a
+  deterministic filename
+  (``tempo-waterfall-<trace-id>-<timestamp>.png``), bytes attached
+  to ``ToolResult.images`` via the 48.2b pipeline so vision-capable
+  providers see the waterfall inline alongside the caption.
+- [x] Registered in ``build_tools()`` and in the DEBUG subagent
+  allowlist; ``reference-tools.html`` updated.  18 new unit tests
+  across ``test_observability_tools.py``:
+  ``_format_duration`` (4), ``_collect_spans_from_trace`` (5 covering
+  legacy-library shape, missing-timestamp skip, empty-trace, default
+  service), ``_render_waterfall_png`` (happy path + 200-span
+  truncation), ``TempoWaterfallTool`` (7 end-to-end cases: no-juju,
+  bad trace id, Tempo missing from COS, malformed JSON, empty
+  trace, happy path with caption + data + image attachment, SSH
+  failure).
 
 ### 48.4 Medium — Juju status tree rendering
 

@@ -121,6 +121,7 @@ def build_tools(
         JujuStreamLogsTool,
         LokiQueryTool,
         TempoQueryTool,
+        TempoWaterfallTool,
     )
     from cantrip.agent.tools.oci_registry import (
         RegistryImageInfoTool,
@@ -257,6 +258,7 @@ def build_tools(
         TempoQueryTool(),
         LokiQueryTool(),
         GrafanaScreenshotTool(),
+        TempoWaterfallTool(),
         # Inference snaps
         ListInferenceSnapsTool(),
         # Testing

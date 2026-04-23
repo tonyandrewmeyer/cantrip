@@ -2,6 +2,7 @@
 
 import base64
 import json
+import pathlib
 import re
 from unittest import mock
 
@@ -14,8 +15,12 @@ from cantrip.agent.tools.observability import (
     JujuDebugLogTool,
     LokiQueryTool,
     TempoQueryTool,
+    TempoWaterfallTool,
+    _collect_spans_from_trace,
     _find_cos_unit,
+    _format_duration,
     _grafana_admin_password,
+    _render_waterfall_png,
 )
 
 
@@ -795,3 +800,282 @@ class TestGrafanaScreenshotTool:
             result = await tool.execute(dashboard_uid="abc")
         assert not result.success
         assert "grafana" in result.error.lower()
+
+
+# ---------------------------------------------------------------------------
+# TempoWaterfallTool  (Phase 48.3)
+# ---------------------------------------------------------------------------
+
+
+def _sample_trace(service: str = "svc", spans: tuple[tuple[str, int, int, str], ...] = ()) -> dict:
+    """Build a minimal OpenTelemetry-format trace dict for the waterfall tool.
+
+    Each span tuple is ``(span_id, start_ns, end_ns, name)``.  If empty,
+    a default 3-span trace is produced so callers can test happy paths
+    without repeating boilerplate.
+    """
+    if not spans:
+        spans = (
+            ("a", 1_000_000_000, 5_000_000_000, "root"),
+            ("b", 1_500_000_000, 2_800_000_000, "db.query"),
+            ("c", 3_000_000_000, 4_800_000_000, "http.call"),
+        )
+    return {
+        "batches": [
+            {
+                "resource": {
+                    "attributes": [{"key": "service.name", "value": {"stringValue": service}}]
+                },
+                "scopeSpans": [
+                    {
+                        "scope": {"name": "test"},
+                        "spans": [
+                            {
+                                "spanId": span_id,
+                                "name": name,
+                                "startTimeUnixNano": str(start),
+                                "endTimeUnixNano": str(end),
+                            }
+                            for span_id, start, end, name in spans
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+
+class TestFormatDuration:
+    """_format_duration picks a readable unit based on magnitude."""
+
+    def test_nanoseconds(self):
+        assert _format_duration(500) == "500ns"
+
+    def test_microseconds(self):
+        assert _format_duration(1_500) == "1.5µs"
+
+    def test_milliseconds(self):
+        assert _format_duration(2_700_000) == "2.7ms"
+
+    def test_seconds(self):
+        assert _format_duration(1_250_000_000) == "1.25s"
+
+
+class TestCollectSpansFromTrace:
+    """Tests for the OpenTelemetry span-flattening helper."""
+
+    def test_extracts_spans_and_service(self):
+        trace = _sample_trace(service="my-charm")
+        spans = _collect_spans_from_trace(trace)
+        assert len(spans) == 3
+        assert {s["service"] for s in spans} == {"my-charm"}
+        assert {s["name"] for s in spans} == {"root", "db.query", "http.call"}
+        # Duration matches end - start to the nanosecond.
+        root = next(s for s in spans if s["name"] == "root")
+        assert root["duration_ns"] == 4_000_000_000
+
+    def test_accepts_legacy_instrumentation_library_spans(self):
+        """Older Tempo versions use instrumentationLibrarySpans — still valid."""
+        trace = {
+            "batches": [
+                {
+                    "resource": {
+                        "attributes": [{"key": "service.name", "value": {"stringValue": "legacy"}}]
+                    },
+                    "instrumentationLibrarySpans": [
+                        {
+                            "spans": [
+                                {
+                                    "spanId": "x",
+                                    "name": "old",
+                                    "startTimeUnixNano": "1000",
+                                    "endTimeUnixNano": "2000",
+                                }
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+        [span] = _collect_spans_from_trace(trace)
+        assert span["service"] == "legacy"
+        assert span["duration_ns"] == 1000
+
+    def test_skips_spans_missing_timestamps(self):
+        """Spans without usable start/end can't be placed, so are dropped."""
+        trace = {
+            "batches": [
+                {
+                    "resource": {},
+                    "scopeSpans": [
+                        {
+                            "spans": [
+                                # Missing endTimeUnixNano.
+                                {"spanId": "a", "startTimeUnixNano": "1"},
+                                # Good span.
+                                {
+                                    "spanId": "b",
+                                    "name": "ok",
+                                    "startTimeUnixNano": "1",
+                                    "endTimeUnixNano": "2",
+                                },
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+        spans = _collect_spans_from_trace(trace)
+        assert [s["span_id"] for s in spans] == ["b"]
+
+    def test_empty_trace_returns_empty_list(self):
+        assert _collect_spans_from_trace({}) == []
+        assert _collect_spans_from_trace({"batches": []}) == []
+        assert _collect_spans_from_trace({"batches": None}) == []
+
+    def test_service_name_defaults_to_question_mark(self):
+        """A batch with no service.name attribute reports ``?``."""
+        trace = {
+            "batches": [
+                {
+                    "resource": {"attributes": []},
+                    "scopeSpans": [
+                        {
+                            "spans": [
+                                {
+                                    "spanId": "a",
+                                    "name": "anon",
+                                    "startTimeUnixNano": "1",
+                                    "endTimeUnixNano": "2",
+                                }
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+        [span] = _collect_spans_from_trace(trace)
+        assert span["service"] == "?"
+
+
+class TestRenderWaterfallPng:
+    """Tests for the Pillow waterfall renderer."""
+
+    def test_produces_valid_png_bytes(self):
+        spans = _collect_spans_from_trace(_sample_trace())
+        png = _render_waterfall_png(spans, "abc123def456")
+        assert png.startswith(_PNG_MAGIC)
+        assert len(png) > 500  # Non-trivial image content.
+
+    def test_truncates_to_max_spans(self):
+        """Very large traces are truncated in the image but still render."""
+        # 200 spans; the renderer caps at 80.
+        span_tuples = tuple(
+            (f"s{i:03}", 1_000_000 * i, 1_000_000 * i + 500_000, f"op{i}") for i in range(200)
+        )
+        spans = _collect_spans_from_trace(_sample_trace(spans=span_tuples))
+        assert len(spans) == 200
+        png = _render_waterfall_png(spans, "trunc")
+        assert png.startswith(_PNG_MAGIC)
+
+
+class TestTempoWaterfallTool:
+    """End-to-end tests for the TempoWaterfallTool agent tool."""
+
+    @pytest.fixture
+    def tool(self):
+        return TempoWaterfallTool()
+
+    def _mock_find_cos_unit(self):
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        return mock.patch(
+            "cantrip.agent.tools.observability._find_cos_unit",
+            return_value=(mock_juju, "tempo/0"),
+        ), mock_juju
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool):
+        with _mock_juju_unavailable():
+            result = await tool.execute(trace_id="abc123")
+        assert not result.success
+        assert "juju" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_non_hex_trace_id_rejected(self, tool):
+        with _mock_juju_available():
+            result = await tool.execute(trace_id="../etc/passwd")
+        assert not result.success
+        assert "hex" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_tempo_not_in_cos(self, tool):
+        with (
+            _mock_juju_available(),
+            mock.patch(
+                "cantrip.agent.tools.observability._find_cos_unit",
+                side_effect=ValueError("No app containing 'tempo' found"),
+            ),
+        ):
+            result = await tool.execute(trace_id="abc123")
+        assert not result.success
+        assert "tempo" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_response(self, tool):
+        patch, mock_juju = self._mock_find_cos_unit()
+        mock_juju.ssh.return_value = "<html>500 internal error</html>"
+        with _mock_juju_available(), patch:
+            result = await tool.execute(trace_id="abc123")
+        assert not result.success
+        assert "malformed" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_empty_trace_returns_clean_error(self, tool):
+        patch, mock_juju = self._mock_find_cos_unit()
+        mock_juju.ssh.return_value = json.dumps({"batches": []})
+        with _mock_juju_available(), patch:
+            result = await tool.execute(trace_id="abc123")
+        assert not result.success
+        assert "no spans" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_happy_path_renders_and_saves_png(self, tool, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            tmp_path,
+        )
+        patch, mock_juju = self._mock_find_cos_unit()
+        trace = _sample_trace(service="my-charm")
+        mock_juju.ssh.return_value = json.dumps(trace)
+
+        with _mock_juju_available(), patch:
+            result = await tool.execute(trace_id="abc123def456")
+
+        assert result.success, result.error
+        # File on disk is a valid PNG.
+        path = pathlib.Path(result.data["path"])
+        assert path.exists()
+        assert path.read_bytes().startswith(_PNG_MAGIC)
+        # Caption carries the useful diagnostic signal.
+        assert "abc123def456" in result.output
+        assert "3 total" in result.output or "Spans: 3" in result.output
+        assert "Slowest spans" in result.output
+        # Image bytes attached for vision-capable providers.
+        assert len(result.images) == 1
+        assert result.images[0].mime == "image/png"
+        assert result.images[0].data.startswith(_PNG_MAGIC)
+        # Structured data makes the result machine-consumable.
+        assert result.data["trace_id"] == "abc123def456"
+        assert result.data["span_count"] == 3
+        assert result.data["duration_ns"] == 4_000_000_000
+
+    @pytest.mark.asyncio
+    async def test_ssh_failure_surfaces_clean_error(self, tool):
+        patch, mock_juju = self._mock_find_cos_unit()
+        mock_juju.ssh.side_effect = jubilant.CLIError(1, "juju ssh", "ssh timed out")
+
+        with _mock_juju_available(), patch:
+            result = await tool.execute(trace_id="abc123")
+
+        assert not result.success
+        assert "ssh" in result.error.lower()

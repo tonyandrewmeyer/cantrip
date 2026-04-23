@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Tempo trace waterfall rendering — Phase 48.3.**  New
+  ``tempo_waterfall`` tool fetches a trace from Tempo (same in-unit
+  SSH pattern as ``tempo_query``), flattens the OpenTelemetry
+  ``batches[].scopeSpans[]`` — or the legacy
+  ``instrumentationLibrarySpans`` shape — into spans, and renders a
+  PNG waterfall with Pillow.  Each span is a horizontal bar
+  positioned on a 1400×N canvas by start time and duration; the
+  top-3 longest spans are highlighted so the eye lands on the
+  bottleneck without reading every number.  Durations are
+  formatted in ns / µs / ms / s depending on magnitude.  Caps the
+  image at 80 spans — the highlight set is computed across the
+  *full* list first so the warm-coloured bars stay the interesting
+  ones.  PNG saved to ``~/.cache/cantrip/screenshots/`` and
+  attached to ``ToolResult.images`` via the 48.2b pipeline so
+  vision-capable providers see the waterfall inline.  Added
+  ``pillow>=11.0`` as a dependency; registered in the DEBUG
+  subagent allowlist; ``reference-tools.html`` updated.
 - **Tool-result images threaded through to vision-capable providers —
   Phase 48.2b.**  Agent ``ToolResult`` and ``llm.ToolResult`` each
   grew an ``images: list[Image]`` field; the conversation loop

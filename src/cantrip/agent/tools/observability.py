@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import datetime
+import io
 import json
 import logging
 import pathlib
@@ -11,6 +12,8 @@ import urllib.parse
 from typing import Any
 
 import jubilant
+from PIL import Image as PILImage
+from PIL import ImageDraw, ImageFont
 
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.tools.juju_subprocess import juju_available as _juju_available
@@ -847,4 +850,406 @@ class GrafanaScreenshotTool(Tool):
                 "bytes": len(payload),
             },
             images=[Image(data=payload, mime="image/png")],
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tempo trace waterfall rendering (Phase 48.3)
+# ---------------------------------------------------------------------------
+
+
+# Common monospace font paths on Linux, macOS, and a bundled-Pillow
+# fallback.  We try each in turn; the first one that loads wins.
+_MONO_FONT_CANDIDATES: tuple[str, ...] = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
+    "/Library/Fonts/Courier New.ttf",
+    "/System/Library/Fonts/Menlo.ttc",
+)
+
+_WATERFALL_WIDTH = 1400
+_WATERFALL_LABEL_WIDTH = 420
+_WATERFALL_ROW_HEIGHT = 18
+_WATERFALL_HEADER_HEIGHT = 40
+_WATERFALL_PADDING = 10
+_WATERFALL_MAX_SPANS = 80
+
+# Bar colour for most spans; the N slowest are redrawn in the "slow"
+# colour to draw the eye.
+_COLOUR_BG = (255, 255, 255)
+_COLOUR_TEXT = (32, 32, 32)
+_COLOUR_MUTED = (120, 120, 120)
+_COLOUR_GRID = (220, 220, 220)
+_COLOUR_BAR = (74, 144, 226)
+_COLOUR_BAR_SLOW = (226, 92, 74)
+
+_SLOW_HIGHLIGHT_COUNT = 3
+
+
+def _load_mono_font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
+    """Return a monospace Pillow font at *size*, or Pillow's bitmap default.
+
+    The bitmap default has no size parameter and renders small — the
+    rest of the layout checks the font's ``size`` attribute (when
+    present) to decide cell height, so a fallback is ugly but
+    functional rather than broken.
+    """
+    for path in _MONO_FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(path, size=size)
+        except OSError:
+            continue
+    log.debug("No TTF monospace font found; using Pillow default")
+    return ImageFont.load_default()
+
+
+def _collect_spans_from_trace(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten a Tempo trace response into a list of span dicts.
+
+    Tempo serves traces in OpenTelemetry ``batches[].resource`` /
+    ``batches[].scopeSpans[].spans[]`` shape (older versions use
+    ``instrumentationLibrarySpans`` — we accept either).  Service name
+    is lifted out of each batch's resource attributes so the waterfall
+    can label rows by service.
+
+    Returns spans with the fields the waterfall renderer needs:
+    ``span_id``, ``name``, ``service``, ``start_ns``, ``end_ns``,
+    ``duration_ns``.  Spans missing a timestamp are skipped — they
+    can't be placed on the axis.
+    """
+    spans: list[dict[str, Any]] = []
+    batches = trace.get("batches") if isinstance(trace, dict) else None
+    if not isinstance(batches, list):
+        return spans
+
+    for batch in batches:
+        if not isinstance(batch, dict):
+            continue
+        service = _extract_service_name(batch)
+        scope_lists = batch.get("scopeSpans") or batch.get("instrumentationLibrarySpans") or []
+        if not isinstance(scope_lists, list):
+            continue
+        for scope in scope_lists:
+            if not isinstance(scope, dict):
+                continue
+            for span in scope.get("spans", []) or []:
+                if not isinstance(span, dict):
+                    continue
+                start = _parse_unix_nano(span.get("startTimeUnixNano"))
+                end = _parse_unix_nano(span.get("endTimeUnixNano"))
+                if start is None or end is None or end < start:
+                    continue
+                spans.append(
+                    {
+                        "span_id": str(span.get("spanId", "")),
+                        "name": str(span.get("name", "(unnamed)")),
+                        "service": service,
+                        "start_ns": start,
+                        "end_ns": end,
+                        "duration_ns": end - start,
+                    }
+                )
+    return spans
+
+
+def _extract_service_name(batch: dict[str, Any]) -> str:
+    """Return ``service.name`` from a batch's resource attributes, or ``?``."""
+    resource = batch.get("resource")
+    if not isinstance(resource, dict):
+        return "?"
+    for attr in resource.get("attributes", []) or []:
+        if not isinstance(attr, dict):
+            continue
+        if attr.get("key") != "service.name":
+            continue
+        value = attr.get("value")
+        if isinstance(value, dict):
+            inner = value.get("stringValue")
+            if isinstance(inner, str) and inner:
+                return inner
+    return "?"
+
+
+def _parse_unix_nano(value: Any) -> int | None:
+    """Parse a Tempo timestamp (stringified nanoseconds) into an int."""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _format_duration(nanos: int) -> str:
+    """Format a duration in nanoseconds using the most readable unit."""
+    if nanos < 1_000:
+        return f"{nanos}ns"
+    if nanos < 1_000_000:
+        return f"{nanos / 1_000:.1f}µs"
+    if nanos < 1_000_000_000:
+        return f"{nanos / 1_000_000:.1f}ms"
+    return f"{nanos / 1_000_000_000:.2f}s"
+
+
+def _render_waterfall_png(spans: list[dict[str, Any]], trace_id: str) -> bytes:
+    """Render a waterfall PNG from span dicts produced by ``_collect_spans_from_trace``.
+
+    Spans are drawn in start-time order, one per row.  The ``duration``
+    bar starts at ``(start - trace_start) / trace_span * timeline_width``
+    and is sized by its own duration.  The top-``_SLOW_HIGHLIGHT_COUNT``
+    longest spans are recoloured so the reader's eye lands on them
+    without needing to read every number.
+    """
+    ordered = sorted(spans, key=lambda s: s["start_ns"])
+    if len(ordered) > _WATERFALL_MAX_SPANS:
+        ordered = ordered[:_WATERFALL_MAX_SPANS]
+
+    trace_start = min(s["start_ns"] for s in ordered)
+    trace_end = max(s["end_ns"] for s in ordered)
+    trace_span = max(trace_end - trace_start, 1)
+
+    # Identify the slowest spans so the renderer can paint them red.
+    # Ranked by duration across the *full* span list (not the truncated
+    # view), so even in a truncated waterfall the highlighted bars are
+    # the most interesting ones the viewer actually sees.
+    slow_ids = {
+        s["span_id"]
+        for s in sorted(spans, key=lambda s: s["duration_ns"], reverse=True)[
+            :_SLOW_HIGHLIGHT_COUNT
+        ]
+    }
+
+    row_height = _WATERFALL_ROW_HEIGHT
+    height = _WATERFALL_HEADER_HEIGHT + row_height * len(ordered) + _WATERFALL_PADDING * 2
+    img = PILImage.new("RGB", (_WATERFALL_WIDTH, height), _COLOUR_BG)
+    draw = ImageDraw.Draw(img)
+
+    font = _load_mono_font(11)
+    font_header = _load_mono_font(13)
+
+    header_text = (
+        f"Trace {trace_id[:16]}… — {len(ordered)} spans shown "
+        f"(of {len(spans)}), total {_format_duration(trace_span)}"
+    )
+    draw.text(
+        (_WATERFALL_PADDING, _WATERFALL_PADDING),
+        header_text,
+        font=font_header,
+        fill=_COLOUR_TEXT,
+    )
+
+    timeline_left = _WATERFALL_LABEL_WIDTH
+    timeline_right = _WATERFALL_WIDTH - _WATERFALL_PADDING
+    timeline_width = max(timeline_right - timeline_left, 1)
+
+    # Faint vertical grid lines at 0 / 25 / 50 / 75 / 100%.
+    for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
+        x = timeline_left + int(timeline_width * frac)
+        draw.line(
+            [(x, _WATERFALL_HEADER_HEIGHT), (x, height - _WATERFALL_PADDING)],
+            fill=_COLOUR_GRID,
+        )
+
+    for index, span in enumerate(ordered):
+        y = _WATERFALL_HEADER_HEIGHT + index * row_height
+        label = f"{span['service']} · {span['name']}"
+        # Keep the label from spilling into the timeline.
+        max_chars = (_WATERFALL_LABEL_WIDTH - _WATERFALL_PADDING * 2) // 7
+        if len(label) > max_chars:
+            label = label[: max_chars - 1] + "…"
+        draw.text(
+            (_WATERFALL_PADDING, y + 2),
+            label,
+            font=font,
+            fill=_COLOUR_TEXT,
+        )
+
+        rel_start = (span["start_ns"] - trace_start) / trace_span
+        rel_width = span["duration_ns"] / trace_span
+        x0 = timeline_left + int(timeline_width * rel_start)
+        x1 = timeline_left + max(int(timeline_width * (rel_start + rel_width)), x0 + 2)
+        colour = _COLOUR_BAR_SLOW if span["span_id"] in slow_ids else _COLOUR_BAR
+        draw.rectangle([(x0, y + 3), (x1, y + row_height - 4)], fill=colour)
+
+        duration_label = _format_duration(span["duration_ns"])
+        # Duration label sits just after the bar when there's room; if
+        # the bar reaches the right edge, tuck the label inside the bar.
+        label_x = x1 + 4
+        text_colour = _COLOUR_MUTED
+        if label_x + len(duration_label) * 7 > timeline_right:
+            label_x = max(x0 + 4, timeline_left)
+            text_colour = _COLOUR_BG
+        draw.text((label_x, y + 2), duration_label, font=font, fill=text_colour)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _waterfall_cache_path(trace_id: str) -> pathlib.Path:
+    """Build the cache path for a waterfall PNG (same dir as Grafana screenshots)."""
+    _SCREENSHOT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    safe_id = re.sub(r"[^A-Za-z0-9]+", "", trace_id)[:32] or "trace"
+    return _SCREENSHOT_CACHE_DIR / f"tempo-waterfall-{safe_id}-{ts}.png"
+
+
+class TempoWaterfallTool(Tool):
+    """Render a Tempo trace as a waterfall PNG.
+
+    Useful when a trace has enough spans that the JSON-text view from
+    :class:`TempoQueryTool` stops being legible.  The waterfall lays
+    spans out along a time axis so the reader can see which spans
+    dominate the trace, which overlap, and which cascade serially —
+    structure that's hard to extract from a flat list of
+    ``startTimeUnixNano`` numbers.
+
+    Fetches the trace with the same in-unit SSH pattern as the other
+    observability tools, parses the OpenTelemetry batches, and draws
+    the waterfall with Pillow.  The PNG is saved to
+    ``~/.cache/cantrip/screenshots/`` and the bytes are attached to
+    the :class:`ToolResult.images` so vision-capable providers
+    (48.1 / 48.2b) can reason about the layout alongside the text
+    caption.
+    """
+
+    @property
+    def name(self) -> str:
+        return "tempo_waterfall"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Render a Tempo distributed trace as a waterfall PNG. Fetches "
+            "the trace by ID from Tempo in the COS model, flattens the "
+            "OpenTelemetry batches into spans, and draws them on a time "
+            "axis with the slowest spans highlighted. Saves the PNG to "
+            "~/.cache/cantrip/screenshots/ and returns a caption (total "
+            "duration, span count, top-3 slowest spans) plus the image "
+            "bytes. Useful when a trace is too dense for the JSON view "
+            "to reveal structure."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "trace_id": {
+                    "type": "string",
+                    "description": "Trace ID (hex string) to fetch from Tempo.",
+                },
+                "cos_model": {
+                    "type": "string",
+                    "description": "COS model name (default 'cos').",
+                    "default": "cos",
+                },
+            },
+            "required": ["trace_id"],
+        }
+
+    async def execute(self, trace_id: str, cos_model: str = "cos") -> ToolResult:
+        """Render the waterfall for *trace_id* and save it to the cache dir."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+
+        if not re.fullmatch(r"[0-9a-fA-F]+", trace_id):
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Invalid trace ID (must be hex): {trace_id[:50]}",
+            )
+
+        try:
+            juju, unit_name = _find_cos_unit(cos_model, "tempo")
+        except ValueError as exc:
+            return ToolResult(success=False, output="", error=str(exc))
+
+        url = f"http://localhost:3200/api/traces/{trace_id}"
+        try:
+            raw = _ssh_fetch_url(juju, unit_name, url, _HTTP_TIMEOUT_SECONDS)
+        except jubilant.CLIError as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"SSH to {unit_name} failed: {exc}",
+            )
+
+        try:
+            trace = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return ToolResult(
+                success=False,
+                output="",
+                error=(f"Malformed JSON response from Tempo: {_truncate(raw, 500)}"),
+            )
+
+        spans = _collect_spans_from_trace(trace)
+        if not spans:
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"No spans found for trace {trace_id}. The trace may "
+                    f"not exist, may have been sampled out, or may use a "
+                    f"Tempo response shape this tool doesn't recognise."
+                ),
+            )
+
+        try:
+            png_bytes = _render_waterfall_png(spans, trace_id)
+        except (OSError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Could not render waterfall PNG: {exc}",
+            )
+
+        path = _waterfall_cache_path(trace_id)
+        path.write_bytes(png_bytes)
+
+        trace_start = min(s["start_ns"] for s in spans)
+        trace_end = max(s["end_ns"] for s in spans)
+        trace_span = trace_end - trace_start
+        slowest = sorted(spans, key=lambda s: s["duration_ns"], reverse=True)[
+            :_SLOW_HIGHLIGHT_COUNT
+        ]
+        slowest_lines = [
+            f"  {s['service']} · {s['name']} — {_format_duration(s['duration_ns'])}"
+            for s in slowest
+        ]
+
+        caption = "\n".join(
+            [
+                f"Rendered waterfall for trace ``{trace_id}``.",
+                f"Total duration: {_format_duration(trace_span)}.",
+                f"Spans: {len(spans)} total"
+                + (
+                    f" ({_WATERFALL_MAX_SPANS} shown; the full list "
+                    f"is in the JSON response via tempo_query)."
+                    if len(spans) > _WATERFALL_MAX_SPANS
+                    else "."
+                ),
+                f"Saved to: {path}",
+                f"Size: {len(png_bytes):,} bytes.",
+                "Slowest spans:",
+                *slowest_lines,
+            ]
+        )
+
+        return ToolResult(
+            success=True,
+            output=caption,
+            data={
+                "path": str(path),
+                "trace_id": trace_id,
+                "span_count": len(spans),
+                "duration_ns": trace_span,
+                "bytes": len(png_bytes),
+            },
+            images=[Image(data=png_bytes, mime="image/png")],
         )
