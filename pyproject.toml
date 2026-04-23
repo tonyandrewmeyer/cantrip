@@ -41,6 +41,7 @@ dependencies = [
     "jinja2>=3.1",                 # Prompt templating
     "mcp>=1.27.0",
     "markdown-it-py[linkify]>=3.0",  # Web UI server-side Markdown rendering (linkify for autolink)
+    "mdit-py-plugins>=0.4",        # Attribute-block plugin used by docs/src/_build.py (Phase 54)
     "pillow>=11.0",                # Observability diagnostics (Phase 48.3 waterfall renderer)
 ]
 

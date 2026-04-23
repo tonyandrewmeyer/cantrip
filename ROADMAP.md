@@ -1412,19 +1412,29 @@ that matters, then commit to it.
   Section metadata and page ordering live in `docs/src/_site.yaml`
   so section-nav derivation stays data-driven.
 
-### 54.3 Medium — Set up a markdown-to-HTML build system
+### 54.3 Medium — Set up a markdown-to-HTML build system ✓
 
-- [ ] Pick a static-site generator that fits (MkDocs with Material,
-  or a MyST-parser Sphinx setup, or a plain pandoc make-rule) — match
-  the flavour chosen in 54.1
-- [ ] Configure the build to emit HTML into `docs/docs/` with the
-  same filenames the current site uses, so external links keep
-  working
-- [ ] Preserve the `docs.css` styling and the current logo / favicon
-  assets under `docs/`
-- [ ] Add a `make docs` target and CI step that rebuilds the site
-  and diffs against the committed HTML (catches drift between the
-  markdown sources and the published HTML)
+- [x] Build system chosen and implemented: `docs/src/_build.py` —
+  markdown-it-py + `mdit_py_plugins.attrs` + Jinja2 + PyYAML, per
+  the decision in 54.1.  No heavyweight SSG; a ~280-line Python
+  script that is small enough to read in one sitting.  `mdit-py-plugins`
+  promoted from a transitive-of-textual to an explicit dependency in
+  `pyproject.toml` since the build script imports it directly.
+- [x] Output path preserved: the build emits HTML into `docs/docs/`
+  with the exact filenames the committed site uses, so all external
+  links and relative anchors keep working.
+- [x] Styling and assets preserved: `docs/docs/docs.css`,
+  `docs/tokens.css`, `docs/style.css`, `docs/favicon.png`, and the
+  `logo-{light,dark}.png` pair are committed assets untouched by the
+  build; the template references them with the same relative paths
+  as the hand-authored HTML did.
+- [x] `make docs` / `make docs-check` / `make docs-check-strict`
+  targets added to the Makefile with help-text entries.  A new
+  `docs` job in `.github/workflows/ci.yaml` runs
+  `make docs-check-strict` on every push and PR, catching any drift
+  between the markdown sources and the published HTML.  Ran both
+  `make docs` and the strict check against the current tree — both
+  are no-ops.
 
 ### 54.4 Low — Round-trip verification and retire the old HTML
 

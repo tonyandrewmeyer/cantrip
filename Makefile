@@ -1,4 +1,4 @@
-.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage rust-test rust-coverage
+.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage rust-test rust-coverage docs docs-check docs-check-strict
 
 # Format code with ruff
 format:
@@ -69,6 +69,22 @@ rust-coverage:
 	cd src/charmlint-rs && cargo llvm-cov --summary-only
 	cd src/quickpack-rs && cargo llvm-cov --summary-only
 
+# Rebuild the user docs site from docs/src/*.md into docs/docs/*.html.
+# See design/DOCS_REBUILD.md for the rationale and authoring rules.
+docs:
+	uv run python docs/src/_build.py
+
+# Semantic-DOM diff: build into a temp dir, compare against the committed
+# HTML ignoring whitespace and entity-vs-unicode differences.  Used in CI
+# to catch drift between the markdown sources and the published site.
+docs-check:
+	uv run python docs/src/_build.py --check
+
+# Stricter byte-for-byte diff — committed HTML must match the rebuild
+# exactly.  Useful once the committed output has been regenerated.
+docs-check-strict:
+	uv run python docs/src/_build.py --check --strict
+
 # Clean build artifacts
 clean:
 	rm -rf .pytest_cache .ruff_cache .ty_cache .coverage .coverage.* htmlcov
@@ -98,5 +114,8 @@ help:
 	@echo "  coverage    - Run unit tests with coverage report"
 	@echo "  rust-test   - Run cargo test for charmlint-rs and quickpack-rs"
 	@echo "  rust-coverage - Run cargo-llvm-cov summary for each Rust crate"
+	@echo "  docs        - Rebuild docs/docs/*.html from docs/src/*.md"
+	@echo "  docs-check  - Semantic-DOM diff of the rebuild against committed HTML"
+	@echo "  docs-check-strict - Byte-for-byte diff of the rebuild against committed HTML"
 	@echo "  clean       - Remove build artifacts"
 	@echo "  install     - Install dependencies"

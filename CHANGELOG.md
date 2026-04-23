@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`make docs` build target + CI gate — Phase 54.3.**  Wired
+  `docs/src/_build.py` into the Makefile as `make docs` (rebuild),
+  `make docs-check` (semantic-DOM diff), and `make docs-check-strict`
+  (byte-for-byte diff).  Added a `docs` CI job that runs the strict
+  check on every PR, so drift between `docs/src/*.md` and the
+  committed `docs/docs/*.html` is caught immediately.  Promoted
+  `mdit-py-plugins` from a transitive-of-textual to an explicit
+  dependency since `_build.py` imports it directly.  `make docs` is
+  a no-op against the current tree — the byte-for-byte check passes.
 - **Authored-markdown sources for every docs page — Phase 54.2.**
   All 20 pages under `docs/docs/` now have markdown sources at
   `docs/src/*.md`: one tutorial, eight how-tos, two references,
