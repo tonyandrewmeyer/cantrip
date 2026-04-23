@@ -2731,7 +2731,7 @@ Existing tools hardened. `make check` passes throughout.
 
 ---
 
-## Phase 31: User Experience Improvements
+## Phase 31: User Experience Improvements ✓
 
 **Goal:** Quality-of-life features that make Cantrip more pleasant and productive for
 experienced users.
@@ -2805,7 +2805,7 @@ experienced users.
 - [x] Show cache hit rate when using Claude — already implemented earlier
   (Phase 27.1); confirmed still working alongside the new cost line
 
-### 31.5 Medium — Log Screen Model Selector
+### 31.5 Medium — Log Screen Model Selector ✓
 
 - [x] `LogScreen` always shows the dev model — add a dropdown or binding to switch
   to COS model logs — ``m`` binding cycles between dev and COS when
@@ -2867,7 +2867,7 @@ experienced users.
   exercising argparse dispatch, path validation, and the printed
   report.
 
-### 31.8 Low — Export Running Session
+### 31.8 Low — Export Running Session ✓
 
 - [x] Allow exporting the transcript while the session is still running (not just
   after exit via `export-transcript` subcommand)
@@ -2875,7 +2875,7 @@ experienced users.
   gained `/export [html|jsonl|markdown] [path]`, so the command is typeable
   in the TUI, CLI REPL, and Web surfaces without leaving the session
 
-### 31.9 Low — Notification Sounds / Desktop Notifications
+### 31.9 Low — Notification Sounds / Desktop Notifications ✓
 
 - [x] Long-running builds can take minutes — notify the user when a task completes
   or needs confirmation — opt-in via ``CANTRIP_NOTIFY`` env var; a
@@ -7497,7 +7497,7 @@ in the commit message.
 | M28: Robust Agent | 28 | SQLite concurrent writes safe; executor self-heals; subagent context managed |
 | M29: Polished TUI | 29 | All screens functional; no blocking subprocess calls; dead features wired up or removed |
 | M30: Complete Toolbox | 30 | Shell injection fixed; missing Juju/git tools available; existing tools hardened |
-| M31: Great UX | 31 | Streaming responses; chat search; session resume; cost tracking visible |
+| M31: Great UX | 31 ✓ | Streaming responses; chat search; session resume; cost tracking visible |
 | M32: Smart Planning | 32 | Compact prompt complete; dependency validation; watcher events all routed |
 | M33: Expanded Skills | 33 | Existing bundle management; charm migration; multi-charm workspaces |
 | M39: ACP Research | 39 | Written assessment of Agent Client Protocol as an alternative to direct LLM provider calls |
