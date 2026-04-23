@@ -3156,11 +3156,53 @@ many existing deployments use bundles, so Cantrip should be able to work with th
   modernise task actually names the `charm-migration` skill and the
   ``framework.observe`` anchor whenever reactive-framework gaps fire.
 
-### 33.3 Medium — Multi-Charm Workspace
+### 33.3 Medium — Multi-Charm Workspace ✓
 
-- [ ] Support working on multiple related charms simultaneously
-- [ ] Shared design document covering cross-charm relations and config
-- [ ] Coordinate deploy and integration testing across charms
+- [x] Support working on multiple related charms simultaneously — new
+  `cantrip.workspace.yaml` manifest format declares the charms, their
+  paths, cross-charm relations, and any shared config; parsed by a new
+  `cantrip.workspace` module (pure-function design, frozen
+  dataclasses, round-trippable `to_dict()`).  `workspace_info` tool
+  reads the manifest and reports it to the agent; it walks upwards
+  from the given directory (or cwd) so launching inside any charm
+  subdirectory still finds the workspace root.  No AgentState churn
+  — per-charm flows keep working unchanged and the workspace is
+  additive metadata.
+- [x] Shared design document covering cross-charm relations and
+  config — the manifest's `relations:` list captures the
+  provider/requirer/interface triple (endpoints validated against the
+  charm list at load time) and `shared_config:` captures values that
+  should match across charms (log levels, TLS modes).  The new
+  `workspace` skill documents the provider/requirer split, interface
+  naming conventions, the app-databag / unit-databag / Juju-secret
+  decision tree, and delegates the library authoring to
+  `charm-library`.
+- [x] Coordinate deploy and integration testing across charms — the
+  `workspace` skill walks through coordinated deploy (per-charm pack
+  → per-charm `juju_deploy` → per-relation `juju_relate` → single
+  `juju_wait`) and Jubilant integration tests that deploy multiple
+  charms, use `juju.integrate(provider_side, requirer_side)` for
+  explicit endpoint pairing, and prefer charm actions over SSH for
+  assertions.  The skill closes by ruling out bundle authoring
+  (pointing at the `bundle` skill for legacy consumption and the
+  `terraform` skill for reusable orchestration).
+- [x] System prompt integration: the "Default Integrations" section
+  gained a "Multi-charm deployments" paragraph telling the agent to
+  load the `workspace` skill and call `workspace_info` whenever the
+  user is working across ≥2 related charms.
+- [x] Test coverage: `tests/unit/test_workspace.py` (17 tests)
+  covers happy-path parsing, the full-manifest round-trip, missing /
+  malformed / empty-charm / duplicate-name / unknown-charm /
+  missing-colon / missing-interface error paths, `find_manifest`
+  walking upwards, and the dataclass `frozen=True` invariant.
+  `tests/unit/test_workspace_tool.py` (5 tests) covers missing-manifest
+  error, malformed-manifest error, full-output rendering,
+  walk-up-from-nested-path behaviour, and the cwd default.  A new
+  `test_workspace_skill_covers_multi_charm_work` anchor test in
+  `test_skills.py` pins the manifest schema, cross-charm design, and
+  coordination sections plus the anti-bundle stance.
+  `reference-tools.html` lists `workspace_info` under the internal
+  tools section.
 
 ### 33.4 Medium — Charm Library Authoring
 

@@ -214,6 +214,14 @@ and `juju_relate` tool calls (or generate a Terraform module via the
 deploy or modify, load the `bundle` skill and use the `bundle_deploy`
 tool — those exist for legacy consumption only, not for authoring.
 
+When the user is working across **two or more related charms** (monorepo,
+producer/requirer pairs, microservice stacks), load the `workspace` skill
+and call `workspace_info` at the start of the conversation. A workspace
+declares its charms, cross-charm relations, and any shared config in a
+single `cantrip.workspace.yaml` manifest — read it once, reference it when
+you plan work, and commit any new cross-charm relation decisions back into
+that file.
+
 **Cross-model COS**: When the dev controller is LXD (machine charms), COS runs on
 a separate K8s controller. Use `juju_offer` to expose COS endpoints and
 `juju_consume` to consume them in the dev model. The charm integrates with

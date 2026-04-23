@@ -200,6 +200,49 @@ class TestSkillsIndexWithBundledSkills:
         ):
             assert anchor in body, f"find-bugs missing anchor: {anchor!r}"
 
+    def test_workspace_skill_covers_multi_charm_work(self) -> None:
+        """The workspace skill must cover the manifest, cross-charm relation
+        design, and coordinated integration tests — and actively discourage
+        bundle authoring."""
+        index = SkillsIndex()
+        index.discover()
+        names = {s.name for s in index.list_skills()}
+        assert "workspace" in names
+        body = index.load_skill("workspace").lower()
+        # Manifest schema anchors.
+        for anchor in (
+            "cantrip.workspace.yaml",
+            "workspace:",
+            "charms:",
+            "relations:",
+            "interface",
+            "shared_config",
+            "workspace_info",
+        ):
+            assert anchor in body, f"workspace skill missing schema anchor: {anchor!r}"
+        # Cross-charm design anchors.
+        for anchor in (
+            "provider",
+            "requirer",
+            "app databag",
+            "juju secret",
+            "charm-library",
+        ):
+            assert anchor in body, f"workspace skill missing design anchor: {anchor!r}"
+        # Coordination anchors: Jubilant integration + sequenced deploy.
+        for anchor in (
+            "jubilant",
+            "juju.integrate",
+            "juju_deploy",
+            "juju_relate",
+            "terraform",
+        ):
+            assert anchor in body, f"workspace skill missing coordination anchor: {anchor!r}"
+        # Explicit "do not write a new bundle" stance.
+        assert "do not write a new `bundle.yaml`" in body, (
+            "workspace skill must repeat the anti-bundle stance from the bundle skill"
+        )
+
     def test_bundle_skill_covers_read_modify_deploy_and_refuses_new(self) -> None:
         """The bundle skill must cover existing-bundle consumption *and*
         actively steer the agent away from authoring new bundles."""

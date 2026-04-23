@@ -5,6 +5,34 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Multi-charm workspace manifest + ``workspace`` skill +
+  ``workspace_info`` tool — Phase 33.3.**  Cantrip can now reason
+  about monorepos that hold more than one related charm.  A new
+  ``cantrip.workspace.yaml`` manifest declares the charms (name,
+  path, optional description), the cross-charm relations (``provider``
+  / ``requirer`` / ``interface``, with both endpoints validated
+  against the charm list at load time), and any shared config values
+  (log level, TLS mode, tenancy ids).  Parsing lives in a new
+  ``cantrip.workspace`` module with frozen dataclasses and a
+  round-trippable ``to_dict()``.  The ``workspace_info`` tool reads
+  the manifest and returns both a human-readable summary and a
+  structured payload; it walks upwards from the given directory (or
+  cwd) so launching inside any charm subdirectory still finds the
+  workspace root.  The ``workspace`` skill documents when to create a
+  manifest, the provider / requirer / interface split for cross-charm
+  relations (app databag vs unit databag vs Juju secret decision
+  tree, interface naming conventions, delegation to ``charm-library``
+  for the library itself), coordinated deploy (per-charm pack →
+  ``juju_deploy`` → ``juju_relate`` → ``juju_wait``), and
+  workspace-level Jubilant integration tests using
+  ``juju.integrate(provider_side, requirer_side)``.  The skill refuses
+  bundle authoring outright and points at ``terraform`` for reusable
+  orchestration and ``bundle`` for legacy consumption.  The system
+  prompt's "Default Integrations" section tells the agent to load the
+  ``workspace`` skill and call ``workspace_info`` whenever the user is
+  working across ≥2 charms.  Covered by 17 manifest-parsing tests, 5
+  tool tests, and a skill-anchor pin that protects the manifest
+  schema, cross-charm design guidance, and the anti-bundle stance.
 - **``bundle`` skill + ``bundle_deploy`` tool — Phase 33.1.**  New
   bundled skill for working with **existing** Juju bundles: reading a
   `bundle.yaml` the user hands you, applying overlays to modify it,

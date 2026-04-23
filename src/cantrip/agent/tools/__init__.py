@@ -153,6 +153,7 @@ def build_tools(
     from cantrip.agent.tools.virtual_files import VirtualFileReadTool, VirtualFileSearchTool
     from cantrip.agent.tools.web import WebFetchTool
     from cantrip.agent.tools.web_search import WebSearchTool
+    from cantrip.agent.tools.workspace import WorkspaceInfoTool
 
     tools: list[Tool] = [
         # File operations
@@ -274,6 +275,8 @@ def build_tools(
         ConfigUnderLoadTool(),
         # Command runner
         RunCommandTool(),
+        # Multi-charm workspace
+        WorkspaceInfoTool(),
     ]
 
     # Tools with dependencies.
