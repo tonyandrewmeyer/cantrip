@@ -80,6 +80,7 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 - `design/PROMPTS.md` — Prompt layering, Jinja2 conventions, template-injection guard
 - `design/WEB_UI_ACCESSIBILITY_AUDIT.md` — WCAG 2.1 AA audit of the Web UI with findings and evidence (see ROADMAP Phase 60)
 - `design/UPSTREAM_AUDIT.md` — Bookkeeping for the upstream-ecosystem sweep (cutoff commits per repo, re-run procedure; pairs with ROADMAP Phase 37)
+- `design/ACP_RESEARCH.md` — Phase 39 findings: Agent Client Protocol concepts, Cantrip integration shapes evaluated, verdict and revisit triggers
 - `ROADMAP.md` — Implementation phases (active/open work only)
 - `ROADMAP_ARCHIVE.md` — Completed phases, full detail, historical record
 - `CHANGELOG.md` — Notable changes (keep updated)

@@ -164,7 +164,7 @@ Cantrip's own agent (system prompts, subagent guidance, skills).
 
 ---
 
-## Phase 39: Agent Client Protocol (ACP) — Research
+## Phase 39: Agent Client Protocol (ACP) — Research ✓
 
 **Goal:** Investigate using the [Agent Client Protocol](https://agentclientprotocol.com/)
 as an alternative to driving an LLM directly. Instead of Cantrip calling a model
@@ -172,44 +172,101 @@ provider, it would drive an existing agent (e.g. Claude Code, or another
 ACP-compatible agent) as its backend. This could let Cantrip leverage agents that
 already have tool use, context management, and domain expertise built in.
 
-This is a **research phase** — no production code changes expected.
+This was a **research phase** — no production code changed.  Findings
+landed in [`design/ACP_RESEARCH.md`](design/ACP_RESEARCH.md); summary
+below.
 
-### 39.1 Protocol familiarisation
+### 39.1 Protocol familiarisation ✓
 
-- [ ] Read the ACP specification and document the core concepts: agent discovery,
-  task lifecycle, streaming, and capability negotiation
-- [ ] Identify which ACP features map to Cantrip's existing `LLMProvider`
-  interface and which are novel
-- [ ] Document the gap between ACP's task model and Cantrip's `AgentTask` /
-  `WorkQueue` model
+- [x] ACP spec read and documented: JSON-RPC 2.0 over stdio (local;
+  remote HTTP/WebSocket still WIP), client = editor and agent =
+  subprocess, baseline methods are `initialize`, `authenticate`,
+  `session/new`, `session/prompt`, `session/load`, `session/set_mode`,
+  `session/cancel`, with `session/update` and
+  `session/request_permission` as agent→client notifications.
+  Optional capability callbacks (`fs/*`, `terminal/*`) let the agent
+  reach back into the client's filesystem and shell.  MCP integrates
+  cleanly — the client can pass MCP servers to the agent during
+  `session/new`.  See `design/ACP_RESEARCH.md` §1.
+- [x] Feature mapping to `LLMProvider` done: ACP's session is roughly
+  one `Subagent.run()`, prompt turn roughly one `complete()` round
+  with tool execution, `stopReason` maps to `SubagentExitState`.
+  The gap table (ACP concept → Cantrip analogue) is in §2.3.
+- [x] Task-model gap documented: ACP plans are per-turn, Cantrip's
+  `WorkQueue` is global; ACP has no "ask the user mid-turn"
+  primitive; ACP's permission model (`session/request_permission`)
+  has no analogue in Cantrip tools, which just run.  §2.3.
 
-### 39.2 Candidate agents
+### 39.2 Candidate agents ✓
 
-- [ ] Survey which agents currently support ACP (Claude Code, other known
-  implementations)
-- [ ] For each candidate, document: supported ACP version, available tools/skills,
-  streaming support, authentication model
-- [ ] Assess whether driving Claude Code via ACP is feasible and what it would
-  gain over direct Anthropic API calls
+- [x] Agent survey landed (§3): Claude Code via
+  [`claude-agent-acp`](https://github.com/zed-industries/claude-agent-acp)
+  (Apache-licensed, TypeScript, wraps the Claude Agent SDK — not a
+  subprocess spawn of Claude Code), plus Gemini CLI, Codex CLI,
+  GitHub Copilot, Goose, Cline, OpenCode, OpenHands, Cursor,
+  Augment Code, and ~20 more.  ACP Agent Registry went live
+  January 2026 (JetBrains + Zed distribution).
+- [x] Per-candidate notes: Claude Code adapter is the most
+  interesting because its tool suite overlaps heavily with
+  Cantrip's *implement*/*debug* subagents and it's actively
+  maintained.  Goose is a natural cross-over with Phase 73.
+  Python SDK exists (`agent-client-protocol` on PyPI, async base
+  classes, Pydantic models) — Pydantic friction is flagged for
+  future implementation phases (§3.4).
+- [x] Claude Code feasibility assessed: viable via Option B
+  (subagent backend).  Gains over direct Anthropic API calls are
+  *tool access* (the agent's built-ins run alongside / instead of
+  ours), not model quality.  Cost model changes because billing
+  moves to the user's Anthropic account.
 
-### 39.3 Integration sketch
+### 39.3 Integration sketch ✓
 
-- [ ] Draft an `ACPProvider` design that implements `LLMProvider` (or a new
-  sibling interface) by delegating to an ACP-compatible agent
-- [ ] Identify architectural questions: how does Cantrip's tool execution interact
-  with the remote agent's own tools? How do we avoid double tool-calling?
-- [ ] Sketch how the autonomous work loop would change if subagents were
-  ACP-driven remote agents rather than isolated LLM contexts
+- [x] Three integration shapes drafted and evaluated (§4):
+  - **A. ACP-as-`LLMProvider`** — the original sketch; breaks on
+    the pivotal finding that ACP agents execute their own tools,
+    while `LLMProvider` expects to return tool calls for Cantrip
+    to execute.  Not recommended.
+  - **B. ACP-as-subagent-backend** — replace the Subagent loop for
+    specific task categories with an ACP session.  Most promising.
+    Buys access to the remote agent's tool suite end-to-end while
+    Cantrip's planner, queue, hooks, and race stay in charge.
+    Costs: real engineering (probably a Phase-47-sized effort),
+    tool duality (either lose Cantrip's charm tools on ACP tasks
+    or re-expose them as MCP servers), race-feature composition
+    problems, billing changes.
+  - **C. Cantrip-as-ACP-agent** — the inverse shape, exposing
+    Cantrip to Zed/JetBrains users via the Registry.  Credible
+    but a different project; flagged so it isn't confused with A
+    or B.
+- [x] Architectural questions catalogued (§4.4): tool bridging
+  via MCP, permission policy via Phase 46 hooks, worktree
+  isolation (leans on Phase 49 sandboxing), telemetry / event-bus
+  translation, cancellation flow.
+- [x] Autonomous-loop impact sketched: Option B routes specific
+  `AgentTask` categories through an `ACPSubagent` sibling class;
+  the rest of the work queue is unchanged.
 
-### 39.4 Decision and write-up
+### 39.4 Decision and write-up ✓
 
-- [ ] Write a findings document summarising feasibility, trade-offs, and
-  recommended next steps
-- [ ] If promising, outline a follow-on implementation phase with concrete tasks
+- [x] Findings document at `design/ACP_RESEARCH.md`.  Verdict:
+  **interesting, not urgent.**  Don't build speculatively; revisit
+  Option B when a concrete trigger appears — a user asks for it,
+  subagent evaluation scores indicate tool-heavier agents would
+  help, or the ACP remote transport stabilises.  Revisit Option C
+  when a non-trivial number of users want to drive Cantrip from
+  an editor.
+- [x] Cheap readiness steps recorded (§5.3): add the doc to
+  CLAUDE.md's reference list, tag `LLMProvider` with a comment
+  noting tool execution stays in Cantrip, monitor Python SDK 1.0.
+  None of those count as "starting implementation".
+- [x] No follow-on phase opened — the decision is "defer pending
+  trigger", not "proceed to implementation".
 
-**Exit criteria:** A written assessment of whether ACP is a viable and valuable
-integration path for Cantrip, with enough detail to decide whether to proceed
-to implementation.
+**Exit criteria met:** `design/ACP_RESEARCH.md` is the written
+assessment.  The document gives enough detail (protocol concepts,
+Cantrip mapping, three integration shapes with tradeoffs, concrete
+triggers) to decide that Phase 39 closes without opening a
+follow-on implementation phase.
 
 ---
 

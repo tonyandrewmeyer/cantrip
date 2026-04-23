@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Agent Client Protocol research findings — Phase 39.**
+  `design/ACP_RESEARCH.md` records the protocol concepts (JSON-RPC
+  over stdio, `session/prompt` turn flow, `tool_call` semantics,
+  MCP crossover), candidate agents (Claude Code via
+  `zed-industries/claude-agent-acp`, Gemini CLI, Codex CLI, Goose,
+  the ACP Agent Registry), and three integration shapes with
+  tradeoffs (ACP-as-`LLMProvider`, ACP-as-subagent-backend,
+  Cantrip-as-ACP-agent).  Pivotal finding: ACP agents execute their
+  own tools, so the original "ACPProvider implements `LLMProvider`"
+  sketch breaks — the interesting shape is instead replacing a
+  specific subagent's internal loop with an ACP session.  Verdict:
+  interesting, not urgent — defer until a concrete trigger appears
+  (user ask, subagent evaluation gap, or remote-transport
+  stabilisation).  CLAUDE.md gains a reference entry pointing at
+  the findings doc.  No code changes.
 - **Docs authoring loop documented and hosting decision recorded —
   Phase 54.4.**  The full-tree round-trip is clean
   (`make docs-check-strict` passes on all 20 pages).  `docs/docs/*.html`
