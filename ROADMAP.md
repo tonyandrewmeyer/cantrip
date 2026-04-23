@@ -1436,15 +1436,32 @@ that matters, then commit to it.
   `make docs` and the strict check against the current tree — both
   are no-ops.
 
-### 54.4 Low — Round-trip verification and retire the old HTML
+### 54.4 Low — Round-trip verification and retire the old HTML ✓
 
-- [ ] Run the full build; diff page-by-page against the original HTML;
-  document any intentional formatting differences
-- [ ] Once parity is confirmed, the generated `docs/docs/*.html` files
-  become build artifacts — they can either stay committed (for
-  GitHub Pages-style hosting) or move into CI-only
-- [ ] Update `CONTRIBUTING.md` with the new docs workflow: edit
-  markdown under `docs/src/`, run `make docs`, commit both
+- [x] Full-tree round-trip is clean: `make docs` is a byte-for-byte
+  no-op against the committed tree, and `make docs-check-strict`
+  passes on all 20 pages.  Intentional formatting differences
+  (`howto-hooks.html` footer normalisation, `&mdash;` in `<title>`
+  tags, curly-vs-ASCII apostrophe policy) were catalogued in
+  `design/DOCS_REBUILD.md` § *Intentional normalisations* during
+  54.2 and remain the only non-zero diff against the hand-authored
+  originals; everything else is the build's own output.
+- [x] Hosting decision: **keep the HTML committed.**  `README.md`
+  and `CLAUDE.md` cross-link into `docs/docs/*.html` via
+  repo-relative paths, and the GitHub-rendered view of those links
+  requires the HTML to exist at that path on `main`.  Moving to
+  CI-only would silently break every cross-link.  The markdown
+  under `docs/src/` is the source of truth; the HTML is a build
+  artifact committed for hosting convenience; `make docs-check-strict`
+  in CI prevents the two from drifting.  Recorded in
+  `design/DOCS_REBUILD.md` § *Hosting model* (replaces the old
+  *Open questions* block).
+- [x] `CONTRIBUTING.md` updated with a new *Editing the Docs Site*
+  section explaining the edit-markdown / `make docs` / commit-both
+  loop, and the stale "docs/ — Landing page" line in *Project
+  Structure* replaced with the real Diátaxis layout (`src/`
+  sources, `_build.py`, `_site.yaml`, `_templates/`, generated
+  `docs/`).
 
 ### What this phase is *not*
 

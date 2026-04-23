@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Docs authoring loop documented and hosting decision recorded —
+  Phase 54.4.**  The full-tree round-trip is clean
+  (`make docs-check-strict` passes on all 20 pages).  `docs/docs/*.html`
+  stays committed rather than moving to CI-only, because `README.md`
+  and `CLAUDE.md` cross-link into those paths via repo-relative
+  URLs that must resolve on GitHub; the markdown sources under
+  `docs/src/` are the true source and CI prevents drift.
+  `CONTRIBUTING.md` gains an *Editing the Docs Site* section with
+  the edit-markdown / `make docs` / commit-both workflow, and the
+  *Project Structure* tree now shows the real `docs/src/` layout.
+  `design/DOCS_REBUILD.md` replaces its *Open questions* block with
+  a resolved *Hosting model* section.  Phase 54 is now complete.
 - **`make docs` build target + CI gate — Phase 54.3.**  Wired
   `docs/src/_build.py` into the Makefile as `make docs` (rebuild),
   `make docs-check` (semantic-DOM diff), and `make docs-check-strict`

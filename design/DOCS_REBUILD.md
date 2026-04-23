@@ -234,16 +234,26 @@ follow:
   pass coalesces adjacent text events so the comparison isn't
   position-sensitive to entity placement.
 
-## Open questions
+## Hosting model
 
-- Whether to retire the committed `docs/docs/*.html` once round-trip
-  parity lands. Deferred to Phase 54.4.
-- Whether to port the CI diff into GitHub Actions or just a Makefile
-  check; deferred to Phase 54.3.
+`docs/docs/*.html` stays committed. The repo is the source of truth
+for the published site: `README.md` and `CLAUDE.md` link into pages
+via repo-relative paths like `docs/docs/howto-memory.html`, and the
+GitHub-rendered version of those links relies on the HTML being
+present at that path on `main`. Moving the HTML to CI-only would
+silently break every cross-link.
+
+The authored markdown under `docs/src/` is the true source — the
+HTML is a build artifact committed for hosting convenience. Drift
+is prevented by `make docs-check-strict` in CI, which rebuilds from
+markdown into a temp dir and fails if the output differs from the
+committed HTML byte-for-byte.
 
 ## Phase milestones mapped
 
 - **54.1** — this document + pilot round-trip on one page.
 - **54.2** — convert all 19 pages using the patterns above.
-- **54.3** — land `make docs`, wire into CI.
-- **54.4** — retire hand-authored HTML once diff is clean.
+- **54.3** — land `make docs`, wire into CI as the `Docs` job.
+- **54.4** — resolve the hosting question (keep committed),
+  document the authoring loop in `CONTRIBUTING.md`, confirm the
+  full-tree strict check is clean.

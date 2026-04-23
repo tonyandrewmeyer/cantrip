@@ -72,6 +72,35 @@ uv run ruff format src tests
 uv run ty check src
 ```
 
+### Editing the Docs Site
+
+User-facing docs live under `docs/` and are authored as markdown in
+`docs/src/*.md`. The build script `docs/src/_build.py` renders them
+to `docs/docs/*.html` via markdown-it-py + Jinja2; the HTML is
+committed so that `README.md` cross-links like
+`docs/docs/howto-memory.html` resolve on GitHub.
+
+```bash
+# Edit the markdown source, not the HTML.
+$EDITOR docs/src/howto-memory.md
+
+# Rebuild the HTML.
+make docs
+
+# Commit both files together.
+git add docs/src/howto-memory.md docs/docs/howto-memory.html
+```
+
+CI runs `make docs-check-strict` on every push and PR, which
+rebuilds into a temp dir and fails on any byte-level diff against
+the committed HTML. If the check fails locally, run `make docs`,
+inspect the diff, and commit the regenerated output.
+
+Authoring conventions (curly quotes, entity handling, raw-HTML
+escape hatches for callouts / prompt-styled code blocks / the
+landing-page doc-cards grid) are documented in
+[`design/DOCS_REBUILD.md`](design/DOCS_REBUILD.md).
+
 ### Running the Application
 
 ```bash
@@ -184,7 +213,12 @@ cantrip/
 │   ├── unit/                    # Unit tests
 │   └── integration/             # Integration tests (require Juju)
 ├── design/                      # Architecture docs (PLAN.md, AGENT.md, UI.md)
-└── docs/                        # Landing page
+└── docs/                        # User docs site — landing page + Diátaxis tree
+    ├── src/                     # Authored markdown sources (edit these)
+    │   ├── _build.py            # markdown-it-py + Jinja2 renderer
+    │   ├── _site.yaml           # Section nav / page ordering
+    │   └── _templates/          # Shared page.html.j2 chrome
+    └── docs/                    # Built HTML (run `make docs` to regenerate)
 ```
 
 ## Reporting Issues
