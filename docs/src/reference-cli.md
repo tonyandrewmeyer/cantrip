@@ -10,6 +10,7 @@ on_this_page:
   - { anchor: "compare", label: "cantrip compare" }
   - { anchor: "export-transcript", label: "export-transcript" }
   - { anchor: "hooks", label: "cantrip hooks" }
+  - { anchor: "skill", label: "cantrip skill" }
   - { anchor: "slash-commands", label: "Slash commands" }
   - { anchor: "env-vars", label: "Environment variables" }
   - { anchor: "session-file", label: "Session file" }
@@ -23,6 +24,7 @@ cantrip [run] [OPTIONS] [PATH]
 cantrip compare CHARM_A CHARM_B
 cantrip export-transcript PATH [OPTIONS]
 cantrip hooks test EVENT [--payload JSON] [--path DIR]
+cantrip skill export NAME PATH [--charm-path DIR] [--force]
 cantrip --version
 cantrip --help
 ```
@@ -281,6 +283,60 @@ cantrip hooks test EVENT [--payload JSON] [--path DIR]
     config at <code>~/.config/cantrip/hooks.yaml</code> is
     always loaded; repo hooks with a colliding
     <code>name</code> override user hooks.
+  </dd>
+</dl>
+
+{#skill}
+## cantrip skill
+
+Manage Cantrip skills. See [How to add a custom
+skill](howto-skills.html) for the standard SKILL.md format and
+the three directories Cantrip discovers skills from.
+
+{#skill-export}
+### cantrip skill export
+
+Writes a discovered skill to a file in the standard SKILL.md
+format — the same shape Claude Code, `gh skill`, Cursor, Codex,
+Gemini CLI, and Windsurf use. Works on the bundled skills and
+on user skills under `~/.claude/skills/` or
+`~/.config/cantrip/skills/`. The exported file drops straight
+back into any of those trees and Cantrip re-imports it without
+translation. Exits 0 on success, 2 on unknown-skill or
+existing-target errors.
+
+```
+cantrip skill export NAME PATH [--charm-path DIR] [--force]
+```
+
+<dl>
+  <dt><code>NAME</code> <span class="arg-req">required</span></dt>
+  <dd>
+    Name of the skill to export — as listed in
+    <code>index.list_skills()</code> or in the
+    <code>&lt;available_skills&gt;</code> system-prompt block.
+  </dd>
+  <dt><code>PATH</code> <span class="arg-req">required</span></dt>
+  <dd>
+    Output path. A <code>.md</code> path is honoured verbatim
+    (single-file layout); any other path is treated as a
+    directory and the file is written as
+    <code>&lt;path&gt;/&lt;name&gt;/SKILL.md</code> (directory
+    layout). Parent directories are created as needed.
+  </dd>
+  <dt><code>--charm-path DIR</code></dt>
+  <dd>
+    Path whose occurrences are replaced with the literal
+    <code>&lt;CHARM_PATH&gt;</code> placeholder in the exported
+    body. Defaults to no charm-path scrubbing. Secret scrubbing
+    (GitHub tokens, AWS keys, <code>Bearer …</code> values,
+    <code>password=…</code> pairs, Slack tokens) always runs.
+  </dd>
+  <dt><code>--force</code></dt>
+  <dd>
+    Overwrite the target file if it already exists. Without
+    this flag Cantrip refuses to clobber an existing file and
+    exits 2.
   </dd>
 </dl>
 

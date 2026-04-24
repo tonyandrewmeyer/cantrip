@@ -139,6 +139,10 @@ class SkillsIndex:
         """Return metadata for all discovered skills, sorted by name."""
         return sorted(self._skills.values(), key=lambda s: s.name)
 
+    def metadata_for(self, name: str) -> SkillMetadata | None:
+        """Return the metadata for *name*, or ``None`` if no such skill is indexed."""
+        return self._skills.get(name)
+
     def load_skill(self, name: str) -> str:
         """Load the full body content of a skill by name.
 

@@ -5,6 +5,39 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Skill export CLI — Phase 50.2.**  ``cantrip skill export <name>
+  <path>`` writes a discovered skill to a file in the same
+  vendor-neutral SKILL.md shape Phase 50.1 imports from, completing
+  the round-trip.  Works on bundled skills and on user-authored
+  skills under ``~/.claude/skills/`` or
+  ``~/.config/cantrip/skills/``.  ``path`` is honoured verbatim when
+  it ends in ``.md`` (single-file layout) and expanded to
+  ``<path>/<name>/SKILL.md`` otherwise (directory layout); parent
+  directories are created as needed and ``--force`` is required to
+  overwrite an existing target.  The exported body is scrubbed
+  through ``memory_export.sanitise_body`` so the same rules that
+  apply to ``/memory export`` also apply here: ``--charm-path DIR``
+  replaces occurrences of that path with the literal
+  ``<CHARM_PATH>`` placeholder, and high-confidence credential
+  shapes (GitHub tokens, AWS keys, Bearer headers, ``password=…``
+  pairs, Slack tokens) are replaced with ``[REDACTED]``.  The
+  command prints the redaction count so the operator can see at a
+  glance whether anything was scrubbed before sharing.  Frontmatter
+  round-trips ``name``, ``description``, and ``tools`` (omitted
+  when empty).  ``SkillsIndex`` grew a ``metadata_for(name)``
+  accessor returning the stored ``SkillMetadata`` (or ``None``) so
+  the exporter can re-emit frontmatter without re-parsing the
+  file.  12 new tests in ``test_skills.py`` cover the core
+  exporter (directory vs file target, force / refuse-to-overwrite,
+  unknown-name error listing known skills, charm-path
+  sanitisation, secret redaction + count, tools preservation,
+  tools omission when empty, and a full export → clear → re-import
+  round-trip through a fresh ``SkillsIndex``) plus CLI dispatch
+  (happy-path exit 0 + target-written, unknown-skill exit 2).
+  ``docs/src/howto-skills.md`` gains an "Exporting a skill" section
+  and ``docs/src/reference-cli.md`` documents
+  ``cantrip skill export`` alongside the existing subcommands.
+
 - **User-authored skill directories — Phase 50.1.**  ``SkillsIndex``
   now discovers vendor-neutral skills in ``~/.claude/skills/`` and
   ``~/.config/cantrip/skills/`` alongside the bundled set.  The

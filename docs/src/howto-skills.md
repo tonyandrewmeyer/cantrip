@@ -12,6 +12,8 @@ see_also:
     href: "reference-tools.html"
   - label: "Use durable memory"
     href: "howto-memory.html"
+  - label: "cantrip skill export"
+    href: "reference-cli.html#skill-export"
 ---
 
 {#overview}
@@ -117,6 +119,50 @@ Restart Cantrip. The new skill appears in
 `index.format_for_prompt()` and the agent can
 `load_skill("team-conventions")` the next time it's
 relevant.
+
+{#exporting}
+## Exporting a skill
+
+`cantrip skill export NAME PATH` writes any discovered skill to a
+standalone SKILL.md file in the same vendor-neutral format Cantrip
+imports from. It works on the bundled skills as well as your own —
+so you can start from a bundled skill, tweak it locally under
+`~/.config/cantrip/skills/`, and then export the modified copy to
+share with a teammate.
+
+```bash
+# Export to a skills tree (creates <dir>/<name>/SKILL.md)
+cantrip skill export scenario-tests ~/my-skills-bundle
+
+# Export to an explicit .md file (single-file layout)
+cantrip skill export scenario-tests ~/scratch/scenario-tests.md
+
+# Overwrite an existing file
+cantrip skill export scenario-tests ~/scratch/scenario-tests.md --force
+
+# Scrub occurrences of your current charm path to <CHARM_PATH>
+cantrip skill export my-skill ~/share --charm-path ~/work/my-charm
+```
+
+Export is symmetric with import — dropping the resulting file into
+`~/.claude/skills/` or `~/.config/cantrip/skills/` and restarting
+Cantrip picks it up again.
+
+### Sanitisation
+
+The body is passed through the same scrubber used by `/memory
+export`:
+
+- Occurrences of the path given to `--charm-path` are replaced with
+  the literal string `<CHARM_PATH>`.
+- High-confidence credential shapes — GitHub tokens
+  (`ghp_…`, `gho_…`, `ghs_…`, `github_pat_…`), AWS access keys
+  (`AKIA…`), HTTP `Bearer` tokens, `password: value` / `password=value`
+  pairs, Slack tokens (`xox?-…`) — are replaced with `[REDACTED]`.
+
+The command prints the number of secret-pattern matches replaced so
+you can see at a glance whether anything was scrubbed before you
+share the file.
 
 {#troubleshooting}
 ## Troubleshooting

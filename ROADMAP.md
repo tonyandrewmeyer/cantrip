@@ -1145,14 +1145,48 @@ COS integration specifically).
   bundled one".  Linked from ``_site.yaml`` and given a card on the
   docs index.
 
-### 50.2 Medium — Export Cantrip skills to the standard format
+### 50.2 Medium — Export Cantrip skills to the standard format ✓
 
-- [ ] `cantrip skill export <name> <path>` emits a standard-format skill file
-  for the named Cantrip skill
-- [ ] Sanitise any charm-specific paths and placeholders (matching the
-  Phase 43.4 export rules)
-- [ ] Round-trip test: export, clear, re-import, verify content and metadata
-  are preserved
+- [x] `cantrip skill export <name> <path>` emits a standard-format
+  skill file for the named Cantrip skill.  Works on bundled skills
+  and on user-authored skills under ``~/.claude/skills/`` or
+  ``~/.config/cantrip/skills/``.  ``path`` is honoured verbatim when
+  it ends in ``.md`` (single-file layout) and expanded to
+  ``<path>/<name>/SKILL.md`` otherwise (directory layout); parent
+  directories are created as needed and ``--force`` is required to
+  overwrite an existing target.  Frontmatter re-emits ``name``,
+  ``description``, and ``tools`` (omitted when empty).
+  ``SkillsIndex`` grew a ``metadata_for(name)`` accessor so the
+  exporter can read the stored ``SkillMetadata`` without
+  re-parsing the file.
+- [x] Sanitisation reuses ``cantrip.agent.memory_export.sanitise_body``
+  so the Phase 43.4 export rules apply verbatim: ``--charm-path DIR``
+  replaces occurrences of that path with the literal
+  ``<CHARM_PATH>`` placeholder, and the same high-confidence
+  credential patterns (GitHub tokens, AWS keys, HTTP ``Bearer``,
+  ``password=…`` / ``password: …``, Slack tokens) become
+  ``[REDACTED]``.  The CLI prints the redaction count so the
+  operator can see at a glance whether anything was scrubbed
+  before sharing.
+- [x] Round-trip test added in ``test_skills.py`` — builds a fixture
+  skill with frontmatter + body (including a ``tools:`` list),
+  exports it, deletes the source tree, re-discovers via a fresh
+  ``SkillsIndex`` rooted at the export target, and asserts
+  ``name`` / ``description`` / ``tools`` / body content are
+  preserved.  12 new tests in total cover the core exporter
+  (directory vs file target, force vs refuse-to-overwrite,
+  unknown-name error listing known skills, charm-path
+  sanitisation, secret redaction + count, tools preservation,
+  tools omission when empty, the round-trip itself) and CLI
+  dispatch (happy-path exit 0 + target-written, unknown-skill
+  exit 2).
+- [x] ``docs/src/howto-skills.md`` gains an "Exporting a skill"
+  section describing the command, the two layouts the path flag
+  selects between, and the sanitisation rules; a ``see_also``
+  link into the CLI reference lands alongside.
+  ``docs/src/reference-cli.md`` documents
+  ``cantrip skill export`` in full — positional args, both flags,
+  and exit codes — and the synopsis gains the new subcommand line.
 
 ### 50.3 Low — `gh skill` discovery
 

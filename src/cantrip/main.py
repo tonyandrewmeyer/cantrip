@@ -215,11 +215,49 @@ def parse_args() -> argparse.Namespace:
         help="Repo root for cantrip.hooks.yaml discovery (default: CWD)",
     )
 
+    # ── skill (Phase 50.2) ────────────────────────────────────────────
+    skill_parser = subparsers.add_parser(
+        "skill",
+        help="Manage Cantrip skills (export them in the standard SKILL.md format)",
+    )
+    skill_sub = skill_parser.add_subparsers(dest="skill_command", required=True)
+    skill_export = skill_sub.add_parser(
+        "export",
+        help="Write a discovered skill to a file in standard SKILL.md format",
+    )
+    skill_export.add_argument(
+        "name",
+        help="Name of the skill to export (as shown in `index.list_skills()`)",
+    )
+    skill_export.add_argument(
+        "path",
+        type=Path,
+        help=(
+            "Output path. A '.md' path is written verbatim; any other path is "
+            "treated as a directory and the file is written as <path>/<name>/SKILL.md."
+        ),
+    )
+    skill_export.add_argument(
+        "--charm-path",
+        type=Path,
+        default=None,
+        dest="charm_path",
+        help=(
+            "Path whose occurrences are scrubbed to <CHARM_PATH> in the exported body "
+            "(default: no charm-path scrubbing; secret scrubbing still runs)"
+        ),
+    )
+    skill_export.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the target file if it already exists",
+    )
+
     # When the first positional argument is not a known subcommand, treat
     # the entire argv as arguments to the "run" sub-parser.  This lets
     # ``cantrip /path/to/charm`` and ``cantrip --no-tui`` work without
     # requiring an explicit ``run`` subcommand.
-    _subcommands = {"run", "export-transcript", "compare", "hooks"}
+    _subcommands = {"run", "export-transcript", "compare", "hooks", "skill"}
     argv = sys.argv[1:]
     if (
         not argv
@@ -529,6 +567,38 @@ def _hooks_test(args: argparse.Namespace) -> int:
     return 0
 
 
+def _skill_export(args: argparse.Namespace) -> int:
+    """Export a discovered skill to a SKILL.md file (Phase 50.2).
+
+    Uses the default :class:`SkillsIndex` — bundled + external dirs — so a
+    user can round-trip their own ``~/.config/cantrip/skills/<foo>/SKILL.md``
+    skill through the export step to, say, paste a sanitised copy into a
+    gist or PR.
+    """
+    from cantrip.agent import skill_export
+    from cantrip.agent.skills import SkillsIndex
+
+    index = SkillsIndex()
+    index.discover()
+
+    try:
+        result = skill_export.export_skill(
+            args.name,
+            args.path,
+            index=index,
+            charm_path=args.charm_path,
+            force=args.force,
+        )
+    except skill_export.SkillExportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"Exported {result.name!r} to {result.output_path}")
+    if result.redactions:
+        print(f"Redacted {result.redactions} secret-pattern match(es).")
+    return 0
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
@@ -541,6 +611,11 @@ def main() -> int:
         if args.hooks_command == "test":
             return _hooks_test(args)
         print(f"Unknown hooks subcommand: {args.hooks_command}", file=sys.stderr)
+        return 2
+    if args.command == "skill":
+        if args.skill_command == "export":
+            return _skill_export(args)
+        print(f"Unknown skill subcommand: {args.skill_command}", file=sys.stderr)
         return 2
     return _run(args)
 

@@ -52,6 +52,7 @@
       <li><a href="reference-cli.html#slash-commands">Slash commands reference</a></li>
       <li><a href="reference-tools.html">Agent tools reference</a></li>
       <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="reference-cli.html#skill-export">cantrip skill export</a></li>
     </ul>
   </aside>
 
@@ -152,6 +153,41 @@ EOF
 <code>index.format_for_prompt()</code> and the agent can
 <code>load_skill(&quot;team-conventions&quot;)</code> the next time it's
 relevant.</p>
+<h2 id="exporting">Exporting a skill</h2>
+<p><code>cantrip skill export NAME PATH</code> writes any discovered skill to a
+standalone SKILL.md file in the same vendor-neutral format Cantrip
+imports from. It works on the bundled skills as well as your own &mdash;
+so you can start from a bundled skill, tweak it locally under
+<code>~/.config/cantrip/skills/</code>, and then export the modified copy to
+share with a teammate.</p>
+<pre><code class="language-bash"># Export to a skills tree (creates &lt;dir&gt;/&lt;name&gt;/SKILL.md)
+cantrip skill export scenario-tests ~/my-skills-bundle
+
+# Export to an explicit .md file (single-file layout)
+cantrip skill export scenario-tests ~/scratch/scenario-tests.md
+
+# Overwrite an existing file
+cantrip skill export scenario-tests ~/scratch/scenario-tests.md --force
+
+# Scrub occurrences of your current charm path to &lt;CHARM_PATH&gt;
+cantrip skill export my-skill ~/share --charm-path ~/work/my-charm
+</code></pre>
+<p>Export is symmetric with import &mdash; dropping the resulting file into
+<code>~/.claude/skills/</code> or <code>~/.config/cantrip/skills/</code> and restarting
+Cantrip picks it up again.</p>
+<h3>Sanitisation</h3>
+<p>The body is passed through the same scrubber used by <code>/memory export</code>:</p>
+<ul>
+<li>Occurrences of the path given to <code>--charm-path</code> are replaced with
+the literal string <code>&lt;CHARM_PATH&gt;</code>.</li>
+<li>High-confidence credential shapes &mdash; GitHub tokens
+(<code>ghp_&hellip;</code>, <code>gho_&hellip;</code>, <code>ghs_&hellip;</code>, <code>github_pat_&hellip;</code>), AWS access keys
+(<code>AKIA&hellip;</code>), HTTP <code>Bearer</code> tokens, <code>password: value</code> / <code>password=value</code>
+pairs, Slack tokens (<code>xox?-&hellip;</code>) &mdash; are replaced with <code>[REDACTED]</code>.</li>
+</ul>
+<p>The command prints the number of secret-pattern matches replaced so
+you can see at a glance whether anything was scrubbed before you
+share the file.</p>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <h3>&quot;My skill isn't being picked up&quot;</h3>
 <p>Cantrip logs skipped skills at warning level. Start Cantrip

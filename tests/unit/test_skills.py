@@ -573,3 +573,323 @@ class TestLoadSkillTool:
         assert tool.name == "load_skill"
         assert "skill" in tool.description.lower()
         assert "skill_name" in tool.parameters["properties"]
+
+
+class TestExportSkill:
+    """Phase 50.2: export a discovered skill as a standard SKILL.md file."""
+
+    def test_export_to_directory_writes_under_name_subdir(self, tmp_path: Path) -> None:
+        """A directory target expands to ``<dir>/<name>/SKILL.md``."""
+        from cantrip.agent.skill_export import export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: The alpha skill\n---\n\n# Alpha\n\nBody content.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        target_dir = tmp_path / "out"
+        result = export_skill("alpha", target_dir, index=index)
+
+        assert result.output_path == target_dir / "alpha" / "SKILL.md"
+        assert result.output_path.is_file()
+        written = result.output_path.read_text()
+        assert written.startswith("---\n")
+        assert "name: alpha" in written
+        assert "description: The alpha skill" in written
+        assert "Body content." in written
+
+    def test_export_to_explicit_md_path_is_verbatim(self, tmp_path: Path) -> None:
+        """An explicit ``.md`` path is written exactly where the caller asked."""
+        from cantrip.agent.skill_export import export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: desc\n---\nBody.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        target = tmp_path / "my-export.md"
+        result = export_skill("alpha", target, index=index)
+
+        assert result.output_path == target
+        assert target.is_file()
+
+    def test_refuses_to_overwrite_without_force(self, tmp_path: Path) -> None:
+        """Refuses to clobber an existing target; pointing at --force flag in the message."""
+        from cantrip.agent.skill_export import SkillExportError, export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: desc\n---\nBody.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        target = tmp_path / "existing.md"
+        target.write_text("pre-existing\n")
+
+        with pytest.raises(SkillExportError) as exc_info:
+            export_skill("alpha", target, index=index)
+        assert "--force" in str(exc_info.value)
+        # File left untouched.
+        assert target.read_text() == "pre-existing\n"
+
+    def test_force_overwrites_existing_target(self, tmp_path: Path) -> None:
+        from cantrip.agent.skill_export import export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: desc\n---\nBody.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        target = tmp_path / "existing.md"
+        target.write_text("pre-existing\n")
+
+        export_skill("alpha", target, index=index, force=True)
+        assert "pre-existing" not in target.read_text()
+        assert "Body." in target.read_text()
+
+    def test_unknown_skill_raises_with_known_names(self, tmp_path: Path) -> None:
+        from cantrip.agent.skill_export import SkillExportError, export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: desc\n---\nBody.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        with pytest.raises(SkillExportError) as exc_info:
+            export_skill("nonexistent", tmp_path / "out", index=index)
+        message = str(exc_info.value)
+        assert "nonexistent" in message
+        assert "alpha" in message
+
+    def test_charm_path_scrubbed_to_placeholder(self, tmp_path: Path) -> None:
+        """The current charm path becomes ``<CHARM_PATH>`` in the exported body."""
+        from cantrip.agent.memory_export import CHARM_PATH_PLACEHOLDER
+        from cantrip.agent.skill_export import export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        charm = tmp_path / "my-charm"
+        charm.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            f"---\nname: alpha\ndescription: desc\n---\n"
+            f"Run the tests from {charm} before deploying.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        target = tmp_path / "out.md"
+        result = export_skill("alpha", target, index=index, charm_path=charm)
+
+        written = target.read_text()
+        assert str(charm) not in written
+        assert CHARM_PATH_PLACEHOLDER in written
+        assert result.redactions == 0  # Path replacement is not a "secret redaction".
+
+    def test_secrets_redacted_and_counted(self, tmp_path: Path) -> None:
+        from cantrip.agent.skill_export import export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: desc\n---\n"
+            "Use the token ghp_abcdef0123456789abcdef0123456789 to sync.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        target = tmp_path / "out.md"
+        result = export_skill("alpha", target, index=index)
+
+        written = target.read_text()
+        assert "ghp_abcdef" not in written
+        assert "[REDACTED]" in written
+        assert result.redactions >= 1
+
+    def test_tools_preserved_on_export(self, tmp_path: Path) -> None:
+        """Frontmatter ``tools`` round-trips verbatim on export."""
+        from cantrip.agent.skill_export import export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha.md").write_text(
+            "---\nname: alpha\ndescription: desc\n"
+            "tools:\n  - juju_status\n  - juju_deploy\n---\n\nBody.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        target = tmp_path / "out.md"
+        export_skill("alpha", target, index=index)
+
+        reload_index = SkillsIndex(tmp_path / "reload")
+        # Import the exported file back via a fresh index.
+        reload_dir = tmp_path / "reload"
+        reload_dir.mkdir()
+        (reload_dir / "alpha.md").write_text(target.read_text())
+        reload_index = SkillsIndex(reload_dir)
+        reload_index.discover()
+
+        [metadata] = reload_index.list_skills()
+        assert metadata.tools == ["juju_status", "juju_deploy"]
+
+    def test_tools_omitted_when_source_has_none(self, tmp_path: Path) -> None:
+        """A skill without ``tools`` exports clean frontmatter (no empty list)."""
+        from cantrip.agent.skill_export import export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: desc\n---\nBody.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        target = tmp_path / "out.md"
+        export_skill("alpha", target, index=index)
+
+        assert "tools:" not in target.read_text()
+
+    def test_round_trip_preserves_name_description_body_tools(self, tmp_path: Path) -> None:
+        """Export → clear → re-import via a fresh SkillsIndex preserves all fields."""
+        from cantrip.agent.skill_export import export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "my-skill").mkdir()
+        original_body = (
+            "# My skill\n\n"
+            "Step 1: do a thing.\n"
+            "Step 2: do another thing.\n"
+            "\n"
+            "See also the [twelve-factor skill](twelve-factor)."
+        )
+        (source / "my-skill" / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: A test skill for round-trip\n"
+            "tools:\n  - juju_status\n---\n\n" + original_body + "\n"
+        )
+        source_index = SkillsIndex(source)
+        source_index.discover()
+
+        # Export into an empty tree.
+        export_root = tmp_path / "exported"
+        export_root.mkdir()
+        export_skill("my-skill", export_root, index=source_index)
+
+        # Clear the original source; re-discover must come entirely from
+        # the exported copy, proving the export carries everything needed.
+        import shutil
+
+        shutil.rmtree(source)
+
+        reload_index = SkillsIndex(export_root)
+        reload_index.discover()
+        [metadata] = reload_index.list_skills()
+
+        assert metadata.name == "my-skill"
+        assert metadata.description == "A test skill for round-trip"
+        assert metadata.tools == ["juju_status"]
+        reloaded_body = reload_index.load_skill("my-skill")
+        assert "Step 1: do a thing." in reloaded_body
+        assert "Step 2: do another thing." in reloaded_body
+        assert "twelve-factor" in reloaded_body
+
+
+class TestSkillExportCLI:
+    """Phase 50.2: the ``cantrip skill export`` CLI subcommand dispatcher."""
+
+    @staticmethod
+    def _isolated_index_factory(source: Path) -> type:
+        """Return a ``SkillsIndex`` subclass that always reads from *source*.
+
+        ``_skill_export`` constructs the index with no arguments so it picks
+        up the user's real ``~/.claude/skills/``.  Tests swap this subclass
+        into the module for deterministic discovery on the CI box.
+        """
+        from cantrip.agent.skills import SkillsIndex as _SkillsIndexCls
+
+        class _IsolatedIndex(_SkillsIndexCls):
+            def __init__(self, *a: object, **kw: object) -> None:  # noqa: D401
+                super().__init__(source)
+
+        return _IsolatedIndex
+
+    def test_happy_path(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Exports a skill, writes the file, and prints the destination."""
+        import argparse
+
+        from cantrip.agent import skills as skills_module
+        from cantrip.main import _skill_export
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: desc\n---\nBody.\n"
+        )
+        monkeypatch.setattr(skills_module, "SkillsIndex", self._isolated_index_factory(source))
+
+        target = tmp_path / "out.md"
+        args = argparse.Namespace(name="alpha", path=target, charm_path=None, force=False)
+        rc = _skill_export(args)
+
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "alpha" in out
+        assert str(target) in out
+        assert target.is_file()
+
+    def test_unknown_skill_exits_nonzero(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An unknown skill name exits with code 2 and an informative message."""
+        import argparse
+
+        from cantrip.agent import skills as skills_module
+        from cantrip.main import _skill_export
+
+        empty_source = tmp_path / "empty"
+        empty_source.mkdir()
+        monkeypatch.setattr(
+            skills_module, "SkillsIndex", self._isolated_index_factory(empty_source)
+        )
+
+        args = argparse.Namespace(
+            name="nonexistent",
+            path=tmp_path / "out.md",
+            charm_path=None,
+            force=False,
+        )
+        rc = _skill_export(args)
+
+        assert rc == 2
+        assert "nonexistent" in capsys.readouterr().err
