@@ -49,9 +49,11 @@ check: lint unit rust-test
 # Run everything (format + check)
 all: format check
 
-# Run unit tests with coverage report (parallel + HTML output)
+# Run unit tests with coverage report (parallel + HTML + annotated source).
+# The annotated report under ``cov_annotate/`` prefixes uncovered lines
+# with ``!`` so subagents can grep for gaps without parsing the HTML.
 coverage:
-	uv run pytest tests/unit -n auto --cov=cantrip --cov-report=term-missing --cov-report=html
+	uv run pytest tests/unit -n auto --cov=cantrip --cov-report=term-missing --cov-report=html --cov-report=annotate:cov_annotate
 
 # Run cargo test for each Rust crate
 rust-test:

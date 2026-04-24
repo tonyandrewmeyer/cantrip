@@ -101,6 +101,22 @@ escape hatches for callouts / prompt-styled code blocks / the
 landing-page doc-cards grid) are documented in
 [`design/DOCS_REBUILD.md`](design/DOCS_REBUILD.md).
 
+### Cookbook recipes
+
+Runnable charm-building recipes live under
+[`cookbook/`](cookbook/README.md). Each recipe is a self-contained
+directory with a walkthrough `README.md`, copy-paste `prompts.md`,
+and a `verify.py` that asserts the resulting charm matches the
+shape the recipe teaches. The verifiers double as regression
+tests — `tests/unit/test_cookbook_recipes.py` runs each verifier
+in CI against hand-written fixtures, so a recipe can't be merged
+with a broken format or drift from its promised output.
+
+Live Cantrip runs (LLM + charmcraft + juju) are deliberately
+**not** part of CI. To add a new recipe, copy
+`cookbook/build-a-sprint-charm/` as a template and update the
+verifier to match your recipe's guarantees.
+
 ### Running the Application
 
 ```bash

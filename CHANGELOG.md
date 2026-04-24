@@ -127,6 +127,45 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Runnable cookbook, first recipe shipped — Phase 55.6.**
+  New ``cookbook/`` top-level directory with its own ``README.md``
+  (index, recipe format, candidate list).  Each recipe is a
+  self-contained directory with a walkthrough ``README.md``, a
+  copy-paste ``prompts.md``, and a CLI-and-library ``verify.py``
+  that asserts the result matches the shape the recipe teaches.
+  Inspired by awesome-copilot's recipe cookbook, adapted for
+  Cantrip's charm-focused surface.
+
+  First recipe shipped: ``cookbook/build-a-sprint-charm/``.
+  Sprint mode is deterministic, has a published shape contract
+  in ``_SPRINT_GUIDANCE``, and can be verified without a live
+  Juju model — the right scope for the first recipe.  Deviation:
+  the roadmap suggested ``build-a-stateful-charm/`` as the first
+  candidate; that recipe would have needed a Scenario test suite
+  + COS wiring + a full Juju model, so we picked the simpler
+  sprint variant and filed ``build-a-stateful-charm`` (plus four
+  other recipes) as proposed follow-ups in ``cookbook/README.md``.
+
+  CI coverage via ``tests/unit/test_cookbook_recipes.py`` (16
+  tests).  **Structure drift** (every recipe must carry README +
+  prompts + verify.py, verify.py must be valid Python) via a
+  parametrised sweep over ``cookbook/*/``.  **Output drift**
+  (verifier's happy path + every failure mode) exercised against
+  handwritten in-process fixtures.  Live Cantrip runs stay out of
+  CI — the cookbook is documentation plus a shape contract, not
+  an end-to-end integration harness.
+
+  ``CONTRIBUTING.md`` gained a *Cookbook recipes* section
+  pointing at ``cookbook/README.md`` and explaining how the
+  verifiers double as regression tests.
+
+  Micro-improvement out of the 55.6 review: ``make coverage`` now
+  emits ``cov_annotate/`` with annotated source files where
+  uncovered lines are prefixed ``!``.  Subagents can grep for
+  coverage gaps without parsing the HTML report.  One-line
+  Makefile change + ``.gitignore`` update; ``htmlcov/`` /
+  ``term-missing`` behaviour unchanged.
+
 - **Ralph-loop comparison + per-goal budget sketch — Phase 55.3.**
   Read ``awesome-copilot``'s 79-line ``ralph_loop.py`` and diffed
   the pattern against Cantrip's two-loop architecture.  The

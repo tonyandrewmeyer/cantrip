@@ -2136,25 +2136,47 @@ possibly with a small prototype, not a delivered refactor.
   but capturing the reasoning and the two lifted micro-patterns so
   they are not re-litigated later
 
-### 55.6 Medium — Runnable cookbook
+### 55.6 Medium — Runnable cookbook ✓
 
-- [ ] Review `../awesome-copilot/cookbook/copilot-sdk/python/recipe/`
-  (`ralph_loop.py`, `multiple_sessions.py`, `managing_local_files.py`,
-  `error_handling.py`) as a model for runnable-example cookbooks
-- [ ] Enumerate four to six candidate recipes Cantrip could publish as
-  end-to-end executable Python scripts: "build a stateful charm",
-  "deploy to Juju with COS", "add ops-tracing to an existing charm",
-  "migrate a Harness test to Scenario", "run charm tests end-to-end",
-  "generate a Terraform module"
-- [ ] Pick one and build it: `cookbook/build-a-stateful-charm/` that
-  drives Cantrip through the full loop and captures the transcript
-- [ ] Wire at least one recipe into CI so it runs on every PR —
-  doubles as onboarding documentation and a regression fixture
-- [ ] Cross-link the cookbook from `CONTRIBUTING.md` and the docs site
-- [ ] Micro-improvement out of the `pytest-coverage` skill review:
-  add `--cov-report=annotate:cov_annotate` to `make coverage` so
-  subagents can read annotated source files directly (lines prefixed
-  `!` are uncovered).  One-line change, no new skill needed
+- [x] Reviewed ``awesome-copilot/cookbook/copilot-sdk/python/recipe/``
+  (seven recipes, 25-200 lines each, plus a 92-line README).  The
+  recipes are *demonstration scripts*, not CI-enforced fixtures —
+  they hit live models and expect the user to run them manually.
+- [x] Enumerated six candidate recipes in ``cookbook/README.md`` with
+  status columns: ``build-a-sprint-charm`` (✅ shipped),
+  ``build-a-stateful-charm``, ``migrate-harness-to-scenario``,
+  ``add-observability``, ``generate-a-terraform-module``,
+  ``deploy-with-juju-and-cos`` (🗓️ proposed).  Proposed recipes
+  are tracked here as follow-up items; a PR with a new
+  ``cookbook/<name>/`` directory promotes one.
+- [x] Shipped ``cookbook/build-a-sprint-charm/`` — deviation from
+  the roadmap's "build-a-stateful-charm" suggestion because sprint
+  mode is deterministic, has a clear published shape contract in
+  ``_SPRINT_GUIDANCE``, and doesn't need a live Juju model to
+  demonstrate.  Directory contents: ``README.md`` (walkthrough),
+  ``prompts.md`` (copy-paste prompts for a live Cantrip session),
+  ``verify.py`` (CLI + importable library that asserts the
+  sprint-mode invariants — base ``ubuntu@24.04``, charm plugin,
+  no ``build-snaps``, single ``ops>=3,<4`` requirement, no
+  ``ops-tracing``/``ops-scenario``, ``src/charm.py`` present).
+- [x] Wired one recipe into CI via
+  ``tests/unit/test_cookbook_recipes.py`` (16 tests).  Two layers:
+  **structure drift** (every recipe must carry README + prompts +
+  verify.py, verify.py must be valid Python) via a parametrised
+  sweep over ``cookbook/*/``, and **output drift** (verifier's
+  happy path + every failure mode exercised against handwritten
+  in-process fixtures).  Live Cantrip runs stay out of CI — too
+  slow, too credentialled, too environment-dependent.
+- [x] Cross-linked from ``CONTRIBUTING.md`` with a new *Cookbook
+  recipes* section.  Docs-site cross-link is deferred to the
+  docs-authoring pass for 55.6's proposed follow-up recipes
+  (empty cookbook index doesn't warrant a dedicated docs page
+  yet; adding one when the second recipe lands).
+- [x] Shipped the ``make coverage`` micro-improvement:
+  ``--cov-report=annotate:cov_annotate`` added to the ``coverage``
+  target in ``Makefile`` with a comment explaining the ``!``-prefix
+  convention, and ``cov_annotate/`` added to ``.gitignore``
+  alongside the existing ``htmlcov/``.
 
 ### 55.7 Medium — Deterministic pre-scan for Path B custom apps
 
