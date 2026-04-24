@@ -5,6 +5,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Policy stack wired into the subagent dispatcher (Phase 80.2).**
+  ``Subagent.__init__`` now composes a ``PolicyEnforcer`` per run
+  (org-wide + per-category + discovered YAML policies) and filters
+  the LLM-visible tool list through it.  ``_tool_or_veto`` gains a
+  call-time ``check_tool`` gate that fires **before** the
+  PRE_TOOL_CALL hook: a policy ``DENY`` short-circuits to a
+  synthetic ``ToolResult(success=False, error=<reason>)`` naming the
+  composed stack, so a tool that became blocked mid-run (rate
+  limit, per-charm overlay, hallucinated name) cannot reach the
+  subprocess or juju code paths.  ``REVIEW`` degrades to ``DENY``
+  with a log line until Phase 68.2's declarative approval prompts
+  land.  POST_TOOL_CALL payloads gain ``policy_denied_by`` so Phase
+  80.4's JSONL audit can trace each decision to the policy layer
+  that caused it.  MCP tools (prefix ``mcp__``) bypass the stack
+  entirely, preserving the per-server ``allowed_tools`` gate from
+  Phase 45.2.  The old ``_filter_tools`` name survives as a thin
+  shim over the new path for the small number of callers that
+  don't construct a full ``SubagentContext``.
+
 - **Stacked tool-access policy primitives (Phase 80.1).**  New
   ``src/cantrip/agent/policy.py`` ships a frozen
   ``GovernancePolicy`` dataclass (allow / block / require-review /

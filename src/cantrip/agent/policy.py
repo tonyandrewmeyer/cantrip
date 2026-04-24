@@ -358,3 +358,97 @@ BUILTIN_POLICIES: dict[str, GovernancePolicy] = {
     ORG_WIDE_POLICY.name: ORG_WIDE_POLICY,
     SPRINT_POLICY.name: SPRINT_POLICY,
 }
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher-facing enforcer (Phase 80.2)
+# ---------------------------------------------------------------------------
+
+
+#: Prefix identifying MCP-provided tools, which bypass the policy
+#: stack — Phase 45.2's per-server ``allowed_tools`` YAML is the gate
+#: for those.  Operators who want category-scoped MCP access remove
+#: unwanted servers from ``mcp.yaml`` rather than listing each MCP
+#: tool in a policy file (the names are dynamic and provider-defined).
+MCP_TOOL_PREFIX = "mcp__"
+
+
+@dataclasses.dataclass(frozen=True)
+class PolicyEnforcer:
+    """Composed-once-per-subagent-run gate for tool access.
+
+    Phase 80.2 wires this in place of ``subagent._filter_tools``.  The
+    dispatcher builds one per subagent run from the org-wide floor,
+    the per-category allow-list (derived from
+    ``subagent._CATEGORY_TOOLS``), and any per-charm /
+    ``~/.config/cantrip/policies/`` files, then both:
+
+    * filters the list of tools the LLM sees (so the LLM never tries
+      a tool that would be refused at call time), and
+    * checks each tool invocation as it happens so a tool that became
+      blocked partway through the run (e.g. rate-limited by 80.3)
+      produces a synthetic error ``ToolResult`` rather than actually
+      firing.
+
+    MCP-provided tools (prefix ``mcp__``) bypass the policy stack
+    entirely — they're gated by the per-server ``allowed_tools`` YAML
+    from Phase 45.2.
+    """
+
+    policy: GovernancePolicy
+
+    @classmethod
+    def compose(cls, *policies: GovernancePolicy) -> PolicyEnforcer:
+        """Build an enforcer by composing a stack of policies."""
+        return cls(policy=compose_policies(*policies))
+
+    def check_tool(self, tool_name: str) -> PolicyAction:
+        """Policy verdict for *tool_name*; MCP tools always ``ALLOW``."""
+        if tool_name.startswith(MCP_TOOL_PREFIX):
+            return PolicyAction.ALLOW
+        return self.policy.check_tool(tool_name)
+
+    def filter_tools(self, tools):
+        """Return *tools* filtered to those the policy permits.
+
+        Tools that resolve to ``REVIEW`` are excluded from the list
+        until Phase 68.2 lands declarative permission prompting —
+        until then, a ``REVIEW`` verdict degrades to ``DENY`` with a
+        log line suggesting the user add an approval rule.  Once
+        68.2 arrives, the ``REVIEW`` branch will route through the
+        confirmation prompt instead of being filtered out here.
+        """
+        kept = []
+        for tool in tools:
+            verdict = self.check_tool(tool.name)
+            if verdict is PolicyAction.ALLOW:
+                kept.append(tool)
+            elif verdict is PolicyAction.REVIEW:
+                log.info(
+                    "Tool %r requires human approval under policy %r; "
+                    "hidden from subagent until an approval rule is added "
+                    "(see Phase 68.2)",
+                    tool.name,
+                    self.policy.name,
+                )
+        return kept
+
+    def deny_reason(self, tool_name: str) -> str:
+        """Human-readable reason a tool call would be denied.
+
+        Used by the subagent to build the synthetic
+        ``ToolResult(is_error=True)`` when a policy DENY fires at
+        call time.  Names the composed policy stack so audit
+        consumers can trace the decision back to the layer that
+        caused it.
+        """
+        verdict = self.check_tool(tool_name)
+        if verdict is PolicyAction.DENY:
+            return f"Tool {tool_name!r} blocked by policy {self.policy.name!r}"
+        if verdict is PolicyAction.REVIEW:
+            return (
+                f"Tool {tool_name!r} requires human approval under "
+                f"policy {self.policy.name!r}; add an approval rule "
+                "to permit this call"
+            )
+        return ""

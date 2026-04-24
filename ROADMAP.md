@@ -2501,25 +2501,50 @@ write-up already decided keep/defer/reject per primitive.
   stack composing to the expected defence-in-depth verdicts
   from ``design/TOOLS.md`` §55.4.
 
-### 80.2 High — Wire policies into the subagent dispatcher
+### 80.2 High — Wire policies into the subagent dispatcher ✓
 
-- [ ] Replace ``_filter_tools(tools, category)`` with a
-  ``PolicyEnforcer`` helper that composes the active policy
-  stack once per subagent run and exposes
-  ``check_tool(name) -> PolicyAction``.
-- [ ] The existing ``_tool_or_veto`` path in
-  ``subagent.py`` gains a ``check_tool`` call before the
-  PRE_TOOL_CALL hook fires.  Policy ``DENY`` produces a
-  synthetic ``ToolResult(success=False, error="policy blocks
-  ...")`` with the policy name in the error; ``REVIEW`` maps
-  to a confirmation request (depends on Phase 68.2's
-  declarative permission work; until that lands, ``REVIEW``
-  degrades to ``DENY`` with a log line suggesting the user
-  add an approval rule).
-- [ ] Preserve the MCP-tool exception today's filter carries
-  — MCP tools still pass through the per-server
-  ``allowed_tools`` config (Phase 45.2) as the gate, not
-  category policy.
+- [x] ``Subagent.__init__`` now composes a
+  :class:`PolicyEnforcer` once per run via the new
+  ``_build_policy_enforcer(category, charm_path)`` helper.
+  The stack layers the org-wide floor, a per-category
+  allow-list (derived from ``_CATEGORY_TOOLS`` via
+  ``category_policy``), and anything discovered from
+  ``~/.config/cantrip/policies/`` plus
+  ``<charm>/cantrip.policies.yaml``.  The LLM-visible tool
+  list is now ``enforcer.filter_tools(tools)`` rather than
+  the bare ``_filter_tools`` lookup.  ``_filter_tools`` is
+  kept as a thin shim for callers that don't build a full
+  ``SubagentContext`` (used by a handful of existing tests).
+- [x] ``_tool_or_veto`` gains a call-time policy check that
+  fires **before** the PRE_TOOL_CALL hook chain.  A policy
+  ``DENY`` short-circuits to a synthetic ``ToolResult(
+  success=False, error=<reason>)`` naming the composed
+  policy stack; the PRE_TOOL_CALL hook does not fire for a
+  denied call because the call never had a chance of running.
+  ``REVIEW`` verdicts degrade to ``DENY`` with a log line
+  suggesting the user add an approval rule (Phase 68.2 will
+  route these through a confirmation prompt instead).  The
+  POST_TOOL_CALL hook payload gains ``policy_denied_by``
+  stamping the composed policy name so Phase 80.4's audit
+  trail can trace each decision.
+- [x] MCP-tool exception preserved: ``PolicyEnforcer.
+  check_tool`` short-circuits ``ALLOW`` for names starting
+  ``mcp__``, matching the old ``_filter_tools`` carve-out.
+  MCP gating stays owned by the per-server
+  ``allowed_tools`` config from Phase 45.2.
+- [x] Unknown categories (e.g. ``CONFIRM``, which never had an
+  entry in ``_CATEGORY_TOOLS``) preserve the historical "zero
+  tools" behaviour via a sentinel allow-list that no real
+  tool name can match.
+- [x] ``tests/unit/subagent/test_policy_wiring.py`` — 18 tests
+  covering enforcer composition, list-time filter, call-time
+  gate with an LLM-driven integration case, deny-reason
+  formatting, per-charm overlays, MCP bypass, unknown-
+  category deny-all, and the "per-charm file cannot loosen
+  the org-wide review list" defence-in-depth invariant.
+  Existing ``test_helpers.py`` / ``test_allowlists.py`` /
+  ``test_mcp_tool.py`` still pass via the ``_filter_tools``
+  shim.
 
 ### 80.3 Medium — ``max_calls_per_request`` per-goal rate limit
 

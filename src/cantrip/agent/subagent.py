@@ -11,6 +11,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib import resources
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.durability import (
@@ -27,6 +28,15 @@ from cantrip.agent.durability import (
     tool_result_to_dict,
 )
 from cantrip.agent.planner import SPRINT_BUILD_PREFIX
+from cantrip.agent.policy import (
+    ORG_WIDE_POLICY,
+    GovernancePolicy,
+    PolicyAction,
+    PolicyEnforcer,
+    category_policy,
+    compose_policies,
+    discover_policies,
+)
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool
@@ -500,17 +510,61 @@ def _select_provider(
 
 
 def _filter_tools(tools: list[Tool], category: TaskCategory) -> list[Tool]:
-    """Filter agent tools to those allowed for *category*.
+    """Filter tools to those permitted under the default policy stack.
 
-    MCP tools (names beginning ``mcp__``) bypass the per-category
-    allowlist — the per-server ``allowed_tools`` config (Phase 45.2)
-    is the gate for MCP exposure.  Operators who want category-scoped
-    MCP access can drop unwanted servers from the YAML config.
+    Thin wrapper around :func:`_build_policy_enforcer` that runs a
+    subagent-less enforcement pass — useful for callers that want the
+    LLM-visible subset for a category without constructing a full
+    ``SubagentContext``.  Wraps the new policy path rather than the
+    historical raw ``_CATEGORY_TOOLS`` lookup so the MCP bypass and
+    the org-wide review list stay consistent across entry points.
+    """
+    enforcer = _build_policy_enforcer(category, charm_path=None)
+    return enforcer.filter_tools(tools)
+
+
+#: Sentinel allow-list entry for categories that shouldn't get any
+#: tools (e.g. ``CONFIRM``, which is a planning-only category).  A
+#: real tool name can never be this string, so listing it as the sole
+#: allowed entry makes the policy's non-empty allow-list filter out
+#: every actual tool while still composing cleanly with the
+#: org-wide layer.
+_DENY_ALL_SENTINEL = "__policy_deny_all__"
+
+
+def _build_policy_enforcer(
+    category: TaskCategory,
+    charm_path: str | None,
+    *,
+    extra_policies: tuple[GovernancePolicy, ...] = (),
+) -> PolicyEnforcer:
+    """Compose the active tool-access policy stack for a subagent run.
+
+    Phase 80.2: replaces the single-level ``_CATEGORY_TOOLS`` gate with
+    a layered policy stack — organisation floor + per-category
+    allow-list + discovered user / per-charm files.  Every layer uses
+    the ``PolicyEnforcer`` primitive from
+    :mod:`cantrip.agent.policy` so the composition semantics stay
+    visible at one module.
+
+    Categories that never had an entry in the old ``_CATEGORY_TOOLS``
+    map (``CONFIRM`` and other planning-only categories) keep the
+    historical behaviour of zero tools.  Implemented via a
+    single-sentinel allow-list that no real tool name can match.
+
+    *extra_policies* lets tests inject additional layers (e.g. a
+    malformed per-charm file that the default discovery would skip).
     """
     allowlist = _CATEGORY_TOOLS.get(category)
     if allowlist is None:
-        return []
-    return [t for t in tools if t.name in allowlist or t.name.startswith("mcp__")]
+        category_layer = category_policy(category.value, frozenset({_DENY_ALL_SENTINEL}))
+    else:
+        category_layer = category_policy(category.value, allowlist)
+    layers: list[GovernancePolicy] = [ORG_WIDE_POLICY, category_layer]
+    charm_dir: Path | None = Path(charm_path) if charm_path else None
+    layers.extend(discover_policies(charm_path=charm_dir))
+    layers.extend(extra_policies)
+    return PolicyEnforcer(policy=compose_policies(*layers))
 
 
 def _tools_for_llm(tools: list[Tool]) -> list[llm.Tool] | None:
@@ -793,7 +847,14 @@ class Subagent:
             task_title=context.task.title,
             model_hint=context.task.model_hint,
         )
-        self._tools = _filter_tools(tools, context.task.category)
+        # Phase 80.2: compose the policy stack once per subagent run
+        # and use it to both filter the LLM-visible tool list and gate
+        # tool calls at execution time.
+        self._policy = _build_policy_enforcer(
+            context.task.category,
+            context.charm_path,
+        )
+        self._tools = self._policy.filter_tools(tools)
         self._tool_map: dict[str, Tool] = {t.name: t for t in self._tools}
         self._on_usage = on_usage
         self._throttle = throttle
@@ -986,14 +1047,26 @@ class Subagent:
             # a single round.  asyncio.gather() preserves order.
             self._set_phase(self._tool_phase_label([tc.name for tc in response.tool_calls]))
             category_value = self._context.task.category.value
-            # Fire pre-hooks sequentially and record a per-call veto
-            # plus any mutated arguments (Phase 46.4b).  A vetoed tool
-            # is replaced with a synthetic error result; the rest of
-            # the batch still runs in parallel, each with whatever
-            # arguments the pre-hook chain produced.
+            # Phase 80.2: check the composed policy stack *before* firing
+            # pre-hooks.  A policy DENY short-circuits to a synthetic
+            # error ToolResult that names the policy; the PRE_TOOL_CALL
+            # hook chain does not fire for a denied call because the
+            # call never had a chance of running.  A REVIEW verdict
+            # degrades to DENY with a log line until Phase 68.2 lands
+            # declarative permission prompting.
+            policy_denials: list[str | None] = []
             call_vetoes: list[tuple[Any, ...] | None] = []
             call_arguments: list[dict[str, Any]] = []
             for tc in response.tool_calls:
+                verdict = self._policy.check_tool(tc.name)
+                if verdict is not PolicyAction.ALLOW:
+                    reason = self._policy.deny_reason(tc.name)
+                    log.info("Subagent tool call %r denied by policy: %s", tc.name, reason)
+                    policy_denials.append(reason)
+                    call_vetoes.append(None)
+                    call_arguments.append(tc.arguments)
+                    continue
+                policy_denials.append(None)
                 pre_results = await self._hook_runner.fire(
                     HookEvent.PRE_TOOL_CALL,
                     {
@@ -1007,10 +1080,19 @@ class Subagent:
                 call_arguments.append(final_arguments(pre_results) or tc.arguments)
 
             async def _tool_or_veto(
-                tc: llm.ToolCall, veto: Any, arguments: dict[str, Any]
+                tc: llm.ToolCall,
+                policy_denial: str | None,
+                veto: Any,
+                arguments: dict[str, Any],
             ) -> tuple[ToolResult, int]:
                 call_start = time.monotonic()
-                if veto is not None:
+                if policy_denial is not None:
+                    result = ToolResult(
+                        success=False,
+                        output="",
+                        error=policy_denial,
+                    )
+                elif veto is not None:
                     log.info(
                         "Subagent tool call %r vetoed by %s",
                         tc.name,
@@ -1027,9 +1109,10 @@ class Subagent:
 
             timed_results = await asyncio.gather(
                 *(
-                    _tool_or_veto(tc, veto, args)
-                    for tc, veto, args in zip(
+                    _tool_or_veto(tc, denial, veto, args)
+                    for tc, denial, veto, args in zip(
                         response.tool_calls,
+                        policy_denials,
                         call_vetoes,
                         call_arguments,
                         strict=True,
@@ -1044,9 +1127,10 @@ class Subagent:
             # the veto as a failure the same way the LLM does.  The
             # ``arguments`` payload uses the mutated form so audit
             # hooks see what actually ran (or would have).
-            for tc, tool_result, veto, args, duration_ms in zip(
+            for tc, tool_result, denial, veto, args, duration_ms in zip(
                 response.tool_calls,
                 raw_results,
+                policy_denials,
                 call_vetoes,
                 call_arguments,
                 raw_durations,
@@ -1062,6 +1146,11 @@ class Subagent:
                 }
                 if veto is not None:
                     payload["vetoed_by"] = veto.name
+                if denial is not None:
+                    # Stamp the composed policy name so audit hooks can
+                    # trace a denial back to the layer that caused it
+                    # (Phase 80.4's JSONL audit will consume this).
+                    payload["policy_denied_by"] = self._policy.policy.name
                 await self._hook_runner.fire(HookEvent.POST_TOOL_CALL, payload)
                 if self._on_tool_invoked is not None:
                     try:
