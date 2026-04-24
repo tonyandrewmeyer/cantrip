@@ -13,6 +13,7 @@ from typing import Any
 
 from cantrip.agent import arena, sandbox
 from cantrip.agent.autodeploy import task_for_watcher_event
+from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.emotions import ParliamentResult, run_parliament
@@ -243,6 +244,10 @@ class CantripAgent:
         # Session-level prompt cache accumulators (Claude-specific).
         self.cache_creation_tokens: int = 0
         self.cache_read_tokens: int = 0
+        # Phase 78.1: watches per-turn cache deltas for the "was reading,
+        # now only creating" pattern that flagged Anthropic's April 23
+        # incident.  Observes response usage in ``_record_usage``.
+        self._cache_monitor = CacheCascadeDetector()
 
         # Pending blind A/B arena session, if the user has fired ``/arena``
         # and not yet replied with a pick.  Cross-surface so every UI
@@ -495,6 +500,7 @@ class CantripAgent:
         if response.usage:
             self.cache_creation_tokens += response.usage.get("cache_creation_input_tokens", 0)
             self.cache_read_tokens += response.usage.get("cache_read_input_tokens", 0)
+            self._check_cache_cascade(response.usage)
         self._ensure_store()
         if self._store and response.usage:
             return self._store.record_usage(
@@ -504,6 +510,21 @@ class CantripAgent:
                 completion_tokens=response.usage.get("completion_tokens", 0),
             )
         return None
+
+    def _check_cache_cascade(self, usage: dict[str, int]) -> None:
+        """Feed per-turn usage into the cache cascade detector.
+
+        Surfaces the warning as a WARNING log, a SYSTEM conversation
+        message (so it rides along with the transcript), and a UI
+        chat event so the TUI and Web chat show it in-band — the
+        April 23 lesson is that passive metrics aren't enough.
+        """
+        warning = self._cache_monitor.observe(usage)
+        if warning is None:
+            return
+        log.warning("Cache cascade detected: %s", warning)
+        self.state.messages.append(Message(role=Role.SYSTEM, content=warning))
+        self._event_bus.publish(ui_events.chat_message(role="system", content=warning))
 
     def _persist_compaction_state(self) -> None:
         """Persist compaction counters and surface any pending safety warning.

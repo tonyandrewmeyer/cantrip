@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Prompt-cache cascade detector (Phase 78.1).**  New
+  ``cantrip.agent.cache_monitor.CacheCascadeDetector`` watches the
+  per-turn ``cache_creation_input_tokens`` / ``cache_read_input_tokens``
+  deltas provided by caching providers (currently Claude) and fires a
+  one-shot warning when three consecutive creation-only turns follow a
+  session that had previously been reading from the cache — the exact
+  symptom of the April 23 Claude Code incident.  The warning surfaces
+  three ways: a WARNING log on ``cantrip.agent.core``, a SYSTEM
+  conversation message in the transcript, and a ``CHAT_MESSAGE`` UI
+  event so the TUI and Web chat show it in-band rather than leaving
+  users to spot it in passive model-bar metrics.  Fresh sessions
+  (never-read baseline) and tool-only turns (no cache activity in the
+  usage dict) don't trip the detector, so routine prompt iteration is
+  quiet.
+
 - **`thinking_budget` wire-shape regression guard (Phase 78.4).**
   New ``tests/unit/test_claude.py::TestClaudeProviderThinkingBudgetWire``
   and three fixtures in

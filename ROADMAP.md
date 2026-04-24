@@ -5195,7 +5195,7 @@ took a week to diagnose because cache-miss symptoms weren't
 connected to the root cause.  Cantrip doesn't have the same bug,
 but it has adjacent exposure surfaces — each addressed below.
 
-### 78.1 Cache anomaly alerting
+### 78.1 Cache anomaly alerting ✓
 
 Today cache metrics are extracted from Anthropic responses
 (``src/cantrip/llm/claude.py:274-277``) and surfaced passively
@@ -5207,17 +5207,28 @@ if ``cache_creation_tokens`` started rising turn-after-turn (the
 exact April 23 symptom) a user would only notice by actively
 watching the model bar.
 
-- [ ] Add a rolling-window detector in ``cantrip.agent.core``
-  that watches per-turn cache-creation deltas.  Fire a WARNING
-  log + a UI event when the ratio of creation-to-read flips
-  unexpectedly (three consecutive turns of cache creation on a
-  session that had previously been cache-reading is the
-  trigger we care about).
-- [ ] Surface the warning as a system message in the TUI / Web
-  chat, not just the debug log — the whole point of the April
-  23 lesson is that passive metrics aren't enough.
-- [ ] Unit test the detector with a synthetic sequence of
-  usage dicts that replicates the April 23 cascade.
+- [x] ``cantrip.agent.cache_monitor.CacheCascadeDetector`` is the
+  rolling-window detector.  It watches per-turn
+  ``cache_creation_input_tokens`` / ``cache_read_input_tokens``
+  deltas and fires a one-shot warning when three consecutive
+  creation-only turns follow a session that had previously been
+  reading from the cache.  Fresh sessions (never-read baseline)
+  and tool-only turns (no cache activity) don't trip the
+  detector.  ``CantripAgent._check_cache_cascade`` wires the
+  detector into ``_record_usage`` so every LLM turn observed.
+- [x] Warning surfaces three ways: WARNING log, a SYSTEM
+  conversation message appended to ``state.messages`` (so the
+  transcript carries it), and a ``CHAT_MESSAGE`` UI event
+  (``role=system``) so the TUI and Web chat show it in-band —
+  passive metrics alone weren't enough in the April 23 case.
+- [x] ``tests/unit/test_cache_monitor.py`` — eight unit tests
+  covering the April 23 cascade, the one-shot latch, the
+  fresh-session baseline, streak reset on a read turn, no-cache
+  turns being ignored, missing/partial usage, and
+  ``reset_warning``.  ``tests/unit/test_agent.py::
+  TestCacheCascadeIntegration`` exercises the whole agent path
+  — log + state message + bus event — against a replay of the
+  cascade.
 
 ### 78.2 Web UI cache parity
 
