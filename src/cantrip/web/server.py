@@ -17,7 +17,7 @@ from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, PreflightEvent
 from cantrip.llm import create_provider, resolve_light_provider
-from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
+from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError, Role
 from cantrip.ui import events as ui_events
 from cantrip.web import markdown as md_render
 
@@ -87,7 +87,28 @@ def _now_iso() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
 
 
-def _broadcast_chat(app: web.Application, role: str, content: str) -> None:
+def _trailing_reasoning(agent: CantripAgent) -> str:
+    """Return the reasoning text on the most recent assistant message.
+
+    Walks backwards through ``agent.state.messages`` until it finds
+    an assistant turn, then returns whatever landed in its
+    ``_thinking_content`` metadata (Claude thinking or
+    OpenAI-compatible ``reasoning_content``).  Empty string when the
+    turn produced no reasoning.
+    """
+    for msg in reversed(agent.state.messages):
+        if msg.role == Role.ASSISTANT:
+            return str(msg.metadata.get("_thinking_content", ""))
+    return ""
+
+
+def _broadcast_chat(
+    app: web.Application,
+    role: str,
+    content: str,
+    *,
+    reasoning: str = "",
+) -> None:
     """Broadcast a ``chat_message`` with pre-rendered Markdown HTML.
 
     Centralising the render call here means every chat message — user,
@@ -96,6 +117,11 @@ def _broadcast_chat(app: web.Application, role: str, content: str) -> None:
     frontend can ``innerHTML`` the HTML without having to run its own
     Markdown parser.  The timestamp is a UTC ISO string; the browser
     formats it per-locale.
+
+    When ``reasoning`` is non-empty, the browser renders it inside a
+    collapsible ``<details>`` above the answer — Claude's extended
+    thinking and Kimi K2's ``reasoning_content`` both flow through
+    this channel.
     """
     _broadcast(
         app,
@@ -104,6 +130,7 @@ def _broadcast_chat(app: web.Application, role: str, content: str) -> None:
             "role": role,
             "content": content,
             "html": md_render.render(content),
+            "reasoning": reasoning,
             "timestamp": _now_iso(),
         },
     )
@@ -225,6 +252,7 @@ def _messages_with_timestamps(agent: CantripAgent) -> list[dict[str, object]]:
                     "role": r["role"],
                     "content": r["content"],
                     "html": md_render.render(str(r["content"] or "")),
+                    "reasoning": _row_reasoning(r),
                     "timestamp": r.get("timestamp"),
                 }
                 for r in rows
@@ -237,11 +265,20 @@ def _messages_with_timestamps(agent: CantripAgent) -> list[dict[str, object]]:
             "role": msg.role.value,
             "content": msg.content,
             "html": md_render.render(msg.content),
+            "reasoning": str(msg.metadata.get("_thinking_content", "")),
             "timestamp": now,
         }
         for msg in agent.state.messages
         if msg.content
     ]
+
+
+def _row_reasoning(row: dict[str, object]) -> str:
+    """Extract reasoning text from a persisted message row."""
+    metadata = row.get("metadata")
+    if isinstance(metadata, dict):
+        return str(metadata.get("_thinking_content", ""))
+    return ""
 
 
 async def _api_session_preview(request: web.Request) -> web.Response:
@@ -509,7 +546,12 @@ async def _process_chat_turn(app: web.Application, agent: CantripAgent, content:
         try:
             response = await turn_task
             _broadcast(app, "thinking", {"active": False})
-            _broadcast_chat(app, "assistant", response)
+            _broadcast_chat(
+                app,
+                "assistant",
+                response,
+                reasoning=_trailing_reasoning(agent),
+            )
             agent.save_state()
         except asyncio.CancelledError:
             _broadcast(app, "thinking", {"active": False})

@@ -24,7 +24,7 @@ from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.race import RACE_CONFIRM_PREFIX
 from cantrip.hooks import HookRunner
 from cantrip.llm import LLMProvider, create_provider, pricing, resolve_light_provider
-from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
+from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError, Role
 from cantrip.tui.widgets import chat as chat_widget
 from cantrip.tui.widgets import filetree as filetree_widget
 from cantrip.tui.widgets import modelbar as modelbar_widget
@@ -1436,6 +1436,25 @@ class CantripApp(App):
                 self._streaming_widget = chat.add_assistant_message("")
                 status_bar.task_label = "⟳ Streaming..."
             chat.append_streaming_chunk(self._streaming_widget, chunk)
+
+        # Reasoning (Claude extended thinking, Kimi K2 ``reasoning_content``)
+        # is accumulated alongside the text stream and attached after
+        # the stream completes so the user can see when their turn
+        # spent reasoning tokens rather than answer tokens.
+        reasoning = self._trailing_reasoning()
+        if reasoning:
+            if self._streaming_widget is None:
+                chat.hide_thinking()
+                self._streaming_widget = chat.add_assistant_message("", reasoning=reasoning)
+            else:
+                chat.set_reasoning(self._streaming_widget, reasoning)
+
+    def _trailing_reasoning(self) -> str:
+        """Return the reasoning text on the most recent assistant message."""
+        for msg in reversed(self._agent.state.messages):
+            if msg.role == Role.ASSISTANT:
+                return str(msg.metadata.get("_thinking_content", ""))
+        return ""
 
     def _handle_feelings_command(self, message: str, chat: chat_widget.ChatWidget) -> None:
         """Dispatch a parliament run from a ``/feelings [emotions...]`` message.

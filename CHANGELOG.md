@@ -4,6 +4,34 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Reasoning / chain-of-thought surfaces in the TUI and Web (Phase 77).**
+  OpenAI-compatible providers (Fireworks, OpenRouter, inference-snap,
+  generic) now capture ``reasoning_content`` — the streaming delta
+  Kimi K2 and DeepSeek-R1-family models emit alongside the final
+  answer — and route it through the same
+  ``Response.metadata["_thinking_content"]`` key Claude's extended
+  thinking uses.  The TUI renders reasoning as a dim italic
+  ``💭 thinking`` preamble above the answer; the Web renders it as
+  a collapsible ``<details>`` block.  ``OpenAICompatBase`` also
+  honours ``thinking_budget`` by raising ``max_tokens`` to at least
+  ``thinking_budget + 4096`` so reasoning doesn't starve the reply
+  on providers that spend both from one budget.  Closes the
+  Fireworks smoke-test gotcha where ``max_tokens=30`` returned
+  empty content while all 30 tokens went to dropped reasoning
+  frames.
+
+### Fixed
+- **``FireworksProvider.complete()`` auto-streams past the 4 096-token
+  non-streaming cap.**  Fireworks rejects non-streaming requests
+  with ``max_tokens > 4096`` (``"Requests with max_tokens > 4096
+  must have stream=true"``), which the Phase 77
+  ``thinking_budget + 4096`` bump would trip the moment a caller
+  signalled reasoning headroom.  ``complete()`` now delegates to
+  ``stream()`` internally in that case and reassembles a
+  ``Response`` from the chunks, keeping the non-streaming API
+  usable for reasoning-capable models.
+
 ### Changed
 - **Update-notice upgrade command uses ``uv pip`` for pip-installed
   Cantrip.**  ``upgrade_command`` previously emitted

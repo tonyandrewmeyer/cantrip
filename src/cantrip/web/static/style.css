@@ -270,6 +270,47 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
+/* Reasoning / chain-of-thought — Claude extended thinking and
+   OpenAI-compatible reasoning_content (Kimi K2, DeepSeek-R1) both
+   surface through here. Collapsed by default so the answer leads. */
+.msg-reasoning {
+  margin: 0 0 0.5rem 0;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-input);
+  border-left: 2px solid var(--text-muted);
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.msg-reasoning > summary {
+  cursor: pointer;
+  font-style: italic;
+  list-style: none;
+}
+
+.msg-reasoning > summary::-webkit-details-marker {
+  display: none;
+}
+
+.msg-reasoning > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  width: 1em;
+}
+
+.msg-reasoning[open] > summary::before {
+  content: "▾ ";
+}
+
+.msg-reasoning-body {
+  margin-top: 0.25rem;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* Markdown rendering — applies to every message body, not just assistant.
    User messages were plain text before; now they render too. */
 .msg-body h1,

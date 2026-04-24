@@ -88,3 +88,65 @@ class TestClaudeLive:
         result = await agent.process_message("Hello! Just say hi back briefly.")
 
         assert len(result) > 0
+
+
+class TestFireworksKimiReasoning:
+    """Phase 77 live smoke — Kimi K2 on Fireworks surfaces ``reasoning_content``.
+
+    Kimi K2 emits chain-of-thought as ``delta.reasoning_content`` before the
+    final answer.  Before Phase 77, the shared OpenAI-compat helper silently
+    dropped those deltas, so short ``max_tokens`` budgets produced an empty
+    string.  These smoke tests confirm the reasoning round-trips through
+    ``Response.metadata["_thinking_content"]`` and that ``thinking_budget``
+    leaves headroom for a real answer.
+    """
+
+    pytestmark = pytest.mark.skipif(
+        not os.environ.get("FIREWORKS_API_KEY"),
+        reason="FIREWORKS_API_KEY not set",
+    )
+
+    @pytest.mark.asyncio
+    async def test_reasoning_content_round_trips_to_metadata(self):
+        """A direct ``complete()`` call surfaces reasoning alongside the answer."""
+        from cantrip.llm.base import Message, Role
+
+        provider = create_provider("fireworks")
+        response = await provider.complete(
+            [Message(role=Role.USER, content="What is 2 + 2? Answer in one word.")],
+            max_tokens=2048,
+        )
+
+        reasoning = response.metadata.get("_thinking_content", "")
+        # Kimi K2 reliably emits a reasoning block on prompts like this.
+        # An empty reasoning field means the shared helper is dropping
+        # ``reasoning_content`` again — the exact regression Phase 77 closed.
+        assert reasoning, (
+            "Kimi K2 returned no reasoning_content; the helper may be dropping "
+            "``delta.reasoning_content`` again."
+        )
+        assert response.content, (
+            f"Kimi K2 returned empty content despite 2048-token budget: reasoning={reasoning!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_thinking_budget_leaves_room_for_answer(self):
+        """``thinking_budget=2000`` must prevent reasoning from starving the reply.
+
+        Even when the caller sets ``max_tokens=30`` — the exact shape that
+        produced ``completion_tokens=30`` with an empty reply before
+        Phase 77 — a ``thinking_budget`` kicker should raise the effective
+        budget high enough for a real answer.
+        """
+        from cantrip.llm.base import Message, Role
+
+        provider = create_provider("fireworks")
+        response = await provider.complete(
+            [Message(role=Role.USER, content="What is 2 + 2? Answer in one word.")],
+            max_tokens=30,
+            thinking_budget=2000,
+        )
+        assert response.content, (
+            "thinking_budget=2000 did not leave headroom for an answer; "
+            "effective max_tokens may still be too small."
+        )

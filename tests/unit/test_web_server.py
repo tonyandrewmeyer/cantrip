@@ -99,6 +99,98 @@ class TestBroadcast:
         _broadcast(app, "test_event", {"key": "value"})
 
 
+class TestBroadcastChat:
+    """Tests for the ``_broadcast_chat`` helper (Phase 77)."""
+
+    def test_payload_includes_reasoning_field_when_supplied(self) -> None:
+        """``reasoning`` flows through to the websocket payload so the
+        browser can render the collapsible ``<details>`` block.
+        """
+        from cantrip.web.server import _broadcast_chat
+
+        app = web.Application()
+        captured: list[tuple[str, dict]] = []
+        with patch(
+            "cantrip.web.server._broadcast",
+            side_effect=lambda _a, t, d: captured.append((t, d)),
+        ):
+            _broadcast_chat(app, "assistant", "42", reasoning="I weighed the options.")
+
+        assert len(captured) == 1
+        event_type, payload = captured[0]
+        assert event_type == "chat_message"
+        assert payload["role"] == "assistant"
+        assert payload["content"] == "42"
+        assert payload["reasoning"] == "I weighed the options."
+
+    def test_payload_defaults_reasoning_to_empty_string(self) -> None:
+        from cantrip.web.server import _broadcast_chat
+
+        app = web.Application()
+        captured: list[tuple[str, dict]] = []
+        with patch(
+            "cantrip.web.server._broadcast",
+            side_effect=lambda _a, t, d: captured.append((t, d)),
+        ):
+            _broadcast_chat(app, "system", "hello")
+
+        assert captured[0][1]["reasoning"] == ""
+
+
+class TestTrailingReasoning:
+    """``_trailing_reasoning`` reads from the latest assistant turn."""
+
+    def _agent_with_messages(self, messages):
+        from cantrip.llm.base import Message, Role
+
+        agent = MagicMock()
+        agent.state = MagicMock()
+        agent.state.messages = [
+            Message(
+                role=Role(role),
+                content=content,
+                metadata=metadata,
+            )
+            for role, content, metadata in messages
+        ]
+        return agent
+
+    def test_returns_thinking_content_from_last_assistant(self) -> None:
+        from cantrip.web.server import _trailing_reasoning
+
+        agent = self._agent_with_messages(
+            [
+                ("user", "Hi", {}),
+                ("assistant", "Hello", {"_thinking_content": "Polite greeting."}),
+            ]
+        )
+        assert _trailing_reasoning(agent) == "Polite greeting."
+
+    def test_empty_string_when_no_reasoning(self) -> None:
+        from cantrip.web.server import _trailing_reasoning
+
+        agent = self._agent_with_messages(
+            [
+                ("user", "Hi", {}),
+                ("assistant", "Hello", {}),
+            ]
+        )
+        assert _trailing_reasoning(agent) == ""
+
+    def test_skips_non_assistant_messages(self) -> None:
+        """A recent user message must not shadow the prior assistant's
+        reasoning when walking backwards."""
+        from cantrip.web.server import _trailing_reasoning
+
+        agent = self._agent_with_messages(
+            [
+                ("assistant", "first", {"_thinking_content": "first reasoning"}),
+                ("user", "follow-up", {}),
+            ]
+        )
+        assert _trailing_reasoning(agent) == "first reasoning"
+
+
 class TestPreflightBroadcast:
     """Tests for preflight-event forwarding over the WebSocket."""
 
@@ -272,6 +364,13 @@ class TestCSS:
         assert ".msg-body code" in css
         assert ".msg-body table" in css
 
+    def test_css_has_reasoning_styles(self) -> None:
+        """Reasoning / chain-of-thought renders as a collapsible <details>."""
+        css = (_STATIC_DIR / "style.css").read_text()
+        assert ".msg-reasoning" in css
+        assert ".msg-reasoning > summary" in css
+        assert ".msg-reasoning-body" in css
+
 
 class TestJavaScriptFeatures:
     """Tests for the enhanced JavaScript features."""
@@ -281,9 +380,21 @@ class TestJavaScriptFeatures:
         js = (_STATIC_DIR / "cantrip.js").read_text()
         # The old regex renderer must be gone.
         assert "_renderMarkdown" not in js
-        # ``appendMessage`` takes html + timestamp and ``innerHTML``s the HTML.
-        assert "function appendMessage(role, content, html, timestamp)" in js
+        # ``appendMessage`` takes html + timestamp + reasoning and
+        # ``innerHTML``s the HTML.
+        assert "function appendMessage(role, content, html, timestamp, reasoning)" in js
         assert "body.innerHTML = html" in js
+
+    def test_js_renders_reasoning_as_details_block(self) -> None:
+        """When ``reasoning`` is present, the browser builds a collapsible
+        ``<details>`` block.  The body is text-content (not innerHTML) so
+        a reasoning string containing angle brackets can't become a
+        DOM-injection vector.
+        """
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert 'createElement("details")' in js
+        assert "msg-reasoning" in js
+        assert "💭 thinking" in js
 
     def test_js_has_juju_status_fetch(self) -> None:
         js = (_STATIC_DIR / "cantrip.js").read_text()

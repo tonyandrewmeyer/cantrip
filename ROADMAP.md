@@ -4926,39 +4926,68 @@ reasoning variants, possibly MiniMax).  The non-streaming
 ``complete()`` path has the same gap — it reads
 ``message.content`` and drops ``message.reasoning_content``.
 
-### 77.1 Capture and expose reasoning
+### 77.1 Capture and expose reasoning ✓
 
-- [ ] Extend ``src/cantrip/llm/_openai_compat.py`` to accumulate
-  ``reasoning_content`` in both ``complete()`` and ``stream()``.
-- [ ] Decide the surface: a ``thinking`` field on ``Response`` /
-  ``Chunk`` (mirroring how Claude's extended thinking is already
-  represented) or metadata on the existing ``content``.  Match
-  the Claude provider so the TUI and Web renderers don't need a
-  second code path.
-- [ ] Render reasoning the same way Claude's thinking is
-  rendered — collapsed by default, expandable on click,
-  visually distinct from the final answer.
+- [x] ``OpenAICompatBase.complete()`` and ``.stream()`` accumulate
+  ``reasoning_content`` — the complete path sets
+  ``Response.metadata["_thinking_content"]`` and the stream path
+  carries accumulated reasoning on the final ``Chunk.metadata``.
+  Same key Claude uses for extended thinking so renderers stay on
+  one code path.
+- [x] TUI: new ``ChatMessage.reasoning`` field;
+  ``ChatWidget.add_assistant_message`` and ``set_reasoning``
+  accept it; ``MessageWidget._render_body`` prepends a dim italic
+  ``💭 thinking`` preamble (Rich-escaped so bracketed reasoning
+  can't inject markup).  ``_process_agent_message`` in
+  ``tui/app.py`` attaches reasoning after the text stream
+  completes by walking the latest assistant message's metadata.
+- [x] Web: ``_broadcast_chat`` carries a ``reasoning`` field;
+  ``appendMessage`` in ``cantrip.js`` renders it as a collapsible
+  ``<details>`` block before the message body; CSS
+  (``.msg-reasoning`` / ``.msg-reasoning-body``) gives the block
+  muted styling with a custom disclosure triangle.
+  ``_messages_with_timestamps`` (used by ``/api/messages``)
+  surfaces reasoning from persisted metadata on page reload.
 
-### 77.2 Budget-aware defaults
+### 77.2 Budget-aware defaults ✓
 
-- [ ] Document the Kimi-K2 ``max_tokens`` gotcha in
-  ``docs/src/howto-provider.md`` with concrete numbers.
-- [ ] Surface a sensible Kimi-specific default in
-  ``FireworksProvider`` — either a ``thinking_budget`` reserved
-  on top of ``max_tokens`` or a raised floor so reasoning
-  doesn't eat the entire budget.
+- [x] Updated the callout in ``docs/src/howto-provider.md`` with
+  concrete numbers (``max_tokens=30`` → 30 reasoning tokens +
+  empty reply; ~4 096 recommended floor for simple prompts,
+  16 000+ for tool-using turns).
+- [x] ``OpenAICompatBase._build_request_body`` now honours
+  ``thinking_budget`` by raising ``max_tokens`` to at least
+  ``thinking_budget + 4096`` (Claude's formula), applied
+  provider-wide since every OpenAI-compat reasoning model spends
+  reasoning tokens from the same budget.  Callers that don't pass
+  ``thinking_budget`` are unaffected.
 
-### 77.3 Tests and regression guard
+### 77.3 Tests and regression guard ✓
 
-- [ ] Streaming test fixture that emits ``reasoning_content``
-  frames and asserts they round-trip to the ``Response`` /
-  ``Chunk`` surface chosen in 77.1.
-- [ ] Non-streaming test fixture putting ``reasoning_content`` on
-  the final message and asserting the same.
-- [ ] Live smoke test against Kimi K2 on Fireworks with a short
-  ``max_tokens`` budget — the turn should surface reasoning plus
-  an actual answer (or a documented reasoning-only turn) rather
-  than an empty string.
+- [x] ``tests/unit/test_openai_compat.py::TestReasoningContent``
+  — five streaming/complete fixtures plus three
+  ``thinking_budget`` floor tests.  Covers reasoning-only turns,
+  reasoning + content turns, no-reasoning turns, and the
+  max_tokens bump in both ``max_tokens`` supplied and omitted
+  cases.
+- [x] ``tests/unit/test_chat_reasoning.py`` — TUI render path:
+  reasoning renders before content, Rich markup escape guard,
+  ``ChatWidget.set_reasoning`` behaviour.
+- [x] ``tests/unit/test_web_server.py::TestBroadcastChat`` +
+  ``TestTrailingReasoning`` — websocket payload carries the
+  ``reasoning`` field, the helper walks back to the latest
+  assistant turn.  Plus CSS/JS presence assertions.
+- [x] Live smoke ran against Kimi K2 on Fireworks
+  (``tests/live/test_llm_live.py::TestFireworksKimiReasoning``,
+  gated on ``FIREWORKS_API_KEY``).  First run surfaced a real wire
+  constraint — Fireworks rejects ``max_tokens > 4096`` on
+  non-streaming requests, and the ``thinking_budget`` bump crosses
+  that cap whenever callers signal reasoning headroom — so
+  ``FireworksProvider.complete()`` now auto-delegates to
+  ``stream()`` past the cap and reassembles a ``Response``.
+  Second run: both smokes pass; reasoning round-trips and the
+  ``thinking_budget`` leaves room for a real answer on a
+  ``max_tokens=30`` caller.
 
 **Exit criteria:** Kimi K2 on Fireworks shows reasoning in the
 TUI/Web chat; ``max_tokens=30`` produces a visible answer (or a

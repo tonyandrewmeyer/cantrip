@@ -222,6 +222,7 @@ class OpenAICompatBase(LLMProvider):
         *,
         stream: bool = False,
         max_tokens: int | None = None,
+        thinking_budget: int | None = None,
     ) -> dict[str, Any]:
         """Build the JSON request body for a chat completion."""
         system_prompt, api_messages = self._convert_messages(messages)
@@ -238,8 +239,17 @@ class OpenAICompatBase(LLMProvider):
         if stream:
             body["stream_options"] = {"include_usage": True}
 
-        if max_tokens is not None:
-            body["max_tokens"] = max_tokens
+        # OpenAI-compatible reasoning models (Kimi K2, DeepSeek-R1,
+        # GLM reasoning variants) spend reasoning tokens from the same
+        # ``max_tokens`` pool as the final answer.  Mirror Claude's
+        # semantic: when the caller signals ``thinking_budget``, raise
+        # the cap so reasoning has room without starving the response.
+        effective_max = max_tokens
+        if thinking_budget:
+            floor = thinking_budget + 4096
+            effective_max = floor if effective_max is None else max(effective_max, floor)
+        if effective_max is not None:
+            body["max_tokens"] = effective_max
 
         if self._supports_tools:
             api_tools = self._convert_tools(tools)
@@ -287,10 +297,16 @@ class OpenAICompatBase(LLMProvider):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        thinking_budget: int | None = None,  # noqa: ARG002 — interface conformity
+        thinking_budget: int | None = None,
     ) -> Response:
         """Generate a completion via the OpenAI-compatible API."""
-        body = self._build_request_body(messages, tools, temperature, max_tokens=max_tokens)
+        body = self._build_request_body(
+            messages,
+            tools,
+            temperature,
+            max_tokens=max_tokens,
+            thinking_budget=thinking_budget,
+        )
 
         try:
             resp = await self.client.post("/chat/completions", json=body)
@@ -312,8 +328,18 @@ class OpenAICompatBase(LLMProvider):
         content = message.get("content") or ""
         raw_tool_calls = message.get("tool_calls") or []
         tool_calls = self._parse_tool_calls(raw_tool_calls)
+        reasoning = message.get("reasoning_content") or ""
 
         usage = data.get("usage", {})
+
+        # Some open-weights models (Kimi K2, DeepSeek-R1 family, GLM
+        # reasoning variants) return chain-of-thought as a sibling
+        # ``reasoning_content`` field.  Surface it on the same metadata
+        # key Claude uses for extended thinking so renderers stay on
+        # one code path.
+        metadata: dict[str, Any] = {}
+        if reasoning:
+            metadata["_thinking_content"] = reasoning
 
         return Response(
             content=content,
@@ -323,6 +349,7 @@ class OpenAICompatBase(LLMProvider):
                 "prompt_tokens": usage.get("prompt_tokens", 0),
                 "completion_tokens": usage.get("completion_tokens", 0),
             },
+            metadata=metadata,
         )
 
     async def stream(
@@ -331,7 +358,7 @@ class OpenAICompatBase(LLMProvider):
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        thinking_budget: int | None = None,  # noqa: ARG002 — interface conformity
+        thinking_budget: int | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion via SSE."""
         body = self._build_request_body(
@@ -340,10 +367,12 @@ class OpenAICompatBase(LLMProvider):
             temperature,
             stream=True,
             max_tokens=max_tokens,
+            thinking_budget=thinking_budget,
         )
 
         tool_calls_acc: dict[int, dict[str, str]] = {}
         usage: dict[str, int] = {}
+        reasoning_parts: list[str] = []
 
         try:
             async with self.client.stream("POST", "/chat/completions", json=body) as resp:
@@ -384,6 +413,10 @@ class OpenAICompatBase(LLMProvider):
                         if "arguments" in func:
                             tool_calls_acc[idx]["arguments"] += func["arguments"]
 
+                    reasoning = delta.get("reasoning_content")
+                    if reasoning:
+                        reasoning_parts.append(reasoning)
+
                     text = delta.get("content")
                     if text:
                         yield Chunk(content=text)
@@ -402,4 +435,8 @@ class OpenAICompatBase(LLMProvider):
                 arguments = {}
             final_tool_calls.append(ToolCall(id=acc["id"], name=acc["name"], arguments=arguments))
 
-        yield Chunk(tool_calls=final_tool_calls, is_final=True, usage=usage)
+        metadata: dict[str, Any] = {}
+        if reasoning_parts:
+            metadata["_thinking_content"] = "".join(reasoning_parts)
+
+        yield Chunk(tool_calls=final_tool_calls, is_final=True, usage=usage, metadata=metadata)

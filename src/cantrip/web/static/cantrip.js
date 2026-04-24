@@ -192,6 +192,7 @@ const cantrip = (() => {
       case "chat_message":
         appendMessage(
           msg.data.role, msg.data.content, msg.data.html, msg.data.timestamp,
+          msg.data.reasoning,
         );
         break;
       case "task_updated":
@@ -358,7 +359,7 @@ const cantrip = (() => {
   // the HTML field is missing (older server, system-generated local
   // messages) we fall back to ``textContent`` to stay XSS-safe.
 
-  function appendMessage(role, content, html, timestamp) {
+  function appendMessage(role, content, html, timestamp, reasoning) {
     const container = chatMessages();
     if (!container) return;
     // First real message hides the welcome placeholder.
@@ -386,6 +387,22 @@ const cantrip = (() => {
     }
 
     div.appendChild(header);
+
+    // Reasoning (Claude extended thinking, Kimi K2 reasoning_content)
+    // renders as a collapsible block above the answer so the user can
+    // tell when a turn spent budget on thinking.
+    if (reasoning) {
+      const details = document.createElement("details");
+      details.className = "msg-reasoning";
+      const summary = document.createElement("summary");
+      summary.textContent = "💭 thinking";
+      details.appendChild(summary);
+      const body = document.createElement("div");
+      body.className = "msg-reasoning-body";
+      body.textContent = reasoning;
+      details.appendChild(body);
+      div.appendChild(details);
+    }
 
     const body = document.createElement("div");
     body.className = "msg-body";
@@ -888,7 +905,7 @@ const cantrip = (() => {
       if (messages.length === 0) return;  // keep the welcome placeholder
       container.innerHTML = "";
       for (const m of messages) {
-        appendMessage(m.role, m.content, m.html, m.timestamp);
+        appendMessage(m.role, m.content, m.html, m.timestamp, m.reasoning);
       }
     } catch { /* ignore */ }
   }

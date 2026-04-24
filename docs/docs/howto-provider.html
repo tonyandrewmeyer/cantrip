@@ -164,11 +164,23 @@ capability flags (tool use, vision) from the Fireworks
 <code>/models</code> endpoint at startup.</p>
 <div class="callout-note callout">
   <p>
-    Kimi K2 emits a <code>reasoning_content</code> stream before
-    the final reply. This is handled internally &mdash; you'll see the
-    assistant's answer as usual &mdash; but the completion-token count
-    in the status bar includes reasoning tokens, so set
-    generous <code>max_tokens</code> when testing short prompts.
+    Kimi K2 (and the DeepSeek-R1 and GLM reasoning variants)
+    emits <code>reasoning_content</code> alongside the final
+    reply, and the <em>reasoning tokens count against
+    <code>max_tokens</code></em>. A low cap will be consumed
+    entirely by reasoning and leave nothing for the answer &mdash; a
+    prompt with <code>max_tokens=30</code> can come back with 30
+    completion tokens and an empty response string.
+  </p>
+  <p>
+    Cantrip surfaces the reasoning through the same
+    <code>_thinking_content</code> metadata channel Claude uses
+    for extended thinking, and honours
+    <code>thinking_budget</code> on Fireworks by raising
+    <code>max_tokens</code> to at least
+    <code>thinking_budget&nbsp;+&nbsp;4096</code>. For manual
+    testing, set <code>max_tokens</code> to at least 4&nbsp;096
+    for simple prompts and 16&nbsp;000+ for tool-using turns.
   </p>
 </div>
 <h2 id="openrouter">Use OpenRouter</h2>

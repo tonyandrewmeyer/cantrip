@@ -66,6 +66,13 @@ class ChatMessage:
     # skipped for these messages — substituting Rich tags into a
     # Markdown source mangles the formatting.
     markdown: bool = False
+    # Reasoning / chain-of-thought the provider exposed for this turn.
+    # Claude's extended-thinking blocks and OpenAI-compatible
+    # ``reasoning_content`` (Kimi K2, DeepSeek-R1 variants) both land
+    # here.  Rendered as a dim ``💭 thinking`` preamble before the
+    # answer so the user can tell whether reasoning tokens were spent
+    # on their turn.
+    reasoning: str = ""
 
 
 class MessageWidget(Static):
@@ -167,6 +174,8 @@ class MessageWidget(Static):
         timestamp = self.message.timestamp.strftime("%H:%M")
         header = f"[dim][{timestamp}][/dim] {header}"
 
+        reasoning_block = self._reasoning_markup()
+
         if self.message.markdown:
             progress_markup = "\n".join(
                 f"[progress-{item.status.value.replace('_', '-')}]"
@@ -174,13 +183,19 @@ class MessageWidget(Static):
                 f"[/progress-{item.status.value.replace('_', '-')}] {item.text}"
                 for item in self.message.progress_items
             )
-            renderables: list[RenderableType] = [header, RichMarkdown(self.message.content)]
+            renderables: list[RenderableType] = [header]
+            if reasoning_block:
+                renderables.append(reasoning_block)
+            renderables.append(RichMarkdown(self.message.content))
             if progress_markup:
                 renderables.append(progress_markup)
             return Group(*renderables)
 
         content = self._highlighted_content() if self._search_query else self.message.content
-        content_lines = [content]
+        content_lines = []
+        if reasoning_block:
+            content_lines.append(reasoning_block)
+        content_lines.append(content)
 
         for item in self.message.progress_items:
             status_char = self._status_char(item.status)
@@ -188,6 +203,14 @@ class MessageWidget(Static):
             content_lines.append(f"[{status_class}]{status_char}[/{status_class}] {item.text}")
 
         return header + "\n".join(content_lines)
+
+    def _reasoning_markup(self) -> str:
+        """Return the dim chain-of-thought preamble, or ``""`` when absent."""
+        reasoning = self.message.reasoning
+        if not reasoning:
+            return ""
+        body = rich_escape(reasoning)
+        return f"[dim italic]💭 thinking\n{body}[/dim italic]\n"
 
     def _highlighted_content(self) -> str:
         """Return message content with search matches wrapped in Rich tags.
@@ -737,16 +760,33 @@ class ChatWidget(Widget):
         self,
         content: str,
         progress_items: list[str] | None = None,
+        *,
+        reasoning: str = "",
     ) -> MessageWidget:
-        """Add an assistant message with optional progress items."""
+        """Add an assistant message with optional progress items and reasoning."""
         items = [ProgressItem(text=item) for item in (progress_items or [])]
         return self.add_message(
             ChatMessage(
                 role=MessageRole.ASSISTANT,
                 content=content,
                 progress_items=items,
+                reasoning=reasoning,
             )
         )
+
+    def set_reasoning(self, widget: MessageWidget, reasoning: str) -> None:
+        """Attach reasoning text to an existing message widget and re-render.
+
+        Streaming agent responses arrive content-first; reasoning is
+        accumulated alongside and surfaces at the end of the turn
+        (Claude extended thinking, Kimi K2 ``reasoning_content``).
+        Callers pump chunks via :meth:`append_streaming_chunk` and then
+        call this once to bolt the reasoning onto the same widget.
+        """
+        if not reasoning:
+            return
+        widget.message.reasoning = reasoning
+        widget._rerender()
 
     def add_system_message(
         self,

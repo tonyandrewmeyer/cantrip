@@ -16,7 +16,15 @@ from typing import Any
 import httpx
 
 from cantrip.llm._openai_compat import OpenAICompatBase
-from cantrip.llm.base import ProviderError
+from cantrip.llm.base import Message, ProviderError, Response, Tool
+
+# Fireworks rejects non-streaming requests with ``max_tokens > 4096``
+# (400 "Requests with max_tokens > 4096 must have stream=true").  This
+# matters the moment reasoning models are in play: Phase 77 bumps
+# ``max_tokens`` by ``thinking_budget + 4096`` to leave room for
+# reasoning alongside the final answer, and that routinely crosses
+# the cap.
+_NON_STREAMING_MAX_TOKENS_CAP = 4096
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +100,73 @@ class FireworksProvider(OpenAICompatBase):
         self._supports_vision = False
 
         self._probe_capabilities(resolved_key)
+
+    async def complete(
+        self,
+        messages: list[Message],
+        tools: list[Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
+    ) -> Response:
+        """Generate a completion, auto-streaming past Fireworks's non-stream cap.
+
+        Fireworks returns a 400 Bad Request when a non-streaming
+        request carries ``max_tokens > 4096`` (the server requires
+        ``stream=true`` above that).  Phase 77 reserves
+        ``thinking_budget + 4096`` so reasoning models don't starve
+        the reply — for ``thinking_budget >= 1`` that always crosses
+        the cap.  Rather than leak the server's constraint into every
+        caller, delegate to ``stream()`` internally and rebuild a
+        :class:`Response` from the chunks.
+        """
+        effective = self._effective_max_tokens(max_tokens, thinking_budget)
+        if effective is None or effective <= _NON_STREAMING_MAX_TOKENS_CAP:
+            return await super().complete(
+                messages,
+                tools,
+                temperature,
+                max_tokens=max_tokens,
+                thinking_budget=thinking_budget,
+            )
+
+        content_parts: list[str] = []
+        tool_calls = []
+        usage: dict[str, int] = {}
+        metadata: dict[str, Any] = {}
+        async for chunk in self.stream(
+            messages,
+            tools,
+            temperature,
+            max_tokens=max_tokens,
+            thinking_budget=thinking_budget,
+        ):
+            if chunk.content:
+                content_parts.append(chunk.content)
+            if chunk.is_final:
+                tool_calls = chunk.tool_calls
+                usage = chunk.usage
+                metadata = chunk.metadata
+        return Response(
+            content="".join(content_parts),
+            tool_calls=tool_calls,
+            finish_reason="tool_use" if tool_calls else "stop",
+            usage=usage,
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _effective_max_tokens(max_tokens: int | None, thinking_budget: int | None) -> int | None:
+        """Mirror ``OpenAICompatBase._build_request_body``'s thinking floor.
+
+        Returns whatever ``max_tokens`` value the wire request would
+        carry once the ``thinking_budget`` bump is applied.  Kept
+        static so the non-streaming-cap check stays in one place.
+        """
+        if thinking_budget:
+            floor = thinking_budget + 4096
+            return floor if max_tokens is None else max(max_tokens, floor)
+        return max_tokens
 
     def _probe_capabilities(self, api_key: str) -> None:
         """Query ``/models`` once to set context window and capability flags.
