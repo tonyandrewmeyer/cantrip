@@ -153,6 +153,154 @@ separate snapshot file.
   status bar, chat echoes) are UI text, not prompts.  They live in
   the UI layer under `src/cantrip/tui/` or `src/cantrip/web/`.
 
+## Frontmatter metadata on subagents (Phase 55.2) — proposed, deferred
+
+The awesome-copilot agent format specifies a rich YAML frontmatter
+block on each `.agent.md` file — `description`, `name`, `tools`,
+`model`, `target`, `user-invocable`, `disable-model-invocation`,
+`handoffs`, `mcp-servers` (see
+[`instructions/agents.instructions.md`][copilot-agents]).  The
+body is markdown describing the agent's behaviour.  This section
+audits whether that shape would fit Cantrip's subagent prompts
+under `prompts/subagent/*.md`.
+
+### Where Cantrip's subagent metadata lives today
+
+| Fact | Location | Shape |
+|------|----------|-------|
+| Allowed tools per category | `subagent.py::_CATEGORY_TOOLS` | `dict[TaskCategory, frozenset[str]]` |
+| Model routing | `subagent.py::_select_provider` + `_LIGHT_CATEGORIES` | function + set |
+| Guidance body | `prompts/subagent/{research,build,deploy,test,debug,infra}.md` | plain markdown |
+| Max subagent rounds | `subagent.py::MAX_SUBAGENT_ROUNDS` / `MAX_BUILD_ROUNDS` | module constants |
+| Timeout per category | `executor.py::_TASK_TIMEOUTS` + `_DEFAULT_TASK_TIMEOUT` | `dict[TaskCategory, float]` |
+| Temperature | `subagent.py::_SUBAGENT_TEMPERATURE` | constant (same for all) |
+| Permission handler | implicit; PRE_TOOL_CALL hooks can veto | code path |
+
+The guidance body is *already* markdown; everything else is
+Python data — four small structures and one function.
+
+### Proposed frontmatter shape
+
+A naive conversion would give each `prompts/subagent/<cat>.md`
+this frontmatter:
+
+```yaml
+---
+category: build
+tools:
+  - read_file
+  - write_file
+  - edit_file
+  - run_command
+  - charmcraft_pack
+  # …
+model: primary
+max_rounds: 12
+timeout_seconds: 1800
+---
+Write clean, well-structured code following ops framework
+conventions…
+```
+
+Python would then build `_CATEGORY_TOOLS`, the rounds dict, and
+the timeouts dict at import time by scanning the frontmatter.
+Six markdown files replace the four Python data structures; the
+guidance body stays where it is.
+
+### Weigh the trade-offs
+
+**What we gain:**
+
+- **Single authoring surface per category.**  Adding a tool to
+  the build category today means edits in `prompts/subagent/build.md`
+  *and* `subagent.py::_CATEGORY_TOOLS`.  Frontmatter collapses
+  that to one file.
+- **Non-Python contributors.**  A charm author who knows markdown
+  but not Python can tweak their category's tool list without
+  touching `.py`.
+
+**What we lose:**
+
+- **Cross-category comparison.**  `_CATEGORY_TOOLS` lets you see
+  all six allowlists at a glance — "which categories expose
+  `juju_deploy`?" is a visual scan.  Split across files it's a
+  `grep` job.  This view is load-bearing when adding a new tool,
+  because the natural question is "which categories should get
+  it?"
+- **Executable conditional routing.**  `_select_provider` has
+  real logic: research tasks default to the light model *except*
+  when the title contains `operational-discovery` or
+  `synthesise`, in which case they upgrade to primary for
+  quality.  That conditional can't live in frontmatter — it
+  either stays in Python (and the frontmatter duplicates the
+  static part) or gets re-invented as a YAML DSL.
+- **Typing and refactor safety.**  `TaskCategory` and
+  `ModelHint` are enums; frontmatter strings aren't.  A typo in
+  `category: bulid` survives the YAML parser and surfaces as a
+  silent routing bug.  Recovering equivalent safety wants a
+  Pydantic-style validator — but the project's stdlib-dataclass
+  policy (see CLAUDE.md) rules Pydantic out.
+
+### Verdict — propose, defer
+
+The hybrid adoption is plausible (frontmatter as source of
+truth, Python builds the aggregated dicts at import time), but
+the payoff is small for six categories that change a couple of
+times a year.  The real wins come at ~12+ categories or when
+non-Python contributors start authoring subagents — neither
+is true today.  Re-evaluate when:
+
+- The subagent-category count grows past ~10.
+- A third-party charm-author community starts contributing new
+  categories without Python chops.
+- Phase 53.5 (prompts/skills design split) is scoping its own
+  refactor and can absorb the migration.
+
+Record the proposed shape here so the decision is discoverable
+rather than rediscovered.
+
+### Handoffs — rejected
+
+Copilot's `handoffs:` frontmatter field declares user-facing
+"next step" buttons after an agent completes.  It's a VSCode UI
+feature for sequential workflows where a human approves each
+transition.
+
+Cantrip's equivalent concept is `AgentTask.dependencies: list[str]`
+— already declarative, already driving automatic dispatch
+through the executor.  The deterministic planner in
+`planner/deterministic.py::plan_sprint_deploy` writes explicit
+`dependencies=[build_id]` on the deploy task, and the executor
+picks it up the moment the build is DONE.  No human-approval
+button because autonomous runs don't need one.
+
+`handoffs:` would buy Cantrip nothing new for the deterministic
+planner.  For *user-facing "what's next" hints* after a task
+completes — a TUI/Web affordance distinct from dependency
+dispatch — that's UI work, not prompt-authoring work.  File it
+under the copy-friendly-chat (Phase 76) or task-panel review
+(Phase 65) surfaces; don't put it in frontmatter.
+
+### Auto-approve sentinel — defer to Phase 68.2
+
+Copilot exposes `PermissionHandler.approve_all` as an explicit
+constant.  Cantrip's equivalent is implicit: if no PRE_TOOL_CALL
+hook vetoes, the tool runs.  The roadmap bullet asks us to
+*name* this mode so the autonomous loop's permission model is
+inspectable.
+
+Naming a sentinel without a behavioural difference is premature
+— the sentinel only carries weight once there is more than one
+mode (e.g. `ASK` alongside `AUTO_APPROVE`).  Phase 68.2
+("Declarative permission config") already scopes exactly that —
+YAML ask/allow/deny rules per tool + source.  When 68.2 lands
+it will introduce the `PermissionMode` enum naturally; adding a
+single-value enum ahead of it is wasted motion.
+
+Cross-reference: Phase 68.2 in the roadmap.
+
+[copilot-agents]: https://github.com/github/awesome-copilot/blob/main/instructions/agents.instructions.md
+
 ## Markdown-workflow format (Phase 55.5) — rejected, with micro-patterns lifted
 
 The awesome-copilot workflow format expresses agentic tasks as

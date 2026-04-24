@@ -127,6 +127,43 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Subagent-frontmatter investigation — Phase 55.2.**  Audited
+  Cantrip's subagent metadata surface against the awesome-copilot
+  ``.agent.md`` frontmatter spec (998 lines — a full authoring
+  standard).  Cantrip keeps allowed tools, model routing, max
+  rounds, timeouts, and temperature in four Python data
+  structures plus one function; guidance bodies already live in
+  ``prompts/subagent/*.md``.  Three decisions:
+
+  1. **Frontmatter schema — propose, defer.**  A hybrid
+     adoption (YAML frontmatter on ``prompts/subagent/<cat>.md``
+     as source of truth, Python rebuilds the aggregated dicts at
+     import time) is plausible but the payoff is small for six
+     categories that change a couple of times a year.  Real
+     costs: loss of cross-category comparison at a glance,
+     executable-conditional routing in ``_select_provider``
+     can't move into frontmatter, stringly-typed keys drop the
+     ``TaskCategory`` / ``ModelHint`` enum safety.  Re-evaluate
+     when categories grow past ~10 or Phase 53.5 absorbs the
+     migration.  Shape sketch recorded in ``design/PROMPTS.md``.
+  2. **Handoffs — reject.**  ``handoffs:`` is a VSCode-UI feature
+     for interactive "next step" buttons.  Cantrip's
+     ``AgentTask.dependencies: list[str]`` already drives
+     automatic dispatch; the deterministic planner needs nothing
+     more.  For user-facing "what's next" hints after a task
+     completes, that's UI work (Phase 76 / 65), not prompt
+     frontmatter.
+  3. **Auto-approve sentinel — defer to Phase 68.2.**  Naming a
+     mode without a behavioural difference is premature.  Phase
+     68.2 already scopes declarative permission config (YAML
+     ask/allow/deny per tool + source) and will introduce
+     ``PermissionMode`` naturally.  Adding a single-value enum
+     ahead of it is wasted motion.
+
+  Full write-up in ``design/PROMPTS.md`` § *Frontmatter metadata
+  on subagents (Phase 55.2) — proposed, deferred*.  No code
+  changes — investigation only.
+
 - **Markdown-workflow format investigation — Phase 55.5.**  Read
   three awesome-copilot workflow files
   (``ospo-release-compliance-checker.md``, ``daily-issues-report.md``,

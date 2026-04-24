@@ -1987,36 +1987,57 @@ added two new ones (55.7, 55.8).
   rather than as a standalone phase.  Full write-up in
   ``design/SKILLS.md``.
 
-### 55.2 Medium — Frontmatter metadata on subagents and prompts
+### 55.2 Medium — Frontmatter metadata on subagents and prompts ✓
 
-- [ ] Audit what Cantrip currently knows about each subagent at
-  invocation time (allowed tools, model hint, which loop should
-  dispatch it) and where that knowledge lives (hardcoded registry?
-  constructor args? config?)
-- [ ] Sample awesome-copilot's agent frontmatter shape in
-  `instructions/agents.instructions.md` (fields: `description`, `name`,
-  `tools`, `model`, `target`, `user-invocable`,
-  `disable-model-invocation`, `handoffs`) and two to three files under
-  `agents/`
-- [ ] Decide whether a YAML frontmatter block on each subagent prompt
-  (`applyTo:`, `tools:`, `model:`) would let the planner mechanically
-  filter subagents — or whether the current Python-side registry is
-  already better because subagent metadata needs to be executable,
-  not just descriptive
-- [ ] Evaluate the Copilot `handoffs:` concept as a way to make the
-  planner's task-chaining data-driven: today the "build → deploy →
-  verify" chain is hardcoded in `plan_sprint_deploy` etc.; a
-  `handoffs: [deploy, verify]` field on a task template would push the
-  routing into data.  Sketch one concrete task and diff the two shapes
-- [ ] Adopt an explicit, named auto-approve sentinel in the subagent
-  dispatcher (mirrors Copilot's `PermissionHandler.approve_all`).
-  Today "approve everything the parent approved" is implicit;
-  naming the mode makes the autonomous loop's permission model
-  inspectable
-- [ ] Output: a short section in `design/PROMPTS.md` (landing in 53.5)
-  either proposing the schema or recording why it was rejected;
-  handoffs evaluated separately and either folded in or filed as a
-  follow-up phase
+- [x] Audited Cantrip's subagent metadata surface: allowed tools
+  live in ``subagent.py::_CATEGORY_TOOLS`` (a
+  ``dict[TaskCategory, frozenset[str]]``); model routing in
+  ``_select_provider`` + ``_LIGHT_CATEGORIES``; guidance bodies in
+  ``prompts/subagent/*.md`` (already markdown, no frontmatter);
+  max rounds in ``MAX_SUBAGENT_ROUNDS`` / ``MAX_BUILD_ROUNDS``;
+  timeouts in ``executor.py::_TASK_TIMEOUTS``; temperature in
+  ``_SUBAGENT_TEMPERATURE``.  Four Python data structures plus
+  one function, plus six markdown guidance files.  Full table in
+  ``design/PROMPTS.md``.
+- [x] Read ``awesome-copilot/instructions/agents.instructions.md``
+  in full (998 lines — it's a spec for how to author
+  ``.agent.md`` files) and sampled two concrete agents
+  (``accessibility.agent.md``, ``address-comments.agent.md``)
+  from ``agents/``.  Catalogued the frontmatter fields
+  (``description``, ``name``, ``tools``, ``model``, ``target``,
+  ``user-invocable``, ``disable-model-invocation``,
+  ``handoffs``, ``mcp-servers``, ``metadata``).
+- [x] **Main verdict on the frontmatter schema: propose and
+  defer.**  A hybrid adoption (frontmatter on
+  ``prompts/subagent/<cat>.md`` as source of truth, Python
+  rebuilds the ``_CATEGORY_TOOLS`` / rounds / timeouts dicts at
+  import time) is plausible.  The payoff is small for six
+  categories that change a couple of times a year, and the
+  costs are real: loss of cross-category comparison at a
+  glance, executable-conditional routing in ``_select_provider``
+  can't live in frontmatter, and stringly-typed frontmatter
+  drops the enum type-safety on ``TaskCategory`` / ``ModelHint``.
+  Re-evaluate when categories grow past ~10, when non-Python
+  contributors start authoring subagents, or when Phase 53.5
+  (prompts/skills design split) absorbs the migration.  Full
+  shape sketch recorded in ``design/PROMPTS.md`` § *Frontmatter
+  metadata on subagents (Phase 55.2) — proposed, deferred*.
+- [x] **Handoffs — rejected.**  ``handoffs:`` in Copilot is a
+  VSCode-UI feature for interactive "next step" buttons.
+  Cantrip's equivalent is ``AgentTask.dependencies: list[str]``
+  — already declarative, already driving automatic dispatch
+  through the executor.  ``handoffs:`` buys the deterministic
+  planner nothing new.  For user-facing "what's next" hints in
+  the TUI/Web after a task completes, that's a UI surface, not
+  prompt frontmatter; file under Phase 76 (copy-friendly chat)
+  or Phase 65 (task-panel review), not here.
+- [x] **Auto-approve sentinel — defer to Phase 68.2.**  Naming
+  a mode without a behavioural difference is premature — the
+  sentinel only carries weight once there's more than one mode.
+  Phase 68.2 ("Declarative permission config") already scopes
+  YAML ask/allow/deny rules per tool + source; when 68.2 lands
+  it will introduce the ``PermissionMode`` enum naturally.
+  Adding a single-value enum ahead of it is wasted motion.
 
 ### 55.3 Medium — Ralph-loop / disk-as-state comparison and per-goal budget ✓
 
