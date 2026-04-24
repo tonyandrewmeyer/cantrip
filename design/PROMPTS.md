@@ -152,3 +152,124 @@ separate snapshot file.
 - **Not a logging message.**  Operator-facing messages (TUI events,
   status bar, chat echoes) are UI text, not prompts.  They live in
   the UI layer under `src/cantrip/tui/` or `src/cantrip/web/`.
+
+## Markdown-workflow format (Phase 55.5) — rejected, with micro-patterns lifted
+
+The awesome-copilot workflow format expresses agentic tasks as
+plain markdown files with YAML frontmatter instead of Python
+orchestration.  A typical file
+([`ospo-release-compliance-checker.md`][ospo]) is ~100 lines —
+frontmatter declares the trigger, permissions, engine, tools,
+`safe-outputs:` caps, and timeout; the body is a numbered
+step-by-step the agent follows, starting with an explicit
+**trigger guard** that bails if preconditions fail.
+
+Cantrip's closest Python equivalent is
+`src/cantrip/agent/planner/deterministic.py::plan_sprint_deploy`
+— ~40 lines that build a two-element `list[AgentTask]` with
+typed fields (id, title, category, model_hint, description,
+dependencies) and render the task bodies through the same
+Jinja2 path (`task_prompts.render(...)`) that prompts already
+use.
+
+### Why we keep Python orchestration
+
+The awesome-copilot format conflates two things:
+
+1. **Dispatch** — when to run, permissions, side-effect caps.
+   Genuinely declarative; fits in frontmatter.
+2. **Prompt body** — numbered sections, step-by-step
+   instructions.  Already markdown.
+
+Cantrip already separates these: Python handles dispatch
+(`plan_sprint_deploy`), Jinja2-over-markdown handles the body
+(`task_prompts/sprint_build.md.j2` and friends).  A single
+markdown-workflow file would have to pull the Python work into
+frontmatter and couldn't:
+
+- Read `/etc/os-release` at planning time to pick the host
+  Ubuntu version for destructive-mode packing
+  (`_host_ubuntu_version()`).
+- Dispatch to `_sprint_design_paas` vs `_sprint_design_custom`
+  based on the framework/charm-type detection logic
+  (`_FAST_PATH_FRAMEWORKS` membership).
+- Allocate unique task IDs, chain dependencies, or route
+  `model_hint` — all value computations that belong in code.
+
+The remaining uniformity wins are small.  The deterministic
+planner's Python is already tightly factored (dispatch is a
+single `if/else`, design generation is two functions, task
+construction is two `AgentTask(...)` calls).  Replacing it
+with a markdown loader would remove the `AgentTask` typed
+fields in favour of stringly-typed frontmatter keys and lose
+the refactorability that comes with real types.
+
+**Verdict:** reject the format for the deterministic planner.
+Keep Python for orchestration, keep Jinja2/markdown for
+prompt bodies (already the shape).  The fast-path, sprint, and
+one-shot recipes in `deterministic.py` do not benefit from a
+markdown conversion.
+
+### Micro-patterns worth lifting
+
+Two pieces from the awesome-copilot workflow format are worth
+adopting independently of the main verdict.
+
+**1. Explicit trigger guard as step 1 of every task template.**
+ospo-release-compliance-checker's section 1 reads:
+
+> First, determine whether this workflow should proceed:
+> - If the event is `workflow_dispatch`, proceed.
+> - If the event is `issues` with type `opened`, proceed.
+> - … Otherwise, stop and do nothing.
+
+Cantrip task templates currently launch straight into
+instructions; if the planner misroutes a task (wrong category,
+stale context, missing precondition), the subagent burns tokens
+figuring out the mismatch before it bails.  A short "first,
+check X/Y/Z — stop and report if not satisfied" header on each
+task template would short-circuit that.  Size: one paragraph
+per template (~8 templates in `task_prompts/`), mechanical
+edit.  Not scoped to a roadmap phase yet — file it as a drive-by
+improvement when touching each template for other reasons.
+
+**2. `safe-outputs` cap — declarative side-effect limits per
+task.**  ospo's frontmatter includes:
+
+```yaml
+safe-outputs:
+  add-comment:
+    max: 1
+```
+
+The workflow is allowed to post at most one comment.  For
+Cantrip this maps to per-task caps on high-blast-radius tools:
+"this task may call `git_push` at most 1×", "this task may call
+`juju_deploy` at most 3×", "this task may call `write_file` at
+most 20×."  Lands as a new `AgentTask.safe_outputs: dict[str,
+int] | None` field that the subagent checks inside its tool
+dispatcher before firing each call; tripped cap → synthetic
+`ToolResult(success=False, error="safe-outputs cap exceeded")`
+plus a UI event.
+
+This **composes cleanly** with two other phases:
+
+- **Phase 55.3 per-goal budget** (goal-level
+  iterations + tokens) — same circuit-breaker shape, different
+  layer.
+- **Phase 55.4 policy composition** (tool-level
+  allowlists + rate limits) — the `max_calls_per_request`
+  primitive from the `agent-governance` skill is the
+  session-level analogue.
+
+The three layers nest: goal-level budget > task-level
+safe-outputs cap > tool-level policy.  Build whichever pays off
+first; they share the event plumbing and each stands on its own.
+
+Size: ~100 lines for the field + dispatcher check + event type
++ a few tests.  Filed as a follow-up item that pairs with
+whichever of 55.3 or 55.4 lands first — doing them all together
+lets the event bus get one structured shape instead of three
+similar-but-different ones.
+
+[ospo]: https://github.com/github/awesome-copilot/blob/main/workflows/ospo-release-compliance-checker.md

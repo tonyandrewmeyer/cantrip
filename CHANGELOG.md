@@ -127,6 +127,41 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Markdown-workflow format investigation — Phase 55.5.**  Read
+  three awesome-copilot workflow files
+  (``ospo-release-compliance-checker.md``, ``daily-issues-report.md``,
+  ``relevance-check.md``) and compared against Cantrip's
+  ``plan_sprint_deploy`` as the closest Python-orchestration
+  analogue.  **Verdict: reject the format for the deterministic
+  planner.**  The awesome-copilot shape conflates dispatch with
+  prompt body; Cantrip already separates them cleanly (Python for
+  dispatch, Jinja2/markdown for bodies), and a markdown
+  conversion would push dispatch into stringly-typed frontmatter
+  while losing the typed ``AgentTask`` fields and value-computing
+  Python (``_host_ubuntu_version()``, ``_FAST_PATH_FRAMEWORKS``
+  membership, unique-id allocation, dependency chaining).
+
+  Two micro-patterns worth lifting independently:
+  1. **Explicit trigger guard as step 1 of every task template** —
+     short-circuits misrouted tasks before they burn tokens.
+     Filed as a drive-by improvement to apply when touching each
+     template for other reasons.
+  2. **``safe-outputs`` cap as a declarative per-task
+     side-effect limit** — sketched as a new
+     ``AgentTask.safe_outputs: dict[str, int] | None`` field the
+     subagent checks inside its tool dispatcher; tripped cap →
+     synthetic failure + UI event.  Composes cleanly with Phase
+     55.3's goal-level budget and 55.4's tool-level
+     ``max_calls_per_request`` — goal > task > tool, same
+     circuit-breaker shape at three layers.  Sized at ~100 lines +
+     event type + tests; pair with whichever of 55.3 / 55.4 lands
+     first so the event bus gets one structured shape instead of
+     three similar-but-different ones.
+
+  Full write-up in ``design/PROMPTS.md`` § *Markdown-workflow
+  format (Phase 55.5) — rejected, with micro-patterns lifted*.  No
+  code changes — investigation only.
+
 - **Runnable cookbook, first recipe shipped — Phase 55.6.**
   New ``cookbook/`` top-level directory with its own ``README.md``
   (index, recipe format, candidate list).  Each recipe is a

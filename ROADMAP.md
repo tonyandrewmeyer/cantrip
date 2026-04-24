@@ -2107,34 +2107,56 @@ possibly with a small prototype, not a delivered refactor.
   prototype of `compose_policies()` against one existing task type is
   welcome but not required
 
-### 55.5 Low — Markdown workflows versus Python orchestration
+### 55.5 Low — Markdown workflows versus Python orchestration ✓
 
-- [ ] Read two or three files under `../awesome-copilot/workflows/`
-  (especially `ospo-release-compliance-checker.md`) to see how
-  agentic workflows get expressed as plain markdown with frontmatter
-  instead of YAML DSLs or Python glue
-- [ ] Identify one Cantrip flow currently expressed as Python
-  orchestration (candidate: the deterministic `plan_sprint_deploy`
-  chain) and sketch what it would look like as a markdown workflow
-  file loaded through the same Jinja2 path as prompts
-- [ ] Decide: is the deterministic planner's Python code clearer, or
-  would markdown-with-frontmatter be a better authoring surface for
-  the sprint / fast-path / one-shot recipes?
-- [ ] Regardless of the main verdict, lift two micro-patterns from
-  the ospo workflow that are worth adopting on their own:
-  - **`safe-outputs` cap** — a declarative limit on how many side
-    effects a task can produce (e.g. "at most 1 PR", "at most 3
-    `juju deploy` calls").  Lands as a field on task templates and
-    composes with 55.4's rate-limit work
-  - **Explicit trigger guard as step 1** of every task template —
-    the workflow's first section reads the event and bails early if
-    preconditions fail.  Cantrip task templates currently launch
-    straight into instructions; a "first, check X/Y/Z — stop if not"
-    header would catch misrouted tasks before they burn tokens
-- [ ] Output: a short note — likely rejecting the main format, since
-  the deterministic planner has strong reasons to stay in Python —
-  but capturing the reasoning and the two lifted micro-patterns so
-  they are not re-litigated later
+- [x] Read three awesome-copilot workflow files: the 124-line
+  ``ospo-release-compliance-checker.md`` (full frontmatter + 7
+  numbered sections starting with an explicit *Trigger Guard*),
+  the 23-line ``daily-issues-report.md`` (minimal frontmatter with
+  ``safe-outputs: create-issue``), and the 64-line
+  ``relevance-check.md`` (slash-command + GitHub-Actions-style
+  ``${{ }}`` templating).
+- [x] Identified ``plan_sprint_deploy`` as the closest Cantrip
+  analogue and diffed: the awesome-copilot format conflates
+  *dispatch* (triggers, permissions, side-effect caps) with
+  *prompt body* (numbered step-by-step).  Cantrip already
+  separates these — Python handles dispatch, Jinja2/markdown
+  handles the body via ``task_prompts.render(...)``.  A markdown
+  conversion would have to push dispatch into stringly-typed
+  frontmatter and lose the typed ``AgentTask`` fields and the
+  value-computing Python (``_host_ubuntu_version()``,
+  ``_FAST_PATH_FRAMEWORKS`` membership, unique-id allocation,
+  dependency chaining).
+- [x] **Main verdict: reject the format for the deterministic
+  planner.**  Keep Python for orchestration, keep Jinja2/markdown
+  for prompt bodies (already the shape).  The fast-path, sprint,
+  and one-shot recipes in ``deterministic.py`` do not benefit from
+  a markdown conversion — the uniformity wins are small and the
+  costs (stringly-typed frontmatter, lost dynamic behaviour) are
+  real.
+- [x] **Micro-pattern 1 lifted: explicit trigger guard as step 1 of
+  every task template.**  ospo's section 1 reads "if X, proceed;
+  otherwise, stop."  Cantrip task templates currently launch
+  straight into instructions; a short "first, check X/Y/Z — stop
+  and report if not satisfied" header on each template would
+  short-circuit misrouted tasks before they burn tokens.  Filed
+  as a drive-by improvement to apply when touching each template
+  for other reasons (~8 templates in ``task_prompts/``, one
+  paragraph each).  Not scoped to a roadmap phase yet.
+- [x] **Micro-pattern 2 lifted: ``safe-outputs`` cap — declarative
+  per-task side-effect limits.**  Sketched as a new
+  ``AgentTask.safe_outputs: dict[str, int] | None`` field the
+  subagent checks inside its tool dispatcher before each call;
+  tripped cap → synthetic ``ToolResult(success=False,
+  error="safe-outputs cap exceeded")`` + UI event.  Composes
+  cleanly with 55.3's goal-level budget and 55.4's tool-level
+  ``max_calls_per_request`` — goal > task > tool, same
+  circuit-breaker shape at three layers.  Sized at ~100 lines +
+  event type + tests; filed to pair with whichever of 55.3 / 55.4
+  lands first so the event bus gets one structured shape instead
+  of three similar-but-different ones.
+- [x] Full write-up in ``design/PROMPTS.md`` § *Markdown-workflow
+  format (Phase 55.5) — rejected, with micro-patterns lifted*.
 
 ### 55.6 Medium — Runnable cookbook ✓
 
