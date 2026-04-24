@@ -135,6 +135,7 @@ def build_tools(
         CharmcraftReleaseTool,
         CharmcraftUploadTool,
         ExtractDesignDecisionsTool,
+        ExtractTroubleshootingTool,
         GenerateDiagramTool,
         GenerateDocsTool,
         GenerateIconTool,
@@ -190,6 +191,7 @@ def build_tools(
         GenerateDocsTool(),
         GenerateDiagramTool(),
         ExtractDesignDecisionsTool(),
+        ExtractTroubleshootingTool(),
         GenerateLoadTestTool(),
         # Demo
         ShowboatTool(),

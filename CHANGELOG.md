@@ -5,6 +5,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`extract_troubleshooting` mines error→fix pairs from the session
+  transcript (Phase 74.4).**  New tool that walks ``messages`` +
+  ``subagent_messages`` chronologically, finds tool results with
+  ``is_error: true``, classifies each via a regex on stderr keywords
+  (``image`` / ``observability`` / ``secret`` / ``relation`` / ``hook``
+  / ``network`` / ``storage`` / ``general``), and pairs each error
+  with the agent's next text reply (the diagnosis) and the next
+  successful tool call within five turns (the resolution).  Trivial
+  errors (general category + fewer than five lines) are filtered;
+  category-matched errors are kept regardless of length.  Output
+  lands in ``docs/how-to/troubleshooting.md`` grouped by category
+  with ``### N. <symptom>`` blocks carrying **Symptom** /
+  **Cause** / **Resolution** / **See also** fields.  Charm-author
+  intros above the ``<!-- cantrip-generated below -->`` marker are
+  preserved across re-runs; a marker-less existing page is treated
+  as fully user-authored and gets the marker appended.  The tool
+  also amends ``docs/how-to/index.md`` to include ``troubleshooting``
+  in the toctree when a how-to index exists.
+
 - **`extract_design_decisions` builds an architecture log from the
   session transcript (Phase 74.3).**  New tool that opens the
   ``.cantrip`` SQLite store, reads the ``decisions`` table the agent

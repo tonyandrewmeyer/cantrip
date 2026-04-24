@@ -4717,41 +4717,75 @@ deferred**:
   page preserved with marker appended, ``db_path``
   override).  Existing 4844 tests still pass.
 
-### 74.4 Medium — Troubleshooting page from debug history
+### 74.4 Medium — Troubleshooting page from debug history ✓
 
-- [ ] New tool ``extract_troubleshooting`` that walks the
-  transcript for error→fix pairs.  An entry qualifies
-  when:
-  - The agent encountered a non-trivial error (subprocess
-    non-zero exit with a stderr block, exception
-    traceback, ``juju status`` showing ``error``,
-    Jubilant assertion failure)
-  - It then took action that resolved the error (the
-    next turn's verification check passed)
-  - The error wasn't a trivial syntax fix (filter by
-    minimum diagnostic-output length, e.g. > 5 lines, or
-    by category — keep relation, hook, secret, storage,
-    image-pull, network errors; drop typos)
-- [ ] Render as ``docs/how-to/troubleshooting.md`` with one
-  entry per qualifying pair: *Symptom* (the error
-  excerpt), *Cause* (the agent's diagnosis as recorded in
-  its self-reflection), *Resolution* (the fix), *See also*
-  (transcript turn ID).
-- [ ] Group by category — relation, hook, secret, image,
-  network, observability — using a small classifier
-  (regex on stderr keywords is fine; this is
-  generation-time, no LLM call needed unless the regex
-  fails).
-- [ ] Preserve charm-author additions: an existing
-  ``docs/how-to/troubleshooting.md`` that contains a
-  ``<!-- cantrip-generated below -->`` marker has the
-  generated section replaced; everything before the
-  marker is preserved.  No marker → fully overwrite (with
-  CONFIRM via Phase 64).
-- [ ] ``tests/unit/test_extract_troubleshooting.py`` —
-  fixture transcript yields expected entries; trivial
-  errors filtered out; existing user content preserved
-  via marker.
+- [x] ``ExtractTroubleshootingTool`` (``extract_troubleshooting``)
+  added to ``publishing.py``.  Walks ``messages`` and
+  ``subagent_messages`` chronologically (one stream at a
+  time so diagnoses don't bleed across subagent task
+  boundaries) and looks at every assistant message whose
+  ``tool_results`` carry ``is_error=true``.  Each error
+  result becomes a ``TroubleshootingEntry`` carrying the
+  symptom (wrapper-stripped tool output, excerpted to 12
+  lines), the agent's next text reply within five turns
+  (the diagnosis), and the next successful tool call
+  within eight turns (the resolution).  A
+  ``<tool_result>`` envelope stripper handles the wrapper
+  ``core.py`` adds around tool results, so the symptom
+  excerpt is the actual error text.
+- [x] Filter: errors that match a non-general category are
+  always kept; general-bucket errors with fewer than
+  ``_MIN_DIAGNOSTIC_LINES`` (5) of content are dropped as
+  typo-shaped.  This catches the "drop typos" case the
+  roadmap calls for without relying on a separate
+  classifier.
+- [x] Categoriser via ``_categorise_error``: regex over
+  stderr keywords across eight buckets (image,
+  observability, secret, relation, hook, network,
+  storage, general).  Order is charm-stack-specific
+  patterns first (image / observability / secret /
+  relation / hook) so an error mentioning a stack
+  component lands in the bucket the operator looks at
+  first; transport-layer patterns (network / storage)
+  come after.  No LLM call — pure regex.
+- [x] ``format_troubleshooting_page`` groups entries by
+  category in stable display order
+  (``_CATEGORY_ORDER``) and emits ``### N. <symptom>``
+  blocks with **Symptom** / **Cause** / **Resolution** /
+  **See also** sub-fields (Cause and Resolution omitted
+  when null so a minimal entry stays clean).  Empty
+  buckets are skipped from the output entirely.
+- [x] Charm-author intro preserved across re-runs via
+  ``_resolve_troubleshooting_intro`` mirroring 74.3:
+  marker in ``troubleshooting.md`` → preserve content
+  above; no marker but file exists → preserve verbatim
+  and append the marker; no file → default
+  ``# Troubleshooting`` heading.  No CONFIRM dependency
+  on Phase 64 — the marker pattern keeps the bridge
+  reversible without dragging the confirmation flow into
+  a publishing tool.
+- [x] ``_ensure_troubleshooting_in_toctree`` patches
+  ``docs/how-to/index.md`` to include ``troubleshooting``
+  before the closing toctree fence when the index exists
+  and doesn't already list the page.  No-op when the
+  index is missing — the next ``generate_docs`` will
+  rebuild it.  ``ToolResult.data["toctree_updated"]``
+  reports whether the patch fired.
+- [x] ``tests/unit/test_extract_troubleshooting.py`` —
+  42 tests covering ``_categorise_error`` (13
+  parametrised + invariants), ``_strip_tool_result_wrapper``
+  (2), ``_read_transcript_pairs`` (7: missing DB, no
+  tables, end-to-end pair extraction with diagnosis +
+  resolution, trivial-general drop, short-categorised
+  keep, long-general keep, subagent walk, non-error
+  ignored), ``format_troubleshooting_page`` (5),
+  ``_resolve_troubleshooting_intro`` (3),
+  ``_ensure_troubleshooting_in_toctree`` (3), and
+  ``ExtractTroubleshootingTool`` end-to-end (7: missing
+  dir, no DB → placeholder, grouped output, intro
+  preserved, marker-less existing page, toctree amended,
+  ``db_path`` override).  All 4866 prior tests still
+  pass.
 
 ### What this phase is *not*
 
