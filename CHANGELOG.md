@@ -5,6 +5,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Per-goal iteration + token budget with a circuit breaker
+  (Phase 55.3 follow-up).**  The per-goal budget primitive scoped
+  in the 55.3 investigation now ships.  Set a hard stop with
+  ``--max-iterations N`` or ``--max-tokens N`` on the CLI (or the
+  ``CANTRIP_MAX_ITERATIONS`` / ``CANTRIP_MAX_TOKENS`` env vars),
+  and the background executor blocks the next task spawn with a
+  ``Goal budget exceeded: N iterations (cap: N).  Raise with
+  /budget --max-iterations N`` message once a cap is hit.  A
+  ``GOAL_BUDGET_EXCEEDED`` UI event + SYSTEM transcript message
+  surface the stop in the chat so users see the cap in-band.  The
+  new ``/budget`` slash command prints the current ``used / cap``
+  summary, raises any individual cap in place, and with
+  ``--clear`` drops the budget entirely.  Raising a cap moves
+  budget-blocked tasks back to ``pending`` so the executor picks
+  them up automatically.  ``--max-tokens`` splits evenly across
+  prompt + completion caps; ``/budget --max-prompt-tokens N`` /
+  ``--max-completion-tokens N`` set them asymmetrically when
+  needed.  Pairs with Phase 80.3's task-level rate limit (when it
+  ships) — goal > task > session-call is the three-layer circuit
+  breaker shape described in design/AGENT.md.
+
 - **JSONL audit trail for policy decisions (Phase 80.4).**  Every
   subagent tool call now lands as one JSON line in
   ``<charm>/.cantrip-audit.jsonl`` with fields ``timestamp`` /

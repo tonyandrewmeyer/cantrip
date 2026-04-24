@@ -37,6 +37,7 @@ class EventType(enum.StrEnum):
     COMPACTION_STARTED = "compaction_started"
     COMPACTION_COMPLETED = "compaction_completed"
     CACHE_METRICS_UPDATED = "cache_metrics_updated"
+    GOAL_BUDGET_EXCEEDED = "goal_budget_exceeded"
 
 
 @dataclass(frozen=True)
@@ -262,6 +263,21 @@ def compaction_started(*, tokens_before: int, source: str = "main") -> Event:
     return Event(
         type=EventType.COMPACTION_STARTED,
         payload={"tokens_before": tokens_before, "source": source},
+    )
+
+
+def goal_budget_exceeded(*, task_id: str, reason: str) -> Event:
+    """Build a ``GOAL_BUDGET_EXCEEDED`` event.
+
+    Phase 55.3: fires when the executor's ``_budget_allows`` gate
+    trips so the TUI / Web can surface the hard-stop in the chat
+    rather than leaving users to work out why the queue stalled.
+    ``reason`` is the human-readable block string from
+    :func:`cantrip.agent.goal_budget.check_budget`.
+    """
+    return Event(
+        type=EventType.GOAL_BUDGET_EXCEEDED,
+        payload={"task_id": task_id, "reason": reason},
     )
 
 

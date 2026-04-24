@@ -163,6 +163,14 @@ def run_cli(args: argparse.Namespace) -> int:
         hook_runner=HookRunner.from_disk(repo_root=args.path),
     )
 
+    # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.
+    from cantrip.agent.goal_budget import from_cli_args
+
+    agent.state.goal_budget = from_cli_args(
+        max_iterations=getattr(args, "max_iterations", None),
+        max_tokens=getattr(args, "max_tokens", None),
+    )
+
     # Set improvement mode if --improve was passed.
     if improve_path is not None:
         from pathlib import Path

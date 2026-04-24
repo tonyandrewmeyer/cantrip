@@ -270,6 +270,133 @@ class TestCost:
         assert "300 tokens" in result.text  # research: 200 + 100
 
 
+class TestBudget:
+    """Phase 55.3: ``/budget`` shows or raises the per-goal budget."""
+
+    def _make_agent(
+        self,
+        memory_manager: MemoryManager,
+        store: SessionStore,
+        *,
+        budget=None,
+        tasks: list | None = None,
+    ) -> SimpleNamespace:
+        from cantrip.agent.queue import WorkQueue
+
+        queue = WorkQueue()
+        for task in tasks or []:
+            queue.add_task(task)
+        return SimpleNamespace(
+            _memory_manager=memory_manager,
+            state=SimpleNamespace(
+                charm_path=None,
+                goal_budget=budget,
+                messages=[],
+            ),
+            mcp_registry=None,
+            mcp_marketplace_sources=[],
+            mcp_marketplace_loader=None,
+            store=store,
+            provider=SimpleNamespace(model_name="fake-model"),
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            work_queue=queue,
+        )
+
+    def test_no_budget_set_shows_usage_hint(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        result = dispatch(agent, "/budget")
+        assert result is not None
+        assert "No goal budget" in result.text
+
+    def test_shows_summary_when_budget_set(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        from cantrip.agent.goal_budget import GoalBudget
+
+        budget = GoalBudget(max_iterations=10)
+        agent = self._make_agent(memory_manager, session_store, budget=budget)
+        result = dispatch(agent, "/budget")
+        assert result is not None
+        assert "0/10" in result.text
+
+    def test_raise_iteration_cap_in_place(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        from cantrip.agent.goal_budget import GoalBudget
+
+        budget = GoalBudget(max_iterations=5)
+        agent = self._make_agent(memory_manager, session_store, budget=budget)
+        result = dispatch(agent, "/budget --max-iterations 50")
+        assert result is not None
+        assert budget.max_iterations == 50
+        assert "50" in result.text
+
+    def test_set_cap_creates_budget_if_none(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        result = dispatch(agent, "/budget --max-prompt-tokens 10000")
+        assert result is not None
+        assert agent.state.goal_budget is not None
+        assert agent.state.goal_budget.max_prompt_tokens == 10_000
+
+    def test_clear_drops_budget(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        from cantrip.agent.goal_budget import GoalBudget
+
+        agent = self._make_agent(
+            memory_manager, session_store, budget=GoalBudget(max_iterations=5)
+        )
+        result = dispatch(agent, "/budget --clear")
+        assert result is not None
+        assert agent.state.goal_budget is None
+
+    def test_raise_unblocks_budget_blocked_tasks(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        """Raising the cap moves budget-blocked tasks back to pending."""
+        from cantrip.agent.goal_budget import GoalBudget
+        from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+
+        blocked_task = AgentTask(id="t1", title="Build", category=TaskCategory.BUILD)
+        other_blocked = AgentTask(id="t2", title="Wait", category=TaskCategory.BUILD)
+        agent = self._make_agent(
+            memory_manager,
+            session_store,
+            budget=GoalBudget(max_iterations=1),
+            tasks=[blocked_task, other_blocked],
+        )
+        # Block both — one for budget, one for something else.
+        agent.work_queue.set_blocked("t1", "Goal budget exceeded: 1 iterations (cap: 1).")
+        agent.work_queue.set_blocked("t2", "Waiting for user confirmation")
+
+        dispatch(agent, "/budget --max-iterations 100")
+
+        assert agent.work_queue.get_task("t1").status is TaskStatus.PENDING
+        # Not budget-blocked → untouched.
+        assert agent.work_queue.get_task("t2").status is TaskStatus.BLOCKED
+
+    def test_rejects_unknown_flag(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        result = dispatch(agent, "/budget --wat 10")
+        assert result is not None
+        assert "Usage" in result.text
+
+    def test_rejects_negative_value(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        result = dispatch(agent, "/budget --max-iterations -1")
+        assert result is not None
+        assert ">= 0" in result.text
+
+
 class TestExport:
     """/export writes the live transcript to disk via the shared renderers."""
 

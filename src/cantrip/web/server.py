@@ -871,6 +871,14 @@ def run_web(args: argparse.Namespace) -> int:
         light_provider=light_provider,
     )
 
+    # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.
+    from cantrip.agent.goal_budget import from_cli_args
+
+    agent.state.goal_budget = from_cli_args(
+        max_iterations=getattr(args, "max_iterations", None),
+        max_tokens=getattr(args, "max_tokens", None),
+    )
+
     port = getattr(args, "web_port", _DEFAULT_PORT)
 
     try:

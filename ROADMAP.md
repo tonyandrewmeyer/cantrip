@@ -2079,6 +2079,38 @@ added two new ones (55.7, 55.8).
   implementation deferred to a dedicated follow-up phase when
   autonomous runs routinely exceed ~20 tasks and the
   "run-until-done" default stops being adequate.
+- [x] **Implementation shipped** (after the deferred follow-up was
+  unblocked by Phase 80.1–80.5's defence-in-depth stack).
+  ``src/cantrip/agent/goal_budget.py`` ships ``GoalBudget``
+  (iteration / prompt / completion caps + ``started_at``),
+  ``measure_usage`` / ``check_budget`` (query the store for
+  usage-since and return a block reason), and ``from_cli_args``
+  that reads ``--max-iterations`` / ``--max-tokens`` with
+  ``CANTRIP_MAX_ITERATIONS`` / ``CANTRIP_MAX_TOKENS`` env-var
+  fallback.  ``started_at`` uses SQLite's ``datetime('now')``
+  shape (``%Y-%m-%d %H:%M:%S`` UTC) so the ``WHERE timestamp
+  >= ?`` comparison against the ``token_usage`` table works
+  lexicographically — mixing Python's ``isoformat`` with
+  SQLite's space-separated format compares wrong.
+  ``AgentState.goal_budget`` carries the optional dataclass.
+  ``BackgroundExecutor`` gate ``_check_goal_budget`` fires
+  before each spawn in ``_run_loop``; a tripped budget blocks
+  the task with ``Goal budget exceeded: …`` and invokes the
+  new ``on_budget_exceeded`` callback, which the core wires to
+  a ``GOAL_BUDGET_EXCEEDED`` UI event plus a SYSTEM chat
+  message so the stop lands in the transcript.  ``/budget``
+  slash command shows the ``used / cap`` summary, raises any
+  individual cap in place, and clears the budget entirely with
+  ``--clear``; raising a cap moves every budget-blocked task
+  back to ``pending`` so the executor picks them up on the
+  next poll.  CLI + env wiring threaded through ``run_cli``,
+  ``CantripApp.__init__``, and ``_run_web``.
+  ``tests/unit/test_goal_budget.py`` (24 tests), plus 6 in
+  ``tests/unit/executor/test_budget.py`` covering the gate-
+  trips / raise-clears / store-less paths end-to-end, plus 8
+  in ``tests/unit/test_slash_commands.py::TestBudget`` for
+  the slash surface including the unblock-on-raise
+  invariant.
 
 ### 55.4 High — Policy composition for tool access ✓
 

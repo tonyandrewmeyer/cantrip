@@ -1,11 +1,16 @@
 """Agent state data structures."""
 
+from __future__ import annotations
+
 import datetime
 import pathlib
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cantrip.llm.base import Message
+
+if TYPE_CHECKING:
+    from cantrip.agent.goal_budget import GoalBudget
 
 
 @dataclass
@@ -84,6 +89,14 @@ class AgentState:
 
     # Transient audit report — populated after charm_audit completes.
     audit_report: str | None = None
+
+    # Phase 55.3: optional per-goal iteration / token budget.  When
+    # set, the executor consults it before spawning each task and
+    # marks the task BLOCKED once the cap is reached.  Mutable so
+    # ``/budget`` can raise caps in place.  Not persisted — each
+    # session re-opts-in via CLI flags or env vars so a budget stop
+    # doesn't silently cascade across resumes.
+    goal_budget: GoalBudget | None = None
 
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)

@@ -94,6 +94,8 @@ class CantripApp(App):
         improve_path: Path | None = None,
         theme_name: str | None = None,
         base_url: str | None = None,
+        max_iterations: int | None = None,
+        max_tokens: int | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -109,6 +111,8 @@ class CantripApp(App):
         self._improve_path = improve_path
         self._theme_name = theme_name
         self._base_url = base_url
+        self._max_iterations = max_iterations
+        self._max_tokens = max_tokens
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -271,6 +275,14 @@ class CantripApp(App):
                 charm_path=self.charm_path,
                 light_provider=light_provider,
                 hook_runner=HookRunner.from_disk(repo_root=self.charm_path),
+            )
+
+            # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.
+            from cantrip.agent.goal_budget import from_cli_args
+
+            self._agent.state.goal_budget = from_cli_args(
+                max_iterations=self._max_iterations,
+                max_tokens=self._max_tokens,
             )
 
             # Set improvement mode if --improve was passed.

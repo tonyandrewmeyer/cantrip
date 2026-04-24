@@ -2365,6 +2365,15 @@ class CantripAgent:
                 duration_ms=duration_ms,
             )
 
+        # Phase 55.3: forward goal-budget trips to both the transcript
+        # (as a SYSTEM chat message) and the shared event bus so TUI
+        # and Web show the stop in-band rather than leaving the user
+        # to work out why the queue stalled.
+        def _forward_budget_exceeded(task: AgentTask, reason: str) -> None:
+            self.state.messages.append(Message(role=Role.SYSTEM, content=reason))
+            self._event_bus.publish(ui_events.goal_budget_exceeded(task_id=task.id, reason=reason))
+            self._event_bus.publish(ui_events.chat_message(role="system", content=reason))
+
         kwargs: dict[str, object] = {
             "queue": self._work_queue,
             "tools": self._tools,
@@ -2375,6 +2384,7 @@ class CantripAgent:
             "hook_runner": self._hook_runner,
             "on_task_done": _purge_task_checkpoints,
             "on_tool_invoked": _forward_subagent_tool_invoked,
+            "on_budget_exceeded": _forward_budget_exceeded,
         }
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency

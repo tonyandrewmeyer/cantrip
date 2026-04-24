@@ -126,6 +126,29 @@ def parse_args() -> argparse.Namespace:
         help="Maximum concurrent subagent tasks (default: 3)",
     )
     run_parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        dest="max_iterations",
+        help=(
+            "Phase 55.3 per-goal budget: hard cap on LLM request count "
+            "before the work queue blocks.  Also settable via "
+            "``CANTRIP_MAX_ITERATIONS`` env var."
+        ),
+    )
+    run_parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        dest="max_tokens",
+        help=(
+            "Phase 55.3 per-goal budget: hard cap on total (prompt + "
+            "completion) tokens before the work queue blocks.  Splits "
+            "evenly across prompt and completion caps.  Also settable "
+            "via ``CANTRIP_MAX_TOKENS`` env var."
+        ),
+    )
+    run_parser.add_argument(
         "--improve",
         type=Path,
         default=None,
@@ -581,6 +604,8 @@ def _run(args: argparse.Namespace) -> int:
             improve_path=improve_path,
             theme_name=args.theme,
             base_url=getattr(args, "base_url", None),
+            max_iterations=getattr(args, "max_iterations", None),
+            max_tokens=getattr(args, "max_tokens", None),
         )
         app.run()
         _print_update_panel(app.pending_update_info)

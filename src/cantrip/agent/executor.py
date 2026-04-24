@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 from cantrip.agent import race, routing
 from cantrip.agent.autodeploy import followup_tasks
+from cantrip.agent.goal_budget import check_budget
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.routing import RouteAction, route, snapshot_from_queue
 from cantrip.agent.services import (
@@ -65,6 +66,12 @@ _ERROR_COOLDOWN = 5.0
 
 # Called when a task completes or fails, for TUI/conversation-loop coordination.
 TaskEventCallback = Callable[[AgentTask], None] | None
+
+# Phase 55.3: callback fired when the goal budget trips before a task
+# spawn.  ``reason`` is the block string from ``goal_budget.check_budget``,
+# suitable for display in the TUI / Web chat.  The executor has already
+# marked the task BLOCKED by the time the callback fires.
+BudgetExceededCallback = Callable[[AgentTask, str], None] | None
 
 # Characters allowed in a filesystem-safe candidate id derived from a
 # provider's model name.  Everything else collapses to a single hyphen.
@@ -341,6 +348,7 @@ class BackgroundExecutor:
         extra_providers: list[llm.LLMProvider] | None = None,
         hook_runner: HookRunner | None = None,
         on_tool_invoked: ToolInvokedCallback | None = None,
+        on_budget_exceeded: BudgetExceededCallback = None,
     ) -> None:
         self._queue = queue
         self._tools = tools
@@ -353,6 +361,7 @@ class BackgroundExecutor:
         self._max_concurrency = max(1, max_concurrency)
         self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
         self._on_tool_invoked = on_tool_invoked
+        self._on_budget_exceeded = on_budget_exceeded
 
         # Injected services — fall back to defaults when not provided.
         self._git: GitService = git_service or _DefaultGitService()
@@ -566,6 +575,24 @@ class BackgroundExecutor:
                 if decision.action == RouteAction.SPAWN_TASK:
                     task = self._queue.get_task(decision.task_id)
                     if task is not None and task.status == TaskStatus.PENDING:
+                        # Phase 55.3: per-goal budget gate.  If the
+                        # operator set a ``goal_budget`` and any cap
+                        # has been reached, block the task with the
+                        # budget reason instead of spawning it.  The
+                        # task stays blocked until the operator raises
+                        # the cap via ``/budget`` (which clears the
+                        # block as a side effect).
+                        budget_veto = self._check_goal_budget()
+                        if budget_veto is not None:
+                            self._queue.set_blocked(task.id, budget_veto)
+                            self._record_status_change(
+                                task, "blocked", old_status="pending", error=budget_veto
+                            )
+                            if self._on_budget_exceeded is not None:
+                                self._on_budget_exceeded(task, budget_veto)
+                            self._persist()
+                            await asyncio.sleep(_POLL_INTERVAL)
+                            continue
                         self._queue.set_active(task.id)
                         self._record_status_change(task, "active", old_status="pending")
                         at = asyncio.create_task(self._run_task_with_semaphore(task))
@@ -614,6 +641,19 @@ class BackgroundExecutor:
         assert self._semaphore is not None  # noqa: S101
         async with self._semaphore:
             await self._execute_task(task)
+
+    def _check_goal_budget(self) -> str | None:
+        """Phase 55.3: consult the per-goal budget before a task spawn.
+
+        Returns a block reason when the budget is exceeded, or
+        ``None`` when there's no budget set or every cap is still
+        clear.  Without a ``SessionStore`` the gate is a no-op —
+        budget evaluation depends on the persisted token-usage rows.
+        """
+        budget = self._state.goal_budget
+        if budget is None or self._store is None:
+            return None
+        return check_budget(self._store, budget)
 
     # -- Confirm handling ----------------------------------------------------
 
