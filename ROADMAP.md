@@ -1950,21 +1950,42 @@ skill, the ospo workflow, the acquire-codebase-knowledge scan script,
 the Copilot agent-frontmatter spec) refined several items below and
 added two new ones (55.7, 55.8).
 
-### 55.1 Medium — Skill-as-folder convention
+### 55.1 Medium — Skill-as-folder convention ✓
 
-- [ ] Read a representative sample of awesome-copilot skills
-  (`skills/acquire-codebase-knowledge/`, `skills/agent-governance/`,
-  `skills/pytest-coverage/`) and document the folder shape:
-  `SKILL.md` + `assets/templates/` + `scripts/` + `references/`
-- [ ] Compare against Cantrip's current skill layout under
-  `src/cantrip/agent/skills/` — what lives alongside `SKILL.md`
-  today, and what would naturally move in (charm scaffolds, Scenario
-  test fixtures, Jubilant fixtures, rockcraft / charmcraft templates)
-- [ ] Prototype one skill (candidate: `harness-migration` from commit
-  8621c49) converted to the full folder layout and report what broke
-  or improved
-- [ ] Record the decision as a section in `design/SKILLS.md` once Phase
-  53.5 lands that file; do not create a parallel design doc
+- [x] Surveyed three representative awesome-copilot skills at
+  revision 2026-04-24: ``pytest-coverage`` (single-file),
+  ``agent-governance`` (long prose, still single-file), and
+  ``acquire-codebase-knowledge`` (fully populated —
+  ``assets/templates/``, ``references/``, ``scripts/``).  Folder
+  shape catalogued in ``design/SKILLS.md`` § *Skill-as-folder
+  convention*.
+- [x] Mapped against Cantrip's current layout: all 30 bundled
+  skills are single ``SKILL.md`` files, bodies range from ~100
+  to ~500 lines, content is workflow guidance (when-to-use,
+  decision tables, code snippets, done-criteria).  None ships a
+  template file or executable helper.
+- [x] Identified two loader gaps that stand between the current
+  layout and useful sibling files: ``LoadSkillTool`` surfaces
+  only the body text (no asset paths, no skill-root injection),
+  and the ``read_file`` tool is sandboxed to the working tree
+  (skills live elsewhere).  Documented the three possible
+  fixes (rewrite relative links; prepend a ``Skill root:``
+  header; add a dedicated ``load_skill_asset`` tool).
+- [x] Deviation: did **not** ship a physical prototype on
+  ``harness-migration``.  A half-conversion would need the
+  loader change to be useful, and a SKILL.md + duplicate-
+  reference-file layout would add cruft without a quality win.
+  The recommendation below explains the call.
+- [x] Recommendation: **keep the directory shell, defer the
+  plumbing.**  The loader already tolerates siblings (they're
+  silently ignored); none of today's skills has a concrete need
+  for them.  The pattern becomes valuable only when a skill
+  ships an executable helper (Phase 55.7's scan.py port is the
+  first real candidate) or a copy-me-into-the-repo template
+  (Phase 55.6's cookbook may surface one).  File the loader
+  work as a prerequisite of whichever of those lands first,
+  rather than as a standalone phase.  Full write-up in
+  ``design/SKILLS.md``.
 
 ### 55.2 Medium — Frontmatter metadata on subagents and prompts
 

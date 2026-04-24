@@ -156,3 +156,125 @@ The authoritative list is whatever `SkillsIndex.discover()` picks up
   basic agent behaviour — out of scope.
 - **Not a place for project-wide rules.**  Those belong in the
   system prompt (`prompts/system.md.j2`), which every turn sees.
+
+## Skill-as-folder convention (Phase 55.1)
+
+The awesome-copilot skills ecosystem uses a richer folder layout
+than Cantrip does today:
+
+```
+skills/<name>/
+├── SKILL.md
+├── assets/
+│   └── templates/          # Boilerplate files the agent copies out
+│       ├── STACK.md
+│       └── …
+├── references/             # Load-on-demand context the body links to
+│   ├── stack-detection.md
+│   └── inquiry-checkpoints.md
+└── scripts/                # Executable helpers the body invokes
+    └── scan.py
+```
+
+*Example: `skills/acquire-codebase-knowledge/` in
+[github/awesome-copilot](https://github.com/github/awesome-copilot)
+at revision surveyed 2026-04-24.*
+
+Three shapes in that repo span the spectrum:
+
+- `pytest-coverage/SKILL.md` — a one-page skill, no siblings.
+- `agent-governance/SKILL.md` — long prose, still single-file.
+- `acquire-codebase-knowledge/` — fully populated (7 markdown
+  templates, 2 reference files, one ~500-line Python scanner).
+
+The SKILL.md body references siblings by relative markdown link
+(`[STACK.md](assets/templates/STACK.md)`) and assumes the agent
+can resolve the path against a *skill root*.  In Copilot-land
+this works because the harness stages the whole folder in a
+known location and exports `$SKILL_ROOT` when firing the skill.
+
+### Cantrip's current layout
+
+Every one of Cantrip's 30 bundled skills is a single
+`SKILL.md` — the directory shell exists (we already discover
+`<root>/<name>/SKILL.md`) but nothing lives next to it.  Skill
+bodies range from ~100 lines (`iterate-fix`, `bundle`) to ~500
+lines (`charmcraft`).  Content is workflow guidance: when-to-use
+blocks, decision tables, short code snippets, done-criteria
+checklists.  None of the skills ship a template file or an
+executable helper script.
+
+### What it would take to adopt
+
+Two loader gaps stand between today's layout and useful
+sibling files:
+
+1. **`LoadSkillTool` returns only the body text.**  Siblings
+   aren't listed, their paths aren't surfaced, and the agent has
+   no way to reach them via `load_skill`.  Options: rewrite
+   relative links in the body to absolute paths at load time;
+   prepend a `Skill root: <abs>` header the body can reference;
+   or add a dedicated `load_skill_asset(name, relative_path)`
+   tool.
+2. **The agent's `read_file` tool is path-based and sandboxed to
+   the working tree** (see `src/cantrip/agent/tools/read_file.py`).
+   Reading from under `src/cantrip/skills/…` — or from an
+   external-scope skill dir — would need either a sandbox
+   exception or the dedicated asset loader above.
+
+Neither is large, but they're real infrastructure commitments.
+The filesystem walker in `SkillsIndex._discover_one_root`
+already tolerates any sibling files — they're just not
+surfaced to the agent today.
+
+### Recommendation — keep the shape, defer the plumbing
+
+Cantrip's 30 bundled skills are workflow guides.  None of them
+currently ships template content that would be meaningfully
+cleaner as a separate file, and none has an executable helper.
+The `harness-migration` skill (185 lines) has a Harness→Scenario
+equivalents table that *could* move to
+`references/harness-to-scenario-map.md`, but that split would
+hurt readability more than it helps: the agent reads the whole
+SKILL.md into context on load, and bouncing out to fetch a
+reference file doubles the tool-call count with no quality win.
+
+The pattern becomes valuable when a skill either:
+
+- Ships an **executable helper** the agent runs as a
+  subprocess.  The Phase 55.7 "deterministic pre-scan for Path
+  B custom apps" is the first concrete candidate — it proposes
+  vendoring or porting `awesome-copilot`'s ~500-line `scan.py`
+  into Cantrip.  If that phase lands via the vendored script
+  path (as opposed to a fully Cantrip-native Python tool), the
+  script belongs under `skills/acquire-codebase-knowledge/scripts/`
+  and the loader change becomes worth the spend.
+- Ships **copy-me-into-the-repo templates** bigger than a
+  snippet.  The Phase 55.6 "runnable cookbook" might surface
+  such a case if a cookbook recipe wants a ready-made charm
+  skeleton to paste in.  Same trigger.
+
+Until one of those lands, the right move is:
+
+- **Keep the existing directory shell** — we already match the
+  folder shape by naming convention; the loader is happy to
+  ignore siblings.  No change here.
+- **Do not split current skills** into `SKILL.md +
+  references/…`.  The split is a code-smell on 185-line bodies;
+  it only pays off when siblings carry genuinely self-contained
+  artefacts.
+- **File the loader work as a prerequisite of Phase 55.7 (or
+  55.6)**, not as a standalone phase.  When the first real
+  asset-bearing skill arrives, do both together so the
+  infrastructure lands with its motivating use case instead of
+  in the abstract.
+
+Cross-references:
+
+- Phase 50 (Skills interop): the SKILL.md + frontmatter shape
+  already matches the cross-vendor convention, so import/export
+  of folder-layout skills is a pure loader-extension problem
+  rather than a schema migration.
+- Phase 53.5 (prompts/skills design split): when that lands, the
+  decision here should remain discoverable in `design/SKILLS.md`
+  (this section).  Do not move it to a parallel design doc.

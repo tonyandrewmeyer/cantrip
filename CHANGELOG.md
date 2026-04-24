@@ -127,6 +127,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Skill-as-folder-convention investigation — Phase 55.1.**
+  Surveyed three representative awesome-copilot skills
+  (``pytest-coverage``, ``agent-governance``,
+  ``acquire-codebase-knowledge``) at revision 2026-04-24 and
+  catalogued the folder shape — ``SKILL.md`` +
+  ``assets/templates/`` + ``scripts/`` + ``references/``.  Mapped
+  against Cantrip's 30 bundled skills (all single ``SKILL.md``
+  files today; no templates or scripts).  Identified two loader
+  gaps that would need to close before siblings become useful:
+  ``LoadSkillTool`` surfaces only the body text, and the
+  ``read_file`` tool is sandboxed away from the skills tree.
+  **Recommendation — keep the existing shell, defer the plumbing.**
+  The loader already tolerates siblings; the pattern pays off only
+  when a skill ships an executable helper (Phase 55.7's scan.py
+  port is the first real candidate) or a template larger than a
+  snippet (Phase 55.6's cookbook may surface one).  File the
+  loader work as a prerequisite of whichever lands first, not as
+  its own phase.  Full write-up in ``design/SKILLS.md`` §
+  *Skill-as-folder convention*.  No code changes — investigation
+  only.
+
 - **Replay-cost accounting — Phase 52.6.**  Closes Phase 52
   entirely.  Two pieces:
 
