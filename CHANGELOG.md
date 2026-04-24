@@ -127,6 +127,40 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Deterministic pre-scan stub — Phase 55.7.**  Read the
+  upstream ``awesome-copilot`` ``scan.py`` (712 lines, MIT) and
+  compared against Cantrip's ``AnalyseFrameworkTool``: upstream
+  is breadth (60 manifests across 25+ languages, 10 CI/CD
+  platforms, container / SBOM / lint / env-template / entry-point
+  detection, git churn); ``analyse_framework`` is charm-specific
+  depth (PaaS profile map, substrate suggestion,
+  ROCKCRAFT_ENABLE_EXPERIMENTAL flagging).
+
+  **Verdict: port, not vendor or subprocess.**  Vendor loses
+  charm awareness (``charmcraft.yaml`` goes undetected) and
+  depends on the Phase 55.1 loader changes that were deferred;
+  subprocess loses the structured-dict output the Phase 52.3
+  checkpoint envelope rewards.  A port to
+  ``src/cantrip/agent/tools/_scan.py`` converges both scans
+  onto one source of truth with Cantrip-specific additions
+  (``charmcraft.yaml`` / ``rockcraft.yaml`` / ``metadata.yaml``
+  / ``.cantrip`` detection; ``CHARM_MARKERS`` signalling
+  "existing charm, route to improvement").
+
+  Shipped a **stub** (not an implementation): the file ports
+  the upstream data tables (``MANIFESTS``, ``ENTRY_CANDIDATES``,
+  ``CI_CD_CONFIGS``, ``CONTAINER_FILES``, ``SECURITY_CONFIGS``,
+  ``LINT_FILES``, ``ENV_TEMPLATES``, ``EXCLUDE_DIRS``),
+  adds ``CHARM_MARKERS``, and defines a frozen ``ScanResult``
+  dataclass with the output shape.  ``scan(path)`` returns an
+  empty result with TODO markers for each detection pass.
+  MIT attribution in the file header.
+
+  Implementation (~400-500 lines + ~150 lines of tests) deferred
+  to a follow-up phase when a real Path B (custom app) user
+  demonstrates the round-trip cost.  Full write-up in
+  ``design/TOOLS.md`` § *Deterministic pre-scan for Path B*.
+
 - **Subagent-frontmatter investigation — Phase 55.2.**  Audited
   Cantrip's subagent metadata surface against the awesome-copilot
   ``.agent.md`` frontmatter spec (998 lines — a full authoring

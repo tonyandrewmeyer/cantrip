@@ -167,3 +167,118 @@ error=...)` to raising when the failure is semantic
   to stderr unless the operation genuinely benefits from it (the
   `log` call inside `execute_tool()` for caught exceptions is
   debugging affordance, not user-facing).
+
+## Deterministic pre-scan for Path B (Phase 55.7) — port with a stub
+
+Cantrip's `AnalyseFrameworkTool` (`tools/charm.py`) covers PaaS
+detection (Flask / Django / FastAPI / Go / Express / Spring Boot)
+and emits a `workload_hints` block for Path B.  For **custom
+applications that don't match a PaaS framework**, the LLM still
+has to go digging in the source tree manually to enumerate
+manifests, entry points, CI/CD config, and container artefacts
+— burning tokens on work that's entirely deterministic.
+
+The upstream
+[`awesome-copilot` `scan.py`][upstream-scan] (712 lines, MIT)
+already does exactly this scan: 60-entry manifest table across 25+
+languages, 10 CI/CD platforms, Docker / k8s / Vagrant detection,
+SBOM and security-config scanning, lint-config detection, 40+
+entry-point candidates, git churn, TODO search, code metrics.
+
+### Comparison
+
+| Dimension | upstream `scan.py` | Cantrip `analyse_framework` |
+|-----------|---------------------|------------------------------|
+| Manifest catalogue | 60 entries, 25+ languages | 4 manifests, 4 languages |
+| CI/CD platform detection | 10 platforms | none |
+| Container artefacts | Dockerfile / compose / k8s / Helm / Vagrant / podman | Dockerfile, docker-compose variants |
+| Security configs | `.snyk`, `SECURITY.md`, SBOM, `.bandit.yaml`, etc. | none |
+| Lint / formatter configs | ~15 files | none |
+| Entry-point candidates | ~40 across 20 languages | none |
+| Env templates | `.env.example` variants | binary flag only |
+| Monorepo detection | yes | no |
+| Git churn / recent commits | yes | no |
+| Charm awareness | no | `charmcraft`/`rockcraft` profile map, substrate suggestion, `ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS` flagging |
+
+The two scans are complementary — upstream is breadth,
+`analyse_framework` is charm-specific depth.  The natural shape
+is a single scan that unifies them.
+
+### Vendor vs port vs subprocess
+
+**Vendor as-is** into `src/cantrip/skills/acquire-codebase-knowledge/scripts/scan.py`
+(MIT permits).  Matches the Phase 55.1 skill-as-folder pattern,
+which would welcome exactly this script.  But: 55.1 explicitly
+deferred the loader changes (`LoadSkillTool` returns body text,
+`read_file` is sandboxed away from the skills tree), and the
+upstream script has no charm awareness — a `charmcraft.yaml` in
+the repo goes undetected.  Vendoring means forking the code to
+add it.
+
+**Subprocess-invoke** a system-installed or vendored script.
+Lightest integration but worst output consumption: the script
+prints section-headed plain text to stdout.  The LLM would parse
+free-form text instead of reading a structured dict.  Loses the
+checkpoint-friendly shape too — Phase 52.3 wraps tool calls with
+`response_to_dict` / `tool_result_to_dict`, and opaque text
+doesn't participate in hash-based invalidation as cleanly as a
+typed dataclass.
+
+**Port** the upstream tables + detection passes into a
+Cantrip-native helper module `src/cantrip/agent/tools/_scan.py`
+with charm-specific additions (`charmcraft.yaml`,
+`rockcraft.yaml`, `metadata.yaml`, `.cantrip` detection; charm
+markers signalling "this is an existing charm, route to
+improvement path").  `AnalyseFrameworkTool.execute` calls into
+the helper and layers charm-specific reasoning on top of the
+structured result.  The port converges on one source of truth
+for "what's in this codebase?" — current PaaS detection in
+`charm.py` becomes a thin layer that reads from `ScanResult`.
+
+**Verdict: port.**  The script is under MIT, so attribution in
+the file header is the only licensing obligation; the Cantrip-
+specific additions (charmcraft / rockcraft manifest awareness,
+the `ScanResult.is_existing_charm` routing signal, the
+`extras: dict[str, Any]` escape hatch) would fork upstream
+anyway, so forking in the form of a port is the cleaner
+long-term home.
+
+### Stub shipped
+
+Phase 55.7 commits a **stub**, not an implementation:
+[`src/cantrip/agent/tools/_scan.py`](../src/cantrip/agent/tools/_scan.py).
+The stub defines:
+
+- The data tables (`MANIFESTS`, `ENTRY_CANDIDATES`,
+  `CI_CD_CONFIGS`, `CONTAINER_FILES`, `SECURITY_CONFIGS`,
+  `LINT_FILES`, `ENV_TEMPLATES`, `EXCLUDE_DIRS`,
+  `CHARM_MARKERS`) with upstream values plus Cantrip extensions.
+- A frozen `ScanResult` dataclass describing the output shape —
+  JSON-friendly so it slots into the Phase 52.3 checkpoint
+  envelope when (not if) this scan gets wrapped by
+  `checkpoint()`.
+- A stub `scan(path)` that returns an empty `ScanResult` with
+  TODO comments enumerating the detection passes in order.
+
+The stub is **not wired into any `Tool` yet**.  The follow-up
+work:
+
+1. Fill in the detection passes (filesystem walk, manifest
+   expansion, framework inference, entry-point probing, CI/CD
+   + container + security + lint + env + charm-marker
+   detection, git churn).
+2. Refactor `AnalyseFrameworkTool.execute` to call `scan(path)`
+   and layer charm-specific reasoning (PaaS profile map,
+   ROCKCRAFT_ENABLE_EXPERIMENTAL flagging, substrate suggestion,
+   improvement-path routing) on top of the structured result.
+3. Unit tests under `tests/unit/test_scan.py`, one per
+   detection pass, against tiny in-process fixtures.
+
+Size estimate: ~400-500 lines of implementation + ~100-150
+lines of tests.  Not scoped to a roadmap phase yet — file when a
+real Path B (custom app) user demonstrates the round-trip cost.
+Until then the stub anchors the shape decision and keeps the
+port proposal honest (by forcing it into a concrete
+`_scan.py`-lives-here layout rather than staying abstract).
+
+[upstream-scan]: https://github.com/github/awesome-copilot/blob/main/skills/acquire-codebase-knowledge/scripts/scan.py

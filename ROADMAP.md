@@ -2221,24 +2221,45 @@ possibly with a small prototype, not a delivered refactor.
   convention, and ``cov_annotate/`` added to ``.gitignore``
   alongside the existing ``htmlcov/``.
 
-### 55.7 Medium — Deterministic pre-scan for Path B custom apps
+### 55.7 Medium — Deterministic pre-scan for Path B custom apps ✓
 
-- [ ] Read `../awesome-copilot/skills/acquire-codebase-knowledge/scripts/scan.py`
-  (~500 lines: manifest detection for 25+ languages, CI/CD platform
-  detection, container and orchestration detection, code metrics,
-  security-config detection, recent-commit churn)
-- [ ] Map the pieces onto Cantrip's Path B (custom apps) discovery
-  phase: today the LLM alone figures out "this is a Flask app / Go
-  service / Node.js server" from chat context.  A deterministic
-  manifest-and-CI scan seeded into the planner's first turn would
-  save round-trips and improve reliability
-- [ ] Decide: vendor the script (MIT-licensed), port its logic into a
-  Cantrip-native `src/cantrip/agent/tools/scan.py`, or invoke it as
-  a subprocess.  Porting is probably right — the script has Cantrip-
-  specific needs (rockcraft / charmcraft manifest awareness) that an
-  upstream version does not cover
-- [ ] Output: a recommendation with a concrete file-layout proposal,
-  and a stub implementation if the call is "port"
+- [x] Read ``awesome-copilot/skills/acquire-codebase-knowledge/scripts/scan.py``
+  (712 lines): 60-entry manifest catalogue across 25+ languages,
+  10 CI/CD platforms, Docker/k8s/Vagrant detection, SBOM +
+  security-config scanning, lint-config detection, 40+ entry-point
+  candidates, git churn, TODO search, code metrics.
+- [x] Mapped against Cantrip's ``AnalyseFrameworkTool``: the two
+  scans are complementary — upstream is breadth (25+ languages),
+  ``analyse_framework`` is charm-specific depth (PaaS profile
+  map, substrate suggestion, ROCKCRAFT_ENABLE_EXPERIMENTAL
+  flagging).  Full comparison table in ``design/TOOLS.md`` §
+  *Deterministic pre-scan for Path B*.
+- [x] **Verdict: port.**  Vendor-as-is loses charm awareness
+  (`charmcraft.yaml` would go undetected) and needs the Phase
+  55.1 loader changes that were deferred.  Subprocess-invoke
+  loses the structured-dict output that the checkpoint envelope
+  (Phase 52.3) rewards.  A port to
+  ``src/cantrip/agent/tools/_scan.py`` converges the two scans
+  onto one source of truth with Cantrip-specific additions
+  (``charmcraft.yaml`` / ``rockcraft.yaml`` / ``metadata.yaml``
+  / ``.cantrip`` detection; ``CHARM_MARKERS`` signalling
+  "existing charm, route to improvement path").
+- [x] Shipped **stub** ``src/cantrip/agent/tools/_scan.py`` with:
+  upstream data tables (``MANIFESTS``, ``ENTRY_CANDIDATES``,
+  ``CI_CD_CONFIGS``, ``CONTAINER_FILES``, ``SECURITY_CONFIGS``,
+  ``LINT_FILES``, ``ENV_TEMPLATES``, ``EXCLUDE_DIRS``) plus the
+  Cantrip-local ``CHARM_MARKERS``; a frozen ``ScanResult``
+  dataclass describing the output shape (JSON-friendly for the
+  Phase 52.3 checkpoint envelope); a ``scan(path) ->
+  ScanResult`` entry point that returns an empty result with
+  TODO markers enumerating the nine detection passes.  MIT
+  attribution in the file header.  Stub smoke-tested via
+  ``uv run python -c "from cantrip.agent.tools import _scan; …"``.
+- [x] Implementation deferred to a follow-up phase — the stub
+  anchors the shape decision without committing to the ~400-500
+  lines of detection-pass code.  File the implementation when a
+  real Path B (custom app) user demonstrates the round-trip
+  cost.
 
 ### 55.8 Low — Charm-design spec template
 
