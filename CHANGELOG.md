@@ -5,6 +5,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Snapshot-backed `/undo` and `/redo` for file changes
+  (Phase 68.1).**  Cantrip now commits the charm working tree into
+  a hidden git repo at ``$XDG_STATE_HOME/cantrip/snapshots/<hash>/``
+  immediately before every user turn enters the conversation loop.
+  The new ``/undo`` slash command restores the working tree from
+  that snapshot **and** strips the user's last message plus every
+  follow-up assistant / tool message from both ``state.messages``
+  and the SQLite ``messages`` table — undoing the *conversation*
+  and the *files* in one stroke.  ``/undo`` stacks: run again to
+  walk back further.  ``/redo`` re-applies the most recently
+  undone turn (in-memory only — clears on every new user turn,
+  so a stale undo can't land in a context that's moved on).  The
+  snapshot repo lives outside the user's tree so it never appears
+  in ``git status`` or gets touched by ``git clean -fdx``;
+  ``.gitignore`` plus a built-in exclude for ``.cantrip/`` and
+  ``.cantrip-worktrees/`` keep cantrip-internal state out of
+  snapshots.  Two new UI events (``SNAPSHOT_CREATED`` and
+  ``SNAPSHOT_RESTORED``) keep the audit trail honest.  Opt out
+  per session with ``--no-snapshots`` or
+  ``CANTRIP_SNAPSHOTS=false`` for monorepos where snapshotting
+  the tree once per turn is too slow.
+
 - **Per-goal tool-call rate limit (Phase 80.3 — closes M80).**  The
   background executor now composes the policy stack at construction
   (``ORG_WIDE_POLICY`` + discovered user / per-charm files), reads

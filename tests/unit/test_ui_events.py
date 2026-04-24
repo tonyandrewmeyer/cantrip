@@ -248,6 +248,8 @@ class TestBusBroadcastContract:
                 previous_model="gemini-3-flash-preview",
                 context_window=200_000,
             ).type,
+            events.snapshot_created(turn_id="1", sha="deadbeef").type,
+            events.snapshot_restored(sha="deadbeef", paths_changed=3, direction="undo").type,
         }
         enum_types = set(events.EventType)
         assert factory_types == enum_types

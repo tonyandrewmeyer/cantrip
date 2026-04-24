@@ -33,7 +33,7 @@ from cantrip import update as update_module
 from cantrip.agent import mcp_commands, memory_commands, sandbox
 from cantrip.agent.goal_budget import GoalBudget, format_summary, measure_usage
 from cantrip.llm import pricing
-from cantrip.llm.base import ProviderError
+from cantrip.llm.base import ProviderError, Role
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +75,8 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/update", "Check PyPI for a newer release"),
     CommandInfo("/sandbox", "Show subprocess sandbox status"),
     CommandInfo("/hooks", "List configured hooks and invocation stats"),
+    CommandInfo("/undo", "Roll back the last user turn (files + messages)"),
+    CommandInfo("/redo", "Re-apply the most recently undone turn"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -167,6 +169,10 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=format_sandbox_status())
     if verb == "/hooks":
         return SlashResult(text=format_hooks_status(agent))
+    if verb == "/undo":
+        return SlashResult(text=handle_undo(agent))
+    if verb == "/redo":
+        return SlashResult(text=handle_redo(agent))
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     return None
@@ -410,6 +416,12 @@ def help_text() -> str:
         " auto-check; `/update --check` re-enables it.\n"
         "- `/sandbox` — show which subprocess sandbox mechanism is"
         " active on this host and what `run_command` enforces.\n"
+        "- `/undo` — roll back the last user turn: restore the working"
+        " tree from the snapshot taken before that turn, and remove"
+        " the messages that came from it.  Stacks: run again to"
+        " unwind further.\n"
+        "- `/redo` — re-apply the most recently undone turn."
+        "  Cleared the moment a new user turn arrives.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
 
@@ -656,6 +668,119 @@ _EXPORT_FORMATS: dict[str, str] = {
 }
 
 
+def handle_undo(agent: CantripAgent) -> str:
+    """Phase 68.1 ``/undo``: roll back the last user turn.
+
+    Restores the working tree to the snapshot taken just before the
+    most recent user message landed, truncates that message and every
+    follow-up assistant / tool message from both ``state.messages``
+    and the SQLite ``messages`` table, and pushes the discarded
+    state onto the snapshot manager's redo stack so ``/redo`` can
+    re-apply it.
+
+    Returns a single-paragraph status string suitable for chat.  Each
+    failure mode (snapshots disabled, no user turns yet, no snapshot
+    recorded for this turn, git restore failed) returns a clear
+    one-liner rather than raising.
+    """
+    mgr = agent.snapshot_manager
+    if mgr is None:
+        return (
+            "_Snapshots are disabled — relaunch without `--no-snapshots` "
+            "or set `CANTRIP_SNAPSHOTS=true` to enable `/undo` and `/redo`._"
+        )
+
+    state = agent.state
+    user_idx: int | None = None
+    for i in range(len(state.messages) - 1, -1, -1):
+        if state.messages[i].role == Role.USER:
+            user_idx = i
+            break
+    if user_idx is None:
+        return "_Nothing to undo — no user turns yet._"
+
+    user_msg = state.messages[user_idx]
+    target_sha = user_msg.metadata.get("snapshot_sha") if user_msg.metadata else None
+    if not target_sha:
+        return (
+            "_Cannot undo this turn — no snapshot was recorded for it. "
+            "Snapshots may have been disabled or git unavailable when "
+            "this turn started._"
+        )
+
+    # Snapshot the *current* working tree before resetting so any
+    # mid-turn agent edits the user might want back can be redone.
+    redo_sha = mgr.snapshot_turn(f"pre-undo-{user_idx}")
+
+    paths_changed = mgr.restore(str(target_sha), direction="undo")
+    if paths_changed is None:
+        return f"_Failed to restore snapshot `{str(target_sha)[:8]}` — check the logs._"
+
+    removed = list(state.messages[user_idx:])
+    del state.messages[user_idx:]
+    if redo_sha is not None:
+        mgr.push_undone(redo_sha, removed)
+
+    deleted = 0
+    db_message_id = user_msg.metadata.get("db_message_id") if user_msg.metadata else None
+    store = agent.store
+    if db_message_id is not None and store is not None:
+        try:
+            deleted = store.delete_messages_from(int(db_message_id))
+        except (ValueError, TypeError):
+            log.warning("Skipping store truncate: bad db_message_id %r", db_message_id)
+
+    parts = [
+        f"Undid the last turn — restored **{paths_changed}** file(s), "
+        f"removed **{len(removed)}** message(s) from history",
+    ]
+    if deleted:
+        parts.append(f"({deleted} from the session store)")
+    redo_note = " · `/redo` re-applies." if redo_sha is not None else ""
+    return " ".join(parts) + "." + redo_note
+
+
+def handle_redo(agent: CantripAgent) -> str:
+    """Phase 68.1 ``/redo``: re-apply the most recently undone turn.
+
+    Pops the top of the snapshot manager's redo stack, restores the
+    working tree to the SHA captured at ``/undo`` time, re-appends
+    the messages that were stripped, and re-records them in the
+    session store (with fresh row IDs).
+
+    Returns a single-paragraph status string.  An empty redo stack
+    or a failed restore returns a clear one-liner; the redo entry
+    is preserved on restore failure so the user can try again.
+    """
+    mgr = agent.snapshot_manager
+    if mgr is None:
+        return "_Snapshots are disabled — nothing to redo._"
+
+    entry = mgr.pop_undone()
+    if entry is None:
+        return (
+            "_Nothing to redo — the redo stack is empty.  It clears "
+            "whenever a new user turn arrives._"
+        )
+
+    paths_changed = mgr.restore(entry.redo_sha, direction="redo")
+    if paths_changed is None:
+        # Put the entry back so a retry stays available.
+        mgr.push_undone(entry.redo_sha, entry.removed_messages)
+        return f"_Failed to restore snapshot `{entry.redo_sha[:8]}` — check the logs._"
+
+    agent.state.messages.extend(entry.removed_messages)
+    for msg in entry.removed_messages:
+        # New IDs land in metadata so a subsequent /undo on this turn
+        # finds the right rows to delete.
+        agent._record_message(msg)
+
+    return (
+        f"Redid the last undo — restored **{paths_changed}** file(s), "
+        f"re-added **{len(entry.removed_messages)}** message(s)."
+    )
+
+
 def _handle_share(agent: CantripAgent) -> SlashResult:
     """Dispatch the ``/share`` slash command.
 
@@ -846,5 +971,7 @@ __all__ = [
     "dispatch",
     "export_transcript",
     "format_cost",
+    "handle_redo",
+    "handle_undo",
     "help_text",
 ]

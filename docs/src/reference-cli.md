@@ -154,6 +154,17 @@ Start the agent and build or improve a charm.
     Maximum number of concurrent subagent tasks. Default:
     <code>3</code>.
   </dd>
+
+  <dt>--no-snapshots</dt>
+  <dd>
+    Disable per-turn working-tree snapshots. By default Cantrip
+    commits the charm tree into a hidden git repo before every
+    user turn so <code>/undo</code> and <code>/redo</code> can
+    roll back agent edits. Use this flag (or set
+    <code>CANTRIP_SNAPSHOTS=false</code>) when working in a
+    monorepo where snapshotting is too slow. See
+    <a href="howto-undo.html">Undo agent changes</a>.
+  </dd>
 </dl>
 
 {#compare}
@@ -633,6 +644,38 @@ for configuration.
   </dd>
 </dl>
 
+{#undo}
+### Undo and redo
+
+<dl>
+  <dt><code>/undo</code></dt>
+  <dd>
+    Roll back the most recent user turn. Restores the working
+    tree from the snapshot taken just before that turn started
+    and removes the user&rsquo;s message plus every assistant /
+    tool message that followed from history (in-memory and the
+    SQLite session store). Stacks: run again to walk back further.
+  </dd>
+
+  <dt><code>/redo</code></dt>
+  <dd>
+    Re-apply the most recently undone turn. Restores the working
+    tree to its post-turn state and re-appends the messages that
+    were sliced off. The redo stack is in-memory only and clears
+    the moment a new user turn arrives.
+  </dd>
+</dl>
+
+Snapshots are on by default. Disable per-session with
+<code>--no-snapshots</code> on the command line or
+<code>CANTRIP_SNAPSHOTS=false</code> in the environment.
+The snapshot repo lives outside the charm tree (under
+<code>$XDG_STATE_HOME/cantrip/snapshots/</code>) so it
+will not appear in <code>git status</code> or be touched by
+<code>git clean -fdx</code>. See
+[Undo agent changes](howto-undo.html) for the full
+how-to.
+
 {#env-vars}
 ## Environment variables
 
@@ -656,6 +699,7 @@ for configuration.
 | `CANTRIP_UPDATE_CACHE_DIR` | optional | Override the disk cache directory for the PyPI check. Defaults to `~/.cache/cantrip/`; the verdict lives in `update.json` with a 24-hour TTL. |
 | `CANTRIP_NO_RESUME` | optional | Disable step-checkpoint replay for the next run. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). Subagents skip the checkpoint lookup and re-execute every LLM turn and tool call live; fresh results still land in the store so the next run without the var sees a clean cache. Useful when hunting a bug that might itself be cached in a stale checkpoint. |
 | `CANTRIP_KEEP_CHECKPOINTS` | optional | Preserve step checkpoints after a task reaches `DONE`. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). By default, checkpoints are purged on successful task completion; setting this flips the purge into a no-op so rows can be inspected via `SELECT * FROM step_checkpoints` in the `.cantrip` SQLite file. Intended for debugging; leave unset in normal use. |
+| `CANTRIP_SNAPSHOTS` | optional | Set to `0`, `false`, `no`, or `off` (case-insensitive) to disable per-turn working-tree snapshots backing `/undo` and `/redo`. Equivalent to passing `--no-snapshots`. Defaults to on; the snapshot repo lives at `$XDG_STATE_HOME/cantrip/snapshots/<hash>/`. |
 
 The `inference-snap` provider does not require an API key
 as it runs models locally.

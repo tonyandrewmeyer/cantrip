@@ -98,6 +98,12 @@ class AgentState:
     # doesn't silently cascade across resumes.
     goal_budget: GoalBudget | None = None
 
+    # Phase 68.1: per-turn working-tree snapshots feed ``/undo`` and
+    # ``/redo``.  Disable for monorepos where snapshotting the tree
+    # is too expensive — escape hatch is the ``--no-snapshots`` CLI
+    # flag or ``CANTRIP_SNAPSHOTS=false``.
+    snapshot_enabled: bool = True
+
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
 

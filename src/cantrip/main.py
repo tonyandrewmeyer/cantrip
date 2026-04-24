@@ -156,6 +156,19 @@ def parse_args() -> argparse.Namespace:
         help="Improve an existing charm at the given path (audit, fix, redeploy)",
     )
     run_parser.add_argument(
+        "--no-snapshots",
+        action="store_true",
+        dest="no_snapshots",
+        help=(
+            "Phase 68.1: disable per-turn working-tree snapshots. "
+            "By default Cantrip commits the charm tree into a hidden "
+            "git repo before every user turn so `/undo` and `/redo` "
+            "can roll back agent edits.  Use this flag (or set "
+            "`CANTRIP_SNAPSHOTS=false`) when working in a monorepo "
+            "where snapshotting is too slow."
+        ),
+    )
+    run_parser.add_argument(
         "--theme",
         type=str,
         default=None,
@@ -606,6 +619,7 @@ def _run(args: argparse.Namespace) -> int:
             base_url=getattr(args, "base_url", None),
             max_iterations=getattr(args, "max_iterations", None),
             max_tokens=getattr(args, "max_tokens", None),
+            no_snapshots=bool(getattr(args, "no_snapshots", False)),
         )
         app.run()
         _print_update_panel(app.pending_update_info)

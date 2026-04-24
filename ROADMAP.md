@@ -3138,37 +3138,51 @@ Four OpenCode features are explicitly **out of scope**:
   out of scope for this phase.  If the idea has legs, it lives
   as its own follow-up phase.
 
-### 68.1 High — Snapshot-backed undo/redo for file changes
+### 68.1 High — Snapshot-backed undo/redo for file changes ✓
 
-- [ ] Audit which Cantrip tools mutate the working tree
-  (``fs_write``, ``fs_edit``, ``fs_patch``, the various charm-
-  init and pack tools, ``git_*`` tools).  List them in the
-  phase before coding; this is the allowlist the snapshotter
-  has to cover.
-- [ ] Add a snapshot layer that, before a user turn completes,
-  commits the relevant paths into a hidden git repo under
-  ``.cantrip/snapshots/`` (or ``$XDG_STATE_HOME/cantrip/…``
-  for the user's global path).  Use ``git`` directly — do not
-  invent a new format.  Commit message is
-  ``snapshot: turn <turn-id>``.
-- [ ] ``/undo`` — walks back one user turn: restores files to
-  the prior snapshot *and* removes that turn and its
-  subsequent assistant messages from ``state.messages``.
-  Running ``/undo`` repeatedly walks further back.
-- [ ] ``/redo`` — re-applies the most recently undone turn if
-  no new user turn has arrived since the undo.
-- [ ] Clear boundary with Phase 44 (worktrees): worktrees
-  isolate concurrent subagents; snapshots capture the main
-  working tree across user turns.  Document the relationship
-  in ``design/AGENT.md``.
-- [ ] Disable flag for large monorepos: ``snapshot: false`` in
-  ``cantrip.yaml`` (mirroring OpenCode's escape hatch).  When
-  disabled, ``/undo`` prints a clear message and exits non-
-  zero rather than silently doing nothing.
-- [ ] ``tests/unit/test_snapshots.py`` — mutate a temp tree,
-  undo, assert content restored; redo, assert mutation back;
-  multi-level undo; disabled-mode message; snapshot skipped
-  for paths outside the repo root.
+- [x] Audit replaced with a tree-wide approach: ``git add -A``
+  honours the user's ``.gitignore`` plus a built-in
+  ``info/exclude`` for ``.cantrip/`` and ``.cantrip-worktrees/``,
+  so every mutating tool (``fs_write``, ``fs_edit``,
+  ``charmcraft_init``, ``charmcraft_pack``, ``git_*``, etc.) is
+  covered automatically without an allowlist that could rot.
+- [x] Snapshot layer in ``src/cantrip/agent/snapshots.py``
+  commits the whole charm working tree before each user turn
+  into a hidden git repo at
+  ``$XDG_STATE_HOME/cantrip/snapshots/<sha>/`` (out of the
+  user's tree so ``git status`` doesn't see it).  Commit
+  message is ``snapshot: turn <turn-id>``.  Empty initial
+  commit anchors the history so ``reset --hard`` always has
+  a target.
+- [x] ``/undo`` slash command (``handle_undo`` in
+  ``slash_commands.py``) takes a pre-restore snapshot of the
+  current dirt (so ``reset --hard`` cleanly removes anything
+  the agent created mid-turn), restores to the user-message's
+  snapshot SHA, truncates ``state.messages`` from that user
+  message onward, and deletes the matching SQLite rows via
+  the new ``SessionStore.delete_messages_from``.
+- [x] ``/redo`` re-applies the most recently undone turn from
+  an in-memory stack; clears the moment a new user turn
+  arrives.  Re-recording assigns fresh DB IDs so a follow-up
+  ``/undo`` finds the right rows.
+- [x] Two new UI events (``SNAPSHOT_CREATED`` /
+  ``SNAPSHOT_RESTORED``) carry SHA, paths-changed and
+  direction so the transcript records every move.
+- [x] Phase 44 vs 68.1 boundary documented in
+  ``design/AGENT.md``: worktrees isolate concurrent
+  subagents, snapshots capture the main tree across user
+  turns; snapshots ignore ``.cantrip-worktrees/``.
+- [x] Disable flag landed as the ``--no-snapshots`` CLI flag
+  + ``CANTRIP_SNAPSHOTS=false`` env var (deferred the
+  ``cantrip.yaml`` parser to a future phase since none
+  exists yet).  Disabled mode short-circuits ``/undo`` and
+  ``/redo`` with a clear "snapshots disabled" message.
+- [x] ``tests/unit/test_snapshots.py`` covers snapshot
+  capture, undo restore (modification / deletion / creation /
+  unsnapshotted dirt), redo round-trip, redo clearing on a
+  new user turn, disabled mode short-circuit, gitignored and
+  ``.cantrip/`` exclusions, and the env/CLI resolver.
+  25 tests, all passing.
 
 ### 68.2 High — Declarative permission config
 

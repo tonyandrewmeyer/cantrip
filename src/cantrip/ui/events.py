@@ -39,6 +39,8 @@ class EventType(enum.StrEnum):
     CACHE_METRICS_UPDATED = "cache_metrics_updated"
     GOAL_BUDGET_EXCEEDED = "goal_budget_exceeded"
     POLICY_RATE_LIMITED = "policy_rate_limited"
+    SNAPSHOT_CREATED = "snapshot_created"
+    SNAPSHOT_RESTORED = "snapshot_restored"
 
 
 @dataclass(frozen=True)
@@ -479,6 +481,41 @@ def tool_invoked(
             "duration_ms": duration_ms,
             "source": source,
         },
+    )
+
+
+def snapshot_created(*, turn_id: str, sha: str) -> Event:
+    """Build a ``SNAPSHOT_CREATED`` event.
+
+    Phase 68.1: emitted just before each user turn enters the
+    conversation loop, so the transcript records which working-tree
+    state ``/undo`` would roll back to.  ``sha`` is the snapshot
+    repo's commit hash; ``turn_id`` is the user-message identifier
+    (sequence number) the snapshot is tagged against.
+    """
+    return Event(
+        type=EventType.SNAPSHOT_CREATED,
+        payload={"turn_id": turn_id, "sha": sha},
+    )
+
+
+def snapshot_restored(
+    *,
+    sha: str,
+    paths_changed: int,
+    direction: str,
+) -> Event:
+    """Build a ``SNAPSHOT_RESTORED`` event.
+
+    Phase 68.1: emitted after ``/undo`` or ``/redo`` finishes
+    restoring the working tree to *sha*.  ``paths_changed`` is the
+    count of files git touched on the way back; ``direction`` is
+    ``"undo"`` or ``"redo"`` so a transcript reader can tell the two
+    apart at a glance.
+    """
+    return Event(
+        type=EventType.SNAPSHOT_RESTORED,
+        payload={"sha": sha, "paths_changed": paths_changed, "direction": direction},
     )
 
 

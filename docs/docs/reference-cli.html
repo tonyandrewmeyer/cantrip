@@ -174,6 +174,16 @@ cantrip --help
     Maximum number of concurrent subagent tasks. Default:
     <code>3</code>.
   </dd>
+  <dt>--no-snapshots</dt>
+  <dd>
+    Disable per-turn working-tree snapshots. By default Cantrip
+    commits the charm tree into a hidden git repo before every
+    user turn so <code>/undo</code> and <code>/redo</code> can
+    roll back agent edits. Use this flag (or set
+    <code>CANTRIP_SNAPSHOTS=false</code>) when working in a
+    monorepo where snapshotting is too slow. See
+    <a href="howto-undo.html">Undo agent changes</a>.
+  </dd>
 </dl>
 <h2 id="compare">cantrip compare</h2>
 <p>Diff two charm implementations along four dimensions and print a
@@ -561,6 +571,33 @@ for configuration.</p>
     Bypass the 24-hour cache and re-fetch every marketplace.
   </dd>
 </dl>
+<h3 id="undo">Undo and redo</h3>
+<dl>
+  <dt><code>/undo</code></dt>
+  <dd>
+    Roll back the most recent user turn. Restores the working
+    tree from the snapshot taken just before that turn started
+    and removes the user&rsquo;s message plus every assistant /
+    tool message that followed from history (in-memory and the
+    SQLite session store). Stacks: run again to walk back further.
+  </dd>
+  <dt><code>/redo</code></dt>
+  <dd>
+    Re-apply the most recently undone turn. Restores the working
+    tree to its post-turn state and re-appends the messages that
+    were sliced off. The redo stack is in-memory only and clears
+    the moment a new user turn arrives.
+  </dd>
+</dl>
+<p>Snapshots are on by default. Disable per-session with
+<code>--no-snapshots</code> on the command line or
+<code>CANTRIP_SNAPSHOTS=false</code> in the environment.
+The snapshot repo lives outside the charm tree (under
+<code>$XDG_STATE_HOME/cantrip/snapshots/</code>) so it
+will not appear in <code>git status</code> or be touched by
+<code>git clean -fdx</code>. See
+<a href="howto-undo.html">Undo agent changes</a> for the full
+how-to.</p>
 <h2 id="env-vars">Environment variables</h2>
 <table>
 <thead>
@@ -660,6 +697,11 @@ for configuration.</p>
 <td><code>CANTRIP_KEEP_CHECKPOINTS</code></td>
 <td>optional</td>
 <td>Preserve step checkpoints after a task reaches <code>DONE</code>. Accepts <code>1</code>, <code>true</code>, <code>yes</code>, or <code>on</code> (case-insensitive). By default, checkpoints are purged on successful task completion; setting this flips the purge into a no-op so rows can be inspected via <code>SELECT * FROM step_checkpoints</code> in the <code>.cantrip</code> SQLite file. Intended for debugging; leave unset in normal use.</td>
+</tr>
+<tr>
+<td><code>CANTRIP_SNAPSHOTS</code></td>
+<td>optional</td>
+<td>Set to <code>0</code>, <code>false</code>, <code>no</code>, or <code>off</code> (case-insensitive) to disable per-turn working-tree snapshots backing <code>/undo</code> and <code>/redo</code>. Equivalent to passing <code>--no-snapshots</code>. Defaults to on; the snapshot repo lives at <code>$XDG_STATE_HOME/cantrip/snapshots/&lt;hash&gt;/</code>.</td>
 </tr>
 </tbody>
 </table>

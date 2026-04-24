@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to undo agent changes &mdash; Cantrip</title>
+<meta name="description" content="Roll back the last user turn &mdash; files and conversation &mdash; with /undo and /redo.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html" class="current">Undo agent changes</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Undo agent changes
+    </div>
+
+    <h1>Undo agent changes</h1>
+    <p class="subtitle">
+      Roll back the working tree and conversation history when the agent makes a mess.
+    </p>
+
+<h2 id="what-it-does">What <code>/undo</code> does</h2>
+<p>Cantrip snapshots your charm's working tree into a hidden git
+repository immediately before each user turn enters the
+conversation loop. <code>/undo</code> restores that snapshot <strong>and</strong>
+strips the user's last message plus every assistant and tool
+message that followed it from the conversation history.</p>
+<p>Two affordances matter here:</p>
+<ul>
+<li>The snapshot is taken <strong>before</strong> the agent acts on a turn, so
+<code>/undo</code> rolls back to &quot;the tree as it was when you typed that
+prompt&quot;.</li>
+<li>The snapshot repo lives outside your charm tree (under
+<code>$XDG_STATE_HOME/cantrip/snapshots/</code>), so it does not
+appear in <code>git status</code>, will not be committed by accident,
+and is unaffected by <code>git clean -fdx</code>.</li>
+</ul>
+<p><code>/undo</code> stacks. Run it twice to walk back two user turns; run
+it three times for three. Each step restores files <strong>and</strong>
+truncates conversation messages.</p>
+<h2 id="redo">Re-applying with <code>/redo</code></h2>
+<p><code>/redo</code> un-does the most recent <code>/undo</code> &mdash; it restores both the
+working-tree state and the messages that were sliced off.</p>
+<p>Two important details:</p>
+<ul>
+<li>Redo state is held in memory only. Restarting Cantrip drops
+it. This is deliberate: re-applying an undo across a restart
+would land in a context that no longer matches the
+conversation, which is a loud footgun.</li>
+<li><code>/redo</code> is cleared the moment a new user turn arrives. Once
+you have spoken again, the agent has moved on, and the redo
+entries from before that no longer fit the present.</li>
+</ul>
+<h2 id="disabling">Turning snapshots off</h2>
+<p>Snapshotting commits the entire charm working tree (minus
+gitignored paths and the <code>.cantrip/</code> session store) before
+every user turn. For most charms this is sub-second. For a
+charm that vendors a large dependency tree it can stutter.</p>
+<p>Two equivalent escape hatches:</p>
+<pre><code><span class="prompt">$</span> cantrip --no-snapshots /path/to/my-charm</code></pre>
+<pre><code><span class="prompt">$</span> CANTRIP_SNAPSHOTS=false cantrip /path/to/my-charm</code></pre>
+<p>When snapshots are off, <code>/undo</code> and <code>/redo</code> print a clear
+&quot;snapshots disabled&quot; message rather than silently doing
+nothing. Re-enable per session by relaunching without the
+flag, or set <code>CANTRIP_SNAPSHOTS=true</code> to override an
+inherited environment.</p>
+<h2 id="what-it-does-not">What <code>/undo</code> does not do</h2>
+<ul>
+<li>It does not touch your real git repository's branches,
+refs, or working tree commits. The snapshot repo is
+separate.</li>
+<li>It does not roll back deployed charm changes in Juju &mdash;
+redeployment is a separate, much larger operation
+(<code>/deploy</code>, the work-queue, etc.).</li>
+<li>It does not roll back memory writes or anything else
+outside the charm root. Memories live in <code>~/.config/cantrip/</code>
+and survive <code>/undo</code>.</li>
+<li>It does not snapshot files Cantrip itself manages inside
+the charm tree (<code>.cantrip/</code> session store, Phase 44
+<code>.cantrip-worktrees/</code> for parallel subagents). Restoring
+those would corrupt agent state that lives outside the
+per-turn contract.</li>
+</ul>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

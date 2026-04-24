@@ -96,6 +96,7 @@ class CantripApp(App):
         base_url: str | None = None,
         max_iterations: int | None = None,
         max_tokens: int | None = None,
+        no_snapshots: bool = False,
     ):
         """Initialise the app."""
         super().__init__()
@@ -113,6 +114,7 @@ class CantripApp(App):
         self._base_url = base_url
         self._max_iterations = max_iterations
         self._max_tokens = max_tokens
+        self._no_snapshots = no_snapshots
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -283,6 +285,13 @@ class CantripApp(App):
             self._agent.state.goal_budget = from_cli_args(
                 max_iterations=self._max_iterations,
                 max_tokens=self._max_tokens,
+            )
+
+            # Phase 68.1: opt out of per-turn working-tree snapshots.
+            from cantrip.agent.snapshots import snapshots_enabled
+
+            self._agent.state.snapshot_enabled = snapshots_enabled(
+                no_snapshots_flag=self._no_snapshots,
             )
 
             # Set improvement mode if --improve was passed.

@@ -658,6 +658,21 @@ class SessionStore:
         assert cursor.lastrowid is not None
         return cursor.lastrowid
 
+    def delete_messages_from(self, message_id: int) -> int:
+        """Delete the message with *message_id* and every later message.
+
+        Used by ``/undo`` (Phase 68.1) to truncate the persisted
+        history alongside the in-memory ``state.messages`` slice.
+        Returns the number of rows deleted so the caller can sanity-
+        check that something actually moved.
+        """
+        cursor = self._db.execute(
+            "DELETE FROM messages WHERE id >= ?",
+            (message_id,),
+        )
+        self._db.commit()
+        return cursor.rowcount or 0
+
     def load_messages(self) -> list[dict[str, object]]:
         """Load all conversation messages ordered by ID."""
         rows = self._db.execute("SELECT * FROM messages ORDER BY id").fetchall()

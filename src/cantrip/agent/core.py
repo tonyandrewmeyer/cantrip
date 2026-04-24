@@ -66,6 +66,7 @@ from cantrip.agent.race import RACE_CONFIRM_PREFIX
 from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.session_preview import SessionPreview
 from cantrip.agent.skills import SkillsIndex
+from cantrip.agent.snapshots import SnapshotManager
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools import Tool, ToolResult, build_tools
@@ -255,6 +256,12 @@ class CantripAgent:
         # carrying its own copy of the state.
         self._arena_session: arena.ArenaSession | None = None
 
+        # Phase 68.1: per-turn working-tree snapshots feed ``/undo``.
+        # Built lazily so sessions that never touch a charm path or
+        # opt out via ``--no-snapshots`` pay no init cost.  Lives on
+        # the agent so the slash-command dispatcher can reach it.
+        self._snapshot_manager_cache: SnapshotManager | None = None
+
         if charm_path:
             self._ensure_claude_md(charm_path)
 
@@ -262,6 +269,26 @@ class CantripAgent:
     def event_bus(self) -> ui_events.EventBus:
         """The shared UI event bus."""
         return self._event_bus
+
+    @property
+    def snapshot_manager(self) -> SnapshotManager | None:
+        """Phase 68.1: lazy-built snapshot manager backing ``/undo`` and ``/redo``.
+
+        Returns ``None`` when the session has no charm path or
+        ``state.snapshot_enabled`` is false.  Callers that want to
+        snapshot must check for ``None`` and skip silently — the
+        agent must keep running even when undo history is unavailable.
+        """
+        if not self.state.snapshot_enabled:
+            return None
+        if self.state.charm_path is None:
+            return None
+        if self._snapshot_manager_cache is None:
+            self._snapshot_manager_cache = SnapshotManager(
+                self.state.charm_path,
+                event_bus=self._event_bus,
+            )
+        return self._snapshot_manager_cache
 
     @property
     def work_queue(self) -> WorkQueue:
@@ -608,11 +635,40 @@ class CantripAgent:
             self.state.messages.append(Message(role=Role.SYSTEM, content=warning))
             log.warning("Compaction safety warning: %s", warning)
 
-    def _record_message(self, msg: Message) -> None:
-        """Persist a conversation message to the session store."""
+    def _snapshot_before_user_turn(self, user_msg: Message) -> None:
+        """Phase 68.1: snapshot the working tree before *user_msg* lands.
+
+        Stamps the resulting commit SHA onto :attr:`Message.metadata`
+        so ``/undo`` can map the turn back to its pre-state, and
+        clears the redo stack — a fresh user turn invalidates any
+        previously-undone history.  All failure modes (no charm path,
+        snapshots disabled, git missing, repo init failed) leave
+        ``user_msg`` untouched and the agent runs uncrippled.
+        """
+        mgr = self.snapshot_manager
+        if mgr is None:
+            return
+        mgr.clear_redo()
+        # ``turn_id`` is the 1-based count of user turns so far —
+        # the one being snapshotted is the next one, hence the +1.
+        existing_user_turns = sum(1 for m in self.state.messages if m.role == Role.USER)
+        turn_id = str(existing_user_turns + 1)
+        sha = mgr.snapshot_turn(turn_id)
+        if sha is not None:
+            user_msg.metadata["snapshot_sha"] = sha
+
+    def _record_message(self, msg: Message) -> int | None:
+        """Persist a conversation message to the session store.
+
+        Returns the SQLite row ID of the inserted record, or ``None``
+        when the store is not yet initialised.  User-role messages
+        also get the row ID stamped onto :attr:`Message.metadata` so
+        Phase 68.1 ``/undo`` can map a sliced message back to the
+        rows it needs to delete.
+        """
         self._ensure_store()
         if not self._store:
-            return
+            return None
         tool_calls = None
         if msg.tool_calls:
             tool_calls = [
@@ -628,13 +684,16 @@ class CantripAgent:
                 }
                 for tr in msg.tool_results
             ]
-        self._store.record_message(
+        row_id = self._store.record_message(
             role=msg.role.value,
             content=msg.content,
             tool_calls=tool_calls,
             tool_results=tool_results,
             metadata=msg.metadata or None,
         )
+        if msg.role == Role.USER:
+            msg.metadata["db_message_id"] = row_id
+        return row_id
 
     def _get_provider(self, purpose: str) -> LLMProvider:
         """Select the appropriate provider for a given purpose.
@@ -958,6 +1017,7 @@ class CantripAgent:
 
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
+        self._snapshot_before_user_turn(user_msg)
         self.state.messages.append(user_msg)
         self._record_message(user_msg)
 
@@ -1152,6 +1212,7 @@ class CantripAgent:
 
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
+        self._snapshot_before_user_turn(user_msg)
         self.state.messages.append(user_msg)
         self._record_message(user_msg)
 

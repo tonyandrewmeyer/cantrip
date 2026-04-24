@@ -421,6 +421,30 @@ Subagents receive:
 Subagents return a text summary that is recorded as the task result and
 passed to downstream dependent tasks.
 
+### Snapshots vs. worktrees
+
+Two different "isolation" mechanisms operate on the working tree, and
+they are not interchangeable:
+
+- **Phase 44 worktrees** (`.cantrip-worktrees/<task-id>/`) isolate
+  *concurrent subagents* so two BUILD tasks editing the same charm do
+  not race each other. Each worktree is a `git worktree` checkout of
+  an ephemeral branch, lives inside the charm tree, and is torn down
+  when the task completes.
+- **Phase 68.1 snapshots**
+  (`$XDG_STATE_HOME/cantrip/snapshots/<hash>/`) capture the *main*
+  working tree once per user turn so `/undo` can roll back the agent's
+  edits between turns. The snapshot repo lives outside the charm
+  tree, never appears in the user's `git status`, and is
+  content-addressed so two charms in different directories don't
+  collide.
+
+Worktrees handle "two agents acting at once"; snapshots handle "the
+agent edited my files and I want them back". They are independent —
+snapshots ignore `.cantrip-worktrees/` so subagent scratch space is
+not rolled back, and worktrees are not snapshotted because they are
+ephemeral by design.
+
 ## Conversation Flow Examples
 
 ### Autonomous Charm Building

@@ -879,6 +879,13 @@ def run_web(args: argparse.Namespace) -> int:
         max_tokens=getattr(args, "max_tokens", None),
     )
 
+    # Phase 68.1: opt out of per-turn working-tree snapshots.
+    from cantrip.agent.snapshots import snapshots_enabled
+
+    agent.state.snapshot_enabled = snapshots_enabled(
+        no_snapshots_flag=bool(getattr(args, "no_snapshots", False)),
+    )
+
     port = getattr(args, "web_port", _DEFAULT_PORT)
 
     try:
