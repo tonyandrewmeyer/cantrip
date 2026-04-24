@@ -233,6 +233,12 @@ const cantrip = (() => {
       case "status_bar_changed":
         _handleStatusBarChanged(msg.data || {});
         break;
+      case "tool_invoked":
+        // Phase 75: render a compact tool block so the user can see
+        // what the agent just did between "Let me check the file:"
+        // and the agent's next narrative message.
+        appendToolBlock(msg.data || {});
+        break;
     }
   }
 
@@ -393,6 +399,52 @@ const cantrip = (() => {
     // Only auto-scroll if the user is already near the bottom;
     // otherwise leave them where they are (the scroll-to-bottom
     // button will appear so they know there's new content below).
+    const wasAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight
+        < _SCROLL_BOTTOM_THRESHOLD;
+    container.appendChild(div);
+    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    _updateScrollBottomButton();
+  }
+
+  // Phase 75: render a tool-invocation block in the chat stream.
+  // Mirrors the TUI ``ToolBlockWidget``: compact single line, accent
+  // border on success, error border on failure, caption prefixed
+  // with a glyph.  Duration shown only when it crosses the
+  // attention threshold (500 ms) so fast calls don't clutter the
+  // chat.
+  const _TOOL_BLOCK_DURATION_THRESHOLD_MS = 500;
+  function appendToolBlock(data) {
+    const container = chatMessages();
+    if (!container) return;
+    const empty = document.getElementById("chat-empty");
+    if (empty) empty.remove();
+
+    const success = Boolean(data.success);
+    const glyph = success ? "🔧" : "✗";
+    const caption = data.caption || data.tool_name || "(tool)";
+
+    const div = document.createElement("div");
+    div.className = "msg msg-tool";
+    if (!success) div.classList.add("msg-tool-failed");
+
+    const body = document.createElement("div");
+    body.className = "msg-body";
+
+    const text = document.createElement("span");
+    text.textContent = `${glyph} ${caption}`;
+    body.appendChild(text);
+
+    const duration = Number(data.duration_ms);
+    if (Number.isFinite(duration) && duration >= _TOOL_BLOCK_DURATION_THRESHOLD_MS) {
+      const suffix = document.createElement("span");
+      suffix.className = "msg-time";
+      suffix.textContent = ` (${duration} ms)`;
+      body.appendChild(suffix);
+    }
+
+    div.appendChild(body);
+
     const wasAtBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight
         < _SCROLL_BOTTOM_THRESHOLD;

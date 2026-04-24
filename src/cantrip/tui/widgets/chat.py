@@ -17,6 +17,10 @@ from textual.widgets import Input, LoadingIndicator, Static
 
 from cantrip.agent.slash_commands import CommandInfo
 
+# Duration below which a tool-block widget does not display the
+# parenthesised timing — fast calls shouldn't clutter the chat.
+_TOOL_BLOCK_DURATION_THRESHOLD_MS = 500
+
 
 class MessageRole(StrEnum):
     """Role of a chat message."""
@@ -24,6 +28,7 @@ class MessageRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
+    TOOL = "tool"
 
 
 class MessageStatus(StrEnum):
@@ -77,6 +82,18 @@ class MessageWidget(Static):
         border-left: thick $surface;
     }
 
+    MessageWidget.tool {
+        color: $text-muted;
+        border-left: thick $accent;
+        margin: 0;
+        padding: 0 1;
+    }
+
+    MessageWidget.tool-failed {
+        color: $error;
+        border-left: thick $error;
+    }
+
     MessageWidget .message-header {
         color: $text-muted;
         text-style: dim;
@@ -127,6 +144,7 @@ class MessageWidget(Static):
             MessageRole.USER: "> ",
             MessageRole.ASSISTANT: "",
             MessageRole.SYSTEM: "[system] ",
+            MessageRole.TOOL: "",  # Caption carries its own glyph.
         }
         header = role_display.get(self.message.role, "")
         timestamp = self.message.timestamp.strftime("%H:%M")
@@ -715,6 +733,41 @@ class ChatWidget(Widget):
                 progress_items=items,
             )
         )
+
+    def add_tool_block(
+        self,
+        caption: str,
+        *,
+        success: bool,
+        duration_ms: int | None = None,
+    ) -> MessageWidget:
+        """Add a compact tool-invocation block to the chat (Phase 75).
+
+        Rendered between agent messages so the user can see *what the
+        agent just did* without opening the transcript viewer.  Keeps
+        the trailing-colon preambles from reading as broken speech —
+        the colon is now followed by a visible tool block.
+
+        ``caption`` is the one-line human summary the agent's
+        ``TOOL_INVOKED`` event carries.  ``success=False`` recolours
+        the block's left border to the error colour and swaps the
+        leading glyph.  ``duration_ms`` is appended in parentheses
+        when supplied so slow calls stand out.
+        """
+        glyph = "🔧" if success else "✗"
+        suffix = ""
+        if duration_ms is not None and duration_ms >= _TOOL_BLOCK_DURATION_THRESHOLD_MS:
+            suffix = f" [dim]({duration_ms} ms)[/dim]"
+        content = f"{glyph} {caption}{suffix}"
+        widget = self.add_message(
+            ChatMessage(
+                role=MessageRole.TOOL,
+                content=content,
+            )
+        )
+        if not success:
+            widget.add_class("tool-failed")
+        return widget
 
     def append_streaming_chunk(self, widget: MessageWidget, chunk: str) -> None:
         """Append *chunk* to *widget* and keep the scroll pinned to the bottom.

@@ -4233,6 +4233,205 @@ filtered to non-trivial pairs.
 
 ---
 
+## Phase 75: Inline Tool Blocks in the Chat
+
+**Goal:** Stop hiding tool execution from the chat.  Today the
+agent streams a preamble (``Let me check the file:``), runs a tool
+*silently*, then streams the next message.  The user sees a line
+that trails off on a colon with no follow-up — it reads like
+broken speech.  Render each tool call as a compact block inline
+with the chat so the user can see *what just happened* without
+opening the transcript.
+
+### 75.1 High — Caption field on ``ToolResult`` ✓
+
+- [x] Added ``caption: str | None = None`` to
+  ``cantrip.agent.tools.base.ToolResult``.  Tools that know the
+  rich one-line summary of what they did populate it; everything
+  else leaves it ``None`` and the agent-loop fallback synthesises
+  ``tool_name(preferred_key=value)`` via the new
+  ``build_tool_caption(tool_name, arguments, result)`` helper.
+- [x] Deviation from the original plan: no per-tool caption
+  population *yet*.  The fallback reads the first argument
+  matching ``path`` / ``file_path`` / ``command`` / ``cmd`` /
+  ``url`` / ``query`` / ``skill_name`` / ``name`` / … (a
+  preferred-key list), truncates the value to 60 chars, and
+  collapses newlines — covering ~90% of concrete tool shapes
+  without touching every tool.  Populating captions is now
+  incremental work tools can pick up as they're touched; the
+  fallback keeps the chat readable until then.
+
+### 75.2 High — ``TOOL_INVOKED`` UI event ✓
+
+- [x] New ``EventType.TOOL_INVOKED`` on
+  ``cantrip.ui.events`` carrying
+  ``{tool_name, caption, success, duration_ms, source}``.
+  ``source`` is one of ``main`` / ``main-stream`` /
+  ``subagent`` so subscribers that care about context (a test
+  harness, a filter on the bus) can route accordingly.
+  ``duration_ms`` is ``None`` when unmeasured and otherwise an
+  integer in milliseconds.
+- [x] Emission wired into all three tool-call boundaries:
+  ``core.py`` synchronous loop, ``core.py`` streaming loop,
+  and ``subagent.py`` gather path.  Fires *after* the tool
+  returns — vetoed pre-hook calls surface as ``success=False``
+  so a blocked action is visible in the chat, not hidden.
+  Subagent emission flows through a new
+  ``Subagent.on_tool_invoked`` callback forwarded by
+  ``BackgroundExecutor`` and bound on the agent layer so the
+  same event bus serves both main-agent and subagent blocks.
+
+### 75.3 High — TUI: render tool blocks ✓
+
+- [x] ``ChatWidget.add_tool_block(caption, success, duration_ms)``
+  and a new ``MessageRole.TOOL`` render a compact single-line
+  block between chat messages.  Success uses the accent border
+  and a ``🔧`` glyph; failure recolours to the error border and
+  swaps in ``✗``.  Durations above the 500 ms attention
+  threshold (``_TOOL_BLOCK_DURATION_THRESHOLD_MS``) appear
+  parenthesised so fast calls don't clutter the chat.
+  ``src/cantrip/tui/app.py`` subscribes to ``TOOL_INVOKED`` in
+  the same place it subscribes to the memory / status-bar
+  events.
+- [x] Deviation from the original plan: kept the block inside
+  ``MessageWidget`` rather than creating a separate
+  ``ToolBlockWidget`` class.  Reusing the existing widget
+  pipeline via ``MessageRole.TOOL`` was half the code and
+  still leaves the CSS rule (``MessageWidget.tool`` /
+  ``MessageWidget.tool-failed``) available for the Phase 76
+  copy-chunk work to target.
+
+### 75.4 High — Web: broadcast tool call over WebSocket ✓
+
+- [x] No new ``_broadcast_tool_call`` helper needed: the
+  existing wildcard bus forwarder
+  (``_make_bus_forwarder``) already translates every
+  bus event into a WebSocket message
+  ``{type: "tool_invoked", data: <payload>}`` — same shape the
+  JS dispatcher case handles.  New ``appendToolBlock`` function
+  in ``cantrip.js`` renders the compact block; new
+  ``.msg-tool`` / ``.msg-tool-failed`` CSS in ``style.css``
+  mirrors the TUI treatment (accent border, muted text, mono
+  font, error border on failure).
+- [x] Shared rendering vocabulary between TUI and Web: same
+  ``🔧`` / ``✗`` glyphs, same 500 ms duration threshold,
+  so users moving between surfaces get an identical mental
+  model.
+
+### 75.5 Medium — Tests ✓
+
+- [x] ``tests/unit/test_ui_events.py`` — new
+  ``TestToolInvokedEvent`` with 4 cases (required fields,
+  duration pass-through, subagent source tag, failure
+  surfacing as ``success=False``).  The existing
+  ``test_event_type_enum_covers_all_factories`` was extended
+  so every new event type keeps being covered automatically.
+- [x] ``tests/unit/test_agent.py`` — new
+  ``TestToolInvokedEvent`` with 3 cases (sync-loop tool call
+  emits event with correct payload + caption fallback,
+  failure surfaces as ``success=False``, explicit caption
+  wins over formulaic fallback).
+- [x] ``tests/unit/test_tui.py`` — 4 new cases on
+  ``TestTuiWidgets`` covering ``add_tool_block`` render
+  (success, failure with ``tool-failed`` class, slow-call
+  duration visible, fast-call duration hidden).
+- [x] New ``tests/unit/test_tool_caption.py`` — 13 cases on
+  ``build_tool_caption`` covering explicit-caption-wins, all
+  preferred-key types (path / file_path / command / url),
+  fallback to first non-preferred arg, empty / None / whitespace
+  values, long-value truncation, newline collapsing,
+  quote normalisation.
+- [x] No dedicated ``_broadcast_tool_call`` test filed —
+  removed the helper as part of the design change above; the
+  existing wildcard-forwarder test in
+  ``test_ui_events.py`` already exercises the path the
+  front-end consumes.
+
+### What this phase is *not*
+
+- Not a full collapse-by-default UI.  First pass is everything
+  visible inline; compacting comes in Phase 76 alongside the
+  copy-chunks work.
+- Not a replacement for the transcript viewer.  The transcript
+  still records the full tool I/O; the chat block is a summary,
+  not the authoritative record.
+- Not a new rendering engine in the TUI.  Mirror the existing
+  system-message widget pattern; no new Textual wizardry.
+
+**Exit criteria:** Every tool call — main-agent and subagent — is
+visible in the TUI and Web chat as a one-line block between
+messages; successes and failures are colour-distinguished; the
+trailing-colon preambles no longer read as broken speech.  Unit
+tests cover event emission, caption fallback, and both UI
+rendering paths.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Caption field (75.1) | None | ``ToolResult`` dataclass change; every tool call falls back gracefully |
+| Event emission (75.2) | Phase 15.1 event bus | Uses existing publisher, adds one event kind |
+| TUI block (75.3) | Phase 15.1 event bus, Phase 4.4 TUI widgets | New widget subscribes to bus |
+| Web broadcast (75.4) | Phase 15.2 web server | New WebSocket message kind, front-end rendering |
+| Tests (75.5) | 75.1–75.4 | Regression cover for the four landing points |
+
+---
+
+## Phase 76: Copy-Friendly Chat — Toad-Inspired
+
+**Goal:** Make it easy to copy chunks of the chat window — a
+single agent message, a single tool block, a whole turn.  Today
+the TUI relies on the terminal's own copy machinery (``Ctrl+Shift+
+C`` in most terminals), which breaks when Cantrip is running
+inside a multiplexer or when multiple surfaces are on screen.
+Toad (Charm's AI agent) has well-regarded per-block copy
+affordances — inspect what they do and adapt what fits.
+
+**This is primarily an investigation phase.**  Ship one concrete
+improvement if one reads as obviously right during the review;
+otherwise document findings and move on without premature
+design.
+
+### 76.1 Research — What Toad does
+
+- [ ] Install / read about Toad's per-block copy behaviour:
+  what gestures, what clipboard formats (plain text, Markdown,
+  rich), what scope (one message / one turn / selection range).
+- [ ] Catalogue the friction points in Cantrip's current
+  TUI-copy flow that real users hit (ghost terminal +
+  tmux/screen + remote ssh all mangle different bits).
+
+### 76.2 Design — What fits Cantrip
+
+- [ ] Pick the subset of Toad's affordances that maps cleanly
+  onto Textual.  Candidates: per-widget copy keybinding;
+  visible ``[copy]`` affordance on hover / focus; a ``/copy
+  last-message`` / ``/copy last-tool-result`` slash command;
+  OSC 52 clipboard escape support for ssh/tmux.
+- [ ] Decide the default Markdown-vs-plain-text policy — agent
+  messages are typically Markdown, but the user probably wants
+  plain text when pasting into Slack vs Markdown when pasting
+  into an issue tracker.
+
+### 76.3 Implement — The one thing worth shipping now
+
+- [ ] Ship whichever affordance from 76.2 has the clearest
+  win.  If nothing rises above the bar, write up findings in
+  ``design/UI.md`` and close the phase without shipping.
+
+**Exit criteria:** Either (a) a concrete copy affordance lands
+and is documented, or (b) a written assessment in ``design/UI.md``
+explains why the current flow is sufficient and what would
+change that.  ``make check`` passes regardless.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Research (76.1) | None | Read-only |
+| Design (76.2) | 76.1, Phase 75 (tool blocks as copyable units) | Tool blocks are new copy targets; wait until 75 lands |
+| Implement (76.3) | 76.2 | Only if 76.2 surfaces a clear win |
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4303,4 +4502,6 @@ filtered to non-trivial pairs.
 | M72: Continue Context Providers | 72 | Indexed charm-ecosystem docs (``@docs juju|ops|charmcraft|rockcraft``), an ``@``-mention context-provider registry, ``embed`` and ``rerank`` model roles, and ``@problems`` diagnostics-as-pre-turn-context |
 | M73: Goose Workflow Packaging | 73 | Parameterised retryable Recipes with sub-recipes, MCP Apps rendered as sandboxed iframes in the Web UI, JSON-schema-enforced structured responses, and declarative retry with shell validators |
 | M74: Populated Charm Docs | 74 | Generated ``docs/`` tree is bridged with the Phase 13 root files, populated from real Phase 17 acceptance-test command/output capture, with an architecture page extracted from transcript design decisions and a troubleshooting page mined from the agent's resolved-error history |
+| M75: Inline Tool Blocks | 75 | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
+| M76: Copy-Friendly Chat | 76 | Toad-inspired per-block copy affordances either ship (keybinding, slash command, OSC 52, or similar) or a written assessment in ``design/UI.md`` explains why the current flow is sufficient |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

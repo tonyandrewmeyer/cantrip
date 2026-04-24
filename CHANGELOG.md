@@ -5,6 +5,48 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Inline tool blocks in the chat — Phase 75.**  Every tool
+  invocation now renders as a compact one-line block in the TUI
+  and Web chat so the agent's "Let me check the file:" preambles
+  stop reading as broken speech — the colon is followed by a
+  visible ``🔧 read_file(path=src/foo.py)`` block, then the
+  agent's next narrative message.  ``ToolResult`` gained a
+  ``caption: str | None`` field tools can populate with a rich
+  one-line summary (``"Read 47 lines from src/foo.py"``); tools
+  that leave it ``None`` get a formulaic
+  ``tool_name(preferred_key=value)`` fallback from
+  ``build_tool_caption`` (using a preferred-key list of ``path``
+  / ``file_path`` / ``command`` / ``cmd`` / ``url`` / ``query``
+  / ``skill_name`` / ``name`` / … ).  Values are truncated to
+  60 chars and newlines are collapsed so the block stays on one
+  line.  New ``TOOL_INVOKED`` UI event carries
+  ``{tool_name, caption, success, duration_ms, source}``; fired
+  from all three tool-call boundaries (main-agent sync loop,
+  main-agent streaming loop, subagent ``asyncio.gather`` path)
+  with the correct ``source`` tag (``main`` / ``main-stream``
+  / ``subagent``).  TUI gets a new ``MessageRole.TOOL`` and
+  ``ChatWidget.add_tool_block`` renderer; failure recolours the
+  left border to error-red and swaps ``🔧`` for ``✗``; duration
+  appears parenthesised only when it exceeds the 500 ms
+  attention threshold so fast calls don't clutter the chat.
+  Web gets a matching ``appendToolBlock`` renderer in
+  ``cantrip.js`` with CSS in ``style.css`` — the existing
+  wildcard bus forwarder already serves the event to the
+  front-end, no new WebSocket message type needed.  Subagent
+  wiring: ``Subagent`` accepts an ``on_tool_invoked`` callback;
+  ``BackgroundExecutor`` forwards it from the agent layer so
+  subagent tool calls surface in the chat with the same visual
+  treatment as main-agent calls.  30 new tests: caption
+  fallback (13 cases covering path / command / url /
+  non-preferred-first / empty / None / long-truncate /
+  newline-collapse / preferred-key-win / quote-normalise),
+  ``TOOL_INVOKED`` event shape (4 cases), agent-level emission
+  (3 cases — success / failure / caption-override), and TUI
+  ``add_tool_block`` widget rendering (4 cases — success /
+  failure / slow-call duration / fast-call duration hidden).
+  Phase 76 filed as a follow-up to investigate Toad-style
+  per-block copy affordances once the blocks have settled.
+
 - **Step-level durable-execution checkpoints — Phase 52.1.**  First
   piece of Phase 52's per-step resume story: a subagent task that
   rate-limits on LLM turn 18 should restart from turn 18, not

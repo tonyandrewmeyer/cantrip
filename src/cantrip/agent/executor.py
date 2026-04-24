@@ -30,6 +30,7 @@ from cantrip.agent.subagent import (
     Subagent,
     SubagentContext,
     SubagentResult,
+    ToolInvokedCallback,
 )
 from cantrip.agent.tools.base import Tool
 from cantrip.agent.tools.git import _gpg_sign_enabled
@@ -339,6 +340,7 @@ class BackgroundExecutor:
         race_config: race.RaceConfig | None = None,
         extra_providers: list[llm.LLMProvider] | None = None,
         hook_runner: HookRunner | None = None,
+        on_tool_invoked: ToolInvokedCallback | None = None,
     ) -> None:
         self._queue = queue
         self._tools = tools
@@ -350,6 +352,7 @@ class BackgroundExecutor:
         self._on_task_failed = on_task_failed
         self._max_concurrency = max(1, max_concurrency)
         self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
+        self._on_tool_invoked = on_tool_invoked
 
         # Injected services — fall back to defaults when not provided.
         self._git: GitService = git_service or _DefaultGitService()
@@ -837,6 +840,7 @@ class BackgroundExecutor:
             store=self._store,
             on_phase_change=self._queue.notify_task,
             hook_runner=self._hook_runner,
+            on_tool_invoked=self._on_tool_invoked,
             **({"max_rounds": max_rounds} if max_rounds is not None else {}),
         )
         t0 = time.monotonic()
@@ -1082,6 +1086,7 @@ class BackgroundExecutor:
                 store=self._store,
                 on_phase_change=self._queue.notify_task,
                 hook_runner=self._hook_runner,
+                on_tool_invoked=self._on_tool_invoked,
                 **extra,
             )
 

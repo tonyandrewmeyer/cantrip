@@ -542,6 +542,13 @@ class CantripApp(App):
         self._agent.event_bus.subscribe(
             ui_events.EventType.STATUS_BAR_CHANGED, self._on_bus_status_bar
         )
+        # Phase 75: inline tool blocks in the chat so the trailing-colon
+        # preambles ("Let me check the file:") stop reading as broken
+        # speech — the next thing the user sees is the tool block that
+        # explains what the agent actually did.
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.TOOL_INVOKED, self._on_bus_tool_invoked
+        )
 
         self._agent.start_executor(max_concurrency=self._max_concurrency)
 
@@ -605,6 +612,19 @@ class CantripApp(App):
         scope = payload.get("scope", "?")
         title = payload.get("title", "?")
         chat.add_system_message(f"Recalled memory: {title} ({scope})")
+
+    def _on_bus_tool_invoked(self, event: ui_events.Event) -> None:
+        """Render an inline tool-invocation block in the chat (Phase 75)."""
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        payload = event.payload
+        caption = payload.get("caption") or payload.get("tool_name", "?")
+        success = bool(payload.get("success", False))
+        duration_ms = payload.get("duration_ms")
+        chat.add_tool_block(
+            caption,
+            success=success,
+            duration_ms=duration_ms if isinstance(duration_ms, int) else None,
+        )
 
     def _on_bus_status_bar(self, event: ui_events.Event) -> None:
         """Apply a STATUS_BAR_CHANGED event to the status bar reactives."""

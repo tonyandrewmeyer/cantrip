@@ -32,6 +32,12 @@ UsageCallback = Callable[[llm.Response], None] | None
 # wires this to publish a ``TASK_UPDATED`` event on the shared bus.
 PhaseChangeCallback = Callable[[AgentTask], None] | None
 
+# Called after each subagent tool call so the UI can render an inline
+# "tool block" in the chat (Phase 75).  Args: (tool_name, arguments,
+# result, duration_ms).  The executor wires this to publish a
+# ``TOOL_INVOKED`` event on the shared bus.
+ToolInvokedCallback = Callable[[str, dict[str, Any], ToolResult, int], None] | None
+
 
 # Tool-call "running" phases shorter than this threshold feel like flicker,
 # so we always show at least this long before the phase updates again.  It's
@@ -737,6 +743,7 @@ class Subagent:
         max_rounds: int = MAX_SUBAGENT_ROUNDS,
         on_phase_change: PhaseChangeCallback = None,
         hook_runner: HookRunner | None = None,
+        on_tool_invoked: ToolInvokedCallback = None,
     ) -> None:
         self._context = context
         self._provider = _select_provider(
@@ -754,6 +761,7 @@ class Subagent:
         self._max_rounds = max_rounds
         self._on_phase_change = on_phase_change
         self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
+        self._on_tool_invoked = on_tool_invoked
 
     def _set_phase(self, phase: str) -> None:
         """Update the task's transient subagent phase and notify listeners."""
@@ -924,21 +932,24 @@ class Subagent:
 
             async def _tool_or_veto(
                 tc: llm.ToolCall, veto: Any, arguments: dict[str, Any]
-            ) -> ToolResult:
+            ) -> tuple[ToolResult, int]:
+                call_start = time.monotonic()
                 if veto is not None:
                     log.info(
                         "Subagent tool call %r vetoed by %s",
                         tc.name,
                         veto.veto_reason,
                     )
-                    return ToolResult(
+                    result = ToolResult(
                         success=False,
                         output="",
                         error=f"Blocked by {veto.veto_reason}",
                     )
-                return await self._execute_tool(tc.name, arguments)
+                else:
+                    result = await self._execute_tool(tc.name, arguments)
+                return result, int((time.monotonic() - call_start) * 1000)
 
-            raw_results = await asyncio.gather(
+            timed_results = await asyncio.gather(
                 *(
                     _tool_or_veto(tc, veto, args)
                     for tc, veto, args in zip(
@@ -949,17 +960,20 @@ class Subagent:
                     )
                 )
             )
+            raw_results = [r for r, _ in timed_results]
+            raw_durations = [ms for _, ms in timed_results]
             # Only the un-vetoed calls actually fired; post_tool_call
             # fires for every call (vetoed or not) so observability
             # hooks see the full picture, with ``success`` reflecting
             # the veto as a failure the same way the LLM does.  The
             # ``arguments`` payload uses the mutated form so audit
             # hooks see what actually ran (or would have).
-            for tc, tool_result, veto, args in zip(
+            for tc, tool_result, veto, args, duration_ms in zip(
                 response.tool_calls,
                 raw_results,
                 call_vetoes,
                 call_arguments,
+                raw_durations,
                 strict=True,
             ):
                 payload = {
@@ -973,6 +987,16 @@ class Subagent:
                 if veto is not None:
                     payload["vetoed_by"] = veto.name
                 await self._hook_runner.fire(HookEvent.POST_TOOL_CALL, payload)
+                if self._on_tool_invoked is not None:
+                    try:
+                        self._on_tool_invoked(tc.name, args, tool_result, duration_ms)
+                    except (  # noqa: PERF203
+                        TypeError,
+                        ValueError,
+                        RuntimeError,
+                        AttributeError,
+                    ):
+                        log.exception("on_tool_invoked callback raised for %s", tc.name)
             # Fresh flavour each time we return to the thinking phase so
             # a long turn that cycles through tools rolls a new label per
             # thinking leg rather than reading the same verb forever.

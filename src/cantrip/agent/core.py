@@ -6,6 +6,7 @@ import logging
 import re
 import sqlite3
 import subprocess
+import time
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
@@ -647,6 +648,36 @@ class CantripAgent:
         """
         self._event_bus.publish(ui_events.status_bar_changed(task_label=label))
 
+    def _publish_tool_invoked(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        result: ToolResult,
+        *,
+        source: str,
+        duration_ms: int | None = None,
+    ) -> None:
+        """Emit a ``TOOL_INVOKED`` event for the chat surfaces (Phase 75).
+
+        Builds a caption via :func:`build_tool_caption` — the tool's
+        own ``ToolResult.caption`` when present, a formulaic
+        ``tool_name(key=value)`` fallback otherwise.  Published on the
+        shared event bus; the TUI chat widget and the Web UI each
+        render a compact tool block when they receive it.
+        """
+        from cantrip.agent.tools.base import build_tool_caption
+
+        caption = build_tool_caption(tool_name, arguments, result)
+        self._event_bus.publish(
+            ui_events.tool_invoked(
+                tool_name=tool_name,
+                caption=caption,
+                success=result.success,
+                duration_ms=duration_ms,
+                source=source,
+            )
+        )
+
     def _capture_test_results(self, tool_name: str, result: ToolResult) -> None:
         """Update state with test results if the tool produced a test summary."""
         if tool_name not in _TEST_RESULT_TOOLS:
@@ -801,6 +832,7 @@ class CantripAgent:
                 # the tool invocation and the post_tool_call payload so
                 # audit logs reflect what actually ran.
                 effective_arguments = final_arguments(pre_results) or tc.arguments
+                tool_start = time.monotonic()
                 if veto is not None:
                     # A pre-hook blocked the call \u2014 synthesise an error
                     # ToolResult so the LLM sees the veto on its next turn
@@ -820,6 +852,7 @@ class CantripAgent:
                     )
                 else:
                     result = await self._execute_tool(tc.name, effective_arguments)
+                tool_elapsed_ms = int((time.monotonic() - tool_start) * 1000)
                 post_payload: dict[str, Any] = {
                     "tool": tc.name,
                     "arguments": effective_arguments,
@@ -832,6 +865,13 @@ class CantripAgent:
                 await self._hook_runner.fire(HookEvent.POST_TOOL_CALL, post_payload)
                 self._publish_activity(f"\u27f3 {flavour.pick_activity_label()}...")
                 self._capture_test_results(tc.name, result)
+                self._publish_tool_invoked(
+                    tc.name,
+                    effective_arguments,
+                    result,
+                    source="main",
+                    duration_ms=tool_elapsed_ms,
+                )
                 content = result.output if result.success else (result.error or "Unknown error")
                 # Wrap tool output in delimiters to reduce prompt injection risk.
                 content = f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"
@@ -1015,6 +1055,7 @@ class CantripAgent:
                 )
                 veto = first_veto(pre_results)
                 effective_arguments = final_arguments(pre_results) or tc.arguments
+                tool_start = time.monotonic()
                 if veto is not None:
                     log.warning(
                         "Tool call %r vetoed by %s",
@@ -1028,6 +1069,7 @@ class CantripAgent:
                     )
                 else:
                     result = await self._execute_tool(tc.name, effective_arguments)
+                tool_elapsed_ms = int((time.monotonic() - tool_start) * 1000)
                 post_payload: dict[str, Any] = {
                     "tool": tc.name,
                     "arguments": effective_arguments,
@@ -1040,6 +1082,13 @@ class CantripAgent:
                 await self._hook_runner.fire(HookEvent.POST_TOOL_CALL, post_payload)
                 self._publish_activity(f"\u27f3 {flavour.pick_activity_label()}...")
                 self._capture_test_results(tc.name, result)
+                self._publish_tool_invoked(
+                    tc.name,
+                    effective_arguments,
+                    result,
+                    source="main-stream",
+                    duration_ms=tool_elapsed_ms,
+                )
                 content = result.output if result.success else (result.error or "Unknown error")
                 content = f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"
                 tool_results.append(
@@ -2166,6 +2215,24 @@ class CantripAgent:
                     exc_info=True,
                 )
 
+        # Phase 75: forward subagent tool calls to the chat surfaces
+        # via the shared event bus.  Mirrors the main-agent emission in
+        # ``_publish_tool_invoked`` but tagged ``source="subagent"`` so
+        # subscribers can tell where each call came from.
+        def _forward_subagent_tool_invoked(
+            tool_name: str,
+            arguments: dict[str, Any],
+            result: ToolResult,
+            duration_ms: int,
+        ) -> None:
+            self._publish_tool_invoked(
+                tool_name,
+                arguments,
+                result,
+                source="subagent",
+                duration_ms=duration_ms,
+            )
+
         kwargs: dict[str, object] = {
             "queue": self._work_queue,
             "tools": self._tools,
@@ -2175,6 +2242,7 @@ class CantripAgent:
             "light_provider": self._light_provider,
             "hook_runner": self._hook_runner,
             "on_task_done": _purge_task_checkpoints,
+            "on_tool_invoked": _forward_subagent_tool_invoked,
         }
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency

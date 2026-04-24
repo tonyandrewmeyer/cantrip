@@ -574,6 +574,92 @@ class TestToolResultImageForwarding:
         assert llm_tr.images[0].data == b"\x89PNGdiagnostic"
 
 
+class TestToolInvokedEvent:
+    """Phase 75: each main-agent tool call publishes a TOOL_INVOKED event."""
+
+    @pytest.mark.asyncio
+    async def test_tool_call_emits_tool_invoked_event(self):
+        """``process_message`` emits a TOOL_INVOKED event with the right payload."""
+        from cantrip.ui import events as ui_events
+
+        tool_call = ToolCall(id="tc1", name="read_file", arguments={"path": "src/foo.py"})
+        provider = FakeProvider(
+            [
+                Response(content="Let me check:", tool_calls=[tool_call]),
+                Response(content="All good."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="47 lines"))
+
+        received: list[ui_events.Event] = []
+        agent.event_bus.subscribe(ui_events.EventType.TOOL_INVOKED, received.append)
+
+        await agent.process_message("show me the file")
+
+        assert len(received) == 1
+        payload = received[0].payload
+        assert payload["tool_name"] == "read_file"
+        assert payload["success"] is True
+        assert payload["source"] == "main"
+        # Caption falls back to the preferred-key formatter.
+        assert payload["caption"] == "read_file(path=src/foo.py)"
+        # Duration is measured, non-negative.
+        assert isinstance(payload["duration_ms"], int)
+        assert payload["duration_ms"] >= 0
+
+    @pytest.mark.asyncio
+    async def test_failed_tool_call_emits_with_success_false(self):
+        tool_call = ToolCall(id="tc1", name="run_command", arguments={"command": "false"})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="That didn't work."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(success=False, output="", error="exit 1")
+        )
+
+        received: list = []
+        agent.event_bus.subscribe(
+            __import__("cantrip.ui.events", fromlist=["EventType"]).EventType.TOOL_INVOKED,
+            received.append,
+        )
+
+        await agent.process_message("run something")
+
+        assert len(received) == 1
+        assert received[0].payload["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_explicit_caption_wins_over_fallback(self):
+        """A tool setting ``ToolResult.caption`` overrides the formulaic fallback."""
+        tool_call = ToolCall(id="tc1", name="read_file", arguments={"path": "src/foo.py"})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Done."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(
+                success=True,
+                output="",
+                caption="Read 47 lines from src/foo.py",
+            )
+        )
+
+        received: list = []
+        from cantrip.ui import events as ui_events
+
+        agent.event_bus.subscribe(ui_events.EventType.TOOL_INVOKED, received.append)
+        await agent.process_message("read it")
+        assert received[0].payload["caption"] == "Read 47 lines from src/foo.py"
+
+
 class TestWatcherIntegration:
     """Tests for watcher integration in CantripAgent."""
 

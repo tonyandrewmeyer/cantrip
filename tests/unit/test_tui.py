@@ -154,6 +154,70 @@ class TestTuiWidgets:
                 assert right_panel.display is True
 
     @pytest.mark.asyncio
+    async def test_tool_block_renders_success(self):
+        """Phase 75: ``add_tool_block(success=True)`` appends a tool message."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block(
+                    "read_file(path=src/foo.py)",
+                    success=True,
+                )
+                await pilot.pause()
+                assert widget.message.role == MessageRole.TOOL
+                assert "read_file" in widget.message.content
+                assert "🔧" in widget.message.content
+                assert "tool-failed" not in widget.classes
+
+    @pytest.mark.asyncio
+    async def test_tool_block_renders_failure_with_error_class(self):
+        """Failed tool calls pick up the ``tool-failed`` CSS hint."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block(
+                    'run_command(command="make check")',
+                    success=False,
+                    duration_ms=120,
+                )
+                await pilot.pause()
+                assert widget.message.role == MessageRole.TOOL
+                assert "✗" in widget.message.content
+                assert "tool-failed" in widget.classes
+
+    @pytest.mark.asyncio
+    async def test_tool_block_slow_call_shows_duration(self):
+        """Durations above the 500 ms threshold appear in parentheses."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block(
+                    "charmcraft_pack",
+                    success=True,
+                    duration_ms=2340,
+                )
+                await pilot.pause()
+                assert "2340 ms" in widget.message.content
+
+    @pytest.mark.asyncio
+    async def test_tool_block_fast_call_hides_duration(self):
+        """Fast calls (below the threshold) don't clutter the chat."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block(
+                    "read_file(path=x)",
+                    success=True,
+                    duration_ms=30,
+                )
+                await pilot.pause()
+                assert "ms" not in widget.message.content
+
+    @pytest.mark.asyncio
     async def test_ctrl_l_clears_chat(self):
         """Ctrl+L clears chat and restores the welcome message."""
         p1, p2, _ = _patch_app()

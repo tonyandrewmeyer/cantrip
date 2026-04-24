@@ -32,6 +32,7 @@ class EventType(enum.StrEnum):
     MEMORY_WRITTEN = "memory_written"
     MEMORY_RECALLED = "memory_recalled"
     MCP_ELICITATION_REQUEST = "mcp_elicitation_request"
+    TOOL_INVOKED = "tool_invoked"
 
 
 @dataclass(frozen=True)
@@ -308,6 +309,37 @@ def memory_recalled(
     return Event(
         type=EventType.MEMORY_RECALLED,
         payload={"title": title, "scope": scope, "kind": kind},
+    )
+
+
+def tool_invoked(
+    *,
+    tool_name: str,
+    caption: str,
+    success: bool,
+    duration_ms: int | None = None,
+    source: str = "main",
+) -> Event:
+    """Build a ``TOOL_INVOKED`` event.
+
+    Emitted from every tool-call boundary (main-agent synchronous
+    loop, main-agent streaming loop, subagent gather path) so the
+    chat surfaces can render a compact "the agent just did X" block
+    between messages.  ``source`` is one of ``main`` / ``main-stream``
+    / ``subagent`` so subscribers that care about context (a test
+    harness recording only main-agent calls, say) can filter.
+    ``duration_ms`` is optional — ``None`` means "not measured" rather
+    than "zero".
+    """
+    return Event(
+        type=EventType.TOOL_INVOKED,
+        payload={
+            "tool_name": tool_name,
+            "caption": caption,
+            "success": success,
+            "duration_ms": duration_ms,
+            "source": source,
+        },
     )
 
 

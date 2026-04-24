@@ -148,6 +148,53 @@ class TestEventContract:
         assert "redis-k8s" in data["apps"]
 
 
+class TestToolInvokedEvent:
+    """Phase 75: ``TOOL_INVOKED`` carries the fields the chat surfaces render."""
+
+    def test_required_fields_surface_on_event(self):
+        event = events.tool_invoked(
+            tool_name="read_file",
+            caption="read_file(path=src/foo.py)",
+            success=True,
+        )
+        assert event.type is events.EventType.TOOL_INVOKED
+        payload = event.payload
+        assert payload["tool_name"] == "read_file"
+        assert payload["caption"] == "read_file(path=src/foo.py)"
+        assert payload["success"] is True
+        # Optional fields default to ``None`` and the ``main`` source so
+        # subscribers can rely on the keys being present.
+        assert payload["duration_ms"] is None
+        assert payload["source"] == "main"
+
+    def test_duration_ms_passes_through(self):
+        event = events.tool_invoked(
+            tool_name="charmcraft_pack",
+            caption="charmcraft pack -> redis.charm",
+            success=True,
+            duration_ms=2340,
+        )
+        assert event.payload["duration_ms"] == 2340
+
+    def test_source_tag_distinguishes_subagent_calls(self):
+        event = events.tool_invoked(
+            tool_name="juju_deploy",
+            caption="juju deploy redis",
+            success=True,
+            source="subagent",
+        )
+        assert event.payload["source"] == "subagent"
+
+    def test_failure_surfaces_as_success_false(self):
+        event = events.tool_invoked(
+            tool_name="run_command",
+            caption='run_command(cmd="make check")',
+            success=False,
+            duration_ms=120,
+        )
+        assert event.payload["success"] is False
+
+
 class TestBusBroadcastContract:
     """The wildcard subscriber pattern used by the web server works for all types."""
 
@@ -193,6 +240,7 @@ class TestBusBroadcastContract:
             events.mcp_elicitation_request(
                 request_id="x", server_name="x", mode="form", message="x"
             ).type,
+            events.tool_invoked(tool_name="read_file", caption="read_file()", success=True).type,
         }
         enum_types = set(events.EventType)
         assert factory_types == enum_types
