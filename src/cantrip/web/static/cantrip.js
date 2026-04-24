@@ -240,7 +240,30 @@ const cantrip = (() => {
         // and the agent's next narrative message.
         appendToolBlock(msg.data || {});
         break;
+      case "cache_metrics_updated":
+        // Phase 78.2: keep the header cache indicator in sync with
+        // the TUI modelbar's ``cache: X% hit`` readout.
+        _updateCacheMetrics(msg.data || {});
+        break;
     }
+  }
+
+  function _updateCacheMetrics(data) {
+    const el = document.getElementById("cache-indicator");
+    if (!el) return;
+    const total = data.cache_total_tokens || 0;
+    if (total <= 0) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    const pct = Math.round(data.hit_pct || 0);
+    el.hidden = false;
+    el.textContent = `cache: ${pct}% hit`;
+    el.title =
+      `${data.cache_read_tokens.toLocaleString()} read / ` +
+      `${data.cache_creation_tokens.toLocaleString()} created`;
+    el.setAttribute("aria-label", `Prompt cache ${pct}% hit`);
   }
 
   // Status-bar activity updates come from the agent's event bus via

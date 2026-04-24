@@ -112,6 +112,20 @@ header h1 {
 .status-dot.disconnected { background: var(--red); }
 .status-dot.reconnecting { background: var(--yellow); }
 
+/* Phase 78.2: prompt-cache hit indicator — parity with the TUI
+   modelbar's ``cache: X% hit`` wording.  Hidden until the first
+   cache-bearing turn lands, so a non-caching provider (Gemini
+   today) never shows an empty badge. */
+.cache-indicator {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
 main {
   display: grid;
   grid-template-columns: 1fr 340px;

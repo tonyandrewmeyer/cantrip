@@ -498,9 +498,24 @@ class CantripAgent:
     def _record_usage(self, response: Response) -> int | None:
         """Record token usage from a provider response if a store is active."""
         if response.usage:
-            self.cache_creation_tokens += response.usage.get("cache_creation_input_tokens", 0)
-            self.cache_read_tokens += response.usage.get("cache_read_input_tokens", 0)
+            created = response.usage.get("cache_creation_input_tokens", 0) or 0
+            read = response.usage.get("cache_read_input_tokens", 0) or 0
+            self.cache_creation_tokens += created
+            self.cache_read_tokens += read
             self._check_cache_cascade(response.usage)
+            # Phase 78.2: publish on every turn where the provider
+            # reports cache fields so the Web status element and the
+            # TUI modelbar stay in lockstep off a single signal.
+            if (
+                "cache_creation_input_tokens" in response.usage
+                or "cache_read_input_tokens" in response.usage
+            ):
+                self._event_bus.publish(
+                    ui_events.cache_metrics_updated(
+                        cache_creation_tokens=self.cache_creation_tokens,
+                        cache_read_tokens=self.cache_read_tokens,
+                    )
+                )
         self._ensure_store()
         if self._store and response.usage:
             return self._store.record_usage(

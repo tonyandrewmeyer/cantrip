@@ -36,6 +36,7 @@ class EventType(enum.StrEnum):
     MODEL_SWITCHED = "model_switched"
     COMPACTION_STARTED = "compaction_started"
     COMPACTION_COMPLETED = "compaction_completed"
+    CACHE_METRICS_UPDATED = "cache_metrics_updated"
 
 
 @dataclass(frozen=True)
@@ -261,6 +262,32 @@ def compaction_started(*, tokens_before: int, source: str = "main") -> Event:
     return Event(
         type=EventType.COMPACTION_STARTED,
         payload={"tokens_before": tokens_before, "source": source},
+    )
+
+
+def cache_metrics_updated(
+    *,
+    cache_creation_tokens: int,
+    cache_read_tokens: int,
+) -> Event:
+    """Build a ``CACHE_METRICS_UPDATED`` event.
+
+    Phase 78.2: fired after every provider response whose usage dict
+    carries cache data so the TUI modelbar and Web status element
+    both update from the same signal.  Payload includes the derived
+    hit-percentage so every consumer renders the same number — no
+    need for each UI to compute it independently.
+    """
+    total = cache_creation_tokens + cache_read_tokens
+    hit_pct = (cache_read_tokens / total * 100.0) if total else 0.0
+    return Event(
+        type=EventType.CACHE_METRICS_UPDATED,
+        payload={
+            "cache_creation_tokens": cache_creation_tokens,
+            "cache_read_tokens": cache_read_tokens,
+            "cache_total_tokens": total,
+            "hit_pct": hit_pct,
+        },
     )
 
 

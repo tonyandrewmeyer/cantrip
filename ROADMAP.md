@@ -5230,19 +5230,35 @@ watching the model bar.
   — log + state message + bus event — against a replay of the
   cascade.
 
-### 78.2 Web UI cache parity
+### 78.2 Web UI cache parity ✓
 
 The TUI's ``ModelInfoBar`` shows ``cache: X% hit`` when
-``cache_total > 0``.  A ``grep`` of ``src/cantrip/web/``
-returns zero results for cache metrics — Web users see no
-cache information at all.
+``cache_total > 0``.  Prior to this sub-phase a ``grep`` of
+``src/cantrip/web/`` returned zero results for cache metrics —
+Web users saw no cache information at all.
 
-- [ ] Add a ``CACHE_METRICS_UPDATED`` event to the shared UI
-  event bus; the TUI modelbar and a new Web element both
-  subscribe.
-- [ ] Web status pane gains a cache-hit indicator matching the
-  TUI's wording so Web and TUI stay feature-equivalent
-  (ongoing commitment from Phase 60 and design/UI.md).
+- [x] ``EventType.CACHE_METRICS_UPDATED`` on the shared UI
+  event bus, with the ``cache_metrics_updated`` factory.
+  ``CantripAgent._record_usage`` publishes the event on every
+  turn whose usage dict carries either ``cache_*_input_tokens``
+  field (providers without the fields never emit the event, so
+  Gemini stays quiet).  The payload carries running totals for
+  creation / read plus a pre-computed ``hit_pct`` so every
+  consumer renders the same number without re-implementing
+  the arithmetic.
+- [x] Web header gains ``#cache-indicator`` — a muted badge
+  that shows ``cache: NN% hit`` matching the TUI's wording.
+  Hidden until the first cache-bearing turn arrives; the JS
+  handler ``_updateCacheMetrics`` toggles visibility, updates
+  the text, and sets ``title`` / ``aria-label`` so screen
+  readers pick up the change via the ``aria-live="polite"``
+  region.  Styled with ``--font-mono`` in ``style.css``
+  alongside the existing ``--text-muted`` / border theme.
+- [x] TUI modelbar subscribes to the same event via
+  ``_on_bus_cache_metrics``, so the cache-hit readout moves in
+  lockstep with the Web badge rather than relying solely on
+  the 5-second polling timer.  Polling stays as the backup for
+  the initial render and subagent-only turns.
 
 ### 78.3 Compaction corner-case tests + resume state ✓
 
@@ -5323,15 +5339,15 @@ field would not fail any suite.
   request logs and the model's cost report.  A debug log
   promising "ignored" would be actively misleading.
 
-### 78.5 Exit criteria
+### 78.5 Exit criteria ✓
 
-- Cache cascade detector ships with unit test coverage.
-- Web UI shows cache-hit metrics at parity with the TUI.
-- Compaction one-shot semantic has an explicit test.
-- Compaction boolean stop-flags survive session resume.
-- ``thinking`` payload is asserted on the wire for Claude
+- [x] Cache cascade detector ships with unit test coverage.
+- [x] Web UI shows cache-hit metrics at parity with the TUI.
+- [x] Compaction one-shot semantic has an explicit test.
+- [x] Compaction boolean stop-flags survive session resume.
+- [x] ``thinking`` payload is asserted on the wire for Claude
   and Gemini.
-- ``make check`` green.  No behaviour change for users who
+- [x] ``make check`` green.  No behaviour change for users who
   weren't hitting any of these bugs.
 
 **Dependencies:**
@@ -5516,7 +5532,7 @@ files only and does not dispatch on provider.
 | M75: Inline Tool Blocks | 75 ✓ | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
 | M76: Copy-Friendly Chat | 76 | Toad-inspired per-block copy affordances either ship (keybinding, slash command, OSC 52, or similar) or a written assessment in ``design/UI.md`` explains why the current flow is sufficient |
 | M77: Reasoning Content Surfaced | 77 | OpenAI-compatible reasoning deltas (Kimi K2, DeepSeek-R1, GLM reasoning variants) are captured and rendered like Claude's extended thinking rather than silently dropped |
-| M78: Observability Hardening | 78 | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
+| M78: Observability Hardening | 78 ✓ | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
 | M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |
 | M80: Stacked Policies | 80 | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

@@ -554,6 +554,15 @@ class CantripApp(App):
         self._agent.event_bus.subscribe(
             ui_events.EventType.TOOL_INVOKED, self._on_bus_tool_invoked
         )
+        # Phase 78.2: update the modelbar cache indicator reactively on
+        # every turn with cache activity, matching the same signal the
+        # Web UI's header badge uses.  The 5-second polling timer in
+        # ``_update_model_info`` still covers the initial render and
+        # subagent-only turns where the main agent never fires a usage
+        # event.
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.CACHE_METRICS_UPDATED, self._on_bus_cache_metrics
+        )
 
         self._agent.start_executor(max_concurrency=self._max_concurrency)
 
@@ -643,6 +652,23 @@ class CantripApp(App):
             status_bar.test_summary = payload["test_summary"]
         if "watcher_status" in payload:
             status_bar.watcher_status = payload["watcher_status"]
+
+    def _on_bus_cache_metrics(self, event: ui_events.Event) -> None:
+        """Apply a CACHE_METRICS_UPDATED event to the modelbar (Phase 78.2).
+
+        The 5-second polling timer already keeps the bar close to the
+        agent's state; this subscription removes the up-to-5s lag so
+        the cache-hit readout moves in lockstep with the Web badge.
+        """
+        from textual.css.query import NoMatches
+
+        try:
+            bar = self.query_one("#model-info", modelbar_widget.ModelInfoBar)
+        except NoMatches:
+            return
+        payload = event.payload
+        bar.cache_creation_tokens = int(payload.get("cache_creation_tokens", 0) or 0)
+        bar.cache_read_tokens = int(payload.get("cache_read_tokens", 0) or 0)
 
     def on_task_checklist_widget_tasks_available(self) -> None:
         """Show the status panel when tasks first appear."""

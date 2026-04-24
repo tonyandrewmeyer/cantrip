@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Web UI cache-hit indicator at parity with the TUI (Phase 78.2 —
+  closes M78).**  New ``CACHE_METRICS_UPDATED`` event on the shared UI
+  bus, published from ``CantripAgent._record_usage`` whenever the
+  provider reports ``cache_*_input_tokens`` fields.  Payload carries
+  running totals plus a pre-computed ``hit_pct`` so every consumer
+  renders the same number.  Web header gains ``#cache-indicator`` — a
+  muted badge that shows ``cache: NN% hit`` matching the TUI modelbar's
+  wording, with ``title``/``aria-label``/``aria-live`` hooks so
+  assistive tech announces the change.  The TUI modelbar subscribes
+  to the same event via ``_on_bus_cache_metrics`` so its readout moves
+  in lockstep with the Web badge rather than relying on the 5-second
+  polling timer alone.  Providers without cache fields (Gemini today)
+  never emit the event, so those UIs stay quiet and the badge stays
+  hidden.
+
 - **Compaction stop-flags survive session resume + one-shot guard +
   visible progress events (Phase 78.3).**  Previously the boolean
   ``_cycle_detected`` / ``_budget_exhausted`` latches inside

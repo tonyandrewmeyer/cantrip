@@ -13,6 +13,9 @@
       {% if charm_name %}<span class="charm-name">{{ charm_name }}</span>{% endif %}
     </div>
     <div class="header-right">
+      <span id="cache-indicator" class="cache-indicator"
+            role="status" aria-live="polite" aria-label="Prompt cache"
+            hidden></span>
       <button id="btn-help" type="button" class="header-btn"
               aria-label="Help" aria-expanded="false" aria-controls="help-overlay"
               onclick="cantrip.toggleHelp()">?</button>

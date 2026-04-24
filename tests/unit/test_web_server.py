@@ -292,6 +292,15 @@ class TestTemplateRendering:
         assert 'class="update-banner"' in html
         assert 'id="update-banner-dismiss"' in html
 
+    def test_template_includes_cache_indicator(self) -> None:
+        """Phase 78.2: header has a cache-hit indicator in the DOM, hidden until data arrives."""
+        html = _render_template()
+        assert 'id="cache-indicator"' in html
+        assert 'class="cache-indicator"' in html
+        # Screen-reader label + aria-live so the hit-rate update is
+        # announced when it arrives.
+        assert 'aria-live="polite"' in html
+
 
 class TestJavaScript:
     """Tests for the client-side JavaScript."""
@@ -323,6 +332,15 @@ class TestJavaScript:
         assert "update_available" in js
         assert "UPDATE_DISMISS_KEY" in js
         assert "localStorage" in js
+
+    def test_js_handles_cache_metrics_updated(self) -> None:
+        """Phase 78.2: JS handles CACHE_METRICS_UPDATED and updates the indicator."""
+        js = (_STATIC_DIR / "cantrip.js").read_text()
+        assert "cache_metrics_updated" in js
+        assert "_updateCacheMetrics" in js
+        assert "cache-indicator" in js
+        # Matches the TUI modelbar wording for feature equivalence.
+        assert "cache: " in js and "% hit" in js
 
 
 class TestCSS:
@@ -363,6 +381,12 @@ class TestCSS:
         assert ".msg-body pre" in css
         assert ".msg-body code" in css
         assert ".msg-body table" in css
+
+    def test_css_has_cache_indicator_styles(self) -> None:
+        """Phase 78.2: the cache badge is styled with the monospace font stack."""
+        css = (_STATIC_DIR / "style.css").read_text()
+        assert ".cache-indicator" in css
+        assert "var(--font-mono)" in css
 
     def test_css_has_reasoning_styles(self) -> None:
         """Reasoning / chain-of-thought renders as a collapsible <details>."""
