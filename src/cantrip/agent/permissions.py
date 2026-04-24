@@ -704,15 +704,44 @@ class PermissionManager:
         *,
         timeout_seconds: float = DEFAULT_ASK_TIMEOUT_SECONDS,
         on_request: Callable[[PermissionAskRequest], None] | None = None,
+        on_auto_approve: Callable[[PermissionAskRequest], None] | None = None,
     ) -> None:
         self._timeout = timeout_seconds
         self._on_request = on_request
+        # Phase 69.2: separate fanout for auto-approvals so the audit
+        # trail captures them distinctly from operator-resolved asks.
+        self._on_auto_approve = on_auto_approve
         self._pending: dict[str, asyncio.Future[bool]] = {}
+        # Phase 69.2: ``--yolo`` / ``/yolo`` sets this to ``True`` and
+        # ``request()`` short-circuits to an auto-approval instead of
+        # parking on a future.  ``deny`` decisions still block because
+        # they never reach the manager — this only toggles the ``ask``
+        # tier.
+        self._yolo_mode: bool = False
 
     @property
     def pending(self) -> list[str]:
         """Request ids still waiting for a user decision."""
         return list(self._pending)
+
+    @property
+    def yolo_mode(self) -> bool:
+        """Whether every ``ask`` is auto-approved (Phase 69.2)."""
+        return self._yolo_mode
+
+    def set_yolo(self, enabled: bool) -> None:
+        """Enable or disable yolo mode mid-session.
+
+        When flipping on, every pending ``ask`` is also resolved as
+        approved so a subagent waiting on a future doesn't stall the
+        run.  Turning yolo off leaves any already-granted approvals
+        in place — only future calls are affected.
+        """
+        self._yolo_mode = bool(enabled)
+        if self._yolo_mode:
+            for future in list(self._pending.values()):
+                if not future.done():
+                    future.set_result(True)
 
     def set_on_request(
         self,
@@ -720,6 +749,13 @@ class PermissionManager:
     ) -> None:
         """Register (or clear) the UI-fanout callback after construction."""
         self._on_request = callback
+
+    def set_on_auto_approve(
+        self,
+        callback: Callable[[PermissionAskRequest], None] | None,
+    ) -> None:
+        """Register (or clear) the yolo auto-approval fanout callback."""
+        self._on_auto_approve = callback
 
     async def request(
         self,
@@ -736,10 +772,44 @@ class PermissionManager:
         catch :class:`TimeoutError` themselves.  The ``request_id``
         defaults to a random uuid; explicit ids let tests drive the
         manager deterministically.
+
+        Phase 69.2: when :attr:`yolo_mode` is ``True`` the request
+        resolves to ``True`` immediately and a
+        ``permission_auto_approved`` event fires through
+        :meth:`set_on_auto_approve` so the audit trail captures the
+        decision.  Deny decisions never reach this method (they
+        short-circuit upstream), so yolo only loosens the ``ask``
+        tier.
         """
         args: dict[str, Any] = dict(arguments or {})
         rid = request_id or uuid.uuid4().hex
         task_id = f"{PERMISSION_CONFIRM_PREFIX}{rid}"
+
+        if self._yolo_mode:
+            if self._on_auto_approve is not None:
+                payload = PermissionAskRequest(
+                    request_id=rid,
+                    task_id=task_id,
+                    tool_name=tool_name,
+                    reason=reason,
+                    command=_bash_command_string(args),
+                    arguments=args,
+                )
+                try:
+                    self._on_auto_approve(payload)
+                except Exception:  # noqa: BLE001
+                    log.debug(
+                        "permission auto-approve callback failed for %s",
+                        tool_name,
+                        exc_info=True,
+                    )
+            log.info(
+                "Permission ask for %r auto-approved by yolo mode: %s",
+                tool_name,
+                reason,
+            )
+            return True
+
         loop = asyncio.get_running_loop()
         future: asyncio.Future[bool] = loop.create_future()
         self._pending[rid] = future

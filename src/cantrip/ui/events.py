@@ -42,6 +42,7 @@ class EventType(enum.StrEnum):
     SNAPSHOT_CREATED = "snapshot_created"
     SNAPSHOT_RESTORED = "snapshot_restored"
     PERMISSION_DECIDED = "permission_decided"
+    PERMISSION_AUTO_APPROVED = "permission_auto_approved"
 
 
 @dataclass(frozen=True)
@@ -551,6 +552,33 @@ def permission_decided(
             "request_id": request_id,
             "task_id": task_id,
             "source": source,
+            "command": command,
+        },
+    )
+
+
+def permission_auto_approved(
+    *,
+    tool_name: str,
+    reason: str,
+    request_id: str | None = None,
+    command: str | None = None,
+) -> Event:
+    """Build a ``PERMISSION_AUTO_APPROVED`` event.
+
+    Phase 69.2: emitted every time yolo mode turns an ``ask``
+    decision into an immediate approval.  The audit trail and the
+    TUI banner both consume this so an operator can trace which
+    rules would otherwise have prompted.  Payload mirrors
+    :func:`permission_decided` minus the outcome field (always
+    "allow") so downstream formatting can be shared.
+    """
+    return Event(
+        type=EventType.PERMISSION_AUTO_APPROVED,
+        payload={
+            "tool_name": tool_name,
+            "reason": reason,
+            "request_id": request_id,
             "command": command,
         },
     )

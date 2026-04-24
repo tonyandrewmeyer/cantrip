@@ -178,6 +178,12 @@ def run_cli(args: argparse.Namespace) -> int:
         no_snapshots_flag=bool(getattr(args, "no_snapshots", False)),
     )
 
+    # Phase 69.2: unattended ("yolo") mode.  When enabled at startup,
+    # stamp the flag on state before any executor starts so the first
+    # subagent sees ``ask`` decisions as auto-approvals.
+    if bool(getattr(args, "yolo", False)):
+        agent.state.yolo_mode = True
+
     # Set improvement mode if --improve was passed.
     if improve_path is not None:
         from pathlib import Path

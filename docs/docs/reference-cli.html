@@ -184,6 +184,14 @@ cantrip --help
     monorepo where snapshotting is too slow. See
     <a href="howto-undo.html">Undo agent changes</a>.
   </dd>
+  <dt>--yolo, -y</dt>
+  <dd>
+    Unattended mode: auto-approve every Phase 68.2
+    <em>ask</em> permission for the session.
+    <em>Deny</em> rules still block. Use for CI scripts where
+    a prompt would hang the run. See
+    <a href="howto-unattended.html">Run Cantrip unattended</a>.
+  </dd>
 </dl>
 <h2 id="compare">cantrip compare</h2>
 <p>Diff two charm implementations along four dimensions and print a
@@ -615,6 +623,29 @@ for configuration.</p>
     allow-list and the <em>Proposed changes</em> contract.
   </dd>
 </dl>
+<h3 id="yolo-mode">Unattended (yolo) mode</h3>
+<dl>
+  <dt><code>/yolo [on|off]</code></dt>
+  <dd>
+    Toggle unattended mode. With yolo on, every
+    <a href="howto-permissions.html">Phase 68.2</a>
+    <em>ask</em> permission auto-approves instead of parking
+    on a CONFIRM task &mdash; useful for CI scripts and
+    non-interactive runs. <em>Deny</em> rules still block.
+    Every auto-approval emits a
+    <code>permission_auto_approved</code> event, so the
+    transcript records the rule that would otherwise have
+    prompted. The status bar tints a distinct colour and
+    renders a "YOLO MODE &mdash; confirmations off" badge.
+    See <a href="howto-unattended.html">Run Cantrip unattended</a>.
+  </dd>
+</dl>
+<p><code>cantrip run --yolo</code> (or <code>-y</code>) on the
+command line enables the mode at startup so the first
+subagent dispatch sees <em>ask</em> permissions as already-
+approved &mdash; pair it with a repo
+<code>permissions.yaml</code> that explicitly denies anything
+you do not want to auto-approve.</p>
 <p>Snapshots are on by default. Disable per-session with
 <code>--no-snapshots</code> on the command line or
 <code>CANTRIP_SNAPSHOTS=false</code> in the environment.

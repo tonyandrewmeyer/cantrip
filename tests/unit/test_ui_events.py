@@ -260,6 +260,7 @@ class TestBusBroadcastContract:
                 task_id="x", tool_calls_made=1, cap=1, policy_name="x"
             ).type,
             events.permission_decided(tool_name="fs_read", outcome="deny", reason="x").type,
+            events.permission_auto_approved(tool_name="fs_read", reason="x").type,
         }
         enum_types = set(events.EventType)
         assert factory_types == enum_types

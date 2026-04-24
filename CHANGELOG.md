@@ -5,6 +5,31 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Unattended ("yolo") mode that auto-approves every ``ask``
+  permission (Phase 69.2).**  New ``cantrip run --yolo`` / ``-y``
+  flag and ``/yolo [on|off]`` slash command flip the session
+  into an auto-approve stance so CI scripts and non-interactive
+  runs never park on a CONFIRM prompt.  Implemented inside
+  :class:`PermissionManager` as a short-circuit on
+  ``request()``: when yolo is on the future resolves to
+  ``True`` immediately, any previously-pending asks resolve
+  too (so a subagent parked on a prompt unblocks), and a
+  ``permission_auto_approved`` callback fires for the audit
+  trail.  ``deny`` rules still short-circuit upstream of the
+  manager — yolo only flips the ``ask`` tier.  Every
+  auto-approval publishes a new ``PERMISSION_AUTO_APPROVED``
+  UI event carrying the tool, reason, request id, and
+  command so transcripts record exactly which rule would
+  otherwise have prompted.  The TUI status bar picks up the
+  new ``mode=yolo`` field on ``STATUS_BAR_CHANGED`` with a
+  ``-yolo-mode`` CSS class backed by ``$error-darken-1`` and
+  a ``YOLO MODE — confirmations off`` badge, distinct from
+  the ``$warning-darken-2`` plan-mode tint.  Documented in
+  the new
+  [Run Cantrip unattended](docs/docs/howto-unattended.html)
+  how-to alongside a ``/yolo`` + ``--yolo`` section in the
+  CLI reference.
+
 - **Plan mode — read-only stance with a Proposed-changes hand-off
   (Phase 68.4, closes M68).**  ``/plan`` flips the session into a
   read-only mode where the agent can inspect files, git history,

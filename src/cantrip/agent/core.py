@@ -2590,6 +2590,16 @@ class CantripAgent:
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency
         self._executor = BackgroundExecutor(**kwargs)
+        # Phase 69.2: forward auto-approvals to the event bus so the
+        # transcript and any UI surface can render the audit line.
+        self._executor.permission_manager.set_on_auto_approve(
+            self._forward_permission_auto_approved
+        )
+        # If the session started with --yolo already set on state,
+        # push it onto the freshly-built manager so subagents pick it
+        # up from the first dispatch.
+        if self.state.yolo_mode:
+            self._executor.set_yolo(True)
         self._executor.start()
 
     async def stop_executor(self) -> None:
@@ -2646,6 +2656,31 @@ class CantripAgent:
         # Force tool list rebuild so MCP tools surface to the agent.
         self._tools_cache = None
         self._tool_map_cache = None
+
+    def _forward_permission_auto_approved(self, request: object) -> None:
+        """Phase 69.2: publish a ``permission_auto_approved`` UI event.
+
+        Receives a :class:`PermissionAskRequest` from the executor's
+        manager every time yolo mode turns an ``ask`` into an
+        auto-approval.  Defensive attribute access so a malformed
+        payload can't break the dispatch loop — worst case the event
+        is dropped.
+        """
+        request_id = getattr(request, "request_id", None)
+        tool_name = getattr(request, "tool_name", "")
+        reason = getattr(request, "reason", "")
+        command = getattr(request, "command", None)
+        try:
+            self._event_bus.publish(
+                ui_events.permission_auto_approved(
+                    tool_name=str(tool_name),
+                    reason=str(reason),
+                    request_id=request_id if isinstance(request_id, str) else None,
+                    command=command if isinstance(command, str) else None,
+                )
+            )
+        except (TypeError, ValueError, RuntimeError, AttributeError):
+            log.debug("permission_auto_approved publish failed", exc_info=True)
 
     def _on_mcp_elicitation(self, request: object) -> None:
         """Forward an MCP elicitation request to the UI event bus."""

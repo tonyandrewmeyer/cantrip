@@ -3477,28 +3477,47 @@ Four Kimi features are explicitly **out of scope**:
   preserves the original user goal verbatim (don't corrupt
   the prompt across iterations).
 
-### 69.2 High — ``/yolo`` and ``--yolo`` unattended mode
+### 69.2 High — ``/yolo`` and ``--yolo`` unattended mode ✓
 
-- [ ] ``--yolo`` / ``--auto-approve`` / ``-y`` flag on the CLI
-  (both top-level and on the ``run`` subcommand) globally
-  suppresses ``ask`` → CONFIRM prompts for the session.  Any
-  rule that resolves to ``deny`` still blocks.
-- [ ] ``/yolo`` slash command toggles the mode mid-session.
-  When enabling, the TUI shows a prominent banner
-  (``YOLO MODE — confirmations off``) in the same theme
-  colour as plan mode (68.4) but distinct, so the state is
-  unmistakable.
-- [ ] Per-call overrides survive yolo: a tool that the
-  Phase 68.2 config marks ``deny`` stays denied.  Only the
-  ``ask`` outcomes flip to auto-allow.  Document the escape
-  hatch explicitly — the point is CI runs, not a footgun.
-- [ ] Audit log: every auto-approval emits a
-  ``permission_auto_approved`` event with the rule that
-  would otherwise have prompted.  Phase 14's transcript
-  captures it.
-- [ ] Document in ``docs/docs/howto-unattended.html`` (new
-  page) alongside the Phase 67.3 print-mode guidance — both
-  are pieces of the same "run Cantrip in CI" story.
+- [x] ``--yolo`` / ``-y`` flag on ``cantrip run`` stamps
+  ``state.yolo_mode = True`` before the executor starts; TUI,
+  CLI, and Web surfaces all honour the argument.  On startup
+  the flag is synced onto the freshly-built
+  :class:`PermissionManager` so the first subagent sees
+  ``ask`` decisions as auto-approvals.
+- [x] ``/yolo`` slash command toggles mid-session; ``/yolo on``
+  / ``/yolo off`` are the explicit forms scripts use and any
+  other argument is rejected with a usage line.  The TUI
+  status bar gains a ``-yolo-mode`` CSS class
+  (``$error-darken-1``) plus a ``YOLO MODE — confirmations
+  off`` badge, distinct from the ``$warning-darken-2`` plan
+  tint.
+- [x] ``PermissionManager.set_yolo`` / ``yolo_mode`` short-
+  circuit ``request()`` to return ``True`` immediately when
+  yolo is active, and resolves any already-pending asks to
+  approved so subagents parked on a future don't stall the
+  run.  ``deny`` rules still short-circuit upstream of the
+  manager — yolo only flips the ``ask`` tier.
+- [x] Every auto-approval fires a
+  ``PERMISSION_AUTO_APPROVED`` event via the new
+  ``permission_auto_approved`` factory + ``EventType`` entry.
+  The agent's ``_forward_permission_auto_approved`` bridges
+  the executor's manager callback onto the event bus, so the
+  transcript and every surface see the rule that would
+  otherwise have prompted.
+- [x] Documented in ``docs/docs/howto-unattended.html`` (new
+  page) with the CI-run rationale, the ``deny``-still-blocks
+  escape hatch, and the interaction with permissions / plan
+  mode.  Linked from every how-to sidebar, the docs index,
+  and a new ``/yolo`` + ``--yolo`` section in
+  ``docs/docs/reference-cli.html``.
+- [x] ``tests/unit/test_yolo.py`` — 13 tests covering
+  ``PermissionManager`` yolo behaviour (auto-approve,
+  callback fanout, pending-future resolution, still-parks-
+  when-off), the ``/yolo`` slash command (bare toggle,
+  explicit ``on``/``off``, no-op, bad argument, event
+  emission), ``help_text`` + catalogue drift, and the event
+  factory payload.
 
 ### 69.3 Medium — Shell command mode
 

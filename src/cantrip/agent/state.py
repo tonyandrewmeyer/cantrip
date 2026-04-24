@@ -115,6 +115,13 @@ class AgentState:
     plan_mode: bool = False
     plan_summary: str | None = None
 
+    # Phase 69.2: unattended ("yolo") mode.  When ``True`` every
+    # Phase 68.2 ``ask`` decision auto-approves instead of parking
+    # on a user CONFIRM — useful for CI runs.  ``deny`` rules still
+    # block outright.  Toggled via ``/yolo`` or the ``--yolo`` CLI
+    # flag; sticky for the session and not persisted.
+    yolo_mode: bool = False
+
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
 

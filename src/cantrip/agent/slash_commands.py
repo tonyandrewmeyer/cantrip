@@ -81,6 +81,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/redo", "Re-apply the most recently undone turn"),
     CommandInfo("/plan", "Enter read-only plan mode (no file edits or shells)"),
     CommandInfo("/build", "Leave plan mode and resume executing changes"),
+    CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -204,6 +205,8 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_plan(agent))
     if verb == "/build":
         return SlashResult(text=handle_build(agent))
+    if verb == "/yolo":
+        return SlashResult(text=handle_yolo(agent, args))
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -542,6 +545,10 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "cannot edit or run shells.\n"
         "- `/build` — leave plan mode and resume executing changes."
         "  Re-feeds the last *Proposed changes* summary as context.\n"
+        "- `/yolo [on|off]` — toggle unattended mode: every `ask` "
+        "permission auto-approves for the rest of the session.  "
+        "`deny` rules still block.  `--yolo` on the command line "
+        "enables it at startup.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
     custom = getattr(agent, "custom_commands", None) if agent is not None else None
@@ -972,6 +979,58 @@ def handle_build(agent: CantripAgent) -> str:
     except (TypeError, ValueError, RuntimeError, AttributeError):
         log.exception("status_bar_changed publish failed on /build")
     return f"**Build mode on.**  Every tool is available again.{resume_note}"
+
+
+def handle_yolo(agent: CantripAgent, args: str) -> str:
+    """Phase 69.2 ``/yolo``: toggle unattended auto-approve mode.
+
+    Bare ``/yolo`` flips the flag.  ``/yolo on`` and ``/yolo off``
+    are explicit forms used by scripts and by operators who want to
+    be sure which state they are heading into.  Any other argument
+    is rejected with a usage line to prevent typos like
+    ``/yolo yes`` from being silently interpreted.
+
+    Syncs the flag onto the executor's ``PermissionManager`` when
+    one is running so existing pending asks either resolve (on) or
+    stop auto-approving (off).  Publishes a
+    ``STATUS_BAR_CHANGED`` event with ``mode=yolo|build`` so every
+    surface repaints its banner in lockstep.
+    """
+    token = args.strip().lower()
+    if token in {"on", "enable", "true", "1"}:
+        target = True
+    elif token in {"off", "disable", "false", "0"}:
+        target = False
+    elif token == "":
+        target = not agent.state.yolo_mode
+    else:
+        return "Usage: `/yolo` toggles, `/yolo on` enables, `/yolo off` disables."
+
+    if target == agent.state.yolo_mode:
+        state_text = "on" if target else "off"
+        return f"Already in yolo mode {state_text}."
+
+    agent.state.yolo_mode = target
+    executor = getattr(agent, "executor", None)
+    if executor is not None:
+        try:
+            executor.set_yolo(target)
+        except AttributeError:
+            log.debug("executor has no set_yolo method", exc_info=True)
+
+    try:
+        agent.event_bus.publish(ui_events.status_bar_changed(mode="yolo" if target else "build"))
+    except (TypeError, ValueError, RuntimeError, AttributeError):
+        log.exception("status_bar_changed publish failed on /yolo")
+
+    if target:
+        return (
+            "**Yolo mode on.**  Every `ask` permission auto-approves "
+            "for the rest of this session.  `deny` rules still block — "
+            "review your `permissions.yaml` before a destructive run.  "
+            "Flip back with `/yolo off`."
+        )
+    return "**Yolo mode off.**  `ask` rules prompt again as usual."
 
 
 def _handle_share(agent: CantripAgent) -> SlashResult:

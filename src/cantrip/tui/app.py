@@ -97,6 +97,7 @@ class CantripApp(App):
         max_iterations: int | None = None,
         max_tokens: int | None = None,
         no_snapshots: bool = False,
+        yolo: bool = False,
     ):
         """Initialise the app."""
         super().__init__()
@@ -115,6 +116,7 @@ class CantripApp(App):
         self._max_iterations = max_iterations
         self._max_tokens = max_tokens
         self._no_snapshots = no_snapshots
+        self._yolo = yolo
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -293,6 +295,13 @@ class CantripApp(App):
             self._agent.state.snapshot_enabled = snapshots_enabled(
                 no_snapshots_flag=self._no_snapshots,
             )
+
+            # Phase 69.2: opt into unattended mode before the executor
+            # starts so the first subagent sees ``ask`` decisions as
+            # auto-approvals from the first dispatch.  ``start_executor``
+            # syncs the flag onto the freshly-built PermissionManager.
+            if self._yolo:
+                self._agent.state.yolo_mode = True
 
             # Set improvement mode if --improve was passed.
             if self._improve_path is not None:

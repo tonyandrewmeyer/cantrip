@@ -529,6 +529,17 @@ class BackgroundExecutor:
         """
         return self._permission_manager.resolve(request_id, approved=approved)
 
+    def set_yolo(self, enabled: bool) -> None:
+        """Phase 69.2: flip unattended mode on the shared manager.
+
+        Thin pass-through used by the ``/yolo`` slash command and the
+        ``--yolo`` CLI flag.  When enabled, every outstanding
+        ``ask`` future resolves to approved so subagents already
+        parked on a prompt don't stall the session.  ``deny``
+        decisions still block — they never reach the manager.
+        """
+        self._permission_manager.set_yolo(enabled)
+
     def _on_permission_decided(
         self,
         tool_name: str,

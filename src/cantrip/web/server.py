@@ -886,6 +886,10 @@ def run_web(args: argparse.Namespace) -> int:
         no_snapshots_flag=bool(getattr(args, "no_snapshots", False)),
     )
 
+    # Phase 69.2: opt into unattended mode before the executor starts.
+    if bool(getattr(args, "yolo", False)):
+        agent.state.yolo_mode = True
+
     port = getattr(args, "web_port", _DEFAULT_PORT)
 
     try:

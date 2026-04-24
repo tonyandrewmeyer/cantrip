@@ -22,6 +22,10 @@ class StatusBar(Widget):
     StatusBar.-plan-mode {
         background: $warning-darken-2;
     }
+    StatusBar.-yolo-mode {
+        background: $error-darken-1;
+        color: $text;
+    }
     """
 
     task_label: reactive[str] = reactive("", init=False)
@@ -29,9 +33,9 @@ class StatusBar(Widget):
     cos_health: reactive[str] = reactive("", init=False)
     test_summary: reactive[str] = reactive("", init=False)
     watcher_status: reactive[str] = reactive("", init=False)
-    # Phase 68.4: ``"plan"`` means the read-only gate is active and the
-    # ``-plan-mode`` CSS class is set so the bar tints distinctly.
-    # Any other value (default: ``"build"``) keeps the normal theme.
+    # Phase 68.4 / 69.2: ``"plan"`` and ``"yolo"`` flip the corresponding
+    # CSS class so the bar tints distinctly.  Anything else
+    # (default ``"build"``) keeps the normal theme.
     mode: reactive[str] = reactive("build", init=False)
 
     def compose(self) -> ComposeResult:
@@ -40,7 +44,12 @@ class StatusBar(Widget):
 
     def _refresh_content(self) -> None:
         """Rebuild the bar text from current reactive values."""
-        mode_badge = "plan mode" if self.mode == "plan" else ""
+        if self.mode == "plan":
+            mode_badge = "plan mode"
+        elif self.mode == "yolo":
+            mode_badge = "YOLO MODE — confirmations off"
+        else:
+            mode_badge = ""
         segments = [
             s
             for s in (
@@ -57,6 +66,7 @@ class StatusBar(Widget):
         with contextlib.suppress(NoMatches):
             self.query_one("#status-bar-content", Static).update(text)
         self.set_class(self.mode == "plan", "-plan-mode")
+        self.set_class(self.mode == "yolo", "-yolo-mode")
 
     # Every reactive triggers the same refresh — watchers generated below.
 

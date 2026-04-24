@@ -169,6 +169,19 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     run_parser.add_argument(
+        "--yolo",
+        "-y",
+        action="store_true",
+        dest="yolo",
+        help=(
+            "Phase 69.2: unattended mode. Auto-approve every Phase "
+            "68.2 `ask` permission for the session so CI scripts "
+            "don't stall on prompts.  `deny` rules still block — "
+            "review your `permissions.yaml` before a destructive "
+            "run.  Toggle mid-session with `/yolo`."
+        ),
+    )
+    run_parser.add_argument(
         "--theme",
         type=str,
         default=None,
@@ -620,6 +633,7 @@ def _run(args: argparse.Namespace) -> int:
             max_iterations=getattr(args, "max_iterations", None),
             max_tokens=getattr(args, "max_tokens", None),
             no_snapshots=bool(getattr(args, "no_snapshots", False)),
+            yolo=bool(getattr(args, "yolo", False)),
         )
         app.run()
         _print_update_panel(app.pending_update_info)
