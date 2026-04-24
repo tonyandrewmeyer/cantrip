@@ -22,6 +22,7 @@ from cantrip.agent.durability import (
     compute_input_hash,
     response_from_dict,
     response_to_dict,
+    should_skip_resume,
     tool_result_from_dict,
     tool_result_to_dict,
 )
@@ -901,12 +902,35 @@ class Subagent:
         # When the subagent runs without a store (unit tests, synthetic
         # harnesses), checkpointing is disabled — ``_llm_turn`` /
         # ``_execute_tool_with_checkpoint`` skip the wrapper entirely.
+        # ``$CANTRIP_NO_RESUME`` (Phase 52.4) also disables the wrapper
+        # so a debugging run can re-execute every step live without
+        # tripping over a stale cached row.
         ctx: CheckpointCtx | None = None
-        if self._store is not None:
-            ctx = CheckpointCtx(
-                store=CheckpointStore(self._store),
-                task_id=self._context.task.id,
-            )
+        if self._store is not None and not should_skip_resume():
+            store = CheckpointStore(self._store)
+            ctx = CheckpointCtx(store=store, task_id=self._context.task.id)
+            # Phase 52.4: surface a "resuming from step N" signal when
+            # the store already has checkpoints for this task so the
+            # user knows why token usage doesn't start at zero and
+            # doesn't mistake the silence for a hang.
+            prior_steps = store.count_for_task(self._context.task.id)
+            if prior_steps:
+                log.info(
+                    "Subagent resuming task %r from step %d (%d checkpoint(s) cached)",
+                    self._context.task.title,
+                    prior_steps + 1,
+                    prior_steps,
+                )
+                self._set_phase(f"resuming from step {prior_steps + 1}")
+                self._store.record_event(
+                    "subagent_resume",
+                    {
+                        "task_id": self._context.task.id,
+                        "task_title": self._context.task.title,
+                        "prior_steps": prior_steps,
+                        "next_step": prior_steps + 1,
+                    },
+                )
 
         # Track message indices for persistent recording.
         msg_idx = 0

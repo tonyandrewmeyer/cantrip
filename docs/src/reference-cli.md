@@ -516,6 +516,8 @@ for configuration.
 | `CANTRIP_NOTIFY` | optional | Notify when a task finishes. Set to `bell` for a terminal bell (`\a` to stderr), `desktop` to shell out to `notify-send` with the task title, or `both`. Defaults to off. The desktop path silently no-ops on platforms where `notify-send` is not on `PATH`. |
 | `CANTRIP_NO_UPDATE_CHECK` | optional | Skip the background PyPI self-update check. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). Useful on corporate networks that block `pypi.org` or for scripted runs that shouldn't talk to the public internet at all. The same effect can be made persistent by setting `update_check_disabled = true` in `~/.config/cantrip/settings.json`. |
 | `CANTRIP_UPDATE_CACHE_DIR` | optional | Override the disk cache directory for the PyPI check. Defaults to `~/.cache/cantrip/`; the verdict lives in `update.json` with a 24-hour TTL. |
+| `CANTRIP_NO_RESUME` | optional | Disable step-checkpoint replay for the next run. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). Subagents skip the checkpoint lookup and re-execute every LLM turn and tool call live; fresh results still land in the store so the next run without the var sees a clean cache. Useful when hunting a bug that might itself be cached in a stale checkpoint. |
+| `CANTRIP_KEEP_CHECKPOINTS` | optional | Preserve step checkpoints after a task reaches `DONE`. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). By default, checkpoints are purged on successful task completion; setting this flips the purge into a no-op so rows can be inspected via `SELECT * FROM step_checkpoints` in the `.cantrip` SQLite file. Intended for debugging; leave unset in normal use. |
 
 The `inference-snap` provider does not require an API key
 as it runs models locally.

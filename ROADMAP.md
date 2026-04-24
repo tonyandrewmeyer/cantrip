@@ -1620,25 +1620,48 @@ adapted to SQLite.
   usage+metadata round-trip for Response; success-path /
   failure-path / images-via-base64 for ToolResult).
 
-### 52.4 Medium — Resume path on session start
+### 52.4 Medium — Resume path on session start ✓ (inspection folded into 52.5)
 
-- [ ] When the executor picks up an `ACTIVE → PENDING`-reset task that
-  has step checkpoints, surface this in the task checklist: *"resuming
-  from step N"*.  Do NOT silently resume — the user sees that a
-  previous attempt was interrupted and knows why the token count
-  doesn't start at zero.
-- [ ] `cantrip session inspect <session>` (or TUI F-key) shows the
-  checkpoint count and list for the current task, so users can see
-  what's cached before deciding whether to resume or clear.
-- [ ] Resume is opt-out via `CANTRIP_NO_RESUME=1` for debugging — useful
-  when hunting a bug that might itself be cached in a stale
-  checkpoint.
+- [x] ``CANTRIP_NO_RESUME=1`` opt-out: when set, the subagent leaves
+  ``ctx = None`` at ``_run_inner`` entry so every LLM turn and every
+  tool call re-runs live.  Fresh results still land in the store
+  (the *lookup* is bypassed, not the write), so the next run
+  without the var sees a clean cache.  ``should_skip_resume()``
+  helper in ``durability.py`` mirrors ``should_keep_checkpoints``
+  — same truthy-value parser (``1`` / ``true`` / ``yes`` / ``on``).
+- [x] Resume-from-step-N signal: when a store-backed subagent starts
+  and finds existing checkpoints for its task, it emits an
+  ``INFO``-level log line (``"Subagent resuming task 'Build
+  redis' from step 4 (3 checkpoint(s) cached)"``), sets the
+  transient ``subagent_phase`` to ``resuming from step N`` so the
+  TUI task pane shows it, and records a ``subagent_resume`` event
+  into the session store's event log (``task_id`` / ``task_title``
+  / ``prior_steps`` / ``next_step``) so the transcript and any
+  future observability surface can replay the history.  ``N`` is
+  ``count_for_task(task_id) + 1`` — the *next* step the subagent
+  will attempt.
+- [x] Deviation from the original plan: the checkpoint-inspection
+  surface (``cantrip session inspect <session>`` / TUI F-key)
+  folded into Phase 52.5.  52.5 already scopes the transcript-
+  viewer "checkpoints" tab plus a ``cantrip checkpoints
+  {list,show,delete}`` subcommand, so adding a separate
+  ``session inspect`` path in 52.4 would double-ship the feature.
+  52.5 absorbs the inspection bullet with the same behaviour.
+- [x] 5 new tests in
+  ``tests/unit/subagent/test_checkpoint.py::TestResumeUX``
+  (``CANTRIP_NO_RESUME`` disables lookup even with pre-populated
+  store, truthy / falsy value parsing, resume log + phase + event
+  fire on a warm task, no signal on a fresh task).  Plus 3 new
+  tests in ``test_durability.py::TestNoResumeEnv`` (truthy / falsy
+  / unset-defaults-to-resume-on).
 
 ### 52.5 Low — Observability and debugging
 
 - [ ] Extend the transcript viewer (F9) with a "checkpoints" tab that
   shows, per task, the recorded steps, ordinals, input hashes, and
-  timestamps.  Click-through to view the stored result blob.
+  timestamps.  Click-through to view the stored result blob.  (Also
+  absorbs 52.4's deferred inspection bullet — this is the primary
+  surface for "what's cached before I resume or clear".)
 - [ ] Add a `cantrip checkpoints {list,show,delete}` CLI subcommand
   for scripted inspection and surgical removal.
 - [ ] Emit a structured event on every checkpoint hit/miss so the

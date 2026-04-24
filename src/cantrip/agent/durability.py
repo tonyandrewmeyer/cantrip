@@ -52,6 +52,15 @@ log = logging.getLogger(__name__)
 # them.  Any truthy-ish value (``1``, ``true``, ``yes``) turns it on.
 KEEP_CHECKPOINTS_ENV = "CANTRIP_KEEP_CHECKPOINTS"
 
+# ``CANTRIP_NO_RESUME=1`` disables checkpoint replay for the next
+# subagent run.  Useful when hunting a bug that might itself be
+# cached in a stale row — the subagent re-executes every step live
+# instead of reading from the store.  Fresh results *are* still
+# persisted; only lookups are bypassed.  (To also stop writes, pair
+# with ``CANTRIP_KEEP_CHECKPOINTS`` not being set so the automatic
+# GC on task completion sweeps the rows anyway.)
+NO_RESUME_ENV = "CANTRIP_NO_RESUME"
+
 # Kinds carried on every stored record.  ``llm_response`` and
 # ``tool_result`` are the two 52.3 will populate; ``value`` is a
 # catch-all for arbitrary JSON the 52.2 wrapper might want to cache
@@ -64,6 +73,9 @@ KIND_VALUE = "value"
 KIND_BYTES = "bytes"
 
 
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
 def should_keep_checkpoints() -> bool:
     """Return True when the debug-mode env var requests retention.
 
@@ -72,8 +84,20 @@ def should_keep_checkpoints() -> bool:
     ``SELECT * FROM step_checkpoints`` after the fact — useful when
     hunting a bug that might be cached in a stale checkpoint.
     """
-    raw = os.environ.get(KEEP_CHECKPOINTS_ENV, "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    return os.environ.get(KEEP_CHECKPOINTS_ENV, "").strip().lower() in _TRUTHY
+
+
+def should_skip_resume() -> bool:
+    """Return True when ``$CANTRIP_NO_RESUME`` requests a live re-run.
+
+    Checked by the subagent at start-of-run: when set, the
+    :class:`CheckpointCtx` is not constructed, so every LLM turn and
+    every tool call runs live instead of consulting stored rows.
+    Fresh results can still be written — only the *lookup* is
+    bypassed.  Intended for debugging a run where a stale checkpoint
+    is suspected of masking a fix.
+    """
+    return os.environ.get(NO_RESUME_ENV, "").strip().lower() in _TRUTHY
 
 
 def compute_input_hash(*parts: object) -> str:
@@ -470,6 +494,7 @@ __all__ = [
     "KIND_LLM_RESPONSE",
     "KIND_TOOL_RESULT",
     "KIND_VALUE",
+    "NO_RESUME_ENV",
     "CheckpointCtx",
     "CheckpointRecord",
     "CheckpointStore",
@@ -478,6 +503,7 @@ __all__ = [
     "response_from_dict",
     "response_to_dict",
     "should_keep_checkpoints",
+    "should_skip_resume",
     "tool_result_from_dict",
     "tool_result_to_dict",
 ]

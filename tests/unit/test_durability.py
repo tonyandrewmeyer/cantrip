@@ -13,6 +13,7 @@ from cantrip.agent.durability import (
     KIND_LLM_RESPONSE,
     KIND_TOOL_RESULT,
     KIND_VALUE,
+    NO_RESUME_ENV,
     CheckpointCtx,
     CheckpointRecord,
     CheckpointStore,
@@ -21,6 +22,7 @@ from cantrip.agent.durability import (
     response_from_dict,
     response_to_dict,
     should_keep_checkpoints,
+    should_skip_resume,
     tool_result_from_dict,
     tool_result_to_dict,
 )
@@ -672,3 +674,21 @@ class TestToolResultSerialisation:
         assert len(restored.images) == 1
         assert restored.images[0].data == raw
         assert restored.images[0].mime == "image/png"
+
+
+class TestNoResumeEnv:
+    """``CANTRIP_NO_RESUME`` toggles the subagent replay lookup (Phase 52.4)."""
+
+    def test_truthy_values_skip_resume(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for raw in ("1", "true", "TRUE", "yes", "on"):
+            monkeypatch.setenv(NO_RESUME_ENV, raw)
+            assert should_skip_resume(), f"{raw!r} should disable resume"
+
+    def test_falsy_values_keep_resume_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for raw in ("0", "false", "", "no"):
+            monkeypatch.setenv(NO_RESUME_ENV, raw)
+            assert not should_skip_resume(), f"{raw!r} must leave resume on"
+
+    def test_unset_defaults_to_resume_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv(NO_RESUME_ENV, raising=False)
+        assert not should_skip_resume()

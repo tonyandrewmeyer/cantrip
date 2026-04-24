@@ -341,3 +341,151 @@ class TestNoStoreBaseline:
         assert tool.execute.call_count == 1  # Ran live, not cached.
         # And of course there is no .cantrip file to inspect.
         assert not (tmp_path / ".cantrip").exists()
+
+
+class TestResumeUX:
+    """Phase 52.4 — opt-out env var and resume-from-step-N signal."""
+
+    async def test_no_resume_env_disables_lookup(
+        self,
+        store: SessionStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``CANTRIP_NO_RESUME=1`` re-runs live even with a populated store."""
+        # Pre-populate a fake LLM turn in the store.
+        from cantrip.agent.durability import KIND_LLM_RESPONSE, CheckpointStore
+
+        cps = CheckpointStore(store)
+        cps.record(
+            "task-1",
+            "llm_turn",
+            1,
+            "",
+            KIND_LLM_RESPONSE,
+            {
+                "content": "stale cached reply [EXIT: completed]",
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {},
+                "metadata": {},
+            },
+        )
+        monkeypatch.setenv("CANTRIP_NO_RESUME", "1")
+
+        provider = FakeProvider(responses=[Response(content="fresh reply [EXIT: completed]")])
+        sub = Subagent(_ctx(), tools=[], provider=provider, store=store)
+
+        result = await sub.run()
+
+        # The live call wins — the stale row was not consulted.
+        assert "fresh reply" in result.text
+        assert provider._call_count == 1
+
+    async def test_no_resume_env_various_truthy_values(
+        self,
+        store: SessionStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        for raw in ("1", "true", "TRUE", "yes", "on"):
+            monkeypatch.setenv("CANTRIP_NO_RESUME", raw)
+            from cantrip.agent.durability import should_skip_resume
+
+            assert should_skip_resume(), f"{raw!r} should disable resume"
+
+    async def test_no_resume_env_falsy_leaves_resume_on(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from cantrip.agent.durability import should_skip_resume
+
+        for raw in ("0", "false", "", "no"):
+            monkeypatch.setenv("CANTRIP_NO_RESUME", raw)
+            assert not should_skip_resume(), f"{raw!r} must leave resume enabled"
+
+    async def test_resume_phase_and_event_on_warm_task(
+        self,
+        store: SessionStore,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A task with pre-existing checkpoints gets a 'resuming from step N' signal."""
+        import logging
+
+        from cantrip.agent.durability import KIND_LLM_RESPONSE, CheckpointStore
+
+        cps = CheckpointStore(store)
+        # Prime two prior checkpoints for task-1.
+        for ordinal in (1, 2):
+            cps.record(
+                "task-1",
+                "llm_turn",
+                ordinal,
+                "",
+                KIND_LLM_RESPONSE,
+                {
+                    "content": "",
+                    "tool_calls": [{"id": f"tc{ordinal}", "name": "read_file", "arguments": {}}],
+                    "finish_reason": "stop",
+                    "usage": {},
+                    "metadata": {},
+                },
+            )
+        # Plus a tool checkpoint so the count reflects real mixed work.
+        cps.record(
+            "task-1",
+            "tool:read_file",
+            1,
+            "",
+            "tool_result",
+            {
+                "success": True,
+                "output": "cached",
+                "data": {},
+                "error": None,
+                "images": [],
+                "caption": None,
+            },
+        )
+
+        tool = _make_tool("read_file")
+        provider = FakeProvider(responses=[Response(content="wrap-up [EXIT: completed]")])
+        sub = Subagent(_ctx(), tools=[tool], provider=provider, store=store)
+
+        with caplog.at_level(logging.INFO, logger="cantrip.agent.subagent"):
+            await sub.run()
+
+        # The log line names the step number and checkpoint count.
+        matching = [rec for rec in caplog.records if "resuming task" in rec.message.lower()]
+        assert matching, "expected a 'resuming' log line"
+        # N = prior_steps + 1 = 3 + 1 = 4.
+        assert "from step 4" in matching[0].message
+        assert "3 checkpoint(s) cached" in matching[0].message
+
+        # Event was recorded for the transcript / event log.
+        resume_events = store.load_events(event_type="subagent_resume")
+        assert len(resume_events) == 1
+        import json as _json
+
+        detail = resume_events[0]["detail"]
+        if isinstance(detail, str):
+            detail = _json.loads(detail)
+        assert detail["task_id"] == "task-1"
+        assert detail["prior_steps"] == 3
+        assert detail["next_step"] == 4
+
+    async def test_no_resume_signal_on_fresh_task(
+        self,
+        store: SessionStore,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A task with zero checkpoints stays quiet — no resume banner."""
+        import logging
+
+        provider = FakeProvider(responses=[Response(content="hi [EXIT: completed]")])
+        sub = Subagent(_ctx(), tools=[], provider=provider, store=store)
+
+        with caplog.at_level(logging.INFO, logger="cantrip.agent.subagent"):
+            await sub.run()
+
+        matching = [rec for rec in caplog.records if "resuming task" in rec.message.lower()]
+        assert not matching, "fresh task must not log a resume line"
+        assert store.load_events(event_type="subagent_resume") == []

@@ -543,6 +543,16 @@ for configuration.</p>
 <td>optional</td>
 <td>Override the disk cache directory for the PyPI check. Defaults to <code>~/.cache/cantrip/</code>; the verdict lives in <code>update.json</code> with a 24-hour TTL.</td>
 </tr>
+<tr>
+<td><code>CANTRIP_NO_RESUME</code></td>
+<td>optional</td>
+<td>Disable step-checkpoint replay for the next run. Accepts <code>1</code>, <code>true</code>, <code>yes</code>, or <code>on</code> (case-insensitive). Subagents skip the checkpoint lookup and re-execute every LLM turn and tool call live; fresh results still land in the store so the next run without the var sees a clean cache. Useful when hunting a bug that might itself be cached in a stale checkpoint.</td>
+</tr>
+<tr>
+<td><code>CANTRIP_KEEP_CHECKPOINTS</code></td>
+<td>optional</td>
+<td>Preserve step checkpoints after a task reaches <code>DONE</code>. Accepts <code>1</code>, <code>true</code>, <code>yes</code>, or <code>on</code> (case-insensitive). By default, checkpoints are purged on successful task completion; setting this flips the purge into a no-op so rows can be inspected via <code>SELECT * FROM step_checkpoints</code> in the <code>.cantrip</code> SQLite file. Intended for debugging; leave unset in normal use.</td>
+</tr>
 </tbody>
 </table>
 <p>The <code>inference-snap</code> provider does not require an API key

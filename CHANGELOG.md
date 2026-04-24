@@ -127,6 +127,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Subagent resume UX — Phase 52.4.**  Two user-facing pieces
+  on top of the 52.3 replay wiring: a ``CANTRIP_NO_RESUME=1``
+  opt-out that disables checkpoint lookup for a debugging session
+  (fresh writes still land in the store so the next run without
+  the var sees a clean cache), and a "resuming from step N"
+  signal that fires when a store-backed subagent starts and
+  finds pre-existing checkpoints for its task.  The signal lands
+  in three places so it can't be missed: an INFO log line
+  (``"Subagent resuming task 'Build redis' from step 4 (3
+  checkpoint(s) cached)"``), the transient ``subagent_phase`` on
+  the task (``"resuming from step N"`` — visible in the TUI task
+  pane), and a ``subagent_resume`` event in the session store's
+  event log with ``task_id`` / ``task_title`` / ``prior_steps``
+  / ``next_step`` for the transcript.  ``N = count_for_task + 1``
+  (the next step the subagent will attempt).  The
+  ``should_skip_resume`` helper in ``durability.py`` mirrors
+  ``should_keep_checkpoints`` — same truthy-value parser (``1``
+  / ``true`` / ``yes`` / ``on``).  Deviation: the original 52.4
+  also called for a ``cantrip session inspect`` / TUI F-key
+  surface to inspect cached checkpoints; that path folds into
+  52.5, which already scopes the transcript "checkpoints" tab
+  plus a ``cantrip checkpoints {list,show,delete}`` CLI.
+  Shipping a parallel surface in 52.4 would double-work.  5 new
+  subagent tests covering the opt-out and the resume signal, plus
+  3 dedicated env-var tests in ``test_durability.py``.
+
 - **Subagent loop checkpoints every LLM turn and tool call — Phase
   52.3.**  The final wiring piece of Phase 52: the subagent loop
   now routes every ``_complete_with_retry`` call through
