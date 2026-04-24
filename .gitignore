@@ -85,3 +85,4 @@ stage/
 
 # Benchmark run logs (transient stdout capture; JSON results are committed)
 benchmarks/**/benchmark-*.log
+/docs/localStorage.json
