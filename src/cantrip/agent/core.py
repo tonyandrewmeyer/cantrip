@@ -2145,6 +2145,27 @@ class CantripAgent:
             self._event_bus.publish(ui_events.task_updated_from_task(task))
 
         self._work_queue._on_task_changed = _notify_bus
+
+        # Phase 52.1: purge a task's step checkpoints on successful
+        # completion so a long-running session doesn't leak rows.
+        # Failed / blocked tasks keep their checkpoints so 52.3's
+        # resume path can reuse them.  Honours
+        # ``$CANTRIP_KEEP_CHECKPOINTS`` via
+        # :meth:`CheckpointStore.on_task_done` for debugging.
+        def _purge_task_checkpoints(task: AgentTask) -> None:
+            if self._store is None:
+                return
+            from cantrip.agent.durability import CheckpointStore
+
+            try:
+                CheckpointStore(self._store).on_task_done(task.id)
+            except sqlite3.Error:
+                log.debug(
+                    "Failed to purge step checkpoints for task %s",
+                    task.id,
+                    exc_info=True,
+                )
+
         kwargs: dict[str, object] = {
             "queue": self._work_queue,
             "tools": self._tools,
@@ -2153,6 +2174,7 @@ class CantripAgent:
             "store": self._store,
             "light_provider": self._light_provider,
             "hook_runner": self._hook_runner,
+            "on_task_done": _purge_task_checkpoints,
         }
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency

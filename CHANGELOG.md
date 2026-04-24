@@ -5,6 +5,48 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Step-level durable-execution checkpoints — Phase 52.1.**  First
+  piece of Phase 52's per-step resume story: a subagent task that
+  rate-limits on LLM turn 18 should restart from turn 18, not
+  turn 1.  Phase 52.1 lands the persistence layer — the replay
+  wrapper and subagent wiring land in 52.2 / 52.3.  New
+  ``step_checkpoints`` table added via schema v10 migration:
+  ``(task_id, step_name, ordinal, input_hash, result_blob,
+  result_kind, created_at)`` with ``UNIQUE(task_id, step_name,
+  ordinal)`` and an ``ix_step_checkpoints_task`` index on
+  ``task_id``.  Migration is idempotent so a partially migrated
+  DB reopens cleanly.  New ``cantrip.agent.durability`` module
+  exposes ``CheckpointStore`` (facade over ``SessionStore``)
+  with the roadmap-named helpers ``record`` / ``get`` /
+  ``next_ordinal`` plus ``list_for_task`` / ``count_for_task``
+  / ``purge_task`` for the 52.5 debugging surface.  Serialisation
+  is JSON with a ``KIND_BYTES`` raw-bytes escape hatch — the
+  roadmap called for msgpack-with-JSON-fallback but msgpack
+  isn't a current dep (no ``import msgpack`` anywhere in
+  ``src/``), and JSON already covers every concrete 52.2 / 52.3
+  value shape without adding blast radius.  The JSON encoder
+  handles ``Path`` / ``datetime`` / ``set`` via ``default=`` so
+  tool args don't need pre-stringifying.  New
+  ``compute_input_hash(*parts)`` helper canonicalises mixed
+  primitives / dicts / lists into a stable SHA-256 digest so
+  dict-key ordering never changes the result.  GC: a new
+  ``on_task_done`` hook on ``BackgroundExecutor`` fires
+  ``CheckpointStore.on_task_done(task.id)`` — purging only
+  when ``WorkQueue.set_done`` resolves (not on FAILED /
+  BLOCKED).  ``$CANTRIP_KEEP_CHECKPOINTS`` (``1`` / ``true`` /
+  ``yes`` / ``on``) flips the purge into a no-op and logs the
+  retained row count at DEBUG so a stale-cache hunt can
+  inspect the rows without a manual ``DELETE``.  30 new tests
+  in ``test_durability.py`` cover the schema (fresh DB, v9→v10
+  migration, unique constraint), the SessionStore helpers, the
+  CheckpointStore facade (JSON round-trip, bytes round-trip +
+  type-mismatch rejection, loud-failure on non-serialisable
+  values, ``json_default`` coverage, next_ordinal delegation,
+  env-var bypass), the GC path (purge by default, skip when
+  env set, truthy / falsy recognition, cross-task isolation),
+  and ``compute_input_hash`` (determinism, key-order
+  invariance, ``repr()`` fallback for non-JSON types).
+
 - **MCP-aware skills — Phase 50.4.**  A skill can now declare
   MCP server dependencies in its frontmatter (``mcp_servers:``,
   same shape as ``tools:`` — YAML list or comma-separated

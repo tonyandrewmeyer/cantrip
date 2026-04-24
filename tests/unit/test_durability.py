@@ -1,0 +1,364 @@
+"""Tests for step-level durable-execution checkpoints (Phase 52.1)."""
+
+import datetime
+import pathlib
+import sqlite3
+from collections.abc import Iterator
+
+import pytest
+
+from cantrip.agent.durability import (
+    KEEP_CHECKPOINTS_ENV,
+    KIND_BYTES,
+    KIND_LLM_RESPONSE,
+    KIND_TOOL_RESULT,
+    KIND_VALUE,
+    CheckpointRecord,
+    CheckpointStore,
+    compute_input_hash,
+    should_keep_checkpoints,
+)
+from cantrip.agent.store import SessionStore
+
+
+@pytest.fixture
+def store(tmp_path: pathlib.Path) -> Iterator[SessionStore]:
+    """Return an open SessionStore backed by a temporary file."""
+    s = SessionStore(tmp_path / ".cantrip")
+    s.open()
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def checkpoints(store: SessionStore) -> CheckpointStore:
+    """Thin CheckpointStore over the tmp-backed SessionStore."""
+    return CheckpointStore(store)
+
+
+class TestSchema:
+    """The v10 schema change creates ``step_checkpoints`` on fresh + migrated DBs."""
+
+    def test_fresh_db_has_table(self, store: SessionStore) -> None:
+        rows = store._db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='step_checkpoints'"
+        ).fetchall()
+        assert len(rows) == 1
+
+    def test_fresh_db_has_index(self, store: SessionStore) -> None:
+        rows = store._db.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='ix_step_checkpoints_task'"
+        ).fetchall()
+        assert len(rows) == 1
+
+    def test_migration_from_v9_adds_table(self, tmp_path: pathlib.Path) -> None:
+        """A pre-v10 database gains the table when the store opens it."""
+        db_path = tmp_path / ".cantrip"
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript("""
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO schema_version (version) VALUES (9);
+            CREATE TABLE tasks (id TEXT PRIMARY KEY);
+        """)
+        conn.commit()
+        conn.close()
+
+        store = SessionStore(db_path)
+        store.open()
+        try:
+            tables = {
+                r[0]
+                for r in store._db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            assert "step_checkpoints" in tables
+            # Version now matches SCHEMA_VERSION.
+            from cantrip.agent.store import SCHEMA_VERSION
+
+            [(version,)] = store._db.execute("SELECT version FROM schema_version").fetchall()
+            assert version == SCHEMA_VERSION
+        finally:
+            store.close()
+
+    def test_unique_constraint_on_task_step_ordinal(self, store: SessionStore) -> None:
+        """``(task_id, step_name, ordinal)`` is UNIQUE — upsert replaces cleanly."""
+        store.record_checkpoint(
+            task_id="t1",
+            step_name="llm_turn",
+            ordinal=1,
+            input_hash="h1",
+            result_kind=KIND_VALUE,
+            result_blob=b"first",
+        )
+        # Same triple → upsert (INSERT OR REPLACE), not a conflict.
+        store.record_checkpoint(
+            task_id="t1",
+            step_name="llm_turn",
+            ordinal=1,
+            input_hash="h2",
+            result_kind=KIND_VALUE,
+            result_blob=b"second",
+        )
+        row = store.get_checkpoint("t1", "llm_turn", 1)
+        assert row is not None
+        assert row["input_hash"] == "h2"
+        assert bytes(row["result_blob"]) == b"second"
+
+
+class TestSessionStoreMethods:
+    """Direct SessionStore CRUD — the raw SQL surface ``CheckpointStore`` wraps."""
+
+    def test_record_and_get_round_trips_bytes(self, store: SessionStore) -> None:
+        store.record_checkpoint(
+            task_id="t1",
+            step_name="tool:juju_status",
+            ordinal=1,
+            input_hash="abc",
+            result_kind=KIND_TOOL_RESULT,
+            result_blob=b'{"success": true}',
+        )
+        row = store.get_checkpoint("t1", "tool:juju_status", 1)
+        assert row is not None
+        assert row["task_id"] == "t1"
+        assert row["step_name"] == "tool:juju_status"
+        assert row["ordinal"] == 1
+        assert row["input_hash"] == "abc"
+        assert row["result_kind"] == KIND_TOOL_RESULT
+        assert bytes(row["result_blob"]) == b'{"success": true}'
+        assert row["created_at"]
+
+    def test_get_returns_none_when_absent(self, store: SessionStore) -> None:
+        assert store.get_checkpoint("missing", "llm_turn", 1) is None
+
+    def test_next_ordinal_starts_at_1(self, store: SessionStore) -> None:
+        assert store.next_checkpoint_ordinal("fresh-task", "llm_turn") == 1
+
+    def test_next_ordinal_increments(self, store: SessionStore) -> None:
+        for n in (1, 2, 3):
+            store.record_checkpoint(
+                task_id="t1",
+                step_name="llm_turn",
+                ordinal=n,
+                input_hash=f"h{n}",
+                result_kind=KIND_VALUE,
+                result_blob=b"",
+            )
+        assert store.next_checkpoint_ordinal("t1", "llm_turn") == 4
+        # A different step name has its own counter.
+        assert store.next_checkpoint_ordinal("t1", "tool:foo") == 1
+
+    def test_list_for_task_returns_insertion_order(self, store: SessionStore) -> None:
+        for name, ordinal in [("llm_turn", 1), ("tool:x", 1), ("llm_turn", 2)]:
+            store.record_checkpoint(
+                task_id="t1",
+                step_name=name,
+                ordinal=ordinal,
+                input_hash=f"h-{name}-{ordinal}",
+                result_kind=KIND_VALUE,
+                result_blob=b"",
+            )
+        rows = store.list_checkpoints_for_task("t1")
+        assert [(r["step_name"], r["ordinal"]) for r in rows] == [
+            ("llm_turn", 1),
+            ("tool:x", 1),
+            ("llm_turn", 2),
+        ]
+
+    def test_count_for_task(self, store: SessionStore) -> None:
+        for n in (1, 2, 3):
+            store.record_checkpoint(
+                task_id="t1",
+                step_name="llm_turn",
+                ordinal=n,
+                input_hash=f"h{n}",
+                result_kind=KIND_VALUE,
+                result_blob=b"",
+            )
+        assert store.count_checkpoints_for_task("t1") == 3
+        assert store.count_checkpoints_for_task("other") == 0
+
+    def test_purge_removes_only_target_task(self, store: SessionStore) -> None:
+        for task_id in ("t1", "t2"):
+            store.record_checkpoint(
+                task_id=task_id,
+                step_name="llm_turn",
+                ordinal=1,
+                input_hash="h",
+                result_kind=KIND_VALUE,
+                result_blob=b"",
+            )
+        removed = store.purge_checkpoints_for_task("t1")
+        assert removed == 1
+        assert store.count_checkpoints_for_task("t1") == 0
+        assert store.count_checkpoints_for_task("t2") == 1
+
+
+class TestCheckpointStore:
+    """The JSON-envelope facade and kind-dispatching decoder."""
+
+    def test_record_and_get_round_trips_json_value(self, checkpoints: CheckpointStore) -> None:
+        value = {"turn": 3, "tokens": 412, "tools": ["juju_status", "read_file"]}
+        checkpoints.record("t1", "llm_turn", 1, "hash-1", KIND_LLM_RESPONSE, value)
+        record = checkpoints.get("t1", "llm_turn", 1)
+        assert record is not None
+        assert record.task_id == "t1"
+        assert record.step_name == "llm_turn"
+        assert record.ordinal == 1
+        assert record.input_hash == "hash-1"
+        assert record.kind == KIND_LLM_RESPONSE
+        assert record.decode() == value
+
+    def test_get_returns_none_for_missing(self, checkpoints: CheckpointStore) -> None:
+        assert checkpoints.get("nope", "llm_turn", 1) is None
+
+    def test_bytes_kind_stores_blob_verbatim(self, checkpoints: CheckpointStore) -> None:
+        raw = b"\x82\xa3key\xa5value\xa1n\x01"  # Arbitrary non-utf-8 bytes.
+        checkpoints.record("t1", "opaque", 1, "h", KIND_BYTES, raw)
+        record = checkpoints.get("t1", "opaque", 1)
+        assert record is not None
+        assert record.decode() == raw
+
+    def test_bytes_kind_rejects_non_bytes(self, checkpoints: CheckpointStore) -> None:
+        with pytest.raises(TypeError, match="requires bytes"):
+            checkpoints.record("t1", "opaque", 1, "h", KIND_BYTES, "not bytes")
+
+    def test_non_serialisable_value_raises_at_record_time(
+        self, checkpoints: CheckpointStore
+    ) -> None:
+        """Loud-failure on record so a stale caller doesn't mask the bug."""
+
+        class NotSerialisable:
+            pass
+
+        with pytest.raises(TypeError, match="not JSON-serialisable"):
+            checkpoints.record("t1", "bad", 1, "h", KIND_VALUE, NotSerialisable())
+
+    def test_json_default_handles_common_types(self, checkpoints: CheckpointStore) -> None:
+        """``Path``, ``datetime``, and ``set`` round-trip through the envelope."""
+        path = pathlib.Path("/tmp/charm")
+        ts = datetime.datetime(2026, 4, 24, 12, 30, tzinfo=datetime.UTC)
+        tags = {"build", "deploy"}
+        value = {"path": path, "ts": ts, "tags": tags}
+        checkpoints.record("t1", "plan", 1, "h", KIND_VALUE, value)
+        decoded = checkpoints.get("t1", "plan", 1)
+        assert decoded is not None
+        payload = decoded.decode()
+        assert isinstance(payload, dict)
+        assert payload["path"] == "/tmp/charm"
+        assert payload["ts"].startswith("2026-04-24T12:30:00")
+        # Sets round-trip as sorted lists.
+        assert sorted(payload["tags"]) == ["build", "deploy"]
+
+    def test_next_ordinal_delegates(self, checkpoints: CheckpointStore) -> None:
+        checkpoints.record("t1", "llm_turn", 1, "h", KIND_VALUE, 1)
+        assert checkpoints.next_ordinal("t1", "llm_turn") == 2
+
+    def test_list_for_task_returns_records(self, checkpoints: CheckpointStore) -> None:
+        checkpoints.record("t1", "llm_turn", 1, "h1", KIND_LLM_RESPONSE, {"turn": 1})
+        checkpoints.record("t1", "llm_turn", 2, "h2", KIND_LLM_RESPONSE, {"turn": 2})
+        records = checkpoints.list_for_task("t1")
+        assert [r.ordinal for r in records] == [1, 2]
+        assert all(isinstance(r, CheckpointRecord) for r in records)
+        assert records[1].decode() == {"turn": 2}
+
+    def test_count_for_task_matches_store(self, checkpoints: CheckpointStore) -> None:
+        checkpoints.record("t1", "llm_turn", 1, "h", KIND_VALUE, {})
+        assert checkpoints.count_for_task("t1") == 1
+        assert checkpoints.count_for_task("other") == 0
+
+    def test_purge_task_bypasses_env_var(
+        self,
+        checkpoints: CheckpointStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``purge_task`` is the blunt tool — even $KEEP set can't save you."""
+        monkeypatch.setenv(KEEP_CHECKPOINTS_ENV, "1")
+        checkpoints.record("t1", "llm_turn", 1, "h", KIND_VALUE, {})
+        removed = checkpoints.purge_task("t1")
+        assert removed == 1
+        assert checkpoints.count_for_task("t1") == 0
+
+
+class TestOnTaskDone:
+    """GC hook honours ``$CANTRIP_KEEP_CHECKPOINTS`` for debugging."""
+
+    def test_purges_completed_task_by_default(
+        self,
+        checkpoints: CheckpointStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv(KEEP_CHECKPOINTS_ENV, raising=False)
+        checkpoints.record("t1", "llm_turn", 1, "h", KIND_VALUE, {})
+        checkpoints.record("t1", "llm_turn", 2, "h", KIND_VALUE, {})
+        checkpoints.on_task_done("t1")
+        assert checkpoints.count_for_task("t1") == 0
+
+    def test_skips_purge_when_env_var_set(
+        self,
+        checkpoints: CheckpointStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv(KEEP_CHECKPOINTS_ENV, "1")
+        checkpoints.record("t1", "llm_turn", 1, "h", KIND_VALUE, {})
+        checkpoints.on_task_done("t1")
+        assert checkpoints.count_for_task("t1") == 1
+
+    def test_other_truthy_env_values(
+        self,
+        checkpoints: CheckpointStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Common truthy shapes all disable the purge."""
+        for raw in ("1", "true", "TRUE", "yes", "on"):
+            monkeypatch.setenv(KEEP_CHECKPOINTS_ENV, raw)
+            assert should_keep_checkpoints(), f"{raw!r} should be truthy"
+
+    def test_zero_and_empty_are_falsy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for raw in ("0", "false", "", "no"):
+            monkeypatch.setenv(KEEP_CHECKPOINTS_ENV, raw)
+            assert not should_keep_checkpoints(), f"{raw!r} should be falsy"
+
+    def test_does_not_touch_other_tasks(
+        self,
+        checkpoints: CheckpointStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv(KEEP_CHECKPOINTS_ENV, raising=False)
+        checkpoints.record("t1", "llm_turn", 1, "h", KIND_VALUE, {})
+        checkpoints.record("t2", "llm_turn", 1, "h", KIND_VALUE, {})
+        checkpoints.on_task_done("t1")
+        assert checkpoints.count_for_task("t1") == 0
+        assert checkpoints.count_for_task("t2") == 1
+
+
+class TestInputHash:
+    """``compute_input_hash`` is deterministic across equivalent inputs."""
+
+    def test_same_inputs_produce_same_hash(self) -> None:
+        a = compute_input_hash("claude-opus-4-7", {"tool": "juju_status", "args": {"x": 1}})
+        b = compute_input_hash("claude-opus-4-7", {"tool": "juju_status", "args": {"x": 1}})
+        assert a == b
+
+    def test_different_inputs_produce_different_hash(self) -> None:
+        a = compute_input_hash("claude-opus-4-7", {"tool": "juju_status"})
+        b = compute_input_hash("claude-opus-4-7", {"tool": "juju_deploy"})
+        assert a != b
+
+    def test_dict_key_order_does_not_matter(self) -> None:
+        """Stable across the same dict re-ordered — that's the whole point."""
+        a = compute_input_hash({"a": 1, "b": 2, "c": 3})
+        b = compute_input_hash({"c": 3, "a": 1, "b": 2})
+        assert a == b
+
+    def test_non_json_types_fall_back_to_repr(self) -> None:
+        """Non-native types don't blow up hashing (they get ``repr()``'d)."""
+
+        class X:
+            def __repr__(self) -> str:
+                return "<X stable>"
+
+        h1 = compute_input_hash(X())
+        h2 = compute_input_hash(X())
+        assert h1 == h2
+        assert len(h1) == 64  # sha256 hex

@@ -1463,32 +1463,69 @@ and worker machinery are irrelevant.  The pattern we want is just
 "checkpoint each expensive step, replay from the store on restart,"
 adapted to SQLite.
 
-### 52.1 Medium — Checkpoint schema and storage helpers
+### 52.1 Medium — Checkpoint schema and storage helpers ✓
 
-- [ ] Add a `step_checkpoints` table to the `.cantrip` SQLite schema
-  (new migration):
-  ```
-  step_checkpoints(
-    id              INTEGER PRIMARY KEY,
-    task_id         TEXT    NOT NULL,
-    step_name       TEXT    NOT NULL,
-    ordinal         INTEGER NOT NULL,      -- auto-numbered for repeats
-    input_hash      TEXT    NOT NULL,      -- sha256 over normalised inputs
-    result_blob     BLOB    NOT NULL,      -- msgpack-encoded return value
-    result_kind     TEXT    NOT NULL,      -- 'llm_response' | 'tool_result' | 'value'
-    created_at      TEXT    NOT NULL,
-    UNIQUE(task_id, step_name, ordinal)
-  );
-  CREATE INDEX ix_step_checkpoints_task ON step_checkpoints(task_id);
-  ```
-- [ ] Implement `CheckpointStore` helpers on top of the existing SQLite
-  session: `record(task_id, step_name, ordinal, input_hash, kind, value)`,
-  `get(task_id, step_name, ordinal)`, `next_ordinal(task_id, step_name)`.
-  Values serialise via msgpack (already a dep through providers) with
-  a fallback to JSON for debuggability.
-- [ ] Garbage-collect checkpoints when a task terminates successfully —
-  retain for failed/paused tasks so the next run can resume.  Config:
-  `CANTRIP_KEEP_CHECKPOINTS=1` to preserve all for debugging.
+- [x] Added a ``step_checkpoints`` table to the ``.cantrip`` SQLite
+  schema via v10 migration.  Columns: ``id`` / ``task_id`` /
+  ``step_name`` / ``ordinal`` / ``input_hash`` / ``result_blob`` /
+  ``result_kind`` / ``created_at`` with ``UNIQUE(task_id,
+  step_name, ordinal)`` and a ``ix_step_checkpoints_task`` index
+  on ``task_id`` for the resume-time list scan.  Migration block
+  is idempotent (``CREATE TABLE IF NOT EXISTS`` / ``CREATE INDEX
+  IF NOT EXISTS``) so reopening a partially migrated DB is safe.
+- [x] Implemented ``CheckpointStore`` in
+  ``src/cantrip/agent/durability.py`` as a thin facade over
+  ``SessionStore``.  Roadmap-named methods:
+  ``record(task_id, step_name, ordinal, input_hash, kind,
+  value)``, ``get(task_id, step_name, ordinal)``,
+  ``next_ordinal(task_id, step_name)``.  Plus ``list_for_task``
+  / ``count_for_task`` / ``purge_task`` for the Phase 52.5
+  debugging surface and the GC path.  ``next_ordinal`` starts at
+  ``1`` and returns ``max(ordinal) + 1`` so callers don't track
+  counters themselves; they just ask for the next slot.
+- [x] Deviation from the roadmap wording: the serialisation layer
+  is **JSON with a raw-bytes escape hatch**, not msgpack-with-
+  JSON-fallback.  msgpack isn't a current dep (roadmap asserted
+  otherwise — I checked ``pyproject.toml`` and the ``src/``
+  tree, no ``import msgpack`` anywhere); adding a new dep for
+  Phase 52.1 was more blast radius than the feature warrants
+  when JSON already covers every concrete 52.2 / 52.3 value
+  shape (LLM response dataclasses, tool result dicts).  Callers
+  that need a binary envelope (pickle, msgpack, protobuf) can
+  pass ``kind=KIND_BYTES`` and pre-serialised bytes; the record
+  path stores them verbatim.  The JSON encoder handles
+  ``pathlib.Path``, ``datetime``, and ``set`` via a ``default=``
+  hook so tool args don't need pre-stringifying.
+  ``compute_input_hash(*parts)`` helper canonicalises a mix of
+  primitives / dicts / lists into a stable SHA-256 so dict-key
+  ordering never changes the digest — 52.2's input-hash check
+  reduces to a string compare.
+- [x] Garbage collection wired via
+  ``CheckpointStore.on_task_done(task_id)``, attached as the
+  ``on_task_done`` callback on ``BackgroundExecutor`` in
+  ``CantripAgent.start_executor`` (fires only when
+  ``WorkQueue.set_done`` resolves — not on FAILED / BLOCKED).
+  ``$CANTRIP_KEEP_CHECKPOINTS`` (``1`` / ``true`` / ``yes`` /
+  ``on``) flips the purge into a no-op and logs the retained
+  row count at DEBUG so a stale-cache bug hunt can inspect the
+  rows without a manual ``DELETE`` afterwards.  The direct
+  ``purge_task`` method bypasses the env var so ``cantrip
+  checkpoints delete`` (52.5) and test teardown can still force
+  a clean.
+- [x] 30 new tests in ``tests/unit/test_durability.py`` covering
+  schema (fresh DB + v9→v10 migration + unique constraint),
+  SessionStore helpers (record / get / next_ordinal / list /
+  count / purge — including the cross-task isolation
+  invariant), the CheckpointStore facade (JSON round-trip,
+  KIND_BYTES round-trip + type-mismatch rejection,
+  non-serialisable-value loud-failure at record time,
+  ``json_default`` covers Path / datetime / set, next_ordinal
+  delegation, purge_task bypasses env var), the ``on_task_done``
+  GC path (purge by default / skip when env set / other truthy
+  env values recognised / zero-and-empty falsy / cross-task
+  isolation), and ``compute_input_hash`` (determinism across
+  invocations, dict-key-order invariance, different inputs →
+  different hash, non-JSON types via ``repr()`` fallback).
 
 ### 52.2 Medium — `checkpoint()` wrapper helper
 
