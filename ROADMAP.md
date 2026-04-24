@@ -1655,17 +1655,48 @@ adapted to SQLite.
   tests in ``test_durability.py::TestNoResumeEnv`` (truthy / falsy
   / unset-defaults-to-resume-on).
 
-### 52.5 Low — Observability and debugging
+### 52.5 Low — Observability and debugging ✓
 
-- [ ] Extend the transcript viewer (F9) with a "checkpoints" tab that
-  shows, per task, the recorded steps, ordinals, input hashes, and
-  timestamps.  Click-through to view the stored result blob.  (Also
-  absorbs 52.4's deferred inspection bullet — this is the primary
-  surface for "what's cached before I resume or clear".)
-- [ ] Add a `cantrip checkpoints {list,show,delete}` CLI subcommand
-  for scripted inspection and surgical removal.
-- [ ] Emit a structured event on every checkpoint hit/miss so the
-  watcher dashboards can plot replay efficiency over a session.
+- [x] Transcript viewer (F9) gained a fourth view, ``checkpoints``,
+  cycled via ``v``.  Per task: title + id + step count, then one
+  line per row showing ``<step>#<ordinal>  <kind>  <input_hash[:12]>
+  <created_at>``.  The input hash is deliberately truncated so the
+  row fits a standard terminal width; full hashes come from
+  ``cantrip checkpoints show``.  This also absorbs 52.4's
+  deferred inspection bullet.
+- [x] ``TranscriptData`` grew a ``checkpoints: dict[str,
+  list[dict]]`` field populated by ``load_transcript``: blobs are
+  *not* included (they can be large) — each row carries
+  ``step_name`` / ``ordinal`` / ``input_hash`` / ``kind`` /
+  ``created_at`` so rendering is cheap.  On-demand blob decode
+  lives on the CLI (``cantrip checkpoints show``).
+- [x] ``cantrip checkpoints`` CLI subcommand with three
+  subcommands:
+  ``list [--task-id X]`` (per-task table — every task if no
+  filter), ``show <task_id> <step_name> <ordinal>`` (pretty-
+  prints the decoded JSON blob, or base64 for
+  ``KIND_BYTES``), and ``delete --task-id X [--yes]`` (purges a
+  task's checkpoints, interactive ``y/N`` prompt unless
+  ``--yes``).  All three take ``--db PATH`` (default
+  ``./.cantrip``) so the subcommand works from any directory
+  with a session file.
+- [x] Hit / miss / invalidated events land in the session store's
+  event log: ``checkpoint_hit`` / ``checkpoint_miss`` /
+  ``checkpoint_invalidated`` with ``{task_id, step_name, ordinal,
+  kind}`` (plus ``stored_hash`` / ``current_hash`` on the
+  invalidation case).  Recorded inside :func:`checkpoint` via a
+  new ``CheckpointStore.record_event`` forwarder so the
+  transcript viewer and any future watcher dashboard can plot
+  replay efficiency without extra plumbing.
+- [x] 17 new tests: 3 in ``test_durability.py::TestCheckpointEventEmission``
+  (miss / hit / hash-mismatch-invalidates-then-misses); 1 in
+  ``test_transcript.py::TestLoadTranscript::
+  test_load_transcript_populates_checkpoints``; 10 CLI handler
+  tests in ``test_checkpoints_cli.py`` (list / show / delete with
+  empty-state, all-tasks, task filter, missing task,
+  JSON-decode, missing-row-errors, ``--yes`` purge, interactive
+  prompt y/n); 3 TUI ``_checkpoint_lines`` render tests
+  (empty-state / populated / unknown-task-id fallback).
 
 ### 52.6 Low — Cost accounting for replayed steps
 

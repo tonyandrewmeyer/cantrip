@@ -1,11 +1,18 @@
 """Cantrip entry point."""
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from cantrip import __version__
+
+if TYPE_CHECKING:
+    from cantrip.agent import durability as durability_mod
+    from cantrip.agent import store as store_mod
 
 # Markers that identify the Cantrip source tree when inspecting a
 # ``pyproject.toml``.  Having *both* avoids confusing a third-party
@@ -269,11 +276,64 @@ def parse_args() -> argparse.Namespace:
         help="Overwrite the target file if it already exists",
     )
 
+    # ── checkpoints (Phase 52.5) ──────────────────────────────────────
+    checkpoints_parser = subparsers.add_parser(
+        "checkpoints",
+        help=(
+            "Inspect and surgically remove step-level durable-execution "
+            "checkpoints stored under a session's .cantrip file"
+        ),
+    )
+    checkpoints_parser.add_argument(
+        "--db",
+        type=Path,
+        default=Path(".cantrip"),
+        help="Path to the .cantrip session file (default: ./.cantrip)",
+    )
+    checkpoints_sub = checkpoints_parser.add_subparsers(dest="checkpoints_command", required=True)
+    cps_list = checkpoints_sub.add_parser(
+        "list",
+        help="List checkpoint rows for a task (or all tasks).",
+    )
+    cps_list.add_argument(
+        "--task-id",
+        default=None,
+        help="Filter to a single task id (default: list every task with checkpoints)",
+    )
+    cps_show = checkpoints_sub.add_parser(
+        "show",
+        help="Pretty-print one stored checkpoint blob as JSON.",
+    )
+    cps_show.add_argument("task_id", help="Task id the checkpoint belongs to")
+    cps_show.add_argument("step_name", help="Step name, e.g. llm_turn or tool:read_file")
+    cps_show.add_argument("ordinal", type=int, help="1-based ordinal within the step")
+    cps_delete = checkpoints_sub.add_parser(
+        "delete",
+        help="Delete every checkpoint for a task.",
+    )
+    cps_delete.add_argument(
+        "--task-id",
+        required=True,
+        help="Task id whose checkpoints should be purged",
+    )
+    cps_delete.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the interactive confirmation prompt",
+    )
+
     # When the first positional argument is not a known subcommand, treat
     # the entire argv as arguments to the "run" sub-parser.  This lets
     # ``cantrip /path/to/charm`` and ``cantrip --no-tui`` work without
     # requiring an explicit ``run`` subcommand.
-    _subcommands = {"run", "export-transcript", "compare", "hooks", "skill"}
+    _subcommands = {
+        "run",
+        "export-transcript",
+        "compare",
+        "hooks",
+        "skill",
+        "checkpoints",
+    }
     argv = sys.argv[1:]
     if (
         not argv
@@ -641,6 +701,127 @@ def _skill_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _checkpoints(args: argparse.Namespace) -> int:
+    """Dispatch ``cantrip checkpoints {list,show,delete}`` (Phase 52.5)."""
+    from cantrip.agent import durability as durability_mod
+    from cantrip.agent import store as store_mod
+
+    db_path: Path = args.db
+    if not db_path.exists():
+        print(f"Error: {db_path} does not exist.", file=sys.stderr)
+        return 2
+
+    session_store = store_mod.SessionStore(db_path)
+    session_store.open()
+    cps = durability_mod.CheckpointStore(session_store)
+    try:
+        if args.checkpoints_command == "list":
+            return _checkpoints_list(session_store, cps, args.task_id)
+        if args.checkpoints_command == "show":
+            return _checkpoints_show(cps, args.task_id, args.step_name, args.ordinal)
+        if args.checkpoints_command == "delete":
+            return _checkpoints_delete(cps, args.task_id, args.yes)
+        print(f"Unknown checkpoints subcommand: {args.checkpoints_command}", file=sys.stderr)
+        return 2
+    finally:
+        session_store.close()
+
+
+def _checkpoints_list(
+    session_store: store_mod.SessionStore,
+    cps: durability_mod.CheckpointStore,
+    task_id: str | None,
+) -> int:
+    """Print a compact table of checkpoint rows for one or every task."""
+    if task_id is None:
+        tasks = session_store.load_tasks()
+        task_ids = [t.id for t in tasks if cps.count_for_task(t.id) > 0]
+        titles = {t.id: t.title for t in tasks}
+    else:
+        task_ids = [task_id]
+        titles = {task_id: ""}
+
+    if not task_ids:
+        print("No tasks with checkpoints.")
+        return 0
+
+    for tid in task_ids:
+        records = cps.list_for_task(tid)
+        if not records:
+            if task_id is not None:
+                print(f"No checkpoints for task {tid!r}.")
+            continue
+        header = f"{titles.get(tid, '')}  ({tid}, {len(records)} step(s))".strip()
+        print(header)
+        print("-" * len(header))
+        for r in records:
+            hash_prefix = (r.input_hash or "(none)")[:12]
+            print(f"  {r.step_name}#{r.ordinal}  {r.kind:<13} {hash_prefix:<12} {r.created_at}")
+        print()
+    return 0
+
+
+def _checkpoints_show(
+    cps: durability_mod.CheckpointStore,
+    task_id: str,
+    step_name: str,
+    ordinal: int,
+) -> int:
+    """Pretty-print one stored blob as JSON (or base64 for KIND_BYTES)."""
+    import base64
+    import json
+
+    from cantrip.agent.durability import KIND_BYTES
+
+    record = cps.get(task_id, step_name, ordinal)
+    if record is None:
+        print(
+            f"Error: no checkpoint for ({task_id!r}, {step_name!r}, {ordinal}).",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(
+        f"Task:       {record.task_id}\n"
+        f"Step:       {record.step_name}#{record.ordinal}\n"
+        f"Kind:       {record.kind}\n"
+        f"Input hash: {record.input_hash or '(none)'}\n"
+        f"Created:    {record.created_at}"
+    )
+    print("-" * 40)
+    if record.kind == KIND_BYTES:
+        print(f"(bytes, {len(record.blob)} bytes; base64):")
+        print(base64.b64encode(record.blob).decode("ascii"))
+        return 0
+    try:
+        decoded = record.decode()
+    except json.JSONDecodeError as exc:
+        print(f"Error: stored blob is not valid JSON: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(decoded, indent=2, sort_keys=True, default=str))
+    return 0
+
+
+def _checkpoints_delete(
+    cps: durability_mod.CheckpointStore,
+    task_id: str,
+    yes: bool,
+) -> int:
+    """Purge every checkpoint row for *task_id* after confirmation."""
+    count = cps.count_for_task(task_id)
+    if count == 0:
+        print(f"No checkpoints to delete for task {task_id!r}.")
+        return 0
+    if not yes:
+        reply = input(f"Delete {count} checkpoint(s) for task {task_id!r}? [y/N] ").strip().lower()
+        if reply not in ("y", "yes"):
+            print("Aborted.")
+            return 1
+    removed = cps.purge_task(task_id)
+    print(f"Removed {removed} checkpoint(s) for task {task_id!r}.")
+    return 0
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
@@ -659,6 +840,8 @@ def main() -> int:
             return _skill_export(args)
         print(f"Unknown skill subcommand: {args.skill_command}", file=sys.stderr)
         return 2
+    if args.command == "checkpoints":
+        return _checkpoints(args)
     return _run(args)
 
 

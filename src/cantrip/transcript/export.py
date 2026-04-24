@@ -19,6 +19,12 @@ class TranscriptData:
     )
     events: list[dict] = dataclasses.field(default_factory=list)
     token_usage: dict[str, int] = dataclasses.field(default_factory=dict)
+    # Phase 52.5: step-level checkpoint rows grouped by task_id.  Each
+    # inner dict carries step_name / ordinal / input_hash / kind /
+    # created_at so the transcript viewer can show what's cached for
+    # each task without decoding the blobs (blobs are on-demand via
+    # ``cantrip checkpoints show``).
+    checkpoints: dict[str, list[dict]] = dataclasses.field(default_factory=dict)
 
 
 # Task categories grouped into phases for --phase filtering.
@@ -107,6 +113,28 @@ def load_transcript(
 
         # Load token usage.
         data.token_usage = session_store.get_total_usage()
+
+        # Phase 52.5 — attach step checkpoints per included task so the
+        # transcript viewer can show what's cached for a task without
+        # having to re-open the database.  Blobs are excluded here; the
+        # ``cantrip checkpoints show`` CLI decodes individual rows on
+        # demand.
+        for task in tasks:
+            if task.id not in included_task_ids:
+                continue
+            rows = session_store.list_checkpoints_for_task(task.id)
+            if not rows:
+                continue
+            data.checkpoints[task.id] = [
+                {
+                    "step_name": row["step_name"],
+                    "ordinal": int(row["ordinal"]),
+                    "input_hash": row["input_hash"],
+                    "kind": row["result_kind"],
+                    "created_at": row["created_at"],
+                }
+                for row in rows
+            ]
 
         return data
     finally:

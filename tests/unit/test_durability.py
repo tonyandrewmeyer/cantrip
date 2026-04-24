@@ -692,3 +692,75 @@ class TestNoResumeEnv:
     def test_unset_defaults_to_resume_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(NO_RESUME_ENV, raising=False)
         assert not should_skip_resume()
+
+
+class TestCheckpointEventEmission:
+    """Phase 52.5 — ``checkpoint()`` records structured hit/miss/invalidated events."""
+
+    async def test_miss_records_checkpoint_miss_event(
+        self, store: SessionStore, checkpoints: CheckpointStore
+    ) -> None:
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn() -> int:
+            return 42
+
+        await checkpoint(ctx, "llm_turn", fn, input_hash="h", kind=KIND_LLM_RESPONSE)
+
+        events = store.load_events(event_type="checkpoint_miss")
+        assert len(events) == 1
+        import json as _json
+
+        detail = events[0]["detail"]
+        if isinstance(detail, str):
+            detail = _json.loads(detail)
+        assert detail["task_id"] == "t1"
+        assert detail["step_name"] == "llm_turn"
+        assert detail["ordinal"] == 1
+        assert detail["kind"] == KIND_LLM_RESPONSE
+
+    async def test_hit_records_checkpoint_hit_event(
+        self, store: SessionStore, checkpoints: CheckpointStore
+    ) -> None:
+        checkpoints.record("t1", "llm_turn", 1, "h", KIND_LLM_RESPONSE, {"turn": 1})
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn() -> dict[str, int]:
+            return {"turn": 999}
+
+        await checkpoint(ctx, "llm_turn", fn, input_hash="h", kind=KIND_LLM_RESPONSE)
+
+        hits = store.load_events(event_type="checkpoint_hit")
+        misses = store.load_events(event_type="checkpoint_miss")
+        assert len(hits) == 1
+        assert len(misses) == 0
+        import json as _json
+
+        detail = hits[0]["detail"]
+        if isinstance(detail, str):
+            detail = _json.loads(detail)
+        assert detail["ordinal"] == 1
+        assert detail["kind"] == KIND_LLM_RESPONSE
+
+    async def test_hash_mismatch_records_invalidated_and_miss(
+        self, store: SessionStore, checkpoints: CheckpointStore
+    ) -> None:
+        checkpoints.record("t1", "llm_turn", 1, "old", KIND_VALUE, "stale")
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn() -> str:
+            return "fresh"
+
+        await checkpoint(ctx, "llm_turn", fn, input_hash="new")
+
+        invalidated = store.load_events(event_type="checkpoint_invalidated")
+        misses = store.load_events(event_type="checkpoint_miss")
+        assert len(invalidated) == 1
+        assert len(misses) == 1  # The re-run after invalidation persisted as a miss.
+        import json as _json
+
+        invalid_detail = invalidated[0]["detail"]
+        if isinstance(invalid_detail, str):
+            invalid_detail = _json.loads(invalid_detail)
+        assert invalid_detail["stored_hash"] == "old"
+        assert invalid_detail["current_hash"] == "new"

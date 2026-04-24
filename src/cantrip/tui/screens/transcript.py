@@ -13,7 +13,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, RichLog, Static
 
 # Views available via the 'v' key.
-_VIEWS = ("conversation", "tasks", "events")
+_VIEWS = ("conversation", "tasks", "events", "checkpoints")
 
 # Maximum messages to display per view to keep the UI responsive.
 _MAX_DISPLAY = 500
@@ -341,6 +341,10 @@ class TranscriptScreen(ModalScreen):
         elif self.view == "events":
             title.update(f"Events ({len(data.events)} events)")
             self._last_lines = self._event_lines(data)
+        elif self.view == "checkpoints":
+            total = sum(len(rows) for rows in data.checkpoints.values())
+            title.update(f"Checkpoints ({total} across {len(data.checkpoints)} task(s))")
+            self._last_lines = self._checkpoint_lines(data)
 
         # Re-run any in-flight search against the new content.
         self._recompute_matches()
@@ -453,5 +457,38 @@ class TranscriptScreen(ModalScreen):
                 for k, v in detail.items():
                     lines.append(f"  [dim]{k}: {v}[/dim]")
 
+            lines.append("")
+        return lines
+
+    @staticmethod
+    def _checkpoint_lines(data: object) -> list[str]:
+        """Return the step-checkpoint summary as markup lines, grouped by task.
+
+        Shows ``step_name#ordinal  kind  input_hash[:12]  created_at`` per
+        row so the user can see what's cached for each task before deciding
+        whether to resume or clear.  Full blob decode is available via
+        ``cantrip checkpoints show``.
+        """
+        checkpoints = getattr(data, "checkpoints", {})
+        if not checkpoints:
+            return ["No step checkpoints recorded."]
+
+        tasks = getattr(data, "tasks", [])
+        title_by_id = {t.get("id", ""): t.get("title", "") for t in tasks}
+
+        lines: list[str] = []
+        for task_id, rows in checkpoints.items():
+            title = title_by_id.get(task_id) or "(unknown task)"
+            lines.append(f"[bold]{title}[/bold]  [dim]{task_id}  {len(rows)} step(s)[/dim]")
+            for row in rows:
+                step = row.get("step_name", "?")
+                ordinal = row.get("ordinal", 0)
+                kind = row.get("kind", "?")
+                hash_prefix = (row.get("input_hash") or "")[:12] or "(none)"
+                ts = row.get("created_at", "")
+                lines.append(
+                    f"  [cyan]{step}#{ordinal}[/cyan]  "
+                    f"[dim]{kind:<13} {hash_prefix:<12} {ts}[/dim]"
+                )
             lines.append("")
         return lines

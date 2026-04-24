@@ -47,6 +47,7 @@
       <li><a href="#export-transcript">export-transcript</a></li>
       <li><a href="#hooks">cantrip hooks</a></li>
       <li><a href="#skill">cantrip skill</a></li>
+      <li><a href="#checkpoints">cantrip checkpoints</a></li>
       <li><a href="#slash-commands">Slash commands</a></li>
       <li><a href="#env-vars">Environment variables</a></li>
       <li><a href="#session-file">Session file</a></li>
@@ -69,6 +70,9 @@ cantrip compare CHARM_A CHARM_B
 cantrip export-transcript PATH [OPTIONS]
 cantrip hooks test EVENT [--payload JSON] [--path DIR]
 cantrip skill export NAME PATH [--charm-path DIR] [--force]
+cantrip checkpoints list [--db PATH] [--task-id ID]
+cantrip checkpoints show [--db PATH] TASK_ID STEP_NAME ORDINAL
+cantrip checkpoints delete [--db PATH] --task-id ID [--yes]
 cantrip --version
 cantrip --help
 </code></pre>
@@ -334,6 +338,59 @@ existing-target errors.</p>
     this flag Cantrip refuses to clobber an existing file and
     exits 2.
   </dd>
+</dl>
+<h2 id="checkpoints">cantrip checkpoints</h2>
+<p>Inspect and surgically remove step-level durable-execution
+checkpoints stored under a session's <code>.cantrip</code> SQLite file.
+Phase 52 persists each LLM turn and each tool call for an
+in-flight subagent task so that an interrupted run resumes from
+the last completed step instead of re-burning tokens from turn 1.
+The <code>cantrip checkpoints</code> subcommand is the out-of-band surface
+for that state &mdash; usually you won't touch it, but it's there when
+a stale row is masking a fix or when you want to see what's
+cached before deciding whether to resume.</p>
+<p>All three subcommands accept <code>--db PATH</code> (default: <code>./.cantrip</code>).</p>
+<h3 id="checkpoints-list">cantrip checkpoints list</h3>
+<p>Prints a compact table per task showing every stored step
+(<code>llm_turn#N</code> or <code>tool:&lt;name&gt;#N</code>), the storage kind, the first
+12 characters of the input hash, and the creation timestamp.
+With no filter, every task that has checkpoints is listed.</p>
+<pre><code>cantrip checkpoints list [--db PATH] [--task-id ID]
+</code></pre>
+<dl>
+  <dt><code>--db PATH</code></dt>
+  <dd>Path to the <code>.cantrip</code> session file. Default: <code>./.cantrip</code>.</dd>
+  <dt><code>--task-id ID</code></dt>
+  <dd>Filter to a single task id. Default: list every task with checkpoints.</dd>
+</dl>
+<h3 id="checkpoints-show">cantrip checkpoints show</h3>
+<p>Pretty-prints a single stored blob. JSON-encoded kinds
+(<code>llm_response</code>, <code>tool_result</code>, <code>value</code>) are decoded and printed
+with <code>json.dumps(..., indent=2, sort_keys=True)</code>; <code>bytes</code> kinds
+are printed as base64.</p>
+<pre><code>cantrip checkpoints show TASK_ID STEP_NAME ORDINAL [--db PATH]
+</code></pre>
+<dl>
+  <dt><code>TASK_ID</code> <span class="arg-req">required</span></dt>
+  <dd>Task id the checkpoint belongs to &mdash; from <code>cantrip checkpoints list</code> or the transcript viewer.</dd>
+  <dt><code>STEP_NAME</code> <span class="arg-req">required</span></dt>
+  <dd>Step name, e.g. <code>llm_turn</code> or <code>tool:read_file</code>.</dd>
+  <dt><code>ORDINAL</code> <span class="arg-req">required</span></dt>
+  <dd>1-based ordinal within the step. The N-th <code>llm_turn</code> call for the task has ordinal N.</dd>
+</dl>
+<p>Exits 1 when no row matches.</p>
+<h3 id="checkpoints-delete">cantrip checkpoints delete</h3>
+<p>Purges every checkpoint for one task. Useful when a stale row
+is suspected of masking a real change, or when you want to force
+a fresh run from turn 1 without setting
+<code>CANTRIP_NO_RESUME</code> for the whole session.</p>
+<pre><code>cantrip checkpoints delete --task-id ID [--db PATH] [--yes]
+</code></pre>
+<dl>
+  <dt><code>--task-id ID</code> <span class="arg-req">required</span></dt>
+  <dd>Task id whose checkpoints should be removed.</dd>
+  <dt><code>--yes</code></dt>
+  <dd>Skip the interactive <code>y/N</code> confirmation prompt. Intended for scripted use.</dd>
 </dl>
 <h2 id="slash-commands">Slash commands</h2>
 <p>Type these directly into the chat (TUI or Web) to drive features

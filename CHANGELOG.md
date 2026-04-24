@@ -127,6 +127,44 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Checkpoint observability and inspection — Phase 52.5.**  Closes
+  out the core of Phase 52 (52.6 cost-accounting remains as a
+  low-priority follow-up).  Three user-facing surfaces on top of
+  52.3's subagent wiring:
+
+  - **Transcript viewer (F9) gained a fourth view, ``checkpoints``,**
+    cycled via ``v``.  Per task: title + id + step count, then one
+    line per row showing ``<step>#<ordinal>  <kind>
+    <input_hash[:12]>  <created_at>``.  Full hash + decoded blob
+    come from the CLI below.  Absorbs the Phase 52.4 inspection
+    bullet.
+  - **``cantrip checkpoints {list,show,delete}`` CLI** with
+    ``--db PATH`` (default ``./.cantrip``).  ``list [--task-id X]``
+    prints a per-task table.  ``show <task_id> <step_name>
+    <ordinal>`` pretty-prints the decoded blob as JSON (or base64
+    for ``KIND_BYTES``).  ``delete --task-id X [--yes]`` purges a
+    task's checkpoints, prompting interactively unless ``--yes``.
+  - **Hit / miss / invalidated events** land in the session store's
+    event log (``checkpoint_hit`` / ``checkpoint_miss`` /
+    ``checkpoint_invalidated``) with
+    ``{task_id, step_name, ordinal, kind}`` and — for
+    invalidation — ``stored_hash`` / ``current_hash``.  Recorded
+    inside :func:`checkpoint` via a new
+    ``CheckpointStore.record_event`` forwarder so the transcript
+    viewer and any future watcher dashboard can plot replay
+    efficiency without extra plumbing.
+
+  ``TranscriptData`` grew a ``checkpoints: dict[str, list[dict]]``
+  field populated by ``load_transcript``; blobs are *not* included
+  (they can be large) — each row carries the metadata fields only,
+  keeping the transcript load cheap.  17 new tests: 3 event-emission
+  cases in ``test_durability.py``, 1 transcript-data population
+  test, 10 CLI handler tests in ``test_checkpoints_cli.py`` (list /
+  show / delete with empty-state, filters, missing rows, ``--yes``,
+  interactive y/n), and 3 TUI ``_checkpoint_lines`` renders.
+  ``docs/src/reference-cli.md`` documents the new ``checkpoints``
+  subcommand alongside the existing subcommand catalogue.
+
 - **Subagent resume UX — Phase 52.4.**  Two user-facing pieces
   on top of the 52.3 replay wiring: a ``CANTRIP_NO_RESUME=1``
   opt-out that disables checkpoint lookup for a debugging session

@@ -11,6 +11,7 @@ on_this_page:
   - { anchor: "export-transcript", label: "export-transcript" }
   - { anchor: "hooks", label: "cantrip hooks" }
   - { anchor: "skill", label: "cantrip skill" }
+  - { anchor: "checkpoints", label: "cantrip checkpoints" }
   - { anchor: "slash-commands", label: "Slash commands" }
   - { anchor: "env-vars", label: "Environment variables" }
   - { anchor: "session-file", label: "Session file" }
@@ -25,6 +26,9 @@ cantrip compare CHARM_A CHARM_B
 cantrip export-transcript PATH [OPTIONS]
 cantrip hooks test EVENT [--payload JSON] [--path DIR]
 cantrip skill export NAME PATH [--charm-path DIR] [--force]
+cantrip checkpoints list [--db PATH] [--task-id ID]
+cantrip checkpoints show [--db PATH] TASK_ID STEP_NAME ORDINAL
+cantrip checkpoints delete [--db PATH] --task-id ID [--yes]
 cantrip --version
 cantrip --help
 ```
@@ -351,6 +355,82 @@ cantrip skill export NAME PATH [--charm-path DIR] [--force]
     this flag Cantrip refuses to clobber an existing file and
     exits 2.
   </dd>
+</dl>
+
+{#checkpoints}
+## cantrip checkpoints
+
+Inspect and surgically remove step-level durable-execution
+checkpoints stored under a session's `.cantrip` SQLite file.
+Phase 52 persists each LLM turn and each tool call for an
+in-flight subagent task so that an interrupted run resumes from
+the last completed step instead of re-burning tokens from turn 1.
+The `cantrip checkpoints` subcommand is the out-of-band surface
+for that state — usually you won't touch it, but it's there when
+a stale row is masking a fix or when you want to see what's
+cached before deciding whether to resume.
+
+All three subcommands accept `--db PATH` (default: `./.cantrip`).
+
+{#checkpoints-list}
+### cantrip checkpoints list
+
+Prints a compact table per task showing every stored step
+(`llm_turn#N` or `tool:<name>#N`), the storage kind, the first
+12 characters of the input hash, and the creation timestamp.
+With no filter, every task that has checkpoints is listed.
+
+```
+cantrip checkpoints list [--db PATH] [--task-id ID]
+```
+
+<dl>
+  <dt><code>--db PATH</code></dt>
+  <dd>Path to the <code>.cantrip</code> session file. Default: <code>./.cantrip</code>.</dd>
+  <dt><code>--task-id ID</code></dt>
+  <dd>Filter to a single task id. Default: list every task with checkpoints.</dd>
+</dl>
+
+{#checkpoints-show}
+### cantrip checkpoints show
+
+Pretty-prints a single stored blob. JSON-encoded kinds
+(`llm_response`, `tool_result`, `value`) are decoded and printed
+with `json.dumps(..., indent=2, sort_keys=True)`; `bytes` kinds
+are printed as base64.
+
+```
+cantrip checkpoints show TASK_ID STEP_NAME ORDINAL [--db PATH]
+```
+
+<dl>
+  <dt><code>TASK_ID</code> <span class="arg-req">required</span></dt>
+  <dd>Task id the checkpoint belongs to — from <code>cantrip checkpoints list</code> or the transcript viewer.</dd>
+  <dt><code>STEP_NAME</code> <span class="arg-req">required</span></dt>
+  <dd>Step name, e.g. <code>llm_turn</code> or <code>tool:read_file</code>.</dd>
+  <dt><code>ORDINAL</code> <span class="arg-req">required</span></dt>
+  <dd>1-based ordinal within the step. The N-th <code>llm_turn</code> call for the task has ordinal N.</dd>
+</dl>
+
+Exits 1 when no row matches.
+
+{#checkpoints-delete}
+### cantrip checkpoints delete
+
+Purges every checkpoint for one task. Useful when a stale row
+is suspected of masking a real change, or when you want to force
+a fresh run from turn 1 without setting
+`CANTRIP_NO_RESUME` for the whole session.
+
+```
+cantrip checkpoints delete --task-id ID [--db PATH] [--yes]
+```
+
+<dl>
+  <dt><code>--task-id ID</code> <span class="arg-req">required</span></dt>
+  <dd>Task id whose checkpoints should be removed.</dd>
+  <dt><code>--yes</code></dt>
+  <dd>Skip the interactive <code>y/N</code> confirmation prompt. Intended for scripted use.</dd>
 </dl>
 
 {#slash-commands}

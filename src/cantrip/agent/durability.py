@@ -253,6 +253,16 @@ class CheckpointStore:
         """Return the number of checkpoints stored for *task_id*."""
         return self._store.count_checkpoints_for_task(task_id)
 
+    def record_event(self, event_type: str, detail: dict[str, object]) -> None:
+        """Forward a structured event to the session store's event log.
+
+        Used by :func:`checkpoint` to emit ``checkpoint_hit`` /
+        ``checkpoint_miss`` / ``checkpoint_invalidated`` events so
+        Phase 52.5's transcript tab and watcher dashboards can plot
+        replay efficiency over a session without extra plumbing.
+        """
+        self._store.record_event(event_type, detail)
+
     def purge_task(self, task_id: str) -> int:
         """Delete every checkpoint for *task_id*.  Returns the row count removed.
 
@@ -359,6 +369,15 @@ async def checkpoint[T](
                 ordinal,
                 record.kind,
             )
+            ctx.store.record_event(
+                "checkpoint_hit",
+                {
+                    "task_id": ctx.task_id,
+                    "step_name": step_name,
+                    "ordinal": ordinal,
+                    "kind": record.kind,
+                },
+            )
             return cast("T", record.decode())
         log.warning(
             "checkpoint input-hash mismatch — invalidating task=%s step=%s#%d "
@@ -368,6 +387,16 @@ async def checkpoint[T](
             ordinal,
             record.input_hash,
             input_hash,
+        )
+        ctx.store.record_event(
+            "checkpoint_invalidated",
+            {
+                "task_id": ctx.task_id,
+                "step_name": step_name,
+                "ordinal": ordinal,
+                "stored_hash": record.input_hash,
+                "current_hash": input_hash,
+            },
         )
     result = await fn()
     ctx.store.record(
@@ -384,6 +413,15 @@ async def checkpoint[T](
         step_name,
         ordinal,
         kind,
+    )
+    ctx.store.record_event(
+        "checkpoint_miss",
+        {
+            "task_id": ctx.task_id,
+            "step_name": step_name,
+            "ordinal": ordinal,
+            "kind": kind,
+        },
     )
     return result
 

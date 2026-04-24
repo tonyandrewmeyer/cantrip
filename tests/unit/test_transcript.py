@@ -89,6 +89,7 @@ class TestTranscriptData:
         assert data.subagent_messages == {}
         assert data.events == []
         assert data.token_usage == {}
+        assert data.checkpoints == {}
 
 
 class TestLoadTranscript:
@@ -120,6 +121,56 @@ class TestLoadTranscript:
         data = load_transcript(path)
         assert data.charm_name == ""
         assert data.messages == []
+
+    def test_load_transcript_populates_checkpoints(self, tmp_path):
+        """Phase 52.5: checkpoints for included tasks land in TranscriptData."""
+        from cantrip.agent.durability import (
+            KIND_LLM_RESPONSE,
+            KIND_TOOL_RESULT,
+            CheckpointStore,
+        )
+        from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+
+        path = tmp_path / ".cantrip"
+        store = SessionStore(path)
+        store.open()
+        # A task must exist and be persisted so load_transcript surfaces it.
+        task = AgentTask(
+            id="task-abc",
+            title="Build stuff",
+            category=TaskCategory.BUILD,
+            description="",
+            status=TaskStatus.DONE,
+        )
+        store.save_tasks([task])
+        cps = CheckpointStore(store)
+        cps.record("task-abc", "llm_turn", 1, "h1", KIND_LLM_RESPONSE, {"turn": 1})
+        cps.record(
+            "task-abc",
+            "tool:read_file",
+            1,
+            "h2",
+            KIND_TOOL_RESULT,
+            {
+                "success": True,
+                "output": "x",
+                "data": {},
+                "error": None,
+                "images": [],
+                "caption": None,
+            },
+        )
+        store.close()
+
+        data = load_transcript(path)
+        assert "task-abc" in data.checkpoints
+        rows = data.checkpoints["task-abc"]
+        assert [(r["step_name"], r["ordinal"], r["kind"]) for r in rows] == [
+            ("llm_turn", 1, KIND_LLM_RESPONSE),
+            ("tool:read_file", 1, KIND_TOOL_RESULT),
+        ]
+        assert rows[0]["input_hash"] == "h1"
+        assert rows[0]["created_at"]
 
 
 class TestHtmlRenderer:
