@@ -32,10 +32,18 @@ class SkillMetadata:
     # ``~/.claude/skills/`` or ``~/.config/cantrip/skills/``.
     source: str = SOURCE_BUNDLED
     # Optional tool allowlist declared in the skill's frontmatter.
-    # Preserved for forward compatibility with Phase 50.4 (MCP-aware
-    # skills) and for cross-vendor skill round-tripping; the loader
-    # does not enforce it yet.
+    # Preserved for cross-vendor skill round-tripping; the loader
+    # does not enforce it.
     tools: list[str] = field(default_factory=list)
+    # Optional MCP server dependencies (Phase 50.4).  Names here are
+    # checked against the configured ``MCPRegistry`` at load time;
+    # ``LoadSkillTool`` prepends a clear warning banner when any
+    # declared server is not configured, so a skill that relies on
+    # ``filesystem`` tools from an MCP server degrades gracefully
+    # rather than silently producing nonsense when the server is
+    # missing.  Accepts a YAML list or a comma-separated string in
+    # frontmatter — the same coercion that applies to ``tools``.
+    mcp_servers: list[str] = field(default_factory=list)
 
 
 def _default_external_skill_dirs() -> list[Path]:
@@ -193,7 +201,15 @@ class SkillsIndex:
         return self._extract_body(raw)
 
     def format_for_prompt(self) -> str:
-        """Render an XML block listing all skills for inclusion in a system prompt."""
+        """Render an XML block listing all skills for inclusion in a system prompt.
+
+        Skills with declared MCP server dependencies (Phase 50.4) get a
+        ``<required_mcp_servers>`` child element so the LLM can tell at
+        the index level which skills need extra infrastructure.  The
+        per-server availability check still happens in
+        ``LoadSkillTool`` — the prompt index doesn't filter, it just
+        informs.
+        """
         if not self._skills:
             return ""
 
@@ -202,6 +218,9 @@ class SkillsIndex:
             lines.append("  <skill>")
             lines.append(f"    <name>{skill.name}</name>")
             lines.append(f"    <description>{skill.description}</description>")
+            if skill.mcp_servers:
+                joined = ", ".join(skill.mcp_servers)
+                lines.append(f"    <required_mcp_servers>{joined}</required_mcp_servers>")
             lines.append("  </skill>")
         lines.append("</available_skills>")
         return "\n".join(lines)
@@ -288,7 +307,8 @@ class SkillsIndex:
         if not name or not description:
             raise ValueError(f"Frontmatter must contain 'name' and 'description' in {path}")
 
-        tools = _coerce_tools(data.get("tools"))
+        tools = _coerce_string_list(data.get("tools"))
+        mcp_servers = _coerce_string_list(data.get("mcp_servers"))
 
         return SkillMetadata(
             name=str(name),
@@ -296,6 +316,7 @@ class SkillsIndex:
             path=path,
             source=source,
             tools=tools,
+            mcp_servers=mcp_servers,
         )
 
     @staticmethod
@@ -318,12 +339,15 @@ class SkillsIndex:
         return "\n".join(lines[end + 1 :]).strip()
 
 
-def _coerce_tools(value: object) -> list[str]:
-    """Normalise a frontmatter ``tools`` entry into a list of strings.
+def _coerce_string_list(value: object) -> list[str]:
+    """Normalise a frontmatter list-of-strings entry into ``list[str]``.
 
-    Accepts a list (typical Cantrip shape), a comma-separated string
-    (Claude Code's shape), or ``None``.  Anything else becomes an empty
-    list so malformed entries don't derail discovery.
+    Shared between the ``tools`` and ``mcp_servers`` frontmatter
+    fields.  Accepts a list (typical Cantrip shape), a comma-separated
+    string (Claude Code's shape for ``tools``, and a natural shorthand
+    for the single-server case in ``mcp_servers``), or ``None``.
+    Anything else becomes an empty list so malformed entries don't
+    derail discovery.
     """
     if value is None:
         return []
@@ -332,3 +356,8 @@ def _coerce_tools(value: object) -> list[str]:
     if isinstance(value, str):
         return [part.strip() for part in value.split(",") if part.strip()]
     return []
+
+
+# Legacy internal name — kept as an alias so any stale import path keeps
+# working.  Prefer ``_coerce_string_list`` in new code.
+_coerce_tools = _coerce_string_list

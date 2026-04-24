@@ -5,6 +5,40 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **MCP-aware skills — Phase 50.4.**  A skill can now declare
+  MCP server dependencies in its frontmatter (``mcp_servers:``,
+  same shape as ``tools:`` — YAML list or comma-separated
+  string).  ``SkillMetadata`` grew an ``mcp_servers: list[str]``
+  field and ``_coerce_tools`` was generalised to
+  ``_coerce_string_list`` shared between both fields.  At load
+  time ``LoadSkillTool`` checks the session's configured
+  ``MCPRegistry`` against the declared list and, when any
+  server is missing, prepends a clear warning banner naming the
+  unconfigured servers before returning the body.  Hard gating
+  would silently hide skills the agent might still extract
+  value from; a visible banner is the better failure mode.
+  The prompt-level skill index
+  (``<available_skills>``) also carries a
+  ``<required_mcp_servers>`` child element per skill that
+  declares deps, so the agent can pick an alternative when
+  missing infrastructure would block a skill.  The registry is
+  threaded from ``CantripAgent`` through ``build_tools()`` into
+  ``LoadSkillTool``; passing ``None`` (e.g. from a test rig
+  without MCP) treats every declared server as missing, so the
+  warning is conservative by default.  Exports round-trip the
+  new field: ``cantrip skill export`` emits ``mcp_servers:``
+  when non-empty and omits it otherwise, matching the existing
+  ``tools:`` behaviour.  13 new tests in ``test_skills.py``
+  cover frontmatter parsing (YAML list / comma-string /
+  missing / malformed), prompt-render of
+  ``required_mcp_servers``, ``LoadSkillTool`` warning /
+  silent-success / partial-missing / no-registry /
+  no-deps-no-banner paths, and the export round-trip.
+  ``docs/src/howto-skills.md`` gains an "MCP dependencies"
+  section describing the frontmatter key, the warning
+  behaviour, and how it composes with Phase 45's MCP config.
+  Phase 50 closes with this change.
+
 - **`gh skill install` discovery — Phase 50.3.**  Cantrip now
   discovers skills installed via GitHub CLI's ``gh skill install``
   at the directories the command actually writes to.  Research

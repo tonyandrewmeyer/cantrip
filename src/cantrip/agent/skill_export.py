@@ -90,6 +90,8 @@ def export_skill(
     }
     if metadata.tools:
         frontmatter["tools"] = list(metadata.tools)
+    if metadata.mcp_servers:
+        frontmatter["mcp_servers"] = list(metadata.mcp_servers)
 
     rendered_frontmatter = yaml.safe_dump(frontmatter, sort_keys=False).strip()
     target.write_text(f"---\n{rendered_frontmatter}\n---\n\n{sanitised.rstrip()}\n")

@@ -654,6 +654,193 @@ class TestLoadSkillTool:
         assert "skill_name" in tool.parameters["properties"]
 
 
+class TestMCPAwareSkills:
+    """Phase 50.4: skills can declare MCP server dependencies.
+
+    The loader doesn't filter skills — it surfaces them all and prepends
+    a warning banner to the body when declared servers aren't
+    configured.  Gating at discovery would silently hide skills the
+    agent might still extract value from; a visible warning is a
+    better failure mode.
+    """
+
+    @staticmethod
+    def _build_index(tmp_path: Path, frontmatter: str, body: str = "Body\n") -> SkillsIndex:
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        (bundled / "deployer").mkdir()
+        (bundled / "deployer" / "SKILL.md").write_text(f"---\n{frontmatter}\n---\n\n{body}")
+        index = SkillsIndex(bundled)
+        index.discover()
+        return index
+
+    def test_mcp_servers_parsed_as_yaml_list(self, tmp_path: Path) -> None:
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\n"
+            "description: Deploys via MCP\n"
+            "mcp_servers:\n  - filesystem\n  - github",
+        )
+        [metadata] = index.list_skills()
+        assert metadata.mcp_servers == ["filesystem", "github"]
+
+    def test_mcp_servers_parsed_as_comma_string(self, tmp_path: Path) -> None:
+        """Same comma-string shape the ``tools`` field accepts."""
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\ndescription: d\nmcp_servers: filesystem, github",
+        )
+        [metadata] = index.list_skills()
+        assert metadata.mcp_servers == ["filesystem", "github"]
+
+    def test_mcp_servers_missing_defaults_to_empty(self, tmp_path: Path) -> None:
+        index = self._build_index(tmp_path, "name: deployer\ndescription: d")
+        [metadata] = index.list_skills()
+        assert metadata.mcp_servers == []
+
+    def test_mcp_servers_malformed_falls_back_to_empty(self, tmp_path: Path) -> None:
+        """A non-list, non-string entry doesn't crash discovery."""
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\ndescription: d\nmcp_servers: 42",
+        )
+        [metadata] = index.list_skills()
+        assert metadata.mcp_servers == []
+
+    def test_format_for_prompt_includes_required_mcp_servers(self, tmp_path: Path) -> None:
+        """Declared servers surface in the prompt-level skill index."""
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\ndescription: d\nmcp_servers:\n  - filesystem",
+        )
+        xml = index.format_for_prompt()
+        assert "<required_mcp_servers>filesystem</required_mcp_servers>" in xml
+
+    def test_format_for_prompt_omits_required_mcp_servers_when_none(self, tmp_path: Path) -> None:
+        """Skills without MCP deps don't add noise to the prompt."""
+        index = self._build_index(tmp_path, "name: deployer\ndescription: d")
+        xml = index.format_for_prompt()
+        assert "<required_mcp_servers>" not in xml
+
+    @pytest.mark.asyncio()
+    async def test_load_skill_warns_when_server_missing(self, tmp_path: Path) -> None:
+        """A skill declaring an unconfigured server loads with a warning banner."""
+        from cantrip.mcp.registry import MCPRegistry
+
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\ndescription: d\nmcp_servers:\n  - filesystem",
+            body="# Skill body.\n\nStep 1: do something.\n",
+        )
+        empty_registry = MCPRegistry([])  # No servers configured.
+        tool = LoadSkillTool(index, mcp_registry=empty_registry)
+        result = await tool.execute(skill_name="deployer")
+        assert result.success
+        assert "filesystem" in result.output
+        assert "NOT configured" in result.output
+        # Body still there after the banner.
+        assert "Step 1: do something." in result.output
+
+    @pytest.mark.asyncio()
+    async def test_load_skill_no_warning_when_servers_configured(self, tmp_path: Path) -> None:
+        """Every declared server configured → no banner."""
+        from cantrip.mcp.registry import MCPRegistry
+        from cantrip.mcp.types import ServerConfig
+
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\ndescription: d\nmcp_servers:\n  - filesystem",
+            body="# Clean body.\n",
+        )
+        registry = MCPRegistry([ServerConfig(name="filesystem")])
+        tool = LoadSkillTool(index, mcp_registry=registry)
+        result = await tool.execute(skill_name="deployer")
+        assert result.success
+        assert "NOT configured" not in result.output
+        assert "# Clean body." in result.output
+
+    @pytest.mark.asyncio()
+    async def test_load_skill_banner_lists_only_missing_servers(self, tmp_path: Path) -> None:
+        """Banner names the unconfigured subset only."""
+        from cantrip.mcp.registry import MCPRegistry
+        from cantrip.mcp.types import ServerConfig
+
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\ndescription: d\nmcp_servers:\n  - filesystem\n  - github\n  - slack",
+        )
+        registry = MCPRegistry([ServerConfig(name="filesystem")])
+        tool = LoadSkillTool(index, mcp_registry=registry)
+        result = await tool.execute(skill_name="deployer")
+        assert "github" in result.output
+        assert "slack" in result.output
+        # ``filesystem`` is configured so it should NOT be named as missing.
+        # Check the banner section specifically (first ~300 chars).
+        banner = result.output.split("\n\n", 1)[0]
+        assert "filesystem" not in banner
+        assert "github" in banner
+
+    @pytest.mark.asyncio()
+    async def test_load_skill_without_registry_treats_all_as_missing(self, tmp_path: Path) -> None:
+        """No registry wired in at all → every declared server is flagged."""
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\ndescription: d\nmcp_servers:\n  - filesystem",
+        )
+        tool = LoadSkillTool(index)  # No mcp_registry.
+        result = await tool.execute(skill_name="deployer")
+        assert result.success
+        assert "filesystem" in result.output
+        assert "NOT configured" in result.output
+
+    @pytest.mark.asyncio()
+    async def test_load_skill_without_deps_never_adds_banner(self, tmp_path: Path) -> None:
+        """A skill with no ``mcp_servers:`` is unaffected by the registry check."""
+        from cantrip.mcp.registry import MCPRegistry
+
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\ndescription: no deps",
+            body="# Pristine body.\n",
+        )
+        tool = LoadSkillTool(index, mcp_registry=MCPRegistry([]))
+        result = await tool.execute(skill_name="deployer")
+        assert result.success
+        assert result.output.strip() == "# Pristine body."
+
+    def test_export_round_trips_mcp_servers(self, tmp_path: Path) -> None:
+        """``cantrip skill export`` emits ``mcp_servers`` when present."""
+        from cantrip.agent.skill_export import export_skill
+
+        index = self._build_index(
+            tmp_path,
+            "name: deployer\ndescription: d\n"
+            "tools:\n  - juju_status\n"
+            "mcp_servers:\n  - filesystem\n  - github",
+        )
+        target = tmp_path / "out.md"
+        export_skill("deployer", target, index=index)
+
+        # Re-import via a fresh isolated index.
+        reload_dir = tmp_path / "reload"
+        reload_dir.mkdir()
+        (reload_dir / "deployer.md").write_text(target.read_text())
+        reload_index = SkillsIndex(reload_dir)
+        reload_index.discover()
+        [metadata] = reload_index.list_skills()
+        assert metadata.tools == ["juju_status"]
+        assert metadata.mcp_servers == ["filesystem", "github"]
+
+    def test_export_omits_mcp_servers_when_empty(self, tmp_path: Path) -> None:
+        """A skill without ``mcp_servers`` exports clean frontmatter."""
+        from cantrip.agent.skill_export import export_skill
+
+        index = self._build_index(tmp_path, "name: deployer\ndescription: d")
+        target = tmp_path / "out.md"
+        export_skill("deployer", target, index=index)
+        assert "mcp_servers:" not in target.read_text()
+
+
 class TestExportSkill:
     """Phase 50.2: export a discovered skill as a standard SKILL.md file."""
 

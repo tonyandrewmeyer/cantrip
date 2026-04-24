@@ -162,8 +162,13 @@ skill about testing&quot;).</li>
 <li><strong><code>tools</code></strong> (optional) &mdash; a list of tool names the skill
 expects to use. Accepts either a YAML list or Claude Code's
 comma-separated string (<code>tools: tool_a, tool_b</code>). Cantrip
-preserves this but does not enforce it yet &mdash; it becomes
-load-bearing when Phase 50.4 lands MCP-aware skills.</li>
+preserves this for cross-vendor round-tripping but does not
+enforce it.</li>
+<li><strong><code>mcp_servers</code></strong> (optional) &mdash; a list of MCP server names
+the skill depends on. Same shape as <code>tools</code> (YAML list or
+comma-separated string). Cantrip checks these names against
+the configured <a href="howto-mcp.html">MCP servers</a> at load time &mdash;
+see <a href="#mcp-deps">MCP dependencies</a> below.</li>
 </ul>
 <h2 id="example">Example: a reminder about your team's charm conventions</h2>
 <pre><code class="language-bash">mkdir -p ~/.config/cantrip/skills
@@ -188,6 +193,53 @@ EOF
 <code>index.format_for_prompt()</code> and the agent can
 <code>load_skill(&quot;team-conventions&quot;)</code> the next time it's
 relevant.</p>
+<h2 id="mcp-deps">MCP dependencies</h2>
+<p>A skill that relies on tools from an <a href="howto-mcp.html">MCP
+server</a> &mdash; <code>filesystem</code>, <code>github</code>, a custom
+server someone on your team set up &mdash; can declare that
+dependency in its frontmatter:</p>
+<pre><code class="language-markdown">---
+name: deploy-via-github
+description: Deploys the charm by opening a PR against the
+  operations repository.
+mcp_servers:
+  - github
+---
+
+# Deploy via GitHub
+
+Use `mcp__github__create_pr` to&hellip;
+</code></pre>
+<p>When the agent calls <code>load_skill(&quot;deploy-via-github&quot;)</code>,
+Cantrip looks at the current session's configured MCP servers
+(loaded from <code>~/.config/cantrip/mcp.yaml</code> and
+<code>cantrip.mcp.yaml</code> per <a href="howto-mcp.html">How to use MCP
+servers</a>) and, if any declared server is
+missing, prepends a warning banner to the returned content:</p>
+<pre><code>&gt; ⚠️  This skill declares MCP server dependencies that are NOT
+&gt;    configured in the current session: github.
+&gt;    The content below may reference tools from those servers
+&gt;    that won't be available.  Configure the servers via
+&gt;    `~/.config/cantrip/mcp.yaml` or `cantrip.mcp.yaml`, or
+&gt;    adapt the workflow to skip those steps.
+
+# Deploy via GitHub
+
+Use `mcp__github__create_pr` to&hellip;
+</code></pre>
+<p>The skill body still loads &mdash; silently hiding a skill because
+a declared MCP server is missing would be worse than a
+visible warning the agent can reason about. The skill index
+the agent reads on every turn (<code>&lt;available_skills&gt;&hellip;</code>) also
+lists the requirement:</p>
+<pre><code class="language-xml">&lt;skill&gt;
+  &lt;name&gt;deploy-via-github&lt;/name&gt;
+  &lt;description&gt;Deploys the charm by opening a PR&hellip;&lt;/description&gt;
+  &lt;required_mcp_servers&gt;github&lt;/required_mcp_servers&gt;
+&lt;/skill&gt;
+</code></pre>
+<p>so the agent can pick a different skill when the missing
+server would block it.</p>
 <h2 id="exporting">Exporting a skill</h2>
 <p><code>cantrip skill export NAME PATH</code> writes any discovered skill to a
 standalone SKILL.md file in the same vendor-neutral format Cantrip

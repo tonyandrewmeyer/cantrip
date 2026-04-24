@@ -1233,17 +1233,73 @@ COS integration specifically).
   ``gh skill install microsoft/skills/...`` invocation, and
   links through to the how-to.
 
-### 50.4 Low — MCP-aware skills
+### 50.4 Low — MCP-aware skills ✓
 
-- [ ] Skills can declare MCP server dependencies in their frontmatter; the
-  loader checks the MCP client (Phase 45) has those servers configured before
-  activating the skill
-- [ ] Missing dependencies degrade gracefully with a clear warning
+- [x] Skills can declare MCP server dependencies in their
+  frontmatter via a new ``mcp_servers:`` key.  Same coercion
+  rules as ``tools:`` (YAML list or comma-separated string);
+  ``SkillMetadata`` grew an ``mcp_servers: list[str]`` field and
+  ``_coerce_tools`` was generalised to ``_coerce_string_list``
+  shared between the two fields.  Parsing happens inside
+  ``_parse_frontmatter`` so every discovered skill surfaces the
+  requirement the same way regardless of layout (directory
+  vs single-file) or source (bundled vs external).
+- [x] Deviation from the roadmap wording: "the loader checks
+  the MCP client" is interpreted as *check at load time, not at
+  discovery*.  Gating at discovery would silently hide skills
+  the agent might still extract value from (the MCP warning is
+  advisory, not always fatal — a skill might degrade
+  gracefully).  Checking at ``load_skill`` and prepending a
+  visible warning banner is the better failure mode.
+- [x] ``LoadSkillTool`` accepts an optional
+  ``mcp_registry: MCPRegistry | None`` kwarg.  On each call it
+  reads the skill's ``mcp_servers`` list, compares against
+  ``registry.configured`` (Phase 45.2), and prepends a clear
+  banner to the returned body naming the unconfigured subset.
+  Happy-path loads (no deps, or every dep configured) pay no
+  formatting cost.  When ``mcp_registry`` is ``None`` (tests,
+  degraded sessions), every declared server is treated as
+  missing so the warning is conservative by default.  The
+  banner never fails the call — ``ToolResult.success`` stays
+  ``True`` so the agent keeps the skill content and can reason
+  about the warning.
+- [x] Prompt-level skill index (``format_for_prompt``) gained a
+  ``<required_mcp_servers>`` child element per skill that
+  declares deps, so the agent sees the requirement at index
+  time and can pick an alternative skill when missing
+  infrastructure would block it.  Skills without deps are
+  unaffected — the element only appears when needed.
+- [x] Wiring: ``build_tools()`` forwards ``mcp_registry`` into
+  ``LoadSkillTool``; ``CantripAgent._build_tools`` already
+  constructs the registry lazily (Phase 45.2), so the tool
+  picks up the same instance the ``MCPTool`` aggregation uses.
+- [x] Export round-trip: ``cantrip skill export`` emits
+  ``mcp_servers:`` in frontmatter when non-empty (and omits it
+  otherwise, matching the ``tools:`` behaviour from 50.2).  A
+  re-imported skill preserves the dependency list verbatim.
+- [x] 13 new tests cover the parse paths (YAML list,
+  comma-string, missing, malformed-type fallback), the prompt
+  rendering (declared → element emitted; none → omitted), the
+  ``LoadSkillTool`` warning paths (server missing → banner;
+  all configured → no banner; partial missing → banner lists
+  only the missing subset; no registry → conservative treat-
+  as-missing; no deps → banner suppressed even with an empty
+  registry), and the export round-trip (``mcp_servers``
+  preserved through export → fresh-index re-import; omitted
+  when the source has none).
+- [x] Documentation: ``docs/src/howto-skills.md`` gains an "MCP
+  dependencies" section describing the frontmatter key, a worked
+  example showing the banner the agent sees, and the mapping
+  into the prompt index, plus a pointer to Phase 45's how-to-
+  mcp page.  The skill-format section covers the new key
+  alongside ``tools``.
 
-**Exit criteria:** Users can drop a standard-format skill into
-`~/.config/cantrip/skills/` and have Cantrip use it; Cantrip skills round-trip
-through the standard format; MCP-aware skills work with the Phase 45 client.
-`make check` passes throughout.
+**Exit criteria met:** Users can drop a standard-format skill into
+`~/.config/cantrip/skills/` and have Cantrip use it (50.1); Cantrip skills
+round-trip through the standard format (50.2); `gh skill install` destinations
+are discovered at user scope and project scope (50.3); MCP-aware skills work
+with the Phase 45 client with a clear warning when declared servers are
+missing (50.4). `make check` passes.
 
 **Dependencies:**
 | Item | Depends On | Notes |

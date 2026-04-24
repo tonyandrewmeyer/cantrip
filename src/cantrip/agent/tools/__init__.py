@@ -287,7 +287,11 @@ def build_tools(
 
     # Tools with dependencies.
     if skills_index is not None:
-        tools.append(LoadSkillTool(skills_index))
+        # mcp_registry is forwarded so LoadSkillTool can warn when a
+        # skill declares MCP server deps that aren't configured
+        # (Phase 50.4).  ``None`` is fine — the tool treats every
+        # declared server as missing and surfaces that in the banner.
+        tools.append(LoadSkillTool(skills_index, mcp_registry=mcp_registry))
     if virtual_store is not None:
         tools.append(VirtualFileReadTool(virtual_store))
         tools.append(VirtualFileSearchTool(virtual_store))
