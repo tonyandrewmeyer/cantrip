@@ -98,6 +98,23 @@ class TestParseArgs:
         assert args.left == left
         assert args.right == right
 
+    def test_audit_list_subcommand(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_argv(monkeypatch, "audit", "list", "--action", "denied", "--tool", "read_file")
+        args = cantrip_main.parse_args()
+        assert args.command == "audit"
+        assert args.audit_command == "list"
+        assert args.action == "denied"
+        assert args.tool == "read_file"
+        assert args.task_id is None
+        assert args.audit_path is None
+
+    def test_audit_export_csv_subcommand(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_argv(monkeypatch, "audit", "export", "--format", "csv")
+        args = cantrip_main.parse_args()
+        assert args.command == "audit"
+        assert args.audit_command == "export"
+        assert args.format == "csv"
+
     def test_export_transcript_subcommand(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -589,6 +606,132 @@ class TestMain:
             rc = cantrip_main.main()
         assert rc == 3
         cmp_fn.assert_called_once_with(args)
+
+    def test_dispatches_audit(self, tmp_path: Path) -> None:
+        args = SimpleNamespace(command="audit", audit_command="list")
+        with (
+            mock.patch.object(cantrip_main, "parse_args", return_value=args),
+            mock.patch.object(cantrip_main, "_audit", return_value=5) as audit_fn,
+        ):
+            rc = cantrip_main.main()
+        assert rc == 5
+        audit_fn.assert_called_once_with(args)
+
+
+class TestAuditEntry:
+    """``_audit`` reads the JSONL file, filters, and formats."""
+
+    def _write_audit_file(self, path: Path) -> None:
+        from cantrip.agent.audit import AuditAction, AuditWriter, make_entry
+
+        writer = AuditWriter(path)
+        writer.write(
+            make_entry(
+                tool="juju_status",
+                action=AuditAction.ALLOWED,
+                policy_name="org-wide+category:build",
+                reason="",
+                arguments={"model": "dev"},
+                task_id="t1",
+            )
+        )
+        writer.write(
+            make_entry(
+                tool="juju_destroy_model",
+                action=AuditAction.DENIED,
+                policy_name="org-wide+category:infra",
+                reason="policy blocks",
+                arguments={"model": "dev"},
+                task_id="t2",
+            )
+        )
+
+    def test_list_returns_error_when_file_missing(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        args = SimpleNamespace(
+            audit_command="list",
+            audit_path=tmp_path / "missing.jsonl",
+            task_id=None,
+            action=None,
+            tool=None,
+        )
+        rc = cantrip_main._audit(args)
+        assert rc == 1
+        assert "not found" in capsys.readouterr().err.lower()
+
+    def test_list_emits_jsonl_per_line(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / ".cantrip-audit.jsonl"
+        self._write_audit_file(path)
+        args = SimpleNamespace(
+            audit_command="list",
+            audit_path=path,
+            task_id=None,
+            action=None,
+            tool=None,
+        )
+        rc = cantrip_main._audit(args)
+        assert rc == 0
+        out = capsys.readouterr().out.strip().splitlines()
+        assert len(out) == 2
+        parsed = [cantrip_main.json.loads(line) for line in out]
+        assert {row["tool"] for row in parsed} == {"juju_status", "juju_destroy_model"}
+
+    def test_list_filters_by_action(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / ".cantrip-audit.jsonl"
+        self._write_audit_file(path)
+        args = SimpleNamespace(
+            audit_command="list",
+            audit_path=path,
+            task_id=None,
+            action="denied",
+            tool=None,
+        )
+        rc = cantrip_main._audit(args)
+        assert rc == 0
+        lines = capsys.readouterr().out.strip().splitlines()
+        assert len(lines) == 1
+        assert "juju_destroy_model" in lines[0]
+
+    def test_list_filters_by_task_id(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / ".cantrip-audit.jsonl"
+        self._write_audit_file(path)
+        args = SimpleNamespace(
+            audit_command="list",
+            audit_path=path,
+            task_id="t1",
+            action=None,
+            tool=None,
+        )
+        rc = cantrip_main._audit(args)
+        assert rc == 0
+        lines = capsys.readouterr().out.strip().splitlines()
+        assert len(lines) == 1
+        assert "t1" in lines[0]
+
+    def test_export_csv(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        path = tmp_path / ".cantrip-audit.jsonl"
+        self._write_audit_file(path)
+        args = SimpleNamespace(
+            audit_command="export",
+            audit_path=path,
+            format="csv",
+        )
+        rc = cantrip_main._audit(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        # CSV header + two rows.
+        lines = out.strip().splitlines()
+        assert len(lines) == 3
+        assert lines[0].split(",")[0] == "timestamp"
+        assert "juju_status" in out
+        assert "juju_destroy_model" in out
 
 
 class TestCompareCharmsEntry:

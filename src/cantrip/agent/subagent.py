@@ -14,6 +14,7 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cantrip.agent.audit import AUDIT_FILENAME, AuditAction, AuditWriter, make_entry
 from cantrip.agent.durability import (
     KIND_LLM_RESPONSE,
     KIND_TOOL_RESULT,
@@ -838,6 +839,7 @@ class Subagent:
         on_phase_change: PhaseChangeCallback = None,
         hook_runner: HookRunner | None = None,
         on_tool_invoked: ToolInvokedCallback = None,
+        audit_writer: AuditWriter | None = None,
     ) -> None:
         self._context = context
         self._provider = _select_provider(
@@ -863,6 +865,50 @@ class Subagent:
         self._on_phase_change = on_phase_change
         self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
         self._on_tool_invoked = on_tool_invoked
+        # Phase 80.4: streaming JSONL audit trail for every policy
+        # decision.  Lazily created from ``context.charm_path`` when no
+        # writer was injected, so tests and one-off runs get the same
+        # audit shape as production callers.
+        self._audit_writer = audit_writer
+        if self._audit_writer is None and context.charm_path:
+            charm_dir = Path(context.charm_path)
+            if charm_dir.is_dir():
+                self._audit_writer = AuditWriter(charm_dir / AUDIT_FILENAME)
+
+    def _record_audit(
+        self,
+        *,
+        tool: str,
+        action: AuditAction,
+        reason: str,
+        arguments: dict[str, Any],
+    ) -> None:
+        """Append one audit line for a policy decision.
+
+        No-op when no writer is configured (e.g. a test that builds a
+        ``Subagent`` without a charm_path).  Errors are caught so a
+        failed audit write never aborts the tool-call loop — the
+        SQLite events table is the canonical record and JSONL is
+        additive (Phase 80.4 design).
+        """
+        if self._audit_writer is None:
+            return
+        charm_dir: Path | None = (
+            Path(self._context.charm_path) if self._context.charm_path else None
+        )
+        try:
+            entry = make_entry(
+                tool=tool,
+                action=action,
+                policy_name=self._policy.policy.name,
+                reason=reason,
+                arguments=arguments,
+                task_id=self._context.task.id,
+                charm_path=charm_dir,
+            )
+            self._audit_writer.write(entry)
+        except OSError:
+            log.warning("Failed to write audit entry for %r", tool, exc_info=True)
 
     def _set_phase(self, phase: str) -> None:
         """Update the task's transient subagent phase and notify listeners."""
@@ -1062,6 +1108,16 @@ class Subagent:
                 if verdict is not PolicyAction.ALLOW:
                     reason = self._policy.deny_reason(tc.name)
                     log.info("Subagent tool call %r denied by policy: %s", tc.name, reason)
+                    self._record_audit(
+                        tool=tc.name,
+                        action=(
+                            AuditAction.REVIEW_REQUESTED
+                            if verdict is PolicyAction.REVIEW
+                            else AuditAction.DENIED
+                        ),
+                        reason=reason,
+                        arguments=tc.arguments,
+                    )
                     policy_denials.append(reason)
                     call_vetoes.append(None)
                     call_arguments.append(tc.arguments)
@@ -1078,6 +1134,16 @@ class Subagent:
                 )
                 call_vetoes.append(first_veto(pre_results))
                 call_arguments.append(final_arguments(pre_results) or tc.arguments)
+                # Phase 80.4: record the ``allowed`` verdict once the
+                # policy gate passes.  Pre-hook vetoes are logged via
+                # the ``vetoed_by`` path in POST_TOOL_CALL instead —
+                # they aren't policy decisions per se.
+                self._record_audit(
+                    tool=tc.name,
+                    action=AuditAction.ALLOWED,
+                    reason="",
+                    arguments=call_arguments[-1],
+                )
 
             async def _tool_or_veto(
                 tc: llm.ToolCall,

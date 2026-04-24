@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -322,6 +323,49 @@ def parse_args() -> argparse.Namespace:
         help="Skip the interactive confirmation prompt",
     )
 
+    # ── audit (Phase 80.4) ────────────────────────────────────────────
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="Inspect the JSONL policy-decision audit trail written by the subagent",
+    )
+    audit_parser.add_argument(
+        "--path",
+        type=Path,
+        default=None,
+        dest="audit_path",
+        help=(
+            "Path to the audit file (default: ``<cwd>/.cantrip-audit.jsonl``). "
+            "Matches the file the subagent writes under ``context.charm_path``."
+        ),
+    )
+    audit_sub = audit_parser.add_subparsers(dest="audit_command", required=True)
+    audit_list = audit_sub.add_parser(
+        "list",
+        help="Print audit lines filtered by task, action, or tool.",
+    )
+    audit_list.add_argument("--task-id", default=None, help="Filter to a single task id.")
+    audit_list.add_argument(
+        "--action",
+        default=None,
+        choices=("allowed", "denied", "review-requested", "rate-limited"),
+        help="Filter to one action kind.",
+    )
+    audit_list.add_argument(
+        "--tool",
+        default=None,
+        help="Filter to a single tool name (exact match).",
+    )
+    audit_export = audit_sub.add_parser(
+        "export",
+        help="Re-emit the audit trail in a different format (jsonl passthrough or csv).",
+    )
+    audit_export.add_argument(
+        "--format",
+        default="jsonl",
+        choices=("jsonl", "csv"),
+        help="Output format (default: jsonl, which passes through unchanged).",
+    )
+
     # When the first positional argument is not a known subcommand, treat
     # the entire argv as arguments to the "run" sub-parser.  This lets
     # ``cantrip /path/to/charm`` and ``cantrip --no-tui`` work without
@@ -333,6 +377,7 @@ def parse_args() -> argparse.Namespace:
         "hooks",
         "skill",
         "checkpoints",
+        "audit",
     }
     argv = sys.argv[1:]
     if (
@@ -822,6 +867,68 @@ def _checkpoints_delete(
     return 0
 
 
+def _audit(args: argparse.Namespace) -> int:
+    """Phase 80.4: read and filter the JSONL audit trail.
+
+    The writer in ``cantrip.agent.subagent`` appends one line per
+    policy decision to ``<charm>/.cantrip-audit.jsonl``.  This
+    subcommand reads that file (from ``--path`` or the default
+    ``<cwd>/.cantrip-audit.jsonl``), applies the user's filter
+    chain, and prints the result — either as the raw JSONL (so the
+    output composes with ``grep`` / ``jq``) or as CSV for
+    spreadsheet import.
+    """
+    import csv
+
+    from cantrip.agent.audit import AUDIT_FILENAME, filter_entries, read_entries
+
+    path: Path = args.audit_path or Path.cwd() / AUDIT_FILENAME
+    if not path.is_file():
+        print(f"Audit file not found: {path}", file=sys.stderr)
+        return 1
+
+    entries = list(read_entries(path))
+    if args.audit_command == "list":
+        filtered = filter_entries(
+            entries,
+            task_id=args.task_id,
+            action=args.action,
+            tool=args.tool,
+        )
+        for entry in filtered:
+            print(entry.to_json())
+        return 0
+
+    if args.audit_command == "export":
+        if args.format == "jsonl":
+            for entry in entries:
+                print(entry.to_json())
+            return 0
+        # CSV: one row per entry, arguments JSON-encoded into the
+        # last column so the row stays rectangular even when
+        # different tools carry different argument shapes.
+        writer = csv.writer(sys.stdout)
+        writer.writerow(
+            ["timestamp", "task_id", "tool", "action", "policy_name", "reason", "arguments"]
+        )
+        for entry in entries:
+            writer.writerow(
+                [
+                    entry.timestamp,
+                    entry.task_id or "",
+                    entry.tool,
+                    entry.action.value,
+                    entry.policy_name,
+                    entry.reason,
+                    json.dumps(entry.arguments, sort_keys=True, ensure_ascii=False),
+                ]
+            )
+        return 0
+
+    print(f"Unknown audit subcommand: {args.audit_command}", file=sys.stderr)
+    return 2
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
@@ -842,6 +949,8 @@ def main() -> int:
         return 2
     if args.command == "checkpoints":
         return _checkpoints(args)
+    if args.command == "audit":
+        return _audit(args)
     return _run(args)
 
 

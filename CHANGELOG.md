@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **JSONL audit trail for policy decisions (Phase 80.4).**  Every
+  subagent tool call now lands as one JSON line in
+  ``<charm>/.cantrip-audit.jsonl`` with fields ``timestamp`` /
+  ``task_id`` / ``tool`` / ``action`` / ``policy_name`` /
+  ``reason`` / ``arguments``.  Actions cover ``allowed``,
+  ``denied``, ``review-requested`` (``rate-limited`` is reserved
+  for Phase 80.3).  String arguments are scrubbed through
+  ``memory_export.sanitise_body`` so GitHub / AWS / Slack tokens,
+  Bearer headers, and ``password=`` values never reach the audit
+  file.  Concurrent subagents share a thread-locked writer so JSON
+  lines stay atomic.  The file is additive to the SQLite ``events``
+  table — SQLite stays the canonical record and the JSONL is the
+  streaming, grep-friendly export that plays nicely with ``tail
+  -f`` and log aggregators.  New ``cantrip audit`` CLI subcommand
+  with ``list [--task-id X] [--action ACT] [--tool T]`` (filtered
+  JSONL output, composes with ``jq``) and ``export [--format
+  jsonl|csv]``.
+
 - **In-code destructive-command gate (Phase 80.5).**
   ``JujuDestroyModelTool`` and ``JujuRemoveApplicationTool`` now
   consult a new ``destructive_gate()`` helper **before** touching

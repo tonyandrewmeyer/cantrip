@@ -2561,23 +2561,41 @@ write-up already decided keep/defer/reject per primitive.
   granularity, all using the same blocked-reason string
   format so the TUI can render them uniformly.
 
-### 80.4 Medium — JSONL audit trail
+### 80.4 Medium — JSONL audit trail ✓
 
-- [ ] Append-only ``<charm>/.cantrip-audit.jsonl`` with one
-  line per policy decision (``allowed`` / ``denied`` /
-  ``review-requested`` / ``rate-limited``).  Fields:
-  ``timestamp`` / ``task_id`` / ``tool`` / ``action`` /
-  ``policy_name`` / ``reason`` / ``arguments`` (redacted via
-  the existing secret-scrubbing from Phase 50.2).
-- [ ] ``cantrip audit`` CLI subcommand with
-  ``list [--task-id X] [--action ACTION]`` and ``export
-  [--format jsonl|csv]``.  Lightweight — wraps the existing
-  SQLite event store path so there's one source of truth for
-  "what did the agent actually do."
-- [ ] The file is additive to the SQLite ``events`` table:
-  SQLite stays as the primary store; the JSONL is a
-  streaming, grep-friendly export that plays nicely with
-  ``tail -f`` and off-the-shelf log aggregators.
+- [x] ``src/cantrip/agent/audit.py`` ships the
+  ``AuditEntry`` dataclass (``timestamp`` / ``task_id`` /
+  ``tool`` / ``action`` / ``policy_name`` / ``reason`` /
+  ``arguments``), the ``AuditAction`` enum (``allowed`` /
+  ``denied`` / ``review-requested`` / ``rate-limited``), and
+  an ``AuditWriter`` that serialises one JSON line per call
+  under a thread-lock so concurrent subagents don't
+  interleave partial writes.  Argument scrubbing reuses
+  ``memory_export.sanitise_body`` — secrets stay in one
+  place.  The file lives at ``<charm>/.cantrip-audit.jsonl``.
+- [x] ``Subagent._record_audit`` fires on every policy
+  decision in the dispatcher: allowed, denied, and
+  review-requested (``rate-limited`` lands with Phase 80.3
+  but the action value is already in the enum).  A missing
+  charm_path produces no writer so tests / headless runs
+  don't leave stray files in ``$CWD``.  Write failures log
+  a warning rather than aborting the tool-call loop — the
+  SQLite events table is the canonical record and the JSONL
+  is additive (per the Phase 80.4 design).
+- [x] ``cantrip audit`` CLI subcommand ships with
+  ``list [--task-id X] [--action ACT] [--tool T]`` (prints
+  one JSONL line per match — composes with ``grep`` /
+  ``jq``) and ``export [--format jsonl|csv]`` (csv path
+  JSON-encodes the ``arguments`` dict into the last column
+  so the row stays rectangular even when different tools
+  carry different argument shapes).
+- [x] ``tests/unit/test_audit.py`` (20 tests), two
+  integration tests in ``test_policy_wiring.py``, and six
+  ``_audit`` CLI tests in ``test_main.py`` cover the
+  round-trip, secret scrubbing, thread safety (two 50-entry
+  bursts producing 100 non-interleaved lines), malformed-
+  line tolerance, filter chain, and the end-to-end
+  subagent → file → CLI path.
 
 ### 80.5 Medium — Juju-aware destructive-command gate ✓
 

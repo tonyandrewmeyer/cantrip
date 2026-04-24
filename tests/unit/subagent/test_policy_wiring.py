@@ -188,6 +188,82 @@ class TestExtraPolicies:
         assert enforcer.policy.max_calls_per_request == 10
 
 
+class TestAuditIntegration:
+    """Phase 80.4: subagent writes one JSONL audit line per decision."""
+
+    @pytest.mark.asyncio
+    async def test_allowed_and_denied_calls_both_land_in_audit_file(self, tmp_path: Path) -> None:
+        """A two-turn run with one allowed tool and one policy-denied tool
+        produces two audit lines with the right actions and policy name.
+        """
+        from cantrip.agent.audit import AUDIT_FILENAME, AuditAction, read_entries
+
+        read_tool = _make_tool("read_file")
+        task = AgentTask(id="t-audit", title="Audit test", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task, charm_path=str(tmp_path))
+
+        provider = FakeProvider(
+            responses=[
+                Response(
+                    content="",
+                    tool_calls=[
+                        ToolCall(id="tc1", name="read_file", arguments={"path": "f.py"}),
+                    ],
+                ),
+                Response(content="Done."),
+            ],
+        )
+        subagent = Subagent(ctx, tools=[read_tool], provider=provider)
+
+        # Swap the policy mid-way isn't necessary — the stock
+        # BUILD category policy allows read_file.  Force a denial
+        # by replacing the enforcer with one that blocks read_file
+        # and making the tool visible again.
+        subagent._policy = PolicyEnforcer(
+            policy=GovernancePolicy(
+                name="test-block",
+                blocked_tools=frozenset({"read_file"}),
+            )
+        )
+        subagent._tool_map["read_file"] = read_tool
+        subagent._tools = [read_tool]
+
+        await subagent.run()
+
+        audit_path = tmp_path / AUDIT_FILENAME
+        assert audit_path.is_file()
+        entries = list(read_entries(audit_path))
+        # Exactly one denial entry for read_file (LLM tried it once).
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry.tool == "read_file"
+        assert entry.action is AuditAction.DENIED
+        assert entry.task_id == "t-audit"
+        assert entry.policy_name == "test-block"
+        assert "blocked" in entry.reason.lower() or "policy" in entry.reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_audit_file_not_written_without_charm_path(self, tmp_path: Path) -> None:
+        """A subagent without a charm_path writes no audit file.
+
+        The JSONL is keyed off the charm directory; there's nowhere
+        meaningful to put the file without one.  Existing subagent
+        tests that don't set charm_path shouldn't start leaving stray
+        files in their cwd.
+        """
+        from cantrip.agent.audit import AUDIT_FILENAME
+
+        task = AgentTask(id="t", title="x", category=TaskCategory.BUILD)
+        ctx = _make_context(task=task)  # No charm_path.
+        provider = FakeProvider(responses=[Response(content="Nothing to do.")])
+        subagent = Subagent(ctx, tools=[], provider=provider)
+        assert subagent._audit_writer is None
+
+        await subagent.run()
+
+        assert not (tmp_path / AUDIT_FILENAME).exists()
+
+
 class TestCallTimeGate:
     """A policy DENY at call time short-circuits to a synthetic error result.
 
