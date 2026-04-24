@@ -51,7 +51,7 @@ Start the agent and build or improve a charm.
 ### Provider and model
 
 <dl>
-  <dt>--provider {gemini,claude,inference-snap,fireworks,openai-compatible}</dt>
+  <dt>--provider {gemini,claude,inference-snap,fireworks,openrouter,openai-compatible}</dt>
   <dd>
     LLM provider to use. Default: <code>gemini</code>.
     See <a href="howto-provider.html">Choose an LLM provider</a>
@@ -76,8 +76,9 @@ Start the agent and build or improve a charm.
     API base URL override. Required with
     <code>--provider openai-compatible</code> (e.g.
     <code>https://api.together.xyz/v1</code>). Optional for
-    <code>inference-snap</code> (overrides snap discovery) and
-    <code>fireworks</code> (for proxies or compatible hosts).
+    <code>inference-snap</code> (overrides snap discovery),
+    <code>fireworks</code>, and <code>openrouter</code> (for
+    proxies or compatible hosts).
   </dd>
 </dl>
 
@@ -90,7 +91,7 @@ Start the agent and build or improve a charm.
     Auto-detected if omitted.
   </dd>
 
-  <dt>--light-provider {gemini,claude,inference-snap,fireworks}</dt>
+  <dt>--light-provider {gemini,claude,inference-snap,fireworks,openrouter}</dt>
   <dd>
     Use a different provider for light tasks, enabling hybrid mode.
   </dd>
@@ -502,6 +503,7 @@ for configuration.
 | `GEMINI_API_KEY` | `--provider gemini` | Google Gemini API key |
 | `ANTHROPIC_API_KEY` | `--provider claude` | Anthropic API key |
 | `FIREWORKS_API_KEY` | `--provider fireworks` | Fireworks.ai API key |
+| `OPENROUTER_API_KEY` | `--provider openrouter` | OpenRouter.ai API key |
 | `OPENAI_COMPATIBLE_API_KEY` | `--provider openai-compatible` | Bearer token for the configured endpoint; set to any non-empty string when auth is not required. |
 | `CANTRIP_MEMORY_DIR` | optional | Override the global memory directory. Defaults to `$XDG_CONFIG_HOME/cantrip/memory` (falls back to `~/.config/cantrip/memory`). |
 | `CANTRIP_MEMORY_SOFT_EXPIRY_DAYS` | optional | Days untouched before a memory is archived by `memory_sweep`. Default `60`. Non-integer or non-positive values log a warning and fall back to the default. |

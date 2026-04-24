@@ -87,7 +87,7 @@ cantrip --help
 </dl>
 <h3>Provider and model</h3>
 <dl>
-  <dt>--provider {gemini,claude,inference-snap,fireworks,openai-compatible}</dt>
+  <dt>--provider {gemini,claude,inference-snap,fireworks,openrouter,openai-compatible}</dt>
   <dd>
     LLM provider to use. Default: <code>gemini</code>.
     See <a href="howto-provider.html">Choose an LLM provider</a>
@@ -109,8 +109,9 @@ cantrip --help
     API base URL override. Required with
     <code>--provider openai-compatible</code> (e.g.
     <code>https://api.together.xyz/v1</code>). Optional for
-    <code>inference-snap</code> (overrides snap discovery) and
-    <code>fireworks</code> (for proxies or compatible hosts).
+    <code>inference-snap</code> (overrides snap discovery),
+    <code>fireworks</code>, and <code>openrouter</code> (for
+    proxies or compatible hosts).
   </dd>
 </dl>
 <h3>Light model (cost routing)</h3>
@@ -120,7 +121,7 @@ cantrip --help
     Cheaper model for internal tasks (compaction, research summaries).
     Auto-detected if omitted.
   </dd>
-  <dt>--light-provider {gemini,claude,inference-snap,fireworks}</dt>
+  <dt>--light-provider {gemini,claude,inference-snap,fireworks,openrouter}</dt>
   <dd>
     Use a different provider for light tasks, enabling hybrid mode.
   </dd>
@@ -476,6 +477,11 @@ for configuration.</p>
 <td><code>FIREWORKS_API_KEY</code></td>
 <td><code>--provider fireworks</code></td>
 <td>Fireworks.ai API key</td>
+</tr>
+<tr>
+<td><code>OPENROUTER_API_KEY</code></td>
+<td><code>--provider openrouter</code></td>
+<td>OpenRouter.ai API key</td>
 </tr>
 <tr>
 <td><code>OPENAI_COMPATIBLE_API_KEY</code></td>

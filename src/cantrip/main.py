@@ -53,7 +53,14 @@ def parse_args() -> argparse.Namespace:
     run_parser = subparsers.add_parser("run", help="Run cantrip agent")
     run_parser.add_argument(
         "--provider",
-        choices=["gemini", "claude", "inference-snap", "fireworks", "openai-compatible"],
+        choices=[
+            "gemini",
+            "claude",
+            "inference-snap",
+            "fireworks",
+            "openrouter",
+            "openai-compatible",
+        ],
         default="gemini",
         help="LLM provider to use (default: gemini)",
     )
@@ -85,7 +92,7 @@ def parse_args() -> argparse.Namespace:
     )
     run_parser.add_argument(
         "--light-provider",
-        choices=["gemini", "claude", "inference-snap", "fireworks"],
+        choices=["gemini", "claude", "inference-snap", "fireworks", "openrouter"],
         help="Use a different provider for light tasks (enables hybrid mode)",
     )
     run_parser.add_argument(
@@ -408,6 +415,11 @@ def _run(args: argparse.Namespace) -> int:
         print("Error: FIREWORKS_API_KEY environment variable not set")
         print("Get a key from: https://fireworks.ai/account/api-keys")
         print("Set it with: export FIREWORKS_API_KEY='your-key-here'")
+        return 1
+    elif args.provider == "openrouter" and not os.environ.get("OPENROUTER_API_KEY"):
+        print("Error: OPENROUTER_API_KEY environment variable not set")
+        print("Get a key from: https://openrouter.ai/settings/keys")
+        print("Set it with: export OPENROUTER_API_KEY='your-key-here'")
         return 1
     elif args.provider == "openai-compatible":
         if not getattr(args, "base_url", None):

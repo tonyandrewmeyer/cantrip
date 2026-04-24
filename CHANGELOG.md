@@ -35,6 +35,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   flipping the flag on, so no other system messages change behaviour.
 
 ### Added
+- **OpenRouter.ai provider.**  New ``--provider openrouter`` choice
+  routes through OpenRouter's meta-API
+  (``https://openrouter.ai/api/v1``), letting Cantrip reach OpenAI
+  GPT, Anthropic Claude, Meta Llama, Mistral, Grok, DeepSeek and
+  several hundred other models behind one ``OPENROUTER_API_KEY``.
+  Default model ``openai/gpt-4o`` was chosen specifically because
+  it sits outside the coverage of Cantrip's existing native
+  providers — Anthropic/Google/Fireworks/inference-snap already
+  cover their own lineups directly, so the default should extend
+  rather than duplicate.  Cantrip probes OpenRouter's richer
+  ``/models`` schema at init (``context_length`` at top level,
+  ``architecture.input_modalities`` for vision, ``supported_
+  parameters`` for tool use) and sends ``HTTP-Referer`` +
+  ``X-Title`` headers so Cantrip appears on OpenRouter's public
+  model-ranking dashboards.  ``--light-provider openrouter``
+  works as a hybrid option.  New ``howto-provider.md`` section
+  lands between Fireworks and the generic escape hatch, with
+  guidance to prefer a dedicated provider when one exists — a
+  routing hop and a small markup sit on top of whatever upstream
+  serves the model.  Live smoke-tested against ``openai/gpt-4o``
+  for both ``complete()`` and ``stream()`` paths.
 - **Fireworks.ai and generic OpenAI-compatible providers.**  Two
   new ``--provider`` choices: ``fireworks`` (baked-in
   ``https://api.fireworks.ai/inference/v1`` base URL, reads

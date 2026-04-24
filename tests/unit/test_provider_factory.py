@@ -110,6 +110,36 @@ class TestCreateProvider:
         ):
             create_provider("fireworks")
 
+    @patch("cantrip.llm.openrouter.OpenRouterProvider._probe_capabilities")
+    def test_create_openrouter_default(self, _mock_probe):
+        """Default OpenRouter provider uses openai/gpt-4o."""
+        with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}):
+            provider = create_provider("openrouter")
+
+        from cantrip.llm.openrouter import DEFAULT_MODEL, OpenRouterProvider
+
+        assert isinstance(provider, OpenRouterProvider)
+        assert provider.model_name == DEFAULT_MODEL
+        assert provider.base_url == "https://openrouter.ai/api/v1"
+
+    @patch("cantrip.llm.openrouter.OpenRouterProvider._probe_capabilities")
+    def test_create_openrouter_custom_model(self, _mock_probe):
+        """``--model`` overrides the OpenRouter default."""
+        with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}):
+            provider = create_provider("openrouter", model="meta-llama/llama-3.3-70b-instruct")
+
+        assert provider.model_name == "meta-llama/llama-3.3-70b-instruct"
+
+    def test_create_openrouter_requires_api_key(self):
+        """Missing OPENROUTER_API_KEY surfaces an actionable ProviderError."""
+        from cantrip.llm.base import ProviderError
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            pytest.raises(ProviderError, match="OPENROUTER_API_KEY"),
+        ):
+            create_provider("openrouter")
+
     @patch("cantrip.llm.openai_compatible.OpenAICompatibleProvider._probe_context_window")
     def test_create_openai_compatible(self, _mock_probe):
         """openai-compatible requires base_url + model and picks them up."""

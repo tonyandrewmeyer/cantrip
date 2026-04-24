@@ -1,8 +1,8 @@
 ---
 title: "How to choose an LLM provider — Cantrip"
-description: "Select the right LLM provider for Cantrip: inference snaps, Gemini, Claude, Fireworks.ai, or any OpenAI-compatible endpoint."
+description: "Select the right LLM provider for Cantrip: inference snaps, Gemini, Claude, Fireworks.ai, OpenRouter, or any OpenAI-compatible endpoint."
 h1: "Choose an LLM provider"
-subtitle: "Cantrip supports five LLM providers. This guide helps you pick the right one for your situation."
+subtitle: "Cantrip supports six LLM providers. This guide helps you pick the right one for your situation."
 section: howto
 breadcrumb_label: "Choose an LLM provider"
 see_also:
@@ -21,6 +21,7 @@ see_also:
 | **Gemini** (default) | Yes (`GEMINI_API_KEY`) | General use, generous free tier | Free tier available |
 | **Claude** | Yes (`ANTHROPIC_API_KEY`) | Best output quality, complex charms | Paid |
 | **Fireworks.ai** | Yes (`FIREWORKS_API_KEY`) | Open-weights models (Kimi, GLM, DeepSeek) with tool use | Paid |
+| **OpenRouter** | Yes (`OPENROUTER_API_KEY`) | Meta-gateway to GPT, Claude, Llama, Grok, Mistral, … through one key | Paid |
 | **OpenAI-compatible** | Yes (`OPENAI_COMPATIBLE_API_KEY`) | Any other OpenAI-compatible endpoint (Together, Groq, vLLM, …) | Depends |
 
 {#inference-snap}
@@ -107,6 +108,50 @@ capability flags (tool use, vision) from the Fireworks
   </p>
 </div>
 
+{#openrouter}
+## Use OpenRouter
+
+OpenRouter is a meta-gateway to hundreds of models — OpenAI GPT,
+Anthropic Claude, Meta Llama, Mistral, Grok, DeepSeek — behind a
+single OpenAI-compatible API and a single key. Useful when you
+want a model Cantrip doesn't ship a dedicated provider for, or
+when you want to A/B the same prompt across vendors.
+
+Get a key from your [OpenRouter
+keys page](https://openrouter.ai/settings/keys), then:
+
+<pre><code><span class="prompt">$</span> export OPENROUTER_API_KEY="your-key-here"
+<span class="prompt">$</span> cantrip --provider openrouter</code></pre>
+
+The default model is `openai/gpt-4o` —
+a long-lived choice that sits outside the coverage of Cantrip's
+other providers. Override with any OpenRouter slug:
+
+<pre><code><span class="prompt">$</span> cantrip --provider openrouter \
+    --model meta-llama/llama-3.3-70b-instruct
+
+<span class="prompt">$</span> cantrip --provider openrouter \
+    --model x-ai/grok-4-fast</code></pre>
+
+Cantrip auto-detects the selected model's context window, tool
+support, and vision support from the OpenRouter
+`/models` catalogue at startup, and sends
+`HTTP-Referer` and `X-Title`
+headers so Cantrip usage shows up on OpenRouter's public
+ranking dashboards.
+
+<div class="callout-note callout">
+  <p>
+    Prefer a dedicated provider when one exists — OpenRouter
+    adds a routing hop (and a small markup) on top of the
+    upstream vendor. Use <code>claude</code> for Anthropic,
+    <code>gemini</code> for Google, and <code>fireworks</code>
+    for open-weights models that Fireworks hosts directly.
+    OpenRouter is the right call when the model you want is not
+    on any of those.
+  </p>
+</div>
+
 {#openai-compatible}
 ## Use any OpenAI-compatible endpoint
 
@@ -146,6 +191,7 @@ summarisation and log queries:
     --light-provider inference-snap --light-snap nemotron-3-nano</code></pre>
 
 `--light-provider` accepts `gemini`,
-`claude`, `inference-snap`, or `fireworks`.
+`claude`, `inference-snap`, `fireworks`, or
+`openrouter`.
 See [Configure light models](howto-light-models.html) for full
 details on cost routing.

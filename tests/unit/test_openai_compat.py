@@ -213,6 +213,78 @@ class TestFireworksProbe:
         assert provider.context_window_tokens == _FALLBACK_CONTEXT_WINDOW
 
 
+class TestOpenRouterProbe:
+    """OpenRouterProvider reads OpenRouter's nested ``/models`` schema."""
+
+    def test_populates_flags_from_architecture_and_supported_parameters(self):
+        from cantrip.llm.openrouter import OpenRouterProvider
+
+        payload = {
+            "data": [
+                {
+                    "id": "openai/gpt-4o",
+                    "context_length": 128000,
+                    "architecture": {
+                        "input_modalities": ["text", "image", "file"],
+                    },
+                    "supported_parameters": [
+                        "temperature",
+                        "tools",
+                        "tool_choice",
+                    ],
+                }
+            ]
+        }
+
+        with (
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}),
+            patch("cantrip.llm.openrouter.httpx.Client") as mock_client_cls,
+        ):
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = payload
+            mock_resp.raise_for_status.return_value = None
+            mock_client = MagicMock()
+            mock_client.get.return_value = mock_resp
+            mock_client_cls.return_value.__enter__.return_value = mock_client
+
+            provider = OpenRouterProvider()
+
+        assert provider.context_window_tokens == 128_000
+        assert provider.supports_vision is True
+        assert provider._supports_tools is True
+
+    def test_missing_tools_in_supported_parameters_disables_tools(self):
+        """When /models lists supported_parameters without 'tools', the provider flips off."""
+        from cantrip.llm.openrouter import OpenRouterProvider
+
+        payload = {
+            "data": [
+                {
+                    "id": "openai/gpt-4o",
+                    "context_length": 128000,
+                    "architecture": {"input_modalities": ["text"]},
+                    "supported_parameters": ["temperature", "top_p"],
+                }
+            ]
+        }
+
+        with (
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}),
+            patch("cantrip.llm.openrouter.httpx.Client") as mock_client_cls,
+        ):
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = payload
+            mock_resp.raise_for_status.return_value = None
+            mock_client = MagicMock()
+            mock_client.get.return_value = mock_resp
+            mock_client_cls.return_value.__enter__.return_value = mock_client
+
+            provider = OpenRouterProvider()
+
+        assert provider._supports_tools is False
+        assert provider.supports_vision is False
+
+
 class TestOpenAICompatibleConstruction:
     """OpenAICompatibleProvider enforces its required arguments."""
 

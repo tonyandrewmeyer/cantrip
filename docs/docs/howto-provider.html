@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to choose an LLM provider &mdash; Cantrip</title>
-<meta name="description" content="Select the right LLM provider for Cantrip: inference snaps, Gemini, Claude, Fireworks.ai, or any OpenAI-compatible endpoint.">
+<meta name="description" content="Select the right LLM provider for Cantrip: inference snaps, Gemini, Claude, Fireworks.ai, OpenRouter, or any OpenAI-compatible endpoint.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
@@ -61,7 +61,7 @@
 
     <h1>Choose an LLM provider</h1>
     <p class="subtitle">
-      Cantrip supports five LLM providers. This guide helps you pick the right one for your situation.
+      Cantrip supports six LLM providers. This guide helps you pick the right one for your situation.
     </p>
 
 <h2 id="overview">Provider comparison</h2>
@@ -97,6 +97,12 @@
 <td><strong>Fireworks.ai</strong></td>
 <td>Yes (<code>FIREWORKS_API_KEY</code>)</td>
 <td>Open-weights models (Kimi, GLM, DeepSeek) with tool use</td>
+<td>Paid</td>
+</tr>
+<tr>
+<td><strong>OpenRouter</strong></td>
+<td>Yes (<code>OPENROUTER_API_KEY</code>)</td>
+<td>Meta-gateway to GPT, Claude, Llama, Grok, Mistral, &hellip; through one key</td>
 <td>Paid</td>
 </tr>
 <tr>
@@ -165,6 +171,41 @@ capability flags (tool use, vision) from the Fireworks
     generous <code>max_tokens</code> when testing short prompts.
   </p>
 </div>
+<h2 id="openrouter">Use OpenRouter</h2>
+<p>OpenRouter is a meta-gateway to hundreds of models &mdash; OpenAI GPT,
+Anthropic Claude, Meta Llama, Mistral, Grok, DeepSeek &mdash; behind a
+single OpenAI-compatible API and a single key. Useful when you
+want a model Cantrip doesn't ship a dedicated provider for, or
+when you want to A/B the same prompt across vendors.</p>
+<p>Get a key from your <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">OpenRouter
+keys page</a>, then:</p>
+<pre><code><span class="prompt">$</span> export OPENROUTER_API_KEY="your-key-here"
+<span class="prompt">$</span> cantrip --provider openrouter</code></pre>
+<p>The default model is <code>openai/gpt-4o</code> &mdash;
+a long-lived choice that sits outside the coverage of Cantrip's
+other providers. Override with any OpenRouter slug:</p>
+<pre><code><span class="prompt">$</span> cantrip --provider openrouter \
+    --model meta-llama/llama-3.3-70b-instruct
+
+<span class="prompt">$</span> cantrip --provider openrouter \
+    --model x-ai/grok-4-fast</code></pre>
+<p>Cantrip auto-detects the selected model's context window, tool
+support, and vision support from the OpenRouter
+<code>/models</code> catalogue at startup, and sends
+<code>HTTP-Referer</code> and <code>X-Title</code>
+headers so Cantrip usage shows up on OpenRouter's public
+ranking dashboards.</p>
+<div class="callout-note callout">
+  <p>
+    Prefer a dedicated provider when one exists &mdash; OpenRouter
+    adds a routing hop (and a small markup) on top of the
+    upstream vendor. Use <code>claude</code> for Anthropic,
+    <code>gemini</code> for Google, and <code>fireworks</code>
+    for open-weights models that Fireworks hosts directly.
+    OpenRouter is the right call when the model you want is not
+    on any of those.
+  </p>
+</div>
 <h2 id="openai-compatible">Use any OpenAI-compatible endpoint</h2>
 <p>For any backend that speaks the OpenAI chat-completions wire format &mdash;
 Together, Groq, DeepInfra, LiteLLM proxies, self-hosted vLLM &mdash; use
@@ -194,7 +235,8 @@ summarisation and log queries:</p>
 <pre><code><span class="prompt">$</span> cantrip --provider claude \
     --light-provider inference-snap --light-snap nemotron-3-nano</code></pre>
 <p><code>--light-provider</code> accepts <code>gemini</code>,
-<code>claude</code>, <code>inference-snap</code>, or <code>fireworks</code>.
+<code>claude</code>, <code>inference-snap</code>, <code>fireworks</code>, or
+<code>openrouter</code>.
 See <a href="howto-light-models.html">Configure light models</a> for full
 details on cost routing.</p>
   </main>
