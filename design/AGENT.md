@@ -166,6 +166,94 @@ When context changes mid-execution:
 - **Watcher event** ("hook failed in redis-k8s/0") → planner inserts diagnostic task
 - **Task failure** → planner may insert a retry or alternative task
 
+### Design proposal as pre-build spec (Phase 55.8)
+
+Cantrip already emits an implementation-agnostic design proposal
+before every non-sprint build.  `DesignProposal` (in
+`agent/design.py`) is parsed from the research subagent's output,
+carries structured fields (`substrate`, `charm_path`,
+`integrations`, `companions`, `config_options`, `actions`,
+`scaling_strategy`, `operational_patterns`,
+`questions_for_user`, `security_surface`, `sources`,
+`raw_design_md`), and is threaded into downstream BUILD /
+DEPLOY / TEST subagents via `SubagentContext.design_content`.
+The user confirms it via the CONFIRM task; once confirmed the
+raw markdown becomes part of the build subagent's system prompt
+under `## Approved design`.
+
+The awesome-copilot
+[`create-github-action-workflow-specification`][copilot-spec]
+skill template proposes a heavyweight spec shape: mermaid flow
+diagrams, Functional/Security/Performance requirements
+matrices with REQ-001-style IDs, input/output contracts,
+execution constraints, error-handling strategy, quality gates,
+monitoring & observability, compliance & governance, edge-case
+matrices, validation criteria, change management, version
+history.  It's the right shape for *reverse-engineering an
+existing CI/CD workflow into an AI-readable spec* — not for
+confirming a proposed charm design before it exists.
+
+### Verdict — reject the template, lift two shape upgrades
+
+The roadmap's 55.8 question — *would making a heavier spec a
+required pre-build artefact improve user-confirmation?* — gets
+a clear "no" once you lay the two shapes side by side.
+
+- Cantrip's design proposal is a *proposal*, not a
+  reverse-engineering deliverable.  Requirements matrices and
+  compliance sections with per-item IDs are audit artefacts;
+  they'd turn the confirmation step into form-filling and burn
+  tokens on structure the downstream build tasks don't need.
+- Version history / change management live in git + SQLite
+  already.  Duplicating them in the proposal duplicates the
+  source of truth.
+- Error-handling / quality-gate / monitoring sections are
+  genuinely covered elsewhere — `operational-readiness`,
+  `find-bugs`, and `security-review` skills carry the
+  substance; they're loaded when needed.  Forcing them into the
+  proposal front-loads work that belongs later in the loop.
+
+Two specific bits of the awesome-copilot shape are worth
+lifting without buying the whole thing.  Both are small
+`design.py::DesignProposal.format_for_chat()` edits:
+
+1. **Mermaid diagram of relation integrations.**
+   Generated deterministically from `integrations` and
+   `companions`:
+
+   ```mermaid
+   graph LR
+     charm["redis-operator"]
+     charm --> grafana-agent
+     charm --> postgresql
+     charm --> loki-push-api
+   ```
+
+   Markdown renderers that support mermaid (GitHub, mkdocs,
+   some TUI/Web surfaces) get a graph view; others degrade to
+   readable text.  Costs nothing when the list is already
+   computed.
+
+2. **Table format for config options and actions.**  Today
+   those lists render as bullet points (`- name: description`).
+   A two-or-three-column table (`| name | type | purpose |`)
+   packs more signal into the same width and matches how
+   charm authors document the same fields in `config.yaml` /
+   `actions.yaml`.
+
+Both are drive-by improvements that pair cleanly with any
+future touch on `design.py`; neither is scoped to a roadmap
+phase yet — file them as follow-ups when revisiting the
+design-confirmation flow.
+
+The primary decision — no, don't require a heavier spec as a
+pre-build artefact — stands: Cantrip's existing
+`DesignProposal` already covers the ground that matters for a
+charm, and the confirmation flow already threads it into
+downstream subagents.
+
+[copilot-spec]: https://github.com/github/awesome-copilot/blob/main/skills/create-github-action-workflow-specification/SKILL.md
+
 ## Background Executor
 
 The `BackgroundExecutor` (in `agent/executor.py`) is an asyncio task that runs

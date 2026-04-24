@@ -127,6 +127,46 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Charm-design spec shape investigation — Phase 55.8.**  Read
+  awesome-copilot's
+  ``create-github-action-workflow-specification`` template (276
+  lines — mermaid flow diagrams, requirements matrices with
+  REQ-IDs, compliance sections, version history) and compared
+  against Cantrip's existing ``DesignProposal`` surface in
+  ``agent/design.py``.
+
+  **Verdict: reject the template, lift two shape upgrades.**  The
+  awesome-copilot shape is for *reverse-engineering existing
+  workflows*; Cantrip's design proposal is a *proposal for a
+  charm that doesn't exist yet*.  Requirements matrices +
+  compliance + version history don't fit the confirmation-step
+  use-case — they'd turn it into form-filling and duplicate
+  source-of-truth artefacts that already live in git, SQLite,
+  and the ``operational-readiness`` skill.  The existing
+  ``DesignProposal`` (structured fields for substrate, charm
+  path, integrations, companions, config, actions, scaling,
+  operational patterns, security surface, sources) already
+  covers the ground that matters for a charm, and the
+  confirmation flow already threads the raw markdown into
+  downstream build subagents.
+
+  Two bits worth lifting as drive-by improvements to
+  ``design.py::DesignProposal.format_for_chat()``:
+
+  1. **Mermaid diagram of relation integrations** generated
+     deterministically from the ``integrations`` +
+     ``companions`` lists.  GitHub / mkdocs render it; other
+     surfaces see readable text.
+  2. **Table format for config options and actions** — a
+     ``| name | type | purpose |`` table instead of bullet
+     lists; matches how charm authors write
+     ``config.yaml`` / ``actions.yaml`` themselves.
+
+  Neither is scoped to a phase yet; file when revisiting the
+  design-confirmation flow.  Full write-up in
+  ``design/AGENT.md`` § *Design proposal as pre-build spec
+  (Phase 55.8)*.  No code changes — investigation only.
+
 - **Deterministic pre-scan stub — Phase 55.7.**  Read the
   upstream ``awesome-copilot`` ``scan.py`` (712 lines, MIT) and
   compared against Cantrip's ``AnalyseFrameworkTool``: upstream

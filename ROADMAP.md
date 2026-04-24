@@ -2261,26 +2261,50 @@ possibly with a small prototype, not a delivered refactor.
   real Path B (custom app) user demonstrates the round-trip
   cost.
 
-### 55.8 Low — Charm-design spec template
+### 55.8 Low — Charm-design spec template ✓
 
-- [ ] Read `../awesome-copilot/skills/create-github-action-workflow-specification/SKILL.md`
-  for its output shape: mermaid diagrams, job-dependency tables,
-  trigger matrices, implementation-agnostic prose with strict
-  frontmatter
-- [ ] Cantrip does not reverse-engineer workflows, so skip the skill
-  itself.  Evaluate whether Cantrip's planner should emit a *charm-
-  design spec* in a similar shape before Path B or Path C builds:
-  mermaid diagram of relation integrations, config-option table,
-  container/resource table, actions list, implementation-agnostic
-  description.  Today that design lives half in chat messages and
-  half in the task description
-- [ ] Prototype one spec by hand for an existing generated charm and
-  decide whether making it a required pre-build artefact would improve
-  the user-confirmation step or add friction
-- [ ] Output: either a template committed to
-  `src/cantrip/agent/prompts/design/charm_spec.md.j2` wired into the
-  planner, or a rejection note explaining why chat-based design
-  confirmation is already sufficient
+- [x] Read
+  ``awesome-copilot/skills/create-github-action-workflow-specification/SKILL.md``
+  (276 lines): mermaid flow diagrams, Functional/Security/
+  Performance requirements matrices with REQ-001-style IDs,
+  input/output contracts, execution constraints, error-handling
+  strategy, quality gates, monitoring/observability,
+  compliance/governance, edge-case matrices, validation
+  criteria, change management, version history.
+- [x] Audited Cantrip's existing design surface: ``DesignProposal``
+  in ``agent/design.py`` already carries structured fields
+  (``substrate``, ``charm_path``, ``integrations``,
+  ``companions``, ``config_options``, ``actions``,
+  ``scaling_strategy``, ``operational_patterns``,
+  ``questions_for_user``, ``security_surface``, ``sources``,
+  ``raw_design_md``).  ``format_for_chat()`` renders it for
+  user confirmation; ``to_design_md()`` threads the raw markdown
+  into downstream subagents via ``SubagentContext.design_content``
+  + the ``## Approved design`` block in the build subagent's
+  system prompt.  The confirmation flow is fully implemented.
+- [x] **Verdict: reject the template, lift two shape upgrades.**
+  The awesome-copilot shape is for *reverse-engineering an
+  existing CI/CD workflow* — requirements matrices + compliance
+  sections + version history don't fit a *proposal* for a charm
+  that doesn't exist yet.  Forcing that shape would turn the
+  confirmation step into form-filling and duplicate source-of-
+  truth artefacts (git, SQLite, ops-readiness skill).
+- [x] Two bits worth lifting as drive-by improvements to
+  ``design.py::DesignProposal.format_for_chat()``:
+  - **Mermaid diagram of relation integrations** generated
+    deterministically from ``integrations`` + ``companions``.
+    Rendered by GitHub / mkdocs / future TUI work; degrades to
+    readable text elsewhere.
+  - **Table format for config options and actions** (currently
+    bullet lists; a ``| name | type | purpose |`` table matches
+    how charm authors document the same fields in
+    ``config.yaml`` / ``actions.yaml``).
+  Both are ``format_for_chat`` edits — neither scoped to a
+  phase yet; file when revisiting the design-confirmation
+  flow.
+- [x] Full write-up in ``design/AGENT.md`` § *Design proposal as
+  pre-build spec (Phase 55.8)*.  No code changes —
+  investigation only.
 
 ### What this phase is *not*
 
