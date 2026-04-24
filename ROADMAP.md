@@ -4545,6 +4545,236 @@ shared helper dropped.
 
 ---
 
+## Phase 78: Provider Observability Hardening — April 23 Postmortem Lessons
+
+**Goal:** Close the class of bug described in Anthropic's
+`April 23 Claude Code postmortem
+<https://www.anthropic.com/engineering/april-23-postmortem>`_:
+a state-management flag that quietly cascaded across turns and
+took a week to diagnose because cache-miss symptoms weren't
+connected to the root cause.  Cantrip doesn't have the same bug,
+but it has adjacent exposure surfaces — each addressed below.
+
+### 78.1 Cache anomaly alerting
+
+Today cache metrics are extracted from Anthropic responses
+(``src/cantrip/llm/claude.py:274-277``) and surfaced passively
+in the TUI model bar (``modelbar.py:100-104``), the ``/info``
+slash command (``slash_commands.py:393-396``), and the CLI
+end-of-session summary (``cli.py:580-583``).  **There is no
+logging or alert when cache behaviour turns pathological** —
+if ``cache_creation_tokens`` started rising turn-after-turn (the
+exact April 23 symptom) a user would only notice by actively
+watching the model bar.
+
+- [ ] Add a rolling-window detector in ``cantrip.agent.core``
+  that watches per-turn cache-creation deltas.  Fire a WARNING
+  log + a UI event when the ratio of creation-to-read flips
+  unexpectedly (three consecutive turns of cache creation on a
+  session that had previously been cache-reading is the
+  trigger we care about).
+- [ ] Surface the warning as a system message in the TUI / Web
+  chat, not just the debug log — the whole point of the April
+  23 lesson is that passive metrics aren't enough.
+- [ ] Unit test the detector with a synthetic sequence of
+  usage dicts that replicates the April 23 cascade.
+
+### 78.2 Web UI cache parity
+
+The TUI's ``ModelInfoBar`` shows ``cache: X% hit`` when
+``cache_total > 0``.  A ``grep`` of ``src/cantrip/web/``
+returns zero results for cache metrics — Web users see no
+cache information at all.
+
+- [ ] Add a ``CACHE_METRICS_UPDATED`` event to the shared UI
+  event bus; the TUI modelbar and a new Web element both
+  subscribe.
+- [ ] Web status pane gains a cache-hit indicator matching the
+  TUI's wording so Web and TUI stay feature-equivalent
+  (ongoing commitment from Phase 60 and design/UI.md).
+
+### 78.3 Compaction corner-case tests + resume state
+
+Cantrip's compaction architecture is safer than Anthropic's
+bug shape — it's a stateless threshold check
+(``context.py:385-412``) with latched flags that *stop*
+compaction rather than trigger it — but specific hazards
+remain:
+
+- ``_cycle_detected`` and ``_budget_exhausted`` reset to
+  ``False`` on session resume (``context.py:173-176``,
+  ``core.py:2487-2491``); numeric counters survive but the
+  boolean "stop" signals don't.
+- No test asserts the one-shot semantic ("after compaction
+  fires, ``should_compact()`` returns False on the very next
+  turn").  The guarantee is implicit in the counter logic.
+
+Work:
+
+- [ ] Add a unit test to ``tests/unit/test_context.py`` that
+  walks the exact turn sequence: 1) load context to 80%, 2)
+  trigger compaction, 3) assert ``should_compact()`` returns
+  False immediately after, before the compacted context has
+  room to refill.
+- [ ] Persist ``_cycle_detected`` / ``_budget_exhausted``
+  across session resume (extend the SQLite store at
+  ``store.py:482-511`` to include the boolean flags alongside
+  the existing counters).
+- [ ] Add a ``COMPACTION_STARTED`` / ``COMPACTION_COMPLETED``
+  pair to the UI event bus so the chat pane can show a
+  visible indicator while compaction runs — today users see a
+  multi-second pause with no explanation.  Complements the
+  existing ``pre_compact`` / ``post_compact`` hooks
+  (``src/cantrip/hooks.py``) which fire but don't reach the
+  UI.
+
+### 78.4 ``thinking_budget`` regression guard
+
+Claude (``claude.py:228-251``) and Gemini
+(``gemini.py:80-108``) forward ``thinking_budget`` correctly to
+their respective SDKs.  All four OpenAI-compatible providers
+(inference-snap, fireworks, openrouter, openai-compatible)
+silently no-op via the shared base's
+``# noqa: ARG002 — interface conformity`` marker.  **No test
+asserts the ``thinking`` block actually reaches the outgoing
+request** — a regression that dropped the field would not fail
+any suite.
+
+- [ ] Add ``tests/unit/test_claude.py`` cases that patch
+  ``client.messages.create`` / ``client.messages.stream`` and
+  assert the kwargs contain
+  ``thinking={"type": "enabled", "budget_tokens": <N>}`` when
+  a non-None budget is passed, and that the field is absent
+  otherwise.
+- [ ] Equivalent test for ``test_gemini.py`` asserting
+  ``ThinkingConfig(thinking_budget=<N>)`` lands in the
+  ``config=`` kwarg of the Google SDK call.
+- [ ] Decide whether the four no-op providers should log a
+  one-time debug message ("thinking_budget ignored —
+  endpoint doesn't expose extended thinking") the first time
+  they see a non-None budget, so the drop is visible rather
+  than silent.
+
+### 78.5 Exit criteria
+
+- Cache cascade detector ships with unit test coverage.
+- Web UI shows cache-hit metrics at parity with the TUI.
+- Compaction one-shot semantic has an explicit test.
+- Compaction boolean stop-flags survive session resume.
+- ``thinking`` payload is asserted on the wire for Claude
+  and Gemini.
+- ``make check`` green.  No behaviour change for users who
+  weren't hitting any of these bugs.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| 78.1 | None | Additive detector in the existing per-turn usage path |
+| 78.2 | Phase 60 (accessible Web UI) | Web updates should land against the WCAG-cleaned surface, not pre-cleanup |
+| 78.3 | None | Tests + a small store migration |
+| 78.4 | None | Pure test additions; optional debug log |
+
+**Discovered:** Reviewing Anthropic's April 23 Claude Code
+postmortem (2026-04-24).  Four parallel code audits confirmed
+the gaps listed above against the current ``main`` branch.
+
+---
+
+## Phase 79: Per-Provider Eval Gate for System-Prompt Changes
+
+**Goal:** Replace today's static gold-standard scoring with an
+eval harness that actually exercises each supported LLM
+provider, so that system-prompt changes are gated on
+behavioural regression across the provider matrix.  Anthropic's
+April 23 postmortem attributes a 3% quality drop to a prompt
+tweak ("Keep text between tool calls to ≤25 words.") that their
+narrow initial eval missed — their remediation is to run
+*per-model* evals on every prompt change.  Cantrip's eval suite
+has the same gap, only wider.
+
+### 79.1 Current state audit (already done)
+
+The eval runner at ``tests/eval/runner.py`` scores hand-written
+charm directories against YAML rubrics (``spec.yaml``).  It
+does **not** call any LLM.  The ``--provider`` flag is
+descriptive metadata only — no dispatch.  Only one gold dir
+exists (``tests/eval/charms/ntfy/gold-claude``).  ``make eval``
+runs ``pytest tests/eval -v``; the suite is **not** in CI
+(``.github/workflows/ci.yaml:81-86`` only runs
+``tests/unit`` + ``tests/integration``).  The unit tests at
+``tests/unit/test_system_prompt.py`` cover Jinja2 template
+rendering and character-count thresholds — adding "Keep
+responses under 100 words" to ``src/cantrip/agent/prompts/
+system.py`` would pass every existing test.
+
+### 79.2 Add an LLM-in-loop prompt smoke test
+
+Not a full charm generation — a lightweight per-provider
+sanity check that can run on every prompt change.
+
+- [ ] New ``tests/eval/test_system_prompt_smoke.py`` that
+  renders the shipped ``system.py``, sends it as the system
+  role with a fixed test prompt to each configured provider,
+  and asserts basic shape invariants on the response
+  (contains a tool call under expected names, respects
+  non-trivial markdown fences, etc.).
+- [ ] Matrix across Claude + Gemini + at least one
+  open-weights model (Fireworks/Kimi or OpenRouter/Llama).
+- [ ] Skippable when per-provider API keys aren't present in
+  the environment so ``make check`` stays green locally
+  without any keys.
+
+### 79.3 Gate in CI against a cheap model
+
+- [ ] New CI job that runs the 79.2 smoke test on every PR
+  that touches ``src/cantrip/agent/prompts/`` or
+  ``src/cantrip/agent/planner/templates/``.  Scoped to a
+  cheap model (Gemini Flash or OpenRouter
+  ``openai/gpt-4o-mini``) to keep CI cost bounded.
+- [ ] Fails fast on 4xx from the LLM so a broken prompt
+  template surfaces as a red check within a minute.
+
+### 79.4 Per-provider full-eval run (nice-to-have)
+
+- [ ] Extend ``tests/eval/runner.py`` so ``score --provider
+  X`` actually uses provider ``X`` to *generate* the charm
+  before scoring, rather than scoring a pre-baked directory.
+- [ ] Add ``gold-gemini`` and ``gold-fireworks`` baseline
+  directories over time as each provider passes.
+- [ ] Document the end-to-end loop in
+  ``docs/src/howto-eval.md`` (new).
+
+### 79.5 Prompt ablation harness (stretch)
+
+- [ ] Tool that takes ``system.py``, drops each labelled
+  section in turn, reruns 79.2, and reports score deltas.
+  Lets a human author reason about which sections pull their
+  weight before a prompt change lands — matches Anthropic's
+  "continue ablations to understand the impact of each line"
+  remediation.
+
+**Exit criteria:**
+
+- System-prompt changes have a per-provider regression guard.
+- CI fails when a prompt edit breaks response shape on the
+  cheap-model smoke test.
+- At least 79.2 + 79.3 ship.  79.4 / 79.5 can land later.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| 79.2 | None | Additive tests + provider keys from CI secrets |
+| 79.3 | 79.2 | Needs the test runner first |
+| 79.4 | 79.2 | Bigger lift — touches the runner, not just new tests |
+| 79.5 | 79.2 | Stretch; nice-to-have |
+
+**Discovered:** Reviewing Anthropic's April 23 Claude Code
+postmortem (2026-04-24).  Code audit of ``tests/eval/`` against
+the current ``main`` branch confirmed the harness scores static
+files only and does not dispatch on provider.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4618,4 +4848,6 @@ shared helper dropped.
 | M75: Inline Tool Blocks | 75 | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
 | M76: Copy-Friendly Chat | 76 | Toad-inspired per-block copy affordances either ship (keybinding, slash command, OSC 52, or similar) or a written assessment in ``design/UI.md`` explains why the current flow is sufficient |
 | M77: Reasoning Content Surfaced | 77 | OpenAI-compatible reasoning deltas (Kimi K2, DeepSeek-R1, GLM reasoning variants) are captured and rendered like Claude's extended thinking rather than silently dropped |
+| M78: Observability Hardening | 78 | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
+| M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
