@@ -1,0 +1,360 @@
+"""Stacked tool-access policies for the subagent dispatcher.
+
+Phase 80.1: replace the single-level category allowlist in
+``subagent._filter_tools`` with a composable policy stack — global
+floor + per-category + per-charm rules, plus a per-goal rate limit,
+a review list, and the plumbing for later sub-phases (dispatcher
+wiring in 80.2, rate limit in 80.3, audit in 80.4, destructive-
+command gate in 80.5).
+
+The design lifts the keep/defer/reject verdicts from the
+`Phase 55.4` investigation in ``design/TOOLS.md``.  Three primitives
+from awesome-copilot's ``agent-governance`` skill ship here:
+
+* ``GovernancePolicy`` — a frozen dataclass carrying allow / block /
+  review / rate-limit sets.
+* ``compose_policies(*policies)`` — most-restrictive-wins: allow-lists
+  intersect, block and review unions; rate limit picks the strictest
+  non-``None`` value.
+* A small YAML loader so operators can drop policy files into
+  ``~/.config/cantrip/policies/`` or ``<charm>/cantrip.policies.yaml``
+  and have them composed into the active policy at subagent-dispatch
+  time.
+
+The module deliberately does **not** wire policies into the subagent
+(Phase 80.2) or export a user-facing audit / CLI subcommand (Phase
+80.4).  It's the primitive layer; later sub-phases consume it.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import enum
+import logging
+from pathlib import Path
+
+import yaml
+
+log = logging.getLogger(__name__)
+
+
+class PolicyAction(enum.StrEnum):
+    """Outcome of :meth:`GovernancePolicy.check_tool`."""
+
+    ALLOW = "allow"
+    DENY = "deny"
+    REVIEW = "review"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class GovernancePolicy:
+    """A single layer of the policy stack.
+
+    An *empty* ``allowed_tools`` set means "no allow constraint" — not
+    "allow nothing".  This keeps the composition rule "intersect
+    allow-lists" well-defined: composing an empty policy with a
+    non-empty one yields the non-empty one.
+
+    ``blocked_tools`` and ``require_human_approval`` are straight
+    sets; composition unions them.  Any tool in
+    ``require_human_approval`` but not in ``blocked_tools`` maps to
+    :attr:`PolicyAction.REVIEW` at check time.
+
+    ``max_calls_per_request`` is the per-goal rate limit consumed by
+    Phase 80.3; ``None`` means "no limit at this layer".  Composition
+    picks the strictest (lowest) non-``None`` value across the stack.
+
+    *name* is carried through composition as ``"<a>+<b>"`` so audit
+    events (Phase 80.4) can show which stack produced a decision.
+    """
+
+    allowed_tools: frozenset[str] = frozenset()
+    blocked_tools: frozenset[str] = frozenset()
+    require_human_approval: frozenset[str] = frozenset()
+    max_calls_per_request: int | None = None
+    name: str = "unnamed"
+
+    def check_tool(self, tool_name: str) -> PolicyAction:
+        """Return the policy verdict for *tool_name*.
+
+        Evaluation order (first hit wins):
+
+        1. If the tool is explicitly blocked, ``DENY``.
+        2. If the tool is in the approval list, ``REVIEW``.
+        3. If an allow-list is set and the tool isn't in it, ``DENY``.
+        4. Otherwise, ``ALLOW``.
+        """
+        if tool_name in self.blocked_tools:
+            return PolicyAction.DENY
+        if tool_name in self.require_human_approval:
+            return PolicyAction.REVIEW
+        if self.allowed_tools and tool_name not in self.allowed_tools:
+            return PolicyAction.DENY
+        return PolicyAction.ALLOW
+
+
+def compose_policies(*policies: GovernancePolicy) -> GovernancePolicy:
+    """Compose a stack of policies with most-restrictive-wins semantics.
+
+    * ``allowed_tools`` is the intersection of every non-empty allow
+      set (empty layers are treated as "no constraint" and dropped
+      before intersection).  If every layer is empty, the composed
+      allow-set is empty — meaning, again, "no allow constraint"
+      rather than "deny everything".
+    * ``blocked_tools`` and ``require_human_approval`` union across
+      every layer.
+    * ``max_calls_per_request`` picks the lowest non-``None`` value.
+
+    With no layers, returns a permissive zero-policy.
+    """
+    if not policies:
+        return GovernancePolicy(name="empty")
+
+    # Intersection of non-empty allow sets, treating empty ones as
+    # "no constraint" rather than "deny everything".
+    non_empty_allows = [p.allowed_tools for p in policies if p.allowed_tools]
+    allowed = frozenset.intersection(*non_empty_allows) if non_empty_allows else frozenset()
+
+    blocked: frozenset[str] = frozenset()
+    for p in policies:
+        blocked = blocked | p.blocked_tools
+
+    approval: frozenset[str] = frozenset()
+    for p in policies:
+        approval = approval | p.require_human_approval
+
+    rate_limits = [
+        p.max_calls_per_request for p in policies if p.max_calls_per_request is not None
+    ]
+    rate_limit = min(rate_limits) if rate_limits else None
+
+    composed_name = "+".join(p.name for p in policies)
+
+    return GovernancePolicy(
+        allowed_tools=allowed,
+        blocked_tools=blocked,
+        require_human_approval=approval,
+        max_calls_per_request=rate_limit,
+        name=composed_name,
+    )
+
+
+# ---------------------------------------------------------------------------
+# YAML serialisation
+# ---------------------------------------------------------------------------
+
+
+class PolicyParseError(ValueError):
+    """Raised when a YAML policy file is malformed."""
+
+
+_POLICY_FIELDS = {
+    "allowed_tools",
+    "blocked_tools",
+    "require_human_approval",
+    "max_calls_per_request",
+    "name",
+}
+
+
+def policy_from_dict(raw: dict[str, object], *, default_name: str = "unnamed") -> GovernancePolicy:
+    """Build a :class:`GovernancePolicy` from a plain dict.
+
+    Raises :class:`PolicyParseError` on unknown keys, wrong types, or
+    negative rate limits.  The loader is deliberately strict — typos
+    in a policy file shouldn't silently relax the policy.
+    """
+    if not isinstance(raw, dict):
+        raise PolicyParseError(f"policy must be a mapping, got {type(raw).__name__}")
+
+    unknown = set(raw.keys()) - _POLICY_FIELDS
+    if unknown:
+        raise PolicyParseError(f"unknown policy fields: {sorted(unknown)}")
+
+    def _frozen_set(key: str) -> frozenset[str]:
+        value = raw.get(key, [])
+        if value is None:
+            return frozenset()
+        if not isinstance(value, list):
+            raise PolicyParseError(
+                f"{key} must be a list of tool names, got {type(value).__name__}"
+            )
+        result: set[str] = set()
+        for entry in value:
+            if not isinstance(entry, str):
+                raise PolicyParseError(f"{key} entries must be strings, got {entry!r}")
+            result.add(entry)
+        return frozenset(result)
+
+    rate = raw.get("max_calls_per_request")
+    if rate is not None:
+        if not isinstance(rate, int) or isinstance(rate, bool):
+            raise PolicyParseError(
+                f"max_calls_per_request must be an integer or null, got {type(rate).__name__}"
+            )
+        if rate < 0:
+            raise PolicyParseError(f"max_calls_per_request must be >= 0, got {rate}")
+
+    name = raw.get("name", default_name)
+    if not isinstance(name, str):
+        raise PolicyParseError(f"name must be a string, got {type(name).__name__}")
+
+    return GovernancePolicy(
+        allowed_tools=_frozen_set("allowed_tools"),
+        blocked_tools=_frozen_set("blocked_tools"),
+        require_human_approval=_frozen_set("require_human_approval"),
+        max_calls_per_request=rate,
+        name=name,
+    )
+
+
+def policy_to_dict(policy: GovernancePolicy) -> dict[str, object]:
+    """Serialise a policy for YAML round-trip.
+
+    Empty sets round-trip as empty lists so the file shape stays
+    stable under ``yaml.safe_dump`` — the loader treats an omitted
+    key and an empty list identically, but emitting keys explicitly
+    makes it obvious to a human reader that the policy was
+    authored, not truncated.
+    """
+    return {
+        "name": policy.name,
+        "allowed_tools": sorted(policy.allowed_tools),
+        "blocked_tools": sorted(policy.blocked_tools),
+        "require_human_approval": sorted(policy.require_human_approval),
+        "max_calls_per_request": policy.max_calls_per_request,
+    }
+
+
+def load_policy_file(path: Path) -> GovernancePolicy:
+    """Load a single YAML policy file.
+
+    The filename stem is the default ``name`` if the file doesn't
+    carry one.  Raises :class:`PolicyParseError` on parse failure or
+    schema violation; callers may convert that into a log + skip if
+    they want a partially-broken policy directory to still produce a
+    usable composition.
+    """
+    try:
+        raw = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as exc:
+        raise PolicyParseError(f"{path}: {exc}") from exc
+    if raw is None:
+        # Empty file — treat as zero-policy named after the file.
+        return GovernancePolicy(name=path.stem)
+    return policy_from_dict(raw, default_name=path.stem)
+
+
+def discover_policies(
+    *,
+    charm_path: Path | None = None,
+    user_config_dir: Path | None = None,
+) -> list[GovernancePolicy]:
+    """Discover and load the active policy stack.
+
+    Returns policies in composition order — built-in floors first,
+    then user-wide overrides, then the per-charm overlay.  Callers
+    pass the result to :func:`compose_policies`.
+
+    * ``user_config_dir`` defaults to ``~/.config/cantrip/policies/``
+      when ``None``; set to a different path for tests.  Every
+      ``*.yaml`` / ``*.yml`` file in the directory is loaded.  A
+      malformed file logs a warning and is skipped rather than
+      raising — one broken file shouldn't lock the operator out.
+    * ``charm_path / "cantrip.policies.yaml"`` is loaded last when it
+      exists, so a per-charm file can tighten (never loosen) the
+      stack.
+
+    Built-in policies are **not** prepended here — callers wire them
+    in explicitly via :data:`BUILTIN_POLICIES` so the three
+    defence-in-depth layers (Phase 55.4) stay visible at the
+    dispatcher site.
+    """
+    policies: list[GovernancePolicy] = []
+
+    if user_config_dir is None:
+        user_config_dir = Path.home() / ".config" / "cantrip" / "policies"
+
+    if user_config_dir.is_dir():
+        # Sort so the composition order is stable across runs.
+        for path in sorted(user_config_dir.iterdir()):
+            if path.suffix not in (".yaml", ".yml") or not path.is_file():
+                continue
+            try:
+                policies.append(load_policy_file(path))
+            except PolicyParseError as exc:
+                log.warning("Skipping malformed policy file %s: %s", path, exc)
+
+    if charm_path is not None:
+        per_charm = charm_path / "cantrip.policies.yaml"
+        if per_charm.is_file():
+            try:
+                policies.append(load_policy_file(per_charm))
+            except PolicyParseError as exc:
+                log.warning("Skipping malformed charm policy %s: %s", per_charm, exc)
+
+    return policies
+
+
+# ---------------------------------------------------------------------------
+# Built-in policies
+# ---------------------------------------------------------------------------
+
+# Global floor: tools that are never OK without explicit operator
+# consent, regardless of category.  Pairs with the in-code
+# destructive-command gate that Phase 80.5 adds inside the juju /
+# run_command tools — the policy layer and the in-code gate are the
+# two halves of the defence-in-depth story from design/TOOLS.md.
+ORG_WIDE_POLICY = GovernancePolicy(
+    name="org-wide",
+    require_human_approval=frozenset(
+        {
+            "juju_destroy_model",
+            "juju_destroy_controller",
+            "juju_remove_application",
+            "juju_remove_relation",
+            "run_command",
+            "git_push",
+        }
+    ),
+)
+
+# Sprint / demo sessions: a charm author is moving fast and wants
+# destructive ops unblocked (they'll re-deploy from scratch anyway),
+# but still wants the rate-limit safety valve so a looping subagent
+# can't run up a bill.  Operators opt in by dropping a file called
+# ``sprint.yaml`` into ``~/.config/cantrip/policies/`` or symlinking
+# this built-in.
+SPRINT_POLICY = GovernancePolicy(
+    name="sprint",
+    max_calls_per_request=200,
+)
+
+
+def category_policy(category_name: str, allowed_tools: frozenset[str]) -> GovernancePolicy:
+    """Build a per-category policy layer from the existing ``_CATEGORY_TOOLS`` data.
+
+    Phase 80.2 wires this in place of the current
+    ``subagent._filter_tools`` allow-list: each subagent dispatch
+    composes the org-wide floor with the category layer and any
+    per-charm file.  Extracted as a helper so the subagent code
+    doesn't need to know the dataclass shape.
+    """
+    return GovernancePolicy(
+        name=f"category:{category_name}",
+        allowed_tools=allowed_tools,
+    )
+
+
+#: The built-in policies callers can reach for without reading YAML.
+#:
+#: A later sub-phase (80.2) will extend this with per-category
+#: policies derived from ``subagent._CATEGORY_TOOLS`` at dispatcher
+#: construction time.  Keeping the data as an explicit frozenset
+#: here rather than re-deriving from ``TaskCategory`` avoids an
+#: import cycle (``subagent`` imports the policy module, not the
+#: other way round).
+BUILTIN_POLICIES: dict[str, GovernancePolicy] = {
+    ORG_WIDE_POLICY.name: ORG_WIDE_POLICY,
+    SPRINT_POLICY.name: SPRINT_POLICY,
+}

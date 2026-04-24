@@ -5,6 +5,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Stacked tool-access policy primitives (Phase 80.1).**  New
+  ``src/cantrip/agent/policy.py`` ships a frozen
+  ``GovernancePolicy`` dataclass (allow / block / require-review /
+  rate-limit) and ``compose_policies(*policies)`` with
+  most-restrictive-wins semantics: non-empty allow-lists intersect,
+  block / review unions, rate limit picks the lowest non-``None``
+  value.  ``check_tool(name)`` returns an ``ALLOW`` / ``DENY`` /
+  ``REVIEW`` verdict with block > review > allow precedence.  A
+  strict YAML loader discovers ``~/.config/cantrip/policies/*.yaml``
+  and ``<charm>/cantrip.policies.yaml`` in sorted order and skips
+  malformed files with a warning so one typo can't lock the
+  operator out.  Two built-in policies ship: ``ORG_WIDE_POLICY``
+  (review gate on ``juju_destroy_model`` / ``juju_destroy_controller``
+  / ``juju_remove_*`` / ``run_command`` / ``git_push``) and
+  ``SPRINT_POLICY`` (200-call rate limit for unattended runs).  The
+  primitives are the foundation for Phase 80.2 (dispatcher wiring),
+  80.3 (per-goal rate limit), 80.4 (JSONL audit trail), and 80.5
+  (Juju-aware destructive-command gate) — none of which ship in this
+  commit; the policy layer is not yet enforced by the subagent.
+
 - **Web UI cache-hit indicator at parity with the TUI (Phase 78.2 —
   closes M78).**  New ``CACHE_METRICS_UPDATED`` event on the shared UI
   bus, published from ``CantripAgent._record_usage`` whenever the

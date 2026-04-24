@@ -2462,27 +2462,44 @@ not prompt content).
 This phase is **implementation**, not investigation — the 55.4
 write-up already decided keep/defer/reject per primitive.
 
-### 80.1 High — ``GovernancePolicy`` dataclass + ``compose_policies``
+### 80.1 High — ``GovernancePolicy`` dataclass + ``compose_policies`` ✓
 
-- [ ] Add ``src/cantrip/agent/policy.py`` with a frozen
-  ``GovernancePolicy`` dataclass carrying
-  ``allowed_tools: frozenset[str]``,
-  ``blocked_tools: frozenset[str]``,
-  ``require_human_approval: frozenset[str]``, and
-  ``max_calls_per_request: int | None``.
-- [ ] Implement ``compose_policies(*policies) ->
-  GovernancePolicy`` with most-restrictive-wins semantics —
-  allow-lists intersect, block-lists union, approval-lists
-  union, rate limit is the minimum non-``None`` value.
-- [ ] Load policies from YAML
-  (``~/.config/cantrip/policies/*.yaml`` and
-  ``<charm>/cantrip.policies.yaml``) via a small parser; ship
-  three built-in policies (``org-wide``, ``category:<name>``,
-  ``sprint``) as default-deny floors.
-- [ ] Unit tests: composition is commutative for union fields
-  and associative for all; compose of empty-set allow and
-  non-empty-set allow keeps the non-empty; rate limit picks
-  the strictest; YAML round-trips.
+- [x] ``src/cantrip/agent/policy.py`` ships the frozen
+  ``GovernancePolicy`` dataclass with ``allowed_tools``,
+  ``blocked_tools``, ``require_human_approval``,
+  ``max_calls_per_request``, and a ``name`` field that
+  composition carries through so audit events (80.4) can show
+  which stack produced a decision.  ``check_tool(name)``
+  returns a :class:`PolicyAction` (``ALLOW`` / ``DENY`` /
+  ``REVIEW``) with block > review > allow precedence — the
+  strictest rule always wins.
+- [x] ``compose_policies(*policies)`` implements
+  most-restrictive-wins: non-empty allow-lists intersect
+  (empty allow means "no allow opinion"), block and
+  approval unions, rate limit picks the lowest non-``None``
+  value.  Associative and commutative for the relevant
+  fields.
+- [x] YAML loader (``policy_from_dict`` /
+  ``load_policy_file`` / ``discover_policies``) scans
+  ``~/.config/cantrip/policies/*.{yaml,yml}`` and
+  ``<charm>/cantrip.policies.yaml`` in sorted order so
+  composition is deterministic; malformed files log a
+  warning and are skipped so one broken policy doesn't lock
+  the operator out.  Strict parser rejects unknown keys,
+  non-integer rate limits, and bool-as-int.
+- [x] Two built-in policies: ``ORG_WIDE_POLICY`` (review gate
+  on ``juju_destroy_model`` / ``juju_destroy_controller`` /
+  ``juju_remove_*`` / ``run_command`` / ``git_push``) and
+  ``SPRINT_POLICY`` (200-call rate limit for unattended
+  sessions).  The per-category layer comes from the
+  ``category_policy()`` factory — Phase 80.2 wires it into
+  the dispatcher by reading ``subagent._CATEGORY_TOOLS``.
+- [x] ``tests/unit/test_policy.py`` — 44 unit tests covering
+  commutativity, associativity, the empty-allow preservation
+  rule, rate-limit min semantics, YAML round-trip, discovery
+  ordering, malformed-file skipping, and a full three-layer
+  stack composing to the expected defence-in-depth verdicts
+  from ``design/TOOLS.md`` §55.4.
 
 ### 80.2 High — Wire policies into the subagent dispatcher
 
