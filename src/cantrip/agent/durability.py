@@ -24,10 +24,12 @@ import hashlib
 import json
 import logging
 import os
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from cantrip.agent.store import SessionStore
 
 log = logging.getLogger(__name__)
@@ -250,6 +252,106 @@ class CheckpointStore:
             log.debug("purged %d checkpoint(s) for completed task %s", removed, task_id)
 
 
+@dataclass
+class CheckpointCtx:
+    """Per-task context for :func:`checkpoint` — ordinal bookkeeping + store handle.
+
+    Constructed once per subagent task.  The per-step counter
+    (``_counters``) is a pure in-memory monotonic sequence so repeated
+    calls to ``checkpoint(ctx, "llm_turn", …)`` auto-number without
+    the caller tracking indices.  On replay the counter starts fresh:
+    deterministic call ordering in the subagent loop means the same
+    ``(step_name, ordinal)`` pairs line up with the persisted rows.
+    """
+
+    store: CheckpointStore
+    task_id: str
+    _counters: dict[str, int] = field(default_factory=dict)
+
+    def next_ordinal(self, step_name: str) -> int:
+        """Increment and return the per-step counter for *step_name*.
+
+        Starts at ``1`` on first call.  Each step name has its own
+        counter: ``llm_turn`` and ``tool:juju_status`` don't interfere.
+        """
+        current = self._counters.get(step_name, 0) + 1
+        self._counters[step_name] = current
+        return current
+
+
+async def checkpoint[T](
+    ctx: CheckpointCtx,
+    step_name: str,
+    fn: Callable[[], Awaitable[T]],
+    *,
+    input_hash: str | None = None,
+    kind: str = KIND_VALUE,
+) -> T:
+    """Run *fn* once per ``(task, step_name, ordinal)``; replay on re-entry.
+
+    Semantics mirror Armin Ronacher's *Absurd* ``ctx.step``:
+
+    1. Allocate the next ordinal for this ``(task_id, step_name)``
+       from the ctx counter.
+    2. Look up the persisted checkpoint.  If present and the stored
+       input hash matches (or the caller passed no hash), return the
+       decoded value without running *fn*.
+    3. On hash mismatch, log a warning and fall through to re-run —
+       ``INSERT OR REPLACE`` semantics overwrite the stale row.
+    4. On miss, ``await fn()`` and persist the result before
+       returning it.
+
+    *input_hash* is optional but strongly recommended in 52.3 wiring
+    so code changes between runs force a re-execution rather than
+    silently serving stale results.  When omitted, an empty string is
+    stored — compatible with future calls that start providing one
+    (they'll mismatch and invalidate).
+
+    *kind* selects the storage envelope.  ``KIND_VALUE`` (default)
+    and ``KIND_LLM_RESPONSE`` / ``KIND_TOOL_RESULT`` are JSON-encoded;
+    ``KIND_BYTES`` stores raw bytes verbatim (caller must return
+    ``bytes``).
+    """
+    ordinal = ctx.next_ordinal(step_name)
+    record = ctx.store.get(ctx.task_id, step_name, ordinal)
+    if record is not None:
+        if input_hash is None or record.input_hash == input_hash:
+            log.debug(
+                "checkpoint hit: task=%s step=%s#%d kind=%s",
+                ctx.task_id,
+                step_name,
+                ordinal,
+                record.kind,
+            )
+            return cast("T", record.decode())
+        log.warning(
+            "checkpoint input-hash mismatch — invalidating task=%s step=%s#%d "
+            "(stored=%s current=%s)",
+            ctx.task_id,
+            step_name,
+            ordinal,
+            record.input_hash,
+            input_hash,
+        )
+    result = await fn()
+    ctx.store.record(
+        task_id=ctx.task_id,
+        step_name=step_name,
+        ordinal=ordinal,
+        input_hash=input_hash or "",
+        kind=kind,
+        value=result,
+    )
+    log.debug(
+        "checkpoint miss: task=%s step=%s#%d kind=%s (ran fn, persisted)",
+        ctx.task_id,
+        step_name,
+        ordinal,
+        kind,
+    )
+    return result
+
+
 def _json_default(value: object) -> object:
     """Extend :func:`json.dumps` to handle common non-JSON-native types.
 
@@ -278,8 +380,10 @@ __all__ = [
     "KIND_LLM_RESPONSE",
     "KIND_TOOL_RESULT",
     "KIND_VALUE",
+    "CheckpointCtx",
     "CheckpointRecord",
     "CheckpointStore",
+    "checkpoint",
     "compute_input_hash",
     "should_keep_checkpoints",
 ]

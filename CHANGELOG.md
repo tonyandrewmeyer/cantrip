@@ -127,6 +127,43 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Step-level checkpoint replay wrapper — Phase 52.2.**  Second
+  piece of Phase 52: the ``async def checkpoint(ctx, step_name,
+  fn, *, input_hash=None, kind=KIND_VALUE) -> T`` helper in
+  ``cantrip.agent.durability`` that 52.3 will wrap around each
+  LLM turn and tool call in the subagent loop.  Semantics mirror
+  Armin Ronacher's *Absurd* ``ctx.step``: allocate the next
+  ordinal from ``CheckpointCtx``'s monotonic per-step counter,
+  look up the persisted row, return the decoded value on hit,
+  otherwise ``await fn()`` and persist before returning.  The
+  new ``CheckpointCtx`` dataclass closes over ``store`` +
+  ``task_id`` with a private per-step ``_counters`` dict so
+  repeated calls to ``checkpoint(ctx, "llm_turn", …)`` auto-
+  number ``llm_turn#1``, ``llm_turn#2``, … without the caller
+  tracking indices; ``next_ordinal(step_name)`` exposes the
+  increment for callers that need it directly.  On replay, a
+  fresh ctx starts at counter=0 and walks the same deterministic
+  sequence of calls the original run produced, so the
+  ``(step_name, ordinal)`` lookups line up with stored rows.
+  Input-hash mismatch invalidates: when the caller passes an
+  ``input_hash`` and the stored record differs, a ``WARNING``
+  is logged ("checkpoint input-hash mismatch — invalidating …")
+  and the wrapper falls through to re-run fn; ``INSERT OR
+  REPLACE`` on the v10 UNIQUE constraint overwrites the stale
+  row naturally.  Omitted ``input_hash`` (``None``) accepts any
+  stored row and is recorded as ``""`` so a future opt-in hash
+  will mismatch cleanly.  Uses PEP 695 generic syntax
+  (``async def checkpoint[T]``) matching the codebase's
+  ``mcp/token_storage._load_model[T]`` precedent.  13 new tests
+  in ``test_durability.py`` split across ``TestCheckpointCtx``
+  (counter start-at-1, per-step independence, monotonic
+  increment) and ``TestCheckpointWrapper`` (miss-runs-fn-and-
+  persists, hit-skips-fn, auto-numbered repeated calls, partial-
+  prior-run replay, hash-mismatch-invalidates with log capture,
+  matching-hash-hits, None-hash-accepts-stored, KIND_BYTES
+  round-trip across two ctxs, step-name isolation, task-id
+  isolation, empty-string-default input_hash).
+
 - **Step-level durable-execution checkpoints — Phase 52.1.**  First
   piece of Phase 52's per-step resume story: a subagent task that
   rate-limits on LLM turn 18 should restart from turn 18, not

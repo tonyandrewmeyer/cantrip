@@ -13,8 +13,10 @@ from cantrip.agent.durability import (
     KIND_LLM_RESPONSE,
     KIND_TOOL_RESULT,
     KIND_VALUE,
+    CheckpointCtx,
     CheckpointRecord,
     CheckpointStore,
+    checkpoint,
     compute_input_hash,
     should_keep_checkpoints,
 )
@@ -362,3 +364,218 @@ class TestInputHash:
         h2 = compute_input_hash(X())
         assert h1 == h2
         assert len(h1) == 64  # sha256 hex
+
+
+class TestCheckpointCtx:
+    """Per-step monotonic counter that drives ordinal allocation."""
+
+    def test_counter_starts_at_1(self, checkpoints: CheckpointStore) -> None:
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+        assert ctx.next_ordinal("llm_turn") == 1
+
+    def test_counter_increments_per_call(self, checkpoints: CheckpointStore) -> None:
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+        assert [ctx.next_ordinal("llm_turn") for _ in range(4)] == [1, 2, 3, 4]
+
+    def test_counters_are_independent_per_step(self, checkpoints: CheckpointStore) -> None:
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+        assert ctx.next_ordinal("llm_turn") == 1
+        assert ctx.next_ordinal("tool:juju_status") == 1
+        assert ctx.next_ordinal("llm_turn") == 2
+        assert ctx.next_ordinal("tool:juju_status") == 2
+
+
+class TestCheckpointWrapper:
+    """``checkpoint()`` replay semantics: miss runs fn, hit returns stored."""
+
+    async def test_miss_runs_fn_and_persists(self, checkpoints: CheckpointStore) -> None:
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+        calls = 0
+
+        async def fn() -> dict[str, int]:
+            nonlocal calls
+            calls += 1
+            return {"turn": 3, "tokens": 412}
+
+        result = await checkpoint(ctx, "llm_turn", fn, kind=KIND_LLM_RESPONSE)
+        assert result == {"turn": 3, "tokens": 412}
+        assert calls == 1
+        # Persisted for next run.
+        record = checkpoints.get("t1", "llm_turn", 1)
+        assert record is not None
+        assert record.kind == KIND_LLM_RESPONSE
+        assert record.decode() == {"turn": 3, "tokens": 412}
+
+    async def test_hit_returns_stored_without_running_fn(
+        self, checkpoints: CheckpointStore
+    ) -> None:
+        """Simulate a resume: pre-populate the store, then fn must not run."""
+        checkpoints.record(
+            "t1", "llm_turn", 1, "abc", KIND_LLM_RESPONSE, {"turn": 3, "tokens": 412}
+        )
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+        calls = 0
+
+        async def fn() -> dict[str, int]:
+            nonlocal calls
+            calls += 1
+            return {"turn": 999, "tokens": 0}  # Different value — proves we didn't run.
+
+        result = await checkpoint(ctx, "llm_turn", fn, kind=KIND_LLM_RESPONSE)
+        assert result == {"turn": 3, "tokens": 412}
+        assert calls == 0
+
+    async def test_auto_numbers_repeated_calls(self, checkpoints: CheckpointStore) -> None:
+        """Successive calls for the same step name walk ordinals 1, 2, 3."""
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def make_fn(value: int) -> int:
+            return value
+
+        results = [await checkpoint(ctx, "llm_turn", lambda v=v: make_fn(v)) for v in (10, 20, 30)]
+        assert results == [10, 20, 30]
+        records = checkpoints.list_for_task("t1")
+        assert [(r.step_name, r.ordinal, r.decode()) for r in records] == [
+            ("llm_turn", 1, 10),
+            ("llm_turn", 2, 20),
+            ("llm_turn", 3, 30),
+        ]
+
+    async def test_replay_after_partial_run(self, checkpoints: CheckpointStore) -> None:
+        """Session 1 stored turns 1-2; session 2 re-runs but only issues turn 3."""
+        checkpoints.record("t1", "llm_turn", 1, "", KIND_VALUE, "first")
+        checkpoints.record("t1", "llm_turn", 2, "", KIND_VALUE, "second")
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+        ran = []
+
+        async def fn(tag: str) -> str:
+            ran.append(tag)
+            return tag
+
+        r1 = await checkpoint(ctx, "llm_turn", lambda: fn("first-replay"))
+        r2 = await checkpoint(ctx, "llm_turn", lambda: fn("second-replay"))
+        r3 = await checkpoint(ctx, "llm_turn", lambda: fn("third-fresh"))
+        assert r1 == "first"
+        assert r2 == "second"
+        assert r3 == "third-fresh"
+        assert ran == ["third-fresh"]  # Only the miss ran fn.
+
+    async def test_input_hash_mismatch_invalidates_and_reruns(
+        self,
+        checkpoints: CheckpointStore,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A different input hash means the stored row is stale — re-run."""
+        import logging
+
+        checkpoints.record("t1", "llm_turn", 1, "old-hash", KIND_VALUE, "stale")
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+        calls = 0
+
+        async def fn() -> str:
+            nonlocal calls
+            calls += 1
+            return "fresh"
+
+        with caplog.at_level(logging.WARNING, logger="cantrip.agent.durability"):
+            result = await checkpoint(ctx, "llm_turn", fn, input_hash="new-hash")
+        assert result == "fresh"
+        assert calls == 1
+        # Row overwritten with new hash + new value.
+        record = checkpoints.get("t1", "llm_turn", 1)
+        assert record is not None
+        assert record.input_hash == "new-hash"
+        assert record.decode() == "fresh"
+        assert any("input-hash mismatch" in rec.message for rec in caplog.records)
+
+    async def test_matching_input_hash_hits(self, checkpoints: CheckpointStore) -> None:
+        checkpoints.record("t1", "llm_turn", 1, "h", KIND_VALUE, "cached")
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+        calls = 0
+
+        async def fn() -> str:
+            nonlocal calls
+            calls += 1
+            return "should not see this"
+
+        result = await checkpoint(ctx, "llm_turn", fn, input_hash="h")
+        assert result == "cached"
+        assert calls == 0
+
+    async def test_none_input_hash_accepts_any_stored(self, checkpoints: CheckpointStore) -> None:
+        """When the caller doesn't supply a hash, any stored row is a hit."""
+        checkpoints.record("t1", "llm_turn", 1, "stored-hash", KIND_VALUE, "cached")
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn() -> str:
+            raise AssertionError("fn must not run on hit")
+
+        result = await checkpoint(ctx, "llm_turn", fn)
+        assert result == "cached"
+
+    async def test_bytes_kind_round_trips(self, checkpoints: CheckpointStore) -> None:
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn() -> bytes:
+            return b"\x82\xa3key\xa5value"
+
+        result = await checkpoint(ctx, "opaque", fn, kind=KIND_BYTES)
+        assert result == b"\x82\xa3key\xa5value"
+        # And replay returns bytes verbatim.
+        ctx2 = CheckpointCtx(store=checkpoints, task_id="t1")
+        replayed = await checkpoint(ctx2, "opaque", fn, kind=KIND_BYTES)
+        assert replayed == b"\x82\xa3key\xa5value"
+
+    async def test_independent_step_names_do_not_interfere(
+        self, checkpoints: CheckpointStore
+    ) -> None:
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn_llm() -> str:
+            return "turn-result"
+
+        async def fn_tool() -> dict[str, object]:
+            return {"ok": True}
+
+        assert await checkpoint(ctx, "llm_turn", fn_llm) == "turn-result"
+        assert await checkpoint(ctx, "tool:juju_status", fn_tool, kind=KIND_TOOL_RESULT) == {
+            "ok": True
+        }
+        assert await checkpoint(ctx, "llm_turn", fn_llm) == "turn-result"  # ordinal=2 miss
+        # Three distinct records, two step names.
+        records = checkpoints.list_for_task("t1")
+        assert {(r.step_name, r.ordinal) for r in records} == {
+            ("llm_turn", 1),
+            ("llm_turn", 2),
+            ("tool:juju_status", 1),
+        }
+
+    async def test_different_tasks_are_isolated(self, checkpoints: CheckpointStore) -> None:
+        ctx_a = CheckpointCtx(store=checkpoints, task_id="task-A")
+        ctx_b = CheckpointCtx(store=checkpoints, task_id="task-B")
+        calls: list[str] = []
+
+        async def fn(tag: str) -> str:
+            calls.append(tag)
+            return tag
+
+        await checkpoint(ctx_a, "llm_turn", lambda: fn("A-1"))
+        await checkpoint(ctx_b, "llm_turn", lambda: fn("B-1"))
+        assert calls == ["A-1", "B-1"]  # Both missed — independent stores per task.
+        # And each sees only its own rows.
+        assert [r.decode() for r in checkpoints.list_for_task("task-A")] == ["A-1"]
+        assert [r.decode() for r in checkpoints.list_for_task("task-B")] == ["B-1"]
+
+    async def test_stored_input_hash_empty_when_caller_omits(
+        self, checkpoints: CheckpointStore
+    ) -> None:
+        """Omitting ``input_hash`` on record stores ``""`` — compatible with future opt-in."""
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn() -> int:
+            return 42
+
+        await checkpoint(ctx, "llm_turn", fn)
+        record = checkpoints.get("t1", "llm_turn", 1)
+        assert record is not None
+        assert record.input_hash == ""

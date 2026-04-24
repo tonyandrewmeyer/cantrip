@@ -1527,30 +1527,43 @@ adapted to SQLite.
   invocations, dict-key-order invariance, different inputs →
   different hash, non-JSON types via ``repr()`` fallback).
 
-### 52.2 Medium — `checkpoint()` wrapper helper
+### 52.2 Medium — `checkpoint()` wrapper helper ✓
 
-- [ ] A single async helper in `cantrip.agent.durability`:
-  ```python
-  async def checkpoint(
-      ctx: CheckpointCtx,
-      step_name: str,
-      fn: Callable[[], Awaitable[T]],
-      *,
-      input_hash: str | None = None,
-      kind: str = "value",
-  ) -> T: ...
-  ```
-- [ ] Semantics mirror Absurd's `ctx.step`: compute the next ordinal for
-  this `(task_id, step_name)` pair, look up the checkpoint, return the
-  stored value if present, otherwise run `fn()` and persist the result
-  before returning.
-- [ ] On input-hash mismatch (same step name + ordinal, different
-  inputs) — invalidate the checkpoint and re-run, logging a warning.
-  This prevents a stale checkpoint from masking a code change.
-- [ ] The `CheckpointCtx` is constructed once per subagent task; it
-  closes over the `task_id` and a monotonic per-step counter so
-  repeated calls to `checkpoint(ctx, "llm_turn", …)` auto-number
-  (`llm_turn`, `llm_turn#2`, …) without the caller tracking indices.
+- [x] Added ``async def checkpoint[T](ctx, step_name, fn, *,
+  input_hash=None, kind=KIND_VALUE) -> T`` to
+  ``src/cantrip/agent/durability.py`` using PEP 695 generic syntax
+  (matching the codebase's ``mcp/token_storage._load_model[T]``
+  precedent).  ``fn`` is a ``Callable[[], Awaitable[T]]`` so both
+  ``provider.complete`` and ``tool.run`` drop in without wrapping.
+- [x] ``CheckpointCtx`` is a frozen-ish dataclass with ``store`` +
+  ``task_id`` + a private ``_counters: dict[str, int]`` default.
+  Exposes ``next_ordinal(step_name)`` which increments and returns
+  the monotonic per-step counter — starts at ``1``, each step name
+  gets its own counter, so ``llm_turn`` and ``tool:juju_status``
+  never interfere.  One ctx per subagent task, constructed fresh on
+  each run.
+- [x] Replay semantics match Absurd's ``ctx.step``: allocate the
+  next ordinal, look up ``store.get(task_id, step_name, ordinal)``,
+  return the decoded value on hit, otherwise ``await fn()`` and
+  persist before returning.  Deterministic call ordering in the
+  subagent loop means the same ``(step_name, ordinal)`` pairs line
+  up with persisted rows across runs.
+- [x] Input-hash mismatch path: when the caller passes an
+  ``input_hash`` and the stored record's hash differs, log a
+  ``WARNING`` ("checkpoint input-hash mismatch — invalidating …")
+  and fall through to re-run.  ``INSERT OR REPLACE`` on the
+  ``(task_id, step_name, ordinal)`` UNIQUE constraint overwrites the
+  stale row naturally — no explicit delete needed.  Omitted
+  ``input_hash`` (``None``) means "accept any stored row"; stored as
+  ``""`` on record so a future opt-in hash will mismatch cleanly.
+- [x] 13 new tests in ``tests/unit/test_durability.py`` split across
+  ``TestCheckpointCtx`` (counter start-at-1, per-step independence,
+  monotonic increment) and ``TestCheckpointWrapper`` (miss-runs-fn-
+  and-persists, hit-skips-fn, auto-numbered repeated calls, mixed
+  replay / fresh after a partial prior run, hash mismatch invalidates
+  with log capture, matching hash hits, None hash accepts stored,
+  KIND_BYTES round-trip across two ctxs, step-name isolation,
+  task-id isolation, empty-string input_hash default).
 
 ### 52.3 Medium — Wire checkpoints into the subagent loop
 
