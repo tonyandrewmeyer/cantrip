@@ -3284,27 +3284,62 @@ Four OpenCode features are explicitly **out of scope**:
   registry lookup, and dispatcher integration (unknown verb
   fall-through, catalogue / help-text inclusion).
 
-### 68.4 Medium — Plan mode
+### 68.4 Medium — Plan mode ✓
 
-- [ ] ``/plan`` and ``/build`` slash commands toggle session
-  mode.  Default on startup is ``build`` (current behaviour).
-  ``plan`` mode is sticky for the session.
-- [ ] Plan mode implementation: enforce a narrow tool allowlist
-  (``fs_read``, ``glob``, ``grep``, ``git_log``, ``git_diff``,
-  Juju read-only tools, websearch, webfetch).  Everything else
-  returns a tool-refused result with a clear "plan mode —
-  switch to /build to execute" message.
-- [ ] Reuse the Phase 68.2 permission layer rather than
-  inventing a parallel gate — plan mode is just a stricter
-  permission set pushed onto the stack for the duration.
-- [ ] Status bar shows the current mode; plan mode uses a
-  distinct theme colour so the user never mistakes one for the
-  other.
-- [ ] In plan mode, the agent's summary includes an explicit
-  "Proposed changes" section listing file edits and commands
-  it *would* run.  Flipping to ``/build`` re-sends that summary
-  as context so the agent doesn't re-plan from scratch.
-- [ ] Document in ``docs/docs/howto-plan-mode.html``.
+- [x] ``/plan`` and ``/build`` slash commands toggle
+  ``AgentState.plan_mode`` (default ``False``, sticky per
+  session).  Added to ``COMMAND_CATALOGUE`` + ``SHARED_VERBS``
+  so autocomplete and ``/help`` pick them up.  Calling either
+  while already in that mode is a no-op with a clear status
+  line.
+- [x] Narrow read-only allow-list ships as
+  :data:`cantrip.agent.permissions.PLAN_MODE_ALLOWED_TOOLS`
+  (file reads, ``git_*`` history reads, Juju introspection,
+  ``memory_list``/``read``/``search``, ``web_search`` /
+  ``web_fetch``).  Everything else returns a refused
+  ``ToolResult`` with the ``plan_mode_message`` phrasing.
+  ``mcp__``-prefixed tools bypass (per-server gated).
+- [x] Implemented as a permission preset, not a parallel
+  code path: :data:`PLAN_MODE_OVERLAY` is a
+  :class:`PermissionRuleset` with ``"*": DENY`` plus literal
+  ``ALLOW`` for every read-only tool.  The executor's
+  ``_effective_permissions`` composes the overlay onto the
+  discovered base ruleset whenever ``state.plan_mode`` is
+  ``True`` and passes the composed ruleset to every Subagent
+  it constructs (single and race paths).  The main-agent
+  conversation loop and streaming loop gate via
+  ``_plan_mode_refusal`` before ``_execute_tool`` for the same
+  effect on typed user messages.
+- [x] TUI status bar gained a ``mode`` reactive + literal
+  "plan mode" badge, a dedicated ``-plan-mode`` CSS class
+  backed by ``$warning-darken-2``, and a ``mode`` payload
+  handler in ``app._on_bus_status_bar``.  ``/plan`` / ``/build``
+  publish ``STATUS_BAR_CHANGED`` events with the
+  ``mode={plan,build}`` field so every surface tints in
+  lockstep.
+- [x] System prompt grows a short ``## Plan mode`` appendix
+  while the flag is on, asking for a ``Proposed changes``
+  section.  ``_extract_proposed_changes`` captures the body
+  case-insensitively at any heading depth and stashes it on
+  ``state.plan_summary``; ``/build`` splices the captured
+  summary back as an assistant-role message so the follow-up
+  turn resumes from the plan instead of re-planning.
+- [x] Documented in
+  ``docs/docs/howto-plan-mode.html`` (new page) with the
+  read-only allow-list, the ``Proposed changes`` contract, the
+  status-indicator story, and the interaction with
+  permissions, hooks, ``/undo``, and custom commands.  Linked
+  from every how-to sidebar, ``docs/docs/index.html``, and a
+  new Plan-mode section in ``docs/docs/reference-cli.html``.
+- [x] ``tests/unit/test_plan_mode.py`` — 22 tests covering
+  the overlay allow/deny matrix, base+overlay composition,
+  ``/plan`` / ``/build`` toggle + event emission + summary
+  splice, double-toggle no-op, ``help_text`` + catalogue drift,
+  the main-agent ``_plan_mode_refusal`` helper (allow / deny /
+  MCP bypass / off), the ``_extract_proposed_changes`` regex
+  (capture, case-insensitivity, heading boundary, miss),
+  plan-summary capture across a turn, and the system-prompt
+  appendix toggle.
 
 ### What this phase is *not*
 
@@ -5713,7 +5748,7 @@ files only and does not dispatch on provider.
 | M65: Right-Panel Tidy | 65 | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
 | M66: Transcript/Log Visible | 66 ✓ | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
 | M67: Pi-Inspired Sessions | 67 | Session tree rewind/branch, mid-session ``/model``, ``cantrip run --print --json`` for scripts, and ``/share`` to secret gist — four gaps the Pi coding agent fills that charm authors also hit |
-| M68: OpenCode Safety Rails | 68 | Snapshot-backed ``/undo``/``/redo`` for file changes, declarative ask/allow/deny permissions, markdown-defined user slash commands, and a session-level plan mode — four guardrails adopted from OpenCode that map onto Cantrip's existing subsystems |
+| M68: OpenCode Safety Rails | 68 ✓ | Snapshot-backed ``/undo``/``/redo`` for file changes, declarative ask/allow/deny permissions, markdown-defined user slash commands, and a session-level plan mode — four guardrails adopted from OpenCode that map onto Cantrip's existing subsystems |
 | M69: Kimi Workflow Features | 69 | Bounded Ralph-Loop iterate-until-green, ``--yolo`` unattended switch, ``Ctrl-X`` shell mode, and Mermaid/D2 Flow skills — four Kimi CLI patterns that fit Cantrip's autonomous loop, skill system, and CI story |
 | M70: Amp-Inspired Depth | 70 | Librarian subagent that searches Charmhub and Launchpad, Oracle tool for on-demand second-opinion reasoning, glob-conditional guidance in AGENTS.md / skills, prompt-based review Checks that layer on top of charmlint, and a Painter tool that generates a Charmhub-style ``icon.svg`` |
 | M71: Aider Engineering Hygiene | 71 | Tree-sitter-backed repo-map with graph-ranked symbols, architect/editor two-model mode, auto-commit-per-turn with dirty-commit separation, and a per-edit ruff/ty/charmlint feedback loop |

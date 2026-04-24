@@ -45,6 +45,10 @@ from cantrip.agent.memory_writer import (
     WriteMemoryContext,
     collect_file_citations,
 )
+from cantrip.agent.permissions import (
+    PLAN_MODE_ALLOWED_TOOLS,
+    plan_mode_message,
+)
 from cantrip.agent.planner import (
     PlanningContext,
     TaskPlanner,
@@ -141,6 +145,80 @@ def _is_user_correction(message: str) -> bool:
     if not message or not message.strip():
         return False
     return bool(_USER_CORRECTION_RE.search(message))
+
+
+#: Guidance appended to the system prompt when :attr:`AgentState.plan_mode` is
+#: on.  Asks the agent to produce a "Proposed changes" section at the end of
+#: each turn so ``/build`` can resume from a concrete list instead of
+#: re-planning from scratch.  Kept short so it doesn't crowd the real system
+#: prompt — the permission gate refusal message already tells the LLM what it
+#: can and can't do when it tries.
+_PLAN_MODE_GUIDANCE = (
+    "## Plan mode (read-only)\n\n"
+    "The user has put this session into **plan mode**.  You may read the "
+    "code, inspect Juju state, read git history, and fetch web content, "
+    "but you cannot edit files, run shell commands, deploy, or mutate the "
+    "model in any way.  Every non-read-only tool will return a refused "
+    "``ToolResult`` — do not retry the same call hoping it will go through.\n"
+    "\n"
+    "Your job in plan mode is to *think through* the change with the user.  "
+    "End every response with a section titled **Proposed changes** listing "
+    "concrete edits (``path/to/file`` — what to change and why) and "
+    "commands (``$ cmd``) you would run.  Leave any work queue tasks you "
+    "create marked as pending so they do not execute.  The user will flip "
+    "to ``/build`` when they are satisfied, and that summary will be re-"
+    "fed as context so you can execute without re-planning."
+)
+
+
+#: Regex that captures the body of a ``## Proposed changes`` (or similar)
+#: section at the end of an assistant response.  Intentionally flexible on
+#: heading depth and capitalisation so the LLM doesn't have to emit a
+#: specific shape.  We stop at the next same-or-higher-level heading or
+#: the end of the string — whichever comes first.
+_PROPOSED_CHANGES_RE = re.compile(
+    r"(?im)^\s*#{2,6}\s*Proposed\s+Changes\s*\n(.+?)(?:\n\s*#{1,6}\s|\Z)",
+    re.DOTALL,
+)
+
+
+def _extract_proposed_changes(content: str) -> str | None:
+    """Return the body of a ``## Proposed changes`` section or ``None``.
+
+    Cantrip asks for the section by name in :data:`_PLAN_MODE_GUIDANCE`, so
+    the extractor is conservative: it only recognises the canonical heading.
+    An absent section returns ``None`` and the caller leaves
+    :attr:`AgentState.plan_summary` unchanged.
+    """
+    match = _PROPOSED_CHANGES_RE.search(content)
+    if match is None:
+        return None
+    body = match.group(1).strip()
+    return body or None
+
+
+def _plan_mode_refusal(state: AgentState, tool_name: str) -> ToolResult | None:
+    """Return a synthetic refused :class:`ToolResult` when plan mode blocks *tool_name*.
+
+    Phase 68.4: plan mode lets the main agent use only the read-only
+    toolset defined by :data:`PLAN_MODE_ALLOWED_TOOLS`.  MCP-provided
+    tools bypass the check (mirroring the Phase 80 policy enforcer's
+    MCP exemption) because those are gated per-server in
+    ``mcp.yaml`` and aren't inherently destructive.  Returns
+    ``None`` when the call is permitted so the caller can proceed
+    normally.
+    """
+    if not state.plan_mode:
+        return None
+    if tool_name.startswith("mcp__"):
+        return None
+    if tool_name in PLAN_MODE_ALLOWED_TOOLS:
+        return None
+    return ToolResult(
+        success=False,
+        output="",
+        error=plan_mode_message(tool_name),
+    )
 
 
 def detect_github_repo(charm_path: Path | None) -> str | None:
@@ -810,11 +888,14 @@ class CantripAgent:
         """Build the current system prompt.
 
         Uses a compact prompt for providers with limited context windows
-        to avoid exceeding the model's capacity.
+        to avoid exceeding the model's capacity.  When plan mode is
+        active (Phase 68.4) an appendix explains the read-only stance
+        and asks for a *Proposed changes* summary so ``/build`` can
+        pick up where the plan left off.
         """
         compact = self.provider.max_tools is not None
         memory_index = self._memory_manager.render_prompt_index() or None
-        return build_system_prompt(
+        prompt = build_system_prompt(
             charm_name=self.state.charm_name,
             charm_path=str(self.state.charm_path) if self.state.charm_path else None,
             charm_type=self.state.charm_type,
@@ -828,6 +909,9 @@ class CantripAgent:
             watcher_enabled=self.state.watcher_enabled,
             compact=compact,
         )
+        if self.state.plan_mode:
+            prompt = f"{prompt}\n\n{_PLAN_MODE_GUIDANCE}"
+        return prompt
 
     # Tools that are always included when the provider has a tool limit.
     _CORE_TOOL_NAMES: set[str] = {
@@ -1067,6 +1151,14 @@ class CantripAgent:
                 # the tool invocation and the post_tool_call payload so
                 # audit logs reflect what actually ran.
                 effective_arguments = final_arguments(pre_results) or tc.arguments
+                # Phase 68.4: plan mode refuses non-read-only tools.
+                # We gate after the hook so a hook-rewritten argument
+                # stays visible, and before execution so the tool body
+                # never runs in read-only mode.  Subagents already hit
+                # the full Phase 68.2 permission gate via their own
+                # ``PermissionRuleset``; the main agent only consults
+                # the plan-mode flag for scope reasons.
+                plan_block = _plan_mode_refusal(self.state, tc.name)
                 tool_start = time.monotonic()
                 if veto is not None:
                     # A pre-hook blocked the call \u2014 synthesise an error
@@ -1085,6 +1177,9 @@ class CantripAgent:
                         output="",
                         error=f"Blocked by {veto.veto_reason}",
                     )
+                elif plan_block is not None:
+                    log.info("Tool call %r refused by plan mode", tc.name)
+                    result = plan_block
                 else:
                     result = await self._execute_tool(tc.name, effective_arguments)
                 tool_elapsed_ms = int((time.monotonic() - tool_start) * 1000)
@@ -1174,6 +1269,13 @@ class CantripAgent:
         )
         self.state.messages.append(final_msg)
         self._record_message(final_msg)
+        # Phase 68.4: harvest a "Proposed changes" section whenever the
+        # agent produces one while plan mode is on, so /build can splice
+        # it back into context on the switch-over turn.
+        if self.state.plan_mode:
+            captured = _extract_proposed_changes(response.content or "")
+            if captured:
+                self.state.plan_summary = captured
         return response
 
     async def _process_message_inner(self, user_message: str) -> str:
@@ -1275,6 +1377,7 @@ class CantripAgent:
                 )
                 veto = first_veto(pre_results)
                 effective_arguments = final_arguments(pre_results) or tc.arguments
+                plan_block = _plan_mode_refusal(self.state, tc.name)
                 tool_start = time.monotonic()
                 if veto is not None:
                     log.warning(
@@ -1287,6 +1390,9 @@ class CantripAgent:
                         output="",
                         error=f"Blocked by {veto.veto_reason}",
                     )
+                elif plan_block is not None:
+                    log.info("Tool call %r refused by plan mode (stream)", tc.name)
+                    result = plan_block
                 else:
                     result = await self._execute_tool(tc.name, effective_arguments)
                 tool_elapsed_ms = int((time.monotonic() - tool_start) * 1000)

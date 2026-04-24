@@ -104,6 +104,17 @@ class AgentState:
     # flag or ``CANTRIP_SNAPSHOTS=false``.
     snapshot_enabled: bool = True
 
+    # Phase 68.4: session-level read-only mode.  When ``True`` the
+    # executor composes ``PLAN_MODE_OVERLAY`` onto every subagent's
+    # permission ruleset and the main-agent tool dispatcher refuses
+    # non-allowlisted tools with a "plan mode" error.  Toggled via
+    # the ``/plan`` and ``/build`` slash commands; sticky for the
+    # session, not persisted across restarts.  ``plan_summary``
+    # stores the most recent "Proposed changes" section so
+    # ``/build`` can feed it back as resume context.
+    plan_mode: bool = False
+    plan_summary: str | None = None
+
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
 

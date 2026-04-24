@@ -595,6 +595,26 @@ for configuration.</p>
     the moment a new user turn arrives.
   </dd>
 </dl>
+<h3 id="plan-mode">Plan mode</h3>
+<dl>
+  <dt><code>/plan</code></dt>
+  <dd>
+    Enter read-only plan mode. The agent can inspect files, git
+    history, Juju state, memory, and the web, but every other
+    tool returns a refused <code>ToolResult</code> with a
+    "plan mode &mdash; switch to <code>/build</code>" message.
+    Session-scoped and sticky. The status bar tints to signal
+    the mode.
+  </dd>
+  <dt><code>/build</code></dt>
+  <dd>
+    Leave plan mode. Re-feeds the most recently captured
+    <em>Proposed changes</em> section as context so the agent
+    picks up where planning left off. See
+    <a href="howto-plan-mode.html">Use plan mode</a> for the
+    allow-list and the <em>Proposed changes</em> contract.
+  </dd>
+</dl>
 <p>Snapshots are on by default. Disable per-session with
 <code>--no-snapshots</code> on the command line or
 <code>CANTRIP_SNAPSHOTS=false</code> in the environment.

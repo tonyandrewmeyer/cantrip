@@ -19,6 +19,9 @@ class StatusBar(Widget):
         background: $primary-background;
         padding: 0 1;
     }
+    StatusBar.-plan-mode {
+        background: $warning-darken-2;
+    }
     """
 
     task_label: reactive[str] = reactive("", init=False)
@@ -26,6 +29,10 @@ class StatusBar(Widget):
     cos_health: reactive[str] = reactive("", init=False)
     test_summary: reactive[str] = reactive("", init=False)
     watcher_status: reactive[str] = reactive("", init=False)
+    # Phase 68.4: ``"plan"`` means the read-only gate is active and the
+    # ``-plan-mode`` CSS class is set so the bar tints distinctly.
+    # Any other value (default: ``"build"``) keeps the normal theme.
+    mode: reactive[str] = reactive("build", init=False)
 
     def compose(self) -> ComposeResult:
         """Compose the status bar."""
@@ -33,9 +40,11 @@ class StatusBar(Widget):
 
     def _refresh_content(self) -> None:
         """Rebuild the bar text from current reactive values."""
+        mode_badge = "plan mode" if self.mode == "plan" else ""
         segments = [
             s
             for s in (
+                mode_badge,
                 self.task_label,
                 self.subagent_label,
                 self.cos_health,
@@ -47,9 +56,17 @@ class StatusBar(Widget):
         text = "  ".join(segments)
         with contextlib.suppress(NoMatches):
             self.query_one("#status-bar-content", Static).update(text)
+        self.set_class(self.mode == "plan", "-plan-mode")
 
     # Every reactive triggers the same refresh — watchers generated below.
 
 
-for _attr in ("task_label", "subagent_label", "cos_health", "test_summary", "watcher_status"):
+for _attr in (
+    "task_label",
+    "subagent_label",
+    "cos_health",
+    "test_summary",
+    "watcher_status",
+    "mode",
+):
     setattr(StatusBar, f"watch_{_attr}", lambda self: self._refresh_content())

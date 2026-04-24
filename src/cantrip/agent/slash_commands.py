@@ -34,7 +34,8 @@ from cantrip.agent import custom_commands, mcp_commands, memory_commands, sandbo
 from cantrip.agent.goal_budget import GoalBudget, format_summary, measure_usage
 from cantrip.agent.queue import AgentTask, TaskCategory
 from cantrip.llm import pricing
-from cantrip.llm.base import ProviderError, Role
+from cantrip.llm.base import Message, ProviderError, Role
+from cantrip.ui import events as ui_events
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +79,8 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/hooks", "List configured hooks and invocation stats"),
     CommandInfo("/undo", "Roll back the last user turn (files + messages)"),
     CommandInfo("/redo", "Re-apply the most recently undone turn"),
+    CommandInfo("/plan", "Enter read-only plan mode (no file edits or shells)"),
+    CommandInfo("/build", "Leave plan mode and resume executing changes"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -197,6 +200,10 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_undo(agent))
     if verb == "/redo":
         return SlashResult(text=handle_redo(agent))
+    if verb == "/plan":
+        return SlashResult(text=handle_plan(agent))
+    if verb == "/build":
+        return SlashResult(text=handle_build(agent))
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -530,6 +537,11 @@ def help_text(agent: CantripAgent | None = None) -> str:
         " unwind further.\n"
         "- `/redo` — re-apply the most recently undone turn."
         "  Cleared the moment a new user turn arrives.\n"
+        "- `/plan` — enter read-only plan mode.  The agent can "
+        "inspect files, git history, Juju state, and the web, but "
+        "cannot edit or run shells.\n"
+        "- `/build` — leave plan mode and resume executing changes."
+        "  Re-feeds the last *Proposed changes* summary as context.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
     custom = getattr(agent, "custom_commands", None) if agent is not None else None
@@ -897,6 +909,69 @@ def handle_redo(agent: CantripAgent) -> str:
         f"Redid the last undo — restored **{paths_changed}** file(s), "
         f"re-added **{len(entry.removed_messages)}** message(s)."
     )
+
+
+def handle_plan(agent: CantripAgent) -> str:
+    """Phase 68.4 ``/plan``: enter the read-only plan-mode gate.
+
+    Flips ``state.plan_mode`` and publishes a ``STATUS_BAR_CHANGED``
+    event so every surface (TUI, Web, CLI) can re-tint the mode
+    indicator.  Returns a concise one-liner noting the allow-listed
+    tools.  Already-in-plan-mode is a no-op; the status line stays
+    a single, truthful sentence.
+    """
+    if agent.state.plan_mode:
+        return "Already in plan mode.  Use `/build` to resume executing changes."
+    agent.state.plan_mode = True
+    # Clear any stale summary from a prior plan cycle.  ``/build``
+    # will capture a new one the next time the agent produces a
+    # "Proposed changes" section.
+    agent.state.plan_summary = None
+    try:
+        agent.event_bus.publish(ui_events.status_bar_changed(mode="plan"))
+    except (TypeError, ValueError, RuntimeError, AttributeError):
+        log.exception("status_bar_changed publish failed on /plan")
+    return (
+        "**Plan mode on.**  I will read the code, Juju state, git history, "
+        "and web, and produce a *Proposed changes* summary — but I won't "
+        "edit files, run shells, or deploy.  Flip back with `/build`."
+    )
+
+
+def handle_build(agent: CantripAgent) -> str:
+    """Phase 68.4 ``/build``: leave plan mode and resume executing changes.
+
+    Flips ``state.plan_mode`` off and, when a ``plan_summary`` was
+    captured while planning, re-sends it as an assistant-role prelude
+    so the agent picks the next turn up with the *Proposed changes*
+    section already in scope.  Without a captured summary we just
+    note the mode switch.
+    """
+    if not agent.state.plan_mode:
+        return "Already in build mode — every tool is available."
+    agent.state.plan_mode = False
+    resume_note = ""
+    if agent.state.plan_summary:
+        # Drop the summary into ``state.messages`` so the next user
+        # message sees it in the LLM's context.  We tag the role as
+        # ASSISTANT so the LLM treats it as its own prior output and
+        # builds on it rather than re-planning from scratch.
+        agent.state.messages.append(
+            Message(
+                role=Role.ASSISTANT,
+                content=f"## Proposed changes (from plan mode)\n\n{agent.state.plan_summary}",
+            )
+        )
+        resume_note = (
+            "  Resumed the plan's *Proposed changes* section as context — "
+            "the next turn will execute against it."
+        )
+        agent.state.plan_summary = None
+    try:
+        agent.event_bus.publish(ui_events.status_bar_changed(mode="build"))
+    except (TypeError, ValueError, RuntimeError, AttributeError):
+        log.exception("status_bar_changed publish failed on /build")
+    return f"**Build mode on.**  Every tool is available again.{resume_note}"
 
 
 def _handle_share(agent: CantripAgent) -> SlashResult:

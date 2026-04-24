@@ -14,9 +14,11 @@ from cantrip.agent import race, routing
 from cantrip.agent.autodeploy import followup_tasks
 from cantrip.agent.goal_budget import check_budget
 from cantrip.agent.permissions import (
+    PLAN_MODE_OVERLAY,
     PermissionDecision,
     PermissionManager,
     PermissionRuleset,
+    compose_rulesets,
     discover_permissions,
 )
 from cantrip.agent.policy import (
@@ -485,7 +487,20 @@ class BackgroundExecutor:
 
     @property
     def permissions(self) -> PermissionRuleset:
-        """Active permission ruleset — exposed for ``/permissions`` introspection."""
+        """Active permission ruleset — exposed for ``/permissions`` introspection.
+
+        Includes the Phase 68.4 plan-mode overlay when
+        ``state.plan_mode`` is ``True`` so callers (subagents, the
+        custom-command shell gate, the main-agent tool dispatcher)
+        automatically see read-only enforcement without each site
+        remembering to compose it.
+        """
+        return self._effective_permissions()
+
+    def _effective_permissions(self) -> PermissionRuleset:
+        """Compose the base ruleset with the plan-mode overlay if active."""
+        if self._state.plan_mode:
+            return compose_rulesets(self._permissions, PLAN_MODE_OVERLAY)
         return self._permissions
 
     @property
@@ -1047,7 +1062,7 @@ class BackgroundExecutor:
             on_phase_change=self._queue.notify_task,
             hook_runner=self._hook_runner,
             on_tool_invoked=self._on_tool_invoked,
-            permissions=self._permissions,
+            permissions=self._effective_permissions(),
             permission_manager=self._permission_manager,
             on_permission_decided=self._on_permission_decided,
             **({"max_rounds": max_rounds} if max_rounds is not None else {}),
@@ -1296,7 +1311,7 @@ class BackgroundExecutor:
                 on_phase_change=self._queue.notify_task,
                 hook_runner=self._hook_runner,
                 on_tool_invoked=self._on_tool_invoked,
-                permissions=self._permissions,
+                permissions=self._effective_permissions(),
                 permission_manager=self._permission_manager,
                 on_permission_decided=self._on_permission_decided,
                 **extra,

@@ -5,6 +5,36 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Plan mode — read-only stance with a Proposed-changes hand-off
+  (Phase 68.4, closes M68).**  ``/plan`` flips the session into a
+  read-only mode where the agent can inspect files, git history,
+  Juju state, memory, and the web, but every other tool returns a
+  refused ``ToolResult`` with a clear "Plan mode — switch to
+  ``/build`` to execute" message.  The allow-list covers
+  ``read_file`` / ``list_directory`` / ``glob`` / ``grep``,
+  ``git_status`` / ``git_diff`` / ``git_log``, seven
+  juju-introspection tools (``juju_status``,
+  ``juju_list_secrets``, ``juju_show_secret``,
+  ``juju_read_relation_data``, ``juju_get_app_config``,
+  ``juju_list_offers``, ``juju_show_unit``), memory reads,
+  and ``web_search`` / ``web_fetch``.  Implemented as a
+  permission preset rather than a parallel code path: a new
+  ``PLAN_MODE_OVERLAY`` :class:`PermissionRuleset` composes
+  onto the base stack via the executor's
+  ``_effective_permissions``, so subagents inherit the same
+  restrictions through Phase 68.2's gate.  The main-agent
+  conversation loop and streaming loop gate directly via a
+  ``_plan_mode_refusal`` helper.  While planning, the system
+  prompt grows a short appendix asking for a ``Proposed
+  changes`` section; Cantrip captures the body case-insensitively
+  and on ``/build`` splices it back in as an assistant-role
+  message so the next turn executes from the plan without
+  re-planning.  TUI status bar tints via a new ``-plan-mode``
+  CSS class backed by ``$warning-darken-2`` plus a literal
+  "plan mode" badge, driven by a new ``mode`` field on
+  ``STATUS_BAR_CHANGED``.  Documented in the new
+  [Use plan mode](docs/docs/howto-plan-mode.html) how-to.
+
 - **User-defined slash commands from markdown (Phase 68.3).**
   A charm team can now drop
   ``.cantrip/commands/<name>.md`` into the repo (or

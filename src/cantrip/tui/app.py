@@ -673,6 +673,11 @@ class CantripApp(App):
             status_bar.test_summary = payload["test_summary"]
         if "watcher_status" in payload:
             status_bar.watcher_status = payload["watcher_status"]
+        if "mode" in payload:
+            # Phase 68.4: ``/plan`` and ``/build`` publish
+            # ``mode=plan|build`` so the bar tints distinctly while
+            # the read-only gate is active.
+            status_bar.mode = payload["mode"]
 
     def _on_bus_cache_metrics(self, event: ui_events.Event) -> None:
         """Apply a CACHE_METRICS_UPDATED event to the modelbar (Phase 78.2).

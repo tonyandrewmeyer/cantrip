@@ -534,6 +534,83 @@ def _builtin_defaults() -> PermissionRuleset:
 BUILTIN_PERMISSIONS: PermissionRuleset = _builtin_defaults()
 
 
+#: Read-only toolset permitted in plan mode (Phase 68.4).  Covers
+#: code / filesystem reads, git history, live Juju inspection, memory
+#: lookup, and network fetches.  Every other tool denies with a
+#: "plan mode — switch to /build to execute" message so the LLM sees
+#: a clear error and the user can't accidentally mutate state while
+#: still in read-only mode.
+PLAN_MODE_ALLOWED_TOOLS: frozenset[str] = frozenset(
+    {
+        # File + code reads
+        "read_file",
+        "list_directory",
+        "glob",
+        "grep",
+        # Git history reads
+        "git_status",
+        "git_diff",
+        "git_log",
+        # Juju introspection
+        "juju_status",
+        "juju_list_secrets",
+        "juju_show_secret",
+        "juju_read_relation_data",
+        "juju_get_app_config",
+        "juju_list_offers",
+        "juju_show_unit",
+        # Memory lookup (safe — doesn't mutate)
+        "memory_list",
+        "memory_read",
+        "memory_search",
+        # Network reads
+        "web_search",
+        "web_fetch",
+    }
+)
+
+
+def _plan_mode_overlay() -> PermissionRuleset:
+    """Build the plan-mode overlay ruleset.
+
+    Implementation detail: a wildcard deny plus an explicit allow for
+    every read-only tool.  Last-match-wins within the ``tools``
+    section picks the literal on a hit and falls back to the
+    wildcard deny otherwise.  Cross-section composition is unaffected
+    — ``bash`` and ``paths`` sections from the base ruleset still
+    apply, but any tool not in the allow-list is denied outright
+    because most-restrictive-wins chooses the overlay's ``deny``.
+    """
+    rules: list[PermissionRule] = [
+        PermissionRule("*", PermissionOutcome.DENY, source="plan-mode"),
+    ]
+    rules.extend(
+        PermissionRule(tool, PermissionOutcome.ALLOW, source="plan-mode")
+        for tool in sorted(PLAN_MODE_ALLOWED_TOOLS)
+    )
+    return PermissionRuleset(tools=tuple(rules), name="plan-mode")
+
+
+#: The plan-mode overlay, composed onto the active ruleset whenever
+#: :attr:`cantrip.agent.state.AgentState.plan_mode` is ``True``.  Built
+#: once at import so compose calls don't re-allocate on every tool
+#: invocation.
+PLAN_MODE_OVERLAY: PermissionRuleset = _plan_mode_overlay()
+
+
+def plan_mode_message(tool_name: str) -> str:
+    """Standard denial message for a tool refused by plan mode.
+
+    Surfaces in the synthetic ``ToolResult`` error a subagent returns
+    when plan mode blocks a call.  Centralised here so the wording is
+    consistent across the main-agent and subagent code paths.
+    """
+    return (
+        f"Plan mode — {tool_name!r} is not available in read-only mode.  "
+        "Switch to ``/build`` to execute, or pick a read-only tool instead."
+    )
+
+
 #: Canonical filenames the discovery helper walks.  Kept as module
 #: constants so docs and tests can reference the same paths without
 #: duplicating the strings.
