@@ -168,6 +168,99 @@ error=...)` to raising when the failure is semantic
   `log` call inside `execute_tool()` for caught exceptions is
   debugging affordance, not user-facing).
 
+## Policy composition for tool access (Phase 55.4) — keep five, defer one, reject one
+
+Cantrip's current tool-gating is `_filter_tools(tools, category)`
+in `src/cantrip/agent/subagent.py` — a single-level allowlist
+keyed off `TaskCategory`.  That's one layer where the
+awesome-copilot [`agent-governance`][copilot-governance] skill
+scopes six primitives across three layers (global / team /
+agent) plus a rate limit, a trust score, and an audit trail.
+
+### The six primitives — keep / defer / reject
+
+| # | Primitive | Disposition | Why |
+|---|-----------|-------------|-----|
+| 1 | **`GovernancePolicy` + `compose_policies()`** — stacked allowlists with most-restrictive-wins semantics | **Keep** | Real value at the three Cantrip-relevant layers: global floor (``rm -rf`` always blocked), per-category (current `_CATEGORY_TOOLS` shape), and per-charm (operators can lock down a production charm directory). |
+| 2 | **`max_calls_per_request`** — per-goal rate limit | **Keep** | Pairs with Phase 55.3's per-goal iteration + token budget as a cost safety valve. Three circuit breakers at goal > task > session-call granularity using the same bus event shape. |
+| 3 | **JSONL audit trail** — append-only log of policy decisions | **Keep** | Streaming, grep-friendly export alongside the existing SQLite `events` table. Plays with `tail -f` and log aggregators in a way SQLite doesn't. |
+| 4 | **Juju-aware destructive-command gate** inside `tools/juju.py` + `tools/run_command.py` | **Keep** | Covers a real gap: user hooks (Phase 46) fire at lifecycle events, sandboxing (Phase 49) isolates subprocesses *after* the decision to call. Neither catches a subagent autonomously firing `juju_destroy_model` through the native `tools/juju.py` path. The in-code gate is the third layer. |
+| 5 | **Intent classification** — regex threat-signal scoring on prompt content | **Defer** | In a charm-building context the signal comes from the tool surface (`juju destroy-*`, `rm -rf`), not prompt content. Revisit if a real case emerges where a content regex catches something the tool-surface gate missed. |
+| 6 | **Trust scoring with temporal decay** for multi-agent delegation | **Reject** | Cantrip's subagents all descend from one trusted operator — no mutually-untrusted delegation. The primitive assumes a threat model Cantrip doesn't have. |
+
+### Mapping against Cantrip's current gating
+
+Today's picture:
+
+```
+user prompt → main agent → planner → AgentTask (with category)
+                                       │
+                                       ▼
+          _filter_tools(tools, category)  ←── single layer: category allowlist
+                                       │
+                                       ▼
+          Subagent runs — _tool_or_veto fires PRE_TOOL_CALL hooks
+                                       │
+                                       ▼
+                              Tool.execute() → subprocess / juju / fs
+```
+
+Three gaps a stacked-policy design would close:
+
+1. **No global floor.**  `juju destroy-model` is in
+   `TaskCategory.INFRA`'s allowlist because *some* infra tasks
+   legitimately destroy models.  There's no way to say "but not
+   against the dev-model currently in use" short of Python code
+   changes.  A global policy with
+   `require_human_approval: [juju_destroy_model]` gives operators
+   that switch declaratively.
+2. **No per-charm scoping.**  Today's gates are identical across
+   every charm Cantrip touches.  A Phase-6 publishing-ready charm
+   and a fresh sprint experiment deserve different policies; a
+   per-charm `<charm>/cantrip.policies.yaml` makes that
+   difference explicit.
+3. **No in-code destructive gate.**  `tools/juju.py::JujuDestroyModelTool`
+   calls `subprocess.run` directly.  A user's PRE_TOOL_CALL hook
+   wrapping `juju destroy-model` does nothing because the
+   subagent never shells out through `run_command` — it calls
+   `Tool.execute` on the Python-side wrapper.  Policy enforcement
+   has to live inside Cantrip's code paths, not external hook
+   scripts.
+
+### Relation to Phases 46 / 49 / 55.3 / 55.5
+
+Four adjacent phases cover related ground.  Policy composition
+doesn't replace any of them — it's the layer they're missing:
+
+| Phase | Layer | Fires when |
+|-------|-------|-----------|
+| 46 (user hooks) | Lifecycle events | `pre_subagent`, `post_subagent`, `pre_tool_call`, `post_tool_call`, `pre_compact` |
+| 49 (sandboxing) | Subprocess isolation | A shelled-out command executes under PID/mount namespaces |
+| 55.3 (goal budget) | Aggregate cost cap | Before the next task spawns; checks total iterations + tokens |
+| 55.5 (safe-outputs) | Per-task side-effect cap | Inside the subagent's tool dispatcher, per-task counters |
+| **55.4 → 80 (policy stack)** | **Tool eligibility** | **Before the tool even appears in the subagent's allowlist; policy check runs ahead of the pre-hook chain** |
+
+The five phases nest: **global budget > task safe-outputs >
+policy allowlist > user hook > sandbox**.  A single tool call
+passes every gate; any one can stop it.  That's the
+defence-in-depth story the charm-building context actually
+needs, and Cantrip has four of the five layers shipped or
+scoped.  Phase 55.4's output (this section) plus the new
+Phase 80 fills the fifth.
+
+### Output — Phase 80 filed
+
+The recommendation lands as a new phase in the roadmap: Phase
+80 — Stacked Tool-Access Policies.  Five subphases (80.1-80.5)
+ship the *keep* primitives; the *defer* and *reject* ones are
+called out in the Phase 80 "What this phase is not" block so a
+future reviewer finds the rationale without re-reading this
+write-up.  No tiny prototype of `compose_policies()` against an
+existing task type — the investigation is complete as-is, and
+the phase proposal is where the prototype would live anyway.
+
+[copilot-governance]: https://github.com/github/awesome-copilot/blob/main/skills/agent-governance/SKILL.md
+
 ## Deterministic pre-scan for Path B (Phase 55.7) — port with a stub
 
 Cantrip's `AnalyseFrameworkTool` (`tools/charm.py`) covers PaaS

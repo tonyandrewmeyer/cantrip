@@ -2080,53 +2080,47 @@ added two new ones (55.7, 55.8).
   autonomous runs routinely exceed ~20 tasks and the
   "run-until-done" default stops being adequate.
 
-### 55.4 High — Policy composition for tool access
+### 55.4 High — Policy composition for tool access ✓
 
-This item stays firmly in the investigation bucket: the scope below
-expanded after a closer read of the agent-governance skill, but
-nothing here is a commitment.  The phase output is a recommendation,
-possibly with a small prototype, not a delivered refactor.
-
-- [ ] Read `../awesome-copilot/skills/agent-governance/SKILL.md` in
-  full (six patterns: `GovernancePolicy`, `compose_policies()`,
-  intent classification, `@govern` decorator, trust scoring, audit
-  trail) and any referenced scripts
-- [ ] Map current Cantrip tool-gating: today `_filter_tools(tools,
-  category)` in `src/cantrip/agent/subagent.py:466` is a single-level
-  category allowlist.  Document where "this subagent may not run
-  `juju destroy-model`" *would* need to get enforced to be sound
-  (likely: inside `src/cantrip/agent/tools/juju.py` and
-  `run_command.py`, not as a category filter)
-- [ ] Evaluate each governance primitive against Cantrip's needs and
-  file a keep / defer / reject recommendation:
-  - **`compose_policies()` (stacked allowlists, most-restrictive-wins)** —
-    likely keep; replaces the single-level category filter with global
-    + per-task-type + per-charm layers
-  - **Per-goal rate limits (`max_calls_per_request`)** — likely keep;
-    pairs with 55.3's iteration budget as a cost safety valve
-  - **JSONL audit trail** — likely keep; emits machine-readable tool
-    events alongside the existing SQLite session state for post-hoc
-    analysis and compliance export
-  - **Juju-aware destructive-command gate inside the executor** —
-    likely keep; the Phase 55.5 / Copilot `tool-guardian` hook
-    protects user-initiated shell calls but autonomous-loop invocations
-    through `tools/juju.py` bypass any external shell hook entirely, so
-    the gate must live inside Cantrip's own code paths
-  - **Trust scoring with temporal decay** — likely reject; Cantrip
-    does not have multi-party delegation between untrusted agents
-  - **Intent classification / threat regexes** — defer; most of the
-    signal in a charm-building context comes from the tool surface
-    (`juju destroy-*`), not the prompt content
-- [ ] Explain how this relates to Phase 46 (user hooks) and Phase 49
-  (sandboxed shell): user hooks fire at lifecycle events; sandboxing
-  isolates subprocess execution; policy composition gates which tools
-  the LLM is allowed to *request* in the first place — all three
-  layers are complementary
-- [ ] Output: a written recommendation filed as a new phase proposal
-  (likely "Phase 57: Stacked Tool-Access Policies") or a
-  "rejected — here's why" entry appended to this roadmap.  A tiny
-  prototype of `compose_policies()` against one existing task type is
-  welcome but not required
+- [x] Read ``awesome-copilot/skills/agent-governance/SKILL.md``
+  in full (569 lines, six patterns): ``GovernancePolicy`` +
+  ``compose_policies()``, semantic intent classification, the
+  ``@govern`` decorator, trust scoring with temporal decay,
+  JSONL audit trail, framework-integration examples.
+- [x] Mapped Cantrip's current tool-gating: one layer —
+  ``_filter_tools(tools, category)`` in ``subagent.py`` — keyed
+  off ``TaskCategory.INFRA``-style enums.  Identified the three
+  gaps a stacked-policy design closes: no global floor, no
+  per-charm scoping, no in-code destructive gate for
+  ``tools/juju.py::JujuDestroyModelTool``-style direct
+  ``subprocess.run`` paths.
+- [x] **Keep / defer / reject per primitive** (full table in
+  ``design/TOOLS.md`` § *Policy composition for tool access
+  (Phase 55.4)*):
+  - ``GovernancePolicy`` + ``compose_policies`` — **keep**
+  - Per-goal ``max_calls_per_request`` — **keep** (pairs with
+    55.3)
+  - JSONL audit trail — **keep** (streaming export alongside
+    SQLite events)
+  - Juju-aware destructive-command gate — **keep** (fills a
+    real gap left by Phase 46 / 49)
+  - Intent classification — **defer** (charm-building signal
+    is tool surface, not prompt content)
+  - Trust scoring — **reject** (Cantrip has no mutually-
+    untrusted delegation)
+- [x] Documented the relationship to Phases 46 / 49 / 55.3 / 55.5
+  in ``design/TOOLS.md``: the five layers nest as
+  *global budget > task safe-outputs > policy allowlist >
+  user hook > sandbox*; any one can stop a tool call.  Phase
+  55.4 + the new Phase 80 fill the fifth layer (policy
+  allowlist).
+- [x] **Filed Phase 80: Stacked Tool-Access Policies** (see
+  entry in this roadmap) with five subphases for the kept
+  primitives: 80.1 ``GovernancePolicy`` + ``compose_policies``,
+  80.2 dispatcher wiring, 80.3 ``max_calls_per_request``, 80.4
+  JSONL audit trail, 80.5 in-code destructive gate.  No tiny
+  prototype of ``compose_policies`` against one task type —
+  the phase proposal is where that lives.
 
 ### 55.5 Low — Markdown workflows versus Python orchestration ✓
 
@@ -2443,6 +2437,169 @@ is announced to at least one charm-developer channel.
 | Extract (56.2) | 56.1 | Needs the scope decided first |
 | Publish (56.3) | 56.2 | Needs the content to publish |
 | Maintain (56.4) | 56.3 | Only meaningful once the bundle exists |
+
+---
+
+## Phase 80: Stacked Tool-Access Policies
+
+**Goal:** Replace the single-level category allowlist
+(``_filter_tools(tools, category)`` in
+``src/cantrip/agent/subagent.py``) with a composable
+policy-stack that layers **global** + **per-task-category** +
+**per-charm** rules, plus a per-goal rate limit, a JSONL
+audit trail, and Cantrip-side destructive-command gates.
+Filed by the Phase 55.4 investigation — see that phase in the
+roadmap + ``design/TOOLS.md`` § *Policy composition for tool
+access (Phase 55.4)* for the analysis that scoped this work.
+
+The design lifts the primitives worth keeping from awesome-
+copilot's ``agent-governance`` skill while leaving behind
+multi-agent trust scoring (Cantrip doesn't have mutually
+untrusted delegation) and intent-classification regex (in a
+charm-building context, the signal comes from the tool surface,
+not prompt content).
+
+This phase is **implementation**, not investigation — the 55.4
+write-up already decided keep/defer/reject per primitive.
+
+### 80.1 High — ``GovernancePolicy`` dataclass + ``compose_policies``
+
+- [ ] Add ``src/cantrip/agent/policy.py`` with a frozen
+  ``GovernancePolicy`` dataclass carrying
+  ``allowed_tools: frozenset[str]``,
+  ``blocked_tools: frozenset[str]``,
+  ``require_human_approval: frozenset[str]``, and
+  ``max_calls_per_request: int | None``.
+- [ ] Implement ``compose_policies(*policies) ->
+  GovernancePolicy`` with most-restrictive-wins semantics —
+  allow-lists intersect, block-lists union, approval-lists
+  union, rate limit is the minimum non-``None`` value.
+- [ ] Load policies from YAML
+  (``~/.config/cantrip/policies/*.yaml`` and
+  ``<charm>/cantrip.policies.yaml``) via a small parser; ship
+  three built-in policies (``org-wide``, ``category:<name>``,
+  ``sprint``) as default-deny floors.
+- [ ] Unit tests: composition is commutative for union fields
+  and associative for all; compose of empty-set allow and
+  non-empty-set allow keeps the non-empty; rate limit picks
+  the strictest; YAML round-trips.
+
+### 80.2 High — Wire policies into the subagent dispatcher
+
+- [ ] Replace ``_filter_tools(tools, category)`` with a
+  ``PolicyEnforcer`` helper that composes the active policy
+  stack once per subagent run and exposes
+  ``check_tool(name) -> PolicyAction``.
+- [ ] The existing ``_tool_or_veto`` path in
+  ``subagent.py`` gains a ``check_tool`` call before the
+  PRE_TOOL_CALL hook fires.  Policy ``DENY`` produces a
+  synthetic ``ToolResult(success=False, error="policy blocks
+  ...")`` with the policy name in the error; ``REVIEW`` maps
+  to a confirmation request (depends on Phase 68.2's
+  declarative permission work; until that lands, ``REVIEW``
+  degrades to ``DENY`` with a log line suggesting the user
+  add an approval rule).
+- [ ] Preserve the MCP-tool exception today's filter carries
+  — MCP tools still pass through the per-server
+  ``allowed_tools`` config (Phase 45.2) as the gate, not
+  category policy.
+
+### 80.3 Medium — ``max_calls_per_request`` per-goal rate limit
+
+- [ ] A per-goal counter in the executor, keyed off the
+  current ``AgentState.goal_budget`` (see Phase 55.3's sketch
+  — the two pair naturally).  Each call to a non-MCP tool
+  increments the counter; tripping the composed policy's
+  ``max_calls_per_request`` marks the task ``BLOCKED`` with
+  ``blocked_reason="policy rate limit exceeded"`` and emits
+  a ``policy_rate_limited`` event on the bus.
+- [ ] Compose cleanly with 55.3's goal-level budget
+  (``max_iterations``) and 55.5's per-task ``safe_outputs``
+  — three circuit breakers at goal > task > session-call
+  granularity, all using the same blocked-reason string
+  format so the TUI can render them uniformly.
+
+### 80.4 Medium — JSONL audit trail
+
+- [ ] Append-only ``<charm>/.cantrip-audit.jsonl`` with one
+  line per policy decision (``allowed`` / ``denied`` /
+  ``review-requested`` / ``rate-limited``).  Fields:
+  ``timestamp`` / ``task_id`` / ``tool`` / ``action`` /
+  ``policy_name`` / ``reason`` / ``arguments`` (redacted via
+  the existing secret-scrubbing from Phase 50.2).
+- [ ] ``cantrip audit`` CLI subcommand with
+  ``list [--task-id X] [--action ACTION]`` and ``export
+  [--format jsonl|csv]``.  Lightweight — wraps the existing
+  SQLite event store path so there's one source of truth for
+  "what did the agent actually do."
+- [ ] The file is additive to the SQLite ``events`` table:
+  SQLite stays as the primary store; the JSONL is a
+  streaming, grep-friendly export that plays nicely with
+  ``tail -f`` and off-the-shelf log aggregators.
+
+### 80.5 Medium — Juju-aware destructive-command gate
+
+- [ ] Add an inline gate inside ``tools/juju.py`` (at minimum
+  ``juju_destroy_model``, ``juju_remove_application``,
+  ``juju_remove_relation``) and ``tools/run_command.py`` (at
+  minimum ``rm -rf``, ``git push --force``, ``git reset
+  --hard``).  The gate fires **before** ``subprocess.run``
+  so a vetoed call never touches the model or the shell.
+- [ ] Gate decisions flow through the same policy stack —
+  the destructive-command list becomes an implicit
+  ``require_human_approval`` addition for the bundled
+  ``org-wide`` policy.  Operators who want bypass
+  capabilities (unattended ``cantrip --yolo`` or equivalent)
+  set ``approve_destructive: true`` in a charm-local
+  policy file.
+- [ ] Covers the gap Phase 55.5 identified: user hooks
+  (Phase 46) only fire at lifecycle events; the sandboxed
+  shell (Phase 49) isolates subprocess execution *after*
+  the call; neither catches a subagent that decides on its
+  own to call ``juju destroy-model`` through
+  ``tools/juju.py``.  This phase's in-code gate is the
+  third layer.
+
+### What this phase is *not*
+
+- **Not trust scoring.**  The ``agent-governance`` skill's
+  Pattern 4 (trust scores with temporal decay for multi-agent
+  delegation) assumes untrusted agent-to-agent delegation —
+  Cantrip's subagents all descend from one trusted operator.
+  Explicitly rejected in 55.4.
+- **Not intent classification.**  The skill's Pattern 2
+  (regex threat scoring against prompt content) is deferred:
+  in a charm-building context the signal comes from the tool
+  surface (``juju destroy-*``, ``rm -rf``), not the prompt
+  content.  Revisit if a real case emerges where a prompt-
+  content regex would have caught something the tool-surface
+  gate missed.
+- **Not a replacement for Phase 46 user hooks or Phase 49
+  sandboxing.**  The three layers are complementary: hooks
+  run at lifecycle events (PRE/POST subagent, tool_call,
+  compact); sandboxing isolates subprocess execution from
+  the host FS/network; policy composition gates which tools
+  the LLM is allowed to *request* in the first place.  A
+  defence-in-depth implementation uses all three.
+
+**Exit criteria:** Composing policies produces the expected
+intersection/union; a subagent run with a restrictive policy
+can't call blocked tools; per-goal rate limit trips the
+expected circuit breaker; JSONL audit contains one line per
+policy decision; ``juju destroy-model`` refuses in bundled-
+policy mode without ``--yolo`` or an explicit charm-local
+override.  New unit tests exercise compose semantics, YAML
+parsing, dispatcher integration, and each of the three
+circuit breakers (80.2 / 80.3 / 80.5).
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Policy dataclass (80.1) | none | Pure data module + YAML loader |
+| Dispatcher wiring (80.2) | 80.1, Phase 46 (hook runner) | Policy check fires before pre-hooks |
+| Rate limit (80.3) | 80.1, Phase 55.3 (goal_budget) | Shares the goal-scoped counter |
+| Audit trail (80.4) | 80.1, existing SQLite events | Streaming export, not new store |
+| Destructive gate (80.5) | 80.1, Phase 49 (sandbox) | Defence-in-depth third layer |
 
 ---
 
@@ -5129,4 +5286,5 @@ files only and does not dispatch on provider.
 | M77: Reasoning Content Surfaced | 77 | OpenAI-compatible reasoning deltas (Kimi K2, DeepSeek-R1, GLM reasoning variants) are captured and rendered like Claude's extended thinking rather than silently dropped |
 | M78: Observability Hardening | 78 | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
 | M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |
+| M80: Stacked Policies | 80 | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

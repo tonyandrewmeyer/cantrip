@@ -127,6 +127,45 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Policy-composition investigation + Phase 80 filed — Phase 55.4.**
+  Closes Phase 55 entirely.  Read the 569-line awesome-copilot
+  ``agent-governance`` skill (six patterns: ``GovernancePolicy``
+  + ``compose_policies()``, intent classification, ``@govern``
+  decorator, trust scoring, audit trail, framework integration)
+  and mapped Cantrip's current single-level
+  ``_filter_tools(tools, category)`` gating surface against
+  them.
+
+  **Keep / defer / reject per primitive:**
+  - ``GovernancePolicy`` + ``compose_policies`` → **keep** (global
+    + per-category + per-charm layers with most-restrictive-wins)
+  - Per-goal ``max_calls_per_request`` rate limit → **keep**
+    (pairs with 55.3's goal budget)
+  - JSONL audit trail → **keep** (streaming export alongside
+    the SQLite ``events`` table)
+  - Juju-aware destructive-command gate → **keep** (fills the
+    real gap: user hooks and the sandbox can't catch a subagent
+    autonomously calling ``tools/juju.py::JujuDestroyModelTool``)
+  - Intent classification → **defer** (charm-building signal is
+    tool surface, not prompt content)
+  - Trust scoring with temporal decay → **reject** (no
+    mutually-untrusted delegation in Cantrip)
+
+  Filed as **Phase 80: Stacked Tool-Access Policies** in the
+  roadmap with five subphases for the kept primitives.  M80
+  milestone row added to the table.  (Phases 57, 77, 78, 79
+  were all already taken — Phase 57 by the archived
+  "Test-Suite Cleanup" phase, 77-79 by the Reasoning Content
+  Surfaced and April 23 postmortem follow-ups — so the new
+  proposal moved to the next free integer above that ceiling.)
+
+  Full analysis in ``design/TOOLS.md`` § *Policy composition
+  for tool access (Phase 55.4)* — includes the keep/defer/reject
+  table, the three gaps a stacked-policy design closes, and the
+  five-layer defence-in-depth nesting (global budget > task
+  safe-outputs > policy allowlist > user hook > sandbox).  No
+  code changes — investigation only.
+
 - **Charm-design spec shape investigation — Phase 55.8.**  Read
   awesome-copilot's
   ``create-github-action-workflow-specification`` template (276
