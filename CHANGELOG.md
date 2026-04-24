@@ -5,6 +5,39 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`gh skill install` discovery — Phase 50.3.**  Cantrip now
+  discovers skills installed via GitHub CLI's ``gh skill install``
+  at the directories the command actually writes to.  Research
+  pinned the behaviour: there is no dedicated "gh skill"
+  directory — the command writes into whichever agent-specific
+  paths each target tool reads from (hard-coded table in
+  ``cli/cli/internal/skills/registry/registry.go``, shipped in
+  GitHub CLI v2.90 on 2026-04-16).  For Cantrip's users the two
+  that matter are the ``universal`` user-scope bucket at
+  ``~/.config/agents/skills/`` (shared by ``opencode`` /
+  ``kimi-cli`` / ``warp`` / ``replit`` / ``universal``) and the
+  project-scope default at ``<charm>/.agents/skills/`` +
+  ``<charm>/.claude/skills/``.  ``_default_external_skill_dirs()``
+  picked up the ``universal`` dir; a new
+  ``_default_project_skill_dirs(project_root)`` helper returns
+  the two project-scope paths; ``SkillsIndex`` gained a
+  ``project_root=`` kwarg; ``CantripAgent`` threads the charm
+  path through so project-scope skills are discovered end-to-end.
+  Precedence follows *most-shared → most-specific*: universal →
+  Claude → Cantrip-specific at user scope, then project-scope
+  wins over user-scope on name conflicts (``gh skill install``
+  into a repo always trumps a shared copy of the same skill).
+  The existing 50.1 test pinning Claude-before-Cantrip order was
+  renamed and expanded to assert the three-way ordering; 3 new
+  tests cover ``project_root=`` discovery, project-wins-over-user
+  override, and the absence of project paths when ``project_root``
+  is omitted.  ``docs/src/howto-skills.md`` grew a user-scope /
+  project-scope breakdown of all six directories plus an
+  *Installing skills with `gh skill install`* section covering
+  both default project-scope and opt-in user-scope invocations;
+  ``README.md`` gained a two-paragraph skills callout linking
+  through to the how-to.
+
 - **Skill export CLI — Phase 50.2.**  ``cantrip skill export <name>
   <path>`` writes a discovered skill to a file in the same
   vendor-neutral SKILL.md shape Phase 50.1 imports from, completing

@@ -32,23 +32,66 @@ for any of those tools works with Cantrip without translation.
 {#locations}
 ## Where Cantrip looks
 
-Cantrip discovers skills at startup from three places, in order:
+Cantrip discovers skills at startup from these places, in
+order of *most-shared* → *most-specific*. Later directories
+override earlier ones on name conflict, so the most specific
+copy wins. Missing directories are silently skipped — every
+external directory is optional.
+
+**User scope:**
 
 1. **Bundled skills** inside the Cantrip package. You don't
    touch these.
-2. `~/.claude/skills/` — shared with Claude Code and other
-   vendor-neutral tools.
-3. `~/.config/cantrip/skills/` — Cantrip-specific. Use this
+2. `~/.config/agents/skills/` — the "universal" user-scope
+   bucket `gh skill install --scope user` writes into when no
+   agent is named; also shared by several individual agents
+   (opencode, kimi-cli, warp, replit).
+3. `~/.claude/skills/` — shared with Claude Code. Also the
+   Claude Code user-scope dir for `gh skill install
+   --agent claude-code --scope user`.
+4. `~/.config/cantrip/skills/` — Cantrip-specific. Use this
    when you want a skill that only Cantrip should see.
 
-Later directories override earlier ones on name conflict, so a
-skill in `~/.config/cantrip/skills/scenario-tests/` takes
-precedence over the bundled version. Cantrip logs an
-`overrides` message at INFO level when this happens so the
-precedence is auditable.
+**Project scope** (when Cantrip runs inside a charm
+directory — it uses the charm path as the project root):
 
-Missing directories are silently skipped — external
-directories are optional.
+5. `<charm>/.agents/skills/` — the shared project-scope bucket
+   `gh skill install` writes into by default (no `--scope`).
+6. `<charm>/.claude/skills/` — Claude Code's project-scope
+   dir.
+
+Project-scope skills win over every user-scope skill with the
+same name, so a repo-local copy always trumps a shared one.
+Cantrip logs an `overrides` message at INFO level when a later
+directory shadows an earlier one so the precedence is
+auditable.
+
+{#gh-skill}
+## Installing skills with `gh skill install`
+
+Cantrip automatically picks up skills installed via GitHub
+CLI's [`gh skill install`](https://cli.github.com/manual/gh_skill_install)
+(released in `gh` v2.90). The command writes to whichever
+directory the target agent reads from — there is no separate
+"`gh skill`" directory. The two recommended combinations for
+Cantrip users:
+
+```bash
+# Project-scope (default) — installs into <charm>/.agents/skills/
+cd ~/charms/my-charm
+gh skill install microsoft/skills/harness-migration
+
+# User-scope — installs into ~/.claude/skills/
+gh skill install microsoft/skills/harness-migration \
+  --agent claude-code --scope user
+```
+
+Restart Cantrip. The installed skill appears in
+`index.format_for_prompt()` and can be loaded with
+`load_skill("<name>")` the next time the agent needs it.
+
+Use `gh skill list` to see what's installed and where; use
+`gh skill update` to pull new versions.
 
 {#format}
 ## Skill format

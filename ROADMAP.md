@@ -1188,12 +1188,50 @@ COS integration specifically).
   ``cantrip skill export`` in full — positional args, both flags,
   and exit codes — and the synopsis gains the new subcommand line.
 
-### 50.3 Low — `gh skill` discovery
+### 50.3 Low — `gh skill` discovery ✓
 
-- [ ] Detect skills installed via `gh skill install` by reading the standard
-  install location
-- [ ] Document in the README how users install skills from
-  `microsoft/skills` and use them with Cantrip
+- [x] Detect skills installed via ``gh skill install`` at the paths
+  the command actually uses.  Research pinned the behaviour: ``gh
+  skill install`` (shipped in GitHub CLI v2.90, 2026-04-16) does
+  not own a dedicated "gh skill" directory — it writes into
+  whichever agent-specific directory each target tool reads from.
+  For Cantrip's users the two that matter are the ``universal``
+  user-scope bucket and the project-scope default.  Implemented by
+  extending ``_default_external_skill_dirs()`` with
+  ``~/.config/agents/skills/`` (the ``gh skill install --scope
+  user`` default for ``universal`` / ``opencode`` / ``kimi-cli`` /
+  ``warp`` / ``replit``) and adding a new
+  ``_default_project_skill_dirs(project_root)`` helper that
+  returns ``<root>/.agents/skills/`` (shared project dir for ~20
+  agents) and ``<root>/.claude/skills/`` (Claude Code's
+  project-scope dir).  ``SkillsIndex`` grew a ``project_root=``
+  kwarg; ``CantripAgent`` threads the charm path through so
+  project-scope skills are discovered end-to-end.  Precedence
+  follows a *most-shared → most-specific* rule: universal →
+  Claude → Cantrip-specific at user scope, then project-scope
+  paths win over any user-scope copy.
+- [x] Deviation from roadmap wording: project-scope discovery is
+  new (not in the original Phase 50.3 sub-bullet) but it's the
+  actual default of ``gh skill install``.  Stopping at user-scope
+  would have missed the install path most users hit first.
+- [x] 4 new tests in ``test_skills.py``: precedence ordering
+  (universal → Claude → Cantrip), ``project_root=`` discovery,
+  project-scope wins over user-scope on name conflict, and
+  absence of project paths when ``project_root`` is omitted.  The
+  pre-existing ``test_default_external_dirs_are_cantrip_then_
+  claude`` was renamed and expanded to assert the three-way
+  ordering; no existing test regressed.
+- [x] Documentation: the *Where Cantrip looks* section in
+  ``docs/src/howto-skills.md`` now distinguishes user-scope vs
+  project-scope paths with all six directories listed in
+  precedence order; a new *Installing skills with `gh skill
+  install`* section covers both default project-scope and
+  opt-in user-scope invocations, plus ``gh skill list`` /
+  ``gh skill update`` for inspection.  ``README.md`` gains a
+  two-paragraph callout after the memory/MCP block that points
+  at the vendor-neutral skills ecosystem, shows a one-line
+  ``gh skill install microsoft/skills/...`` invocation, and
+  links through to the how-to.
 
 ### 50.4 Low — MCP-aware skills
 

@@ -42,15 +42,40 @@ def _default_external_skill_dirs() -> list[Path]:
     """Return the user-scoped skill directories searched by default.
 
     Order matters: later directories override earlier ones on name
-    conflict.  ``~/.claude/skills/`` is shared with Claude Code and
-    other vendor-neutral tools; ``~/.config/cantrip/skills/`` is
-    Cantrip-specific, so it takes precedence when a user wants to
-    override a shared skill.
+    conflict.  The principle is *most-shared → most-specific*:
+
+    - ``~/.config/agents/skills/`` is the ``universal`` bucket
+      ``gh skill install --scope user`` writes into when no agent is
+      named; it's also shared by several individual agents (opencode,
+      kimi-cli, warp, replit).  Least specific, so indexed first.
+    - ``~/.claude/skills/`` is the Claude Code user-scope dir (and the
+      Claude Code convention a chunk of the vendor-neutral ecosystem
+      follows).  More specific — a Cantrip user deliberately using
+      this location wants it to beat the universal dir.
+    - ``~/.config/cantrip/skills/`` is Cantrip-specific, so it takes
+      precedence over both shared locations when a user wants to
+      override.
     """
     home = Path.home()
     return [
+        home / ".config" / "agents" / "skills",
         home / ".claude" / "skills",
         home / ".config" / "cantrip" / "skills",
+    ]
+
+
+def _default_project_skill_dirs(project_root: Path) -> list[Path]:
+    """Return project-scoped skill directories for a charm repo.
+
+    These correspond to the paths ``gh skill install`` writes into
+    when run without ``--scope user`` (the default is project scope).
+    ``.agents/skills/`` is the shared project dir for ~20 agents;
+    ``.claude/skills/`` is Claude Code's project dir.  Project-scope
+    paths are the most specific — they win over user-scope conflicts.
+    """
+    return [
+        project_root / ".agents" / "skills",
+        project_root / ".claude" / "skills",
     ]
 
 
@@ -79,6 +104,7 @@ class SkillsIndex:
         skills_dir: Path | None = None,
         *,
         extra_dirs: Iterable[Path] | None = None,
+        project_root: Path | None = None,
     ) -> None:
         """Build an index.
 
@@ -92,6 +118,13 @@ class SkillsIndex:
         - ``extra_dirs=...`` may be supplied in either mode to override
           or extend the set of external directories; pass ``[]`` to
           explicitly disable external discovery even in default mode.
+        - ``project_root=<charm_path>``: when set, project-scope
+          directories (``<root>/.agents/skills/`` and
+          ``<root>/.claude/skills/``) are appended *after* the
+          user-scope dirs.  This is how ``gh skill install`` (default
+          ``--scope project``) ships skills into a charm repo.
+          Project-scope paths are the most specific — they win over
+          any user-scope conflict.
         """
         if skills_dir is None:
             baseline: list[Path] = [_DEFAULT_SKILLS_DIR]
@@ -103,6 +136,9 @@ class SkillsIndex:
             baseline = [skills_dir]
             if extra_dirs:
                 baseline.extend(extra_dirs)
+
+        if project_root is not None:
+            baseline.extend(_default_project_skill_dirs(project_root))
 
         # Preserve the baseline order for precedence decisions.
         self._skills_dirs: list[Path] = baseline

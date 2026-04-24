@@ -511,22 +511,101 @@ class TestSkillsIndexExternalDirs:
         assert by_name["core"].source == "bundled"
         assert by_name["user"].source == "external"
 
-    def test_default_external_dirs_are_cantrip_then_claude(self) -> None:
-        """Cantrip-specific dir trumps shared Claude Code dir on name conflicts."""
+    def test_default_external_dirs_are_most_shared_first(self) -> None:
+        """Precedence ordering: universal → Claude Code → Cantrip-specific.
+
+        ``~/.config/agents/skills/`` is the ``gh skill install`` user-scope
+        ``universal`` bucket (shared by opencode, kimi-cli, warp, replit
+        and several others); it's the least specific and loses to every
+        Claude or Cantrip skill on name conflict.  ``~/.claude/skills/``
+        is shared with Claude Code.  ``~/.config/cantrip/skills/`` is
+        Cantrip-only and wins the insertion-order contest against both.
+        """
         from cantrip.agent.skills import _default_external_skill_dirs
 
         dirs = _default_external_skill_dirs()
         paths = [str(d) for d in dirs]
-        # Claude Code first (shared), Cantrip second (user-specific) — so
-        # Cantrip's wins the insertion-order contest in ``SkillsIndex``.
+        assert any(".config/agents/skills" in p for p in paths)
         assert any(".claude/skills" in p for p in paths)
         assert any(".config/cantrip/skills" in p for p in paths)
+        agents_idx = next(i for i, p in enumerate(paths) if ".config/agents/skills" in p)
         claude_idx = next(i for i, p in enumerate(paths) if ".claude/skills" in p)
         cantrip_idx = next(i for i, p in enumerate(paths) if ".config/cantrip/skills" in p)
-        assert claude_idx < cantrip_idx, (
-            "Cantrip-specific dir must come after the shared Claude Code dir "
-            "so it wins the later-wins override."
+        assert agents_idx < claude_idx < cantrip_idx, (
+            "Expected universal → Claude → Cantrip-specific order "
+            "so Cantrip's wins name conflicts on later-wins semantics."
         )
+
+    def test_project_root_adds_gh_skill_project_scope_dirs(self, tmp_path: Path) -> None:
+        """``project_root=`` unlocks the project-scope ``gh skill install`` paths."""
+        from cantrip.agent.skills import _default_project_skill_dirs
+
+        project = tmp_path / "charm-repo"
+        project.mkdir()
+        (project / ".agents" / "skills").mkdir(parents=True)
+        (project / ".agents" / "skills" / "from-gh").mkdir()
+        (project / ".agents" / "skills" / "from-gh" / "SKILL.md").write_text(
+            "---\nname: from-gh\ndescription: installed via gh skill\n---\nBody\n"
+        )
+        (project / ".claude" / "skills").mkdir(parents=True)
+        (project / ".claude" / "skills" / "claude-only").mkdir()
+        (project / ".claude" / "skills" / "claude-only" / "SKILL.md").write_text(
+            "---\nname: claude-only\ndescription: Claude Code user-scope\n---\nBody\n"
+        )
+
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        index = SkillsIndex(bundled, project_root=project)
+        index.discover()
+        names = {s.name for s in index.list_skills()}
+        assert {"from-gh", "claude-only"} <= names
+
+        # _default_project_skill_dirs returns the two project paths in
+        # the documented order.
+        dirs = _default_project_skill_dirs(project)
+        paths = [str(d) for d in dirs]
+        agents_idx = next(i for i, p in enumerate(paths) if ".agents/skills" in p)
+        claude_idx = next(i for i, p in enumerate(paths) if ".claude/skills" in p)
+        assert agents_idx < claude_idx
+
+    def test_project_scope_skill_overrides_user_scope(self, tmp_path: Path) -> None:
+        """A repo-local ``gh skill install`` copy wins over the same-named user-scope one."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        (external / "shared").mkdir()
+        (external / "shared" / "SKILL.md").write_text(
+            "---\nname: shared\ndescription: user-scope version\n---\nUser body\n"
+        )
+
+        project = tmp_path / "charm"
+        project.mkdir()
+        (project / ".agents" / "skills" / "shared").mkdir(parents=True)
+        (project / ".agents" / "skills" / "shared" / "SKILL.md").write_text(
+            "---\nname: shared\ndescription: project-scope version\n---\nProject body\n"
+        )
+
+        index = SkillsIndex(bundled, extra_dirs=[external], project_root=project)
+        index.discover()
+        [metadata] = index.list_skills()
+        assert metadata.description == "project-scope version"
+        assert "Project body" in index.load_skill("shared")
+
+    def test_project_root_none_skips_project_discovery(self, tmp_path: Path) -> None:
+        """Without ``project_root=`` the project paths are not scanned at all."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        project = tmp_path / "charm"
+        (project / ".agents" / "skills" / "ghost").mkdir(parents=True)
+        (project / ".agents" / "skills" / "ghost" / "SKILL.md").write_text(
+            "---\nname: ghost\ndescription: should not be picked up\n---\nBody\n"
+        )
+
+        # No project_root kwarg → the .agents/skills tree is invisible.
+        index = SkillsIndex(bundled)
+        index.discover()
+        assert [s.name for s in index.list_skills()] == []
 
     def test_explicit_dir_does_not_pick_up_host_external_dirs(self, tmp_path: Path) -> None:
         """Passing an explicit ``skills_dir`` isolates from the host environment.

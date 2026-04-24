@@ -308,9 +308,15 @@ class CantripAgent:
 
     @property
     def _skills_index(self) -> SkillsIndex:
-        """Skills index, discovered lazily on first access."""
+        """Skills index, discovered lazily on first access.
+
+        Passes the charm path as ``project_root`` so project-scope
+        ``gh skill install`` destinations (``<charm>/.agents/skills/``,
+        ``<charm>/.claude/skills/``) are discovered alongside the
+        user-scope directories.
+        """
         if self._skills_index_cache is None:
-            self._skills_index_cache = SkillsIndex()
+            self._skills_index_cache = SkillsIndex(project_root=self.state.charm_path)
             self._skills_index_cache.discover()
         return self._skills_index_cache
 

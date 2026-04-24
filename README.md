@@ -105,6 +105,20 @@ See [`docs/docs/howto-memory.html`](docs/docs/howto-memory.html) and
 [`docs/docs/howto-mcp.html`](docs/docs/howto-mcp.html) for full
 workflows.
 
+Skills authored for the vendor-neutral ecosystem (Claude Code,
+`gh skill install`, Cursor, Codex, Gemini CLI, Windsurf) work with
+Cantrip unchanged — drop a standard SKILL.md into
+`~/.claude/skills/`, `~/.config/agents/skills/`, or
+`~/.config/cantrip/skills/`, or install via GitHub CLI:
+
+```bash
+gh skill install microsoft/skills/harness-migration   # project-scope, into <charm>/.agents/skills/
+```
+
+`cantrip skill export NAME PATH` writes any discovered skill back
+out in the same format, sanitising charm paths and secrets. See
+[`docs/docs/howto-skills.html`](docs/docs/howto-skills.html).
+
 ## Development
 
 ```bash
