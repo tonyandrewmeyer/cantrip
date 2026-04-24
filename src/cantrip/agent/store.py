@@ -897,6 +897,47 @@ class SessionStore:
             for r in rows
         ]
 
+    def get_replay_savings(self) -> dict[str, int]:
+        """Sum LLM tokens replayed from step checkpoints (Phase 52.6).
+
+        Reads ``checkpoint_hit`` events whose detail carries
+        ``prompt_tokens`` / ``completion_tokens`` (stamped by
+        :func:`cantrip.agent.durability.checkpoint` on
+        ``KIND_LLM_RESPONSE`` hits) and returns the running totals so
+        ``/cost`` can show "cached from checkpoint" alongside the live
+        token counts.  Tool hits contribute zero.
+
+        The payload never exceeds a session's event count (tens to low
+        hundreds in practice), so a Python-side sum is cheaper than
+        adding a ``json_extract`` SQL path here.
+        """
+        rows = self._db.execute(
+            "SELECT detail FROM events WHERE event_type = 'checkpoint_hit'"
+        ).fetchall()
+        prompt = 0
+        completion = 0
+        request_count = 0
+        for row in rows:
+            try:
+                detail = json.loads(row["detail"]) if row["detail"] else {}
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(detail, dict):
+                continue
+            p = detail.get("prompt_tokens")
+            c = detail.get("completion_tokens")
+            if isinstance(p, int):
+                prompt += p
+            if isinstance(c, int):
+                completion += c
+            if isinstance(p, int) or isinstance(c, int):
+                request_count += 1
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "request_count": request_count,
+        }
+
     # ── Memory (charm scope, Phase 43) ───────────────────────────────────
 
     def record_memory(

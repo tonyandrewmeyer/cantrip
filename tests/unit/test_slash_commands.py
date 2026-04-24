@@ -177,6 +177,11 @@ class TestCost:
         store.get_total_usage.return_value = {"prompt_tokens": 0, "completion_tokens": 0}
         store.get_usage_by_model.return_value = []
         store.get_usage_by_category.return_value = []
+        store.get_replay_savings.return_value = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "request_count": 0,
+        }
         agent = _fake_agent(memory_manager, store=store)
         result = dispatch(agent, "/cost")
         assert result is not None
@@ -187,12 +192,40 @@ class TestCost:
         store.get_total_usage.return_value = {"prompt_tokens": 1000, "completion_tokens": 200}
         store.get_usage_by_model.return_value = []
         store.get_usage_by_category.return_value = []
+        store.get_replay_savings.return_value = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "request_count": 0,
+        }
         agent = _fake_agent(memory_manager, store=store)
         result = dispatch(agent, "/cost")
         assert result is not None
         assert "1,000" in result.text
         assert "200" in result.text
         assert "1,200" in result.text
+        # With zero savings, the cached-from-checkpoint line is omitted.
+        assert "Cached from checkpoint" not in result.text
+
+    def test_cost_renders_cached_from_checkpoint_when_nonzero(
+        self, memory_manager: MemoryManager
+    ) -> None:
+        """Phase 52.6: replayed tokens show up alongside live usage."""
+        store = MagicMock()
+        store.get_total_usage.return_value = {"prompt_tokens": 800, "completion_tokens": 100}
+        store.get_usage_by_model.return_value = []
+        store.get_usage_by_category.return_value = []
+        store.get_replay_savings.return_value = {
+            "prompt_tokens": 250,
+            "completion_tokens": 50,
+            "request_count": 3,
+        }
+        agent = _fake_agent(memory_manager, store=store)
+        result = dispatch(agent, "/cost")
+        assert result is not None
+        assert "Cached from checkpoint: 300 tokens" in result.text
+        assert "250 prompt" in result.text
+        assert "50 completion" in result.text
+        assert "3 replayed turn(s)" in result.text
 
     def test_cost_renders_category_breakdown(self, memory_manager: MemoryManager) -> None:
         """Phase 31.4: ``/cost`` surfaces a **By category** table."""
@@ -202,6 +235,11 @@ class TestCost:
             "completion_tokens": 250,
         }
         store.get_usage_by_model.return_value = []
+        store.get_replay_savings.return_value = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "request_count": 0,
+        }
         store.get_usage_by_category.return_value = [
             {
                 "category": "build",

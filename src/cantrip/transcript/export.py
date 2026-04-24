@@ -25,6 +25,12 @@ class TranscriptData:
     # each task without decoding the blobs (blobs are on-demand via
     # ``cantrip checkpoints show``).
     checkpoints: dict[str, list[dict]] = dataclasses.field(default_factory=dict)
+    # Phase 52.6: sum of tokens avoided via checkpoint replay over the
+    # session's lifetime — ``{prompt_tokens, completion_tokens,
+    # request_count}``.  Populated from the ``checkpoint_hit`` event
+    # log so replayed turns show up in cost reports even though the
+    # live provider call never fired.
+    replay_savings: dict[str, int] = dataclasses.field(default_factory=dict)
 
 
 # Task categories grouped into phases for --phase filtering.
@@ -113,6 +119,10 @@ def load_transcript(
 
         # Load token usage.
         data.token_usage = session_store.get_total_usage()
+
+        # Phase 52.6 — aggregate tokens replayed from checkpoints so
+        # cost reports can show the savings alongside live usage.
+        data.replay_savings = session_store.get_replay_savings()
 
         # Phase 52.5 — attach step checkpoints per included task so the
         # transcript viewer can show what's cached for a task without

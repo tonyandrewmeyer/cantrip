@@ -395,6 +395,20 @@ def format_cost(agent: CantripAgent) -> str:
         hit_pct = agent.cache_read_tokens / cache_total * 100 if cache_total else 0
         lines.append(f"- Cache hit:  {hit_pct:>9.0f}%")
 
+    # Phase 52.6: tokens avoided via step-checkpoint replay.  These are
+    # billed zero this session (the live provider never fired) but the
+    # sum is worth showing so the user can see the cost-savings headroom
+    # the durable-execution machinery bought them.
+    savings = store.get_replay_savings()
+    saved_total = savings["prompt_tokens"] + savings["completion_tokens"]
+    if saved_total:
+        lines.append(
+            f"- Cached from checkpoint: {saved_total:,} tokens "
+            f"({savings['prompt_tokens']:,} prompt, "
+            f"{savings['completion_tokens']:,} completion, "
+            f"{savings['request_count']} replayed turn(s))"
+        )
+
     by_model = store.get_usage_by_model()
     total_cost = 0.0
     if by_model:

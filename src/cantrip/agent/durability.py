@@ -369,16 +369,28 @@ async def checkpoint[T](
                 ordinal,
                 record.kind,
             )
-            ctx.store.record_event(
-                "checkpoint_hit",
-                {
-                    "task_id": ctx.task_id,
-                    "step_name": step_name,
-                    "ordinal": ordinal,
-                    "kind": record.kind,
-                },
-            )
-            return cast("T", record.decode())
+            decoded = record.decode()
+            hit_detail: dict[str, object] = {
+                "task_id": ctx.task_id,
+                "step_name": step_name,
+                "ordinal": ordinal,
+                "kind": record.kind,
+            }
+            # Phase 52.6 — stamp the replayed LLM usage into the hit
+            # event so ``/cost`` can show "cached from checkpoint"
+            # totals without inspecting the blob again.  Tool hits
+            # don't contribute token cost and get no stamp.
+            if record.kind == KIND_LLM_RESPONSE and isinstance(decoded, dict):
+                usage = decoded.get("usage") or {}
+                if isinstance(usage, dict):
+                    prompt = usage.get("prompt_tokens")
+                    completion = usage.get("completion_tokens")
+                    if isinstance(prompt, int):
+                        hit_detail["prompt_tokens"] = prompt
+                    if isinstance(completion, int):
+                        hit_detail["completion_tokens"] = completion
+            ctx.store.record_event("checkpoint_hit", hit_detail)
+            return cast("T", decoded)
         log.warning(
             "checkpoint input-hash mismatch — invalidating task=%s step=%s#%d "
             "(stored=%s current=%s)",

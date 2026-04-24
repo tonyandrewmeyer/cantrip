@@ -90,6 +90,7 @@ class TestTranscriptData:
         assert data.events == []
         assert data.token_usage == {}
         assert data.checkpoints == {}
+        assert data.replay_savings == {}
 
 
 class TestLoadTranscript:
@@ -171,6 +172,44 @@ class TestLoadTranscript:
         ]
         assert rows[0]["input_hash"] == "h1"
         assert rows[0]["created_at"]
+
+    def test_load_transcript_populates_replay_savings(self, tmp_path):
+        """Phase 52.6: aggregated replayed tokens land in TranscriptData."""
+        path = tmp_path / ".cantrip"
+        store = SessionStore(path)
+        store.open()
+        # Two checkpoint_hit events with token stamps — what the durability
+        # wrapper records on llm_response replays.
+        store.record_event(
+            "checkpoint_hit",
+            {
+                "task_id": "t1",
+                "step_name": "llm_turn",
+                "ordinal": 1,
+                "kind": "llm_response",
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+            },
+        )
+        store.record_event(
+            "checkpoint_hit",
+            {
+                "task_id": "t1",
+                "step_name": "llm_turn",
+                "ordinal": 2,
+                "kind": "llm_response",
+                "prompt_tokens": 50,
+                "completion_tokens": 10,
+            },
+        )
+        store.close()
+
+        data = load_transcript(path)
+        assert data.replay_savings == {
+            "prompt_tokens": 150,
+            "completion_tokens": 30,
+            "request_count": 2,
+        }
 
 
 class TestHtmlRenderer:

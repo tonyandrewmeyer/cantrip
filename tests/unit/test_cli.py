@@ -266,6 +266,11 @@ class TestPrintCost:
                 },
             ],
             get_usage_by_category=lambda: [],
+            get_replay_savings=lambda: {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "request_count": 0,
+            },
         )
         cli._print_cost(
             SimpleNamespace(
@@ -282,6 +287,32 @@ class TestPrintCost:
         assert "gemini-3-flash" in out
         # Cost now shown for priced models and an overall total.
         assert "Estimated total" in out
+
+    def test_cached_from_checkpoint_line(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Phase 52.6: replay savings show alongside live usage."""
+        store = SimpleNamespace(
+            get_total_usage=lambda: {"prompt_tokens": 1000, "completion_tokens": 200},
+            get_usage_by_model=lambda: [],
+            get_usage_by_category=lambda: [],
+            get_replay_savings=lambda: {
+                "prompt_tokens": 150,
+                "completion_tokens": 30,
+                "request_count": 2,
+            },
+        )
+        cli._print_cost(
+            SimpleNamespace(
+                store=store,
+                cache_creation_tokens=0,
+                cache_read_tokens=0,
+                provider=SimpleNamespace(model_name="claude-opus-4"),
+            )
+        )
+        out = capsys.readouterr().out
+        assert "Cached from checkpoint: 180 tokens" in out
+        assert "150 prompt" in out
+        assert "30 completion" in out
+        assert "2 replayed turn(s)" in out
 
     def test_per_category_breakdown_rendered(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Phase 31.4: ``/cost`` groups rows by task category."""
@@ -306,6 +337,11 @@ class TestPrintCost:
                     "request_count": 3,
                 },
             ],
+            get_replay_savings=lambda: {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "request_count": 0,
+            },
         )
         cli._print_cost(
             SimpleNamespace(

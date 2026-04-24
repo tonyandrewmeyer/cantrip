@@ -764,3 +764,181 @@ class TestCheckpointEventEmission:
             invalid_detail = _json.loads(invalid_detail)
         assert invalid_detail["stored_hash"] == "old"
         assert invalid_detail["current_hash"] == "new"
+
+
+class TestReplaySavings:
+    """Phase 52.6 — ``checkpoint_hit`` events stamp LLM token usage for ``/cost``."""
+
+    async def test_llm_response_hit_stamps_usage(
+        self, store: SessionStore, checkpoints: CheckpointStore
+    ) -> None:
+        """A cached llm_response hit surfaces prompt/completion tokens in the event."""
+        checkpoints.record(
+            "t1",
+            "llm_turn",
+            1,
+            "h",
+            KIND_LLM_RESPONSE,
+            {
+                "content": "ok",
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {"prompt_tokens": 123, "completion_tokens": 45},
+                "metadata": {},
+            },
+        )
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn() -> dict[str, object]:
+            return {}  # Must not run on hit.
+
+        await checkpoint(ctx, "llm_turn", fn, input_hash="h", kind=KIND_LLM_RESPONSE)
+
+        hits = store.load_events(event_type="checkpoint_hit")
+        assert len(hits) == 1
+        import json as _json
+
+        detail = hits[0]["detail"]
+        if isinstance(detail, str):
+            detail = _json.loads(detail)
+        assert detail["prompt_tokens"] == 123
+        assert detail["completion_tokens"] == 45
+
+    async def test_tool_result_hit_does_not_stamp_tokens(
+        self, store: SessionStore, checkpoints: CheckpointStore
+    ) -> None:
+        """Tool hits carry no token cost — the stamp only applies to llm_response kinds."""
+        checkpoints.record(
+            "t1",
+            "tool:read_file",
+            1,
+            "h",
+            KIND_TOOL_RESULT,
+            {
+                "success": True,
+                "output": "x",
+                "data": {},
+                "error": None,
+                "images": [],
+                "caption": None,
+            },
+        )
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn() -> dict[str, object]:
+            return {}
+
+        await checkpoint(ctx, "tool:read_file", fn, input_hash="h", kind=KIND_TOOL_RESULT)
+
+        hits = store.load_events(event_type="checkpoint_hit")
+        import json as _json
+
+        detail = hits[0]["detail"]
+        if isinstance(detail, str):
+            detail = _json.loads(detail)
+        assert "prompt_tokens" not in detail
+        assert "completion_tokens" not in detail
+
+    async def test_llm_response_hit_with_empty_usage_skips_stamp(
+        self, store: SessionStore, checkpoints: CheckpointStore
+    ) -> None:
+        """A cached llm_response with no usage fields doesn't crash or stamp zeros."""
+        checkpoints.record(
+            "t1",
+            "llm_turn",
+            1,
+            "h",
+            KIND_LLM_RESPONSE,
+            {
+                "content": "ok",
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {},
+                "metadata": {},
+            },
+        )
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def fn() -> dict[str, object]:
+            return {}
+
+        await checkpoint(ctx, "llm_turn", fn, input_hash="h", kind=KIND_LLM_RESPONSE)
+
+        hits = store.load_events(event_type="checkpoint_hit")
+        import json as _json
+
+        detail = hits[0]["detail"]
+        if isinstance(detail, str):
+            detail = _json.loads(detail)
+        assert "prompt_tokens" not in detail
+        assert "completion_tokens" not in detail
+
+    def test_get_replay_savings_empty_session(self, store: SessionStore) -> None:
+        savings = store.get_replay_savings()
+        assert savings == {"prompt_tokens": 0, "completion_tokens": 0, "request_count": 0}
+
+    async def test_get_replay_savings_sums_across_hits(
+        self, store: SessionStore, checkpoints: CheckpointStore
+    ) -> None:
+        # Two llm hits with usage + one tool hit without.
+        checkpoints.record(
+            "t1",
+            "llm_turn",
+            1,
+            "h",
+            KIND_LLM_RESPONSE,
+            {
+                "content": "",
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {"prompt_tokens": 100, "completion_tokens": 20},
+                "metadata": {},
+            },
+        )
+        checkpoints.record(
+            "t1",
+            "llm_turn",
+            2,
+            "h",
+            KIND_LLM_RESPONSE,
+            {
+                "content": "",
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {"prompt_tokens": 50, "completion_tokens": 10},
+                "metadata": {},
+            },
+        )
+        checkpoints.record(
+            "t1",
+            "tool:read_file",
+            1,
+            "h",
+            KIND_TOOL_RESULT,
+            {
+                "success": True,
+                "output": "x",
+                "data": {},
+                "error": None,
+                "images": [],
+                "caption": None,
+            },
+        )
+        ctx = CheckpointCtx(store=checkpoints, task_id="t1")
+
+        async def llm_fn() -> dict[str, object]:
+            return {}
+
+        async def tool_fn() -> dict[str, object]:
+            return {}
+
+        await checkpoint(ctx, "llm_turn", llm_fn, input_hash="h", kind=KIND_LLM_RESPONSE)
+        await checkpoint(ctx, "llm_turn", llm_fn, input_hash="h", kind=KIND_LLM_RESPONSE)
+        await checkpoint(ctx, "tool:read_file", tool_fn, input_hash="h", kind=KIND_TOOL_RESULT)
+
+        savings = store.get_replay_savings()
+        assert savings == {
+            "prompt_tokens": 150,
+            "completion_tokens": 30,
+            "request_count": 2,  # Tool hit didn't contribute.
+        }

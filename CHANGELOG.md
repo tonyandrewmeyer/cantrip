@@ -127,6 +127,39 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Replay-cost accounting — Phase 52.6.**  Closes Phase 52
+  entirely.  Two pieces:
+
+  - **Rate-limit budget tracker is already correct.**  This half
+    of the roadmap was satisfied by the 52.3 wiring: checkpoint
+    hits short-circuit ``_complete_with_retry`` entirely, so
+    ``on_usage`` (the callback that feeds the budget tracker and
+    the ``token_usage`` table) is never invoked on a hit — no
+    double-counting, no separate code path.  Documented.
+
+  - **"Cached from checkpoint" line in ``/cost``.**  The 52.5
+    ``checkpoint_hit`` event now stamps ``prompt_tokens`` /
+    ``completion_tokens`` onto the event detail when the cached
+    row is a ``KIND_LLM_RESPONSE`` (tool hits contribute
+    nothing).  New ``SessionStore.get_replay_savings()`` sums
+    those fields across the event log and returns
+    ``{prompt_tokens, completion_tokens, request_count}``.  Both
+    ``format_cost`` (TUI / Web ``/cost``) and
+    ``cli._print_cost`` (CLI ``/cost``) append a
+    ``"Cached from checkpoint: X tokens (Y prompt, Z
+    completion, N replayed turn(s))"`` line when savings are
+    non-zero; the line is omitted on fresh sessions so existing
+    output is unchanged by default.
+
+  ``TranscriptData`` grew a ``replay_savings: dict[str, int]``
+  field populated by ``load_transcript`` so downstream exporters
+  (HTML / JSONL / markdown) can surface the saved-token figure.
+  9 new tests: 3 event-stamping cases (llm hit stamps / tool
+  hit doesn't / empty usage stays clean), 2 ``get_replay_savings``
+  sums, 1 transcript-data population, 1 positive ``format_cost``
+  case + assertions in existing totals tests that the line stays
+  absent on zero savings, 1 ``_print_cost`` positive case.
+
 - **Checkpoint observability and inspection — Phase 52.5.**  Closes
   out the core of Phase 52 (52.6 cost-accounting remains as a
   low-priority follow-up).  Three user-facing surfaces on top of

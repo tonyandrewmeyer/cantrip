@@ -1698,15 +1698,40 @@ adapted to SQLite.
   prompt y/n); 3 TUI ``_checkpoint_lines`` render tests
   (empty-state / populated / unknown-task-id fallback).
 
-### 52.6 Low — Cost accounting for replayed steps
+### 52.6 Low — Cost accounting for replayed steps ✓
 
-- [ ] Token-usage records note whether a turn's tokens came from a
-  fresh provider call or a checkpoint replay — the model-info bar and
-  transcript show "X tokens (Y cached from checkpoint)" so the cost
-  signal isn't misleading.
-- [ ] On replay, we do not double-count tokens toward the rate-limit
-  budget tracker (which already treats cache hits correctly; this
-  extends the same treatment to checkpoint hits).
+- [x] Rate-limit budget tracker already does not double-count on
+  replay — a consequence of the 52.3 wiring: checkpoint hits
+  short-circuit ``_complete_with_retry`` entirely, so
+  ``on_usage`` (the callback that feeds the budget tracker +
+  ``token_usage`` table) is *never invoked* on a hit.  No change
+  needed in 52.6 for this half; the behaviour has been correct
+  since 52.3.
+- [x] Replayed-usage surface: the 52.5 ``checkpoint_hit`` event
+  now carries ``prompt_tokens`` / ``completion_tokens`` when the
+  cached row is a ``KIND_LLM_RESPONSE`` (tool hits contribute
+  nothing).  New ``SessionStore.get_replay_savings()`` sums
+  those fields across the event log and returns ``{prompt_tokens,
+  completion_tokens, request_count}`` so ``/cost`` and the
+  transcript can show the savings at a glance.  Both
+  ``format_cost`` (TUI / Web ``/cost``) and ``cli._print_cost``
+  (CLI ``/cost``) append a "Cached from checkpoint: X tokens
+  (Y prompt, Z completion, N replayed turn(s))" line whenever
+  the saved total is non-zero; the line is omitted on fresh
+  sessions so the existing output is unchanged by default.
+- [x] ``TranscriptData`` grew a ``replay_savings: dict[str,
+  int]`` field populated by ``load_transcript`` from
+  ``get_replay_savings``, so downstream renderers (HTML / JSONL /
+  markdown in Phase 54) can surface the saved-token figure in
+  exported transcripts without re-reading the database.
+- [x] 9 new tests: 3 event-stamping (``llm_response`` hit stamps
+  usage / ``tool_result`` hit does not / empty-``usage`` dict
+  stays clean); 2 ``get_replay_savings`` sums (empty-session /
+  mixed llm-and-tool hits); 1 transcript-data population test;
+  1 ``format_cost`` positive case + assertions in the existing
+  ``format_cost`` / ``_print_cost`` totals tests that the line
+  stays *absent* on zero savings; 1 ``_print_cost`` positive
+  case.
 
 ### What this phase is *not*
 
@@ -4927,7 +4952,7 @@ files only and does not dispatch on provider.
 | M49: Sandboxed Shell | 49 | Untrusted subprocesses run under PID/mount namespaces with deny-rule and syscall hardening |
 | M50: Skills Interop | 50 | Standard-format skills import and export round-trip; MCP-aware skills resolve dependencies at load time |
 | M51: Team Research | 51 | Written assessment of whether and how Cantrip should support teams working on a charm, with architecture sketches and a next-step recommendation |
-| M52: Durable Subagents | 52 | Subagent LLM turns and tool calls checkpoint into SQLite; interrupted tasks resume from the last completed step instead of re-burning tokens |
+| M52: Durable Subagents | 52 ✓ | Subagent LLM turns and tool calls checkpoint into SQLite; interrupted tasks resume from the last completed step instead of re-burning tokens |
 | M53: Knowledge-in-Markdown | 53 | Planner prompts and task descriptions live in Jinja2 templates; `planner.py` split along the deterministic / LLM seam; dev design docs cover tools, skills, and prompts |
 | M54: Authored Docs | 54 | `docs/docs/` site rebuilds from committed markdown sources through `make docs`; no hand-authored HTML remains in the docs tree |
 | M55: Awesome-Copilot Survey | 55 | Eight awesome-copilot patterns investigated end-to-end; each has a committed decision, prototype, or recommendation |
