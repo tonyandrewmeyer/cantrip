@@ -526,16 +526,66 @@ class CantripAgent:
         self.state.messages.append(Message(role=Role.SYSTEM, content=warning))
         self._event_bus.publish(ui_events.chat_message(role="system", content=warning))
 
+    async def _run_compaction(self, *, tokens_before: int, source: str) -> None:
+        """Run compaction (with emergency-truncate fallback), bracketed by UI events.
+
+        Publishes ``COMPACTION_STARTED`` / ``COMPACTION_COMPLETED`` around
+        the work so the chat pane can show an inline indicator — without
+        it users see a multi-second pause with no explanation (the lesson
+        from Anthropic's April 23 incident was that silent state changes
+        are expensive to diagnose later).  Complements the existing
+        ``pre_compact`` / ``post_compact`` hooks which fire but don't
+        reach the UI event bus.
+
+        On failure falls back to ``emergency_truncate`` so the loop can
+        continue; the ``kind`` field in the completed event
+        disambiguates the two paths for downstream listeners.
+        """
+        self._event_bus.publish(
+            ui_events.compaction_started(tokens_before=tokens_before, source=source)
+        )
+        kind = "compact"
+        try:
+            self.state.messages = await self._context_manager.compact(
+                self.state.messages,
+                system_prompt=self._build_system_prompt(),
+                provider=self._get_provider("compaction"),
+            )
+        except Exception:
+            log.warning(
+                "Compaction failed, falling back to emergency truncation",
+                exc_info=True,
+            )
+            self.state.messages = self._context_manager.emergency_truncate(self.state.messages)
+            kind = "emergency"
+        tokens_after = self._context_manager.estimate_tokens(self.state.messages)
+        self._persist_compaction_state()
+        self._event_bus.publish(
+            ui_events.compaction_completed(
+                tokens_before=tokens_before,
+                tokens_after=tokens_after,
+                source=source,
+                kind=kind,
+            )
+        )
+
     def _persist_compaction_state(self) -> None:
         """Persist compaction counters and surface any pending safety warning.
 
-        Called after each compact/emergency_truncate so budgets survive
-        session resume and the user sees cycle/budget warnings promptly.
+        Called after each compact/emergency_truncate so budgets (and as
+        of Phase 78.3 the ``cycle_detected`` / ``budget_exhausted`` stop
+        flags) survive session resume and the user sees cycle/budget
+        warnings promptly.
         """
-        compactions, emergencies = self._context_manager.safety_state()
+        compactions, emergencies, cycle, exhausted = self._context_manager.safety_state()
         if self._store:
             try:
-                self._store.save_compaction_counters(compactions, emergencies)
+                self._store.save_compaction_counters(
+                    compactions,
+                    emergencies,
+                    cycle_detected=cycle,
+                    budget_exhausted=exhausted,
+                )
             except sqlite3.Error:
                 log.warning("Failed to persist compaction counters", exc_info=True)
         warning = self._context_manager.consume_safety_warning()
@@ -1011,23 +1061,7 @@ class CantripAgent:
                         tokens_before,
                     )
                 else:
-                    try:
-                        self.state.messages = await self._context_manager.compact(
-                            self.state.messages,
-                            system_prompt=self._build_system_prompt(),
-                            provider=self._get_provider("compaction"),
-                        )
-                    except Exception:
-                        # Compaction is best-effort; fall back to crude truncation
-                        # so the conversation can continue.
-                        log.warning(
-                            "Compaction failed, falling back to emergency truncation",
-                            exc_info=True,
-                        )
-                        self.state.messages = self._context_manager.emergency_truncate(
-                            self.state.messages
-                        )
-                    self._persist_compaction_state()
+                    await self._run_compaction(tokens_before=tokens_before, source="main")
                     await self._hook_runner.fire(
                         HookEvent.POST_COMPACT,
                         {
@@ -1222,21 +1256,7 @@ class CantripAgent:
                         tokens_before,
                     )
                 else:
-                    try:
-                        self.state.messages = await self._context_manager.compact(
-                            self.state.messages,
-                            system_prompt=self._build_system_prompt(),
-                            provider=self._get_provider("compaction"),
-                        )
-                    except Exception:
-                        log.warning(
-                            "Compaction failed, falling back to emergency truncation",
-                            exc_info=True,
-                        )
-                        self.state.messages = self._context_manager.emergency_truncate(
-                            self.state.messages
-                        )
-                    self._persist_compaction_state()
+                    await self._run_compaction(tokens_before=tokens_before, source="main-stream")
                     await self._hook_runner.fire(
                         HookEvent.POST_COMPACT,
                         {
@@ -2582,8 +2602,13 @@ class CantripAgent:
         # resume and we don't hand a fresh budget to a session that has
         # already been compacting aggressively.
         try:
-            compactions, emergencies = self._store.load_compaction_counters()
-            self._context_manager.restore_safety_state(compactions, emergencies)
+            compactions, emergencies, cycle, exhausted = self._store.load_compaction_counters()
+            self._context_manager.restore_safety_state(
+                compactions,
+                emergencies,
+                cycle_detected=cycle,
+                budget_exhausted=exhausted,
+            )
         except sqlite3.Error:
             log.warning("Failed to restore compaction counters")
 

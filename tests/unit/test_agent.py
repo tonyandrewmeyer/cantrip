@@ -581,6 +581,54 @@ class TestContextManagement:
         assert len(files) >= 1
         assert any(f.source == "compaction" for f in files)
 
+    @pytest.mark.asyncio
+    async def test_compaction_emits_started_and_completed_events(self):
+        """Phase 78.3: compaction brackets the work with UI events.
+
+        Without the events, users see a multi-second pause while the
+        summary LLM turn runs with no explanation.  The event pair
+        complements the ``pre_compact`` / ``post_compact`` hooks
+        (which fire but don't reach the bus) so chat panes can show
+        an inline indicator.
+        """
+        from cantrip.ui.events import EventType
+
+        tool_call = ToolCall(id="tc1", name="juju_status", arguments={})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Compaction summary."),
+                Response(content="After compaction."),
+            ],
+            context_window_tokens=200,
+        )
+        agent = CantripAgent(provider=provider)
+        events: list = []
+        agent.event_bus.subscribe(None, lambda e: events.append(e))
+
+        # Pre-load the context past the 80% threshold so the tool
+        # round-trip trips compaction.
+        for _ in range(10):
+            agent.state.messages.append(Message(role=Role.USER, content="A" * 80))
+            agent.state.messages.append(Message(role=Role.ASSISTANT, content="B" * 80))
+
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="ok"))
+
+        await agent.process_message("Check status")
+
+        started = [e for e in events if e.type == EventType.COMPACTION_STARTED]
+        completed = [e for e in events if e.type == EventType.COMPACTION_COMPLETED]
+        assert len(started) == 1
+        assert len(completed) == 1
+        # Started fires first and carries the pre-compaction token count.
+        assert events.index(started[0]) < events.index(completed[0])
+        assert started[0].payload["tokens_before"] > 0
+        assert started[0].payload["source"] == "main"
+        # Completed carries the token counts and kind.
+        assert completed[0].payload["tokens_before"] == started[0].payload["tokens_before"]
+        assert completed[0].payload["kind"] in {"compact", "emergency"}
+        assert "tokens_after" in completed[0].payload
+
     def test_virtual_file_tools_are_registered(self):
         """Virtual file tools are included in the tool list."""
         provider = FakeProvider()

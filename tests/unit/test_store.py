@@ -313,18 +313,18 @@ class TestMigration:
 
 
 class TestCompactionCounters:
-    """Tests for compaction safety counter persistence (Phase 40.2)."""
+    """Tests for compaction safety counter persistence (Phase 40.2, 78.3)."""
 
     def test_default_counters_are_zero(self, store: SessionStore) -> None:
         state = AgentState(charm_name="x")
         store.save_session(state)
-        assert store.load_compaction_counters() == (0, 0)
+        assert store.load_compaction_counters() == (0, 0, False, False)
 
     def test_save_and_load_counters(self, store: SessionStore) -> None:
         state = AgentState(charm_name="x")
         store.save_session(state)
         store.save_compaction_counters(compactions_attempted=7, emergencies_attempted=3)
-        assert store.load_compaction_counters() == (7, 3)
+        assert store.load_compaction_counters() == (7, 3, False, False)
 
     def test_counters_independent_of_session_save(self, store: SessionStore) -> None:
         """save_session() must not reset counters that save_compaction_counters set."""
@@ -335,11 +335,36 @@ class TestCompactionCounters:
         # the counters.
         state.charm_name = "y"
         store.save_session(state)
-        assert store.load_compaction_counters() == (5, 2)
+        assert store.load_compaction_counters() == (5, 2, False, False)
 
     def test_load_on_empty_store_returns_zero(self, store: SessionStore) -> None:
-        """No session row yet → counters default to (0, 0)."""
-        assert store.load_compaction_counters() == (0, 0)
+        """No session row yet → counters default to (0, 0, False, False)."""
+        assert store.load_compaction_counters() == (0, 0, False, False)
+
+    def test_stop_flags_persist_across_save_load(self, store: SessionStore) -> None:
+        """Phase 78.3: cycle_detected / budget_exhausted round-trip.
+
+        Without this, a session that had already decided to stop
+        compacting would silently re-arm on resume and the ineffective
+        compaction loop could start again.
+        """
+        state = AgentState(charm_name="x")
+        store.save_session(state)
+        store.save_compaction_counters(
+            compactions_attempted=3,
+            emergencies_attempted=1,
+            cycle_detected=True,
+            budget_exhausted=True,
+        )
+        assert store.load_compaction_counters() == (3, 1, True, True)
+
+    def test_stop_flags_default_false_when_unset(self, store: SessionStore) -> None:
+        """Callers that only pass counters leave stop-flags False."""
+        state = AgentState(charm_name="x")
+        store.save_session(state)
+        store.save_compaction_counters(4, 2)
+        _, _, cycle, exhausted = store.load_compaction_counters()
+        assert (cycle, exhausted) == (False, False)
 
 
 class TestCorruptDataResilience:

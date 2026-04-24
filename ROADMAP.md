@@ -5244,40 +5244,49 @@ cache information at all.
   TUI's wording so Web and TUI stay feature-equivalent
   (ongoing commitment from Phase 60 and design/UI.md).
 
-### 78.3 Compaction corner-case tests + resume state
+### 78.3 Compaction corner-case tests + resume state ✓
 
 Cantrip's compaction architecture is safer than Anthropic's
 bug shape — it's a stateless threshold check
 (``context.py:385-412``) with latched flags that *stop*
 compaction rather than trigger it — but specific hazards
-remain:
+remained:
 
 - ``_cycle_detected`` and ``_budget_exhausted`` reset to
-  ``False`` on session resume (``context.py:173-176``,
-  ``core.py:2487-2491``); numeric counters survive but the
-  boolean "stop" signals don't.
-- No test asserts the one-shot semantic ("after compaction
+  ``False`` on session resume; numeric counters survived but
+  the boolean "stop" signals didn't.  A session already
+  disabled could silently re-arm.
+- No test asserted the one-shot semantic ("after compaction
   fires, ``should_compact()`` returns False on the very next
-  turn").  The guarantee is implicit in the counter logic.
+  turn").  The guarantee was implicit in the counter logic.
 
-Work:
-
-- [ ] Add a unit test to ``tests/unit/test_context.py`` that
-  walks the exact turn sequence: 1) load context to 80%, 2)
-  trigger compaction, 3) assert ``should_compact()`` returns
-  False immediately after, before the compacted context has
-  room to refill.
-- [ ] Persist ``_cycle_detected`` / ``_budget_exhausted``
-  across session resume (extend the SQLite store at
-  ``store.py:482-511`` to include the boolean flags alongside
-  the existing counters).
-- [ ] Add a ``COMPACTION_STARTED`` / ``COMPACTION_COMPLETED``
-  pair to the UI event bus so the chat pane can show a
-  visible indicator while compaction runs — today users see a
-  multi-second pause with no explanation.  Complements the
-  existing ``pre_compact`` / ``post_compact`` hooks
-  (``src/cantrip/hooks.py``) which fire but don't reach the
-  UI.
+- [x] ``tests/unit/test_context_manager.py::
+  TestCompactionSafety::test_should_compact_is_one_shot_after_compaction``
+  walks the roadmap turn sequence: fill the context past the
+  80% threshold, run ``compact()``, assert ``should_compact()``
+  on the compacted output is False — no chance for the next
+  turn to immediately re-trigger summarisation.
+- [x] Schema v11 adds ``cycle_detected`` and ``budget_exhausted``
+  boolean columns to ``session``; ``SessionStore.
+  save_compaction_counters`` / ``load_compaction_counters``
+  now persist and restore them; ``ContextManager.safety_state``
+  / ``restore_safety_state`` round-trip both flags and
+  ``CantripAgent._persist_compaction_state`` and the session-
+  resume path in ``load_state`` are wired accordingly.  New
+  tests cover the store round-trip, the ContextManager round-
+  trip, and the "restored stop-flag blocks should_compact"
+  assertion — the exact resume bug called out in the roadmap.
+- [x] ``EventType.COMPACTION_STARTED`` /
+  ``EventType.COMPACTION_COMPLETED`` added to the UI event bus
+  with ``compaction_started`` / ``compaction_completed``
+  factory helpers.  ``CantripAgent._run_compaction`` (new
+  helper used by both the main and streaming conversation
+  loops) publishes the events around the work and carries
+  ``kind=compact|emergency`` in the completed payload so UIs
+  can distinguish a successful summary from a fallback
+  truncation.  ``TestContextManagement::
+  test_compaction_emits_started_and_completed_events``
+  exercises the whole pipeline end-to-end.
 
 ### 78.4 ``thinking_budget`` regression guard ✓
 

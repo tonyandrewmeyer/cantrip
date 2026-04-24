@@ -198,14 +198,34 @@ class ContextManager:
         """True once the per-session compaction budget has been exhausted."""
         return self._budget_exhausted
 
-    def safety_state(self) -> tuple[int, int]:
-        """Return (compactions_attempted, emergencies_attempted) for persistence."""
-        return self._compactions_attempted, self._emergencies_attempted
+    def safety_state(self) -> tuple[int, int, bool, bool]:
+        """Return the full compaction safety state for persistence.
 
-    def restore_safety_state(self, compactions_attempted: int, emergencies_attempted: int) -> None:
-        """Restore counters from persisted state on session resume."""
+        Returns ``(compactions_attempted, emergencies_attempted,
+        cycle_detected, budget_exhausted)``.  Phase 78.3 extended this
+        from a two-tuple so the boolean latches survive session
+        resume — a session that has already decided to stop compacting
+        should not silently re-arm on the next run.
+        """
+        return (
+            self._compactions_attempted,
+            self._emergencies_attempted,
+            self._cycle_detected,
+            self._budget_exhausted,
+        )
+
+    def restore_safety_state(
+        self,
+        compactions_attempted: int,
+        emergencies_attempted: int,
+        cycle_detected: bool = False,
+        budget_exhausted: bool = False,
+    ) -> None:
+        """Restore counters and stop-flags from persisted state on resume."""
         self._compactions_attempted = max(0, compactions_attempted)
         self._emergencies_attempted = max(0, emergencies_attempted)
+        self._cycle_detected = bool(cycle_detected)
+        self._budget_exhausted = bool(budget_exhausted)
 
     def consume_safety_warning(self) -> str | None:
         """Return and clear any pending safety warning for the user."""

@@ -14,7 +14,7 @@ from cantrip.agent.state import AgentState, Decision
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS session (
     message_count INTEGER DEFAULT 0,
     compactions_attempted INTEGER NOT NULL DEFAULT 0,
     emergencies_attempted INTEGER NOT NULL DEFAULT 0,
+    cycle_detected INTEGER NOT NULL DEFAULT 0,
+    budget_exhausted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -336,6 +338,22 @@ class SessionStore:
                     ON step_checkpoints(task_id);
             """)
 
+        if current < 11:
+            # v11: persist compaction stop-flags on the session table
+            # (Phase 78.3).  The counters were already persisted at v7,
+            # but the boolean latches (cycle_detected, budget_exhausted)
+            # were reset to False on every resume, letting a session
+            # that had already been disabled silently re-arm.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(session)").fetchall()}
+            if "cycle_detected" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE session ADD COLUMN cycle_detected INTEGER NOT NULL DEFAULT 0"
+                )
+            if "budget_exhausted" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE session ADD COLUMN budget_exhausted INTEGER NOT NULL DEFAULT 0"
+                )
+
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
             self._conn.commit()
@@ -480,34 +498,56 @@ class SessionStore:
     # ── Compaction safety counters (Phase 40.2) ─────────────────────────
 
     def save_compaction_counters(
-        self, compactions_attempted: int, emergencies_attempted: int
+        self,
+        compactions_attempted: int,
+        emergencies_attempted: int,
+        *,
+        cycle_detected: bool = False,
+        budget_exhausted: bool = False,
     ) -> None:
-        """Persist the per-session compaction safety counters.
+        """Persist the per-session compaction safety counters and stop-flags.
 
         Called from the conversation loop after each compaction/truncate so
-        the budgets survive session resume.  Assumes a session row already
-        exists (save_session() creates it on first use).
+        the budgets survive session resume.  Phase 78.3 extended this with
+        the boolean ``cycle_detected`` / ``budget_exhausted`` latches — a
+        session that already decided to stop compacting must remember that
+        decision across resume, otherwise the very next turn could
+        re-enable an ineffective compaction loop.  Assumes a session row
+        already exists (save_session() creates it on first use).
         """
         self._db.execute(
             "UPDATE session SET compactions_attempted = ?, "
-            "emergencies_attempted = ?, updated_at = datetime('now') WHERE id = 1",
-            (compactions_attempted, emergencies_attempted),
+            "emergencies_attempted = ?, cycle_detected = ?, "
+            "budget_exhausted = ?, updated_at = datetime('now') WHERE id = 1",
+            (
+                compactions_attempted,
+                emergencies_attempted,
+                1 if cycle_detected else 0,
+                1 if budget_exhausted else 0,
+            ),
         )
         self._db.commit()
 
-    def load_compaction_counters(self) -> tuple[int, int]:
-        """Return (compactions_attempted, emergencies_attempted) for the session.
+    def load_compaction_counters(self) -> tuple[int, int, bool, bool]:
+        """Return the four compaction safety values for the session.
 
-        Returns (0, 0) when no session row exists yet.
+        Returns (compactions_attempted, emergencies_attempted,
+        cycle_detected, budget_exhausted).  Phase 78.3 extended this
+        from a two-tuple to a four-tuple so the boolean stop-flags
+        survive session resume.  Returns all-zero/False when no session
+        row exists yet.
         """
         row = self._db.execute(
-            "SELECT compactions_attempted, emergencies_attempted FROM session WHERE id = 1"
+            "SELECT compactions_attempted, emergencies_attempted, "
+            "cycle_detected, budget_exhausted FROM session WHERE id = 1"
         ).fetchone()
         if row is None:
-            return 0, 0
+            return 0, 0, False, False
         return (
             int(row["compactions_attempted"] or 0),
             int(row["emergencies_attempted"] or 0),
+            bool(row["cycle_detected"] or 0),
+            bool(row["budget_exhausted"] or 0),
         )
 
     # ── Task persistence ────────────────────────────────────────────────

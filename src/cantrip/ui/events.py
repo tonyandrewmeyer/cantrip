@@ -34,6 +34,8 @@ class EventType(enum.StrEnum):
     MCP_ELICITATION_REQUEST = "mcp_elicitation_request"
     TOOL_INVOKED = "tool_invoked"
     MODEL_SWITCHED = "model_switched"
+    COMPACTION_STARTED = "compaction_started"
+    COMPACTION_COMPLETED = "compaction_completed"
 
 
 @dataclass(frozen=True)
@@ -245,6 +247,45 @@ def juju_status_changed(*, status_data: dict[str, Any]) -> Event:
     return Event(
         type=EventType.JUJU_STATUS_CHANGED,
         payload=status_data,
+    )
+
+
+def compaction_started(*, tokens_before: int, source: str = "main") -> Event:
+    """Build a ``COMPACTION_STARTED`` event.
+
+    Fired before :meth:`ContextManager.compact` runs so UIs can show an
+    inline "compacting…" indicator.  Without this, users see a multi-
+    second pause with no explanation because compaction requires a
+    full LLM summary round-trip before the next turn can proceed.
+    """
+    return Event(
+        type=EventType.COMPACTION_STARTED,
+        payload={"tokens_before": tokens_before, "source": source},
+    )
+
+
+def compaction_completed(
+    *,
+    tokens_before: int,
+    tokens_after: int,
+    source: str = "main",
+    kind: str = "compact",
+) -> Event:
+    """Build a ``COMPACTION_COMPLETED`` event.
+
+    Fired after compaction finishes (either normally or after falling
+    back to ``emergency_truncate``).  ``kind`` is ``"compact"`` for a
+    successful LLM summary, ``"emergency"`` when truncation was used
+    instead — lets the UI show a different phrasing for the two paths.
+    """
+    return Event(
+        type=EventType.COMPACTION_COMPLETED,
+        payload={
+            "tokens_before": tokens_before,
+            "tokens_after": tokens_after,
+            "source": source,
+            "kind": kind,
+        },
     )
 
 

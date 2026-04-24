@@ -5,6 +5,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Compaction stop-flags survive session resume + one-shot guard +
+  visible progress events (Phase 78.3).**  Previously the boolean
+  ``_cycle_detected`` / ``_budget_exhausted`` latches inside
+  ``ContextManager`` reset to ``False`` on every session resume, so a
+  session that had already decided to stop compacting could silently
+  re-arm the next run and re-enter an ineffective compaction loop.
+  Schema v11 adds ``cycle_detected`` and ``budget_exhausted`` columns
+  to ``session``; ``save_compaction_counters`` /
+  ``load_compaction_counters`` carry them alongside the existing
+  counters, and ``CantripAgent`` round-trips both flags across
+  ``_persist_compaction_state`` and the resume path.  A new unit test
+  asserts the one-shot semantic — after ``compact()`` runs,
+  ``should_compact()`` returns False on the compacted output.  The
+  UI event bus gains ``COMPACTION_STARTED`` / ``COMPACTION_COMPLETED``
+  (fired from the new ``CantripAgent._run_compaction`` helper, which
+  replaces the duplicated compact-with-fallback block in both the
+  synchronous and streaming conversation loops) so chat panes can
+  show an inline indicator while the summary turn runs — today
+  users see a multi-second pause with no explanation.  The completed
+  event carries ``kind=compact|emergency`` so listeners can word the
+  two paths differently.
+
 - **Prompt-cache cascade detector (Phase 78.1).**  New
   ``cantrip.agent.cache_monitor.CacheCascadeDetector`` watches the
   per-turn ``cache_creation_input_tokens`` / ``cache_read_input_tokens``

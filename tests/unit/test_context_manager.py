@@ -268,6 +268,34 @@ class TestCompactionSafety:
         assert cm.compactions_attempted == 1
 
     @pytest.mark.asyncio
+    async def test_should_compact_is_one_shot_after_compaction(self):
+        """Phase 78.3: compaction is one-shot per turn.
+
+        Walks the exact turn sequence called out in the roadmap:
+        1) fill the context past the compaction threshold, 2) run
+        compaction, 3) assert ``should_compact()`` is False on the
+        compacted output before the new context has any chance to
+        refill.  Protects against a re-entry bug where a quirk of the
+        threshold-check logic could let the next turn immediately
+        fire again, burning tokens on back-to-back summaries.
+        """
+        cm = ContextManager(
+            virtual_store=VirtualFileStore(),
+            context_window_tokens=200_000,
+            compaction_threshold=0.8,
+        )
+        # Build 80%+-of-window worth of content.  ~_CPT chars/token and
+        # we need ~160k tokens of filler, so 800 long messages do it.
+        heavy = [Message(role=Role.USER, content="x" * 800) for _ in range(800)]
+        assert cm.should_compact(heavy) is True
+
+        compacted = await cm.compact(heavy, "prompt", FakeProvider())
+
+        # Immediately after compaction the summary + recent tail must
+        # fit well below the threshold; should_compact() must be False.
+        assert cm.should_compact(compacted) is False
+
+    @pytest.mark.asyncio
     async def test_budget_exhausted_stops_compacting(self):
         """Once the compaction budget is spent, should_compact returns False
         and a warning is queued for the user."""
@@ -354,10 +382,35 @@ class TestCompactionSafety:
     def test_restore_safety_state_round_trip(self):
         cm = ContextManager(virtual_store=VirtualFileStore(), context_window_tokens=200_000)
         cm.restore_safety_state(7, 2)
-        assert cm.safety_state() == (7, 2)
+        assert cm.safety_state() == (7, 2, False, False)
         # Negative inputs are clamped to zero.
         cm.restore_safety_state(-1, -5)
-        assert cm.safety_state() == (0, 0)
+        assert cm.safety_state() == (0, 0, False, False)
+
+    def test_restore_safety_state_round_trips_stop_flags(self):
+        """Phase 78.3: cycle_detected / budget_exhausted survive restore."""
+        cm = ContextManager(virtual_store=VirtualFileStore(), context_window_tokens=200_000)
+        cm.restore_safety_state(3, 1, cycle_detected=True, budget_exhausted=True)
+        assert cm.safety_state() == (3, 1, True, True)
+        assert cm.cycle_detected is True
+        assert cm.budget_exhausted is True
+
+    def test_restored_stop_flag_blocks_should_compact(self):
+        """A session resumed with cycle_detected=True doesn't compact again.
+
+        Without persistence, the flag reset to False on resume and the
+        next full context window would re-enter the ineffective
+        compaction loop — the Phase 78.3 motivation.
+        """
+        cm = ContextManager(
+            virtual_store=VirtualFileStore(),
+            context_window_tokens=200,
+        )
+        cm.restore_safety_state(5, 0, cycle_detected=True)
+        # Build an oversized message list that would otherwise trigger
+        # compaction.
+        msgs = self._messages(20)
+        assert cm.should_compact(msgs) is False
 
 
 class TestBudgetMessage:

@@ -203,7 +203,7 @@ class TestLoadStateBranches:
         loaded.decisions = []
 
         store.load_session = MagicMock(return_value=loaded)
-        store.load_compaction_counters = MagicMock(return_value=(0, 0))
+        store.load_compaction_counters = MagicMock(return_value=(0, 0, False, False))
         store.load_messages = MagicMock(
             return_value=[
                 {"role": "not_a_role", "content": "dropped"},
