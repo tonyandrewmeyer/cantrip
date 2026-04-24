@@ -73,6 +73,12 @@ class GovernancePolicy:
     require_human_approval: frozenset[str] = frozenset()
     max_calls_per_request: int | None = None
     name: str = "unnamed"
+    # Phase 80.5: explicit opt-in for destructive commands.  OR-composed
+    # across the stack — any layer with ``True`` lets the in-code gate
+    # inside ``tools/juju.py`` and ``tools/run_command.py`` through.
+    # Intended for unattended / ``--yolo`` sessions where the operator
+    # has accepted the blast radius ahead of time.
+    approve_destructive: bool = False
 
     def check_tool(self, tool_name: str) -> PolicyAction:
         """Return the policy verdict for *tool_name*.
@@ -128,6 +134,13 @@ def compose_policies(*policies: GovernancePolicy) -> GovernancePolicy:
     ]
     rate_limit = min(rate_limits) if rate_limits else None
 
+    # approve_destructive: OR across layers — any opt-in wins.  This
+    # is the one field where a more-permissive layer overrides a more-
+    # restrictive one, because the flag exists specifically to let an
+    # operator accept the blast radius ahead of time for unattended
+    # ``--yolo``-style sessions.
+    approve_destructive = any(p.approve_destructive for p in policies)
+
     composed_name = "+".join(p.name for p in policies)
 
     return GovernancePolicy(
@@ -136,6 +149,7 @@ def compose_policies(*policies: GovernancePolicy) -> GovernancePolicy:
         require_human_approval=approval,
         max_calls_per_request=rate_limit,
         name=composed_name,
+        approve_destructive=approve_destructive,
     )
 
 
@@ -154,6 +168,7 @@ _POLICY_FIELDS = {
     "require_human_approval",
     "max_calls_per_request",
     "name",
+    "approve_destructive",
 }
 
 
@@ -199,12 +214,19 @@ def policy_from_dict(raw: dict[str, object], *, default_name: str = "unnamed") -
     if not isinstance(name, str):
         raise PolicyParseError(f"name must be a string, got {type(name).__name__}")
 
+    approve_destructive = raw.get("approve_destructive", False)
+    if not isinstance(approve_destructive, bool):
+        raise PolicyParseError(
+            f"approve_destructive must be a boolean, got {type(approve_destructive).__name__}"
+        )
+
     return GovernancePolicy(
         allowed_tools=_frozen_set("allowed_tools"),
         blocked_tools=_frozen_set("blocked_tools"),
         require_human_approval=_frozen_set("require_human_approval"),
         max_calls_per_request=rate,
         name=name,
+        approve_destructive=approve_destructive,
     )
 
 
@@ -223,6 +245,7 @@ def policy_to_dict(policy: GovernancePolicy) -> dict[str, object]:
         "blocked_tools": sorted(policy.blocked_tools),
         "require_human_approval": sorted(policy.require_human_approval),
         "max_calls_per_request": policy.max_calls_per_request,
+        "approve_destructive": policy.approve_destructive,
     }
 
 
@@ -318,6 +341,119 @@ ORG_WIDE_POLICY = GovernancePolicy(
         }
     ),
 )
+
+
+#: Tools whose ``execute`` method consults the in-code destructive
+#: gate (Phase 80.5) before calling subprocess / juju.  Kept as a
+#: module-level constant so the list is discoverable without
+#: walking each tool file.  Subset of ORG_WIDE_POLICY's approval
+#: list — the approval list gates *the LLM's ability to request
+#: the tool*, while this set gates *the tool's own execution path*
+#: so a direct call (main-agent, future scripting entry point) also
+#: hits the gate.
+DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
+    {
+        "juju_destroy_model",
+        "juju_destroy_controller",
+        "juju_remove_application",
+        "juju_remove_relation",
+    }
+)
+
+
+def _is_short_flag(token: str, letter: str) -> bool:
+    """True when *token* is a POSIX short-flag bundle containing *letter*.
+
+    Handles ``-r``, ``-rf``, ``-fr`` uniformly while rejecting
+    long-form options that happen to contain the letter (``--recurse``
+    wouldn't qualify as a ``-r`` hit).
+    """
+    return (
+        len(token) >= 2
+        and token.startswith("-")
+        and not token.startswith("--")
+        and letter in token[1:]
+    )
+
+
+def destructive_gate(
+    tool_name: str,
+    *,
+    charm_path: Path | None = None,
+    user_config_dir: Path | None = None,
+    extra_policies: tuple[GovernancePolicy, ...] = (),
+) -> tuple[bool, str]:
+    """Check whether a destructive tool is approved to run.
+
+    Returns ``(approved, reason)``.  A tool not in
+    :data:`DESTRUCTIVE_TOOLS` is always approved — the gate is a
+    backstop, not the primary allow-list.  For a destructive tool,
+    the gate composes ``ORG_WIDE_POLICY`` with any discovered user /
+    per-charm policies (plus *extra_policies* for tests) and lets
+    the call through only when the composed
+    ``approve_destructive`` flag is ``True``.
+
+    The denial reason names the composed policy stack so audit
+    consumers (Phase 80.4) can trace it.
+    """
+    if tool_name not in DESTRUCTIVE_TOOLS:
+        return True, ""
+    layers: list[GovernancePolicy] = [ORG_WIDE_POLICY]
+    layers.extend(discover_policies(charm_path=charm_path, user_config_dir=user_config_dir))
+    layers.extend(extra_policies)
+    composed = compose_policies(*layers)
+    if composed.approve_destructive:
+        return True, ""
+    reason = (
+        f"Destructive tool {tool_name!r} requires explicit approval "
+        f"under policy stack {composed.name!r}.  Add "
+        "``approve_destructive: true`` to a charm-local or user "
+        "policy file to enable this call."
+    )
+    return False, reason
+
+
+def destructive_command_check(argv: list[str]) -> tuple[bool, str]:
+    """Detect destructive shapes in a shell-parsed argv.
+
+    Returns ``(is_destructive, description)``.  When destructive,
+    ``tools/run_command.py`` composes the active policy stack and
+    refuses unless ``approve_destructive`` is ``True`` — same
+    semantic as :func:`destructive_gate` but triggered by the command
+    shape rather than the tool name.
+
+    Shapes caught, each corresponding to one of the command forms
+    Phase 80.5 committed to gating:
+
+    * ``rm`` with both ``-r`` and ``-f`` flags (combined or split —
+      ``-rf``, ``-fr``, ``-r -f``, ``-r --force`` all trip).
+    * ``git push`` with ``--force`` or ``-f``.
+    * ``git reset`` with ``--hard``.
+
+    A long-form flag that happens to contain the letter (e.g.
+    ``--recurse-submodules``) does not trip the ``rm`` rule because
+    short-flag detection rejects ``--`` prefixes.
+    """
+    if not argv:
+        return False, ""
+    base = argv[0]
+    rest = argv[1:]
+    if base == "rm":
+        has_r = any(_is_short_flag(t, "r") for t in rest) or "--recursive" in rest
+        has_f = any(_is_short_flag(t, "f") for t in rest) or "--force" in rest
+        if has_r and has_f:
+            return True, "rm -rf"
+    if base == "git" and len(rest) >= 1:
+        subcommand = rest[0]
+        subargs = rest[1:]
+        if subcommand == "push" and any(
+            arg in {"--force", "-f", "--force-with-lease"} for arg in subargs
+        ):
+            return True, "git push --force"
+        if subcommand == "reset" and "--hard" in subargs:
+            return True, "git reset --hard"
+    return False, ""
+
 
 # Sprint / demo sessions: a charm author is moving fast and wants
 # destructive ops unblocked (they'll re-deploy from scratch anyway),
@@ -432,6 +568,17 @@ class PolicyEnforcer:
                     self.policy.name,
                 )
         return kept
+
+    def destructive_approved(self) -> bool:
+        """Whether the composed policy opts in to destructive commands.
+
+        Phase 80.5's in-code gate inside destructive tool wrappers
+        consults this flag to decide whether to short-circuit a
+        destructive call with a synthetic error or let the subprocess
+        fire.  Exposed as a method (not a property) to stay symmetric
+        with ``check_tool`` and ``deny_reason``.
+        """
+        return self.policy.approve_destructive
 
     def deny_reason(self, tool_name: str) -> str:
         """Human-readable reason a tool call would be denied.

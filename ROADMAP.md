@@ -2579,28 +2579,52 @@ write-up already decided keep/defer/reject per primitive.
   streaming, grep-friendly export that plays nicely with
   ``tail -f`` and off-the-shelf log aggregators.
 
-### 80.5 Medium — Juju-aware destructive-command gate
+### 80.5 Medium — Juju-aware destructive-command gate ✓
 
-- [ ] Add an inline gate inside ``tools/juju.py`` (at minimum
-  ``juju_destroy_model``, ``juju_remove_application``,
-  ``juju_remove_relation``) and ``tools/run_command.py`` (at
-  minimum ``rm -rf``, ``git push --force``, ``git reset
-  --hard``).  The gate fires **before** ``subprocess.run``
-  so a vetoed call never touches the model or the shell.
-- [ ] Gate decisions flow through the same policy stack —
-  the destructive-command list becomes an implicit
-  ``require_human_approval`` addition for the bundled
-  ``org-wide`` policy.  Operators who want bypass
-  capabilities (unattended ``cantrip --yolo`` or equivalent)
-  set ``approve_destructive: true`` in a charm-local
-  policy file.
-- [ ] Covers the gap Phase 55.5 identified: user hooks
-  (Phase 46) only fire at lifecycle events; the sandboxed
-  shell (Phase 49) isolates subprocess execution *after*
-  the call; neither catches a subagent that decides on its
-  own to call ``juju destroy-model`` through
-  ``tools/juju.py``.  This phase's in-code gate is the
-  third layer.
+- [x] ``GovernancePolicy`` gained ``approve_destructive: bool``
+  with OR composition — the one field where a more-permissive
+  layer wins, because the flag exists specifically to let an
+  operator accept the blast radius ahead of time.  YAML loader
+  accepts the key; ``policy_to_dict`` round-trips it.
+- [x] ``cantrip.agent.policy.destructive_gate(tool_name,
+  charm_path=None)`` returns ``(approved, reason)``.  A tool
+  not in :data:`DESTRUCTIVE_TOOLS` is always approved; for a
+  listed tool the gate composes ``ORG_WIDE_POLICY`` with any
+  discovered user / per-charm policies and lets the call
+  through only when ``approve_destructive`` is ``True``.
+  Refusal reason names the composed policy stack so the Phase
+  80.4 audit can trace it.
+- [x] ``JujuDestroyModelTool.execute`` and
+  ``JujuRemoveApplicationTool.execute`` call the gate **before**
+  checking ``_juju_available()`` or running the CLI — so a
+  denied call never touches the controller even when juju is
+  installed.  ``juju_remove_relation`` is listed in
+  :data:`DESTRUCTIVE_TOOLS` for future coverage but the tool
+  class doesn't exist yet; noted so a future wrapper
+  automatically inherits the gate.
+- [x] ``RunCommandTool.execute`` gained
+  :func:`destructive_command_check` — an argv-shape detector
+  that catches ``rm -rf <path>`` (flag-order insensitive —
+  ``-rf``, ``-fr``, ``-r -f``, ``--recursive --force`` all
+  trip), ``git push --force`` / ``-f`` /
+  ``--force-with-lease``, and ``git reset --hard``.  The gate
+  consults the same policy stack; denial produces a clear
+  error pointing at ``approve_destructive`` in a YAML file.
+  A plain ``rm <file>`` without ``-r`` or ``-f`` still runs
+  so benign single-file deletes aren't blocked.
+- [x] ``tests/unit/test_destructive_gate.py`` — 10 integration
+  tests covering the juju gate (blocks by default, unblocks
+  with per-user opt-in, names the tool in refusals) and the
+  run_command gate (all three destructive shapes blocked
+  without approval, ``rm <file>`` passes the shape gate and
+  actually deletes the file, ``rm -rf`` with opt-in succeeds
+  end-to-end).  ``tests/unit/test_policy.py`` adds 13 tests
+  covering the OR composition, the ``approve_destructive``
+  YAML round-trip, and the argv shape detector across every
+  destructive form.  Existing ``TestJujuDestroyModelTool``
+  gains a gate-blocks-by-default case plus an
+  ``_approve_destructive`` fixture so the legacy success
+  paths still exercise the underlying juju logic.
 
 ### What this phase is *not*
 

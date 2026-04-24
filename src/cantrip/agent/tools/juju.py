@@ -920,6 +920,14 @@ class JujuDestroyModelTool(Tool):
 
     async def execute(self, model: str, force: bool = False) -> ToolResult:
         """Destroy a Juju model."""
+        # Phase 80.5: destructive-command gate.  Refuses unless a
+        # policy layer explicitly sets ``approve_destructive: true``.
+        from cantrip.agent.policy import destructive_gate
+
+        approved, reason = destructive_gate("juju_destroy_model")
+        if not approved:
+            return ToolResult(success=False, output="", error=reason)
+
         if not _juju_available():
             return ToolResult(
                 success=False,
@@ -2228,6 +2236,14 @@ class JujuRemoveApplicationTool(Tool):
         force: bool = False,
     ) -> ToolResult:
         """Remove an application."""
+        # Phase 80.5: destructive-command gate.  Refuses unless a
+        # policy layer explicitly sets ``approve_destructive: true``.
+        from cantrip.agent.policy import destructive_gate
+
+        approved, reason = destructive_gate("juju_remove_application")
+        if not approved:
+            return ToolResult(success=False, output="", error=reason)
+
         if not _juju_available():
             return ToolResult(
                 success=False,

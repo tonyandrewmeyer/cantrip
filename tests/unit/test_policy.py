@@ -9,6 +9,7 @@ import pytest
 
 from cantrip.agent.policy import (
     BUILTIN_POLICIES,
+    DESTRUCTIVE_TOOLS,
     ORG_WIDE_POLICY,
     SPRINT_POLICY,
     GovernancePolicy,
@@ -16,6 +17,8 @@ from cantrip.agent.policy import (
     PolicyParseError,
     category_policy,
     compose_policies,
+    destructive_command_check,
+    destructive_gate,
     discover_policies,
     load_policy_file,
     policy_from_dict,
@@ -211,9 +214,18 @@ class TestPolicyFromDict:
             require_human_approval=frozenset({"p"}),
             max_calls_per_request=42,
             name="round-trip",
+            approve_destructive=True,
         )
         restored = policy_from_dict(policy_to_dict(original))
         assert restored == original
+
+    def test_approve_destructive_defaults_to_false(self) -> None:
+        policy = policy_from_dict({"name": "bare"})
+        assert policy.approve_destructive is False
+
+    def test_approve_destructive_must_be_bool(self) -> None:
+        with pytest.raises(PolicyParseError, match="approve_destructive must be a boolean"):
+            policy_from_dict({"approve_destructive": "yes"})
 
     def test_missing_keys_produce_empty_sets(self) -> None:
         policy = policy_from_dict({"name": "bare"})
@@ -398,3 +410,126 @@ class TestBuiltinPolicies:
         # Org-wide review propagates through composition.
         assert composed.check_tool("charmcraft_pack") == PolicyAction.ALLOW
         assert composed.check_tool("juju_destroy_model") == PolicyAction.REVIEW
+
+
+class TestApproveDestructiveComposition:
+    """Phase 80.5: ``approve_destructive`` ORs across the stack."""
+
+    def test_single_layer_default_false(self) -> None:
+        assert GovernancePolicy().approve_destructive is False
+
+    def test_or_semantics(self) -> None:
+        """Any layer with approve_destructive=True flips the composed flag on."""
+        restrictive = GovernancePolicy(name="org", approve_destructive=False)
+        permissive = GovernancePolicy(name="sprint", approve_destructive=True)
+        assert compose_policies(restrictive, permissive).approve_destructive is True
+        # Commutative.
+        assert compose_policies(permissive, restrictive).approve_destructive is True
+
+    def test_all_false_composes_to_false(self) -> None:
+        a = GovernancePolicy(name="a", approve_destructive=False)
+        b = GovernancePolicy(name="b", approve_destructive=False)
+        assert compose_policies(a, b).approve_destructive is False
+
+
+class TestDestructiveGate:
+    """Phase 80.5: the in-code gate inside destructive juju tools."""
+
+    def test_non_destructive_tool_always_approved(self, tmp_path: Path) -> None:
+        """A tool not in ``DESTRUCTIVE_TOOLS`` never hits the gate."""
+        approved, reason = destructive_gate(
+            "juju_status",
+            user_config_dir=tmp_path,
+        )
+        assert approved is True
+        assert reason == ""
+
+    def test_destructive_tool_denied_by_default(self, tmp_path: Path) -> None:
+        """Without approve_destructive anywhere, the gate refuses."""
+        approved, reason = destructive_gate(
+            "juju_destroy_model",
+            user_config_dir=tmp_path,
+        )
+        assert approved is False
+        assert "juju_destroy_model" in reason
+        assert "approve_destructive" in reason
+
+    def test_per_charm_opt_in_approves(self, tmp_path: Path) -> None:
+        """A per-charm file with approve_destructive lets the call through."""
+        (tmp_path / "cantrip.policies.yaml").write_text("name: yolo\napprove_destructive: true\n")
+        approved, reason = destructive_gate(
+            "juju_destroy_model",
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-user-dir",
+        )
+        assert approved is True
+        assert reason == ""
+
+    def test_extra_policy_opt_in_approves(self, tmp_path: Path) -> None:
+        """Tests can inject approval via extra_policies without writing YAML."""
+        extra = GovernancePolicy(name="test-yolo", approve_destructive=True)
+        approved, _ = destructive_gate(
+            "juju_remove_application",
+            user_config_dir=tmp_path,
+            extra_policies=(extra,),
+        )
+        assert approved is True
+
+    def test_destructive_tools_registry_covers_roadmap_set(self) -> None:
+        """The tool set matches what Phase 80.5 committed to gating."""
+        assert "juju_destroy_model" in DESTRUCTIVE_TOOLS
+        assert "juju_remove_application" in DESTRUCTIVE_TOOLS
+        # juju_destroy_controller is on the org-wide review list too;
+        # ship the gate entry even though no tool class exists yet,
+        # so a future wrapper doesn't forget to consult the gate.
+        assert "juju_destroy_controller" in DESTRUCTIVE_TOOLS
+
+
+class TestDestructiveCommandCheck:
+    """Phase 80.5: argv-shape detection for ``run_command``."""
+
+    def test_empty_argv_is_not_destructive(self) -> None:
+        is_destructive, _ = destructive_command_check([])
+        assert is_destructive is False
+
+    def test_safe_argv_is_not_destructive(self) -> None:
+        for argv in (
+            ["make", "lint"],
+            ["git", "push"],
+            ["git", "reset"],
+            ["rm", "/tmp/target.txt"],  # rm without -rf is not destructive-shape.
+        ):
+            is_destructive, shape = destructive_command_check(argv)
+            assert is_destructive is False, f"{argv!r} tripped shape={shape!r}"
+
+    def test_rm_rf_is_destructive(self) -> None:
+        is_destructive, shape = destructive_command_check(["rm", "-rf", "/tmp/x"])
+        assert is_destructive is True
+        assert shape == "rm -rf"
+
+    def test_rm_separate_flags_is_destructive(self) -> None:
+        """``rm -r -f <path>`` trips too — flag-order shouldn't matter."""
+        is_destructive, _ = destructive_command_check(["rm", "-r", "-f", "/tmp/x"])
+        assert is_destructive is True
+
+    def test_rm_combined_letters_is_destructive(self) -> None:
+        is_destructive, _ = destructive_command_check(["rm", "-fr", "/tmp/x"])
+        assert is_destructive is True
+
+    def test_git_push_force_is_destructive(self) -> None:
+        is_destructive, shape = destructive_command_check(["git", "push", "--force"])
+        assert is_destructive is True
+        assert shape == "git push --force"
+
+    def test_git_push_f_short_is_destructive(self) -> None:
+        is_destructive, _ = destructive_command_check(["git", "push", "-f"])
+        assert is_destructive is True
+
+    def test_git_reset_hard_is_destructive(self) -> None:
+        is_destructive, shape = destructive_command_check(["git", "reset", "--hard", "HEAD~1"])
+        assert is_destructive is True
+        assert shape == "git reset --hard"
+
+    def test_git_reset_soft_is_not_destructive(self) -> None:
+        is_destructive, _ = destructive_command_check(["git", "reset", "--soft", "HEAD~1"])
+        assert is_destructive is False

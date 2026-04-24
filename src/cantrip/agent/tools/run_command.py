@@ -223,6 +223,34 @@ class RunCommandTool(Tool):
                 error=f"Command '{base}' is not on the allowlist. Allowed: {allowed}",
             )
 
+        # Phase 80.5: destructive-argument gate.  Even when the base
+        # command is on the allowlist, shapes like ``rm -rf`` /
+        # ``git push --force`` / ``git reset --hard`` require a policy
+        # layer with ``approve_destructive: true`` before the
+        # subprocess fires.  Pattern match happens on ``parts`` (the
+        # shlex-parsed argv) so flag-order and separator variations
+        # still trip the regex.
+        from cantrip.agent.policy import (
+            compose_policies,
+            destructive_command_check,
+            discover_policies,
+        )
+
+        is_destructive, shape = destructive_command_check(parts)
+        if is_destructive:
+            composed = compose_policies(*discover_policies())
+            if not composed.approve_destructive:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=(
+                        f"Destructive command shape {shape!r} requires explicit "
+                        "approval.  Add ``approve_destructive: true`` to a "
+                        "policy file (``~/.config/cantrip/policies/*.yaml`` or "
+                        "``<charm>/cantrip.policies.yaml``) to enable it."
+                    ),
+                )
+
         timeout = min(max(1, timeout), _MAX_TIMEOUT)
 
         # Validate cwd is within the project tree when a base path is set.

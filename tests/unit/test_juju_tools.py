@@ -1,5 +1,6 @@
 """Tests for Juju agent tools."""
 
+from pathlib import Path
 from unittest import mock
 
 import jubilant
@@ -96,8 +97,35 @@ class TestJujuDestroyModelTool:
     def tool(self):
         return JujuDestroyModelTool()
 
+    @pytest.fixture
+    def _approve_destructive(self):
+        """Phase 80.5: bypass the destructive gate for tests that target the
+        underlying juju logic, not the gate itself."""
+        with mock.patch(
+            "cantrip.agent.policy.destructive_gate",
+            return_value=(True, ""),
+        ) as patched:
+            yield patched
+
     @pytest.mark.asyncio
-    async def test_juju_not_installed(self, tool):
+    async def test_destructive_gate_blocks_by_default(self, tool, tmp_path, monkeypatch):
+        """Phase 80.5: without approve_destructive anywhere, the tool refuses.
+
+        The gate fires *before* the Juju CLI check, so a missing
+        juju binary still yields the policy error — that's the
+        defence-in-depth shape we want.
+        """
+        # Point the policy discovery at an empty directory so the test
+        # is deterministic regardless of what's in $HOME.
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        result = await tool.execute(model="dev")
+
+        assert not result.success
+        assert "approve_destructive" in result.error
+        assert "juju_destroy_model" in result.error
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool, _approve_destructive):
         """Error when juju CLI is missing."""
         with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
             result = await tool.execute(model="dev")
@@ -106,7 +134,7 @@ class TestJujuDestroyModelTool:
         assert "not found" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_destroy_model_success(self, tool):
+    async def test_destroy_model_success(self, tool, _approve_destructive):
         """Destroys a model successfully."""
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
@@ -126,7 +154,7 @@ class TestJujuDestroyModelTool:
         )
 
     @pytest.mark.asyncio
-    async def test_destroy_model_force(self, tool):
+    async def test_destroy_model_force(self, tool, _approve_destructive):
         """Passes force and no_wait when force=True."""
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
@@ -145,7 +173,7 @@ class TestJujuDestroyModelTool:
         )
 
     @pytest.mark.asyncio
-    async def test_destroy_model_error(self, tool):
+    async def test_destroy_model_error(self, tool, _approve_destructive):
         """Reports CLI errors."""
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         mock_juju.destroy_model.side_effect = jubilant.CLIError(

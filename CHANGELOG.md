@@ -5,6 +5,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **In-code destructive-command gate (Phase 80.5).**
+  ``JujuDestroyModelTool`` and ``JujuRemoveApplicationTool`` now
+  consult a new ``destructive_gate()`` helper **before** touching
+  the controller or checking the juju CLI; ``RunCommandTool`` pairs
+  a new argv-shape detector with the same gate to catch ``rm -rf``,
+  ``git push --force`` / ``-f`` / ``--force-with-lease``, and
+  ``git reset --hard`` even when the leading command is on the
+  allowlist.  Denials produce a clear error naming
+  ``approve_destructive`` and the composed policy stack.  A plain
+  ``rm <file>`` without ``-r``/``-f`` still runs so single-file
+  deletes aren't gated.  The gate is opt-in via
+  ``approve_destructive: true`` in any discovered policy file
+  (``~/.config/cantrip/policies/*.yaml`` or
+  ``<charm>/cantrip.policies.yaml``) — OR-composed, so a single
+  permissive layer is enough to enable unattended /``--yolo``
+  sessions.  ``GovernancePolicy`` gained the ``approve_destructive``
+  field with YAML round-trip support.  Fills the in-code gate layer
+  of Phase 55.4's defence-in-depth stack: user hooks fire at
+  lifecycle events, sandboxing isolates subprocesses *after* the
+  decision to call, and this gate catches the call before either
+  can intervene.
+
 - **Policy stack wired into the subagent dispatcher (Phase 80.2).**
   ``Subagent.__init__`` now composes a ``PolicyEnforcer`` per run
   (org-wide + per-category + discovered YAML policies) and filters
