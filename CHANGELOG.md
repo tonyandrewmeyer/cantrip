@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`generate_docs` bridges root TUTORIAL.md / DEMO.md / architecture.md
+  into the Diátaxis tree (Phase 74.1).** The Phase-13 root files now
+  become ``docs/tutorial/getting-started.md`` /
+  ``docs/how-to/deploy-and-verify.md`` /
+  ``docs/explanation/architecture.md`` instead of co-existing with —
+  and contradicting — the metadata-derived stubs.  Top-level headings
+  are rewritten so the Sphinx ``toctree`` still resolves; intra-charm
+  Markdown links are rewritten to climb out of ``docs/<dir>/`` (so
+  ``[WORKLOAD.md](WORKLOAD.md)`` becomes ``[WORKLOAD.md](../../WORKLOAD.md)``)
+  and cross-references between bridged files become ``../<other>``
+  links.  Each bridged root file is replaced with a one-line stub
+  pointing into the docs/ tree so existing in-repo links don't 404,
+  and re-runs detect the stub so the pointer isn't bridged back over
+  the page it pointed to.  ``GenerateReadmeTool`` now prefers the
+  bridged docs/ paths in its Architecture / Demo links, with the
+  legacy root-file links kept as a fallback for charms that haven't
+  run ``generate_docs`` yet.
+
 - **Share a session as a secret gist via ``/share`` (Phase 67.4).**
   New slash command that exports the live session as an HTML
   transcript and uploads it via ``gh gist create``, returning the

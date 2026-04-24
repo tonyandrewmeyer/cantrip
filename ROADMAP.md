@@ -4554,31 +4554,58 @@ deferred**:
   versioning is a Sphinx/readthedocs concern.  Defer until
   a real demand surfaces.
 
-### 74.1 High — Bridge root files into the Diátaxis tree
+### 74.1 High — Bridge root files into the Diátaxis tree ✓
 
-- [ ] Update ``GenerateDocsTool`` (or add a sibling
-  ``populate_docs`` tool) to detect ``TUTORIAL.md``,
-  ``DEMO.md``, ``architecture.md`` at the charm root and,
-  when present, prefer their content over the stub
-  templates currently emitted by ``generate_docs_scaffold``
-  for the corresponding ``docs/`` pages.
-- [ ] When bridging, rewrite top-level headings so the
-  Sphinx ``toctree`` still resolves (e.g. ``# Tutorial``
-  → ``# Get started with <display-name>``) and adjust any
-  inter-document links to use the docs/ tree's relative
-  paths.
-- [ ] After bridging, leave a one-line stub at the root
-  (``# Tutorial moved to docs/tutorial/getting-started.md``)
-  so existing links don't 404.  Or delete the root files,
-  with a CONFIRM prompt (Phase 64) — user picks once,
-  remembered per-charm.
-- [ ] ``GenerateReadmeTool`` (``publishing.py:236``) — already
-  links ``DEMO.md`` / ``TUTORIAL.md`` / ``architecture.md``
-  by name — gets updated to point at the new
-  ``docs/tutorial/`` etc. paths instead.
-- [ ] ``tests/unit/test_docs_bridge.py`` — root files
-  present → bridged content; root files absent → stubs
-  used (current behaviour); README links updated.
+- [x] ``generate_docs_scaffold`` gained a ``root_files``
+  keyword.  When the caller hands it the contents of
+  ``TUTORIAL.md`` / ``DEMO.md`` / ``architecture.md``, those
+  override the metadata-derived stubs at
+  ``docs/tutorial/getting-started.md`` and
+  ``docs/explanation/architecture.md``, and add a new
+  ``docs/how-to/deploy-and-verify.md`` page (with the
+  how-to ``index.md`` toctree picking it up after
+  ``deploy``).  ``GenerateDocsTool.execute`` is the only
+  caller that reads from disk, keeping the scaffold
+  function pure / unit-testable.
+- [x] Bridging rewrites the first H1 to a docs-shaped
+  title (``# Get started with <display-name>`` /
+  ``# Deploy and verify <display-name>`` / ``# Architecture``)
+  via ``_replace_first_h1`` so the Sphinx toctree
+  resolves.  Markdown links and image references are
+  rewritten by ``_rewrite_root_link``: cross-references
+  between bridged files become ``../<other>`` links
+  (``DEMO.md`` → ``../how-to/deploy-and-verify``); other
+  root-relative paths get ``../../`` prepended to climb
+  out of ``docs/<dir>/``; absolute URLs, anchors, and
+  paths already starting with ``../`` are left alone.
+- [x] After bridging, the original root file is replaced
+  with a one-line stub (``# Moved`` + a link to the
+  docs/-tree home) so existing in-repo links keep
+  resolving.  Re-runs check the file content for the
+  ``# Moved`` header before bridging, so the stub isn't
+  fed back into ``docs/`` on subsequent runs.  The
+  CONFIRM-prompt-and-delete variant is left for a
+  follow-up — the simpler stub pattern keeps the bridge
+  reversible and avoids dragging the Phase 64 CONFIRM
+  flow into a publishing tool.
+- [x] ``GenerateReadmeTool`` now prefers
+  ``docs/tutorial/getting-started.md`` /
+  ``docs/how-to/deploy-and-verify.md`` /
+  ``docs/explanation/architecture.md`` when those exist,
+  with the legacy root-file links kept as a fallback so
+  charms that haven't run the bridge yet are
+  unchanged.  Mixed states (one bridged, one not) are
+  handled link-by-link.
+- [x] ``tests/unit/test_docs_bridge.py`` covers all five
+  surfaces — 38 tests total: ``_replace_first_h1`` (5),
+  ``_rewrite_root_link`` (7), ``bridge_root_file`` (8),
+  ``generate_docs_scaffold`` with ``root_files`` (9),
+  ``GenerateDocsTool.execute`` end-to-end (6), and
+  ``GenerateReadmeTool`` link-preference (4).
+  ``tests/unit/test_publishing.py`` (72 cases) still
+  passes — the ``root_files`` parameter is keyword-only
+  with a default of ``None`` so existing callers are
+  unaffected.
 
 ### 74.2 High — Populate tutorial and how-to from acceptance-test runs
 

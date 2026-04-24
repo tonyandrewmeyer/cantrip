@@ -372,24 +372,54 @@ class GenerateReadmeTool(Tool):
             sections.append("## Design")
             sections.append("See [DESIGN.md](DESIGN.md) for the charm design rationale.")
 
-        # Architecture diagram.
-        architecture_path = charm_path / "architecture.md"
-        if architecture_path.exists():
+        # Architecture diagram.  Prefer the docs/-tree home (Phase 74.1) so
+        # the README points at whatever the published site builds from.
+        bridged_arch = charm_path / "docs" / "explanation" / "architecture.md"
+        legacy_arch = charm_path / "architecture.md"
+        if bridged_arch.exists():
+            sections.append("## Architecture")
+            sections.append(
+                "See [docs/explanation/architecture.md]"
+                "(docs/explanation/architecture.md) for the relation and "
+                "container topology diagram."
+            )
+        elif legacy_arch.exists():
             sections.append("## Architecture")
             sections.append(
                 "See [architecture.md](architecture.md) for the relation and "
                 "container topology diagram."
             )
 
-        # Demo and tutorial links.
-        demo_path = charm_path / "DEMO.md"
-        tutorial_path = charm_path / "TUTORIAL.md"
+        # Demo and tutorial links.  Bridged docs/ pages take precedence over
+        # the original root files; fall back to the root files when the bridge
+        # has not run yet.
+        bridged_tutorial = charm_path / "docs" / "tutorial" / "getting-started.md"
+        bridged_demo = charm_path / "docs" / "how-to" / "deploy-and-verify.md"
+        legacy_demo = charm_path / "DEMO.md"
+        legacy_tutorial = charm_path / "TUTORIAL.md"
         juju_status_path = charm_path / "demo" / "juju-status.txt"
-        if demo_path.exists() or tutorial_path.exists():
+        has_demo_section = (
+            bridged_tutorial.exists()
+            or bridged_demo.exists()
+            or legacy_demo.exists()
+            or legacy_tutorial.exists()
+        )
+        if has_demo_section:
             sections.append("## Demo")
-            if tutorial_path.exists():
+            if bridged_tutorial.exists():
+                sections.append(
+                    "See [docs/tutorial/getting-started.md]"
+                    "(docs/tutorial/getting-started.md) for a guided walk-through."
+                )
+            elif legacy_tutorial.exists():
                 sections.append("See [TUTORIAL.md](TUTORIAL.md) for a guided walk-through.")
-            if demo_path.exists():
+            if bridged_demo.exists():
+                sections.append(
+                    "See [docs/how-to/deploy-and-verify.md]"
+                    "(docs/how-to/deploy-and-verify.md) for an annotated demo "
+                    "with real command output and screenshots."
+                )
+            elif legacy_demo.exists():
                 sections.append(
                     "See [DEMO.md](DEMO.md) for an annotated demo with real "
                     "command output and screenshots."
@@ -677,15 +707,145 @@ def _read_charm_metadata(charm_dir: Path) -> dict[str, Any]:
         return {}
 
 
+# ---------------------------------------------------------------------------
+# Bridging Phase 13 root files (TUTORIAL.md / DEMO.md / architecture.md) into
+# the Diátaxis tree so the docs/ site reflects what the agent actually did
+# rather than the metadata-derived stubs.
+# ---------------------------------------------------------------------------
+
+# Map root-file name → docs/ destination path (without ``.md`` so the toctree
+# entries match Sphinx's ``dirhtml`` link form).
+_BRIDGE_TARGETS: dict[str, str] = {
+    "TUTORIAL.md": "tutorial/getting-started",
+    "DEMO.md": "how-to/deploy-and-verify",
+    "architecture.md": "explanation/architecture",
+}
+
+# Markdown link / image regex.  Captures the bracket text and the URL
+# separately so the alt/text can be preserved unchanged.
+_MARKDOWN_LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
+
+# Absolute-URL prefixes left untouched by the link rewriter.
+_ABSOLUTE_URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://|^//|^mailto:|^tel:")
+
+
+def _replace_first_h1(content: str, new_heading: str) -> str:
+    """Replace the first ATX H1 in *content* with *new_heading*.
+
+    Falls back to prepending the heading when the source has no H1, so the
+    bridged page always starts with one.
+    """
+    lines = content.splitlines()
+    for i, line in enumerate(lines):
+        # H1 is exactly one ``#`` followed by a space; ``##`` and deeper are
+        # left alone.
+        if line.startswith("# ") or line.rstrip() == "#":
+            lines[i] = new_heading
+            return "\n".join(lines) + ("\n" if content.endswith("\n") else "")
+    prefix = new_heading + "\n\n"
+    return prefix + content
+
+
+def _rewrite_root_link(url: str) -> str:
+    """Rewrite *url* (originally relative to the charm root) for a docs/<dir>/<page> file.
+
+    - Absolute URLs and anchors are left as-is.
+    - Cross-references to other bridged root files become docs/-tree links
+      (``../how-to/deploy-and-verify`` etc.) so the rebuilt site still
+      resolves them.
+    - Other root-relative paths get a ``../../`` prefix to climb out of
+      ``docs/<dir>/`` back to the charm root.
+
+    All bridge destinations currently live at depth 2 (``docs/<dir>/<page>``),
+    so the climb count is fixed at two.
+    """
+    if _ABSOLUTE_URL_RE.match(url) or url.startswith("#"):
+        return url
+    path, anchor = (url.split("#", 1) + [""])[:2]
+    anchor_suffix = "#" + anchor if anchor else ""
+    if path.startswith("./"):
+        path = path[2:]
+    if not path:
+        return anchor_suffix or url
+    # Already escaping out of a subdirectory — leave well alone.
+    if path.startswith("../"):
+        return url
+    if path in _BRIDGE_TARGETS:
+        return "../" + _BRIDGE_TARGETS[path] + anchor_suffix
+    return "../../" + path + anchor_suffix
+
+
+def _rewrite_links(content: str) -> str:
+    """Apply :func:`_rewrite_root_link` to every Markdown link in *content*."""
+
+    def _sub(match: re.Match[str]) -> str:
+        bang, text, url, title = match.group(1), match.group(2), match.group(3), match.group(4)
+        new_url = _rewrite_root_link(url)
+        return f"{bang}[{text}]({new_url}{title or ''})"
+
+    return _MARKDOWN_LINK_RE.sub(_sub, content)
+
+
+def bridge_root_file(
+    root_filename: str,
+    content: str,
+    display_name: str,
+) -> tuple[str, str]:
+    """Convert a charm-root demo file into its docs/-tree equivalent.
+
+    Returns ``(docs_relative_path, rewritten_content)``.  Raises
+    :class:`KeyError` for filenames that aren't bridged.
+    """
+    target = _BRIDGE_TARGETS[root_filename]
+    docs_path = "docs/" + target + ".md"
+    new_heading = _BRIDGE_HEADINGS[root_filename](display_name)
+    rewritten = _replace_first_h1(content, new_heading)
+    rewritten = _rewrite_links(rewritten)
+    return docs_path, rewritten
+
+
+# Heading rewrite per bridged file.  Tutorial and how-to pick up the charm's
+# display name so the page reads naturally; architecture is just "Architecture"
+# because the page title is enough context.
+_BRIDGE_HEADINGS: dict[str, Any] = {
+    "TUTORIAL.md": lambda display_name: f"# Get started with {display_name}",
+    "DEMO.md": lambda display_name: f"# Deploy and verify {display_name}",
+    "architecture.md": lambda _display_name: "# Architecture",
+}
+
+
+# Stub left at the charm root after a file has been bridged into ``docs/``.
+# Keeps existing in-repo links from 404-ing while making the move discoverable.
+_ROOT_STUB_TEMPLATE = (
+    "# Moved\n"
+    "\n"
+    "This content now lives in [`{docs_path}`]({docs_path}).\n"
+    "\n"
+    "It was bridged into the Diátaxis tree by `generate_docs` so the\n"
+    "documentation site builds from a single source.\n"
+)
+
+
+def _root_stub(docs_path: str) -> str:
+    return _ROOT_STUB_TEMPLATE.format(docs_path=docs_path)
+
+
 def generate_docs_scaffold(
     charm_name: str,
     metadata: dict[str, Any],
+    *,
+    root_files: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """Generate a complete docs scaffold as a ``{relative_path: content}`` map.
 
     Follows the Diátaxis structure (tutorial, how-to, reference, explanation)
     and uses the Canonical starter pack conventions (Makefile, conf.py,
     requirements.txt, .readthedocs.yaml).  Content files are MyST Markdown.
+
+    When *root_files* maps a known charm-root file (``TUTORIAL.md`` /
+    ``DEMO.md`` / ``architecture.md``) to its current contents, the scaffold
+    bridges that content into the matching ``docs/`` page rather than emitting
+    the metadata-derived stub.
     """
     year = datetime.date.today().year
     display_name = metadata.get("display-name") or metadata.get("name", charm_name)
@@ -795,6 +955,21 @@ def generate_docs_scaffold(
 
     # -- How-to guides ------------------------------------------------------
 
+    bridged_files: dict[str, str] = {}
+    if root_files:
+        for root_name, raw_content in root_files.items():
+            if root_name not in _BRIDGE_TARGETS:
+                continue
+            docs_path, rewritten = bridge_root_file(root_name, raw_content, display_name)
+            bridged_files[docs_path] = rewritten
+
+    howto_entries = ["deploy"]
+    if "docs/how-to/deploy-and-verify.md" in bridged_files:
+        howto_entries.append("deploy-and-verify")
+    howto_entries.extend(["configure", "integrate"])
+    if actions:
+        howto_entries.append("actions")
+
     files["docs/how-to/index.md"] = (
         f"# How-to guides\n"
         f"\n"
@@ -802,10 +977,7 @@ def generate_docs_scaffold(
         f"\n"
         f"```{{toctree}}\n"
         f":maxdepth: 1\n"
-        f"\n"
-        f"deploy\n"
-        f"configure\n"
-        f"integrate\n" + ("actions\n" if actions else "") + "```\n"
+        f"\n" + "".join(f"{entry}\n" for entry in howto_entries) + "```\n"
     )
 
     files["docs/how-to/deploy.md"] = (
@@ -1109,6 +1281,8 @@ def generate_docs_scaffold(
         "    - requirements: docs/requirements.txt\n"
     )
 
+    files.update(bridged_files)
+
     return files
 
 
@@ -1160,7 +1334,24 @@ class GenerateDocsTool(Tool):
         if not charm_name:
             charm_name = metadata.get("name", charm_dir.name)
 
-        files = generate_docs_scaffold(charm_name, metadata)
+        # Pick up Phase 13 root files (TUTORIAL.md / DEMO.md / architecture.md)
+        # so generate_docs_scaffold can bridge them into the docs/ tree.  We
+        # only read files we'll actually bridge; the stub left at the root
+        # afterwards isn't itself bridged on the next run because it lacks the
+        # original page content.
+        root_files: dict[str, str] = {}
+        for root_name in _BRIDGE_TARGETS:
+            root_path = charm_dir / root_name
+            if not root_path.is_file():
+                continue
+            content = root_path.read_text()
+            # Skip files that are already the post-bridge stub so re-runs
+            # don't double-bridge a "Moved" pointer back into docs/.
+            if content.lstrip().startswith("# Moved"):
+                continue
+            root_files[root_name] = content
+
+        files = generate_docs_scaffold(charm_name, metadata, root_files=root_files)
 
         written: list[str] = []
         for rel_path, content in files.items():
@@ -1169,12 +1360,23 @@ class GenerateDocsTool(Tool):
             full_path.write_text(content)
             written.append(rel_path)
 
+        bridged: list[str] = []
+        for root_name in root_files:
+            target = _BRIDGE_TARGETS[root_name]
+            docs_path = "docs/" + target + ".md"
+            (charm_dir / root_name).write_text(_root_stub(docs_path))
+            bridged.append(f"{root_name} → {docs_path}")
+
         summary = (
             f"Generated documentation scaffold for '{charm_name}' "
             f"({len(written)} files):\n"
             + "\n".join(f"  {f}" for f in sorted(written))
             + "\n\nBuild with: cd docs && make html"
         )
+        if bridged:
+            summary += "\n\nBridged from charm root:\n" + "\n".join(
+                f"  {entry}" for entry in bridged
+            )
 
         return ToolResult(
             success=True,
@@ -1183,5 +1385,6 @@ class GenerateDocsTool(Tool):
                 "charm_name": charm_name,
                 "file_count": len(written),
                 "files": sorted(written),
+                "bridged": bridged,
             },
         )
