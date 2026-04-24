@@ -163,7 +163,7 @@ on_this_page:
 | `charmcraft_release` | Release a charm revision to a channel |
 | `generate_readme` | Generate a README for the charm |
 | `generate_icon` | Generate a charm icon |
-| `generate_docs` | Generate charm documentation; bridges root `TUTORIAL.md` / `DEMO.md` / `architecture.md` into the Diátaxis tree when present |
+| `generate_docs` | Generate charm documentation; bridges root `TUTORIAL.md` / `DEMO.md` / `architecture.md` into the Diátaxis tree when present, and populates tutorial / how-to from `demo/` and `ACCEPTANCE.md` artefacts when acceptance tests have run |
 | `generate_diagram` | Generate architecture or integration diagrams |
 | `generate_terraform` | Generate Terraform module for the charm |
 | `validate_terraform` | Validate a generated Terraform module |

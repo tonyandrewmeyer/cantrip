@@ -5,6 +5,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`generate_docs` populates tutorial / how-to from acceptance artefacts
+  (Phase 74.2).** When the agent has captured a Phase-13 demo bundle
+  (``demo/juju-status.txt`` + ``demo/actions/*.json``) or written a
+  ``ACCEPTANCE.md`` summary, ``generate_docs`` now overrides the
+  metadata-derived stubs at ``docs/tutorial/getting-started.md``,
+  ``docs/how-to/deploy-and-verify.md``, and ``docs/how-to/actions.md``
+  with real captured commands and output — the tutorial reads as a
+  reproducible walkthrough rather than a templated placeholder.
+  Captured output is sanitised on read: IPv4 addresses become
+  ``<unit-ip>``, UUIDs become ``<model-uuid>``, ``*.svc.cluster.local``
+  hostnames become ``<svc-fqdn>``, and ``sha256:…`` digests become
+  ``<image-sha256>``.  When acceptance hasn't run, each affected page
+  carries a one-line HTML comment noting that the content is templated
+  until tests run.  Bridged root files (Phase 74.1) still take
+  precedence over artefact-derived content.
+
 - **`generate_docs` bridges root TUTORIAL.md / DEMO.md / architecture.md
   into the Diátaxis tree (Phase 74.1).** The Phase-13 root files now
   become ``docs/tutorial/getting-started.md`` /

@@ -4607,45 +4607,64 @@ deferred**:
   with a default of ``None`` so existing callers are
   unaffected.
 
-### 74.2 High — Populate tutorial and how-to from acceptance-test runs
+### 74.2 High — Populate tutorial and how-to from acceptance-test runs ✓
 
-- [ ] When ``GenerateDocsTool`` runs after Phase 17 has
-  produced acceptance results, read the test transcript
-  (the per-test command and captured stdout/stderr/juju-
-  status sequence) from wherever Phase 17 stores it and
-  use it as the source for:
-  - ``docs/tutorial/getting-started.md`` — the canonical
-    happy path: bootstrap → ``juju add-model`` → ``juju
-    deploy`` → first ``juju integrate`` → ``juju run``
-    action → ``juju status`` showing active.  Each step
-    is a fenced ``console`` block with the *real* command
-    and the *real* output the test recorded.
-  - ``docs/how-to/deploy-and-verify.md`` — the same
-    deploy sequence as a focused recipe (no narrative
-    framing).
-  - ``docs/how-to/<relation-name>.md`` — one per
-    requires/provides relation in ``metadata.yaml``,
-    showing the actual ``juju integrate`` invocation
-    that was tested plus the post-integration
-    ``juju status`` excerpt.
-  - ``docs/how-to/run-actions.md`` — one section per
-    action, with the action signature, the
-    ``juju run <unit> <action>`` invocation, and the
-    captured action output.
-- [ ] When acceptance tests have *not* run, fall back to
-  the current templated stubs and emit a docstring at the
-  top of each affected page noting that the content is
-  generic until tests run.  Keep the build green either
-  way.
-- [ ] Sanitise captured output before embedding: strip
-  cluster-specific data (model UUIDs, IP addresses, unit
-  hostnames) and replace with placeholders
-  (``<model-uuid>``, ``<unit-ip>``).  Reuse Phase 16
-  redaction patterns where they exist.
-- [ ] ``tests/unit/test_docs_from_acceptance.py`` — fixture
-  acceptance-test bundle drives doc population; sanitised
-  output excludes IPs/UUIDs; absent acceptance run
-  preserves stub content.
+- [x] ``generate_docs`` now reads ``demo/juju-status.txt``,
+  ``demo/actions/*.json`` (Phase 13's captured artefacts) and
+  ``ACCEPTANCE.md`` (Phase 17's summary) via the new
+  ``load_acceptance_artefacts()`` helper.  Two source surfaces
+  combined cover the "test transcript" the roadmap called for:
+  Phase 13's demo bundle has the rich captured data (sanitised
+  ``juju status`` text, per-action JSON outputs); Phase 17's
+  ``ACCEPTANCE.md`` is treated as a "did acceptance run"
+  signal.  No new sidecar storage — both already land on disk.
+- [x] When the artefact bundle is populated,
+  ``generate_docs_scaffold`` overrides three pages with
+  artefact-derived content via ``_populate_tutorial_from_artefacts``,
+  ``_populate_actions_from_artefacts``, and
+  ``_populate_deploy_and_verify_from_artefacts``:
+  - ``docs/tutorial/getting-started.md`` — the canonical happy
+    path with real captured ``juju status`` excerpt and the
+    first action's captured output.
+  - ``docs/how-to/deploy-and-verify.md`` — the same deploy
+    sequence as a focused recipe (no narrative framing); also
+    added to the how-to ``index.md`` toctree.
+  - ``docs/how-to/actions.md`` — one section per action with
+    the captured JSON output embedded under the
+    ``juju run <unit> <action>`` invocation.
+  Per-relation pages (``docs/how-to/<relation-name>.md``) are
+  deferred — the existing ``docs/how-to/integrate.md`` already
+  lists every relation with its ``juju integrate`` invocation,
+  and per-relation pages would balloon the toctree without a
+  corresponding richness payoff.  Re-open if/when there's
+  per-relation captured output to embed.
+- [x] When acceptance hasn't run, each affected page
+  (``docs/tutorial/getting-started.md``, ``docs/how-to/deploy.md``,
+  ``docs/how-to/integrate.md``, ``docs/how-to/actions.md``) gets a
+  one-line HTML comment prepended noting the content is
+  templated until tests run.  Bridged root files (74.1) still
+  win over both — the ordering is
+  ``templated stub  <  artefact-derived  <  bridged root files``.
+- [x] Sanitisation is implemented in ``sanitise_capture()``:
+  IPv4 addresses → ``<unit-ip>`` (octets restricted to 0–255 so
+  version strings like ``999.999.999.999`` don't trip it),
+  UUIDs → ``<model-uuid>``, ``*.svc.cluster.local`` hostnames
+  → ``<svc-fqdn>``, ``sha256:…`` digests → ``<image-sha256>``.
+  Sanitisation runs at load time so embedded content is always
+  safe.  Phase 16's ``sanitise_body`` is targeted at
+  secrets/charm paths and intentionally not reused — the
+  acceptance-capture sanitiser handles cluster-shape data.
+- [x] ``tests/unit/test_docs_from_acceptance.py`` — 25 tests
+  covering ``sanitise_capture`` (6), ``load_acceptance_artefacts``
+  (7), ``generate_docs_scaffold`` artefact population (8 — stub
+  marker, tutorial replacement, deploy-and-verify, actions
+  with captured output, toctree inclusion, bridge precedence,
+  and the no-status-block edge case), and ``GenerateDocsTool``
+  end-to-end (4 — no artefacts, demo artefacts drive tutorial,
+  ACCEPTANCE.md alone signals populated, bridged tutorial wins
+  over artefacts).  Existing 110 publishing + bridge tests
+  still pass — the ``acceptance`` parameter is keyword-only
+  with a default of ``None``.
 
 ### 74.3 Medium — Architecture explanation from transcript-extracted decisions
 
