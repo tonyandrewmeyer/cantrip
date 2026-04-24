@@ -106,6 +106,7 @@ class GlobTool(PathAwareTool):
                 success=True,
                 output="No matching files found.",
                 data={"match_count": 0},
+                caption=f"No files matching {pattern!r}",
             )
 
         # Report paths relative to the search directory.
@@ -119,10 +120,14 @@ class GlobTool(PathAwareTool):
         if truncated:
             display += f"\n\n(results truncated — showing {max_results} of more matches)"
 
+        caption = f"{len(rel_paths)} files matching {pattern!r}"
+        if truncated:
+            caption += " (truncated)"
         return ToolResult(
             success=True,
             output=display,
             data={"match_count": len(rel_paths), "truncated": truncated},
+            caption=caption,
         )
 
 

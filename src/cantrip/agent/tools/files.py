@@ -100,6 +100,7 @@ class ReadFileTool(PathAwareTool):
                         data={"path": str(resolved), "total_lines": total},
                     )
                 content = "".join(lines[start:end])
+                shown = content.count("\n")
                 return ToolResult(
                     success=True,
                     output=content,
@@ -109,12 +110,15 @@ class ReadFileTool(PathAwareTool):
                         "lines": f"{start + 1}-{min(end, total)}",
                         "total_lines": total,
                     },
+                    caption=f"Read {shown} lines from {path}",
                 )
 
+            line_count = content.count("\n")
             return ToolResult(
                 success=True,
                 output=content,
                 data={"path": str(resolved), "size": len(content)},
+                caption=f"Read {line_count} lines from {path}",
             )
         except (OSError, UnicodeDecodeError, ValueError) as e:
             return ToolResult(
@@ -167,6 +171,7 @@ class WriteFileTool(PathAwareTool):
                 success=True,
                 output=f"Wrote {len(content)} bytes to {path}",
                 data={"path": str(resolved), "size": len(content)},
+                caption=f"Wrote {len(content)} bytes to {path}",
             )
         except (OSError, UnicodeEncodeError, ValueError) as e:
             return ToolResult(
@@ -228,10 +233,12 @@ class ListDirectoryTool(PathAwareTool):
                 entries.append(label)
 
             output = "\n".join(entries) if entries else "(empty directory)"
+            display_path = path if path != "." else str(resolved)
             return ToolResult(
                 success=True,
                 output=output,
                 data={"path": str(resolved), "count": len(entries)},
+                caption=f"Listed {len(entries)} entries in {display_path}",
             )
         except (OSError, ValueError) as e:
             return ToolResult(
@@ -309,6 +316,7 @@ class EditFileTool(PathAwareTool):
                 success=True,
                 output=f"Replaced string in {path}",
                 data={"path": str(resolved)},
+                caption=f"Edited {path} (1 replacement)",
             )
         except (OSError, UnicodeDecodeError, ValueError) as e:
             return ToolResult(

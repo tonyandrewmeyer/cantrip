@@ -5,6 +5,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Rich captions on file-system, git, and charm-tooling tools
+  (Phase 75.6 — closes M75).**  ``ToolResult.caption`` now ships
+  count / size / destination shaped one-liners for ``read_file`` /
+  ``write_file`` / ``edit_file`` / ``list_directory`` / ``grep`` /
+  ``glob`` / ``git_clone`` / ``git_commit`` / ``git_push`` /
+  ``charmcraft_pack`` / ``charmcraft_fetch_libs`` / ``charm_validate``.
+  The TUI/Web inline tool block displays the rich caption in
+  preference to the formulaic ``tool_name(path=…)`` fallback, so
+  ``Edited charm.py (1 replacement)`` reads naturally instead of
+  ``edit_file(path="charm.py")``.  Shell / juju / acceptance tools
+  still rely on the fallback and can be filled in as drive-bys —
+  the framework remains additive.
+
 - **`extract_troubleshooting` mines error→fix pairs from the session
   transcript (Phase 74.4).**  New tool that walks ``messages`` +
   ``subagent_messages`` chronologically, finds tool results with

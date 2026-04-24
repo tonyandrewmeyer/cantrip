@@ -1,6 +1,7 @@
 """Git version control tools."""
 
 import os
+import re
 import shutil
 import subprocess
 from typing import Any
@@ -157,6 +158,12 @@ class GitCloneTool(Tool):
             result.error = _auth_hint(result.error or "")
         else:
             result.data = {"url": url, "path": path}
+            # Strip the protocol/auth prefix so the caption stays on one line
+            # (``git@github.com:foo/bar.git`` → ``github.com:foo/bar``).
+            display_url = re.sub(r"^[a-z]+://(?:[^@]+@)?", "", url)
+            display_url = re.sub(r"^git@", "", display_url)
+            display_url = re.sub(r"\.git$", "", display_url)
+            result.caption = f"Cloned {display_url}"
 
         return result
 
@@ -421,7 +428,18 @@ class GitCommitTool(Tool):
         args = ["commit", "-m", message]
         if not _gpg_sign_enabled():
             args.insert(1, "--no-gpg-sign")
-        return _run_git(args, cwd=path)
+        result = _run_git(args, cwd=path)
+        if result.success:
+            # Use the commit subject (first non-empty line) so the caption
+            # carries the same context that ``git log --oneline`` shows.
+            subject = next(
+                (line.strip() for line in message.splitlines() if line.strip()),
+                "(empty message)",
+            )
+            if len(subject) > 60:
+                subject = subject[:59] + "…"
+            result.caption = f"Committed: {subject!r}"
+        return result
 
 
 class GitPushTool(Tool):
@@ -507,6 +525,8 @@ class GitPushTool(Tool):
         else:
             result.output = result.output or "Pushed successfully."
             result.data = {"remote": remote, "branch": branch}
+            target = f"{remote}/{branch}" if branch else remote
+            result.caption = f"Pushed → {target}"
 
         return result
 

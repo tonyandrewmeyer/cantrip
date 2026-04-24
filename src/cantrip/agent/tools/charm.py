@@ -596,6 +596,11 @@ class CharmcraftPackTool(Tool):
             # Find the created .charm file
             charm_files = list(charm_path.glob("*.charm"))
             charm_file = charm_files[0] if charm_files else None
+            if charm_file is not None:
+                size_mb = charm_file.stat().st_size / (1024 * 1024)
+                caption = f"Packed → {charm_file.name} ({size_mb:.1f} MB)"
+            else:
+                caption = "Packed charm (no .charm file located)"
 
             return ToolResult(
                 success=True,
@@ -604,6 +609,7 @@ class CharmcraftPackTool(Tool):
                     "path": str(charm_path),
                     "charm_file": str(charm_file) if charm_file else None,
                 },
+                caption=caption,
             )
         except FileNotFoundError:
             return ToolResult(
@@ -739,6 +745,9 @@ class CharmValidateTool(Tool):
                 "pack": {"status": pack_status, "charm_file": pack_charm_file},
                 "overall": overall,
             },
+            caption=(
+                f"charm_validate: tests {tests_status}, pack {pack_status} → {overall.upper()}"
+            ),
         )
 
 
@@ -916,10 +925,17 @@ class CharmcraftFetchLibsTool(Tool):
                     error=result.stderr or "charmcraft fetch-libs failed",
                 )
 
+            # ``charmcraft fetch-libs`` writes a one-line "Fetched library
+            # foo.bar" per library to stdout — count those for the caption.
+            fetched_count = sum(
+                1 for line in result.stdout.splitlines() if line.lstrip().startswith("Fetched")
+            )
+            caption = f"Fetched {fetched_count} libs" if fetched_count else "Fetched libraries"
             return ToolResult(
                 success=True,
                 output=f"Fetched libraries\n{result.stdout}",
-                data={"path": str(charm_path)},
+                data={"path": str(charm_path), "fetched_count": fetched_count},
+                caption=caption,
             )
         except FileNotFoundError:
             return ToolResult(

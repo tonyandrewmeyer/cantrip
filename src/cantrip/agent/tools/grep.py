@@ -142,6 +142,7 @@ class GrepTool(PathAwareTool):
                 success=True,
                 output="No matches found.",
                 data={"match_count": 0},
+                caption=f"No matches for {pattern!r}",
             )
 
         lines = output.split("\n")
@@ -153,10 +154,23 @@ class GrepTool(PathAwareTool):
         if truncated:
             display += f"\n\n(results truncated — showing {max_results} of more matches)"
 
+        # Match-count caption with file-count when grep emits ``path:line``
+        # rows; falls back to a plain match count when paths aren't in the
+        # output (e.g. ``-l`` / ``-c`` modes).
+        unique_files = {
+            line.split(":", 1)[0] for line in lines if ":" in line and not line.startswith("--")
+        }
+        if unique_files:
+            caption = f"{len(lines)} matches for {pattern!r} across {len(unique_files)} file(s)"
+        else:
+            caption = f"{len(lines)} matches for {pattern!r}"
+        if truncated:
+            caption += " (truncated)"
         return ToolResult(
             success=True,
             output=display,
             data={"match_count": len(lines), "truncated": truncated},
+            caption=caption,
         )
 
     @staticmethod

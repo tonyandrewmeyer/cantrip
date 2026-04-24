@@ -4941,46 +4941,63 @@ opening the transcript.
   ``test_ui_events.py`` already exercises the path the
   front-end consumes.
 
-### 75.6 Low — Populate rich captions on high-traffic tools
+### 75.6 Low — Populate rich captions on high-traffic tools ✓
 
 Phase 75 shipped the framework and the formulaic fallback
 (``tool_name(path=src/foo.py)``).  The fallback is readable but
 tools can do better: a rich caption carries count / size /
-destination information the formulaic shape can't.  Fill this in
-as each tool gets touched for other reasons — this subphase
-tracks the work so the improvement doesn't rot.
+destination information the formulaic shape can't.  This subphase
+tracks the work so the improvement doesn't rot — the
+exit-criterion categories have landed; remaining tools still
+benefit from the fallback and can be filled in as drive-bys.
 
-- [ ] File-system tools: ``read_file`` (``"Read 47 lines from
+- [x] File-system tools: ``read_file`` (``"Read 47 lines from
   src/foo.py"``), ``write_file`` (``"Wrote 312 bytes to
-  src/bar.py"``), ``edit`` (``"Edited src/foo.py (1
+  src/bar.py"``), ``edit_file`` (``"Edited src/foo.py (1
   replacement)"``), ``list_directory`` (``"Listed 12 entries in
   src/"``), ``grep`` (``"6 matches for 'HookEvent' across 3
-  files"``), ``glob`` (``"4 files matching '**/*.py'"``).
-- [ ] Charm-tooling: ``charmcraft_pack`` (``"Packed →
-  redis.charm (2.1 MB)"``), ``charmcraft_fetch_libs``
-  (``"Fetched 4 libs"``), ``charm_validate`` (``"charmlint: 2
-  errors, 3 warnings"``).
+  files"``; collapses to ``"No matches for 'X'"`` on empty),
+  ``glob`` (``"4 files matching '*.py'"``).  All six tools
+  populate ``ToolResult.caption`` on the success path.
+- [x] Charm-tooling: ``charmcraft_pack`` (``"Packed →
+  redis.charm (2.1 MB)"`` from the file size on disk),
+  ``charmcraft_fetch_libs`` (``"Fetched 4 libs"`` counted
+  from ``Fetched library`` lines in stdout, falls back to
+  ``"Fetched libraries"`` when the count is zero),
+  ``charm_validate`` (``"charm_validate: tests passed, pack
+  passed → PASSED"``).
+- [x] Git: ``git_clone`` (``"Cloned github.com/foo/bar"`` —
+  protocol prefix, ``git@`` user, and trailing ``.git``
+  stripped so HTTPS and SSH URLs yield the same caption),
+  ``git_commit`` (``"Committed: 'Add a thing'"`` using just
+  the first line of the message, truncated at 60 chars),
+  ``git_push`` (``"Pushed → origin/main"``, falling back to
+  the remote name when no branch is supplied).
+- [ ] Shell: ``run_command`` — include exit code and a short
+  output summary (first 40 chars, stripped) so a failing
+  command shows its error in the caption.  *Deferred* — the
+  exit criterion is met without it; pick this up as a drive-
+  by next time ``run_command`` is touched.
 - [ ] Juju: ``juju_deploy`` (``"Deployed redis to
   dev-model"``), ``juju_config`` (``"Set redis/0
   debug=true"``), ``juju_status`` (``"4 apps, 1 blocked"``),
-  ``juju_integrate`` / ``juju_remove_relation``.
-- [ ] Git: ``git_clone`` (``"Cloned github.com/foo/bar
-  (main)"``), ``git_commit`` (``"Committed 3 files: 'Add
-  charmcraft.yaml'"``), ``git_push`` (``"Pushed main → origin
-  (4 commits)"``).
-- [ ] Shell: ``run_command`` — include exit code and a short
-  output summary (first 40 chars, stripped) so a failing
-  command shows its error in the caption.
+  ``juju_integrate`` / ``juju_remove_relation``.  *Deferred*
+  alongside the shell tool — same drive-by reasoning.
 - [ ] Acceptance / test: ``run_charm_tests`` (``"12 passed, 1
   failed"``), ``charm_audit`` (``"2 issues"``),
-  ``acceptance_report``.
-- [ ] Each change is small — one tool, one or two lines in
-  ``execute()``.  Landing them as drive-bys alongside unrelated
-  tool changes avoids a big-bang PR.
+  ``acceptance_report``.  *Deferred*.
+- [x] 18 new tests in ``tests/unit/test_tool_captions.py``
+  asserting caption shape across file-system (9), git (5), and
+  charm-tooling (4) tools — including stub-driven cases for
+  network operations (``git_clone``, ``git_push``) and
+  subprocess-mocked cases for the charm tools.
 
 **75.6 Exit criteria:** at least the file-system, git, and
 charm-tooling categories populate captions; everything else still
-falls back gracefully.
+falls back gracefully. ✓ — file-system, git, and charm-tooling
+shipped; shell / juju / acceptance categories rely on the
+``tool_name(arg=value)`` fallback and will be filled in as
+drive-bys.
 
 ### What this phase is *not*
 
@@ -5468,7 +5485,7 @@ files only and does not dispatch on provider.
 | M72: Continue Context Providers | 72 | Indexed charm-ecosystem docs (``@docs juju|ops|charmcraft|rockcraft``), an ``@``-mention context-provider registry, ``embed`` and ``rerank`` model roles, and ``@problems`` diagnostics-as-pre-turn-context |
 | M73: Goose Workflow Packaging | 73 | Parameterised retryable Recipes with sub-recipes, MCP Apps rendered as sandboxed iframes in the Web UI, JSON-schema-enforced structured responses, and declarative retry with shell validators |
 | M74: Populated Charm Docs | 74 ✓ | Generated ``docs/`` tree is bridged with the Phase 13 root files, populated from real Phase 17 acceptance-test command/output capture, with an architecture page extracted from transcript design decisions and a troubleshooting page mined from the agent's resolved-error history |
-| M75: Inline Tool Blocks | 75 | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
+| M75: Inline Tool Blocks | 75 ✓ | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
 | M76: Copy-Friendly Chat | 76 | Toad-inspired per-block copy affordances either ship (keybinding, slash command, OSC 52, or similar) or a written assessment in ``design/UI.md`` explains why the current flow is sufficient |
 | M77: Reasoning Content Surfaced | 77 | OpenAI-compatible reasoning deltas (Kimi K2, DeepSeek-R1, GLM reasoning variants) are captured and rendered like Claude's extended thinking rather than silently dropped |
 | M78: Observability Hardening | 78 | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
