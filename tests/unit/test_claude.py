@@ -607,3 +607,156 @@ class TestClaudeProviderStream:
         assert final.usage["completion_tokens"] == 17
         assert final.usage["cache_creation_input_tokens"] == 5
         assert final.usage["cache_read_input_tokens"] == 3
+
+
+class TestClaudeProviderThinkingBudgetWire:
+    """Phase 78.4: assert ``thinking`` payload lands on the outgoing wire.
+
+    The April 23 postmortem showed that a silently-dropped field can
+    cascade for a week before anyone notices.  These tests pin the
+    wire shape so a regression fails at unit-test time rather than in
+    production.
+    """
+
+    def _make_provider(self):
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            from cantrip.llm.claude import ClaudeProvider
+
+            return ClaudeProvider(api_key="test-key", model="claude-sonnet-4-6")
+
+    @pytest.mark.asyncio
+    async def test_complete_sends_thinking_kwarg(self):
+        """When ``thinking_budget`` is set, ``messages.create`` gets the field."""
+        provider = self._make_provider()
+
+        mock_response = MagicMock()
+        mock_response.content = []
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = MagicMock(input_tokens=1, output_tokens=1)
+        mock_response.usage.cache_creation_input_tokens = 0
+        mock_response.usage.cache_read_input_tokens = 0
+
+        captured: dict = {}
+
+        async def fake_create(**kwargs):
+            captured.update(kwargs)
+            return mock_response
+
+        provider.client.messages.create = fake_create
+
+        await provider.complete(
+            [Message(role=Role.USER, content="Hi")],
+            thinking_budget=8192,
+        )
+
+        assert captured["thinking"] == {"type": "enabled", "budget_tokens": 8192}
+        # Temperature must be 1 when extended thinking is enabled.
+        assert captured["temperature"] == 1
+        # max_tokens must include the thinking budget plus Claude's 4096
+        # output headroom.
+        assert captured["max_tokens"] >= 8192 + 4096
+
+    @pytest.mark.asyncio
+    async def test_complete_omits_thinking_when_budget_none(self):
+        """When ``thinking_budget`` is None, no ``thinking`` key is sent."""
+        provider = self._make_provider()
+
+        mock_response = MagicMock()
+        mock_response.content = []
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = MagicMock(input_tokens=1, output_tokens=1)
+        mock_response.usage.cache_creation_input_tokens = 0
+        mock_response.usage.cache_read_input_tokens = 0
+
+        captured: dict = {}
+
+        async def fake_create(**kwargs):
+            captured.update(kwargs)
+            return mock_response
+
+        provider.client.messages.create = fake_create
+
+        await provider.complete([Message(role=Role.USER, content="Hi")])
+
+        assert "thinking" not in captured
+        # Caller-supplied temperature must pass through unchanged.
+        assert captured["temperature"] == 0.7
+
+    @pytest.mark.asyncio
+    async def test_stream_sends_thinking_kwarg(self):
+        """When ``thinking_budget`` is set, ``messages.stream`` gets the field."""
+        provider = self._make_provider()
+
+        captured: dict = {}
+
+        class _MockStream:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+            async def get_final_message(self):
+                final = MagicMock()
+                final.usage = None
+                return final
+
+        def fake_stream(**kwargs):
+            captured.update(kwargs)
+            return _MockStream()
+
+        provider.client.messages.stream = fake_stream
+
+        async for _ in provider.stream(
+            [Message(role=Role.USER, content="Hi")],
+            thinking_budget=4096,
+        ):
+            pass
+
+        assert captured["thinking"] == {"type": "enabled", "budget_tokens": 4096}
+        assert captured["temperature"] == 1
+        assert captured["max_tokens"] >= 4096 + 4096
+
+    @pytest.mark.asyncio
+    async def test_stream_omits_thinking_when_budget_none(self):
+        """Streaming without a budget omits the ``thinking`` key entirely."""
+        provider = self._make_provider()
+
+        captured: dict = {}
+
+        class _MockStream:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+            async def get_final_message(self):
+                final = MagicMock()
+                final.usage = None
+                return final
+
+        def fake_stream(**kwargs):
+            captured.update(kwargs)
+            return _MockStream()
+
+        provider.client.messages.stream = fake_stream
+
+        async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
+            pass
+
+        assert "thinking" not in captured
+        assert captured["temperature"] == 0.7

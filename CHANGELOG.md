@@ -5,6 +5,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`thinking_budget` wire-shape regression guard (Phase 78.4).**
+  New ``tests/unit/test_claude.py::TestClaudeProviderThinkingBudgetWire``
+  and three fixtures in
+  ``tests/unit/test_gemini.py::TestGemini3ThinkingConfig`` pin the
+  extended-thinking payload on the wire: Claude's
+  ``messages.create`` / ``messages.stream`` kwargs must carry
+  ``thinking={"type": "enabled", "budget_tokens": <N>}``,
+  ``temperature=1``, and a ``max_tokens`` floor of
+  ``budget + 4096`` when a non-None budget is passed; Gemini's
+  ``generate_content`` / ``generate_content_stream`` config must
+  carry ``ThinkingConfig(thinking_budget=<N>, include_thoughts=True)``
+  in the same scenario; both providers must omit the field when no
+  budget is requested.  Closes the gap identified in Anthropic's
+  April 23 postmortem retrospective — a silently-dropped field can
+  no longer cascade undetected.
+
 - **Rich captions on file-system, git, and charm-tooling tools
   (Phase 75.6 — closes M75).**  ``ToolResult.caption`` now ships
   count / size / destination shaped one-liners for ``read_file`` /

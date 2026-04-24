@@ -5268,32 +5268,40 @@ Work:
   (``src/cantrip/hooks.py``) which fire but don't reach the
   UI.
 
-### 78.4 ``thinking_budget`` regression guard
+### 78.4 ``thinking_budget`` regression guard ✓
 
 Claude (``claude.py:228-251``) and Gemini
 (``gemini.py:80-108``) forward ``thinking_budget`` correctly to
-their respective SDKs.  All four OpenAI-compatible providers
-(inference-snap, fireworks, openrouter, openai-compatible)
-silently no-op via the shared base's
-``# noqa: ARG002 — interface conformity`` marker.  **No test
-asserts the ``thinking`` block actually reaches the outgoing
-request** — a regression that dropped the field would not fail
-any suite.
+their respective SDKs.  The four OpenAI-compatible providers
+(inference-snap, fireworks, openrouter, openai-compatible) don't
+forward a ``thinking`` block but *do* consume the budget: the
+shared base bumps ``max_tokens`` to at least
+``thinking_budget + 4096`` (Claude's formula) so reasoning tokens
+don't starve the final answer (see Phase 77.2).  Before this
+sub-phase **no test asserted the ``thinking`` block actually
+reached the outgoing request** — a regression that dropped the
+field would not fail any suite.
 
-- [ ] Add ``tests/unit/test_claude.py`` cases that patch
-  ``client.messages.create`` / ``client.messages.stream`` and
-  assert the kwargs contain
-  ``thinking={"type": "enabled", "budget_tokens": <N>}`` when
-  a non-None budget is passed, and that the field is absent
-  otherwise.
-- [ ] Equivalent test for ``test_gemini.py`` asserting
-  ``ThinkingConfig(thinking_budget=<N>)`` lands in the
-  ``config=`` kwarg of the Google SDK call.
-- [ ] Decide whether the four no-op providers should log a
-  one-time debug message ("thinking_budget ignored —
-  endpoint doesn't expose extended thinking") the first time
-  they see a non-None budget, so the drop is visible rather
-  than silent.
+- [x] ``tests/unit/test_claude.py::TestClaudeProviderThinkingBudgetWire``
+  patches ``client.messages.create`` / ``client.messages.stream``
+  and asserts the kwargs contain
+  ``thinking={"type": "enabled", "budget_tokens": <N>}`` when a
+  non-None budget is passed, and that the field is absent
+  otherwise.  Also pins ``temperature=1`` (required by extended
+  thinking) and the ``max_tokens`` floor of
+  ``budget + 4096``.
+- [x] ``tests/unit/test_gemini.py::TestGemini3ThinkingConfig``
+  gained three wire tests asserting
+  ``ThinkingConfig(thinking_budget=<N>, include_thoughts=True)``
+  lands in the ``config=`` kwarg of both
+  ``generate_content`` and ``generate_content_stream``; when
+  the budget is None, ``include_thoughts`` is False and
+  ``thinking_budget`` is unset.
+- [x] Decision: **no debug log needed** in the OpenAI-compat
+  providers.  They're not silent no-ops — the budget raises
+  ``max_tokens`` on the wire, which is observable in provider
+  request logs and the model's cost report.  A debug log
+  promising "ignored" would be actively misleading.
 
 ### 78.5 Exit criteria
 

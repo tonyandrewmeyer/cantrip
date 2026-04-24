@@ -851,6 +851,86 @@ class TestGemini3ThinkingConfig:
         assert config.thinking_config.include_thoughts is False
         assert config.temperature == 1.0
 
+    @pytest.mark.asyncio
+    async def test_gemini3_complete_forwards_thinking_budget_on_wire(self):
+        """Phase 78.4: a non-None ``thinking_budget`` lands in ThinkingConfig.
+
+        Regression guard — ensures the field actually reaches
+        ``generate_content`` rather than silently dropping somewhere
+        between the public API and the SDK call.
+        """
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [_make_text_part("OK")]
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 5
+        mock_response.usage_metadata.candidates_token_count = 2
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        await provider.complete(
+            [Message(role=Role.USER, content="Hi")],
+            thinking_budget=12288,
+        )
+
+        config = provider._client.aio.models.generate_content.call_args.kwargs["config"]
+        assert config.thinking_config is not None
+        assert config.thinking_config.thinking_budget == 12288
+        assert config.thinking_config.include_thoughts is True
+
+    @pytest.mark.asyncio
+    async def test_gemini3_stream_forwards_thinking_budget_on_wire(self):
+        """Phase 78.4: streaming path also forwards ``thinking_budget``."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+
+        async def _stream_gen():
+            # One empty chunk is enough to exercise the wire-build path;
+            # the test only cares about the config passed to
+            # ``generate_content_stream``.
+            chunk = MagicMock()
+            chunk.candidates = []
+            chunk.usage_metadata = None
+            yield chunk
+
+        provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
+
+        async for _ in provider.stream(
+            [Message(role=Role.USER, content="Hi")],
+            thinking_budget=4096,
+        ):
+            pass
+
+        call = provider._client.aio.models.generate_content_stream.call_args
+        config = call.kwargs["config"]
+        assert config.thinking_config is not None
+        assert config.thinking_config.thinking_budget == 4096
+        assert config.thinking_config.include_thoughts is True
+
+    @pytest.mark.asyncio
+    async def test_gemini3_complete_omits_thinking_budget_when_none(self):
+        """No ``thinking_budget`` still yields a config (for include_thoughts=False)
+        but without a ``thinking_budget`` set."""
+        provider, _ = _make_provider(model="gemini-3-flash-preview")
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [_make_text_part("OK")]
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 5
+        mock_response.usage_metadata.candidates_token_count = 2
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        await provider.complete([Message(role=Role.USER, content="Hi")])
+
+        config = provider._client.aio.models.generate_content.call_args.kwargs["config"]
+        # Budget-unset path: include_thoughts is False and no budget value.
+        assert config.thinking_config is not None
+        assert config.thinking_config.include_thoughts is False
+        assert config.thinking_config.thinking_budget is None
+
 
 class TestThoughtSignatureRoundTrip:
     """Tests for preserving thought signatures across the Gemini round-trip."""
