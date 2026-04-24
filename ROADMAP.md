@@ -3184,35 +3184,51 @@ Four OpenCode features are explicitly **out of scope**:
   ``.cantrip/`` exclusions, and the env/CLI resolver.
   25 tests, all passing.
 
-### 68.2 High — Declarative permission config
+### 68.2 High — Declarative permission config ✓
 
-- [ ] ``.cantrip/permissions.yaml`` (repo) and
+- [x] ``.cantrip/permissions.yaml`` (repo) and
   ``~/.config/cantrip/permissions.yaml`` (user), merged with
   repo taking precedence.  Three outcomes: ``allow``, ``ask``,
-  ``deny``.  Glob patterns on tool name and on bash command
-  string.  Last matching pattern wins (match OpenCode's rule
-  so the config transfers).
-- [ ] Sensible defaults shipped as a built-in fallback:
-  ``bash: rm -rf *`` → ``deny``; ``.env`` reads → ``deny``;
-  ``git push *`` → ``ask``; everything else → ``allow`` (i.e.
-  today's behaviour).
-- [ ] Enforcement sits *before* tool dispatch, *after* Phase 46
-  pre-tool hooks.  A ``deny`` raises a tool-refused result to
-  the agent; an ``ask`` prompts the user via the existing
-  CONFIRM-task pathway (Phase 64) so the UX matches what the
-  user already sees.
-- [ ] Per-agent and per-subagent overrides: the policy block
-  can be nested under ``agent: <name>`` to tighten or loosen
-  rules for a specific (sub)agent.  Mirrors OpenCode's
-  per-agent permission blocks.
-- [ ] Emit a ``permission_decided`` event on the event bus so
-  the transcript records *why* a call was blocked or approved;
-  feeds the audit log from Phase 14.
-- [ ] Document in ``docs/docs/howto-permissions.html`` (new
-  page) and link from ``docs/docs/reference-cli.html``.
-- [ ] ``tests/unit/test_permissions.py`` — last-match-wins,
-  glob semantics, per-agent override merge, ``ask`` routes
-  through CONFIRM task, default-safe fallbacks.
+  ``deny``.  Ordered glob maps per section (``tools`` / ``bash``
+  / ``paths``); last matching pattern wins within a section,
+  most-restrictive (``deny`` > ``ask`` > ``allow``) wins across
+  sections.  OpenCode rule shapes transfer one-for-one.
+- [x] Sensible defaults shipped as a built-in fallback
+  (``BUILTIN_PERMISSIONS``): ``bash: rm -rf *`` → ``deny``,
+  ``rm -fr *`` → ``deny``, ``sudo *`` → ``ask``, ``git push *``
+  → ``ask``; ``paths: .env`` / ``*/.env`` / ``*.env`` →
+  ``deny``; everything else defaults to ``allow``.
+- [x] Enforcement lives in ``Subagent._apply_permission_gate``
+  inside the per-tool-call ``_tool_or_veto`` closure — runs
+  *after* the Phase 46 ``PRE_TOOL_CALL`` hook (on the
+  post-mutation arguments) and *before*
+  ``_execute_tool_with_checkpoint``.  A ``deny`` returns a
+  synthetic ``ToolResult`` naming the matched rule; an ``ask``
+  parks the call on the new ``PermissionManager`` (``asyncio
+  .Future`` + timeout auto-deny), surfaced via the CONFIRM-task
+  id convention ``permission-confirm-<request-id>``.
+- [x] Per-agent overrides land as an ``agents:`` sub-map keyed
+  by the subagent's category value (``research`` / ``build`` /
+  …); overlays compose on top of the global sections and then
+  feed the same cross-section "most restrictive wins" merge.
+- [x] ``PERMISSION_DECIDED`` event type + ``permission_decided``
+  factory added to ``cantrip.ui.events``; emitted by the
+  executor's ``on_permission_decided`` callback for every
+  non-allow verdict plus the user's ``ask`` resolution.
+- [x] Documented in ``docs/docs/howto-permissions.html`` (new
+  page) with schema, defaults, per-agent examples, and an
+  OpenCode rule-transfer note; linked from the how-to sidebar
+  on every existing how-to page, from ``docs/docs/index.html``,
+  and from the ``cantrip hooks`` entry in
+  ``docs/docs/reference-cli.html``.
+- [x] ``tests/unit/test_permissions.py`` — 37 tests covering
+  glob semantics, last-match-wins, most-restrictive-wins
+  cross-section resolution, per-agent overlay merge, YAML
+  loader + error shapes, ``discover_permissions`` layer
+  ordering (repo beats user), built-in default behaviour, the
+  async ``PermissionManager`` (approve / deny / timeout /
+  cancel_all), and a subagent-integration smoke for the gate
+  helper's deny / allow / ask paths.
 
 ### 68.3 Medium — User-defined slash commands
 

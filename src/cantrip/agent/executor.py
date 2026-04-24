@@ -13,6 +13,12 @@ from collections.abc import Callable
 from cantrip.agent import race, routing
 from cantrip.agent.autodeploy import followup_tasks
 from cantrip.agent.goal_budget import check_budget
+from cantrip.agent.permissions import (
+    PermissionDecision,
+    PermissionManager,
+    PermissionRuleset,
+    discover_permissions,
+)
 from cantrip.agent.policy import (
     MCP_TOOL_PREFIX,
     ORG_WIDE_POLICY,
@@ -388,6 +394,15 @@ class BackgroundExecutor:
         self._rate_limit_cap: int | None = composed.max_calls_per_request
         self._rate_limit_policy_name: str = composed.name
         self._tool_calls_made: int = 0
+        # Phase 68.2: load the declarative permission stack once and
+        # share it across every subagent dispatched by this executor.
+        # Empty ruleset when discovery finds nothing — the evaluator's
+        # default is "no rule → allow" so loading no files preserves
+        # pre-Phase-68.2 behaviour.
+        self._permissions: PermissionRuleset = discover_permissions(charm_path=charm_dir)
+        # One manager per executor so a CONFIRM resolved on the
+        # conversation loop can unblock whichever subagent asked.
+        self._permission_manager: PermissionManager = PermissionManager()
         # Phase 80.3: wrap the user's ``on_tool_invoked`` so every
         # non-MCP tool call bumps the counter on its way through.  MCP
         # tools bypass — they're gated by the per-server
@@ -432,6 +447,14 @@ class BackgroundExecutor:
         self._throttle = ProviderThrottle()
         # Consecutive loop-level errors; used to detect persistent failures.
         self._consecutive_errors = 0
+        # Phase 68.2: callback for permission events — consumed by the
+        # agent layer (core.py) which forwards to the UI event bus and
+        # drops a CONFIRM task when a subagent parks on an ``ask``.
+        # Left ``None`` by default so unit tests that construct an
+        # executor without a UI wiring still work.
+        self._permission_callback: (
+            Callable[[str, PermissionDecision, dict[str, object]], None] | None
+        ) = None
 
     # -- Lifecycle -----------------------------------------------------------
 
@@ -459,6 +482,55 @@ class BackgroundExecutor:
     def healthy(self) -> bool:
         """Whether the executor is running and not in a persistent error state."""
         return self.running and self._consecutive_errors < _MAX_CONSECUTIVE_ERRORS
+
+    @property
+    def permissions(self) -> PermissionRuleset:
+        """Active permission ruleset — exposed for ``/permissions`` introspection."""
+        return self._permissions
+
+    @property
+    def permission_manager(self) -> PermissionManager:
+        """Manager tracking outstanding permission ``ask`` requests."""
+        return self._permission_manager
+
+    def set_permission_callback(
+        self,
+        callback: Callable[[str, PermissionDecision, dict[str, object]], None] | None,
+    ) -> None:
+        """Register a UI-facing callback for permission decisions.
+
+        Invoked every time a Phase 68.2 gate reaches a non-allow
+        verdict.  The callback receives ``(tool_name, decision,
+        arguments)``.  Set to ``None`` to clear.
+        """
+        self._permission_callback = callback
+
+    def resolve_permission_ask(self, request_id: str, *, approved: bool) -> bool:
+        """Resolve an outstanding ``ask`` with the user's decision.
+
+        Returns ``True`` when a pending request matched *request_id*;
+        ``False`` when the request timed out, was already answered, or
+        never existed.
+        """
+        return self._permission_manager.resolve(request_id, approved=approved)
+
+    def _on_permission_decided(
+        self,
+        tool_name: str,
+        decision: PermissionDecision,
+        arguments: dict[str, object],
+    ) -> None:
+        """Forward subagent permission decisions to the UI callback.
+
+        Swallows callback errors so a broken UI hook can never crash
+        the subagent loop — pattern matches ``_wrap_tool_invoked``.
+        """
+        if self._permission_callback is None:
+            return
+        try:
+            self._permission_callback(tool_name, decision, arguments)
+        except (TypeError, ValueError, RuntimeError, AttributeError):
+            log.exception("permission_callback raised for tool %s", tool_name)
 
     def start(self) -> None:
         """Start the background poll-and-execute loop.
@@ -975,6 +1047,9 @@ class BackgroundExecutor:
             on_phase_change=self._queue.notify_task,
             hook_runner=self._hook_runner,
             on_tool_invoked=self._on_tool_invoked,
+            permissions=self._permissions,
+            permission_manager=self._permission_manager,
+            on_permission_decided=self._on_permission_decided,
             **({"max_rounds": max_rounds} if max_rounds is not None else {}),
         )
         t0 = time.monotonic()
@@ -1221,6 +1296,9 @@ class BackgroundExecutor:
                 on_phase_change=self._queue.notify_task,
                 hook_runner=self._hook_runner,
                 on_tool_invoked=self._on_tool_invoked,
+                permissions=self._permissions,
+                permission_manager=self._permission_manager,
+                on_permission_decided=self._on_permission_decided,
                 **extra,
             )
 

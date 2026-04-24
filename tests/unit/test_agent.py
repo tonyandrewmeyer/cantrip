@@ -1,5 +1,6 @@
 """Tests for agent core."""
 
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -236,6 +237,10 @@ class TestSwitchModel:
         )
         return provider
 
+    @pytest.mark.skipif(
+        not os.environ.get("ANTHROPIC_API_KEY"),
+        reason="ANTHROPIC_API_KEY not set — switch_model resolves a real light provider",
+    )
     def test_switch_model_updates_provider_and_context_window(self):
         from unittest.mock import patch
 
@@ -252,6 +257,10 @@ class TestSwitchModel:
         # Context manager tracks the new provider's window.
         assert agent._context_manager._context_window == 200_000
 
+    @pytest.mark.skipif(
+        not os.environ.get("ANTHROPIC_API_KEY"),
+        reason="ANTHROPIC_API_KEY not set — switch_model resolves a real light provider",
+    )
     def test_switch_model_drops_provider_dependent_caches(self):
         from unittest.mock import patch
 
@@ -269,6 +278,10 @@ class TestSwitchModel:
         assert agent._tool_map_cache is None
         assert agent._auto_writer_cache is None
 
+    @pytest.mark.skipif(
+        not os.environ.get("ANTHROPIC_API_KEY"),
+        reason="ANTHROPIC_API_KEY not set — switch_model resolves a real light provider",
+    )
     def test_switch_model_publishes_event(self):
         from unittest.mock import patch
 

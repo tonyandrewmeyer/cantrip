@@ -250,6 +250,16 @@ class TestBusBroadcastContract:
             ).type,
             events.snapshot_created(turn_id="1", sha="deadbeef").type,
             events.snapshot_restored(sha="deadbeef", paths_changed=3, direction="undo").type,
+            events.compaction_started(tokens_before=1).type,
+            events.compaction_completed(
+                tokens_before=1, tokens_after=1, source="main", kind="compact"
+            ).type,
+            events.cache_metrics_updated(cache_creation_tokens=1, cache_read_tokens=1).type,
+            events.goal_budget_exceeded(task_id="x", reason="x").type,
+            events.policy_rate_limited(
+                task_id="x", tool_calls_made=1, cap=1, policy_name="x"
+            ).type,
+            events.permission_decided(tool_name="fs_read", outcome="deny", reason="x").type,
         }
         enum_types = set(events.EventType)
         assert factory_types == enum_types

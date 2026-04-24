@@ -28,6 +28,15 @@ from cantrip.agent.durability import (
     tool_result_from_dict,
     tool_result_to_dict,
 )
+from cantrip.agent.permissions import (
+    PermissionDecision,
+    PermissionManager,
+    PermissionOutcome,
+    PermissionRuleset,
+)
+from cantrip.agent.permissions import (
+    evaluate as evaluate_permissions,
+)
 from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.policy import (
     ORG_WIDE_POLICY,
@@ -840,6 +849,10 @@ class Subagent:
         hook_runner: HookRunner | None = None,
         on_tool_invoked: ToolInvokedCallback = None,
         audit_writer: AuditWriter | None = None,
+        permissions: PermissionRuleset | None = None,
+        permission_manager: PermissionManager | None = None,
+        on_permission_decided: Callable[[str, PermissionDecision, dict[str, Any]], None]
+        | None = None,
     ) -> None:
         self._context = context
         self._provider = _select_provider(
@@ -874,6 +887,15 @@ class Subagent:
             charm_dir = Path(context.charm_path)
             if charm_dir.is_dir():
                 self._audit_writer = AuditWriter(charm_dir / AUDIT_FILENAME)
+        # Phase 68.2: declarative allow/ask/deny policy from
+        # ``.cantrip/permissions.yaml``.  Evaluated per tool call *after*
+        # the PRE_TOOL_CALL hook runs so a hook that rewrites an argument
+        # still gets the right post-mutation permission verdict.  An
+        # empty ruleset + missing manager degrades to "everything allow"
+        # so existing call sites keep their behaviour.
+        self._permissions = permissions if permissions is not None else PermissionRuleset()
+        self._permission_manager = permission_manager
+        self._on_permission_decided = on_permission_decided
 
     def _record_audit(
         self,
@@ -909,6 +931,108 @@ class Subagent:
             self._audit_writer.write(entry)
         except OSError:
             log.warning("Failed to write audit entry for %r", tool, exc_info=True)
+
+    async def _apply_permission_gate(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        decision: PermissionDecision | None,
+    ) -> ToolResult | None:
+        """Consult the Phase 68.2 permission policy for one tool call.
+
+        Returns a synthetic :class:`ToolResult` to short-circuit the
+        call, or ``None`` to let execution proceed.  Handles the three
+        outcomes defined in ``design/TOOLS.md``:
+
+        * ``allow`` — no-op, execution continues.
+        * ``deny`` — return a refused result that names the matched rule.
+        * ``ask`` — park the call on the :class:`PermissionManager`
+          (surfacing a CONFIRM task to the UI) and either allow or
+          deny depending on the user's response / timeout.
+
+        ``decision`` may be ``None`` when a prior gate already refused
+        the call (policy DENY, hook veto).  In that case the caller
+        has already built the error result and this helper returns
+        ``None`` so the existing short-circuit stays in effect.
+        """
+        if decision is None or decision.outcome is PermissionOutcome.ALLOW:
+            return None
+        self._record_audit(
+            tool=tool_name,
+            action=(
+                AuditAction.DENIED
+                if decision.outcome is PermissionOutcome.DENY
+                else AuditAction.REVIEW_REQUESTED
+            ),
+            reason=decision.reason,
+            arguments=arguments,
+        )
+        if decision.outcome is PermissionOutcome.DENY:
+            log.info(
+                "Subagent tool call %r denied by permissions: %s",
+                tool_name,
+                decision.reason,
+            )
+            if self._on_permission_decided is not None:
+                try:
+                    self._on_permission_decided(tool_name, decision, arguments)
+                except (TypeError, ValueError, RuntimeError, AttributeError):
+                    log.exception("on_permission_decided callback raised for %s", tool_name)
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Refused by permissions policy: {decision.reason}. "
+                    "Edit .cantrip/permissions.yaml to allow or ask, or "
+                    "run the command manually."
+                ),
+            )
+        # outcome == ASK
+        if self._permission_manager is None:
+            log.info(
+                "Subagent tool call %r needs approval but no permission manager "
+                "is wired; treating as deny (%s)",
+                tool_name,
+                decision.reason,
+            )
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Permission required: {decision.reason}. "
+                    "This session has no interactive approval surface; "
+                    "update .cantrip/permissions.yaml to allow the call."
+                ),
+            )
+        if self._on_permission_decided is not None:
+            try:
+                self._on_permission_decided(tool_name, decision, arguments)
+            except (TypeError, ValueError, RuntimeError, AttributeError):
+                log.exception("on_permission_decided callback raised for %s", tool_name)
+        approved = await self._permission_manager.request(
+            tool_name=tool_name,
+            reason=decision.reason,
+            arguments=arguments,
+        )
+        resolution = PermissionDecision(
+            outcome=PermissionOutcome.ALLOW if approved else PermissionOutcome.DENY,
+            reason=(f"{decision.reason} (user {'approved' if approved else 'denied'})"),
+            matched_rule=decision.matched_rule,
+        )
+        if self._on_permission_decided is not None:
+            try:
+                self._on_permission_decided(tool_name, resolution, arguments)
+            except (TypeError, ValueError, RuntimeError, AttributeError):
+                log.exception("on_permission_decided callback raised for %s", tool_name)
+        if approved:
+            return None
+        return ToolResult(
+            success=False,
+            output="",
+            error=(
+                f"Refused by user: {decision.reason}. The user declined the permission prompt."
+            ),
+        )
 
     def _set_phase(self, phase: str) -> None:
         """Update the task's transient subagent phase and notify listeners."""
@@ -1103,6 +1227,14 @@ class Subagent:
             policy_denials: list[str | None] = []
             call_vetoes: list[tuple[Any, ...] | None] = []
             call_arguments: list[dict[str, Any]] = []
+            # Phase 68.2: per-call permission decision, evaluated on the
+            # *post-hook* arguments so a hook that rewrote a command
+            # string is matched against the rewritten form.  DENY becomes
+            # a synthetic error result alongside the Phase 80 denial
+            # path; ASK parks the call on the permission manager inside
+            # ``_tool_or_veto`` so each parallel call can wait for its
+            # own user decision without blocking the siblings.
+            permission_decisions: list[PermissionDecision | None] = []
             for tc in response.tool_calls:
                 verdict = self._policy.check_tool(tc.name)
                 if verdict is not PolicyAction.ALLOW:
@@ -1121,6 +1253,7 @@ class Subagent:
                     policy_denials.append(reason)
                     call_vetoes.append(None)
                     call_arguments.append(tc.arguments)
+                    permission_decisions.append(None)
                     continue
                 policy_denials.append(None)
                 pre_results = await self._hook_runner.fire(
@@ -1133,7 +1266,24 @@ class Subagent:
                     },
                 )
                 call_vetoes.append(first_veto(pre_results))
-                call_arguments.append(final_arguments(pre_results) or tc.arguments)
+                effective_args = final_arguments(pre_results) or tc.arguments
+                call_arguments.append(effective_args)
+                # Phase 68.2: evaluate the declarative permission policy
+                # on the post-hook arguments.  A vetoing pre-hook takes
+                # precedence over the permission gate (no sense asking
+                # about a call that's already blocked), so skip the
+                # evaluation when a veto is in play.
+                if call_vetoes[-1] is not None:
+                    permission_decisions.append(None)
+                else:
+                    permission_decisions.append(
+                        evaluate_permissions(
+                            self._permissions,
+                            tc.name,
+                            effective_args,
+                            agent_name=category_value,
+                        )
+                    )
                 # Phase 80.4: record the ``allowed`` verdict once the
                 # policy gate passes.  Pre-hook vetoes are logged via
                 # the ``vetoed_by`` path in POST_TOOL_CALL instead —
@@ -1150,6 +1300,7 @@ class Subagent:
                 policy_denial: str | None,
                 veto: Any,
                 arguments: dict[str, Any],
+                permission: PermissionDecision | None,
             ) -> tuple[ToolResult, int]:
                 call_start = time.monotonic()
                 if policy_denial is not None:
@@ -1170,17 +1321,24 @@ class Subagent:
                         error=f"Blocked by {veto.veto_reason}",
                     )
                 else:
-                    result = await self._execute_tool_with_checkpoint(ctx, tc.name, arguments)
+                    permission_block = await self._apply_permission_gate(
+                        tc.name, arguments, permission
+                    )
+                    if permission_block is not None:
+                        result = permission_block
+                    else:
+                        result = await self._execute_tool_with_checkpoint(ctx, tc.name, arguments)
                 return result, int((time.monotonic() - call_start) * 1000)
 
             timed_results = await asyncio.gather(
                 *(
-                    _tool_or_veto(tc, denial, veto, args)
-                    for tc, denial, veto, args in zip(
+                    _tool_or_veto(tc, denial, veto, args, permission)
+                    for tc, denial, veto, args, permission in zip(
                         response.tool_calls,
                         policy_denials,
                         call_vetoes,
                         call_arguments,
+                        permission_decisions,
                         strict=True,
                     )
                 )

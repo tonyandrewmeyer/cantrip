@@ -41,6 +41,7 @@ class EventType(enum.StrEnum):
     POLICY_RATE_LIMITED = "policy_rate_limited"
     SNAPSHOT_CREATED = "snapshot_created"
     SNAPSHOT_RESTORED = "snapshot_restored"
+    PERMISSION_DECIDED = "permission_decided"
 
 
 @dataclass(frozen=True)
@@ -516,6 +517,42 @@ def snapshot_restored(
     return Event(
         type=EventType.SNAPSHOT_RESTORED,
         payload={"sha": sha, "paths_changed": paths_changed, "direction": direction},
+    )
+
+
+def permission_decided(
+    *,
+    tool_name: str,
+    outcome: str,
+    reason: str,
+    request_id: str | None = None,
+    task_id: str | None = None,
+    source: str = "subagent",
+    command: str | None = None,
+) -> Event:
+    """Build a ``PERMISSION_DECIDED`` event.
+
+    Phase 68.2: emitted each time the declarative permission gate
+    reaches a non-default decision on a tool call — deny, ask
+    opened, ask resolved.  ``outcome`` is one of
+    ``allow`` / ``ask`` / ``ask-approved`` / ``ask-denied`` /
+    ``ask-timeout`` / ``deny`` so transcript readers can tell a
+    still-open ``ask`` apart from one the user has already
+    resolved.  ``request_id`` / ``task_id`` are populated for the
+    ``ask`` lifecycle events so the UI can dismiss the CONFIRM
+    widget when the resolution arrives.
+    """
+    return Event(
+        type=EventType.PERMISSION_DECIDED,
+        payload={
+            "tool_name": tool_name,
+            "outcome": outcome,
+            "reason": reason,
+            "request_id": request_id,
+            "task_id": task_id,
+            "source": source,
+            "command": command,
+        },
     )
 
 

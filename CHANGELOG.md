@@ -5,6 +5,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Declarative tool-permission config with allow / ask / deny
+  (Phase 68.2).**  Cantrip now reads
+  ``~/.config/cantrip/permissions.yaml`` (user) and
+  ``.cantrip/permissions.yaml`` (per-charm, wins on conflict) and
+  evaluates every subagent tool call against three ordered glob
+  sections — ``tools`` matches the tool name, ``bash`` matches the
+  shell command on ``run_command`` (argv lists are shell-joined),
+  ``paths`` matches ``path`` / ``file_path`` / ``filename``
+  arguments.  Within a section the last-matching glob wins (so
+  OpenCode's ordered-dict rules transfer one-for-one); across
+  sections the most restrictive outcome wins (``deny`` > ``ask`` >
+  ``allow``).  An optional ``agents:`` sub-map tightens or loosens
+  rules for a specific subagent category.  The gate runs *after*
+  Phase 46 ``PRE_TOOL_CALL`` hooks on the post-mutation arguments
+  and *before* tool dispatch, so a hook that rewrote the command
+  still matches the rewritten form.  ``deny`` returns a synthetic
+  refused ``ToolResult``; ``ask`` parks the call on a new async
+  ``PermissionManager`` (``asyncio.Future`` + 240 s auto-deny),
+  while a fresh ``PERMISSION_DECIDED`` UI event records every
+  non-allow verdict + the user's resolution.  Built-in defaults
+  ship safe out of the box: ``rm -rf *`` / ``rm -fr *`` deny;
+  ``sudo *`` and ``git push *`` ask; ``.env`` reads deny.
+  Documented in the new
+  [Configure tool permissions](docs/docs/howto-permissions.html)
+  how-to.
+
 - **Snapshot-backed `/undo` and `/redo` for file changes
   (Phase 68.1).**  Cantrip now commits the charm working tree into
   a hidden git repo at ``$XDG_STATE_HOME/cantrip/snapshots/<hash>/``
