@@ -4347,6 +4347,47 @@ opening the transcript.
   ``test_ui_events.py`` already exercises the path the
   front-end consumes.
 
+### 75.6 Low — Populate rich captions on high-traffic tools
+
+Phase 75 shipped the framework and the formulaic fallback
+(``tool_name(path=src/foo.py)``).  The fallback is readable but
+tools can do better: a rich caption carries count / size /
+destination information the formulaic shape can't.  Fill this in
+as each tool gets touched for other reasons — this subphase
+tracks the work so the improvement doesn't rot.
+
+- [ ] File-system tools: ``read_file`` (``"Read 47 lines from
+  src/foo.py"``), ``write_file`` (``"Wrote 312 bytes to
+  src/bar.py"``), ``edit`` (``"Edited src/foo.py (1
+  replacement)"``), ``list_directory`` (``"Listed 12 entries in
+  src/"``), ``grep`` (``"6 matches for 'HookEvent' across 3
+  files"``), ``glob`` (``"4 files matching '**/*.py'"``).
+- [ ] Charm-tooling: ``charmcraft_pack`` (``"Packed →
+  redis.charm (2.1 MB)"``), ``charmcraft_fetch_libs``
+  (``"Fetched 4 libs"``), ``charm_validate`` (``"charmlint: 2
+  errors, 3 warnings"``).
+- [ ] Juju: ``juju_deploy`` (``"Deployed redis to
+  dev-model"``), ``juju_config`` (``"Set redis/0
+  debug=true"``), ``juju_status`` (``"4 apps, 1 blocked"``),
+  ``juju_integrate`` / ``juju_remove_relation``.
+- [ ] Git: ``git_clone`` (``"Cloned github.com/foo/bar
+  (main)"``), ``git_commit`` (``"Committed 3 files: 'Add
+  charmcraft.yaml'"``), ``git_push`` (``"Pushed main → origin
+  (4 commits)"``).
+- [ ] Shell: ``run_command`` — include exit code and a short
+  output summary (first 40 chars, stripped) so a failing
+  command shows its error in the caption.
+- [ ] Acceptance / test: ``run_charm_tests`` (``"12 passed, 1
+  failed"``), ``charm_audit`` (``"2 issues"``),
+  ``acceptance_report``.
+- [ ] Each change is small — one tool, one or two lines in
+  ``execute()``.  Landing them as drive-bys alongside unrelated
+  tool changes avoids a big-bang PR.
+
+**75.6 Exit criteria:** at least the file-system, git, and
+charm-tooling categories populate captions; everything else still
+falls back gracefully.
+
 ### What this phase is *not*
 
 - Not a full collapse-by-default UI.  First pass is everything
