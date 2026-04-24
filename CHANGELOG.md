@@ -127,6 +127,36 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Ralph-loop comparison + per-goal budget sketch — Phase 55.3.**
+  Read ``awesome-copilot``'s 79-line ``ralph_loop.py`` and diffed
+  the pattern against Cantrip's two-loop architecture.  The
+  overlap is enormous: Cantrip's subagent-per-task model *is*
+  the ralph fresh-session-per-iteration pattern, scaled up with a
+  work queue, typed dependencies, parallel subagents under a
+  concurrency semaphore, and (since Phase 52) step-level
+  checkpoint replay.  A full mapping table ships in
+  ``design/AGENT.md`` § *Prior art — the ralph loop*.
+
+  The **single primitive Cantrip is missing** is a hard
+  **per-goal iteration + token budget with a circuit breaker**.
+  Today the autonomous loop drains the work queue on its own
+  schedule; a runaway planner could spawn arbitrary follow-up
+  tasks without an aggregate cap.  Sketched the follow-up in
+  ``design/AGENT.md`` § *Per-goal budget*: new
+  ``AgentState.goal_budget`` carrying ``max_iterations`` /
+  ``max_prompt_tokens`` / ``max_completion_tokens`` /
+  ``started_at``; executor gate ``_budget_allows(task)`` before
+  each spawn that queries ``SessionStore.get_usage_since`` against
+  the caps; tripped task → ``BLOCKED`` with ``budget_exceeded`` +
+  ``goal_budget_exceeded`` UI event; recovery via ``/budget``
+  slash command, ``--max-iterations`` / ``--max-tokens`` CLI
+  flags, and ``CANTRIP_MAX_*`` env vars.  Sized at ~150 lines of
+  code + one event type + three tests.  Pairs with Phase 55.4's
+  tool-level ``max_calls_per_request`` work.  Implementation
+  deferred to a dedicated follow-up phase; investigation ends at
+  "scoped and sized" per the 55.3 exit criterion.  No code
+  changes.
+
 - **Skill-as-folder-convention investigation — Phase 55.1.**
   Surveyed three representative awesome-copilot skills
   (``pytest-coverage``, ``agent-governance``,

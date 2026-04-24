@@ -193,6 +193,88 @@ async def run(self):
 - Independent tasks (e.g. research + environment setup) can run in parallel later
 - The executor pauses during user interactions that affect the work queue
 
+### Prior art — the *ralph loop*
+
+[awesome-copilot's ``ralph_loop.py``][ralph-loop] is the prior art
+for what Cantrip does with subagents.  79 lines, one function: read
+a single prompt file, loop ``max_iterations`` times, create a
+**fresh session** each iteration (so the LLM always operates in the
+"smart zone" of its context window), auto-approve permissions, send
+the prompt, wait up to 600 s, destroy the session.  State carries
+between iterations via plain markdown files the agent writes and
+reads — ``IMPLEMENTATION_PLAN.md``, ``AGENTS.md``, ``specs/*``.
+
+Cantrip's subagent pattern is the same idea scaled up:
+
+| Ralph | Cantrip equivalent |
+|-------|--------------------|
+| Fresh session per iteration | Fresh ``Subagent`` per task (isolated LLM context, focused system prompt) |
+| Auto-approve permissions | ``PRE_TOOL_CALL`` hooks run but don't gate by default inside the autonomous loop |
+| 600 s per-iteration timeout | ``_TASK_TIMEOUTS`` + ``_DEFAULT_TASK_TIMEOUT`` in ``executor.py`` |
+| Disk-as-state (markdown files) | ``.cantrip`` SQLite + the charm working tree |
+| Single prompt file | ``prompts/system.md.j2`` + per-category guidance under ``prompts/subagent/`` |
+| ``max_iterations`` hard cap | *Missing — see "Per-goal budget" below* |
+
+The similarities vastly outweigh the differences.  Cantrip adds a
+**work queue with typed dependencies**, **parallel subagents under
+a concurrency semaphore**, **category-scoped tool allowlists**, and
+(since Phase 52) **step-level checkpoint replay** so a rate-limited
+turn resumes from the checkpoint instead of turn 1.  Those are
+strict extensions of the ralph pattern, not alternatives to it.
+
+### Per-goal budget (scoped follow-up — see ROADMAP Phase 55.3)
+
+The one ralph primitive Cantrip is missing is the ``max_iterations``
+circuit breaker.  Today the autonomous loop runs until the planner
+declares done — there's no aggregate cap on "how many tasks / how
+many tokens may this one user request consume before we stop and
+ask?"  The work queue drains on its own schedule, and a runaway
+planner could in principle spawn arbitrary follow-up tasks.
+
+A concrete scope for the missing primitive, **sketched here and
+deferred to a dedicated follow-up phase**:
+
+- **A "goal"** is a user request that kicks off an autonomous run
+  (the implicit root of the task DAG).  A new
+  ``AgentState.goal_budget: GoalBudget | None`` is set when the
+  goal starts and cleared on completion.
+- **``GoalBudget`` fields:** ``max_iterations: int`` (tasks
+  permitted for this goal), ``max_prompt_tokens: int | None``,
+  ``max_completion_tokens: int | None``, ``started_at: datetime``.
+  The token caps scope off the existing ``token_usage`` table via
+  ``SessionStore.get_usage_since(goal_budget.started_at)`` — no new
+  schema required.
+- **Circuit breaker in the executor:** before ``_run_task`` spawns
+  a subagent, a ``_budget_allows(task)`` gate checks both counters.
+  If tripped, the task is marked ``BLOCKED`` with
+  ``blocked_reason="budget exceeded"`` and a new
+  ``goal_budget_exceeded`` event is published on the UI bus.
+  In-flight subagents drain naturally (Phase 52.3's checkpoint
+  wiring already makes resume cheap if the user later raises the
+  budget).
+- **Recovery surfaces:** a ``/budget`` slash command to show the
+  current caps + burn-down, and (if tripped) raise them in-place;
+  CLI flags ``--max-iterations`` / ``--max-tokens`` to set the
+  defaults at startup; environment variables ``CANTRIP_MAX_ITERATIONS``
+  / ``CANTRIP_MAX_PROMPT_TOKENS`` / ``CANTRIP_MAX_COMPLETION_TOKENS``
+  for operator config.
+- **Pairs with the tool-access policy work in Phase 55.4.**
+  ``max_calls_per_request`` from the awesome-copilot
+  ``agent-governance`` skill is the same circuit-breaker shape
+  applied at the *tool* level instead of the *goal* level.  The
+  two share the same event plumbing; build them together or pick
+  the goal-level one first — it has broader blast radius.
+
+Not scoped here: UI redesign, multi-goal budget sharing, or
+budget rollover between resumed sessions.  Size: one module
+(~150 lines) + one event type + two CLI flags + three tests
+(gate trips / raise clears / resume honours the cap).  Worth a
+dedicated phase when autonomous runs start routinely exceeding
+~20 tasks; until then the current "run until done" behaviour is
+adequate for supervised use.
+
+[ralph-loop]: https://github.com/github/awesome-copilot/blob/main/cookbook/copilot-sdk/python/recipe/ralph_loop.py
+
 ## Subagent Pattern
 
 Each background task runs as a **subagent**: a fresh LLM context with a focused system

@@ -2018,28 +2018,46 @@ added two new ones (55.7, 55.8).
   handoffs evaluated separately and either folded in or filed as a
   follow-up phase
 
-### 55.3 Medium — Ralph-loop / disk-as-state comparison and per-goal budget
+### 55.3 Medium — Ralph-loop / disk-as-state comparison and per-goal budget ✓
 
-- [ ] Read `../awesome-copilot/cookbook/copilot-sdk/python/recipe/ralph_loop.py`
-  end-to-end and diagram its control flow
-- [ ] Diff the pattern against Cantrip's two-loop architecture in
-  `design/AGENT.md` and the Phase 52 step-level durable-execution
-  design
-- [ ] Call out any primitive the ralph pattern has that Cantrip does
-  not (fresh context per iteration? on-disk plan file convention?
-  recovery semantics?) — the overlap is large, so the interesting
-  output is the delta, not the similarity
-- [ ] The one ralph primitive Cantrip is missing is a **hard
-  per-goal iteration and token budget** with a circuit breaker.
-  Today the autonomous loop runs until the planner declares done,
-  which is a long way from safe.  Scope a small addition: a per-goal
-  `max_iterations` and `max_tokens` counter in the executor, with a
-  clean shutdown path (save checkpoint, surface a `BudgetExceeded`
-  event to the UI) when tripped.  Pairs with 55.4's rate-limit work
-- [ ] Output: a paragraph in `design/AGENT.md` pointing at the ralph
-  loop as prior art; a concrete implementation sketch for the
-  per-goal budget (not necessarily built in this phase — the
-  investigation ends at "scoped and sized")
+- [x] Read ``awesome-copilot/cookbook/copilot-sdk/python/recipe/ralph_loop.py``
+  (79 lines).  Control flow: one prompt file, loop ``max_iterations``
+  times, create a fresh CopilotClient session each iteration
+  (``PermissionHandler.approve_all``), ``send_and_wait`` with 600 s
+  timeout, ``destroy()`` the session.  State between iterations
+  carries on disk via plain markdown (``IMPLEMENTATION_PLAN.md``,
+  ``AGENTS.md``, ``specs/*``).
+- [x] Diffed against Cantrip's two-loop design: the overlap is
+  large.  Cantrip's subagent-per-task pattern *is* the ralph
+  fresh-session-per-iteration pattern, scaled up with a work
+  queue, typed dependencies, parallel subagents under a
+  concurrency semaphore, category-scoped tool allowlists, and
+  (since Phase 52) step-level checkpoint replay.  Full mapping
+  table in ``design/AGENT.md`` § *Prior art — the ralph loop*.
+- [x] Delta identified: the single ralph primitive Cantrip is
+  missing is a **hard per-goal iteration + token budget with a
+  circuit breaker**.  Today the autonomous loop drains the work
+  queue on its own schedule; a runaway planner could in principle
+  spawn arbitrary follow-up tasks without an aggregate cap.
+- [x] Scoped and sized the missing piece in ``design/AGENT.md``
+  § *Per-goal budget (scoped follow-up — see ROADMAP Phase 55.3)*:
+  new ``AgentState.goal_budget: GoalBudget | None`` with
+  ``max_iterations`` / ``max_prompt_tokens`` /
+  ``max_completion_tokens`` / ``started_at``; executor gate
+  ``_budget_allows(task)`` before each spawn that queries
+  ``SessionStore.get_usage_since(started_at)`` against the caps;
+  tripped task → ``BLOCKED`` with ``budget_exceeded`` reason +
+  ``goal_budget_exceeded`` event; recovery via ``/budget`` slash
+  command, ``--max-iterations`` / ``--max-tokens`` CLI flags,
+  and ``CANTRIP_MAX_*`` env vars.  Pairs with Phase 55.4's
+  ``max_calls_per_request`` (tool-level version of the same
+  circuit-breaker shape).
+- [x] Sized: ~150 lines for the budget module + one event type
+  + two CLI flags + three tests (gate trips / raise clears /
+  resume honours the cap).  Investigation ends here —
+  implementation deferred to a dedicated follow-up phase when
+  autonomous runs routinely exceed ~20 tasks and the
+  "run-until-done" default stops being adequate.
 
 ### 55.4 High — Policy composition for tool access
 
