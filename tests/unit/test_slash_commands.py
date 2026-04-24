@@ -335,6 +335,138 @@ class TestExport:
         assert "no `.cantrip`" in result.text
 
 
+class TestShare:
+    """Phase 67.4 — ``/share`` uploads the HTML transcript as a secret gist."""
+
+    def _agent_with_charm(
+        self, memory_manager: MemoryManager, charm_path: Path
+    ) -> SimpleNamespace:
+        """Agent shell with a ``.cantrip`` file so /share doesn't short-circuit."""
+        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
+        return _fake_agent(memory_manager, charm_path=charm_path)
+
+    def test_missing_charm_path_short_circuits(self, memory_manager: MemoryManager) -> None:
+        agent = _fake_agent(memory_manager, charm_path=None)
+        result = dispatch(agent, "/share")
+        assert result is not None
+        assert result.followup is None
+        assert "no charm path" in result.text
+
+    def test_missing_cantrip_db_short_circuits(
+        self, memory_manager: MemoryManager, tmp_path: Path
+    ) -> None:
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        agent = _fake_agent(memory_manager, charm_path=empty)
+        result = dispatch(agent, "/share")
+        assert result is not None
+        assert result.followup is None
+        assert "no `.cantrip`" in result.text
+
+    def test_charm_ready_returns_followup(
+        self, memory_manager: MemoryManager, tmp_path: Path
+    ) -> None:
+        agent = self._agent_with_charm(memory_manager, tmp_path)
+        result = dispatch(agent, "/share")
+        assert result is not None
+        assert result.followup is not None
+        assert "Uploading session" in result.text
+        result.followup.close()
+
+    @pytest.mark.asyncio
+    async def test_share_happy_path_returns_gist_url(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        charm_path = tmp_path / "charm"
+        charm_path.mkdir()
+        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
+
+        async def _fake_comm(_self):
+            return (b"https://gist.github.com/user/abc123\n", b"")
+
+        # Mock the transcript pipeline so the test doesn't need a real
+        # SQLite file on disk.
+        with (
+            patch("cantrip.transcript.export.load_transcript", return_value={}),
+            patch("cantrip.transcript.html.render_html", return_value="<html/>"),
+            patch("cantrip.agent.slash_commands.shutil.which", return_value="/usr/bin/gh"),
+            patch("cantrip.agent.slash_commands.asyncio.create_subprocess_exec") as mock_exec,
+        ):
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.communicate = _fake_comm.__get__(mock_proc)
+
+            async def _fake_exec(*_args, **_kwargs):
+                return mock_proc
+
+            mock_exec.side_effect = _fake_exec
+
+            result = await slash_commands._run_share_to_gist(
+                charm_path / ".cantrip",
+                charm_path,
+            )
+
+        assert "https://gist.github.com/user/abc123" in result
+
+    @pytest.mark.asyncio
+    async def test_share_falls_back_to_local_path_when_gh_missing(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        charm_path = tmp_path / "charm"
+        charm_path.mkdir()
+        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
+
+        with (
+            patch("cantrip.transcript.export.load_transcript", return_value={}),
+            patch("cantrip.transcript.html.render_html", return_value="<html/>"),
+            patch("cantrip.agent.slash_commands.shutil.which", return_value=None),
+        ):
+            result = await slash_commands._run_share_to_gist(
+                charm_path / ".cantrip",
+                charm_path,
+            )
+
+        assert "`gh` is not installed" in result
+        assert "gh gist create" in result
+        # The user should see the local path so they can upload manually.
+        assert "cantrip-session-charm-" in result
+
+    @pytest.mark.asyncio
+    async def test_share_surfaces_gh_auth_failure_with_retry_command(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        charm_path = tmp_path / "charm"
+        charm_path.mkdir()
+        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
+
+        async def _fake_comm(_self):
+            return (b"", b"You are not logged into any GitHub hosts. Run gh auth login\n")
+
+        with (
+            patch("cantrip.transcript.export.load_transcript", return_value={}),
+            patch("cantrip.transcript.html.render_html", return_value="<html/>"),
+            patch("cantrip.agent.slash_commands.shutil.which", return_value="/usr/bin/gh"),
+            patch("cantrip.agent.slash_commands.asyncio.create_subprocess_exec") as mock_exec,
+        ):
+            mock_proc = MagicMock()
+            mock_proc.returncode = 4
+            mock_proc.communicate = _fake_comm.__get__(mock_proc)
+
+            async def _fake_exec(*_args, **_kwargs):
+                return mock_proc
+
+            mock_exec.side_effect = _fake_exec
+
+            result = await slash_commands._run_share_to_gist(
+                charm_path / ".cantrip",
+                charm_path,
+            )
+
+        assert "Failed to upload gist" in result
+        assert "gh auth login" in result
+        assert "gh gist create" in result
+
+
 class TestArena:
     """/arena returns usage when bare and a followup when given a prompt."""
 

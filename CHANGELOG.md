@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Share a session as a secret gist via ``/share`` (Phase 67.4).**
+  New slash command that exports the live session as an HTML
+  transcript and uploads it via ``gh gist create``, returning the
+  gist URL.  Runs as a background coroutine so the UI stays
+  responsive.  When ``gh`` is missing or unauthenticated the
+  transcript still lands on disk and the command prints a
+  copy-pasteable ``gh gist create ...`` the user can run manually
+  — the session is never blocked by a missing dependency.
+
 - **Mid-session model switching via ``/model`` (Phase 67.2).** New
   slash command: ``/model`` prints the active provider + model (plus
   the light provider when configured); ``/model <provider>`` swaps to

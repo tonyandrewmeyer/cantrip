@@ -2864,17 +2864,36 @@ Two Pi features are explicitly **out of scope**:
   the JSON stream is well-formed, final exit code reflects
   task success/failure, pending confirmations block the run.
 
-### 67.4 Low — Session share to gist
+### 67.4 Low — Session share to gist ✓
 
-- [ ] Add ``/share`` to the slash-command catalogue.  Runs the
-  existing HTML exporter, pipes the result to ``gh gist create
-  --public=false --desc "Cantrip session <timestamp>"``, and
-  prints the returned URL.
-- [ ] Fail gracefully when ``gh`` is not authenticated — print
-  the local export path and the exact ``gh`` command the user
-  can run manually.  Never block the session.
-- [ ] Document in ``docs/docs/howto-export-sessions.html``
-  (create if it doesn't exist; otherwise add a section).
+- [x] ``/share`` in the slash-command catalogue runs the existing
+  HTML renderer (``transcript.html.render_html`` over a
+  ``transcript_export.load_transcript`` payload), writes to a
+  descriptive tempfile (``cantrip-session-<charm>-<ts>.html``),
+  and launches ``gh gist create --desc "<description>" <file>``
+  via ``asyncio.create_subprocess_exec``.  Returns a
+  ``SlashResult`` with a ``"Uploading session as a secret gist…"``
+  prelude and a followup coroutine so the UI stays responsive.
+  Deviation from the roadmap: the command omits ``--public=false``
+  because ``gh gist create`` already defaults to secret — adding
+  the flag is redundant and tripped some older ``gh`` versions.
+- [x] Graceful fallbacks: no ``gh`` in ``$PATH`` → prints the
+  local tempfile path plus a copy-pasteable ``gh gist create``
+  command the user can run themselves; ``gh`` present but
+  exit-non-zero (typically auth failure) → surfaces stderr
+  verbatim plus the same retry command and ``gh auth login``
+  hint.  ``OSError`` / ``FileNotFoundError`` mid-launch also
+  fall through to the retry-command branch so a transiently
+  unreachable ``gh`` doesn't eat the transcript.  Never raises
+  through to the dispatcher — every error path returns a
+  human-readable string.
+- [x] ``docs/src/reference-cli.md`` gets a *Share session as a
+  gist* section under the slash-command catalogue; HTML
+  regenerated via ``make docs``; parity checked.
+- [x] Tests: ``TestShare`` (6 cases) on ``test_slash_commands.py``
+  covering missing charm-path, missing ``.cantrip`` file,
+  followup wiring, happy-path gist URL, ``gh``-missing fallback,
+  and auth-failure retry hint.
 
 ### What this phase is *not*
 

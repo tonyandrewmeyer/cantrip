@@ -509,6 +509,25 @@ swap&mdash;they&rsquo;re session totals, not per-provider. Any
 cross-provider light routing (<code>--light-provider snap</code>
 etc.) drops in favour of same-family routing; callers who rely on
 a specific hybrid should restart the session.</p>
+<h3 id="share">Share session as a gist</h3>
+<dl>
+  <dt><code>/share</code></dt>
+  <dd>
+    Export the live session as an HTML transcript and upload it as
+    a <strong>secret</strong> GitHub gist via <code>gh gist
+    create</code>. Returns the gist URL. Uses the same HTML
+    renderer as <code>/export html</code> so the gist content is
+    identical to what a local export would produce.
+  </dd>
+</dl>
+<p>Requires the GitHub CLI: install <code>gh</code> and run
+<code>gh auth login</code> once. When <code>gh</code> is missing
+or unauthenticated, <code>/share</code> still writes the HTML to a
+temp file and prints a copy-pasteable
+<code>gh gist create</code> command so nothing is lost&mdash;the
+session is never blocked by a missing dependency. Cantrip does
+not run its own hosting service; the gist lives on GitHub under
+the authenticated user.</p>
 <h3>MCP (Model Context Protocol)</h3>
 <p>Inspect configured MCP servers and discover new ones from
 marketplaces. See <a href="howto-mcp.html">the MCP how-to</a>

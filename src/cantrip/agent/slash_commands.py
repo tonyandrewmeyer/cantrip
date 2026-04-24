@@ -18,8 +18,13 @@ deliberately limited to commands that reduce to a string response.
 
 from __future__ import annotations
 
+import asyncio
+import datetime
+import logging
 import pathlib
 import shlex
+import shutil
+import tempfile
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -28,6 +33,8 @@ from cantrip import update as update_module
 from cantrip.agent import mcp_commands, memory_commands, sandbox
 from cantrip.llm import pricing
 from cantrip.llm.base import ProviderError
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from cantrip.agent.core import CantripAgent
@@ -62,6 +69,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/arena", "Blind A/B compare two models"),
     CommandInfo("/model", "Show or switch the active model"),
     CommandInfo("/export", "Export the live session transcript"),
+    CommandInfo("/share", "Upload the session as a secret GitHub gist"),
     CommandInfo("/update", "Check PyPI for a newer release"),
     CommandInfo("/sandbox", "Show subprocess sandbox status"),
     CommandInfo("/hooks", "List configured hooks and invocation stats"),
@@ -147,6 +155,8 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return _handle_model(agent, args)
     if verb == "/export":
         return SlashResult(text=export_transcript(agent, args))
+    if verb == "/share":
+        return _handle_share(agent)
     if verb == "/update":
         return _handle_update(args)
     if verb == "/sandbox":
@@ -300,6 +310,9 @@ def help_text() -> str:
         "- `/export [html|jsonl|markdown] [path]` — export the live"
         " transcript without leaving the session (default: html to"
         " `<charm>/transcript.html`).\n"
+        "- `/share` — upload the HTML transcript as a secret GitHub"
+        " gist via `gh` and return the URL.  Falls back to a local"
+        " path + the exact `gh` command when `gh` is unavailable.\n"
         "- `/update` — check PyPI for a newer Cantrip release right"
         " now (cache-bypassing).  `/update --no-check` disables the"
         " auto-check; `/update --check` re-enables it.\n"
@@ -549,6 +562,127 @@ _EXPORT_FORMATS: dict[str, str] = {
     "jsonl": ".jsonl",
     "markdown": ".md",
 }
+
+
+def _handle_share(agent: CantripAgent) -> SlashResult:
+    """Dispatch the ``/share`` slash command.
+
+    Returns an immediate "Uploading..." prelude plus a followup that
+    exports the HTML transcript, uploads it as a secret gist via
+    ``gh gist create``, and resolves to the gist URL.  When ``gh`` is
+    unavailable we still want the user to have *something* useful —
+    the followup writes the export locally and returns a
+    copy-pasteable ``gh gist create`` command.
+    """
+    charm_path: pathlib.Path | None = getattr(agent.state, "charm_path", None)
+    if charm_path is None:
+        return SlashResult(text="_Cannot share: no charm path for this session._")
+    db_path = charm_path / ".cantrip"
+    if not db_path.exists():
+        return SlashResult(text=f"_Cannot share: no `.cantrip` file at {charm_path}._")
+
+    return SlashResult(
+        text="Uploading session as a secret gist…",
+        followup=_run_share_to_gist(db_path, charm_path),
+    )
+
+
+async def _run_share_to_gist(db_path: pathlib.Path, charm_path: pathlib.Path) -> str:
+    """Export to HTML and upload via ``gh gist create``.
+
+    On ``gh`` absence or auth failure, write the HTML locally and
+    return a message containing the path + the exact ``gh`` command
+    the user can run manually.  The session is never blocked — every
+    error path returns a human-readable string.
+    """
+    # Import lazily so the slash module stays importable even when the
+    # renderer's optional deps are unusual.
+    from cantrip.transcript import export as transcript_export
+    from cantrip.transcript.html import render_html
+
+    try:
+        data = transcript_export.load_transcript(db_path)
+        content = render_html(data)
+    except (OSError, ValueError, RuntimeError) as exc:
+        return f"_Failed to render transcript: {exc}._"
+
+    timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+    charm_name = charm_path.name or "cantrip"
+    description = f"Cantrip session — {charm_name} — {timestamp}"
+
+    # Write into a tempfile the subprocess call can read.  Use the
+    # charm name as a prefix so the gist's default filename is
+    # discoverable rather than being a random hex string.
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f"cantrip-session-{charm_name}-",
+            suffix=".html",
+            delete=False,
+        ) as tmp:
+            tmp.write(content.encode("utf-8"))
+            tmp_path = pathlib.Path(tmp.name)
+    except OSError as exc:
+        return f"_Failed to write temp transcript: {exc}._"
+
+    if not shutil.which("gh"):
+        return (
+            f"`gh` is not installed — transcript written to `{tmp_path}`.\n\n"
+            f"Install GitHub CLI and run:\n\n"
+            f"```\ngh gist create --desc {shlex.quote(description)} {shlex.quote(str(tmp_path))}\n```"
+        )
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "gh",
+            "gist",
+            "create",
+            "--desc",
+            description,
+            str(tmp_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_bytes, stderr_bytes = await proc.communicate()
+    except (OSError, FileNotFoundError) as exc:
+        return (
+            f"_Failed to launch `gh`: {exc}._ Transcript written to "
+            f"`{tmp_path}` — upload manually with the `gh gist create` "
+            f"command."
+        )
+
+    stdout = stdout_bytes.decode("utf-8", errors="replace").strip()
+    stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
+
+    if proc.returncode != 0:
+        # gh auth status failure is the common case — the stderr
+        # carries the hint, so surface it verbatim.
+        hint = stderr or f"`gh` exited with code {proc.returncode}"
+        return (
+            f"_Failed to upload gist: {hint}._ Transcript written to "
+            f"`{tmp_path}` — run `gh auth login` and retry with:\n\n"
+            f"```\ngh gist create --desc {shlex.quote(description)} {shlex.quote(str(tmp_path))}\n```"
+        )
+
+    # ``gh gist create`` prints the URL on the last non-empty stdout
+    # line; older versions include a progress preamble.
+    url = next(
+        (line for line in reversed(stdout.splitlines()) if line.strip().startswith("http")),
+        "",
+    )
+    if not url:
+        return (
+            f"Uploaded, but could not parse a URL from `gh` output. "
+            f"Raw output:\n\n```\n{stdout}\n```"
+        )
+
+    # Clean up the local tempfile now that the gist is live — leaving
+    # it behind would gradually fill /tmp and the user has the URL.
+    try:
+        tmp_path.unlink()
+    except OSError:
+        log.debug("Failed to unlink temp transcript %s", tmp_path, exc_info=True)
+
+    return f"Shared session as a secret gist: {url}"
 
 
 def export_transcript(agent: CantripAgent, args: str) -> str:
