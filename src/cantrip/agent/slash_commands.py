@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 from cantrip import update as update_module
 from cantrip.agent import mcp_commands, memory_commands, sandbox
 from cantrip.llm import pricing
+from cantrip.llm.base import ProviderError
 
 if TYPE_CHECKING:
     from cantrip.agent.core import CantripAgent
@@ -59,6 +60,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/mcp", "Manage MCP servers"),
     CommandInfo("/cost", "Show token usage and cost"),
     CommandInfo("/arena", "Blind A/B compare two models"),
+    CommandInfo("/model", "Show or switch the active model"),
     CommandInfo("/export", "Export the live session transcript"),
     CommandInfo("/update", "Check PyPI for a newer release"),
     CommandInfo("/sandbox", "Show subprocess sandbox status"),
@@ -141,6 +143,8 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
             text="Arena: running A and B side by side…",
             followup=agent.begin_arena(args),
         )
+    if verb == "/model":
+        return _handle_model(agent, args)
     if verb == "/export":
         return SlashResult(text=export_transcript(agent, args))
     if verb == "/update":
@@ -188,6 +192,69 @@ def _handle_update(args: str) -> SlashResult:
 _SETTINGS_LABEL = "~/.config/cantrip/settings.json"
 
 
+# Providers that ``/model`` can construct with just a name (plus an
+# optional model slug).  ``openai-compatible`` is deliberately absent —
+# it needs a ``--base-url`` that doesn't fit the slash syntax.  Restart
+# the session with ``cantrip --provider openai-compatible --base-url ...``
+# when targeting a generic endpoint.
+_MODEL_SWITCH_PROVIDERS: frozenset[str] = frozenset(
+    {"gemini", "claude", "fireworks", "openrouter", "inference-snap"}
+)
+
+
+def _handle_model(agent: CantripAgent, args: str) -> SlashResult:
+    """Dispatch the ``/model`` slash command.
+
+    No argument: print the active provider + model.  Argument parses
+    as ``provider`` (switch to that provider's default model) or
+    ``provider/model`` (switch to a specific model).  Model slugs can
+    contain ``/`` themselves — only the first ``/`` is treated as the
+    separator.
+    """
+    spec = args.strip()
+    if not spec:
+        light = ""
+        if agent._light_provider is not None:
+            light = f" (light: {agent._light_provider.name}/{agent._light_provider.model_name})"
+        return SlashResult(
+            text=(
+                f"**Active model:** {agent.provider.name}/"
+                f"{agent.provider.model_name}{light}\n\n"
+                "Usage: `/model <provider>[/model]` — switch to another "
+                "provider.  Known providers: "
+                f"`{'`, `'.join(sorted(_MODEL_SWITCH_PROVIDERS))}`.  "
+                "Model slug is optional (uses the provider's default "
+                "when omitted).  Example: `/model claude/claude-sonnet-4-6`."
+            )
+        )
+
+    provider_name, _, model_slug = spec.partition("/")
+    provider_name = provider_name.strip()
+    model_slug = model_slug.strip() or None
+
+    if provider_name not in _MODEL_SWITCH_PROVIDERS:
+        return SlashResult(
+            text=(
+                f"Unknown provider `{provider_name}`.  Known providers: "
+                f"`{'`, `'.join(sorted(_MODEL_SWITCH_PROVIDERS))}`.  "
+                "For `openai-compatible` endpoints, restart Cantrip with "
+                "`--provider openai-compatible --base-url ...`."
+            )
+        )
+
+    try:
+        agent.switch_model(provider_name, model_slug)
+    except (ProviderError, ValueError) as exc:
+        return SlashResult(text=f"_Failed to switch model: {exc}_")
+
+    return SlashResult(
+        text=(
+            f"Switched to **{agent.provider.name}/{agent.provider.model_name}** "
+            f"(context window: {agent.provider.context_window_tokens:,} tokens)."
+        )
+    )
+
+
 async def _run_update_slash_check() -> str:
     """Hit PyPI, bypassing the cache, and format the result for chat.
 
@@ -227,6 +294,9 @@ def help_text() -> str:
         "- `/cost` — show token usage and estimated cost.\n"
         "- `/arena <prompt>` — run two models blind on *prompt* and pick"
         " a winner; the preference is recorded as a global-scope memory.\n"
+        "- `/model [provider[/model]]` — show the active model, or swap"
+        " the provider mid-session (e.g. `/model claude`, `/model"
+        " claude/claude-sonnet-4-6`).\n"
         "- `/export [html|jsonl|markdown] [path]` — export the live"
         " transcript without leaving the session (default: html to"
         " `<charm>/transcript.html`).\n"

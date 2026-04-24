@@ -219,6 +219,96 @@ class TestCantripAgent:
         assert agent._execute_tool.await_count == 20
 
 
+class TestSwitchModel:
+    """Phase 67.2 — ``CantripAgent.switch_model`` swaps the active provider."""
+
+    def _make_fake(self, name="other", model="other-model", window=500_000):
+        """Build a ``FakeProvider`` with an overridable ``name``/``model``."""
+        provider = FakeProvider()
+        provider.model_name = model
+        provider._context_window_tokens = window
+        # ``FakeProvider.name`` is a read-only property returning "fake"
+        # — override via a type trick so each test gets a distinct tag.
+        provider.__class__ = type(
+            f"_Fake_{name}",
+            (FakeProvider,),
+            {"name": property(lambda _self, _n=name: _n)},
+        )
+        return provider
+
+    def test_switch_model_updates_provider_and_context_window(self):
+        from unittest.mock import patch
+
+        initial = FakeProvider()
+        agent = CantripAgent(provider=initial)
+        assert agent.provider is initial
+
+        replacement = self._make_fake(name="claude", model="claude-sonnet-4-6", window=200_000)
+        with patch("cantrip.agent.core.create_provider", return_value=replacement):
+            agent.switch_model("claude")
+
+        assert agent.provider is replacement
+        assert agent.provider.model_name == "claude-sonnet-4-6"
+        # Context manager tracks the new provider's window.
+        assert agent._context_manager._context_window == 200_000
+
+    def test_switch_model_drops_provider_dependent_caches(self):
+        from unittest.mock import patch
+
+        agent = CantripAgent(provider=FakeProvider())
+        # Prime caches so the swap has something to drop.
+        agent._tools_cache = [object()]
+        agent._tool_map_cache = {"x": object()}
+        agent._auto_writer_cache = object()
+
+        replacement = self._make_fake(name="claude", model="claude-sonnet-4-6")
+        with patch("cantrip.agent.core.create_provider", return_value=replacement):
+            agent.switch_model("claude")
+
+        assert agent._tools_cache is None
+        assert agent._tool_map_cache is None
+        assert agent._auto_writer_cache is None
+
+    def test_switch_model_publishes_event(self):
+        from unittest.mock import patch
+
+        from cantrip.ui import events
+
+        agent = CantripAgent(provider=FakeProvider())
+        received = []
+        agent.event_bus.subscribe(events.EventType.MODEL_SWITCHED, received.append)
+
+        replacement = self._make_fake(name="claude", model="claude-sonnet-4-6", window=200_000)
+        with patch("cantrip.agent.core.create_provider", return_value=replacement):
+            agent.switch_model("claude")
+
+        assert len(received) == 1
+        ev = received[0]
+        assert ev.type == events.EventType.MODEL_SWITCHED
+        assert ev.payload["provider"] == "claude"
+        assert ev.payload["model"] == "claude-sonnet-4-6"
+        assert ev.payload["previous_provider"] == "fake"
+        assert ev.payload["context_window"] == 200_000
+
+    def test_switch_model_propagates_construction_errors(self):
+        from unittest.mock import patch
+
+        from cantrip.llm.base import ProviderError
+
+        agent = CantripAgent(provider=FakeProvider())
+        original_provider = agent.provider
+        with (
+            patch(
+                "cantrip.agent.core.create_provider",
+                side_effect=ProviderError("missing key"),
+            ),
+            pytest.raises(ProviderError, match="missing key"),
+        ):
+            agent.switch_model("claude")
+        # Original provider is preserved when construction fails.
+        assert agent.provider is original_provider
+
+
 class TestUsageRecording:
     """Tests for token usage recording."""
 

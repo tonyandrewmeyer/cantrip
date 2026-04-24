@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Mid-session model switching via ``/model`` (Phase 67.2).** New
+  slash command: ``/model`` prints the active provider + model (plus
+  the light provider when configured); ``/model <provider>`` swaps to
+  that provider's default model; ``/model <provider>/<model>`` swaps
+  to a specific model (splitting on the first ``/`` only so Fireworks
+  slugs like ``fireworks/accounts/fireworks/models/kimi-k2p6`` work).
+  Atomic swap: ``CantripAgent.switch_model`` rebuilds the light
+  provider with same-family routing, updates the context-window
+  budget, invalidates caches that captured the old provider, and
+  emits a ``model_switched`` event for listeners.  Cost accumulators
+  survive the swap (they're session totals, not per-provider).
+  Any cross-provider hybrid configured at startup is dropped in
+  favour of same-family routing — restart the session to preserve a
+  specific hybrid.
+
 - **Reasoning / chain-of-thought surfaces in the TUI and Web (Phase 77).**
   OpenAI-compatible providers (Fireworks, OpenRouter, inference-snap,
   generic) now capture ``reasoning_content`` — the streaming delta

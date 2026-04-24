@@ -241,6 +241,13 @@ class TestBusBroadcastContract:
                 request_id="x", server_name="x", mode="form", message="x"
             ).type,
             events.tool_invoked(tool_name="read_file", caption="read_file()", success=True).type,
+            events.model_switched(
+                provider="claude",
+                model="claude-sonnet-4-6",
+                previous_provider="gemini",
+                previous_model="gemini-3-flash-preview",
+                context_window=200_000,
+            ).type,
         }
         enum_types = set(events.EventType)
         assert factory_types == enum_types

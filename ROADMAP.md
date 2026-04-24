@@ -2785,26 +2785,63 @@ Two Pi features are explicitly **out of scope**:
   reference token and the referenced context is materialised
   exactly once on send.
 
-### 67.2 Medium — Mid-session model switching
+### 67.2 Medium — Mid-session model switching ✓
 
-- [ ] Add ``/model [provider/name]`` to the slash-command
-  catalogue (``src/cantrip/agent/slash_commands.py``).  With no
-  argument: print the current model and list configured
-  alternatives.  With an argument: call ``create_provider`` and
-  atomically swap ``agent.provider``; continue the conversation.
-- [ ] Add ``Ctrl+L`` binding in the TUI chat widget to open a
-  model picker.  Re-use the arena model list plumbing where
-  possible.
-- [ ] Add a ``favorite_models`` list to settings (CLI flag +
-  config) and ``Ctrl+P`` to cycle through them without opening
-  the picker.
-- [ ] Emit a ``model_switched`` event on the event bus so the
-  transcript, status bar, and cost tracker all reflect the
-  change.  Per-model cost breakdown (already in ``cantrip/cli.py``
-  line ~581) continues to work because we already group by model
-  name in the usage store.
-- [ ] Document in ``docs/docs/reference-cli.html`` and
-  ``docs/docs/howto-providers.html``.
+- [x] ``/model`` slash command in
+  ``src/cantrip/agent/slash_commands.py``.  No argument: prints
+  the active provider + model (plus the light provider when
+  configured) and the switch syntax.  With argument: parses
+  ``provider`` or ``provider/model`` (splitting on the *first*
+  ``/`` so Fireworks slugs like
+  ``fireworks/accounts/fireworks/models/kimi-k2p6`` work).  Five
+  providers accepted (``gemini`` / ``claude`` / ``fireworks`` /
+  ``openrouter`` / ``inference-snap``); ``openai-compatible`` is
+  excluded because it needs a ``--base-url`` that doesn't fit
+  the slash syntax — error message points at restarting with
+  ``--provider openai-compatible --base-url ...``.  ``ProviderError``
+  and ``ValueError`` during construction surface as
+  ``_Failed to switch model: ..._`` without tearing down the
+  session; the original provider stays active when the swap
+  fails.
+- [x] ``CantripAgent.switch_model(name, model=None)`` in
+  ``src/cantrip/agent/core.py``: constructs via
+  ``create_provider``, replaces ``self.provider`` atomically,
+  rebuilds ``_light_provider`` via same-family
+  ``resolve_light_provider`` (dropping any CLI-configured hybrid
+  — documented), updates ``_context_manager.update_context_window``
+  with the new window, invalidates ``_tools_cache`` /
+  ``_tool_map_cache`` / ``_auto_writer_cache`` so next access
+  rebuilds them with the new provider.  Cache accumulators
+  (``cache_creation_tokens`` / ``cache_read_tokens``) survive the
+  swap — they're session totals, not per-provider.
+- [x] New ``model_switched`` event on ``ui_events``
+  (``provider`` / ``model`` / ``previous_provider`` /
+  ``previous_model`` / ``context_window``) published after each
+  swap.  TUI's ``_update_model_info`` already polls every 5 s so
+  the model bar catches up automatically; the event is there for
+  listeners that want instant refresh.  Per-model cost breakdown
+  in ``cantrip/cli.py`` already groups by model name in the
+  usage store, so nothing extra was needed.  A ``model_switched``
+  transcript event is also written via ``SessionStore.record_event``
+  when a store exists.
+- [x] ``docs/src/reference-cli.md`` gains a *Mid-session model
+  switching* section under the slash-command catalogue; HTML
+  regenerated via ``make docs``; parity checked via
+  ``make docs-check``.
+- [x] Tests: ``TestSwitchModel`` (4 cases) on the agent side —
+  provider/window swap, cache invalidation, event emission,
+  construction-error preserves the old provider.
+  ``TestModel`` (6 cases) on the slash-command dispatcher —
+  bare prints active, bare surfaces light provider, unknown
+  provider names the known set, provider-only uses default
+  model, ``provider/model`` parses on the first ``/`` only,
+  ``ProviderError`` surfaces cleanly.
+- [ ] **Deferred: TUI hotkey + favourites cycling.**  ``Ctrl+L``
+  is already bound to ``clear_chat`` (classic terminal muscle
+  memory — rebinding would surprise users).  ``favorite_models``
+  needs a config-surface addition.  File as a follow-up when a
+  concrete ergonomic case surfaces; the slash command covers the
+  primary value today.
 
 ### 67.3 Medium — Non-interactive print mode
 

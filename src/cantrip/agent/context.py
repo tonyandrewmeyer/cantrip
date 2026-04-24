@@ -269,6 +269,17 @@ class ContextManager:
         # Cycle if every recent event left the post count above the threshold.
         return all(event.post_tokens >= threshold_tokens for event in recent)
 
+    def update_context_window(self, tokens: int) -> None:
+        """Change the tracked context-window size mid-session.
+
+        Used when the active provider is swapped at runtime via
+        ``/model`` (Phase 67.2) so the compaction threshold tracks
+        the new model's window rather than the startup one.
+        """
+        if tokens <= 0:
+            raise ValueError("context_window_tokens must be positive")
+        self._context_window = tokens
+
     @property
     def compaction_threshold(self) -> float:
         """Fraction of context window at which compaction triggers."""

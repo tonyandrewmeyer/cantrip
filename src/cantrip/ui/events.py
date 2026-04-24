@@ -33,6 +33,7 @@ class EventType(enum.StrEnum):
     MEMORY_RECALLED = "memory_recalled"
     MCP_ELICITATION_REQUEST = "mcp_elicitation_request"
     TOOL_INVOKED = "tool_invoked"
+    MODEL_SWITCHED = "model_switched"
 
 
 @dataclass(frozen=True)
@@ -209,6 +210,33 @@ def thinking_changed(*, active: bool) -> Event:
     return Event(
         type=EventType.THINKING_CHANGED,
         payload={"active": active},
+    )
+
+
+def model_switched(
+    *,
+    provider: str,
+    model: str,
+    previous_provider: str,
+    previous_model: str,
+    context_window: int,
+) -> Event:
+    """Build a ``MODEL_SWITCHED`` event.
+
+    Fired after :meth:`CantripAgent.switch_model` atomically swaps the
+    active provider so status bar, cost tracker, and transcript
+    listeners can update in lockstep.  ``context_window`` is the new
+    provider's window — callers rebuild budget displays from it.
+    """
+    return Event(
+        type=EventType.MODEL_SWITCHED,
+        payload={
+            "provider": provider,
+            "model": model,
+            "previous_provider": previous_provider,
+            "previous_model": previous_model,
+            "context_window": context_window,
+        },
     )
 
 

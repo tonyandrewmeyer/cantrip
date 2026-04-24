@@ -377,6 +377,103 @@ class TestArena:
         result.followup.close()  # type: ignore[attr-defined]
 
 
+class TestModel:
+    """``/model`` prints the active model or swaps the provider mid-session."""
+
+    def _agent(self, *, provider_name="gemini", model_name="gemini-3-flash-preview"):
+        """Minimal agent shape the ``/model`` handler inspects."""
+        return SimpleNamespace(
+            _memory_manager=None,
+            state=SimpleNamespace(charm_path=None),
+            mcp_registry=None,
+            mcp_marketplace_sources=[],
+            mcp_marketplace_loader=None,
+            store=None,
+            provider=SimpleNamespace(
+                name=provider_name,
+                model_name=model_name,
+                context_window_tokens=1_048_576,
+            ),
+            _light_provider=None,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            switch_model=MagicMock(),
+        )
+
+    def test_bare_model_prints_active(self):
+        agent = self._agent()
+        result = dispatch(agent, "/model")
+        assert result is not None
+        assert result.followup is None
+        assert "gemini/gemini-3-flash-preview" in result.text
+        assert "`/model <provider>" in result.text
+
+    def test_bare_model_surfaces_light_provider(self):
+        agent = self._agent()
+        agent._light_provider = SimpleNamespace(
+            name="claude",
+            model_name="claude-haiku-4-5-20251001",
+        )
+        result = dispatch(agent, "/model")
+        assert result is not None
+        assert "light: claude/claude-haiku-4-5-20251001" in result.text
+
+    def test_unknown_provider_surfaces_known_set(self):
+        agent = self._agent()
+        result = dispatch(agent, "/model no-such-provider")
+        assert result is not None
+        agent.switch_model.assert_not_called()
+        assert "Unknown provider" in result.text
+        assert "`claude`" in result.text
+
+    def test_provider_only_switches_to_default_model(self):
+        agent = self._agent()
+
+        # Simulate what switch_model does to the provider pointer.
+        def _swap(name, _model=None):
+            agent.provider = SimpleNamespace(
+                name=name,
+                model_name="claude-sonnet-4-6",
+                context_window_tokens=200_000,
+            )
+
+        agent.switch_model.side_effect = _swap
+        result = dispatch(agent, "/model claude")
+        assert result is not None
+        agent.switch_model.assert_called_once_with("claude", None)
+        assert "Switched to **claude/claude-sonnet-4-6**" in result.text
+        assert "200,000 tokens" in result.text
+
+    def test_provider_slash_model_parses_on_first_slash(self):
+        """Fireworks model slugs contain ``/`` — only the first one splits."""
+        agent = self._agent()
+
+        def _swap(name, model=None):
+            agent.provider = SimpleNamespace(
+                name=name,
+                model_name=model,
+                context_window_tokens=262_144,
+            )
+
+        agent.switch_model.side_effect = _swap
+        result = dispatch(agent, "/model fireworks/accounts/fireworks/models/kimi-k2p6")
+        assert result is not None
+        agent.switch_model.assert_called_once_with(
+            "fireworks",
+            "accounts/fireworks/models/kimi-k2p6",
+        )
+
+    def test_provider_error_surfaces_cleanly(self):
+        from cantrip.llm.base import ProviderError
+
+        agent = self._agent()
+        agent.switch_model.side_effect = ProviderError("FIREWORKS_API_KEY not set")
+        result = dispatch(agent, "/model fireworks")
+        assert result is not None
+        assert "Failed to switch model" in result.text
+        assert "FIREWORKS_API_KEY" in result.text
+
+
 class TestUpdate:
     """``/update`` dispatch and the toggle flags."""
 

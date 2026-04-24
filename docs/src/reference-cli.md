@@ -535,6 +535,41 @@ Requires a configured light provider (`--light-provider`
 or `CANTRIP_LIGHT_PROVIDER`)—without one the
 command prints a setup hint and exits.
 
+### Mid-session model switching
+
+<dl>
+  <dt><code>/model</code></dt>
+  <dd>
+    Print the active provider and model, plus the light provider
+    when one is configured. Shows the syntax for switching.
+  </dd>
+  <dt><code>/model &lt;provider&gt;</code></dt>
+  <dd>
+    Swap to <code>provider</code>&rsquo;s default model. Accepts
+    <code>gemini</code>, <code>claude</code>,
+    <code>fireworks</code>, <code>openrouter</code>, and
+    <code>inference-snap</code>. <code>openai-compatible</code>
+    requires a <code>--base-url</code> that doesn&rsquo;t fit the
+    slash syntax&mdash;restart the session instead.
+  </dd>
+  <dt><code>/model &lt;provider&gt;/&lt;model&gt;</code></dt>
+  <dd>
+    Swap to a specific model. Only the first <code>/</code> splits,
+    so Fireworks-style slugs like
+    <code>fireworks/accounts/fireworks/models/kimi-k2p6</code> work.
+  </dd>
+</dl>
+
+The swap is atomic: the context-window budget tracks the new
+provider&rsquo;s window, provider-dependent caches (tool list,
+auto-writer) rebuild on next access, and a
+<code>model_switched</code> event lands on the event bus so the
+status bar and cost tracker follow. Cost accumulators survive the
+swap&mdash;they&rsquo;re session totals, not per-provider. Any
+cross-provider light routing (<code>--light-provider snap</code>
+etc.) drops in favour of same-family routing; callers who rely on
+a specific hybrid should restart the session.
+
 ### MCP (Model Context Protocol)
 
 Inspect configured MCP servers and discover new ones from

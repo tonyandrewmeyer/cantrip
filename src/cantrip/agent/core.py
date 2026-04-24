@@ -82,6 +82,7 @@ from cantrip.hooks import (
     first_veto,
 )
 from cantrip.llm import base as llm
+from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
 from cantrip.mcp import (
     MarketplaceLoader,
@@ -558,6 +559,81 @@ class CantripAgent:
         if self._light_provider and purpose in _LIGHT_PURPOSES:
             return self._light_provider
         return self.provider
+
+    def switch_model(
+        self,
+        provider_name: str,
+        model: str | None = None,
+        *,
+        base_url: str | None = None,
+        snap_name: str = "gemma3",
+    ) -> None:
+        """Swap the active provider mid-session (Phase 67.2).
+
+        Constructs a new provider via :func:`create_provider`, replaces
+        ``self.provider`` atomically, rebuilds the light provider using
+        same-family rules, updates the context manager's window, and
+        invalidates caches that captured the old provider (tool list,
+        auto-writer).  Cost accumulators (``cache_creation_tokens`` /
+        ``cache_read_tokens``) survive the swap — they're session
+        totals, not per-provider.
+
+        Raises:
+            ProviderError / ValueError: Propagated from
+                :func:`create_provider` when construction fails (bad
+                name, missing API key, missing ``base_url`` for
+                ``openai-compatible``).
+
+        Emits a ``model_switched`` event so the status bar, cost
+        tracker, and transcript listeners refresh.  Any CLI-configured
+        hybrid light provider is dropped in favour of same-family
+        routing — callers who relied on a specific light-provider
+        combination should restart the session instead.
+        """
+        new_provider = create_provider(
+            provider_name,
+            model,
+            snap_name=snap_name,
+            base_url=base_url,
+        )
+        previous_provider = self.provider
+        self.provider = new_provider
+        self._light_provider, _ = resolve_light_provider(
+            new_provider,
+            provider_name,
+        )
+        self._context_manager.update_context_window(new_provider.context_window_tokens)
+        # Caches that captured the old provider need rebuilding on the
+        # next access.  Memory manager is left alone: its provider is
+        # used only inside the auto-writer path, which is itself cached
+        # here and gets dropped.
+        self._tools_cache = None
+        self._tool_map_cache = None
+        self._auto_writer_cache = None
+
+        if self._store:
+            self._store.record_event(
+                "model_switched",
+                {
+                    "provider": new_provider.name,
+                    "model": new_provider.model_name,
+                    "previous_provider": previous_provider.name,
+                    "previous_model": previous_provider.model_name,
+                },
+            )
+
+        try:
+            self._event_bus.publish(
+                ui_events.model_switched(
+                    provider=new_provider.name,
+                    model=new_provider.model_name,
+                    previous_provider=previous_provider.name,
+                    previous_model=previous_provider.model_name,
+                    context_window=new_provider.context_window_tokens,
+                )
+            )
+        except Exception:  # noqa: BLE001 - UI hook must not break the swap.
+            log.debug("model_switched event publish failed", exc_info=True)
 
     def _build_tools(self) -> list[Tool]:
         """Build available tools."""
