@@ -38,6 +38,7 @@ class EventType(enum.StrEnum):
     COMPACTION_COMPLETED = "compaction_completed"
     CACHE_METRICS_UPDATED = "cache_metrics_updated"
     GOAL_BUDGET_EXCEEDED = "goal_budget_exceeded"
+    POLICY_RATE_LIMITED = "policy_rate_limited"
 
 
 @dataclass(frozen=True)
@@ -263,6 +264,32 @@ def compaction_started(*, tokens_before: int, source: str = "main") -> Event:
     return Event(
         type=EventType.COMPACTION_STARTED,
         payload={"tokens_before": tokens_before, "source": source},
+    )
+
+
+def policy_rate_limited(
+    *,
+    task_id: str,
+    tool_calls_made: int,
+    cap: int,
+    policy_name: str,
+) -> Event:
+    """Build a ``POLICY_RATE_LIMITED`` event.
+
+    Phase 80.3: fires when the executor's per-goal tool-call counter
+    trips the composed policy's ``max_calls_per_request`` cap.  The
+    TUI / Web surface the event as a system chat message so the user
+    sees why the queue stalled rather than guessing.  Pairs with
+    ``GOAL_BUDGET_EXCEEDED`` — same shape, different axis.
+    """
+    return Event(
+        type=EventType.POLICY_RATE_LIMITED,
+        payload={
+            "task_id": task_id,
+            "tool_calls_made": tool_calls_made,
+            "cap": cap,
+            "policy_name": policy_name,
+        },
     )
 
 

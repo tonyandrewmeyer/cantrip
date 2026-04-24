@@ -207,6 +207,21 @@ class TestEventFactory:
         assert event.type is EventType.GOAL_BUDGET_EXCEEDED
         assert event.payload == {"task_id": "t-42", "reason": "budget blown"}
 
+    def test_policy_rate_limited_event(self) -> None:
+        """Phase 80.3: the rate-limit event carries count / cap / policy."""
+        from cantrip.ui.events import EventType, policy_rate_limited
+
+        event = policy_rate_limited(
+            task_id="t-7", tool_calls_made=50, cap=25, policy_name="org-wide+sprint"
+        )
+        assert event.type is EventType.POLICY_RATE_LIMITED
+        assert event.payload == {
+            "task_id": "t-7",
+            "tool_calls_made": 50,
+            "cap": 25,
+            "policy_name": "org-wide+sprint",
+        }
+
 
 class TestFromCliArgs:
     """Phase 55.3: ``--max-iterations`` / ``--max-tokens`` / env-var wiring."""

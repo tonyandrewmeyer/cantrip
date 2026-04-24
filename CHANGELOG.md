@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Per-goal tool-call rate limit (Phase 80.3 — closes M80).**  The
+  background executor now composes the policy stack at construction
+  (``ORG_WIDE_POLICY`` + discovered user / per-charm files), reads
+  ``max_calls_per_request`` off the composed policy, and tracks an
+  in-memory counter bumped by every non-MCP tool call.  When the
+  counter hits the cap, the next task spawn blocks with ``"Policy
+  rate limit exceeded: N tool calls (cap: M)..."`` and fires a new
+  ``POLICY_RATE_LIMITED`` UI event carrying the count, cap, and
+  composed policy name.  MCP tools (``mcp__``-prefixed) bypass the
+  counter — they stay gated by the per-server ``allowed_tools``
+  config (Phase 45.2).  Same shape as Phase 55.3's
+  ``GOAL_BUDGET_EXCEEDED``; together with Phase 55.5's per-task
+  ``safe_outputs``, operators now have three circuit breakers at
+  goal > task > session-call granularity.  Operators opt in by
+  dropping ``max_calls_per_request: N`` into a policy file (user
+  config dir or per-charm).
+
 - **Per-goal iteration + token budget with a circuit breaker
   (Phase 55.3 follow-up).**  The per-goal budget primitive scoped
   in the 55.3 investigation now ships.  Set a hard stop with

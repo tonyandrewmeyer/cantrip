@@ -13,6 +13,12 @@ from collections.abc import Callable
 from cantrip.agent import race, routing
 from cantrip.agent.autodeploy import followup_tasks
 from cantrip.agent.goal_budget import check_budget
+from cantrip.agent.policy import (
+    MCP_TOOL_PREFIX,
+    ORG_WIDE_POLICY,
+    compose_policies,
+    discover_policies,
+)
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.routing import RouteAction, route, snapshot_from_queue
 from cantrip.agent.services import (
@@ -72,6 +78,13 @@ TaskEventCallback = Callable[[AgentTask], None] | None
 # suitable for display in the TUI / Web chat.  The executor has already
 # marked the task BLOCKED by the time the callback fires.
 BudgetExceededCallback = Callable[[AgentTask, str], None] | None
+
+# Phase 80.3: callback fired when the per-goal tool-call counter trips
+# the composed policy's ``max_calls_per_request`` cap before a task
+# spawn.  Args: (task, tool_calls_made, cap, policy_name).  The
+# executor has already marked the task BLOCKED by the time the
+# callback fires.
+RateLimitedCallback = Callable[[AgentTask, int, int, str], None] | None
 
 # Characters allowed in a filesystem-safe candidate id derived from a
 # provider's model name.  Everything else collapses to a single hyphen.
@@ -349,6 +362,7 @@ class BackgroundExecutor:
         hook_runner: HookRunner | None = None,
         on_tool_invoked: ToolInvokedCallback | None = None,
         on_budget_exceeded: BudgetExceededCallback = None,
+        on_rate_limited: RateLimitedCallback = None,
     ) -> None:
         self._queue = queue
         self._tools = tools
@@ -360,8 +374,26 @@ class BackgroundExecutor:
         self._on_task_failed = on_task_failed
         self._max_concurrency = max(1, max_concurrency)
         self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
-        self._on_tool_invoked = on_tool_invoked
         self._on_budget_exceeded = on_budget_exceeded
+        self._on_rate_limited = on_rate_limited
+        # Phase 80.3: compose the policy stack once per executor run to
+        # read its ``max_calls_per_request`` cap.  The subagent's own
+        # per-run enforcer still does tool-level ALLOW/DENY/REVIEW; the
+        # rate limit is *goal-scoped*, so the counter has to live on
+        # the executor where it can span subagent boundaries.
+        charm_dir: pathlib.Path | None = (
+            pathlib.Path(state.charm_path) if state.charm_path else None
+        )
+        composed = compose_policies(ORG_WIDE_POLICY, *discover_policies(charm_path=charm_dir))
+        self._rate_limit_cap: int | None = composed.max_calls_per_request
+        self._rate_limit_policy_name: str = composed.name
+        self._tool_calls_made: int = 0
+        # Phase 80.3: wrap the user's ``on_tool_invoked`` so every
+        # non-MCP tool call bumps the counter on its way through.  MCP
+        # tools bypass — they're gated by the per-server
+        # ``allowed_tools`` config (Phase 45.2), not by the policy
+        # stack's rate limit.
+        self._on_tool_invoked = self._wrap_tool_invoked(on_tool_invoked)
 
         # Injected services — fall back to defaults when not provided.
         self._git: GitService = git_service or _DefaultGitService()
@@ -593,6 +625,31 @@ class BackgroundExecutor:
                             self._persist()
                             await asyncio.sleep(_POLL_INTERVAL)
                             continue
+                        # Phase 80.3: per-goal rate-limit gate.  If the
+                        # composed policy stack set
+                        # ``max_calls_per_request`` and the executor's
+                        # counter has hit that cap, block the task
+                        # with ``policy rate limit exceeded`` so the
+                        # user sees the stop in the chat.
+                        rate_trip = self._check_rate_limit()
+                        if rate_trip is not None:
+                            count, cap = rate_trip
+                            reason = (
+                                f"Policy rate limit exceeded: {count} tool calls "
+                                f"(cap: {cap}).  Raise ``max_calls_per_request`` in a "
+                                "policy file or clear the stack to continue."
+                            )
+                            self._queue.set_blocked(task.id, reason)
+                            self._record_status_change(
+                                task, "blocked", old_status="pending", error=reason
+                            )
+                            if self._on_rate_limited is not None:
+                                self._on_rate_limited(
+                                    task, count, cap, self._rate_limit_policy_name
+                                )
+                            self._persist()
+                            await asyncio.sleep(_POLL_INTERVAL)
+                            continue
                         self._queue.set_active(task.id)
                         self._record_status_change(task, "active", old_status="pending")
                         at = asyncio.create_task(self._run_task_with_semaphore(task))
@@ -641,6 +698,43 @@ class BackgroundExecutor:
         assert self._semaphore is not None  # noqa: S101
         async with self._semaphore:
             await self._execute_task(task)
+
+    def _wrap_tool_invoked(self, inner: ToolInvokedCallback | None) -> ToolInvokedCallback | None:
+        """Return a wrapper that increments the rate-limit counter.
+
+        MCP tools (``mcp__``-prefixed) are skipped — they're gated by
+        the per-server ``allowed_tools`` config (Phase 45.2) rather
+        than by the policy stack's ``max_calls_per_request``.  The
+        original callback still fires for every tool so UI consumers
+        see MCP calls too.
+        """
+
+        def _wrapped(
+            tool_name: str,
+            arguments: dict[str, object],
+            result: object,
+            duration_ms: int,
+        ) -> None:
+            if not tool_name.startswith(MCP_TOOL_PREFIX):
+                self._tool_calls_made += 1
+            if inner is not None:
+                inner(tool_name, arguments, result, duration_ms)
+
+        return _wrapped
+
+    def _check_rate_limit(self) -> tuple[int, int] | None:
+        """Phase 80.3: return ``(count, cap)`` when the rate limit trips, else ``None``.
+
+        Unlike :meth:`_check_goal_budget`, which reads from the
+        persisted token_usage table, the rate limit is an in-memory
+        counter — the cap is per-goal / per-session and doesn't need
+        to survive a process restart.
+        """
+        if self._rate_limit_cap is None:
+            return None
+        if self._tool_calls_made >= self._rate_limit_cap:
+            return self._tool_calls_made, self._rate_limit_cap
+        return None
 
     def _check_goal_budget(self) -> str | None:
         """Phase 55.3: consult the per-goal budget before a task spawn.

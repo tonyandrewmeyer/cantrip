@@ -2578,20 +2578,43 @@ write-up already decided keep/defer/reject per primitive.
   ``test_mcp_tool.py`` still pass via the ``_filter_tools``
   shim.
 
-### 80.3 Medium — ``max_calls_per_request`` per-goal rate limit
+### 80.3 Medium — ``max_calls_per_request`` per-goal rate limit ✓
 
-- [ ] A per-goal counter in the executor, keyed off the
-  current ``AgentState.goal_budget`` (see Phase 55.3's sketch
-  — the two pair naturally).  Each call to a non-MCP tool
-  increments the counter; tripping the composed policy's
-  ``max_calls_per_request`` marks the task ``BLOCKED`` with
-  ``blocked_reason="policy rate limit exceeded"`` and emits
-  a ``policy_rate_limited`` event on the bus.
-- [ ] Compose cleanly with 55.3's goal-level budget
-  (``max_iterations``) and 55.5's per-task ``safe_outputs``
-  — three circuit breakers at goal > task > session-call
-  granularity, all using the same blocked-reason string
-  format so the TUI can render them uniformly.
+- [x] ``BackgroundExecutor`` composes the stack
+  (``ORG_WIDE_POLICY`` + ``discover_policies(charm_path)``)
+  once at construction, reads ``max_calls_per_request`` off
+  the composed policy, and stores it as ``_rate_limit_cap``
+  alongside an in-memory ``_tool_calls_made`` counter.  The
+  policy-name survives composition so audit / UI consumers
+  see which layer caused the cap.
+- [x] The constructor wraps the caller's ``on_tool_invoked``
+  through ``_wrap_tool_invoked``: every non-MCP call bumps
+  the counter before forwarding to the inner callback, so
+  MCP tools stay gated by the per-server ``allowed_tools``
+  config (Phase 45.2) rather than the policy stack and UI
+  events still reach the chat unchanged.
+- [x] Spawn-time gate ``_check_rate_limit`` fires in
+  ``_run_loop`` right after the goal-budget gate.  Tripping
+  the cap blocks the task with ``"Policy rate limit
+  exceeded: N tool calls (cap: M)…"`` and invokes the new
+  ``on_rate_limited`` callback.  The core wires that
+  callback to a ``POLICY_RATE_LIMITED`` UI event (``task_id``
+  / ``tool_calls_made`` / ``cap`` / ``policy_name``) plus a
+  SYSTEM transcript message so the stop lands in the chat
+  — same shape as Phase 55.3's ``GOAL_BUDGET_EXCEEDED``.
+- [x] Composes cleanly with the two sister circuit breakers:
+  goal > task > session-call, all using ``<Reason> exceeded:
+  …``-shaped ``blocked_reason`` strings so the TUI renders
+  each uniformly.
+- [x] ``tests/unit/executor/test_rate_limit.py`` — 11 tests
+  covering the "no policy file → no cap" and "per-charm file
+  sets cap" paths, the wrapper-increments-non-MCP-only
+  invariant, the inner callback still firing, the gate
+  trip-at-cap / clear-below-cap / never-without-cap matrix,
+  and the end-to-end "rate-limited task blocks + raising
+  counter unblocks" flow.  Plus a factory test for the
+  ``POLICY_RATE_LIMITED`` event shape in
+  ``test_goal_budget.py::TestEventFactory``.
 
 ### 80.4 Medium — JSONL audit trail ✓
 
@@ -5650,5 +5673,5 @@ files only and does not dispatch on provider.
 | M77: Reasoning Content Surfaced | 77 | OpenAI-compatible reasoning deltas (Kimi K2, DeepSeek-R1, GLM reasoning variants) are captured and rendered like Claude's extended thinking rather than silently dropped |
 | M78: Observability Hardening | 78 ✓ | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
 | M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |
-| M80: Stacked Policies | 80 | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
+| M80: Stacked Policies | 80 ✓ | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

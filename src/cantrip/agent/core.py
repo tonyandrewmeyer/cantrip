@@ -2374,6 +2374,26 @@ class CantripAgent:
             self._event_bus.publish(ui_events.goal_budget_exceeded(task_id=task.id, reason=reason))
             self._event_bus.publish(ui_events.chat_message(role="system", content=reason))
 
+        # Phase 80.3: same shape for per-goal rate-limit trips.  Fires
+        # a ``POLICY_RATE_LIMITED`` event carrying count / cap / the
+        # composed-policy-name so observability consumers can
+        # distinguish rate-limit stops from goal-budget stops.
+        def _forward_rate_limited(task: AgentTask, count: int, cap: int, policy_name: str) -> None:
+            reason = (
+                f"Policy rate limit exceeded: {count} tool calls "
+                f"(cap: {cap}) under policy {policy_name!r}."
+            )
+            self.state.messages.append(Message(role=Role.SYSTEM, content=reason))
+            self._event_bus.publish(
+                ui_events.policy_rate_limited(
+                    task_id=task.id,
+                    tool_calls_made=count,
+                    cap=cap,
+                    policy_name=policy_name,
+                )
+            )
+            self._event_bus.publish(ui_events.chat_message(role="system", content=reason))
+
         kwargs: dict[str, object] = {
             "queue": self._work_queue,
             "tools": self._tools,
@@ -2385,6 +2405,7 @@ class CantripAgent:
             "on_task_done": _purge_task_checkpoints,
             "on_tool_invoked": _forward_subagent_tool_invoked,
             "on_budget_exceeded": _forward_budget_exceeded,
+            "on_rate_limited": _forward_rate_limited,
         }
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency
