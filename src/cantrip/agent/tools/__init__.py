@@ -134,6 +134,7 @@ def build_tools(
     from cantrip.agent.tools.publishing import (
         CharmcraftReleaseTool,
         CharmcraftUploadTool,
+        ExtractDesignDecisionsTool,
         GenerateDiagramTool,
         GenerateDocsTool,
         GenerateIconTool,
@@ -188,6 +189,7 @@ def build_tools(
         GenerateIconTool(),
         GenerateDocsTool(),
         GenerateDiagramTool(),
+        ExtractDesignDecisionsTool(),
         GenerateLoadTestTool(),
         # Demo
         ShowboatTool(),

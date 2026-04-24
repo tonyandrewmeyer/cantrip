@@ -4666,34 +4666,56 @@ deferred**:
   still pass — the ``acceptance`` parameter is keyword-only
   with a default of ``None``.
 
-### 74.3 Medium — Architecture explanation from transcript-extracted decisions
+### 74.3 Medium — Architecture explanation from transcript-extracted decisions ✓
 
-- [ ] New tool ``extract_design_decisions`` that walks the
-  transcript (Phase 14 SQLite store) for the active charm
-  and pulls user→agent turns whose subject is a design
-  choice.  Heuristics: research-phase tasks (Phase 5)
-  whose conclusion was "we will do X because Y", build-
-  phase commits whose message starts with ``feat:`` or
-  ``refactor:``, oracle-consult turns (Phase 70.2) that
-  influenced a decision.
-- [ ] Render as ``docs/explanation/architecture.md`` with
-  one section per decision: *Decision* (the choice made),
-  *Context* (what alternatives were considered),
-  *Rationale* (the why), *Citation* (transcript turn ID
-  + a deep link if the Phase 14 viewer supports them).
-  Chronological ordering — the doc reads as a build log.
-- [ ] Inline the existing scaffold's static
-  ``architecture.md`` content as an introduction (charm
-  shape, paths, container layout from
-  ``charmcraft.yaml``).  Decisions follow.
-- [ ] Charm-author override: a ``docs/explanation/_intro.md``
-  (or an explicit ``docs/explanation/architecture.md``
-  that already exists and isn't a Cantrip-generated file)
-  is preserved and prepended; only the auto-generated
-  decision log gets refreshed on re-run.
-- [ ] ``tests/unit/test_extract_decisions.py`` — fixture
-  transcript yields the expected decision set; ordering
-  is chronological; user-authored intro is preserved.
+- [x] ``ExtractDesignDecisionsTool`` (``extract_design_decisions``)
+  added to ``src/cantrip/agent/tools/publishing.py`` and
+  registered in the agent's tool list.  Reads the
+  ``decisions`` table from the ``.cantrip`` SQLite store the
+  agent already populates during the design phase
+  (substrate, charm path, Charmhub recommendations).
+  Optional ``db_path`` argument lets the tool target a
+  sidecar store; defaults to ``<path>/.cantrip``.
+  Build-phase ``feat:`` / ``refactor:`` commit mining and
+  Phase-70.2 oracle-consult turns are deferred — the
+  ``decisions`` table is the authoritative shipping
+  source.  Re-open this part of the phase if/when there's
+  a concrete request for the extra heuristics.
+- [x] ``format_decision_log`` renders chronological
+  ``### N. <Type>: <Choice>`` blocks with **Decision**,
+  **Recorded**, **Citation**, and **Rationale** sub-fields.
+  Empty inputs produce a placeholder explaining the
+  section will fill in as decisions land — keeps the page
+  well-formed when the tool runs early.  Decision-type
+  labels are humanised (``charm_path`` → ``Charm Path``).
+  Ordering uses ``timestamp, id`` so chronologically
+  ordered output survives clock-skew on equal timestamps.
+- [x] Intro fallback ladder via ``_resolve_architecture_intro``:
+  ``docs/explanation/_intro.md`` wins outright; an
+  existing ``architecture.md`` keeps everything above the
+  ``<!-- cantrip-decisions-start -->`` marker; an
+  ``architecture.md`` without the marker is treated as
+  fully user-authored and preserved verbatim;
+  otherwise the scaffold's mermaid-diagram intro is
+  generated from ``charmcraft.yaml``.  The auto-generated
+  decision log lands below the marker each run, so
+  re-runs only refresh the decisions section.
+- [x] ``tests/unit/test_extract_decisions.py`` — 22 tests
+  covering ``_read_decisions`` (4: missing DB, missing
+  table, chronological order, preserved fields),
+  ``format_decision_log`` (4: placeholder, ordered output,
+  rationale + citation, missing reason),
+  ``_resolve_architecture_intro`` (4: ``_intro.md`` wins,
+  marker preserves above content, marker-less arch
+  preserved verbatim, scaffold fallback),
+  ``_compose_architecture_page`` (3: marker placement,
+  empty decisions still include marker, empty intro
+  default heading), and ``ExtractDesignDecisionsTool``
+  end-to-end (7: missing dir, no DB writes placeholder,
+  decisions render, ``_intro.md`` preserved across run,
+  re-run only refreshes below marker, hand-authored
+  page preserved with marker appended, ``db_path``
+  override).  Existing 4844 tests still pass.
 
 ### 74.4 Medium — Troubleshooting page from debug history
 

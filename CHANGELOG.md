@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`extract_design_decisions` builds an architecture log from the
+  session transcript (Phase 74.3).**  New tool that opens the
+  ``.cantrip`` SQLite store, reads the ``decisions`` table the agent
+  already populates during the design phase (substrate, charm path,
+  Charmhub recommendations), and renders them as a chronological
+  ``## Design decisions`` section in
+  ``docs/explanation/architecture.md``.  Each decision becomes a
+  numbered ``### N. <Type>: <Choice>`` block with Decision / Recorded
+  / Citation / Rationale fields.  Charm-author intros are preserved:
+  ``docs/explanation/_intro.md`` wins outright; an existing
+  ``architecture.md`` keeps everything above the
+  ``<!-- cantrip-decisions-start -->`` marker; a hand-authored
+  ``architecture.md`` without the marker is preserved verbatim and
+  the marker is appended.  Re-runs only refresh the section below the
+  marker.  Empty decisions tables still produce a well-formed page
+  with a placeholder explaining the section will fill in.
+
 - **`generate_docs` populates tutorial / how-to from acceptance artefacts
   (Phase 74.2).** When the agent has captured a Phase-13 demo bundle
   (``demo/juju-status.txt`` + ``demo/actions/*.json``) or written a

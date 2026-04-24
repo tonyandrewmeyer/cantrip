@@ -165,6 +165,7 @@ on_this_page:
 | `generate_icon` | Generate a charm icon |
 | `generate_docs` | Generate charm documentation; bridges root `TUTORIAL.md` / `DEMO.md` / `architecture.md` into the Diátaxis tree when present, and populates tutorial / how-to from `demo/` and `ACCEPTANCE.md` artefacts when acceptance tests have run |
 | `generate_diagram` | Generate architecture or integration diagrams |
+| `extract_design_decisions` | Refresh `docs/explanation/architecture.md` with a chronological design-decision log mined from the session transcript; preserves charm-author intro |
 | `generate_terraform` | Generate Terraform module for the charm |
 | `validate_terraform` | Validate a generated Terraform module |
 
