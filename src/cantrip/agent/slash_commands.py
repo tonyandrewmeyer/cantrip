@@ -30,8 +30,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cantrip import update as update_module
-from cantrip.agent import mcp_commands, memory_commands, sandbox
+from cantrip.agent import custom_commands, mcp_commands, memory_commands, sandbox
 from cantrip.agent.goal_budget import GoalBudget, format_summary, measure_usage
+from cantrip.agent.queue import AgentTask, TaskCategory
 from cantrip.llm import pricing
 from cantrip.llm.base import ProviderError, Role
 
@@ -90,6 +91,29 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
 SHARED_VERBS: frozenset[str] = frozenset({cmd.verb for cmd in COMMAND_CATALOGUE} | {"?"})
 
 
+def catalogue_for(
+    agent: CantripAgent | None = None,
+) -> tuple[CommandInfo, ...]:
+    """Return :data:`COMMAND_CATALOGUE` plus the agent's custom commands.
+
+    Phase 68.3: TUI autocomplete and ``/help`` both call this so
+    user-defined markdown commands in ``.cantrip/commands/`` show
+    up alongside the built-ins without each surface re-implementing
+    the merge.  ``agent`` may be ``None`` when a caller just wants
+    the built-in list (useful in tests and in the CLI's startup
+    banner before the agent is fully initialised).
+    """
+    if agent is None:
+        return COMMAND_CATALOGUE
+    custom = getattr(agent, "custom_commands", None)
+    if not isinstance(custom, custom_commands.CustomCommandRegistry):
+        return COMMAND_CATALOGUE
+    if not custom.commands:
+        return COMMAND_CATALOGUE
+    extras = tuple(CommandInfo(c.verb, c.description) for c in custom.commands)
+    return COMMAND_CATALOGUE + extras
+
+
 @dataclass
 class SlashResult:
     """Outcome of a dispatched slash command.
@@ -120,7 +144,7 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
     verb, _, args = message.partition(" ")
     verb = verb.lower()
     if verb in {"/help", "?"}:
-        return SlashResult(text=help_text())
+        return SlashResult(text=help_text(agent))
     if verb == "/memory":
         text = memory_commands.handle_memory(
             agent._memory_manager, args, charm_path=agent.state.charm_path
@@ -175,7 +199,88 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_redo(agent))
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
+    # Phase 68.3: fall through to user-defined commands discovered
+    # from ``.cantrip/commands/*.md`` + ``~/.config/cantrip/commands/*.md``.
+    # ``isinstance`` guards against the ``MagicMock``-backed agents
+    # used in TUI / Web tests: without it, ``getattr`` would return a
+    # Mock that answers affirmatively to ``.get(verb)`` and send the
+    # dispatch loop down the wrong path.
+    custom = getattr(agent, "custom_commands", None)
+    if isinstance(custom, custom_commands.CustomCommandRegistry):
+        match = custom.get(verb)
+        if match is not None:
+            return _handle_custom_command(agent, match, args)
     return None
+
+
+def _handle_custom_command(
+    agent: CantripAgent,
+    command: custom_commands.CustomCommand,
+    args: str,
+) -> SlashResult:
+    """Expand a user-defined slash command and hand off to the agent.
+
+    Expansion is async because ``!`cmd` `` references may park on
+    the Phase 68.2 permission manager.  The caller (TUI / Web /
+    CLI) already supports ``SlashResult.followup`` coroutines, so
+    we render a "running..." prelude and attach the expansion-plus-
+    dispatch coroutine as the followup.  ``subtask: true`` routes
+    the prompt onto the work queue; ``primary`` (the default) feeds
+    it through ``agent.process_message`` like a typed user message.
+    """
+    prelude = f"Running `{command.verb}`…"
+
+    async def _run() -> str:
+        try:
+            prompt = await custom_commands.expand(
+                command,
+                args,
+                repo_root=agent.state.charm_path,
+                permissions=(agent.executor.permissions if agent.executor else None),
+                permission_manager=(agent.executor.permission_manager if agent.executor else None),
+            )
+        except custom_commands.CustomCommandError as exc:
+            return f"`{command.verb}` failed to expand: {exc}"
+        if command.subtask or command.agent != custom_commands.DEFAULT_AGENT:
+            # Route through the work queue for non-primary commands —
+            # the executor will spawn a subagent under the chosen
+            # category.  For v1 we map the category name 1:1 and let
+            # the work-queue validation catch typos.
+            try:
+                category = _coerce_task_category(command.agent)
+            except ValueError:
+                return (
+                    f"`{command.verb}` names unknown agent {command.agent!r}; "
+                    "expected 'primary' or a subagent category "
+                    "(research, build, deploy, test, debug, infra)."
+                )
+            agent._work_queue.add_task(
+                AgentTask(
+                    title=f"Custom command: {command.verb}",
+                    category=category,
+                    description=prompt,
+                )
+            )
+            return (
+                f"Queued `{command.verb}` as a {category.value} task.  "
+                "Check the task panel for progress."
+            )
+        return await agent.process_message(prompt)
+
+    return SlashResult(text=prelude, followup=_run())
+
+
+def _coerce_task_category(name: str) -> TaskCategory:
+    """Map a string like ``"research"`` onto :class:`TaskCategory`.
+
+    Raises :class:`ValueError` on unknown names so the custom-command
+    handler can render a clear error instead of blowing up inside the
+    work-queue validator.
+    """
+    try:
+        return TaskCategory(name)
+    except ValueError as exc:
+        raise ValueError(f"unknown task category {name!r}") from exc
 
 
 def _handle_budget(agent: CantripAgent, args: str) -> str:
@@ -386,13 +491,16 @@ async def _run_update_slash_check() -> str:
     return update_module.format_slash_notice(info)
 
 
-def help_text() -> str:
+def help_text(agent: CantripAgent | None = None) -> str:
     """Return help for the shared slash commands.
 
     Surface-native commands (e.g. the CLI's ``/tasks``) are appended
-    by each surface on top of this text.
+    by each surface on top of this text.  When *agent* is provided,
+    Phase 68.3 user-defined commands from ``.cantrip/commands/`` are
+    appended after the built-ins so ``/help`` reflects the live
+    catalogue.
     """
-    return (
+    base = (
         "**Slash commands**\n\n"
         "- `/help`, `?` — show this help message.\n"
         "- `/memory [scope]` — list memories. Run `/memory help` for subcommands.\n"
@@ -424,6 +532,16 @@ def help_text() -> str:
         "  Cleared the moment a new user turn arrives.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
+    custom = getattr(agent, "custom_commands", None) if agent is not None else None
+    if not isinstance(custom, custom_commands.CustomCommandRegistry) or not custom.commands:
+        return base
+    extras = ["", "**User commands** (from `.cantrip/commands/*.md`)", ""]
+    for command in custom.commands:
+        suffix = ""
+        if command.subtask or command.agent != custom_commands.DEFAULT_AGENT:
+            suffix = f" _(routes to {command.agent} agent)_"
+        extras.append(f"- `{command.verb}` — {command.description}{suffix}")
+    return base + "\n" + "\n".join(extras)
 
 
 def format_sandbox_status() -> str:

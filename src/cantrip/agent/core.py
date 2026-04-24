@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
-from cantrip.agent import arena, sandbox
+from cantrip.agent import arena, custom_commands, sandbox
 from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.context import ContextManager, VirtualFileStore
@@ -261,6 +261,19 @@ class CantripAgent:
         # opt out via ``--no-snapshots`` pay no init cost.  Lives on
         # the agent so the slash-command dispatcher can reach it.
         self._snapshot_manager_cache: SnapshotManager | None = None
+
+        # Phase 68.3: load user-defined slash commands from
+        # ``.cantrip/commands/*.md`` + ``~/.config/cantrip/commands/*.md``
+        # once at startup.  The dispatcher reads
+        # ``agent.custom_commands`` and surfaces each command in
+        # ``/help``, autocomplete, and the verb fall-through path.
+        # Malformed files log a warning and are skipped inside the
+        # loader so a single bad file can't prevent the agent booting.
+        self.custom_commands: custom_commands.CustomCommandRegistry = (
+            custom_commands.CustomCommandRegistry(
+                commands=tuple(custom_commands.discover_custom_commands(charm_path=charm_path))
+            )
+        )
 
         if charm_path:
             self._ensure_claude_md(charm_path)

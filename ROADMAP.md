@@ -3230,37 +3230,59 @@ Four OpenCode features are explicitly **out of scope**:
   cancel_all), and a subagent-integration smoke for the gate
   helper's deny / allow / ask paths.
 
-### 68.3 Medium — User-defined slash commands
+### 68.3 Medium — User-defined slash commands ✓
 
-- [ ] Loader that discovers ``.cantrip/commands/*.md`` (repo)
-  and ``~/.config/cantrip/commands/*.md`` (user).  Filename
-  → command name (``debug-relation.md`` → ``/debug-relation``).
-  Repo beats user on name conflict.
-- [ ] YAML frontmatter: ``description``, ``agent`` (one of the
-  existing subagent names, or ``primary``), ``model`` (optional
-  override), ``subtask`` (bool — route via the work queue
-  instead of the primary agent).  Body is the prompt template.
-- [ ] Placeholders in the body:
-  - ``$ARGUMENTS`` — everything after the command verb as a
-    single string
-  - ``$1``, ``$2``, … — positional args
-  - ``@path`` — substitute the contents of ``path`` (reject
-    absolute paths and paths outside the repo unless the path
-    is allowed by ``external_directory`` permission)
-  - ``` !`shell cmd` ``` — run the shell command at expansion
-    time and substitute its stdout.  Must flow through the
-    Phase 68.2 permission layer so an unsafe command is
-    blocked or asked about.
-- [ ] Catalogue the loaded commands in
-  ``src/cantrip/agent/slash_commands.py``'s registry so the
-  Phase 61 autocomplete and help text pick them up for free.
-- [ ] Document in ``docs/docs/howto-custom-commands.html`` with
-  a working example (``/relation-check <charm>`` that runs
-  ``juju show-unit`` and feeds the output back into the agent).
-- [ ] ``tests/unit/test_custom_commands.py`` — frontmatter
-  parse, placeholder substitution, repo-beats-user precedence,
-  shell and file-ref expansion paths, permission gate
-  respected.
+- [x] Loader in ``src/cantrip/agent/custom_commands.py``
+  discovers ``.cantrip/commands/*.md`` (repo) and
+  ``~/.config/cantrip/commands/*.md`` (user).  Filename →
+  command name (``debug-relation.md`` → ``/debug-relation``),
+  validated against ``[a-z0-9][a-z0-9_-]*``.  Repo beats user
+  on name conflict; malformed files log + skip rather than
+  halting discovery.
+- [x] YAML frontmatter fields ``description``, ``agent``
+  (default ``primary``; any ``TaskCategory`` value routes via
+  the work queue), ``model`` (optional override), ``subtask``
+  (bool).  Unknown frontmatter keys raise so typos surface
+  immediately.  Body is the prompt template.
+- [x] Placeholder substitution in ``expand()``:
+  - ``$ARGUMENTS`` — everything after the verb.
+  - ``$1``, ``$2``, … — :mod:`shlex`-split positionals; unset
+    indexes expand to the empty string.
+  - ``@path`` — repo-local file contents, with absolute paths
+    and ``..`` traversal outside the repo root rejected.
+  - ``` !`shell cmd` `` — ``sh -c`` stdout (+ labelled
+    ``[stderr]`` and ``[exit N]``), bounded to 10 s / 10 000
+    chars, routed through the Phase 68.2 permission gate so a
+    ``deny`` refuses and an ``ask`` parks on the
+    :class:`PermissionManager` via ``PermissionManager.request``.
+- [x] ``CantripAgent.custom_commands`` loads at construction
+  and is exposed as a ``CustomCommandRegistry``.  The slash
+  dispatcher falls through to it when no built-in verb matches;
+  ``catalogue_for(agent)`` composes built-in + user commands so
+  Phase 61 autocomplete and ``/help`` pick them up without
+  per-surface work.  ``help_text(agent)`` also lists them under
+  a "**User commands**" heading.
+- [x] Dispatch path renders a "Running `/verb`…" prelude and
+  attaches an async ``followup`` that expands + dispatches:
+  ``agent: primary`` feeds the expanded prompt into
+  ``agent.process_message``; a subagent category (or
+  ``subtask: true``) queues an :class:`AgentTask` of that
+  category instead.
+- [x] Documented in
+  ``docs/docs/howto-custom-commands.html`` with a working
+  ``/relation-check`` example, full schema, placeholder
+  reference, and the permission-gate interaction; linked from
+  every how-to sidebar, ``docs/docs/index.html``, and the
+  ``cantrip hooks`` entry in ``docs/docs/reference-cli.html``.
+- [x] ``tests/unit/test_custom_commands.py`` — 30 tests
+  covering frontmatter parse + error shapes, filename → verb
+  validation, repo-beats-user precedence, malformed-file
+  skip, ``$ARGUMENTS`` / positional substitution including
+  quoted args, ``@path`` include with absolute + traversal
+  rejection, ``!`cmd` `` shell expansion under ALLOW / DENY /
+  ASK / no-manager, failed-command exit-code formatting,
+  registry lookup, and dispatcher integration (unknown verb
+  fall-through, catalogue / help-text inclusion).
 
 ### 68.4 Medium — Plan mode
 

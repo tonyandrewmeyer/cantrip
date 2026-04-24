@@ -5,6 +5,33 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **User-defined slash commands from markdown (Phase 68.3).**
+  A charm team can now drop
+  ``.cantrip/commands/<name>.md`` into the repo (or
+  ``~/.config/cantrip/commands/<name>.md`` for a personal
+  command) and ``/<name>`` becomes a new slash verb the same
+  way every Cantrip session.  The filename is the verb;
+  YAML frontmatter (``description`` / ``agent`` / ``model`` /
+  ``subtask``) says how to dispatch; and the markdown body is
+  a prompt template with four expansion shapes: ``$ARGUMENTS``
+  (everything after the verb), ``$1`` / ``$2`` / … (shlex-split
+  positional args), ``@path`` (repo-local file contents, with
+  absolute paths and ``..`` traversal rejected), and
+  ``` !`cmd` `` (stdout of a shell command bounded to 10 s /
+  10 000 chars).  Shell expansion routes through the Phase 68.2
+  permission gate so an unsafe ``!`rm -rf *` `` is refused and
+  a ``git push`` asks for confirmation under the built-in
+  defaults.  ``agent: primary`` (the default) feeds the
+  expanded prompt to ``agent.process_message`` like a typed
+  user message; any subagent category
+  (``research`` / ``build`` / ``deploy`` / ``test`` / ``debug``
+  / ``infra``) queues an ``AgentTask`` of that category
+  instead.  ``/help`` and Phase 61 autocomplete pick up every
+  loaded command automatically — no per-surface wiring.
+  Documented in the new
+  [Define custom slash commands](docs/docs/howto-custom-commands.html)
+  how-to with a working ``/relation-check`` example.
+
 - **Declarative tool-permission config with allow / ask / deny
   (Phase 68.2).**  Cantrip now reads
   ``~/.config/cantrip/permissions.yaml`` (user) and
