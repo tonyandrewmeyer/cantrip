@@ -93,6 +93,7 @@ class CantripApp(App):
         light_provider_name: str | None = None,
         improve_path: Path | None = None,
         theme_name: str | None = None,
+        base_url: str | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -107,6 +108,7 @@ class CantripApp(App):
         self._max_concurrency = max_concurrency
         self._improve_path = improve_path
         self._theme_name = theme_name
+        self._base_url = base_url
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -255,7 +257,10 @@ class CantripApp(App):
         """Initialise the LLM provider and agent."""
         try:
             llm_provider = create_provider(
-                self.provider_name, self.model_name, snap_name=self._snap_name
+                self.provider_name,
+                self.model_name,
+                snap_name=self._snap_name,
+                base_url=self._base_url,
             )
 
             # Resolve light provider for internal tasks (e.g. compaction).
@@ -1516,7 +1521,7 @@ class CantripApp(App):
         if event.state == WorkerState.SUCCESS:
             report = event.worker.result
             if report:
-                chat.add_system_message(str(report))
+                chat.add_system_message(str(report), markdown=True)
         elif event.state == WorkerState.CANCELLED:
             chat.add_system_message("Parliament adjourned (cancelled).")
         elif event.state == WorkerState.ERROR:

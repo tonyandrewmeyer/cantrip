@@ -18,7 +18,12 @@ Two opt-outs are honoured by every caller:
 Also exposes :func:`detect_install_method` and
 :func:`upgrade_command` so the user-facing notice can show the
 exact command to run for the user's installer (``uv tool``,
-``pipx``, ``pip``, snap).
+``pipx``, ``uv pip``, snap).  The pip-installed cases are
+surfaced as ``uv pip`` invocations rather than bare ``pip`` to
+match the project's uv-everywhere stance — ``uv pip`` reads the
+same venv / ``--user`` site-packages as pip, so the upgrade
+still lands in the right place even when the original install
+used ``pip`` directly.
 
 Failure-mode guarantee: every entry point degrades to ``None`` (or
 :attr:`InstallMethod.UNKNOWN`) on error so a flaky network or a
@@ -719,8 +724,8 @@ def detect_install_method() -> InstallMethod:
 _UPGRADE_COMMANDS: dict[InstallMethod, str] = {
     InstallMethod.UV_TOOL: "uv tool upgrade cantrip",
     InstallMethod.PIPX: "pipx upgrade cantrip",
-    InstallMethod.PIP_USER: "pip install --user --upgrade cantrip",
-    InstallMethod.PIP_VENV: "pip install --upgrade cantrip",
+    InstallMethod.PIP_USER: "uv pip install --user --upgrade cantrip",
+    InstallMethod.PIP_VENV: "uv pip install --upgrade cantrip",
     InstallMethod.SNAP: "snap refresh cantrip",
 }
 

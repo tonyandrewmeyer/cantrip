@@ -4,7 +4,66 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Update-notice upgrade command uses ``uv pip`` for pip-installed
+  Cantrip.**  ``upgrade_command`` previously emitted
+  ``pip install --upgrade cantrip`` (and the ``--user`` variant) for
+  the ``PIP_VENV`` / ``PIP_USER`` install methods.  The project's
+  stance is uv-everywhere, so both strings now lead with ``uv pip``
+  — the command still targets the same venv or ``--user`` site-
+  packages as plain pip, so the upgrade lands in the right place
+  regardless of which tool originally installed Cantrip.
+  ``uv tool upgrade cantrip``, ``pipx upgrade cantrip`` and
+  ``snap refresh cantrip`` are unchanged.  Docs
+  (``docs/src/reference-cli.md`` + regenerated
+  ``docs/docs/reference-cli.html``) and the parametrised test in
+  ``tests/unit/test_update.py`` tracked the rename.
+
+### Fixed
+- **Parliament report renders as Markdown in the TUI.**  The
+  ``/feelings`` command posts a Markdown document (headings, bold,
+  italic) that was previously shown verbatim — users saw literal
+  ``#``/``**`` characters in the chat pane.  ``ChatMessage`` gained a
+  ``markdown`` flag; ``ChatWidget.add_system_message`` accepts a
+  matching ``markdown=`` kwarg; ``MessageWidget._render_body`` returns
+  a ``rich.console.Group`` containing the header line and a
+  ``rich.markdown.Markdown`` body when the flag is set.  Search
+  highlighting is skipped for Markdown messages because substituting
+  Rich tags into Markdown source mangles the formatting — acceptable
+  since the only current opt-in is the parliament report.  The
+  ``_on_feelings_done`` handler in ``TUIApp`` is the sole call site
+  flipping the flag on, so no other system messages change behaviour.
+
 ### Added
+- **Fireworks.ai and generic OpenAI-compatible providers.**  Two
+  new ``--provider`` choices: ``fireworks`` (baked-in
+  ``https://api.fireworks.ai/inference/v1`` base URL, reads
+  ``FIREWORKS_API_KEY``, default model
+  ``accounts/fireworks/models/kimi-k2p6`` — a 256k-context
+  agentic Kimi K2 variant with native tool use and vision) and
+  ``openai-compatible`` (escape hatch for Together, Groq,
+  DeepInfra, vLLM, LiteLLM proxies, etc. — requires
+  ``--base-url``, ``--model``, and ``OPENAI_COMPATIBLE_API_KEY``).
+  Canonical's ``inference-snap`` remains the first-class local
+  provider — ``fireworks`` and ``openai-compatible`` are
+  additions, not replacements.  Under the hood, the OpenAI
+  chat-completions wire format and SSE streaming logic moved out
+  of ``inference_snap.py`` into a new
+  ``cantrip.llm._openai_compat.OpenAICompatBase`` that all three
+  providers extend; the inference-snap keeps its snap-discovery
+  + ``/models`` probing.  New ``--base-url`` CLI flag overrides
+  the default endpoint for any of the three OpenAI-compatible
+  providers.  ``--light-provider`` gained ``fireworks`` as a
+  hybrid option.  Env-var validation in ``main._run`` surfaces
+  actionable errors when a key or flag is missing.  New unit
+  tests cover the shared wire format plus factory wiring for
+  both new providers.  Docs updated:
+  ``docs/src/howto-provider.md`` (inference-snap still listed
+  first) and ``docs/src/reference-cli.md`` (new provider names,
+  ``--base-url`` flag, new env vars).  Known limitation: Kimi K2
+  emits a ``reasoning_content`` delta stream that is currently
+  dropped — it burns completion tokens without surfacing in the
+  transcript, so set generous ``max_tokens`` when evaluating.
 - **Inline tool blocks in the chat — Phase 75.**  Every tool
   invocation now renders as a compact one-line block in the TUI
   and Web chat so the agent's "Let me check the file:" preambles

@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
     run_parser = subparsers.add_parser("run", help="Run cantrip agent")
     run_parser.add_argument(
         "--provider",
-        choices=["gemini", "claude", "inference-snap"],
+        choices=["gemini", "claude", "inference-snap", "fireworks", "openai-compatible"],
         default="gemini",
         help="LLM provider to use (default: gemini)",
     )
@@ -67,6 +67,15 @@ def parse_args() -> argparse.Namespace:
         help=("Inference snap name when using --provider inference-snap (default: gemma3)"),
     )
     run_parser.add_argument(
+        "--base-url",
+        default=None,
+        help=(
+            "API base URL override.  Required for --provider "
+            "openai-compatible; optional for inference-snap (overrides "
+            "snap discovery) and fireworks (proxies or compatible hosts)."
+        ),
+    )
+    run_parser.add_argument(
         "--light-model",
         help=("Cheaper model for internal tasks like compaction (auto-detected if omitted)"),
     )
@@ -76,7 +85,7 @@ def parse_args() -> argparse.Namespace:
     )
     run_parser.add_argument(
         "--light-provider",
-        choices=["gemini", "claude", "inference-snap"],
+        choices=["gemini", "claude", "inference-snap", "fireworks"],
         help="Use a different provider for light tasks (enables hybrid mode)",
     )
     run_parser.add_argument(
@@ -395,6 +404,26 @@ def _run(args: argparse.Namespace) -> int:
         print("Error: ANTHROPIC_API_KEY environment variable not set")
         print("Set it with: export ANTHROPIC_API_KEY='your-key-here'")
         return 1
+    elif args.provider == "fireworks" and not os.environ.get("FIREWORKS_API_KEY"):
+        print("Error: FIREWORKS_API_KEY environment variable not set")
+        print("Get a key from: https://fireworks.ai/account/api-keys")
+        print("Set it with: export FIREWORKS_API_KEY='your-key-here'")
+        return 1
+    elif args.provider == "openai-compatible":
+        if not getattr(args, "base_url", None):
+            print("Error: --base-url is required with --provider openai-compatible")
+            print("Example: cantrip --provider openai-compatible \\")
+            print("           --base-url https://api.together.xyz/v1 \\")
+            print("           --model meta-llama/Llama-3.3-70B-Instruct-Turbo")
+            return 1
+        if not args.model:
+            print("Error: --model is required with --provider openai-compatible")
+            return 1
+        if not os.environ.get("OPENAI_COMPATIBLE_API_KEY"):
+            print("Error: OPENAI_COMPATIBLE_API_KEY environment variable not set")
+            print("Set it to your bearer token, or any non-empty string if")
+            print("the endpoint does not require authentication.")
+            return 1
     # inference-snap needs no API key (local model).
 
     _install_unraisable_hook()
@@ -434,6 +463,7 @@ def _run(args: argparse.Namespace) -> int:
             light_provider_name=args.light_provider,
             improve_path=improve_path,
             theme_name=args.theme,
+            base_url=getattr(args, "base_url", None),
         )
         app.run()
         _print_update_panel(app.pending_update_info)

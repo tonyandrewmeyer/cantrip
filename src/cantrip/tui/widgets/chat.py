@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
+from rich.console import Group, RenderableType
+from rich.markdown import Markdown as RichMarkdown
 from rich.markup import escape as rich_escape
 from textual import events
 from textual.app import ComposeResult
@@ -56,6 +58,14 @@ class ChatMessage:
     content: str
     timestamp: datetime = field(default_factory=datetime.now)
     progress_items: list[ProgressItem] = field(default_factory=list)
+    # When true, ``content`` is rendered as Markdown instead of being
+    # shown verbatim with Rich markup.  Used for system messages whose
+    # body is generated markdown (e.g. the ``/feelings`` parliament
+    # report) so headings, bold and list markers display as formatting
+    # rather than raw ``#``/``**`` characters.  Search highlighting is
+    # skipped for these messages — substituting Rich tags into a
+    # Markdown source mangles the formatting.
+    markdown: bool = False
 
 
 class MessageWidget(Static):
@@ -138,8 +148,15 @@ class MessageWidget(Static):
         """Compose the message widget."""
         yield Static(self._render_body(), id="message-body")
 
-    def _render_body(self) -> str:
-        """Build the Rich-markup body string for this message."""
+    def _render_body(self) -> RenderableType:
+        """Build the Rich renderable for this message.
+
+        Returns a plain Rich-markup string by default.  When the message
+        is flagged as Markdown, returns a :class:`rich.console.Group`
+        combining the header line and a :class:`rich.markdown.Markdown`
+        renderable for the body so headings and emphasis render as
+        formatting rather than literal ``#``/``**`` characters.
+        """
         role_display = {
             MessageRole.USER: "> ",
             MessageRole.ASSISTANT: "",
@@ -149,6 +166,18 @@ class MessageWidget(Static):
         header = role_display.get(self.message.role, "")
         timestamp = self.message.timestamp.strftime("%H:%M")
         header = f"[dim][{timestamp}][/dim] {header}"
+
+        if self.message.markdown:
+            progress_markup = "\n".join(
+                f"[progress-{item.status.value.replace('_', '-')}]"
+                f"{self._status_char(item.status)}"
+                f"[/progress-{item.status.value.replace('_', '-')}] {item.text}"
+                for item in self.message.progress_items
+            )
+            renderables: list[RenderableType] = [header, RichMarkdown(self.message.content)]
+            if progress_markup:
+                renderables.append(progress_markup)
+            return Group(*renderables)
 
         content = self._highlighted_content() if self._search_query else self.message.content
         content_lines = [content]
@@ -723,14 +752,22 @@ class ChatWidget(Widget):
         self,
         content: str,
         progress_items: list[str] | None = None,
+        *,
+        markdown: bool = False,
     ) -> MessageWidget:
-        """Add a system message with optional progress items."""
+        """Add a system message with optional progress items.
+
+        Pass ``markdown=True`` when ``content`` is a Markdown document
+        (headings, lists, emphasis) so it renders as formatting instead
+        of raw syntax — used for the ``/feelings`` parliament report.
+        """
         items = [ProgressItem(text=item) for item in (progress_items or [])]
         return self.add_message(
             ChatMessage(
                 role=MessageRole.SYSTEM,
                 content=content,
                 progress_items=items,
+                markdown=markdown,
             )
         )
 

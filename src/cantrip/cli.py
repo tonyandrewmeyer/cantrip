@@ -136,7 +136,10 @@ def run_cli(args: argparse.Namespace) -> int:
     try:
         snap_name = getattr(args, "snap", "gemma3")
         light_snap_name = getattr(args, "light_snap", None)
-        provider = create_provider(args.provider, args.model, snap_name=snap_name)
+        base_url = getattr(args, "base_url", None)
+        provider = create_provider(
+            args.provider, args.model, snap_name=snap_name, base_url=base_url
+        )
     except (ValueError, ProviderError) as e:
         print(f"Error: {e}")
         return 1

@@ -570,8 +570,8 @@ class TestUpgradeCommand:
         [
             (update.InstallMethod.UV_TOOL, "uv tool upgrade cantrip"),
             (update.InstallMethod.PIPX, "pipx upgrade cantrip"),
-            (update.InstallMethod.PIP_USER, "pip install --user --upgrade cantrip"),
-            (update.InstallMethod.PIP_VENV, "pip install --upgrade cantrip"),
+            (update.InstallMethod.PIP_USER, "uv pip install --user --upgrade cantrip"),
+            (update.InstallMethod.PIP_VENV, "uv pip install --upgrade cantrip"),
             (update.InstallMethod.SNAP, "snap refresh cantrip"),
         ],
     )

@@ -4,31 +4,19 @@ Uses the OpenAI-compatible API exposed by Canonical's inference snaps
 (https://documentation.ubuntu.com/inference-snaps/).  Each snap serves
 a local model at ``http://localhost:<port>/v1`` and supports chat
 completions, streaming, and tool calling — no API key required.
+
+The HTTP and wire-format plumbing lives in ``_openai_compat``; this
+module only adds the snap-specific discovery bits (``snap status`` /
+``/models`` probing, vision allowlist).
 """
 
-import base64
-import contextlib
-import json
 import logging
 import subprocess
-from collections.abc import AsyncIterator
-from typing import Any
 
 import httpx
 
-from cantrip.llm.base import (
-    Chunk,
-    Image,
-    LLMProvider,
-    Message,
-    ProviderError,
-    ProviderOverloadedError,
-    ProviderRateLimitError,
-    Response,
-    Role,
-    Tool,
-    ToolCall,
-)
+from cantrip.llm._openai_compat import OpenAICompatBase
+from cantrip.llm.base import ProviderError
 
 log = logging.getLogger(__name__)
 
@@ -49,10 +37,6 @@ _DEFAULT_CONTEXT_WINDOW = 8_192
 # snap's OpenAI-compatible endpoint.  The ``/models`` capability probe
 # extends this at runtime when a server advertises a vision flag.
 _VISION_SNAP_NAMES: frozenset[str] = frozenset({"qwen-vl", "gemma3"})
-
-# Sensible upper bound for base64-encoded image_url payloads posted to
-# a local inference snap.  Matches Gemini's 20 MB cap.
-_MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 
 def discover_snap_endpoint(snap_name: str) -> str:
@@ -101,7 +85,7 @@ def list_available_snaps() -> list[str]:
         return []
 
 
-class InferenceSnapProvider(LLMProvider):
+class InferenceSnapProvider(OpenAICompatBase):
     """LLM provider backed by a local Ubuntu inference snap."""
 
     @property
@@ -110,24 +94,14 @@ class InferenceSnapProvider(LLMProvider):
         return "inference-snap"
 
     @property
-    def context_window_tokens(self) -> int:
-        """Maximum context window size in tokens for the current model."""
-        return self._context_window
+    def _error_label(self) -> str:
+        """Include the snap name in error messages for operator clarity."""
+        return f"inference snap '{self.snap_name}'"
 
     @property
     def max_tools(self) -> int | None:
         """Local models have limited context; restrict tools to a core set."""
         return 12
-
-    @property
-    def supports_vision(self) -> bool:
-        """Whether this snap can accept image attachments.
-
-        True for known vision snaps (``qwen-vl``, ``gemma3``) and for
-        any snap whose ``/models`` metadata advertises a vision
-        capability; otherwise False.
-        """
-        return self._supports_vision
 
     def __init__(
         self,
@@ -250,349 +224,5 @@ class InferenceSnapProvider(LLMProvider):
         # the flag (not every backend populates ``capabilities`` fully).
         if capabilities and ("vision" in capabilities or "image" in capabilities):
             self._supports_vision = True
-
-    # -- Message conversion (to OpenAI chat format) -----------------------
-
-    @staticmethod
-    def _image_content_parts(images: list[Image]) -> list[dict[str, Any]]:
-        """Build OpenAI multi-part ``image_url`` entries from ``Image`` payloads.
-
-        Images are base64-encoded and wrapped in a ``data:`` URI, the
-        format all the OpenAI-compatible snap backends accept.
-        Enforces the 20 MB per-image cap.
-        """
-        parts: list[dict[str, Any]] = []
-        for img in images:
-            if len(img.data) > _MAX_IMAGE_BYTES:
-                raise ProviderError(
-                    f"Image exceeds the {_MAX_IMAGE_BYTES}-byte per-image "
-                    f"limit for inference snaps: {len(img.data)} bytes "
-                    f"({img.mime})"
-                )
-            encoded = base64.b64encode(img.data).decode("ascii")
-            parts.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{img.mime};base64,{encoded}"},
-                }
-            )
-        return parts
-
-    def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict]]:
-        """Convert messages to OpenAI chat API format.
-
-        Returns a (system_prompt, messages) tuple.  The system prompt is
-        extracted from the first SYSTEM message and passed as a separate
-        system message at the start.
-
-        Consecutive user or assistant messages are merged into a single
-        message because some local model backends (e.g. Mediapipe in the
-        gemma3 snap) reject conversations with consecutive same-role
-        messages.  Once a user message carries images the content becomes
-        a multi-part list, which the backend treats as a distinct turn —
-        subsequent plain-text user messages do not merge into a
-        list-valued content field.
-        """
-        if self._messages_have_images(messages) and not self._supports_vision:
-            raise NotImplementedError(
-                f"Inference snap '{self.snap_name}' does not support image "
-                f"input. Switch to a vision-capable snap (e.g. qwen-vl or "
-                f"gemma3) or drop the image attachments."
-            )
-
-        system_prompt: str | None = None
-        result: list[dict[str, Any]] = []
-
-        for msg in messages:
-            if msg.role == Role.SYSTEM:
-                system_prompt = msg.content
-                continue
-
-            if msg.role == Role.USER:
-                if msg.images:
-                    content_parts: list[dict[str, Any]] = self._image_content_parts(msg.images)
-                    if msg.content:
-                        content_parts.append({"type": "text", "text": msg.content})
-                    result.append({"role": "user", "content": content_parts})
-                # Merge with previous user message if consecutive and
-                # both use plain-string content; a list-valued previous
-                # turn (images) stays distinct.
-                elif (
-                    result
-                    and result[-1]["role"] == "user"
-                    and isinstance(result[-1]["content"], str)
-                ):
-                    if msg.content:
-                        result[-1]["content"] += "\n\n" + msg.content
-                else:
-                    result.append({"role": "user", "content": msg.content})
-
-            elif msg.role == Role.ASSISTANT:
-                entry: dict[str, Any] = {"role": "assistant"}
-                if msg.tool_calls:
-                    entry["content"] = msg.content or None
-                    entry["tool_calls"] = [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.name,
-                                "arguments": json.dumps(tc.arguments),
-                            },
-                        }
-                        for tc in msg.tool_calls
-                    ]
-                else:
-                    # Merge with previous assistant message if consecutive
-                    # and neither has tool calls.
-                    if (
-                        result
-                        and result[-1]["role"] == "assistant"
-                        and "tool_calls" not in result[-1]
-                    ):
-                        if msg.content:
-                            result[-1]["content"] += "\n\n" + msg.content
-                        continue
-                    entry["content"] = msg.content
-                result.append(entry)
-
-            elif msg.role == Role.TOOL:
-                for tr in msg.tool_results:
-                    result.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tr.tool_call_id,
-                            "content": tr.content,
-                        }
-                    )
-
-        return system_prompt, result
-
-    @staticmethod
-    def _convert_tools(tools: list[Tool] | None) -> list[dict] | None:
-        """Convert tools to OpenAI function-calling format."""
-        if not tools:
-            return None
-
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
-            }
-            for tool in tools
-        ]
-
-    # -- API calls --------------------------------------------------------
-
-    def _build_request_body(
-        self,
-        messages: list[Message],
-        tools: list[Tool] | None,
-        temperature: float,
-        *,
-        stream: bool = False,
-        max_tokens: int | None = None,
-    ) -> dict[str, Any]:
-        """Build the JSON request body for a chat completion."""
-        system_prompt, api_messages = self._convert_messages(messages)
-        if system_prompt:
-            api_messages.insert(0, {"role": "system", "content": system_prompt})
-
-        body: dict[str, Any] = {
-            "model": self.model_name,
-            "messages": api_messages,
-            "temperature": temperature,
-            "stream": stream,
-        }
-
-        if stream:
-            body["stream_options"] = {"include_usage": True}
-
-        if max_tokens is not None:
-            body["max_tokens"] = max_tokens
-
-        # Only include tools if the backend supports function calling.
-        if self._supports_tools:
-            api_tools = self._convert_tools(tools)
-            if api_tools:
-                body["tools"] = api_tools
-
-        return body
-
-    @staticmethod
-    def _parse_tool_calls(raw_tool_calls: list[dict]) -> list[ToolCall]:
-        """Parse tool calls from an OpenAI-format response."""
-        tool_calls = []
-        for tc in raw_tool_calls:
-            func = tc.get("function", {})
-            arguments = func.get("arguments", "{}")
-            if isinstance(arguments, str):
-                try:
-                    arguments = json.loads(arguments)
-                except json.JSONDecodeError:
-                    arguments = {}
-            tool_calls.append(
-                ToolCall(
-                    id=tc.get("id", ""),
-                    name=func.get("name", ""),
-                    arguments=arguments,
-                )
-            )
-        return tool_calls
-
-    async def complete(
-        self,
-        messages: list[Message],
-        tools: list[Tool] | None = None,
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-        thinking_budget: int | None = None,  # noqa: ARG002 — interface conformity
-    ) -> Response:
-        """Generate a completion via the snap's OpenAI-compatible API."""
-        body = self._build_request_body(messages, tools, temperature, max_tokens=max_tokens)
-
-        try:
-            resp = await self.client.post("/chat/completions", json=body)
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429:
-                raise ProviderRateLimitError("Inference snap rate limit reached.") from e
-            if e.response.status_code >= 500:
-                raise ProviderOverloadedError(
-                    f"Inference snap server error ({e.response.status_code})."
-                ) from e
-            # Include the response body for debugging 4xx errors.
-            detail = ""
-            with contextlib.suppress(AttributeError, UnicodeDecodeError, ValueError):
-                detail = e.response.text[:500]
-            raise ProviderError(
-                f"Inference snap error ({e.response.status_code}): {detail or e}"
-            ) from e
-        except httpx.HTTPError as e:
-            raise ProviderError(
-                f"Failed to connect to inference snap at {self.base_url}: {e}"
-            ) from e
-
-        try:
-            data = resp.json()
-        except (ValueError, json.JSONDecodeError) as exc:
-            raise ProviderError(
-                f"Inference snap returned non-JSON response: {resp.text[:200]}"
-            ) from exc
-        choice = data.get("choices", [{}])[0]
-        message = choice.get("message", {})
-
-        content = message.get("content") or ""
-        raw_tool_calls = message.get("tool_calls") or []
-        tool_calls = self._parse_tool_calls(raw_tool_calls)
-
-        usage = data.get("usage", {})
-
-        return Response(
-            content=content,
-            tool_calls=tool_calls,
-            finish_reason=choice.get("finish_reason", "stop"),
-            usage={
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "completion_tokens": usage.get("completion_tokens", 0),
-            },
-        )
-
-    async def stream(
-        self,
-        messages: list[Message],
-        tools: list[Tool] | None = None,
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-        thinking_budget: int | None = None,  # noqa: ARG002 — interface conformity
-    ) -> AsyncIterator[Chunk]:
-        """Stream a completion via SSE."""
-        body = self._build_request_body(
-            messages,
-            tools,
-            temperature,
-            stream=True,
-            max_tokens=max_tokens,
-        )
-
-        tool_calls_acc: dict[int, dict[str, str]] = {}
-        usage: dict[str, int] = {}
-
-        try:
-            async with self.client.stream("POST", "/chat/completions", json=body) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    payload = line[len("data: ") :]
-                    if payload.strip() == "[DONE]":
-                        break
-
-                    try:
-                        data = json.loads(payload)
-                    except json.JSONDecodeError:
-                        continue
-
-                    # Capture usage from the final SSE chunk.
-                    chunk_usage = data.get("usage")
-                    if chunk_usage:
-                        usage = {
-                            "prompt_tokens": chunk_usage.get("prompt_tokens", 0),
-                            "completion_tokens": chunk_usage.get("completion_tokens", 0),
-                        }
-
-                    # Some frames (e.g. the usage-only final frame) carry an
-                    # empty choices list, so the list access must be guarded.
-                    choices = data.get("choices") or [{}]
-                    delta = choices[0].get("delta", {})
-
-                    # Accumulate streamed tool calls.
-                    for tc_delta in delta.get("tool_calls", []):
-                        idx = tc_delta.get("index", 0)
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {
-                                "id": tc_delta.get("id", ""),
-                                "name": "",
-                                "arguments": "",
-                            }
-                        func = tc_delta.get("function", {})
-                        if "name" in func:
-                            tool_calls_acc[idx]["name"] = func["name"]
-                        if "arguments" in func:
-                            tool_calls_acc[idx]["arguments"] += func["arguments"]
-
-                    # Yield text content as it arrives.
-                    text = delta.get("content")
-                    if text:
-                        yield Chunk(content=text)
-
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429:
-                raise ProviderRateLimitError("Inference snap rate limit reached.") from e
-            if e.response.status_code >= 500:
-                raise ProviderOverloadedError(
-                    f"Inference snap server error ({e.response.status_code})."
-                ) from e
-            raise ProviderError(f"Inference snap error: {e}") from e
-        except httpx.HTTPError as e:
-            raise ProviderError(
-                f"Failed to connect to inference snap at {self.base_url}: {e}"
-            ) from e
-
-        # Emit final chunk with accumulated tool calls.
-        final_tool_calls = []
-        for idx in sorted(tool_calls_acc):
-            acc = tool_calls_acc[idx]
-            try:
-                arguments = json.loads(acc["arguments"])
-            except json.JSONDecodeError:
-                arguments = {}
-            final_tool_calls.append(ToolCall(id=acc["id"], name=acc["name"], arguments=arguments))
-
-        yield Chunk(tool_calls=final_tool_calls, is_final=True, usage=usage)
 
     # count_tokens inherited from LLMProvider (character-based heuristic).

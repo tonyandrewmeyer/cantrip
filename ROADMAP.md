@@ -4473,6 +4473,78 @@ change that.  ``make check`` passes regardless.
 
 ---
 
+## Phase 77: Surface `reasoning_content` From OpenAI-Compatible Models
+
+**Goal:** Capture the ``reasoning_content`` streaming delta that
+Kimi K2 (and some other open-weights models) emit alongside the
+final ``content``.  Today ``OpenAICompatBase.stream`` only reads
+``delta.content`` and silently drops ``delta.reasoning_content``,
+so Kimi K2 on Fireworks burns completion tokens on chain-of-
+thought that never reaches the user — short ``max_tokens``
+budgets appear to return empty replies because reasoning
+consumed the budget before any answer was emitted.
+
+This affects any OpenAI-compatible endpoint that uses the
+reasoning-delta convention (DeepSeek-R1 family via vLLM, GLM
+reasoning variants, possibly MiniMax).  The non-streaming
+``complete()`` path has the same gap — it reads
+``message.content`` and drops ``message.reasoning_content``.
+
+### 77.1 Capture and expose reasoning
+
+- [ ] Extend ``src/cantrip/llm/_openai_compat.py`` to accumulate
+  ``reasoning_content`` in both ``complete()`` and ``stream()``.
+- [ ] Decide the surface: a ``thinking`` field on ``Response`` /
+  ``Chunk`` (mirroring how Claude's extended thinking is already
+  represented) or metadata on the existing ``content``.  Match
+  the Claude provider so the TUI and Web renderers don't need a
+  second code path.
+- [ ] Render reasoning the same way Claude's thinking is
+  rendered — collapsed by default, expandable on click,
+  visually distinct from the final answer.
+
+### 77.2 Budget-aware defaults
+
+- [ ] Document the Kimi-K2 ``max_tokens`` gotcha in
+  ``docs/src/howto-provider.md`` with concrete numbers.
+- [ ] Surface a sensible Kimi-specific default in
+  ``FireworksProvider`` — either a ``thinking_budget`` reserved
+  on top of ``max_tokens`` or a raised floor so reasoning
+  doesn't eat the entire budget.
+
+### 77.3 Tests and regression guard
+
+- [ ] Streaming test fixture that emits ``reasoning_content``
+  frames and asserts they round-trip to the ``Response`` /
+  ``Chunk`` surface chosen in 77.1.
+- [ ] Non-streaming test fixture putting ``reasoning_content`` on
+  the final message and asserting the same.
+- [ ] Live smoke test against Kimi K2 on Fireworks with a short
+  ``max_tokens`` budget — the turn should surface reasoning plus
+  an actual answer (or a documented reasoning-only turn) rather
+  than an empty string.
+
+**Exit criteria:** Kimi K2 on Fireworks shows reasoning in the
+TUI/Web chat; ``max_tokens=30`` produces a visible answer (or a
+documented reasoning-only turn); the provider surface stays
+compatible with Claude's existing thinking rendering.  ``make
+check`` passes with the new tests exercising both transports.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| 77.1 | Claude thinking surface on ``Response`` / ``Chunk`` | Match the existing shape rather than inventing a parallel one |
+| 77.2 | 77.1 | Need the field before budgets can be tuned against it |
+| 77.3 | 77.1, 77.2 | Live smoke needs ``FIREWORKS_API_KEY`` — mark skippable in CI |
+
+**Discovered:** While adding the Fireworks.ai provider
+(2026-04-24) — the Kimi K2 smoke test produced
+``completion_tokens=30`` with an empty streamed string because
+all 30 tokens went into ``reasoning_content`` frames that the
+shared helper dropped.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4545,4 +4617,5 @@ change that.  ``make check`` passes regardless.
 | M74: Populated Charm Docs | 74 | Generated ``docs/`` tree is bridged with the Phase 13 root files, populated from real Phase 17 acceptance-test command/output capture, with an architecture page extracted from transcript design decisions and a troubleshooting page mined from the agent's resolved-error history |
 | M75: Inline Tool Blocks | 75 | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
 | M76: Copy-Friendly Chat | 76 | Toad-inspired per-block copy affordances either ship (keybinding, slash command, OSC 52, or similar) or a written assessment in ``design/UI.md`` explains why the current flow is sufficient |
+| M77: Reasoning Content Surfaced | 77 | OpenAI-compatible reasoning deltas (Kimi K2, DeepSeek-R1, GLM reasoning variants) are captured and rendered like Claude's extended thinking rather than silently dropped |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

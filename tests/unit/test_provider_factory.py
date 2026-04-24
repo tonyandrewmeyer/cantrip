@@ -79,3 +79,59 @@ class TestCreateProvider:
 
         assert provider.snap_name == "deepseek-r1"
         assert provider.model_name == "custom-model"
+
+    @patch("cantrip.llm.fireworks.FireworksProvider._probe_capabilities")
+    def test_create_fireworks_default(self, _mock_probe):
+        """Default Fireworks provider uses the Kimi K2 agentic model."""
+        with patch.dict("os.environ", {"FIREWORKS_API_KEY": "test-key"}):
+            provider = create_provider("fireworks")
+
+        from cantrip.llm.fireworks import DEFAULT_MODEL, FireworksProvider
+
+        assert isinstance(provider, FireworksProvider)
+        assert provider.model_name == DEFAULT_MODEL
+        assert provider.base_url == "https://api.fireworks.ai/inference/v1"
+
+    @patch("cantrip.llm.fireworks.FireworksProvider._probe_capabilities")
+    def test_create_fireworks_custom_model(self, _mock_probe):
+        """``--model`` overrides the Fireworks default."""
+        with patch.dict("os.environ", {"FIREWORKS_API_KEY": "test-key"}):
+            provider = create_provider("fireworks", model="accounts/fireworks/models/glm-5p1")
+
+        assert provider.model_name == "accounts/fireworks/models/glm-5p1"
+
+    def test_create_fireworks_requires_api_key(self):
+        """Missing FIREWORKS_API_KEY surfaces an actionable ProviderError."""
+        from cantrip.llm.base import ProviderError
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            pytest.raises(ProviderError, match="FIREWORKS_API_KEY"),
+        ):
+            create_provider("fireworks")
+
+    @patch("cantrip.llm.openai_compatible.OpenAICompatibleProvider._probe_context_window")
+    def test_create_openai_compatible(self, _mock_probe):
+        """openai-compatible requires base_url + model and picks them up."""
+        with patch.dict("os.environ", {"OPENAI_COMPATIBLE_API_KEY": "test-key"}):
+            provider = create_provider(
+                "openai-compatible",
+                model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                base_url="https://api.together.xyz/v1",
+            )
+
+        from cantrip.llm.openai_compatible import OpenAICompatibleProvider
+
+        assert isinstance(provider, OpenAICompatibleProvider)
+        assert provider.base_url == "https://api.together.xyz/v1"
+        assert provider.model_name == "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+
+    def test_create_openai_compatible_requires_base_url(self):
+        """openai-compatible without --base-url fails before constructing."""
+        with pytest.raises(ValueError, match="base-url"):
+            create_provider("openai-compatible", model="some-model")
+
+    def test_create_openai_compatible_requires_model(self):
+        """openai-compatible without --model fails before constructing."""
+        with pytest.raises(ValueError, match="model"):
+            create_provider("openai-compatible", base_url="https://example.com/v1")

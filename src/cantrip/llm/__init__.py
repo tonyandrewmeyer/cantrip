@@ -92,13 +92,18 @@ def create_provider(
     model: str | None = None,
     *,
     snap_name: str = "gemma3",
+    base_url: str | None = None,
 ) -> LLMProvider:
     """Create an LLM provider by name.
 
     Args:
-        name: Provider name ("gemini", "claude", or "inference-snap").
+        name: Provider name — one of ``inference-snap``, ``gemini``,
+            ``claude``, ``fireworks``, ``openai-compatible``.
         model: Optional model override. If not given, the provider's default is used.
         snap_name: Inference snap to use (only for "inference-snap" provider).
+        base_url: Override the API base URL.  Required for
+            ``openai-compatible``; optional for ``inference-snap`` and
+            ``fireworks``.
     """
     if name == "gemini":
         from cantrip.llm.gemini import GeminiProvider
@@ -122,9 +127,37 @@ def create_provider(
         kwargs: dict = {"snap_name": snap_name}
         if model:
             kwargs["model"] = model
+        if base_url:
+            kwargs["base_url"] = base_url
         return InferenceSnapProvider(**kwargs)
+
+    elif name == "fireworks":
+        from cantrip.llm.fireworks import FireworksProvider
+
+        fw_kwargs: dict = {}
+        if model:
+            fw_kwargs["model"] = model
+        if base_url:
+            fw_kwargs["base_url"] = base_url
+        return FireworksProvider(**fw_kwargs)
+
+    elif name == "openai-compatible":
+        from cantrip.llm.openai_compatible import OpenAICompatibleProvider
+
+        if not base_url:
+            raise ValueError(
+                "Provider 'openai-compatible' requires --base-url "
+                "(e.g. https://api.together.xyz/v1)."
+            )
+        if not model:
+            raise ValueError(
+                "Provider 'openai-compatible' requires --model — there is "
+                "no sensible default across arbitrary endpoints."
+            )
+        return OpenAICompatibleProvider(model=model, base_url=base_url)
 
     else:
         raise ValueError(
-            f"Unknown provider: {name!r}. Use 'gemini', 'claude', or 'inference-snap'."
+            f"Unknown provider: {name!r}. Use 'gemini', 'claude', "
+            f"'inference-snap', 'fireworks', or 'openai-compatible'."
         )

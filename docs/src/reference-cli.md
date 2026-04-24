@@ -51,21 +51,33 @@ Start the agent and build or improve a charm.
 ### Provider and model
 
 <dl>
-  <dt>--provider {gemini,claude,inference-snap}</dt>
+  <dt>--provider {gemini,claude,inference-snap,fireworks,openai-compatible}</dt>
   <dd>
     LLM provider to use. Default: <code>gemini</code>.
+    See <a href="howto-provider.html">Choose an LLM provider</a>
+    for a full comparison.
   </dd>
 
   <dt>--model MODEL</dt>
   <dd>
     Specific model name. Provider-dependent. When omitted, the
-    provider's default model is used.
+    provider's default model is used. Required with
+    <code>--provider openai-compatible</code>.
   </dd>
 
   <dt>--snap SNAP_NAME</dt>
   <dd>
     Inference snap name when using <code>--provider inference-snap</code>.
     Default: <code>gemma3</code>.
+  </dd>
+
+  <dt>--base-url URL</dt>
+  <dd>
+    API base URL override. Required with
+    <code>--provider openai-compatible</code> (e.g.
+    <code>https://api.together.xyz/v1</code>). Optional for
+    <code>inference-snap</code> (overrides snap discovery) and
+    <code>fireworks</code> (for proxies or compatible hosts).
   </dd>
 </dl>
 
@@ -78,7 +90,7 @@ Start the agent and build or improve a charm.
     Auto-detected if omitted.
   </dd>
 
-  <dt>--light-provider {gemini,claude,inference-snap}</dt>
+  <dt>--light-provider {gemini,claude,inference-snap,fireworks}</dt>
   <dd>
     Use a different provider for light tasks, enabling hybrid mode.
   </dd>
@@ -489,6 +501,8 @@ for configuration.
 |---|---|---|
 | `GEMINI_API_KEY` | `--provider gemini` | Google Gemini API key |
 | `ANTHROPIC_API_KEY` | `--provider claude` | Anthropic API key |
+| `FIREWORKS_API_KEY` | `--provider fireworks` | Fireworks.ai API key |
+| `OPENAI_COMPATIBLE_API_KEY` | `--provider openai-compatible` | Bearer token for the configured endpoint; set to any non-empty string when auth is not required. |
 | `CANTRIP_MEMORY_DIR` | optional | Override the global memory directory. Defaults to `$XDG_CONFIG_HOME/cantrip/memory` (falls back to `~/.config/cantrip/memory`). |
 | `CANTRIP_MEMORY_SOFT_EXPIRY_DAYS` | optional | Days untouched before a memory is archived by `memory_sweep`. Default `60`. Non-integer or non-positive values log a warning and fall back to the default. |
 | `CANTRIP_MEMORY_HARD_EXPIRY_DAYS` | optional | Days archived before a memory is surfaced as a deletion candidate by `memory_purge_check`. Default `180`. |
@@ -560,8 +574,8 @@ non-blocking notice:
 The upgrade command is installer-aware. Cantrip inspects
 `sys.executable` to pick among
 `uv tool upgrade cantrip`, `pipx upgrade cantrip`,
-`pip install --user --upgrade cantrip`,
-`pip install --upgrade cantrip`, and
+`uv pip install --user --upgrade cantrip`,
+`uv pip install --upgrade cantrip`, and
 `snap refresh cantrip`. When nothing matches the
 notice falls back to the PyPI URL rather than guess.
 

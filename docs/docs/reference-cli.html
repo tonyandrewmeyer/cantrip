@@ -87,19 +87,30 @@ cantrip --help
 </dl>
 <h3>Provider and model</h3>
 <dl>
-  <dt>--provider {gemini,claude,inference-snap}</dt>
+  <dt>--provider {gemini,claude,inference-snap,fireworks,openai-compatible}</dt>
   <dd>
     LLM provider to use. Default: <code>gemini</code>.
+    See <a href="howto-provider.html">Choose an LLM provider</a>
+    for a full comparison.
   </dd>
   <dt>--model MODEL</dt>
   <dd>
     Specific model name. Provider-dependent. When omitted, the
-    provider's default model is used.
+    provider's default model is used. Required with
+    <code>--provider openai-compatible</code>.
   </dd>
   <dt>--snap SNAP_NAME</dt>
   <dd>
     Inference snap name when using <code>--provider inference-snap</code>.
     Default: <code>gemma3</code>.
+  </dd>
+  <dt>--base-url URL</dt>
+  <dd>
+    API base URL override. Required with
+    <code>--provider openai-compatible</code> (e.g.
+    <code>https://api.together.xyz/v1</code>). Optional for
+    <code>inference-snap</code> (overrides snap discovery) and
+    <code>fireworks</code> (for proxies or compatible hosts).
   </dd>
 </dl>
 <h3>Light model (cost routing)</h3>
@@ -109,7 +120,7 @@ cantrip --help
     Cheaper model for internal tasks (compaction, research summaries).
     Auto-detected if omitted.
   </dd>
-  <dt>--light-provider {gemini,claude,inference-snap}</dt>
+  <dt>--light-provider {gemini,claude,inference-snap,fireworks}</dt>
   <dd>
     Use a different provider for light tasks, enabling hybrid mode.
   </dd>
@@ -462,6 +473,16 @@ for configuration.</p>
 <td>Anthropic API key</td>
 </tr>
 <tr>
+<td><code>FIREWORKS_API_KEY</code></td>
+<td><code>--provider fireworks</code></td>
+<td>Fireworks.ai API key</td>
+</tr>
+<tr>
+<td><code>OPENAI_COMPATIBLE_API_KEY</code></td>
+<td><code>--provider openai-compatible</code></td>
+<td>Bearer token for the configured endpoint; set to any non-empty string when auth is not required.</td>
+</tr>
+<tr>
 <td><code>CANTRIP_MEMORY_DIR</code></td>
 <td>optional</td>
 <td>Override the global memory directory. Defaults to <code>$XDG_CONFIG_HOME/cantrip/memory</code> (falls back to <code>~/.config/cantrip/memory</code>).</td>
@@ -570,8 +591,8 @@ detected installer.</li>
 <p>The upgrade command is installer-aware. Cantrip inspects
 <code>sys.executable</code> to pick among
 <code>uv tool upgrade cantrip</code>, <code>pipx upgrade cantrip</code>,
-<code>pip install --user --upgrade cantrip</code>,
-<code>pip install --upgrade cantrip</code>, and
+<code>uv pip install --user --upgrade cantrip</code>,
+<code>uv pip install --upgrade cantrip</code>, and
 <code>snap refresh cantrip</code>. When nothing matches the
 notice falls back to the PyPI URL rather than guess.</p>
 <p>Pre-releases (<code>1.2.0rc1</code>) are hidden unless the
