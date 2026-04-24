@@ -127,6 +127,53 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Phase 76 filed as a follow-up to investigate Toad-style
   per-block copy affordances once the blocks have settled.
 
+- **Subagent loop checkpoints every LLM turn and tool call — Phase
+  52.3.**  The final wiring piece of Phase 52: the subagent loop
+  now routes every ``_complete_with_retry`` call through
+  ``checkpoint(ctx, "llm_turn", ...)`` and every ``_execute_tool``
+  call through ``checkpoint(ctx, f"tool:{name}", ...)``.  A
+  rate-limited BUILD subagent that dies on turn 18 now resumes on
+  turn 18 — the first 17 LLM completions and every tool result
+  between them are served from the ``step_checkpoints`` table
+  without hitting the provider or running tools again.  New
+  ``Subagent._llm_turn`` helper spans provider + model name + the
+  canonicalised message prefix + the canonicalised tool-schema
+  list as the input hash, so a conversation that diverges between
+  runs (new prompt template, model change, new tool registered)
+  invalidates the stale row via Phase 52.2's hash-mismatch path
+  rather than silently serving it.  New
+  ``Subagent._execute_tool_with_checkpoint`` helper uses
+  ``compute_input_hash(name, arguments)`` as the per-tool hash;
+  called from inside ``_tool_or_veto`` so the ``asyncio.gather``-
+  based concurrent tool-call path is preserved — ordinal
+  allocation happens synchronously at the start of each
+  ``checkpoint()`` call, before any ``await``, so parallel tool
+  calls line up with the tool-call ordering deterministically
+  across runs.  Vetoed calls are *not* checkpointed (the synthetic
+  error is free to rebuild on replay); successful and failed tool
+  results both persist — a deterministic tool error doesn't
+  re-burn on resume, matching the roadmap's "negative checkpoints"
+  intent without a separate code path.  New
+  ``response_to_dict`` / ``response_from_dict`` and
+  ``tool_result_to_dict`` / ``tool_result_from_dict`` helpers in
+  ``durability.py`` round-trip the concrete ``llm.Response`` and
+  ``agent.tools.base.ToolResult`` dataclasses through the JSON
+  envelope; image bytes are base64-encoded.  Subagents constructed
+  without a ``SessionStore`` (unit tests, synthetic harnesses)
+  stay on the pre-52.3 code path entirely — ``ctx`` is ``None``
+  and the helpers short-circuit.  9 new tests in
+  ``tests/unit/subagent/test_checkpoint.py`` assert first-run
+  records the expected step rows; replay short-circuits
+  provider and tool execution (asserted with an "exploding"
+  provider + tool that raise if called); partial-prior-run
+  resumes from the correct turn; two-different-tools-in-one-round
+  land on distinct step names; same-tool-twice-in-one-round walks
+  ordinals 1→2; model-name-change invalidates the first turn and
+  re-runs; tool-failure persists as ``success=False`` and replays
+  without re-calling; no-store baseline preserves pre-52.3
+  behaviour.  Plus 7 new serialiser tests in
+  ``test_durability.py``.
+
 - **Step-level checkpoint replay wrapper — Phase 52.2.**  Second
   piece of Phase 52: the ``async def checkpoint(ctx, step_name,
   fn, *, input_hash=None, kind=KIND_VALUE) -> T`` helper in

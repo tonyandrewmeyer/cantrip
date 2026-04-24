@@ -18,9 +18,15 @@ from cantrip.agent.durability import (
     CheckpointStore,
     checkpoint,
     compute_input_hash,
+    response_from_dict,
+    response_to_dict,
     should_keep_checkpoints,
+    tool_result_from_dict,
+    tool_result_to_dict,
 )
 from cantrip.agent.store import SessionStore
+from cantrip.agent.tools.base import ToolResult as AgentToolResult
+from cantrip.llm.base import Image, Response, ToolCall
 
 
 @pytest.fixture
@@ -579,3 +585,90 @@ class TestCheckpointWrapper:
         record = checkpoints.get("t1", "llm_turn", 1)
         assert record is not None
         assert record.input_hash == ""
+
+
+class TestResponseSerialisation:
+    """``response_to_dict`` / ``response_from_dict`` round-trip an ``llm.Response``."""
+
+    def test_round_trips_content_only(self) -> None:
+        original = Response(content="hello world", finish_reason="stop")
+        restored = response_from_dict(response_to_dict(original))
+        assert restored.content == original.content
+        assert restored.finish_reason == original.finish_reason
+        assert restored.tool_calls == []
+
+    def test_round_trips_tool_calls(self) -> None:
+        original = Response(
+            content="",
+            tool_calls=[
+                ToolCall(id="tc1", name="read_file", arguments={"path": "foo.py"}),
+                ToolCall(id="tc2", name="grep", arguments={"pattern": "X", "files": ["a", "b"]}),
+            ],
+        )
+        restored = response_from_dict(response_to_dict(original))
+        assert len(restored.tool_calls) == 2
+        assert restored.tool_calls[0].id == "tc1"
+        assert restored.tool_calls[0].name == "read_file"
+        assert restored.tool_calls[0].arguments == {"path": "foo.py"}
+        assert restored.tool_calls[1].arguments == {"pattern": "X", "files": ["a", "b"]}
+
+    def test_round_trips_usage_and_metadata(self) -> None:
+        original = Response(
+            content="x",
+            usage={"prompt_tokens": 42, "completion_tokens": 17},
+            metadata={"_provider_name": "fake", "_task_category": "build"},
+        )
+        restored = response_from_dict(response_to_dict(original))
+        assert restored.usage == {"prompt_tokens": 42, "completion_tokens": 17}
+        assert restored.metadata["_task_category"] == "build"
+
+
+class TestToolResultSerialisation:
+    """``tool_result_to_dict`` / ``tool_result_from_dict`` round-trip agent tool results."""
+
+    def test_round_trips_success_path(self) -> None:
+        original = AgentToolResult(
+            success=True,
+            output="42 lines",
+            data={"count": 42},
+            caption="Read 42 lines from f.py",
+        )
+        restored = tool_result_from_dict(tool_result_to_dict(original))
+        assert restored.success is True
+        assert restored.output == "42 lines"
+        assert restored.data == {"count": 42}
+        assert restored.caption == "Read 42 lines from f.py"
+        assert restored.error is None
+        assert restored.images == []
+
+    def test_round_trips_failure_path(self) -> None:
+        original = AgentToolResult(
+            success=False,
+            output="",
+            error="snapd barfed",
+            caption="Pack failed",
+        )
+        restored = tool_result_from_dict(tool_result_to_dict(original))
+        assert restored.success is False
+        assert restored.error == "snapd barfed"
+        assert restored.caption == "Pack failed"
+
+    def test_round_trips_images_via_base64(self) -> None:
+        """Images carry raw bytes; the envelope base64-encodes them."""
+        raw = b"\x89PNG\r\n\x1a\n\x00\x01\x02"
+        original = AgentToolResult(
+            success=True,
+            output="screenshot",
+            images=[Image(data=raw, mime="image/png")],
+        )
+        envelope = tool_result_to_dict(original)
+        # Envelope is JSON-native — bytes were encoded, not left raw.
+        import json
+
+        blob = json.dumps(envelope)
+        assert isinstance(blob, str)
+        assert b"\x89".decode("latin-1") not in blob  # Raw bytes didn't leak in.
+        restored = tool_result_from_dict(envelope)
+        assert len(restored.images) == 1
+        assert restored.images[0].data == raw
+        assert restored.images[0].mime == "image/png"

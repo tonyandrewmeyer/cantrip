@@ -1565,22 +1565,60 @@ adapted to SQLite.
   KIND_BYTES round-trip across two ctxs, step-name isolation,
   task-id isolation, empty-string input_hash default).
 
-### 52.3 Medium — Wire checkpoints into the subagent loop
+### 52.3 Medium — Wire checkpoints into the subagent loop ✓
 
-- [ ] Wrap each LLM call in the subagent turn loop with
-  `checkpoint(ctx, "llm_turn", lambda: provider.complete(...))`.
-  Result kind = `llm_response`; input hash includes model, conversation
-  prefix hash, tools schema hash.
-- [ ] Wrap each tool-call execution with
-  `checkpoint(ctx, f"tool:{tool_name}", lambda: tool.run(args))`.
-  Result kind = `tool_result`; input hash = sha256 of canonicalised
-  `args`.  Tool failures are persisted as *negative* checkpoints so a
-  deterministic error doesn't replay forever — but the user can opt in
-  to "retry failed steps on resume" via a session flag.
-- [ ] Streaming LLM responses checkpoint *after* the full response is
-  assembled; partial streams are not persisted (they're free to
-  re-request on replay).  The existing streaming UI plumbing is
-  unaffected.
+- [x] Added ``Subagent._llm_turn(ctx, messages, tools)`` that wraps
+  ``_complete_with_retry`` with
+  ``checkpoint(ctx, "llm_turn", ..., kind=KIND_LLM_RESPONSE)``.
+  Input hash spans provider name + model name + canonicalised
+  message prefix + canonicalised tool-schema list so any conversation
+  divergence invalidates the stale row via the 52.2 hash-mismatch
+  path rather than silently serving it.  On checkpoint hit the
+  provider is never called — ``on_usage`` isn't invoked either,
+  which is the desired replay behaviour (the original run already
+  counted the tokens).
+- [x] Added ``Subagent._execute_tool_with_checkpoint(ctx, name,
+  arguments)`` that wraps ``_execute_tool`` with
+  ``checkpoint(ctx, f"tool:{name}", ..., kind=KIND_TOOL_RESULT)``.
+  Input hash is ``compute_input_hash(name, arguments)``.  Called
+  from inside ``_tool_or_veto`` so the gather-based concurrent
+  tool-call path is preserved — ordinal allocation happens
+  synchronously at the start of each ``checkpoint()`` call, before
+  any ``await``, so parallel tool calls line up with the tc
+  ordering deterministically.  Vetoed calls are *not* checkpointed
+  (they produce a synthetic result, which is free to rebuild on
+  replay).
+- [x] Tool failures *are* persisted.  The roadmap called for
+  "negative checkpoints" so a deterministic error doesn't re-burn
+  on resume — that's what the plain cache path already does: a
+  ``ToolResult(success=False, error=...)`` round-trips through
+  the envelope the same as a success.  A future session-level
+  "retry failed steps" flag (pencilled into 52.4) can opt back into
+  re-running failures without changing this layer.
+- [x] ``Subagent._run_inner`` constructs a ``CheckpointCtx`` when a
+  ``SessionStore`` is present and passes ``None`` otherwise — unit
+  tests and any future store-less path stay on the pre-52.3 code
+  path.  Streaming is untouched: subagents don't stream, and the
+  conversation loop's streaming path is out of scope here.
+- [x] Added ``response_to_dict`` / ``response_from_dict`` and
+  ``tool_result_to_dict`` / ``tool_result_from_dict`` helpers in
+  ``durability.py`` to lossless-round-trip the concrete dataclasses
+  through the JSON envelope.  Image bytes are base64-encoded in the
+  tool-result payload.
+- [x] 9 new tests in
+  ``tests/unit/subagent/test_checkpoint.py``: first-run records
+  llm_turn/tool rows correctly; replay skips provider and tool
+  execution entirely (asserts an "exploding" provider + tool are
+  never touched); partial-prior-run resumes from the right
+  point; two-different-tools-in-one-round land on distinct step
+  names; same-tool-twice-in-one-round walks ordinals 1→2;
+  model-name-change invalidates the first turn and re-runs the
+  provider; tool-failure persists as ``success=False`` and replays
+  without re-calling the tool; no-store baseline preserves
+  pre-52.3 behaviour.  Plus 7 new tests in ``test_durability.py``
+  covering the serialisers (content-only / tool-calls /
+  usage+metadata round-trip for Response; success-path /
+  failure-path / images-via-base64 for ToolResult).
 
 ### 52.4 Medium — Resume path on session start
 

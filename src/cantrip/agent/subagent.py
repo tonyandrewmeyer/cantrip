@@ -13,6 +13,18 @@ from dataclasses import dataclass, field
 from importlib import resources
 from typing import TYPE_CHECKING, Any
 
+from cantrip.agent.durability import (
+    KIND_LLM_RESPONSE,
+    KIND_TOOL_RESULT,
+    CheckpointCtx,
+    CheckpointStore,
+    checkpoint,
+    compute_input_hash,
+    response_from_dict,
+    response_to_dict,
+    tool_result_from_dict,
+    tool_result_to_dict,
+)
 from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.retry import complete_with_retry
@@ -512,6 +524,33 @@ def _tools_for_llm(tools: list[Tool]) -> list[llm.Tool] | None:
     ]
 
 
+def _message_hash_repr(message: llm.Message) -> dict[str, Any]:
+    """Return a canonical dict for an :class:`llm.Message` used in input-hash composition.
+
+    Skips ``images`` and ``metadata`` — image bytes blow up the hash
+    payload and metadata is stamped by the provider on responses, not
+    inputs.  Tool calls and tool results are reduced to their
+    identifier-bearing fields so the same prefix across runs produces
+    the same digest.
+    """
+    return {
+        "role": message.role.value,
+        "content": message.content,
+        "tool_calls": [
+            {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in message.tool_calls
+        ],
+        "tool_results": [
+            {"id": tr.tool_call_id, "content": tr.content, "is_error": tr.is_error}
+            for tr in message.tool_results
+        ],
+    }
+
+
+def _tool_hash_repr(tool: llm.Tool) -> dict[str, Any]:
+    """Return a canonical dict for an :class:`llm.Tool` schema."""
+    return {"name": tool.name, "description": tool.description, "parameters": tool.parameters}
+
+
 def _task_instruction(task: AgentTask) -> str:
     """Format the initial USER message from the task title and description."""
     parts = [task.title]
@@ -856,6 +895,19 @@ class Subagent:
             llm.Message(role=llm.Role.USER, content=user_instruction),
         ]
 
+        # Checkpoint context tracks per-step ordinals for the replay
+        # path (Phase 52.3).  Bound to the session store so a run that
+        # rate-limits on turn 18 resumes from turn 18 instead of turn 1.
+        # When the subagent runs without a store (unit tests, synthetic
+        # harnesses), checkpointing is disabled — ``_llm_turn`` /
+        # ``_execute_tool_with_checkpoint`` skip the wrapper entirely.
+        ctx: CheckpointCtx | None = None
+        if self._store is not None:
+            ctx = CheckpointCtx(
+                store=CheckpointStore(self._store),
+                task_id=self._context.task.id,
+            )
+
         # Track message indices for persistent recording.
         msg_idx = 0
         if self._store:
@@ -876,7 +928,7 @@ class Subagent:
             msg_idx += 1
 
         llm_tools = _tools_for_llm(self._tools)
-        response = await self._complete_with_retry(messages, llm_tools)
+        response = await self._llm_turn(ctx, messages, llm_tools)
 
         rounds = 0
         while response.tool_calls and rounds < self._max_rounds:
@@ -946,7 +998,7 @@ class Subagent:
                         error=f"Blocked by {veto.veto_reason}",
                     )
                 else:
-                    result = await self._execute_tool(tc.name, arguments)
+                    result = await self._execute_tool_with_checkpoint(ctx, tc.name, arguments)
                 return result, int((time.monotonic() - call_start) * 1000)
 
             timed_results = await asyncio.gather(
@@ -1042,7 +1094,7 @@ class Subagent:
             # Trim older tool results if we are approaching the context limit.
             _truncate_messages(messages, self._provider.context_window_tokens)
 
-            response = await self._complete_with_retry(messages, llm_tools)
+            response = await self._llm_turn(ctx, messages, llm_tools)
 
         # Record the final assistant response.
         if self._store:
@@ -1107,3 +1159,73 @@ class Subagent:
     async def _execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Look up and execute a tool by name."""
         return await execute_tool(self._tool_map, name, arguments)
+
+    async def _llm_turn(
+        self,
+        ctx: CheckpointCtx | None,
+        messages: list[llm.Message],
+        tools: list[llm.Tool] | None,
+    ) -> llm.Response:
+        """Run one provider turn, checkpointing the response when a store is wired.
+
+        On checkpoint hit the LLM isn't called at all — the stored
+        :class:`llm.Response` is returned verbatim.  On miss the real
+        call fires, the response is serialised via :func:`response_to_dict`
+        and persisted, then returned to the caller as a live
+        :class:`llm.Response`.  The input hash spans provider name +
+        model name + serialised messages + serialised tool schemas so a
+        conversation that diverges from a prior run invalidates the
+        stale row rather than silently serving it.
+        """
+        if ctx is None:
+            return await self._complete_with_retry(messages, tools)
+
+        async def run_turn() -> dict[str, Any]:
+            response = await self._complete_with_retry(messages, tools)
+            return response_to_dict(response)
+
+        input_hash = compute_input_hash(
+            self._provider.name,
+            self._provider.model_name,
+            [_message_hash_repr(m) for m in messages],
+            [_tool_hash_repr(t) for t in tools] if tools else None,
+        )
+        data = await checkpoint(
+            ctx,
+            "llm_turn",
+            run_turn,
+            input_hash=input_hash,
+            kind=KIND_LLM_RESPONSE,
+        )
+        return response_from_dict(data)
+
+    async def _execute_tool_with_checkpoint(
+        self,
+        ctx: CheckpointCtx | None,
+        name: str,
+        arguments: dict[str, Any],
+    ) -> ToolResult:
+        """Run one tool call, checkpointing the result when a store is wired.
+
+        Failed tool calls are persisted as ``success=False`` rows —
+        Phase 52.3 deliberately caches deterministic errors so a
+        rate-limited task doesn't re-burn a broken tool on every
+        resume.  A future session-level "retry failed steps" flag
+        (Phase 52.4) can flip this behaviour.
+        """
+        if ctx is None:
+            return await self._execute_tool(name, arguments)
+
+        async def run_tool() -> dict[str, Any]:
+            result = await self._execute_tool(name, arguments)
+            return tool_result_to_dict(result)
+
+        input_hash = compute_input_hash(name, arguments)
+        data = await checkpoint(
+            ctx,
+            f"tool:{name}",
+            run_tool,
+            input_hash=input_hash,
+            kind=KIND_TOOL_RESULT,
+        )
+        return tool_result_from_dict(data)

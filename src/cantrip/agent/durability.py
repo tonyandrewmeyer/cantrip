@@ -1,16 +1,24 @@
-"""Step-level durable-execution checkpoints (Phase 52.1).
+"""Step-level durable-execution checkpoints (Phase 52).
 
 A subagent task that rate-limits on LLM turn 18 shouldn't restart
 from turn 1 on the next run.  This module exposes a small facade over
 :class:`~cantrip.agent.store.SessionStore` for recording each
 expensive step — LLM calls and tool invocations — so the replay path
-in Phases 52.2 / 52.3 can resume from the last completed checkpoint.
+in Phase 52.3's subagent wiring can resume from the last completed
+checkpoint.
 
-The facade stays deliberately thin in 52.1: it handles serialisation
-(JSON envelope with a raw-bytes escape hatch), ordinal allocation,
-and task-scoped garbage collection.  The replay wrapper
-(``checkpoint(ctx, step_name, fn)``) and the subagent wiring land in
-52.2 / 52.3.
+The module is layered:
+
+- 52.1 — :class:`CheckpointStore` handles the JSON envelope with a
+  raw-bytes escape hatch, ordinal allocation, and task-scoped GC.
+- 52.2 — :class:`CheckpointCtx` + :func:`checkpoint` are the replay
+  wrapper around arbitrary async work.
+- 52.3 — :func:`response_to_dict` / :func:`response_from_dict` and
+  :func:`tool_result_to_dict` / :func:`tool_result_from_dict`
+  serialise the concrete ``llm.Response`` and
+  ``agent.tools.base.ToolResult`` dataclasses into the JSON envelope
+  so the subagent loop's per-turn and per-tool checkpoints round-
+  trip losslessly across process restarts.
 
 Inspired by Armin Ronacher's *Absurd* (Postgres-backed durable
 execution) — the single-process SQLite flavour.  No queue, no
@@ -20,12 +28,16 @@ resume.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
+
+from cantrip.agent.tools.base import ToolResult
+from cantrip.llm import base as llm
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -352,6 +364,84 @@ async def checkpoint[T](
     return result
 
 
+# ---------------------------------------------------------------------------
+# 52.3 — concrete serialisers for LLM responses and tool results
+# ---------------------------------------------------------------------------
+
+
+def _encode_image(img: llm.Image) -> dict[str, str]:
+    """Base64-encode an image so it round-trips through JSON."""
+    return {"data_b64": base64.b64encode(img.data).decode("ascii"), "mime": img.mime}
+
+
+def _decode_image(payload: dict[str, str]) -> llm.Image:
+    return llm.Image(
+        data=base64.b64decode(payload["data_b64"].encode("ascii")),
+        mime=payload["mime"],
+    )
+
+
+def response_to_dict(response: llm.Response) -> dict[str, Any]:
+    """Serialise an :class:`llm.Response` into a JSON-compatible dict.
+
+    Tool calls carry arbitrary JSON argument payloads the model
+    produced; ``metadata`` and ``usage`` are plain dicts of primitives
+    already.  The envelope keeps nothing the caller didn't give us —
+    there's no hidden state in ``Response`` to recover.
+    """
+    return {
+        "content": response.content,
+        "tool_calls": [
+            {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in response.tool_calls
+        ],
+        "finish_reason": response.finish_reason,
+        "usage": dict(response.usage),
+        "metadata": dict(response.metadata),
+    }
+
+
+def response_from_dict(data: dict[str, Any]) -> llm.Response:
+    """Reconstruct an :class:`llm.Response` from :func:`response_to_dict`'s output."""
+    return llm.Response(
+        content=data.get("content", ""),
+        tool_calls=[
+            llm.ToolCall(id=tc["id"], name=tc["name"], arguments=dict(tc["arguments"]))
+            for tc in data.get("tool_calls", [])
+        ],
+        finish_reason=data.get("finish_reason", "stop"),
+        usage=dict(data.get("usage", {})),
+        metadata=dict(data.get("metadata", {})),
+    )
+
+
+def tool_result_to_dict(result: ToolResult) -> dict[str, Any]:
+    """Serialise a :class:`ToolResult` into a JSON-compatible dict.
+
+    Images carry raw bytes, so they're base64-encoded in the envelope.
+    Every other field is JSON-native or already a dict of primitives.
+    """
+    return {
+        "success": result.success,
+        "output": result.output,
+        "data": dict(result.data),
+        "error": result.error,
+        "images": [_encode_image(img) for img in result.images],
+        "caption": result.caption,
+    }
+
+
+def tool_result_from_dict(data: dict[str, Any]) -> ToolResult:
+    """Reconstruct a :class:`ToolResult` from :func:`tool_result_to_dict`'s output."""
+    return ToolResult(
+        success=bool(data["success"]),
+        output=data.get("output", ""),
+        data=dict(data.get("data", {})),
+        error=data.get("error"),
+        images=[_decode_image(img) for img in data.get("images", [])],
+        caption=data.get("caption"),
+    )
+
+
 def _json_default(value: object) -> object:
     """Extend :func:`json.dumps` to handle common non-JSON-native types.
 
@@ -385,5 +475,9 @@ __all__ = [
     "CheckpointStore",
     "checkpoint",
     "compute_input_hash",
+    "response_from_dict",
+    "response_to_dict",
     "should_keep_checkpoints",
+    "tool_result_from_dict",
+    "tool_result_to_dict",
 ]
