@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to add a custom skill &mdash; Cantrip</title>
+<meta name="description" content="Drop a standard-format skill into ~/.claude/skills/ or ~/.config/cantrip/skills/ and Cantrip uses it alongside the bundled charm-building skills.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-skills.html" class="current">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="reference-cli.html#slash-commands">Slash commands reference</a></li>
+      <li><a href="reference-tools.html">Agent tools reference</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Add a custom skill
+    </div>
+
+    <h1>Add a custom skill</h1>
+    <p class="subtitle">
+      Extend Cantrip's knowledge with your own charm-building skills &mdash; no recompile, no config edits, just a Markdown file in the right place.
+    </p>
+
+<h2 id="overview">What a skill is</h2>
+<p>A <strong>skill</strong> is a focused Markdown document that teaches Cantrip
+how to accomplish one charm-building task &mdash; how to write
+Scenario tests, how to set up ingress, how to migrate from
+Harness. The bundled set ships with Cantrip; the body loads on
+demand when the agent needs it.</p>
+<p>The same directory format is used by Claude Code, <code>gh skill</code>,
+Cursor, Codex, Gemini CLI, and Windsurf &mdash; so a skill authored
+for any of those tools works with Cantrip without translation.</p>
+<h2 id="locations">Where Cantrip looks</h2>
+<p>Cantrip discovers skills at startup from three places, in order:</p>
+<ol>
+<li><strong>Bundled skills</strong> inside the Cantrip package. You don't
+touch these.</li>
+<li><code>~/.claude/skills/</code> &mdash; shared with Claude Code and other
+vendor-neutral tools.</li>
+<li><code>~/.config/cantrip/skills/</code> &mdash; Cantrip-specific. Use this
+when you want a skill that only Cantrip should see.</li>
+</ol>
+<p>Later directories override earlier ones on name conflict, so a
+skill in <code>~/.config/cantrip/skills/scenario-tests/</code> takes
+precedence over the bundled version. Cantrip logs an
+<code>overrides</code> message at INFO level when this happens so the
+precedence is auditable.</p>
+<p>Missing directories are silently skipped &mdash; external
+directories are optional.</p>
+<h2 id="format">Skill format</h2>
+<p>Two layouts are accepted:</p>
+<ul>
+<li><strong>Directory style</strong> &mdash;
+<code>&lt;root&gt;/&lt;name&gt;/SKILL.md</code> (the Cantrip bundled layout and the
+Claude Code convention).</li>
+<li><strong>Single-file style</strong> &mdash; <code>&lt;root&gt;/&lt;name&gt;.md</code> (common in
+lightweight user skills).</li>
+</ul>
+<p>Both start with YAML frontmatter:</p>
+<pre><code class="language-markdown">---
+name: my-skill
+description: A one-line summary shown in the skill index.
+tools:
+  - juju_status
+  - read_file
+---
+
+# My skill
+
+The body is Markdown. Cantrip loads it on demand when the
+agent decides this skill is relevant to the task at hand.
+</code></pre>
+<ul>
+<li><strong><code>name</code></strong> (required) &mdash; the identifier Cantrip uses
+internally and the one the agent names when loading the
+skill. Must be unique across all discovered skills in the
+same precedence bucket.</li>
+<li><strong><code>description</code></strong> (required) &mdash; appears in the prompt-level
+skill index the agent reads on every turn, so it should be
+short and task-oriented (&quot;Writing Scenario tests&quot;, not &quot;A
+skill about testing&quot;).</li>
+<li><strong><code>tools</code></strong> (optional) &mdash; a list of tool names the skill
+expects to use. Accepts either a YAML list or Claude Code's
+comma-separated string (<code>tools: tool_a, tool_b</code>). Cantrip
+preserves this but does not enforce it yet &mdash; it becomes
+load-bearing when Phase 50.4 lands MCP-aware skills.</li>
+</ul>
+<h2 id="example">Example: a reminder about your team's charm conventions</h2>
+<pre><code class="language-bash">mkdir -p ~/.config/cantrip/skills
+cat &gt; ~/.config/cantrip/skills/team-conventions.md &lt;&lt;'EOF'
+---
+name: team-conventions
+description: Coding and review conventions for charms owned by the platform team.
+---
+
+# Team conventions
+
+- All charms use `ops[testing]` (Scenario) for unit tests,
+  never Harness.
+- Integration tests live in `tests/integration/` and use
+  Jubilant.
+- New charms must include `ops-tracing` from the start.
+- Pull requests need a reviewer from the platform team
+  before merging to `main`.
+EOF
+</code></pre>
+<p>Restart Cantrip. The new skill appears in
+<code>index.format_for_prompt()</code> and the agent can
+<code>load_skill(&quot;team-conventions&quot;)</code> the next time it's
+relevant.</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3>&quot;My skill isn't being picked up&quot;</h3>
+<p>Cantrip logs skipped skills at warning level. Start Cantrip
+with <code>--log-level=DEBUG</code> and look for lines like:</p>
+<pre><code>Skipping malformed skill file: /home/you/.claude/skills/bad/SKILL.md
+</code></pre>
+<p>The usual causes:</p>
+<ul>
+<li>The file is missing the opening <code>---</code> frontmatter delimiter.</li>
+<li>The frontmatter is not a YAML mapping (a bare list, for
+example).</li>
+<li><code>name</code> or <code>description</code> is missing or empty.</li>
+</ul>
+<h3>&quot;My skill overrides the bundled one &mdash; is that a mistake?&quot;</h3>
+<p>Cantrip logs this explicitly at INFO level:</p>
+<pre><code>Skill 'scenario-tests' from /home/you/.config/cantrip/skills/scenario-tests/SKILL.md
+overrides bundled at /path/to/cantrip/skills/scenario-tests/SKILL.md
+</code></pre>
+<p>If that's what you want, no action is needed. If you'd rather
+keep the bundled skill, rename your file or move it to a
+different directory.</p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

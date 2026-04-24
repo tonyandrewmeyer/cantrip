@@ -1097,15 +1097,53 @@ in the review window — Microsoft's `microsoft/skills` repository now includes
 MCP-aware Azure and cloud skills directly applicable to charm work (and to
 COS integration specifically).
 
-### 50.1 Medium — Import from standard-format Skills directories
+### 50.1 Medium — Import from standard-format Skills directories ✓
 
-- [ ] Discover skills in `~/.config/cantrip/skills/*.md` and
-  `~/.claude/skills/` that follow the standard YAML-frontmatter + markdown
-  shape, and surface them alongside Cantrip's built-in skills
-- [ ] Translate the frontmatter (`name`, `description`, `tools`) into
-  Cantrip's internal skill dataclass
-- [ ] Imported skills can reference MCP tools from Phase 45 when the MCP
-  client exposes them
+- [x] Discover skills in `~/.config/cantrip/skills/` and
+  `~/.claude/skills/` that follow the standard YAML-frontmatter +
+  markdown shape, and surface them alongside Cantrip's built-in
+  skills — ``SkillsIndex`` now accepts ``extra_dirs``; the default
+  constructor walks ``[bundled, ~/.claude/skills, ~/.config/cantrip/
+  skills]`` in order, with later directories winning on name
+  conflict (so a Cantrip-specific user skill trumps a shared Claude
+  Code skill, which trumps the bundled default).  Conflicts log at
+  INFO level so the override is auditable in the transcript.
+- [x] Both layouts are accepted: ``<root>/<name>/SKILL.md``
+  (directory style — Cantrip bundled + Claude Code convention) and
+  ``<root>/<name>.md`` (single-file style — common in lightweight
+  user skills).  ``_resolve_skill_file`` handles the shape selection
+  so either works without changing the loader.
+- [x] Translate the frontmatter (``name``, ``description``, ``tools``)
+  into Cantrip's internal skill dataclass — ``SkillMetadata`` grew a
+  ``tools: list[str]`` field (with a ``_coerce_tools`` helper that
+  accepts YAML lists, Claude Code's comma-separated string, or
+  nothing; malformed ``tools`` falls back to an empty list so
+  discovery never crashes) and a ``source`` tag
+  (``bundled`` / ``external``) so callers can distinguish provenance
+  at load time.
+- [x] Test isolation: explicit ``SkillsIndex(tmp_path)`` no longer
+  picks up external dirs (so unit tests can't accidentally read the
+  developer's real ``~/.claude/skills/``), and the ten bundled-skill
+  tests were switched to ``SkillsIndex(extra_dirs=[])`` to stay
+  isolated from host state.  10 new tests in
+  ``TestSkillsIndexExternalDirs`` cover missing-dir silence, external
+  skills appearing alongside bundled, name-conflict override +
+  INFO-level logging, single-file discovery, ``tools`` as list /
+  comma-string / malformed, ``source`` tag propagation, default-dir
+  ordering (Claude Code before Cantrip), and the test-isolation
+  guarantee.
+- [x] Imported skills can reference MCP tools from Phase 45 when the
+  MCP client exposes them — ``tools`` is preserved on the metadata
+  as forward-compatible groundwork for 50.4 (MCP-aware skills); the
+  loader doesn't enforce the list yet, but a user can already
+  declare MCP tool names in the frontmatter and they round-trip
+  through ``list_skills()``.
+- [x] ``docs/src/howto-skills.md`` added: covers skill format, the
+  three discovery locations with precedence, both on-disk layouts,
+  frontmatter fields, a worked example, and a troubleshooting
+  section for "my skill isn't picked up" / "my skill overrides the
+  bundled one".  Linked from ``_site.yaml`` and given a card on the
+  docs index.
 
 ### 50.2 Medium — Export Cantrip skills to the standard format
 

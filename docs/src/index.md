@@ -71,6 +71,18 @@ section: index
     </p>
   </a>
 
+  <a href="howto-skills.html" class="doc-card">
+    <span class="doc-card-label">How-to</span>
+    <h3>Add a custom skill</h3>
+    <p>
+      Drop a standard-format skill into
+      <code>~/.claude/skills/</code> or
+      <code>~/.config/cantrip/skills/</code> and Cantrip picks it
+      up at startup &mdash; vendor-neutral format, optional
+      <code>tools:</code> list, bundled skills can be overridden.
+    </p>
+  </a>
+
   <a href="howto-mcp.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Configure MCP servers</h3>

@@ -5,6 +5,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **User-authored skill directories — Phase 50.1.**  ``SkillsIndex``
+  now discovers vendor-neutral skills in ``~/.claude/skills/`` and
+  ``~/.config/cantrip/skills/`` alongside the bundled set.  The
+  default constructor walks ``[bundled, ~/.claude/skills,
+  ~/.config/cantrip/skills]`` in order, with later directories
+  winning on name conflict — so a Cantrip-specific user skill trumps
+  a shared Claude Code skill, which trumps the bundled default.
+  Conflicts log at INFO level so the override is auditable.  Both
+  on-disk layouts are accepted: ``<root>/<name>/SKILL.md`` (the
+  Cantrip bundled + Claude Code convention) and ``<root>/<name>.md``
+  (single-file style common in user skills).  ``SkillMetadata``
+  grew a ``tools: list[str]`` field (accepting either a YAML list
+  or Claude Code's comma-separated string; malformed entries fall
+  back to an empty list so discovery never crashes) and a ``source``
+  tag distinguishing ``bundled`` from ``external`` skills.
+  ``docs/src/howto-skills.md`` documents the format, the three
+  discovery locations, both on-disk layouts, and a
+  troubleshooting section.  Test isolation: explicit
+  ``SkillsIndex(tmp_path)`` no longer picks up host external dirs,
+  and the bundled-skill tests now pass ``extra_dirs=[]`` so they
+  stay deterministic.  10 new tests cover missing-dir silence,
+  external + bundled co-existence, name-conflict override with INFO
+  logging, single-file discovery, ``tools`` coercion (list / comma
+  string / malformed), ``source`` tag propagation, and default-dir
+  precedence.
+
 - **``juju_status_render`` tool — Phase 48.4.**  New observability tool
   that fetches the current ``juju status`` via Jubilant and renders it
   as a coloured tree PNG.  Layout follows the TUI graph screen: apps

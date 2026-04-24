@@ -144,7 +144,7 @@ class TestSkillsIndexWithBundledSkills:
     """Test against the actual bundled skills directory."""
 
     def test_bundled_skills_discovered(self) -> None:
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         skills = index.list_skills()
         names = {s.name for s in skills}
@@ -159,7 +159,7 @@ class TestSkillsIndexWithBundledSkills:
         assert "custom-charm" in names
 
     def test_bundled_skills_loadable(self) -> None:
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         for skill in index.list_skills():
             body = index.load_skill(skill.name)
@@ -168,7 +168,7 @@ class TestSkillsIndexWithBundledSkills:
     def test_security_review_skill_covers_charm_risks(self) -> None:
         """The security-review skill should name charm-specific risks so the
         subagent doesn't treat it as a generic OWASP pass."""
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         names = {s.name for s in index.list_skills()}
         assert "security-review" in names
@@ -185,7 +185,7 @@ class TestSkillsIndexWithBundledSkills:
 
     def test_find_bugs_skill_covers_charm_bugs(self) -> None:
         """The find-bugs skill should cover charm-specific bug classes."""
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         names = {s.name for s in index.list_skills()}
         assert "find-bugs" in names
@@ -203,7 +203,7 @@ class TestSkillsIndexWithBundledSkills:
     def test_charm_debug_skill_covers_diagnostic_workflow(self) -> None:
         """The charm-debug skill must prescribe the five-step inspection
         and the symptom → cause → action table."""
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         names = {s.name for s in index.list_skills()}
         assert "charm-debug" in names
@@ -227,7 +227,7 @@ class TestSkillsIndexWithBundledSkills:
     def test_benchmark_skill_covers_hook_benchmark_and_comparison(self) -> None:
         """The benchmark skill must wrap hook_benchmark and prescribe the
         before/after comparison pattern."""
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         names = {s.name for s in index.list_skills()}
         assert "benchmark" in names
@@ -249,7 +249,7 @@ class TestSkillsIndexWithBundledSkills:
         """The workspace skill must cover the manifest, cross-charm relation
         design, and coordinated integration tests — and actively discourage
         bundle authoring."""
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         names = {s.name for s in index.list_skills()}
         assert "workspace" in names
@@ -291,7 +291,7 @@ class TestSkillsIndexWithBundledSkills:
     def test_bundle_skill_covers_read_modify_deploy_and_refuses_new(self) -> None:
         """The bundle skill must cover existing-bundle consumption *and*
         actively steer the agent away from authoring new bundles."""
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         names = {s.name for s in index.list_skills()}
         assert "bundle" in names
@@ -315,7 +315,7 @@ class TestSkillsIndexWithBundledSkills:
 
     def test_charm_migration_skill_covers_all_four_migrations(self) -> None:
         """The charm-migration skill must cover all four legacy patterns end-to-end."""
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         names = {s.name for s in index.list_skills()}
         assert "charm-migration" in names
@@ -343,7 +343,7 @@ class TestSkillsIndexWithBundledSkills:
 
     def test_charm_library_skill_covers_authoring(self) -> None:
         """The charm-library skill should cover the end-to-end authoring flow."""
-        index = SkillsIndex()
+        index = SkillsIndex(extra_dirs=[])
         index.discover()
         names = {s.name for s in index.list_skills()}
         assert "charm-library" in names
@@ -363,6 +363,185 @@ class TestSkillsIndexWithBundledSkills:
             "charmlibs-",
         ):
             assert anchor in body, f"charm-library missing anchor: {anchor!r}"
+
+
+class TestSkillsIndexExternalDirs:
+    """Tests for Phase 50.1: standard-format skill dirs alongside bundled."""
+
+    def test_missing_external_dir_is_silent(self, tmp_path: Path) -> None:
+        """Non-existent external dirs must not emit a warning — they're optional."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        (bundled / "b").mkdir()
+        (bundled / "b" / "SKILL.md").write_text("---\nname: b\ndescription: b\n---\n\nBody\n")
+        missing = tmp_path / "does-not-exist"
+        index = SkillsIndex(bundled, extra_dirs=[missing])
+        index.discover()
+        # Only the bundled skill is indexed; no error.
+        assert [s.name for s in index.list_skills()] == ["b"]
+
+    def test_external_dir_skill_appears_alongside_bundled(self, tmp_path: Path) -> None:
+        """Skills in an external dir surface together with bundled ones."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        (bundled / "a").mkdir()
+        (bundled / "a" / "SKILL.md").write_text(
+            "---\nname: a\ndescription: a skill\n---\nBody a\n"
+        )
+
+        external = tmp_path / "external"
+        external.mkdir()
+        (external / "x").mkdir()
+        (external / "x" / "SKILL.md").write_text(
+            "---\nname: x\ndescription: x skill\n---\nBody x\n"
+        )
+
+        index = SkillsIndex(bundled, extra_dirs=[external])
+        index.discover()
+        names = [s.name for s in index.list_skills()]
+        assert names == ["a", "x"]
+
+    def test_external_dir_skill_overrides_bundled_on_name_conflict(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Later dirs win so user customisation trumps the bundled default."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        (bundled / "shared").mkdir()
+        (bundled / "shared" / "SKILL.md").write_text(
+            "---\nname: shared\ndescription: bundled version\n---\nBundled body\n"
+        )
+
+        external = tmp_path / "external"
+        external.mkdir()
+        (external / "shared").mkdir()
+        (external / "shared" / "SKILL.md").write_text(
+            "---\nname: shared\ndescription: user version\n---\nUser body\n"
+        )
+
+        index = SkillsIndex(bundled, extra_dirs=[external])
+        with caplog.at_level("INFO", logger="cantrip.agent.skills"):
+            index.discover()
+
+        [metadata] = index.list_skills()
+        assert metadata.description == "user version"
+        assert index.load_skill("shared") == "User body"
+        assert any("overrides" in record.message for record in caplog.records)
+
+    def test_external_single_file_skill_is_discovered(self, tmp_path: Path) -> None:
+        """A bare ``<name>.md`` at the top of the external dir is a valid skill."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        (external / "notes.md").write_text(
+            "---\nname: notes\ndescription: single-file skill\n---\n\nBody text.\n"
+        )
+
+        index = SkillsIndex(bundled, extra_dirs=[external])
+        index.discover()
+        [metadata] = index.list_skills()
+        assert metadata.name == "notes"
+        assert metadata.source == "external"
+        assert "Body text." in index.load_skill("notes")
+
+    def test_frontmatter_tools_parsed_as_list(self, tmp_path: Path) -> None:
+        """A ``tools`` list in frontmatter is preserved on the metadata."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        (external / "gh.md").write_text(
+            "---\nname: gh\ndescription: GitHub ops\ntools:\n  - git_clone\n  - gh_pr_create\n---\nBody\n"
+        )
+
+        index = SkillsIndex(bundled, extra_dirs=[external])
+        index.discover()
+        [metadata] = index.list_skills()
+        assert metadata.tools == ["git_clone", "gh_pr_create"]
+
+    def test_frontmatter_tools_parsed_as_comma_string(self, tmp_path: Path) -> None:
+        """Claude Code's comma-string ``tools`` shape is accepted too."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        (external / "ops.md").write_text(
+            "---\nname: ops\ndescription: Ops helpers\ntools: juju_status, juju_deploy\n---\nBody\n"
+        )
+
+        index = SkillsIndex(bundled, extra_dirs=[external])
+        index.discover()
+        [metadata] = index.list_skills()
+        assert metadata.tools == ["juju_status", "juju_deploy"]
+
+    def test_malformed_tools_falls_back_to_empty_list(self, tmp_path: Path) -> None:
+        """A non-list, non-string ``tools`` entry doesn't crash discovery."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        (external / "bad.md").write_text(
+            "---\nname: bad\ndescription: bad tools\ntools: 42\n---\nBody\n"
+        )
+
+        index = SkillsIndex(bundled, extra_dirs=[external])
+        index.discover()
+        [metadata] = index.list_skills()
+        assert metadata.tools == []
+
+    def test_source_tag_identifies_provenance(self, tmp_path: Path) -> None:
+        """``source`` distinguishes bundled vs external skills at load time."""
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        (bundled / "core").mkdir()
+        (bundled / "core" / "SKILL.md").write_text(
+            "---\nname: core\ndescription: core\n---\nBody\n"
+        )
+        external = tmp_path / "external"
+        external.mkdir()
+        (external / "user").mkdir()
+        (external / "user" / "SKILL.md").write_text(
+            "---\nname: user\ndescription: user skill\n---\nBody\n"
+        )
+
+        index = SkillsIndex(bundled, extra_dirs=[external])
+        index.discover()
+        by_name = {s.name: s for s in index.list_skills()}
+        assert by_name["core"].source == "bundled"
+        assert by_name["user"].source == "external"
+
+    def test_default_external_dirs_are_cantrip_then_claude(self) -> None:
+        """Cantrip-specific dir trumps shared Claude Code dir on name conflicts."""
+        from cantrip.agent.skills import _default_external_skill_dirs
+
+        dirs = _default_external_skill_dirs()
+        paths = [str(d) for d in dirs]
+        # Claude Code first (shared), Cantrip second (user-specific) — so
+        # Cantrip's wins the insertion-order contest in ``SkillsIndex``.
+        assert any(".claude/skills" in p for p in paths)
+        assert any(".config/cantrip/skills" in p for p in paths)
+        claude_idx = next(i for i, p in enumerate(paths) if ".claude/skills" in p)
+        cantrip_idx = next(i for i, p in enumerate(paths) if ".config/cantrip/skills" in p)
+        assert claude_idx < cantrip_idx, (
+            "Cantrip-specific dir must come after the shared Claude Code dir "
+            "so it wins the later-wins override."
+        )
+
+    def test_explicit_dir_does_not_pick_up_host_external_dirs(self, tmp_path: Path) -> None:
+        """Passing an explicit ``skills_dir`` isolates from the host environment.
+
+        Test authors rely on this isolation — a fixture that hands a
+        ``tmp_path`` to ``SkillsIndex`` must not accidentally read the
+        developer's real ``~/.claude/skills/``.
+        """
+        (tmp_path / "only").mkdir()
+        (tmp_path / "only" / "SKILL.md").write_text(
+            "---\nname: only\ndescription: the only skill\n---\nBody\n"
+        )
+        index = SkillsIndex(tmp_path)
+        index.discover()
+        assert [s.name for s in index.list_skills()] == ["only"]
 
 
 class TestLoadSkillTool:
