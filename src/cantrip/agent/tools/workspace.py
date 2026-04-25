@@ -95,8 +95,14 @@ class WorkspaceInfoTool(Tool):
             for key, value in workspace.shared_config.items():
                 lines.append(f"  {key}: {value}")
 
+        n_charms = len(workspace.charms)
+        n_relations = len(workspace.relations)
+        caption_parts = [f"{n_charms} charm{'s' if n_charms != 1 else ''}"]
+        if n_relations:
+            caption_parts.append(f"{n_relations} relation{'s' if n_relations != 1 else ''}")
         return ToolResult(
             success=True,
             output="\n".join(lines),
             data=workspace.to_dict() | {"manifest": str(manifest)},
+            caption=", ".join(caption_parts),
         )

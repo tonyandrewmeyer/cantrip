@@ -128,6 +128,7 @@ class RodneyTool(Tool):
                 success=True,
                 output=output.strip() or f"rodney {command} completed",
                 data={"command": command},
+                caption=f"rodney {command}",
             )
         except subprocess.TimeoutExpired:
             return ToolResult(

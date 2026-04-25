@@ -159,6 +159,7 @@ class RegistrySearchTool(Tool):
             success=True,
             output=output,
             data={"results": formatted, "total": total, "query": query},
+            caption=f"{total} image{'s' if total != 1 else ''} for {query!r}",
         )
 
 
@@ -286,8 +287,15 @@ class RegistryImageInfoTool(Tool):
             header = f"Tags for {display_name}:\n"
             output = header + "\n".join(lines)
 
+        if tag and tags:
+            caption = f"{image}:{tag}"
+        elif tag:
+            caption = f"{image}:{tag} not found"
+        else:
+            caption = f"{image}: {len(tags)} tag{'s' if len(tags) != 1 else ''}"
         return ToolResult(
             success=True,
             output=output,
             data={"image": image, "tags": tags},
+            caption=caption,
         )

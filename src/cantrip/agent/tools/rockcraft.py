@@ -104,6 +104,7 @@ class RockcraftInitTool(Tool):
                 success=True,
                 output=f"Initialised rock at {target_path}\n{result.stdout}",
                 data={"path": str(target_path), "profile": profile},
+                caption=f"Initialised rock ({profile})",
             )
         except subprocess.TimeoutExpired:
             return ToolResult(
@@ -292,6 +293,7 @@ class SkopeoRegistryPushTool(Tool):
                 success=True,
                 output=f"Pushed rock to {image_url}\n{result.stdout}",
                 data={"image_url": image_url},
+                caption=f"Pushed → {image_url}",
             )
         except subprocess.TimeoutExpired:
             return ToolResult(

@@ -289,6 +289,7 @@ class ConciergePrepareTool(Tool):
             success=True,
             output=f"Environment provisioned with preset '{preset}'.\n{stdout.strip()}",
             data={"preset": preset},
+            caption=f"Provisioned environment ({preset})",
         )
 
 
@@ -338,9 +339,21 @@ class ConciergeStatusTool(Tool):
                 error=f"Concierge status failed (exit {rc}): {stderr.strip()}",
             )
 
+        # Parse a quick summary out of the status output for the caption.
+        # Concierge prints lines like "juju: installed" / "k8s: installed" —
+        # count them up.  When no machine-parseable output, fall back to
+        # the line count so the caption stays informative.
+        out = stdout.strip()
+        lines = [line for line in out.splitlines() if ":" in line]
+        installed = sum(1 for line in lines if "installed" in line.lower())
         return ToolResult(
             success=True,
-            output=stdout.strip(),
+            output=out,
+            caption=(
+                f"{installed} component{'s' if installed != 1 else ''} installed"
+                if installed
+                else "concierge status"
+            ),
         )
 
 

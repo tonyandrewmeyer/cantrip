@@ -413,6 +413,8 @@ class BundleDeployTool(Tool):
                 "overlays": [str(p) for p in overlay_paths],
                 "trust": trust,
             },
+            caption=f"Deployed bundle {bundle_path.name}"
+            + (f" (+{len(overlay_paths)} overlay)" if overlay_paths else ""),
         )
 
 
@@ -490,10 +492,12 @@ class JujuTrustTool(Tool):
 
             action = "Revoked trust for" if remove else "Granted trust to"
             scope_note = f" (scope={scope})" if scope else ""
+            verb = "Revoked trust" if remove else "Trusted"
             return ToolResult(
                 success=True,
                 output=f"{action} {app_name}{scope_note}",
                 data={"app_name": app_name, "scope": scope, "remove": remove},
+                caption=f"{verb} {app_name}",
             )
         except TimeoutError:
             return ToolResult(
@@ -595,6 +599,7 @@ class JujuRefreshTool(Tool):
                 success=True,
                 output=f"Refreshed {app_name}" + (f" from {path}" if path else ""),
                 data={"app_name": app_name, "path": path},
+                caption=f"Refreshed {app_name}" + (f" → {channel}" if channel else ""),
             )
         except TimeoutError:
             return ToolResult(
@@ -743,10 +748,15 @@ class JujuSSHTool(Tool):
                 output = output[:8000]
                 truncated = True
 
+            # Caption: short command + unit, truncated for readability.
+            cmd_preview = command.split("\n")[0]
+            if len(cmd_preview) > 30:
+                cmd_preview = cmd_preview[:29] + "…"
             return ToolResult(
                 success=True,
                 output=output + ("\n…(output truncated at 8000 chars)" if truncated else ""),
                 data={"unit": unit, "command": command, "truncated": truncated},
+                caption=f"ssh {unit}: {cmd_preview}",
             )
         except TimeoutError:
             return ToolResult(
@@ -821,6 +831,7 @@ class JujuRunActionTool(Tool):
                 success=True,
                 output=json.dumps(result, indent=2) if isinstance(result, dict) else str(result),
                 data={"unit": unit, "action": action, "result": result},
+                caption=f"Ran {action} on {unit}",
             )
         except TimeoutError:
             return ToolResult(
@@ -890,6 +901,7 @@ class JujuAddModelTool(Tool):
                 success=True,
                 output=f"Model '{model}' created{suffix}.",
                 data={"model": model, "cloud": cloud},
+                caption=f"Added model {model}" + (f" on {cloud}" if cloud else ""),
             )
         except TimeoutError:
             return ToolResult(
@@ -965,6 +977,7 @@ class JujuDestroyModelTool(Tool):
                 success=True,
                 output=f"Model '{model}' destruction initiated.",
                 data={"model": model, "force": force},
+                caption=f"Destroyed {model}" + (" (force)" if force else ""),
             )
         except TimeoutError:
             return ToolResult(
@@ -1037,6 +1050,7 @@ class JujuOfferTool(Tool):
                 success=True,
                 output=f"Offer created: {app}:{endpoint}",
                 data={"app": app, "endpoint": endpoint, "model": model},
+                caption=f"Offered {app}:{endpoint}",
             )
         except TimeoutError:
             return ToolResult(
@@ -1114,6 +1128,7 @@ class JujuConsumeTool(Tool):
                     "alias": alias,
                     "model": model,
                 },
+                caption=f"Consumed {model_and_app}" + (f" as {alias}" if alias else ""),
             )
         except TimeoutError:
             return ToolResult(
@@ -1298,6 +1313,7 @@ class JujuWaitTool(Tool):
                 success=True,
                 output=f"{app_name} is active/idle. Units: {units_info}",
                 data={"app_name": app_name, "status": app.app_status.current},
+                caption=f"{app_name} settled (active/idle)",
             )
         except TimeoutError:
             return ToolResult(
@@ -1544,6 +1560,7 @@ class JujuDispatchTool(Tool):
                 success=True,
                 output=output or f"Event '{event}' dispatched on {unit} (no output).",
                 data={"unit": unit, "event": event},
+                caption=f"Dispatched {event} on {unit}",
             )
         except TimeoutError:
             return ToolResult(
@@ -1615,6 +1632,7 @@ class JujuListSecretsTool(Tool):
                     success=True,
                     output="No secrets found in the model.",
                     data={"secrets": [], "count": 0},
+                    caption="no secrets",
                 )
 
             lines = [f"Found {len(secrets)} secret(s):", ""]
@@ -1650,6 +1668,7 @@ class JujuListSecretsTool(Tool):
                 success=True,
                 output="\n".join(lines),
                 data={"secrets": secret_data, "count": len(secrets)},
+                caption=f"{len(secrets)} secret{'s' if len(secrets) != 1 else ''}",
             )
         except TimeoutError:
             return ToolResult(
@@ -1746,6 +1765,7 @@ class JujuShowSecretTool(Tool):
                 success=True,
                 output="\n".join(lines),
                 data=data,
+                caption=f"Secret {secret.name or identifier} (rev {secret.revision})",
             )
         except TimeoutError:
             return ToolResult(
@@ -1851,6 +1871,7 @@ class JujuReadRelationDataTool(Tool):
                 success=True,
                 output=msg,
                 data={"unit": unit, "relations": []},
+                caption=f"no relations on {unit}",
             )
 
         lines = [f"Relation data for {unit}:", ""]
@@ -1917,6 +1938,7 @@ class JujuReadRelationDataTool(Tool):
             success=True,
             output="\n".join(lines),
             data={"unit": unit, "relations": relation_list},
+            caption=f"{len(relation_list)} relation{'s' if len(relation_list) != 1 else ''} on {unit}",
         )
 
 
@@ -2108,6 +2130,11 @@ class JujuGetAppConfigTool(Tool):
                 for issue in validation:
                     lines.append(f"  ! {issue['key']}: {issue['issue']}")
 
+        caption = f"{app} config: {user_set_count} user-set, {len(config_list)} total"
+        if validation:
+            caption += (
+                f" ({len(validation)} validation issue{'s' if len(validation) != 1 else ''})"
+            )
         return ToolResult(
             success=True,
             output="\n".join(lines),
@@ -2117,6 +2144,7 @@ class JujuGetAppConfigTool(Tool):
                 "user_set_count": user_set_count,
                 "validation_issues": validation,
             },
+            caption=caption,
         )
 
 
@@ -2169,6 +2197,7 @@ class JujuListOffersTool(Tool):
                     success=True,
                     output="No cross-model offers found in the model.",
                     data={"offers": [], "count": 0},
+                    caption="no offers",
                 )
 
             lines = [f"Found {len(offers)} offer(s):", ""]
@@ -2202,6 +2231,7 @@ class JujuListOffersTool(Tool):
                 success=True,
                 output="\n".join(lines),
                 data={"offers": offer_list, "count": len(offers)},
+                caption=f"{len(offers)} offer{'s' if len(offers) != 1 else ''}",
             )
         except TimeoutError:
             return ToolResult(
@@ -2294,6 +2324,7 @@ class JujuRemoveApplicationTool(Tool):
                 success=True,
                 output=f"Removed application {app_name}.",
                 data={"app_name": app_name},
+                caption=f"Removed {app_name}" + (" (force)" if force else ""),
             )
         except (TimeoutError, OSError) as e:
             return ToolResult(success=False, output="", error=str(e))
@@ -2367,6 +2398,7 @@ class JujuShowUnitTool(Tool):
                 success=True,
                 output=output,
                 data={"unit": unit},
+                caption=f"Show {unit}",
             )
         except (TimeoutError, OSError) as e:
             return ToolResult(success=False, output="", error=str(e))

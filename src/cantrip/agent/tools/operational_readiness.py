@@ -717,8 +717,12 @@ class OperationalReadinessTool(Tool):
         except OSError:
             pass
 
+        score = data.get("overall_score", 0)
+        passed = data.get("total_passed", 0)
+        total = data.get("total_checks", 0)
         return ToolResult(
             success=True,
             output=report,
             data=data,
+            caption=f"readiness: {passed}/{total} ({score}%)",
         )

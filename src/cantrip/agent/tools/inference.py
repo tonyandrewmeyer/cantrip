@@ -42,9 +42,11 @@ class ListInferenceSnapsTool(Tool):
                     + ", ".join(sorted(_SNAP_DEFAULTS))
                     + ". Install with: sudo snap install <name>"
                 ),
+                caption="no snaps installed",
             )
 
         lines = []
+        running_count = 0
         for snap in sorted(installed):
             endpoint = discover_snap_endpoint(snap)
             # Quick health check.
@@ -59,6 +61,7 @@ class ListInferenceSnapsTool(Tool):
                         if models:
                             model_name = models[0].get("id", "unknown")
                         status = "running"
+                        running_count += 1
             except httpx.HTTPError:
                 pass
 
@@ -68,4 +71,5 @@ class ListInferenceSnapsTool(Tool):
             success=True,
             output="Installed inference snaps:\n" + "\n".join(lines),
             data={"snaps": installed},
+            caption=f"{len(installed)} snap{'s' if len(installed) != 1 else ''}, {running_count} running",
         )

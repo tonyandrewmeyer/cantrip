@@ -3079,7 +3079,10 @@ also landed.  Captioned tools went from 28 to 73 of 111.
 
 Discovered while trimming ``_FALLBACK_OK``.  The original 84-tool
 fallback list was too coarse — most tools had clear one-line
-verdicts available.
+verdicts available.  The follow-up pass took the captioned share
+to **111 / 111**: every registered tool populates
+``ToolResult.caption`` on its success path, and ``_FALLBACK_OK``
+is empty.
 
 - [x] New ``TestCaptionCoverage`` test in
   ``test_tool_captions.py`` walks every ``Tool`` instance from
@@ -3089,21 +3092,47 @@ verdicts available.
   either populate ``result.caption`` on the success path or
   add their name to ``_FALLBACK_OK`` with a one-line
   justification, so the choice is a visible review decision.
-- [x] Drive-by captions for the highest-value remaining tools:
-  git plumbing (status / log / diff / init / branch / checkout
-  / add / stash), GitHub commands (PR create / view / list,
-  issue list, repo create / bootstrap), generators
-  (``generate_readme`` / ``generate_icon`` / ``generate_diagram``
-  / ``generate_docs`` / ``generate_load_test`` /
-  ``generate_tests`` / ``extract_design_decisions`` /
-  ``extract_troubleshooting``), test harnesses
-  (``test_report``, ``scaling_test``, ``upgrade_test``,
-  ``fuzz_charm``, ``chaos_test``, ``hook_benchmark``),
-  acceptance probes (the four listed under 81.3),
-  ``charmcraft_init`` / ``charmcraft_release`` /
-  ``charmcraft_upload``, ``charmhub_search`` / ``charmhub_info``,
-  ``rockcraft_pack``, ``multi_edit``, ``charmlint``,
-  ``charm_sync``, ``web_fetch``, ``web_search``, ``quick_pack``.
+- [x] Drive-by captions, in batches:
+  - **Batch 1** (with the 81.4 land): git plumbing
+    (status / log / diff / init / branch / checkout / add /
+    stash), GitHub commands (PR create / view / list, issue
+    list, repo create / bootstrap), generators
+    (``generate_readme`` / ``generate_icon`` /
+    ``generate_diagram`` / ``generate_docs`` /
+    ``generate_load_test`` / ``generate_tests`` /
+    ``extract_design_decisions`` /
+    ``extract_troubleshooting``), test harnesses
+    (``test_report``, ``scaling_test``, ``upgrade_test``,
+    ``fuzz_charm``, ``chaos_test``, ``hook_benchmark``),
+    acceptance probes (the four listed under 81.3),
+    ``charmcraft_init`` / ``charmcraft_release`` /
+    ``charmcraft_upload``, ``charmhub_search`` /
+    ``charmhub_info``, ``rockcraft_pack``, ``multi_edit``,
+    ``charmlint``, ``charm_sync``, ``web_fetch``,
+    ``web_search``, ``quick_pack``.
+  - **Batch 2** (clearing the long tail): the remaining Juju
+    family (``juju_trust``, ``juju_refresh``, ``juju_ssh``,
+    ``juju_run_action``, ``juju_add_model``,
+    ``juju_destroy_model``, ``juju_offer``, ``juju_consume``,
+    ``juju_wait``, ``juju_dispatch``, ``juju_get_app_config``,
+    ``juju_list_offers``, ``juju_list_secrets``,
+    ``juju_show_secret``, ``juju_show_unit``,
+    ``juju_remove_application``, ``juju_read_relation_data``,
+    ``juju_debug_log``, ``juju_stream_logs``,
+    ``bundle_deploy``), observability queries
+    (``loki_query``, ``tempo_query``), framework
+    (``analyse_framework``), terraform
+    (``generate_terraform`` / ``validate_terraform``),
+    inference / registry probes (``list_inference_snaps``,
+    ``registry_search`` / ``registry_image_info`` /
+    ``skopeo_registry_push``), workspace listings
+    (``workspace_info``), concierge (``concierge_prepare`` /
+    ``concierge_status``), readiness
+    (``operational_readiness``), PR review
+    (``pr_review`` / ``pr_review_reply``), accessibility
+    audits (``rodney`` / ``showboat``).
+- [x] ``_FALLBACK_OK`` is now empty.  Future fallback usage
+  will require an explicit code-review decision.
 
 ### What this phase is *not*
 

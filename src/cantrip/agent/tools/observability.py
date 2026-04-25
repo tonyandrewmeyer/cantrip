@@ -220,11 +220,14 @@ class JujuDebugLogTool(Tool):
             return ToolResult(
                 success=True,
                 output="(no log output matching the given filters)",
+                caption="no log lines",
             )
 
+        line_count = sum(1 for line in output.splitlines() if line.strip())
         return ToolResult(
             success=True,
             output=_truncate(output),
+            caption=f"{line_count} log line{'s' if line_count != 1 else ''}",
         )
 
 
@@ -325,11 +328,13 @@ class JujuStreamLogsTool(Tool):
             return ToolResult(
                 success=True,
                 output="(no log output matching the given filters)",
+                caption="no log lines",
             )
 
         return ToolResult(
             success=True,
             output=_truncate("\n".join(collected)),
+            caption=f"streamed {len(collected)} log line{'s' if len(collected) != 1 else ''}",
         )
 
 
@@ -449,11 +454,13 @@ class TempoQueryTool(Tool):
                 return ToolResult(
                     success=True,
                     output=f"No trace found with ID {trace_id}.",
+                    caption=f"trace {trace_id[:8]}: not found",
                 )
             return ToolResult(
                 success=True,
                 output=_truncate(formatted),
                 data={"trace_id": trace_id},
+                caption=f"trace {trace_id[:8]}",
             )
 
         traces = data.get("traces", [])
@@ -461,12 +468,14 @@ class TempoQueryTool(Tool):
             return ToolResult(
                 success=True,
                 output="No traces found matching the query.",
+                caption="no traces",
             )
 
         return ToolResult(
             success=True,
             output=_truncate(formatted),
             data={"count": len(traces)},
+            caption=f"{len(traces)} trace{'s' if len(traces) != 1 else ''}",
         )
 
 
@@ -573,6 +582,7 @@ class LokiQueryTool(Tool):
             return ToolResult(
                 success=True,
                 output="No log entries found matching the query.",
+                caption="no log entries",
             )
 
         # Flatten log entries from all streams.
@@ -589,6 +599,7 @@ class LokiQueryTool(Tool):
             return ToolResult(
                 success=True,
                 output="No log entries found matching the query.",
+                caption="no log entries",
             )
 
         output = "\n".join(lines)
@@ -596,6 +607,7 @@ class LokiQueryTool(Tool):
             success=True,
             output=_truncate(output),
             data={"count": len(lines)},
+            caption=f"{len(lines)} log entr{'ies' if len(lines) != 1 else 'y'}",
         )
 
 

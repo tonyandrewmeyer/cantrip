@@ -405,7 +405,12 @@ class CharmcraftInitTool(Tool):
     ) -> ToolResult:
         """Run charmcraft init."""
         try:
-            target_path = Path(path) / name
+            target_path = Path(path)
+            # Avoid creating a redundant ``name/name`` directory when the agent
+            # passes a path that already names the charm (common in sprint mode,
+            # where ``state.charm_path`` is pre-set to ``workspace/charm_name``).
+            if target_path.name != name:
+                target_path = target_path / name
             target_path.mkdir(parents=True, exist_ok=True)
 
             env = os.environ.copy()
@@ -1191,10 +1196,19 @@ class AnalyseFrameworkTool(Tool):
             if not output_lines:
                 output_lines.append("Could not detect framework. Manual configuration needed.")
 
+            framework = findings.get("framework")
+            profile = findings.get("profile")
+            if framework:
+                caption = f"Detected {framework}" + (f" ({profile})" if profile else "")
+            elif profile:
+                caption = f"Profile: {profile}"
+            else:
+                caption = "no framework detected"
             return ToolResult(
                 success=True,
                 output="\n".join(output_lines),
                 data=findings,
+                caption=caption,
             )
         except (subprocess.SubprocessError, OSError, yaml.YAMLError, ValueError) as e:
             return ToolResult(
@@ -1268,6 +1282,7 @@ class GenerateTerraformTool(Tool):
             success=True,
             output=summary,
             data={"terraform_path": str(tf_dir), "files": sorted(written)},
+            caption=f"Wrote {len(written)} terraform file{'s' if len(written) != 1 else ''}",
         )
 
 
@@ -1364,8 +1379,17 @@ class ValidateTerraformTool(Tool):
                 f"validate: FAILED\n{validate_result.stderr or validate_result.stdout}"
             )
 
+        if overall:
+            caption = "fmt + validate: PASSED"
+        elif fmt_ok:
+            caption = "fmt PASSED, validate FAILED"
+        elif validate_ok:
+            caption = "fmt FAILED, validate PASSED"
+        else:
+            caption = "fmt + validate: FAILED"
         return ToolResult(
             success=overall,
             output="\n".join(output_parts),
             data={"fmt_ok": fmt_ok, "validate_ok": validate_ok},
+            caption=caption,
         )

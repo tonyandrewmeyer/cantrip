@@ -116,6 +116,7 @@ class PrReviewTool(Tool):
                 success=True,
                 output="No review comments on this PR.",
                 data={"count": 0, "comments": []},
+                caption="no review comments",
             )
 
         lines = [_format_comment(c) for c in comments]
@@ -123,6 +124,7 @@ class PrReviewTool(Tool):
             success=True,
             output="\n\n---\n\n".join(lines),
             data={"count": len(comments), "comments": comments},
+            caption=f"{len(comments)} review comment{'s' if len(comments) != 1 else ''}",
         )
 
 
@@ -243,4 +245,5 @@ class PrReviewReplyTool(Tool):
             success=True,
             output=f"Reply posted to comment #{comment_id}.",
             data={"comment_id": comment_id},
+            caption=f"Replied to comment #{comment_id}",
         )

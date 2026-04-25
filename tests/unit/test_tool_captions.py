@@ -665,76 +665,14 @@ class TestAcceptanceCaptions:
 
 
 # Tools that intentionally rely on the formulaic ``tool_name(arg=value)``
-# fallback rather than populating ``ToolResult.caption`` directly.  Each
-# entry is a deliberate decision: the formulaic shape ("benchmark(path=foo)")
-# already conveys what the tool did, and a hand-written caption wouldn't add
-# meaningful information beyond that.
+# fallback rather than populating ``ToolResult.caption`` directly.
 #
-# Adding to this list requires reviewer judgement — prefer populating a
-# real caption when the tool's effect would be clearer with one
-# (file count, status verdict, deployed name, etc.).  See ``base.py``
-# :class:`ToolResult` docstring and Phase 75 for the rationale.
-_FALLBACK_OK: frozenset[str] = frozenset(
-    {
-        # Framework analysis — single ``path`` argument; output is a
-        # long structured report.
-        "analyse_framework",
-        # Bundle deploy — wraps Juju with a single bundle path.
-        "bundle_deploy",
-        # Concierge environment prep — long status walls, not one-line
-        # achievements.
-        "concierge_prepare",
-        "concierge_status",
-        # Terraform tools — single-path scaffolding / validation.
-        "generate_terraform",
-        "validate_terraform",
-        # Juju write-side actions and read-only probes whose value is
-        # the data (or where a count would lose specificity).  Captioned
-        # drive-bys for a future micro-pass.
-        "juju_add_model",
-        "juju_consume",
-        "juju_debug_log",
-        "juju_destroy_model",
-        "juju_dispatch",
-        "juju_get_app_config",
-        "juju_list_offers",
-        "juju_list_secrets",
-        "juju_offer",
-        "juju_read_relation_data",
-        "juju_refresh",
-        "juju_remove_application",
-        "juju_run_action",
-        "juju_show_secret",
-        "juju_show_unit",
-        "juju_ssh",
-        "juju_stream_logs",
-        "juju_trust",
-        "juju_wait",
-        # Inference and registry probes — the value is in the listing.
-        "list_inference_snaps",
-        "registry_image_info",
-        "registry_search",
-        "rockcraft_init",
-        "skopeo_registry_push",
-        # Observability — long query results.  ``loki_query(query=...)``
-        # and ``tempo_query(trace_id=...)`` fallbacks are clearer than
-        # any synthetic summary.
-        "loki_query",
-        "tempo_query",
-        # PR review tools — wrap gh; argument shape is enough.
-        "pr_review",
-        "pr_review_reply",
-        # Operational readiness — long Markdown report; no one-line summary.
-        "operational_readiness",
-        # Rodney / Showboat — accessibility / CSS audit tools, output is
-        # the report.
-        "rodney",
-        "showboat",
-        # Workspace info — listing tool; fallback ``workspace_info(path=...)``
-        # is enough.
-        "workspace_info",
-    }
-)
+# Empty as of Phase 81 — every registered tool populates
+# ``ToolResult.caption`` on its success path.  When a new tool can't
+# reasonably surface a one-line verdict, add the tool's ``name`` here
+# with a comment explaining why the formulaic
+# ``tool_name(arg=value)`` shape carries enough information.
+_FALLBACK_OK: frozenset[str] = frozenset()
 
 
 class TestCaptionCoverage:

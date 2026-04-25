@@ -5,32 +5,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
-- **Phase 81: tool-caption coverage and future-proof guard.**
-  ``run_command`` now captions ``"<base> (exit N)"`` plus a 40-char
-  output snippet so a failing call surfaces its error inline instead
-  of the formulaic fallback.  Juju write-side tools caption their
-  effect (``"Deployed redis to dev"``, ``"Set redis: debug=true"``,
-  ``"Integrated redis ↔ traefik"``, ``"4 apps, 1 blocked"``).  Test
-  harnesses (``run_charm_tests``, ``test_report``, ``chaos_test``,
-  ``scaling_test``, ``upgrade_test``, ``fuzz_charm``,
-  ``hook_benchmark``) and acceptance probes
-  (``action_exerciser``, ``relation_smoke_test``,
-  ``workload_endpoint_test``, ``config_variation_test``,
-  ``config_under_load_test``) caption pass/fail counts.
-  Drive-by captions for git plumbing (status / log / diff / init /
-  branch / checkout / add / stash), GitHub commands (PR create /
-  view / list, issue list, repo create / bootstrap), generators
-  (``generate_*``, ``extract_*``), ``charmcraft_init`` /
-  ``charmcraft_release`` / ``charmcraft_upload``,
-  ``charmhub_search`` / ``charmhub_info``, ``rockcraft_pack``,
-  ``multi_edit``, ``charmlint``, ``charm_sync``, ``web_fetch``,
-  ``web_search``, ``charm_audit``, ``acceptance_report``.  The
-  share of registered tools populating ``ToolResult.caption`` rose
-  from 28 / 111 to 73 / 111.  A new ``TestCaptionCoverage``
-  walks every ``Tool`` instance from ``build_tools()`` and fails
-  when a new tool is neither captioned nor on the explicit
-  ``_FALLBACK_OK`` allowlist, so future tools must make that
-  choice deliberately.
+- **Phase 81: 100 % tool-caption coverage and future-proof guard.**
+  Every registered ``Tool`` (111 of them) now populates
+  ``ToolResult.caption`` on its success path, replacing the
+  formulaic ``tool_name(arg=value)`` fallback with a one-line
+  human verdict.  Examples: ``run_command`` → ``"<base> (exit
+  N): <40-char snippet>"``, Juju write tools (``"Deployed redis
+  to dev"``, ``"Set redis: debug=true"``, ``"Integrated redis ↔
+  traefik"``, ``"4 apps, 1 blocked"``, ``"Trusted my-app"``,
+  ``"Refreshed my-app → latest/edge"``, ``"Ran restart-action on
+  my-app/0"``, ``"Added model dev on k8s"``, ``"Destroyed dev"``,
+  ``"Offered redis:db"``, ``"Consumed cos.grafana as dashboards"``,
+  ``"redis settled (active/idle)"``), test harnesses
+  (``"12 passed, 1 failed"``, ``"3 hooks, 1 slow"``,
+  ``"scaling redis: PASS"``), observability tools
+  (``"5 traces"``, ``"trace abc12345"``, ``"42 log entries"``),
+  generators (``"Wrote architecture.md (redis)"``,
+  ``"3 decisions"``), GitHub (``"Created PR #42"``,
+  ``"4 open PRs"``), inference / registry probes
+  (``"3 snaps, 2 running"``, ``"redis: 25 tags"``), readiness
+  reports (``"readiness: 47/52 (90%)"``).  ``_FALLBACK_OK`` is
+  empty as of this commit; the ``TestCaptionCoverage`` guard
+  fails for any new tool that doesn't either populate caption
+  or explicitly opt into the fallback with a comment.
 - **`setup_local_registry` tool + canonical k8s as default substrate.**
   The agent now treats the canonical ``k8s`` snap as the default
   substrate for new K8s charm work; ``microk8s`` is reserved for

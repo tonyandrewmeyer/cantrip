@@ -121,6 +121,7 @@ class ShowboatTool(Tool):
                 success=True,
                 output=output.strip() or f"showboat {command} completed",
                 data={"command": command, "file": file},
+                caption=f"showboat {command}",
             )
         except subprocess.TimeoutExpired:
             return ToolResult(
