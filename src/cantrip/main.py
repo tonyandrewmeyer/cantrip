@@ -17,10 +17,10 @@ if TYPE_CHECKING:
 
 # Markers that identify the Cantrip source tree when inspecting a
 # ``pyproject.toml``.  Having *both* avoids confusing a third-party
-# package called ``cantrip`` with the real source checkout: a fork of
-# our code is very likely to keep ``cantrip.main:main`` as its entry
+# package called ``juju-cantrip`` with the real source checkout: a fork
+# of our code is very likely to keep ``cantrip.main:main`` as its entry
 # point, while a namespace collision would not.
-_CANTRIP_PYPROJECT_NAME_MARKER = 'name = "cantrip"'
+_CANTRIP_PYPROJECT_NAME_MARKER = 'name = "juju-cantrip"'
 _CANTRIP_PYPROJECT_ENTRY_MARKER = "cantrip.main:main"
 
 
@@ -309,6 +309,14 @@ def parse_args() -> argparse.Namespace:
         help="Export only messages and events at or after an ISO timestamp",
     )
     export_parser.add_argument(
+        "--branch",
+        type=int,
+        default=None,
+        dest="filter_branch",
+        help="Export the conversation path leading to a specific turn id "
+        "(default: the currently active branch)",
+    )
+    export_parser.add_argument(
         "--page-size",
         type=int,
         default=None,
@@ -523,6 +531,7 @@ def _export_transcript(args: argparse.Namespace) -> int:
         task_id=getattr(args, "filter_task", None),
         phase=getattr(args, "filter_phase", None),
         since=getattr(args, "filter_since", None),
+        branch=getattr(args, "filter_branch", None),
     )
 
     fmt = args.fmt
