@@ -4,8 +4,10 @@ from unittest import mock
 
 import pytest
 
+from cantrip.agent.policy import GovernancePolicy
 from cantrip.agent.tools.environment import (
     ConciergePrepareTool,
+    ConciergeRestoreTool,
     ConciergeStatusTool,
     _concierge_already_running,
     _concierge_available,
@@ -473,6 +475,126 @@ class TestConciergeStatusTool:
         """Reports error on timeout."""
         with (
             mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            mock.patch(
+                "cantrip.agent.tools.environment._run_concierge",
+                side_effect=TimeoutError,
+            ),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "timed out" in result.error.lower()
+
+
+class TestConciergeRestoreTool:
+    """Tests for ConciergeRestoreTool — used by the fix-broken-juju-k8s skill."""
+
+    @pytest.fixture
+    def tool(self):
+        return ConciergeRestoreTool()
+
+    @pytest.fixture
+    def approve_destructive(self):
+        """Make ``discover_policies`` return a layer with destructive opt-in."""
+        return mock.patch(
+            "cantrip.agent.policy.discover_policies",
+            return_value=[GovernancePolicy(name="approve", approve_destructive=True)],
+        )
+
+    @pytest.fixture
+    def deny_destructive(self):
+        """Make ``discover_policies`` return no opt-in layers."""
+        return mock.patch("cantrip.agent.policy.discover_policies", return_value=[])
+
+    @pytest.mark.asyncio
+    async def test_concierge_not_installed(self, tool):
+        """Error when concierge is not on PATH."""
+        with mock.patch(
+            "cantrip.agent.tools.environment._concierge_available", return_value=False
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "not installed" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_destructive_gate_blocks_by_default(self, tool, deny_destructive):
+        """Without ``approve_destructive`` in the policy stack, restore refuses."""
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            deny_destructive,
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "destructive" in result.error.lower()
+        assert "approve_destructive" in result.error
+
+    @pytest.mark.asyncio
+    async def test_running_concierge_refused(self, tool, approve_destructive):
+        """Refuses to launch if another concierge is mid-run."""
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            approve_destructive,
+            mock.patch(
+                "cantrip.agent.tools.environment._concierge_already_running",
+                return_value=True,
+            ),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "already running" in result.error.lower()
+        assert result.data["concierge_running"] is True
+
+    @pytest.mark.asyncio
+    async def test_restore_success(self, tool, approve_destructive):
+        """Successful restore returns the concierge stdout."""
+        proc = _make_fake_process(stdout='msg="Removed snap" snap=lxd\n')
+
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            approve_destructive,
+            mock.patch(
+                "cantrip.agent.tools.environment._concierge_already_running",
+                return_value=False,
+            ),
+            mock.patch("asyncio.create_subprocess_exec", return_value=proc),
+        ):
+            result = await tool.execute()
+
+        assert result.success
+        assert "Environment restored" in result.output
+
+    @pytest.mark.asyncio
+    async def test_restore_failure(self, tool, approve_destructive):
+        """Non-zero exit reports the stderr verbatim."""
+        proc = _make_fake_process(returncode=1, stderr="no preset matched")
+
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            approve_destructive,
+            mock.patch(
+                "cantrip.agent.tools.environment._concierge_already_running",
+                return_value=False,
+            ),
+            mock.patch("asyncio.create_subprocess_exec", return_value=proc),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "no preset matched" in result.error
+
+    @pytest.mark.asyncio
+    async def test_restore_timeout(self, tool, approve_destructive):
+        """Reports error on timeout."""
+        with (
+            mock.patch("cantrip.agent.tools.environment._concierge_available", return_value=True),
+            approve_destructive,
+            mock.patch(
+                "cantrip.agent.tools.environment._concierge_already_running",
+                return_value=False,
+            ),
             mock.patch(
                 "cantrip.agent.tools.environment._run_concierge",
                 side_effect=TimeoutError,

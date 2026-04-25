@@ -5,6 +5,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **``fix-broken-juju-k8s`` skill and ``concierge_restore`` tool.**
+  When Juju, the ``k8s`` snap, microk8s, LXD, or concierge wedges
+  on a dev machine, the agent loads the new skill to triage (snap
+  services, stuck snap changes, disk pressure, system-Docker
+  conflicts with the ``k8s`` snap's bundled containerd) and reach
+  for ``sudo concierge restore`` + ``sudo concierge prepare`` to
+  rebuild from scratch.  The new ``ConciergeRestoreTool`` is
+  destructive and gated by the existing destructive-policy layer
+  (``approve_destructive: true``); without it, the tool surfaces
+  the exact ``sudo concierge ...`` command for the user to run.
+  The skill enumerates the common failure shapes seen in the field
+  (boltdb deadlock between system containerd and the snap, stuck
+  ``Doing`` snap changes, disk full, LXD bridge missing, microk8s
+  wedged) with copy-pasteable fixes.
+- **``run_command`` blocks Docker / system containerd installs.**
+  Token-level rejection of ``docker``, ``docker.io``, ``docker-ce``,
+  ``docker-ce-cli``, ``docker-engine``, ``docker-compose``,
+  ``docker-compose-plugin``, ``containerd``, and ``containerd.io``
+  in any argv (including the ``<name>_<version>_<arch>.deb``
+  shape used by ``dpkg -i``).  The dev machine's containerd is
+  provided by the ``k8s`` snap, and a parallel apt-installed
+  engine deadlocks both on ``/var/lib/containerd``'s boltdb.  The
+  error names the conflict and points at the
+  ``fix-broken-juju-k8s`` skill for recovery.  System prompt and
+  ``concierge`` skill updated with the same rule so the agent
+  never reaches for ``--extra-debs=docker.io`` either.
 - **Prompt-based review checks (Phase 70.4).**  New
   ``/review`` slash command runs every loaded *Check* — a
   markdown file with YAML frontmatter that asks the LLM to

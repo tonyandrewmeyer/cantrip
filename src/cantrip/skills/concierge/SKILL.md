@@ -265,6 +265,16 @@ concierge status
 2. **Use virtual machines for testing** — try configurations safely
 3. **Check status before and after** — `concierge status` shows what happened
 4. **Review preset contents** — know what will be installed before running
+5. **Never add Docker or system containerd to `--extra-debs` / `host.debs`** —
+   `docker.io`, `docker-ce`, `docker-engine`, `containerd`, and
+   `containerd.io` all conflict with the `k8s` snap's bundled
+   containerd (both target `/run/containerd/containerd.sock` and
+   `/var/lib/containerd`, deadlocking on the boltdb).  Charms
+   consume OCI images via skopeo + the k8s snap's runtime — a
+   system Docker engine is never needed.  The `run_command` tool
+   blocks these package names; the user's policy is explicit.  When
+   the cluster is already broken from a prior install, load the
+   `fix-broken-juju-k8s` skill.
 
 ### Development Workflow
 

@@ -56,7 +56,11 @@ def build_tools(
     )
     from cantrip.agent.tools.charmhub import CharmhubInfoTool, CharmhubSearchTool
     from cantrip.agent.tools.charmlint_tool import CharmlintTool
-    from cantrip.agent.tools.environment import ConciergePrepareTool, ConciergeStatusTool
+    from cantrip.agent.tools.environment import (
+        ConciergePrepareTool,
+        ConciergeRestoreTool,
+        ConciergeStatusTool,
+    )
     from cantrip.agent.tools.files import (
         EditFileTool,
         ListDirectoryTool,
@@ -215,6 +219,7 @@ def build_tools(
         # Environment
         ConciergePrepareTool(),
         ConciergeStatusTool(),
+        ConciergeRestoreTool(),
         # Git operations
         GitCloneTool(),
         GitInitTool(),

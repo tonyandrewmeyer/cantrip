@@ -203,6 +203,8 @@ K8s charms need an OCI image as a container resource. Choose the right approach:
 
 **Build a rock** when the application is custom code, needs framework extensions baked in, or no suitable image exists on a public registry. All 12-factor (Path A) charms build a rock.
 
+**Never install a Docker engine or system containerd on the dev box.** Cantrip handles images via the registry tools (Docker Hub HTTP API), `rockcraft`, and skopeo — none of which need a local Docker daemon. The `k8s` snap ships its own containerd; a parallel `docker.io` / `containerd` install deadlocks both. `run_command` rejects any install of `docker`, `docker.io`, `docker-ce`, `containerd`, or `containerd.io`. If the substrate is already wedged from a prior install, load the `fix-broken-juju-k8s` skill.
+
 **Two-step workflow for existing images:**
 1. `registry_search` — find candidate images on Docker Hub
 2. `registry_image_info` — inspect tags, sizes, architectures, and update dates

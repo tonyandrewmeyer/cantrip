@@ -342,3 +342,100 @@ class ConciergeStatusTool(Tool):
             success=True,
             output=stdout.strip(),
         )
+
+
+class ConciergeRestoreTool(Tool):
+    """Tool to reverse a previous ``concierge prepare``.
+
+    Used by the ``fix-broken-juju-k8s`` skill when Juju or the k8s
+    cluster is wedged — concierge's own restore knows how to remove
+    the providers it set up, including stopping stuck snap services.
+    Destructive: removes the Juju controller, LXD/k8s snaps, and any
+    workloads in the dev model.  Gated by the destructive-policy
+    layer (``approve_destructive: true``) so a casual session can't
+    nuke the environment without operator opt-in.
+    """
+
+    @property
+    def name(self) -> str:
+        return "concierge_restore"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Reverse a previous concierge prepare — removes Juju, the cloud substrate, "
+            "and any associated controllers/snaps. Use this to recover from a broken "
+            "Juju or Kubernetes cluster on a dev machine, then run concierge_prepare "
+            "again for a clean slate. DESTRUCTIVE: requires destructive-policy approval."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {},
+        }
+
+    async def execute(self) -> ToolResult:
+        """Run ``sudo concierge restore``."""
+        if not _concierge_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    "Concierge is not installed. "
+                    "Install it with: sudo snap install concierge --channel latest/edge"
+                ),
+            )
+
+        # Gate behind the destructive-policy layer.  Restore tears down
+        # the controller and provider snaps — operators must opt in
+        # ahead of time on a session-by-session basis.
+        from cantrip.agent.policy import compose_policies, discover_policies
+
+        composed = compose_policies(*discover_policies())
+        if not composed.approve_destructive:
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    "concierge_restore is destructive (removes the controller, "
+                    "Juju/LXD/k8s snaps, and any workloads).  Add "
+                    "``approve_destructive: true`` to a policy file "
+                    "(``~/.config/cantrip/policies/*.yaml`` or "
+                    "``<charm>/cantrip.policies.yaml``) to enable it."
+                ),
+            )
+
+        if _concierge_already_running():
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    "Another concierge process is already running. "
+                    "Wait for it to finish before starting a new one "
+                    "(check with `pgrep -a concierge`)."
+                ),
+                data={"concierge_running": True},
+            )
+
+        try:
+            rc, stdout, stderr = await _run_concierge("restore", timeout=600)
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="Concierge restore timed out after 600 seconds.",
+            )
+
+        if rc != 0:
+            return ToolResult(
+                success=False,
+                output=stdout,
+                error=f"Concierge restore failed (exit {rc}): {stderr.strip()}",
+            )
+
+        return ToolResult(
+            success=True,
+            output=f"Environment restored.\n{stdout.strip()}",
+        )

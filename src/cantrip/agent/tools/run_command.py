@@ -63,6 +63,65 @@ _WRAPPER_COMMANDS: frozenset[str] = frozenset(
 # reason as ``env`` — they mask what's actually being invoked.
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
+# Package names that must never be installed by the agent.  System
+# Docker (and its bundled containerd) actively breaks the ``k8s`` snap
+# on dev machines: both ship a containerd that uses
+# ``/run/containerd/containerd.sock`` and ``/var/lib/containerd``, and
+# they deadlock each other on the boltdb metadata store.  Charms
+# *consume* OCI images from Docker Hub, but the agent never needs the
+# Docker engine itself — charmcraft, rockcraft, and the k8s snap's
+# built-in containerd cover image building and runtime.
+#
+# Caught as a token-level match so ``apt install docker.io``,
+# ``snap install docker``, ``dpkg -i docker-ce_*.deb``, and
+# ``apt-get install -y docker-ce containerd.io`` all trip the same
+# rule, regardless of whether the base command would otherwise be
+# allowed.  See ``fix-broken-juju-k8s`` skill for the recovery flow
+# when an earlier install has already wedged the cluster.
+_BLOCKED_PACKAGES: frozenset[str] = frozenset(
+    {
+        "docker",
+        "docker.io",
+        "docker-ce",
+        "docker-ce-cli",
+        "docker-engine",
+        "docker-compose",
+        "docker-compose-plugin",
+        "containerd",
+        "containerd.io",
+    }
+)
+
+
+def _matches_blocked_package(token: str) -> str | None:
+    """Return the matching blocked package name, or ``None``.
+
+    Matches a bare token (``docker.io``) and the Debian-binary-package
+    filename shape ``<name>_<version>_<arch>.deb`` so ``dpkg -i
+    docker-ce_24.0.7-1_amd64.deb`` is rejected the same as ``apt
+    install docker-ce``.  A bare path like ``./docker.io`` is also
+    checked via its basename.
+    """
+    if token in _BLOCKED_PACKAGES:
+        return token
+    # ``./docker.io`` / ``/tmp/docker.io`` — treat as a relative
+    # reference to a blocked package only when the basename is the
+    # full match.  Avoids false positives on directory paths that
+    # merely contain ``docker``.
+    base = token.rsplit("/", 1)[-1]
+    if base in _BLOCKED_PACKAGES:
+        return base
+    if base.endswith(".deb"):
+        # Debian binary package convention is ``<name>_<version>_<arch>.deb``.
+        # Split off the first underscore-segment so we match the package
+        # name regardless of the version / architecture suffix.
+        stem = base[: -len(".deb")]
+        name = stem.split("_", 1)[0]
+        if name in _BLOCKED_PACKAGES:
+            return name
+    return None
+
+
 # Shell metacharacters that would enable pipelines / compound commands
 # under a shell=True interpreter.  We already run with shell=False, so
 # these are ineffective today, but rejecting them (a) makes the error
@@ -201,6 +260,30 @@ class RunCommandTool(Tool):
             )
 
         base = parts[0]
+
+        # Reject any attempt to install Docker or the system containerd —
+        # they conflict with the ``k8s`` snap's bundled containerd on
+        # the dev machine.  Token-level match (whole word, plus the
+        # ``<package>_<version>_<arch>.deb`` filename shape so ``dpkg
+        # -i docker-ce_24.0.7-1_amd64.deb`` trips the same rule).
+        # Trips regardless of which package manager is invoked or
+        # whether the base command would otherwise be allowed.
+        for token in parts[1:]:
+            blocked = _matches_blocked_package(token)
+            if blocked is not None:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=(
+                        f"Refusing to install blocked package '{blocked}'. "
+                        "System Docker / containerd conflict with the "
+                        "k8s snap's bundled containerd and wedge the "
+                        "cluster.  Charms consume OCI images via "
+                        "registry tools — they don't need a local "
+                        "Docker engine.  If the cluster is already "
+                        "broken, load the 'fix-broken-juju-k8s' skill."
+                    ),
+                )
 
         # Wrapper denylist takes precedence over the allowlist so that
         # adding ``env`` / ``bash`` to the allowlist (e.g. during local

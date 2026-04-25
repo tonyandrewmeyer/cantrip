@@ -285,6 +285,72 @@ class TestWrapperDenylist:
         assert "Environment-variable assignment" in result.error
 
 
+class TestBlockedPackages:
+    """Reject any command that tries to install Docker / containerd.
+
+    Defence-in-depth on top of the allowlist — none of ``apt`` /
+    ``apt-get`` / ``dpkg`` / ``snap`` are allowlisted by default, but
+    if an operator widens the allowlist for local debugging, the
+    docker block stays in place.  The dev machine's containerd is
+    provided by the ``k8s`` snap; a parallel apt-installed containerd
+    deadlocks both.
+    """
+
+    @pytest.fixture
+    def permissive_tool(self):
+        """Allowlist that includes the package managers a docker install would use."""
+        return RunCommandTool(
+            allowlist=frozenset({"apt", "apt-get", "dpkg", "snap", "yum", "dnf", "make"})
+        )
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "apt install docker.io",
+            "apt-get install -y docker-ce containerd.io",
+            "apt install docker",
+            "snap install docker",
+            "snap install --classic docker",
+            "dpkg -i docker-ce_24.0.7-1_amd64.deb",
+            "apt-get install containerd",
+            "apt install docker-engine",
+            "apt install docker-compose",
+        ],
+    )
+    async def test_docker_install_rejected(self, permissive_tool, command):
+        """Any install-shaped command mentioning a docker/containerd package fails."""
+        result = await permissive_tool.execute(command=command)
+        assert not result.success
+        assert "Refusing to install blocked package" in result.error
+        assert "k8s snap" in result.error
+
+    @pytest.mark.anyio
+    async def test_blocked_check_runs_before_allowlist(self, tool):
+        """``apt`` isn't on the default allowlist, but the docker token is the
+        more useful error to surface — the LLM should learn the policy, not
+        retry the same package via a different manager."""
+        result = await tool.execute(command="apt install docker.io")
+        assert not result.success
+        assert "Refusing to install blocked package" in result.error
+
+    @pytest.mark.anyio
+    async def test_docker_directory_path_not_blocked(self, custom_tool):
+        """Tokens that merely *contain* the substring 'docker' (e.g. a
+        directory path or a docker-tagged image reference) must not trip
+        the rule — the check is whole-token only."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/etc/docker-config\n"
+        mock_result.stderr = ""
+        with mock.patch(
+            "cantrip.agent.tools.run_command.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = await custom_tool.execute(command="ls /etc/docker-config")
+        assert result.success
+
+
 class TestShellMetacharacters:
     """Phase 49.2: reject pipelines / compound commands at the source."""
 
