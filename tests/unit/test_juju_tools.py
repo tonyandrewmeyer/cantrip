@@ -17,6 +17,7 @@ from cantrip.agent.tools.juju import (
     JujuDispatchTool,
     JujuOfferTool,
     JujuRefreshTool,
+    JujuStatusTool,
     JujuTrustTool,
     JujuWaitTool,
     _agent_charm_dir,
@@ -37,6 +38,115 @@ class TestJujuAvailable:
         """Returns False when juju is not on PATH."""
         with mock.patch("shutil.which", return_value=None):
             assert _juju_available() is False
+
+
+class TestJujuStatusTool:
+    """Tests for JujuStatusTool."""
+
+    @pytest.fixture
+    def tool(self):
+        return JujuStatusTool()
+
+    @staticmethod
+    def _fake_app(
+        current: str,
+        message: str = "",
+        units: dict[str, mock.MagicMock] | None = None,
+    ) -> mock.MagicMock:
+        app = mock.MagicMock()
+        app.app_status.current = current
+        app.app_status.message = message
+        app.units = units or {}
+        return app
+
+    @staticmethod
+    def _fake_unit(current: str, message: str = "") -> mock.MagicMock:
+        unit = mock.MagicMock()
+        unit.workload_status.current = current
+        unit.workload_status.message = message
+        return unit
+
+    @pytest.mark.asyncio
+    async def test_juju_not_installed(self, tool):
+        """Error when juju CLI is missing."""
+        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_status_message_in_output(self, tool):
+        """Blocked status message ('Run `juju trust ...`') is surfaced verbatim.
+
+        Without the message, the agent has no way to know it should call
+        ``juju_trust`` to unblock the app.
+        """
+        fake_status = mock.MagicMock()
+        fake_status.model.name = "testing"
+        mysql_app = self._fake_app(
+            current="blocked",
+            message="Run `juju trust mysql --scope=cluster`. Needed for in-place refreshes",
+            units={"mysql/0": self._fake_unit("unknown")},
+        )
+        fake_status.apps = {"mysql": mysql_app}
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant") as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.status = mock.MagicMock(return_value=fake_status)
+            fake_jubilant.CLIError = jubilant.CLIError
+            fake_jubilant.TaskError = jubilant.TaskError
+            result = await tool.execute()
+
+        assert result.success
+        assert "Run `juju trust mysql --scope=cluster`" in result.output
+        assert "App: mysql (blocked)" in result.output
+
+    @pytest.mark.asyncio
+    async def test_unit_message_in_output(self, tool):
+        """Per-unit workload messages also render in the output."""
+        fake_status = mock.MagicMock()
+        fake_status.model.name = "testing"
+        app = self._fake_app(
+            current="active",
+            units={"booklore/0": self._fake_unit("waiting", "installing agent")},
+        )
+        fake_status.apps = {"booklore": app}
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant") as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.status = mock.MagicMock(return_value=fake_status)
+            fake_jubilant.CLIError = jubilant.CLIError
+            fake_jubilant.TaskError = jubilant.TaskError
+            result = await tool.execute()
+
+        assert result.success
+        assert "booklore/0: waiting — installing agent" in result.output
+
+    @pytest.mark.asyncio
+    async def test_no_message_no_dash(self, tool):
+        """When status has no message, the em-dash separator is omitted."""
+        fake_status = mock.MagicMock()
+        fake_status.model.name = "testing"
+        app = self._fake_app(current="active", units={"redis/0": self._fake_unit("active")})
+        fake_status.apps = {"redis": app}
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant") as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.status = mock.MagicMock(return_value=fake_status)
+            fake_jubilant.CLIError = jubilant.CLIError
+            fake_jubilant.TaskError = jubilant.TaskError
+            result = await tool.execute()
+
+        assert result.success
+        assert "App: redis (active)\n" in result.output
+        assert "—" not in result.output
 
 
 class TestJujuAddModelTool:

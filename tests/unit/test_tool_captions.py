@@ -389,9 +389,11 @@ class TestJujuCaptions:
         # Four apps; one blocked.
         active_app = mock.MagicMock()
         active_app.app_status.current = "active"
+        active_app.app_status.message = ""
         active_app.units = {}
         blocked_app = mock.MagicMock()
         blocked_app.app_status.current = "blocked"
+        blocked_app.app_status.message = ""
         blocked_app.units = {}
         fake_status.apps = {
             "redis": active_app,
@@ -420,6 +422,7 @@ class TestJujuCaptions:
         fake_status.model.name = "dev-model"
         only_app = mock.MagicMock()
         only_app.app_status.current = "active"
+        only_app.app_status.message = ""
         only_app.units = {}
         fake_status.apps = {"redis": only_app}
         with (

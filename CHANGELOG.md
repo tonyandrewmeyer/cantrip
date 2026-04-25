@@ -772,6 +772,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   frames.
 
 ### Fixed
+- **``juju_status`` surfaces app and unit status messages.**
+  The tool previously rendered only the status *names* (``active``,
+  ``blocked``, …) and dropped ``app_status.message`` /
+  ``workload_status.message``, which hid actionable operator hints
+  like ``Run `juju trust mysql --scope=cluster`. Needed for in-place
+  refreshes`` from the agent.  The agent already had a ``juju_trust``
+  tool but no signal that it should call it.  ``JujuStatusTool``
+  now appends the message after each app/unit line when present
+  (e.g. ``App: mysql (blocked) — Run `juju trust mysql
+  --scope=cluster`. ...``), so the model can act on the hint.
 - **``charmcraft_init`` no longer creates a redundant
   ``charm_name/charm_name`` directory.**  Sprint mode pre-sets
   ``state.charm_path`` to ``workspace/charm_name`` so subsequent
