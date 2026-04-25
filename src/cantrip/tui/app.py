@@ -12,7 +12,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
-from cantrip import __version__, notifications, update
+from cantrip import __version__, diagnostics, notifications, update
 from cantrip.agent import emotions, slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
@@ -146,9 +146,38 @@ class CantripApp(App):
         The default Textual implementation uses ``rich.traceback.Traceback``
         with ``show_locals=True``, which produces very long output that is
         hard to copy-paste into bug reports.
+
+        Also persists the traceback to the diagnostics log
+        (``$XDG_STATE_HOME/cantrip/diagnostics.log``) so a developer
+        can read the underlying cause after the user has hit a UI
+        crash — Textual's terminal-restoration tears the screen down
+        before most users can copy the traceback by hand.
         """
         self.bell()
-        self._exit_renderables.append(traceback.format_exc())
+        formatted = traceback.format_exc()
+        self._exit_renderables.append(formatted)
+        # Also capture to the diagnostics log.  ``sys.exc_info`` may
+        # not have a live exception by the time this runs in some
+        # Textual paths, so guard accordingly and fall back to writing
+        # the formatted text directly.
+        import sys
+
+        exc = sys.exc_info()[1]
+        if exc is not None:
+            with contextlib.suppress(Exception):
+                diagnostics.report_internal_error("textual_fatal", exc)
+        else:
+            log_path = diagnostics.log_path()
+            with contextlib.suppress(OSError):
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with log_path.open("a", encoding="utf-8") as fh:
+                    fh.write(
+                        f"\n{'=' * 72}\n"
+                        f"{datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds')}"
+                        f"  textual_fatal (no live exception object)\n"
+                        f"{'-' * 72}\n"
+                        f"{formatted}"
+                    )
         self._close_messages_no_wait()
 
     def compose(self) -> ComposeResult:
@@ -208,6 +237,15 @@ class CantripApp(App):
         if self._agent is not None:
             self._agent.event_bus.bind_loop(asyncio.get_running_loop())
             notifications.install(self._agent.event_bus)
+        # Issue triage adds tasks to the work queue for any actionable
+        # GitHub issue.  It must run *after* ``_resume_session`` has
+        # finished loading the persisted queue — otherwise the
+        # background triage worker can register an ``triage-issue-N``
+        # task before ``load_state`` gets to load the persisted copy
+        # of the same task, and the deferred load then crashes on a
+        # duplicate ID.  ``_resume_session`` calls ``_start_issue_triage``
+        # itself once the resume modal resolves (or immediately when no
+        # prior session exists and the modal is skipped).
         self._resume_session()
         self._start_prepare()
         self._start_executor()
@@ -218,9 +256,6 @@ class CantripApp(App):
         self.set_interval(5.0, self._update_model_info)
         self._subscribe_watcher_events()
         self._start_watcher()
-        # Start issue triage if a GitHub remote is detected.
-        if self._agent and self._agent.state.github_repo:
-            self._agent.start_issue_triage()
         self._start_update_check()
 
     def _start_update_check(self) -> None:
@@ -319,11 +354,21 @@ class CantripApp(App):
         callback is responsible for loading (on Resume) or archiving
         (on Fresh), so a user picking Fresh doesn't end up with a
         polluted ``state`` that was populated before they decided.
+
+        After the modal resolves (or immediately when no prior
+        session exists), :meth:`_start_issue_triage` kicks off the
+        background GitHub-issue scan.  Triage *must* run after
+        ``load_state`` so the persisted queue takes priority over a
+        fresh triage that happens to find the same issue —
+        otherwise the deferred load crashes on a duplicate task ID.
         """
         if not self._agent:
             return
         preview = self._agent.preview_session()
         if not preview.exists:
+            # No persisted state — no resume modal needed; triage can
+            # start immediately.
+            self._start_issue_triage()
             return
         from cantrip.tui.screens import resume as resume_screen
 
@@ -338,6 +383,7 @@ class CantripApp(App):
                     chat.add_system_message(
                         f"Starting fresh — prior session archived to {backup.name}."
                     )
+                self._start_issue_triage()
                 return
             # Default path (resume or dismissed): load state and show summary.
             if self._agent and self._agent.load_state():
@@ -345,8 +391,14 @@ class CantripApp(App):
                 if summary:
                     chat = self.query_one("#chat", chat_widget.ChatWidget)
                     chat.add_system_message(summary)
+            self._start_issue_triage()
 
         self.push_screen(screen, _on_choice)
+
+    def _start_issue_triage(self) -> None:
+        """Kick off background GitHub-issue triage, if a remote was detected."""
+        if self._agent and self._agent.state.github_repo:
+            self._agent.start_issue_triage()
 
     def _resolve_light_provider(self, main_provider: LLMProvider) -> LLMProvider | None:
         """Build a light provider for cheap internal tasks."""

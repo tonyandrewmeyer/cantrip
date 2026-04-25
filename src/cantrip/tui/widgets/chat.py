@@ -298,6 +298,21 @@ class MessageWidget(Static):
         self._rerender()
 
 
+def _looks_like_traceback(content: str) -> bool:
+    """Heuristic: does *content* look like a Python traceback?
+
+    Used by :meth:`ChatWidget.add_system_message` to divert leaked
+    tracebacks into the diagnostics log instead of showing them in
+    the chat.  Matches the standard Python ``Traceback (most recent
+    call last):`` preamble; handles the unicode arrow characters
+    Python 3.11+ emits in error highlighting too.
+    """
+    if not content:
+        return False
+    needle = "Traceback (most recent call last)"
+    return needle in content
+
+
 def _filter_catalogue(catalogue: Sequence[CommandInfo], value: str) -> list[CommandInfo]:
     """Return catalogue entries whose verb starts with *value*.
 
@@ -800,7 +815,41 @@ class ChatWidget(Widget):
         Pass ``markdown=True`` when ``content`` is a Markdown document
         (headings, lists, emphasis) so it renders as formatting instead
         of raw syntax — used for the ``/feelings`` parliament report.
+
+        If *content* looks like a Python traceback (a developer
+        artifact that should never make it into the chat), the body
+        is replaced with a friendly notice and the original is
+        appended to the diagnostics log so a developer can review it
+        later.  This is a last-resort safety net — every code path
+        that surfaces an exception should already route through
+        ``cantrip.diagnostics.report_internal_error``.
         """
+        if _looks_like_traceback(content):
+            from cantrip import diagnostics
+
+            log_path = diagnostics.log_path()
+            try:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with log_path.open("a", encoding="utf-8") as fh:
+                    from datetime import UTC
+
+                    fh.write(
+                        "\n"
+                        + "=" * 72
+                        + "\n"
+                        + datetime.now(UTC).isoformat(timespec="seconds")
+                        + "  chat-leaked traceback\n"
+                        + "-" * 72
+                        + "\n"
+                        + content
+                        + "\n"
+                    )
+            except OSError:
+                pass
+            content = (
+                f"Sorry, something went wrong.  The full traceback was written "
+                f"to `{log_path}` — please share that file when reporting the issue."
+            )
         items = [ProgressItem(text=item) for item in (progress_items or [])]
         return self.add_message(
             ChatMessage(

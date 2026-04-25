@@ -570,6 +570,49 @@ class TestStoreBackedPersistence:
         agent = CantripAgent(provider=provider)
         assert agent.load_state() is False
 
+    def test_load_state_skips_persisted_tasks_already_in_queue(self, tmp_path: Path) -> None:
+        # Background workers (e.g. issue triage) may add tasks with
+        # deterministic IDs to the work queue before ``load_state``
+        # gets a chance to run.  Loading a persisted task that
+        # collides on ID must not crash the whole resume — the
+        # in-memory copy stays, the persisted copy is skipped with a
+        # warning.
+        from cantrip.agent.queue import AgentTask, TaskCategory
+
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        # Seed a state snapshot with one task so a session row exists.
+        agent.state.charm_name = "demo"
+        seeded = AgentTask(
+            id="triage-issue-150",
+            title="Persisted version",
+            category=TaskCategory.RESEARCH,
+        )
+        agent._work_queue.add_task(seeded)
+        agent.save_state()
+        # Wipe the in-memory queue and re-seed with a *fresh* version
+        # of the same id to simulate the race: a background worker
+        # added it before ``load_state`` runs.
+        agent._work_queue.clear()
+        racing = AgentTask(
+            id="triage-issue-150",
+            title="Fresh from triage",
+            category=TaskCategory.RESEARCH,
+        )
+        agent._work_queue.add_task(racing)
+
+        # load_state must not raise.
+        assert agent.load_state() is True
+        # The fresh in-memory copy is what's in the queue.
+        tasks = agent._work_queue.all_tasks()
+        ids = {t.id for t in tasks}
+        assert "triage-issue-150" in ids
+        # Exactly one — no duplicate.
+        assert sum(1 for t in tasks if t.id == "triage-issue-150") == 1
+        # And it's the racing copy, not the persisted one.
+        match = next(t for t in tasks if t.id == "triage-issue-150")
+        assert match.title == "Fresh from triage"
+
 
 class TestContextManagement:
     """Tests for context window management integration."""

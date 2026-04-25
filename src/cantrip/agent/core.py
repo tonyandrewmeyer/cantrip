@@ -3160,8 +3160,14 @@ class CantripAgent:
             log.warning("Failed to load conversation history — continuing without it")
 
         # Restore persisted tasks into the work queue, resetting any that
-        # were mid-flight when the previous session ended.
+        # were mid-flight when the previous session ended.  Skip tasks
+        # whose IDs are already in the queue — a background worker
+        # (issue triage, watcher) may have raced ahead of resume and
+        # added the same deterministic ID.  Logging at warning level so
+        # the operator sees the collision without the session crashing.
         tasks = self._store.load_tasks()
+        existing_ids = {t.id for t in self._work_queue.all_tasks()}
+        fresh_tasks: list[AgentTask] = []
         for task in tasks:
             if task.status == TaskStatus.ACTIVE:
                 log.warning(
@@ -3170,8 +3176,17 @@ class CantripAgent:
                     task.title,
                 )
                 task.status = TaskStatus.PENDING
-        if tasks:
-            self._work_queue.add_tasks(tasks)
+            if task.id in existing_ids:
+                log.warning(
+                    "Skipping persisted task %s (%s): already in the work "
+                    "queue from a background worker",
+                    task.id,
+                    task.title,
+                )
+                continue
+            fresh_tasks.append(task)
+        if fresh_tasks:
+            self._work_queue.add_tasks(fresh_tasks)
 
         if self._store:
             self._store.record_event(
