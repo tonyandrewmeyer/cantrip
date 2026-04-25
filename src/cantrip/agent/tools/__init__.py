@@ -96,6 +96,7 @@ def build_tools(
         BundleDeployTool,
         CharmSyncTool,
         JujuAddModelTool,
+        JujuCliTool,
         JujuConfigTool,
         JujuConsumeTool,
         JujuDeployTool,
@@ -273,6 +274,7 @@ def build_tools(
         JujuListOffersTool(),
         JujuRemoveApplicationTool(),
         JujuShowUnitTool(),
+        JujuCliTool(),
         # Observability
         JujuDebugLogTool(),
         JujuStreamLogsTool(),
