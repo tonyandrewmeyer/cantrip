@@ -53,9 +53,10 @@ What this means in practice:
 ## Diagnostic sweep — first 60 seconds
 
 Run these in parallel before deciding on a fix.  Most don't require
-sudo; the agent can do them via `juju_status` and `run_command` (for
-`juju controllers` etc.).  Anything that needs `sudo` you'll have to
-escalate to the user — quote the exact command.
+sudo; the agent can do them via `juju_status` for ``juju status`` and
+``juju_cli`` (the Jubilant escape hatch) for ``juju controllers`` and
+similar.  Anything that needs `sudo` you'll have to escalate to the
+user — quote the exact command.
 
 | Check | Command | What it tells you |
 |---|---|---|

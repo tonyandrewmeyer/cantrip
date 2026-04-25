@@ -1,15 +1,28 @@
-"""Shared helpers for running Juju CLI commands via subprocess.
+"""Shared helpers for running Juju CLI commands via Jubilant.
 
 Several tool modules (acceptance, chaos, scaling, upgrade) need to invoke
-``juju`` as a subprocess.  This module provides the common helpers so the
-pattern is defined once.
+``juju`` to perform operations Jubilant doesn't expose as a typed method
+(``status --format json``, ``wait-for application``, ``debug-log``,
+``scale-application``, ``remove-relation`` ...).  This module funnels
+all of them through :meth:`jubilant.Juju.cli` so we never spawn a raw
+``juju`` subprocess from within Cantrip's sandboxed runner — that path
+trips snap's ``[Process 1 is a manager process, refusing.]`` dbus error
+on systems where the juju snap is installed.
 """
 
 import functools
 import shutil
 import subprocess
 
+import jubilant
+
 # Default timeout for juju subprocess calls (seconds).
+#
+# Jubilant's ``cli()`` does not enforce a Python-level timeout — most
+# juju subcommands return promptly, and the few that don't (``wait-for
+# application``, ``run``) take their own ``--timeout`` flag.  This
+# constant is preserved so callers that pass ``timeout=`` keep working,
+# but it is no longer applied at the Python boundary.
 JUJU_SUBPROCESS_TIMEOUT = 60
 
 # Stderr substrings that suggest the juju binary itself entered a
@@ -50,21 +63,13 @@ def juju_version() -> str | None:
     """Return the juju CLI version string, or ``None`` if unavailable.
 
     Cached so repeated crash dumps don't fork a subprocess each time.
-    Best-effort: any failure (juju missing, hangs past 5 s, non-zero
-    exit) returns ``None`` and the crash dump skips the version line.
+    Best-effort: any failure (juju missing, non-zero exit) returns
+    ``None`` and the crash dump skips the version line.
     """
     try:
-        result = subprocess.run(
-            ["juju", "version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except (FileNotFoundError, subprocess.SubprocessError, OSError):
+        text = jubilant.Juju().cli("version", include_model=False).strip()
+    except (jubilant.CLIError, FileNotFoundError, OSError):
         return None
-    if result.returncode != 0:
-        return None
-    text = result.stdout.strip()
     return text or None
 
 
@@ -77,14 +82,15 @@ def run_juju(
     args: list[str],
     model: str | None = None,
     *,
-    timeout: int = JUJU_SUBPROCESS_TIMEOUT,
+    timeout: int = JUJU_SUBPROCESS_TIMEOUT,  # noqa: ARG001 — preserved for caller compat.
 ) -> subprocess.CompletedProcess[str]:
-    """Run a juju CLI command and return the completed process.
+    """Run a juju CLI command via Jubilant and return a CompletedProcess.
 
     Args:
         args: Command arguments after ``juju`` (e.g. ``["status", "--format", "json"]``).
-        model: Optional model name passed via ``--model``.
-        timeout: Subprocess timeout in seconds.
+        model: Optional model name; injected by Jubilant as ``--model``.
+        timeout: Accepted for backward compatibility but not enforced —
+            see module docstring.
 
     Side effect: when juju exits with a crash-shaped status (see
     :func:`looks_like_juju_crash`), the verbatim cmd / stdout /
@@ -92,15 +98,28 @@ def run_juju(
     repro material to file an upstream bug — even after the
     conversation context rolls over.
     """
-    cmd = ["juju"] + args
+    juju = jubilant.Juju(model=model) if model else jubilant.Juju()
+    cmd_for_log = ["juju", *args]
     if model:
-        cmd.extend(["--model", model])
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+        cmd_for_log.extend(["--model", model])
+
+    try:
+        stdout = juju.cli(*args, include_model=bool(model))
+    except jubilant.CLIError as exc:
+        result: subprocess.CompletedProcess[str] = subprocess.CompletedProcess(
+            args=exc.cmd or cmd_for_log,
+            returncode=exc.returncode,
+            stdout=exc.stdout or "",
+            stderr=exc.stderr or "",
+        )
+    else:
+        return subprocess.CompletedProcess(
+            args=cmd_for_log,
+            returncode=0,
+            stdout=stdout,
+            stderr="",
+        )
+
     if looks_like_juju_crash(result.returncode, result.stderr or ""):
         # Late import keeps ``cantrip.diagnostics`` out of the
         # import-time graph for tools that never crash.
@@ -112,7 +131,7 @@ def run_juju(
             extra["juju_version"] = version
         diagnostics.report_command_crash(
             context="juju_subprocess:run_juju",
-            cmd=cmd,
+            cmd=list(result.args) if isinstance(result.args, list) else cmd_for_log,
             returncode=result.returncode,
             stdout=result.stdout or "",
             stderr=result.stderr or "",
@@ -124,19 +143,19 @@ def run_juju(
 def wait_for_app(app: str, model: str | None, timeout: int) -> bool:
     """Wait for all units of an application to reach active/idle.
 
-    Uses ``juju wait-for application`` with a generous subprocess timeout
-    (the juju timeout + 30 s buffer) so the CLI can report its own errors.
+    Uses ``juju wait-for application`` (via Jubilant's ``cli()``) with
+    its own ``--timeout`` flag — juju enforces the deadline itself.
     """
-    cmd = ["juju", "wait-for", "application", app, "--timeout", f"{timeout}s"]
-    if model:
-        cmd.extend(["--model", model])
+    juju = jubilant.Juju(model=model) if model else jubilant.Juju()
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout + 30,
+        juju.cli(
+            "wait-for",
+            "application",
+            app,
+            "--timeout",
+            f"{timeout}s",
+            include_model=bool(model),
         )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    except (jubilant.CLIError, FileNotFoundError, OSError):
         return False
+    return True

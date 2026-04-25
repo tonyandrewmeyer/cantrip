@@ -2357,20 +2357,8 @@ class JujuRemoveApplicationTool(Tool):
             )
 
         try:
-            from cantrip.agent.tools.juju_subprocess import run_juju
-
-            args = ["remove-application", app_name, "--no-prompt"]
-            if force:
-                args.append("--force")
-            result = await asyncio.to_thread(run_juju, args, model)
-
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=result.stderr or f"Failed to remove {app_name}",
-                )
-
+            juju = jubilant.Juju(model=model)
+            await _run_juju(juju.remove_application, app_name, force=force)
             return ToolResult(
                 success=True,
                 output=f"Removed application {app_name}.",
@@ -2379,6 +2367,12 @@ class JujuRemoveApplicationTool(Tool):
             )
         except (TimeoutError, OSError) as e:
             return ToolResult(success=False, output="", error=str(e))
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output=e.stdout or "",
+                error=e.stderr or f"Failed to remove {app_name}",
+            )
 
 
 class JujuShowUnitTool(Tool):
@@ -2426,24 +2420,22 @@ class JujuShowUnitTool(Tool):
             )
 
         try:
-            from cantrip.agent.tools.juju_subprocess import run_juju
-
-            args = ["show-unit", unit, "--format", "json"]
-            result = await asyncio.to_thread(run_juju, args, model)
-
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    output=result.stdout,
-                    error=result.stderr or f"Failed to show unit {unit}",
-                )
+            juju = jubilant.Juju(model=model)
+            stdout = await _run_juju(
+                juju.cli,
+                "show-unit",
+                unit,
+                "--format",
+                "json",
+                include_model=bool(model),
+            )
 
             # Parse and re-format for readability.
             try:
-                data = json.loads(result.stdout)
+                data = json.loads(stdout)
                 output = json.dumps(data, indent=2)
             except json.JSONDecodeError:
-                output = result.stdout
+                output = stdout
 
             return ToolResult(
                 success=True,
@@ -2453,3 +2445,96 @@ class JujuShowUnitTool(Tool):
             )
         except (TimeoutError, OSError) as e:
             return ToolResult(success=False, output="", error=str(e))
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output=e.stdout or "",
+                error=e.stderr or f"Failed to show unit {unit}",
+            )
+
+
+class JujuCliTool(Tool):
+    """Escape hatch for juju subcommands without a typed wrapper.
+
+    The ``juju`` binary is deliberately *not* on the ``run_command``
+    allowlist (snap + sandbox PID-namespace incompatibility), so this
+    tool is the only way to run juju commands that don't have a
+    dedicated ``juju_*`` tool — e.g. ``juju controllers``,
+    ``juju add-credential``, ``juju spaces``.  Calls land via
+    :meth:`jubilant.Juju.cli`, which uses plain subprocess and bypasses
+    the sandbox.  Prefer the typed tools when one fits — those expose
+    structured results, while this tool only returns juju's stdout.
+    """
+
+    @property
+    def name(self) -> str:
+        return "juju_cli"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Run an arbitrary juju subcommand (e.g. controllers, "
+            "add-credential, spaces) and return its stdout. Use only "
+            "when no typed juju_* tool fits — the typed tools expose "
+            "structured data, this one just returns raw text."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Arguments to pass to juju, excluding the leading "
+                        "'juju' (e.g. ['controllers', '--refresh'])."
+                    ),
+                },
+                "model": {
+                    "type": "string",
+                    "description": (
+                        "Optional model name; injected as --model. "
+                        "Omit for commands that don't take a model."
+                    ),
+                },
+            },
+            "required": ["args"],
+        }
+
+    async def execute(
+        self,
+        args: list[str] | None = None,
+        model: str | None = None,
+    ) -> ToolResult:
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Juju CLI not found. Is Juju installed?",
+            )
+        if not args:
+            return ToolResult(
+                success=False,
+                output="",
+                error="args is required and must be non-empty.",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model) if model else jubilant.Juju()
+            stdout = await _run_juju(juju.cli, *args, include_model=bool(model))
+            return ToolResult(
+                success=True,
+                output=stdout,
+                data={"args": args, "model": model},
+                caption=f"juju {args[0]}",
+            )
+        except (TimeoutError, OSError) as e:
+            return ToolResult(success=False, output="", error=str(e))
+        except jubilant.CLIError as e:
+            return ToolResult(
+                success=False,
+                output=e.stdout or "",
+                error=e.stderr or f"juju {args[0]} failed",
+            )

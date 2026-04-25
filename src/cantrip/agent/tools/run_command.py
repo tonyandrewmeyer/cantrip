@@ -10,6 +10,14 @@ from cantrip.agent.sandbox import SandboxedRunner, SandboxPolicy
 from cantrip.agent.tools.base import Tool, ToolResult
 
 # Default commands the agent is allowed to run.
+#
+# ``juju`` is deliberately *not* on this list.  Cantrip exposes a typed
+# Jubilant-backed tool for every juju operation we support, and routing
+# through ``run_command`` would invoke the snap-packaged ``juju`` inside
+# our PID-namespace sandbox — which makes snap's transient-scope dbus
+# call fail with ``[Process 1 is a manager process, refusing.]``.  Force
+# the agent to use the typed tools, which call Jubilant directly without
+# the sandbox wrapper.
 DEFAULT_ALLOWLIST: frozenset[str] = frozenset(
     {
         "make",
@@ -19,7 +27,6 @@ DEFAULT_ALLOWLIST: frozenset[str] = frozenset(
         "pip",
         "charmcraft",
         "rockcraft",
-        "juju",
         "python",
         "python3",
     }
@@ -383,44 +390,9 @@ class RunCommandTool(Tool):
         if result.stderr:
             output = output + "\n--- stderr ---\n" + result.stderr if output else result.stderr
 
-        # When juju exits with a crash-shaped status, persist the full
-        # repro material (cmd, cwd, stdout, stderr, juju version) to
-        # ``diagnostics.log`` before the 50 KB output truncation kicks
-        # in.  Lets the user open an upstream issue with verbatim
-        # evidence even after the conversation context has rolled over.
-        crash_dump_path: Path | None = None
-        if base == "juju" and result.returncode != 0:
-            from cantrip import diagnostics
-            from cantrip.agent.tools.juju_subprocess import (
-                juju_version,
-                looks_like_juju_crash,
-            )
-
-            if looks_like_juju_crash(result.returncode, result.stderr or ""):
-                extra: dict[str, str] = {}
-                version = juju_version()
-                if version:
-                    extra["juju_version"] = version
-                crash_dump_path = diagnostics.report_command_crash(
-                    context="run_command:juju",
-                    cmd=parts,
-                    cwd=str(Path(cwd).resolve()),
-                    returncode=result.returncode,
-                    stdout=result.stdout or "",
-                    stderr=result.stderr or "",
-                    extra=extra or None,
-                )
-
         truncated = len(output) > _MAX_OUTPUT_CHARS
         if truncated:
             output = output[:_MAX_OUTPUT_CHARS] + "\n\n(output truncated)"
-
-        if crash_dump_path is not None:
-            output = (
-                output.rstrip()
-                + "\n\n[juju exit looks crash-shaped — full repro material captured to "
-                + f"{crash_dump_path}]"
-            )
 
         # Caption: "<base> (exit N)" or "<base> (exit N): <40-char snippet>".
         # Newlines are collapsed so the caption stays on one line in the
@@ -436,8 +408,6 @@ class RunCommandTool(Tool):
         error_text = ""
         if result.returncode != 0:
             error_text = f"Command exited with code {result.returncode}"
-            if crash_dump_path is not None:
-                error_text += f" (crash dump: {crash_dump_path})"
 
         return ToolResult(
             success=result.returncode == 0,

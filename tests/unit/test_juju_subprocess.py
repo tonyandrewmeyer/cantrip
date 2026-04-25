@@ -1,14 +1,29 @@
-"""Tests for ``cantrip.agent.tools.juju_subprocess`` — crash heuristic + run_juju dump."""
+"""Tests for ``cantrip.agent.tools.juju_subprocess`` — Jubilant wrapper + crash dump."""
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from unittest import mock
 
+import jubilant
 import pytest
 
 from cantrip.agent.tools import juju_subprocess
+
+
+def _cli_error(
+    cmd: list[str],
+    returncode: int,
+    stderr: str,
+    stdout: str = "",
+) -> jubilant.CLIError:
+    """Build a ``jubilant.CLIError`` for use as a mock side_effect."""
+    return jubilant.CLIError(
+        returncode=returncode,
+        cmd=cmd,
+        output=stdout,
+        stderr=stderr,
+    )
 
 
 class TestLooksLikeJujuCrash:
@@ -38,36 +53,58 @@ class TestLooksLikeJujuCrash:
 
 class TestJujuVersion:
     def setup_method(self) -> None:
-        # Each test starts with a clean cache so the mocked subprocess
+        # Each test starts with a clean cache so the mocked CLI
         # actually fires.
         juju_subprocess.juju_version.cache_clear()
 
     def test_returns_stripped_stdout(self) -> None:
-        completed = mock.MagicMock()
-        completed.returncode = 0
-        completed.stdout = "3.6.0-genericlinux-amd64\n"
         with mock.patch(
-            "cantrip.agent.tools.juju_subprocess.subprocess.run",
-            return_value=completed,
+            "jubilant.Juju.cli",
+            return_value="3.6.0-genericlinux-amd64\n",
         ):
             assert juju_subprocess.juju_version() == "3.6.0-genericlinux-amd64"
 
     def test_returns_none_when_juju_missing(self) -> None:
+        with mock.patch("jubilant.Juju.cli", side_effect=FileNotFoundError):
+            assert juju_subprocess.juju_version() is None
+
+    def test_returns_none_on_cli_error(self) -> None:
         with mock.patch(
-            "cantrip.agent.tools.juju_subprocess.subprocess.run",
-            side_effect=FileNotFoundError,
+            "jubilant.Juju.cli",
+            side_effect=_cli_error(["juju", "version"], 1, ""),
         ):
             assert juju_subprocess.juju_version() is None
 
-    def test_returns_none_on_nonzero_exit(self) -> None:
-        completed = mock.MagicMock()
-        completed.returncode = 1
-        completed.stdout = ""
+
+class TestRunJuju:
+    """``run_juju`` routes through Jubilant and surfaces results as CompletedProcess."""
+
+    def test_success_returns_stdout_and_zero(self) -> None:
         with mock.patch(
-            "cantrip.agent.tools.juju_subprocess.subprocess.run",
-            return_value=completed,
+            "jubilant.Juju.cli",
+            return_value="ok\n",
+        ) as cli:
+            result = juju_subprocess.run_juju(["status"], model="foo")
+        assert result.returncode == 0
+        assert result.stdout == "ok\n"
+        assert result.stderr == ""
+        assert result.args == ["juju", "status", "--model", "foo"]
+        cli.assert_called_once_with("status", include_model=True)
+
+    def test_failure_populates_returncode_stdout_stderr(self) -> None:
+        with mock.patch(
+            "jubilant.Juju.cli",
+            side_effect=_cli_error(
+                ["juju", "status"],
+                1,
+                "ERROR model not found",
+                stdout="partial",
+            ),
         ):
-            assert juju_subprocess.juju_version() is None
+            result = juju_subprocess.run_juju(["status"])
+        assert result.returncode == 1
+        assert result.stdout == "partial"
+        assert result.stderr == "ERROR model not found"
 
 
 class TestRunJujuCrashDump:
@@ -85,14 +122,13 @@ class TestRunJujuCrashDump:
             lambda: "juju 3.6.0",
         )
 
-        completed = mock.MagicMock(spec=subprocess.CompletedProcess)
-        completed.returncode = 46
-        completed.stdout = ""
-        completed.stderr = "2026/04/26 01:37:44 cmd_run.go:178: oh no\n"
-
         with mock.patch(
-            "cantrip.agent.tools.juju_subprocess.subprocess.run",
-            return_value=completed,
+            "jubilant.Juju.cli",
+            side_effect=_cli_error(
+                ["juju", "status", "--model", "foo"],
+                46,
+                "2026/04/26 01:37:44 cmd_run.go:178: oh no\n",
+            ),
         ):
             result = juju_subprocess.run_juju(["status"], model="foo")
 
@@ -111,15 +147,35 @@ class TestRunJujuCrashDump:
     ) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
 
-        completed = mock.MagicMock(spec=subprocess.CompletedProcess)
-        completed.returncode = 1
-        completed.stdout = ""
-        completed.stderr = "ERROR model not found"
-
         with mock.patch(
-            "cantrip.agent.tools.juju_subprocess.subprocess.run",
-            return_value=completed,
+            "jubilant.Juju.cli",
+            side_effect=_cli_error(["juju", "status"], 1, "ERROR model not found"),
         ):
             juju_subprocess.run_juju(["status"])
 
         assert not (tmp_path / "cantrip" / "diagnostics.log").exists()
+
+
+class TestWaitForApp:
+    def test_returns_true_on_success(self) -> None:
+        with mock.patch("jubilant.Juju.cli", return_value="") as cli:
+            assert juju_subprocess.wait_for_app("myapp", "mymodel", 30) is True
+        cli.assert_called_once_with(
+            "wait-for",
+            "application",
+            "myapp",
+            "--timeout",
+            "30s",
+            include_model=True,
+        )
+
+    def test_returns_false_on_cli_error(self) -> None:
+        with mock.patch(
+            "jubilant.Juju.cli",
+            side_effect=_cli_error(["juju", "wait-for", "application", "myapp"], 1, "timed out"),
+        ):
+            assert juju_subprocess.wait_for_app("myapp", None, 5) is False
+
+    def test_returns_false_when_juju_missing(self) -> None:
+        with mock.patch("jubilant.Juju.cli", side_effect=FileNotFoundError):
+            assert juju_subprocess.wait_for_app("myapp", None, 5) is False

@@ -4,7 +4,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **``juju_cli`` escape-hatch tool — Jubilant-backed wrapper for
+  arbitrary juju subcommands.**  Routes through
+  :meth:`jubilant.Juju.cli` and bypasses the ``run_command`` sandbox.
+  The agent should still prefer the typed ``juju_*`` tools when one
+  fits (they expose structured data); ``juju_cli`` is for things
+  with no typed wrapper — ``juju controllers``, ``juju
+  add-credential``, ``juju spaces`` and friends.
+
 ### Changed
+- **``juju`` removed from the ``run_command`` allowlist; all juju
+  invocations now route through Jubilant.**  Snap-packaged ``juju``
+  invoked under our PID-namespace sandbox failed with ``[Process 1
+  is a manager process, refusing.]`` from systemd over dbus — the
+  snap launcher tries to set up a transient scope before exec'ing
+  juju, and dbus refuses when PID 1 inside the namespace isn't
+  systemd.  Routing through ``jubilant.Juju`` (typed methods where
+  available, ``cli()`` otherwise) bypasses the sandbox wrapper.
+  ``juju_subprocess.run_juju`` and ``wait_for_app`` are now thin
+  Jubilant wrappers; ``JujuRemoveApplicationTool`` and
+  ``JujuShowUnitTool`` use Jubilant directly.  Also drops the
+  now-dead juju crash-dump branch from ``RunCommandTool`` —
+  the typed tools and ``run_juju`` already dump on their own.
 - **PyPI distribution renamed to ``juju-cantrip``.**  The
   ``cantrip`` name on PyPI was claimed by an unrelated semantic-layer
   project before we published, so the distribution moves to
