@@ -15,7 +15,11 @@ from pathlib import Path
 
 import pytest
 
+from cantrip.agent.core import CantripAgent
+from cantrip.agent.slash_commands import handle_branch
 from cantrip.agent.store import SCHEMA_VERSION, SessionStore
+from cantrip.llm.base import Role
+from tests.conftest import FakeProvider
 
 
 @pytest.fixture
@@ -123,6 +127,102 @@ class TestActiveBranchEdgeCases:
         assert store.load_active_branch() == []
         # Sanity check: the row that does exist is still there.
         assert {m["id"] for m in store.load_messages()} == {a}
+
+
+class TestBranchSlashCommand:
+    """``/branch`` moves the head and rebuilds ``state.messages``."""
+
+    def _seed_agent(self, tmp_path: Path) -> tuple[CantripAgent, list[int]]:
+        """Build an agent with three persisted user/assistant turns."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent._ensure_store()
+        store = agent.store
+        assert store is not None
+        ids = [
+            store.record_message(role="user", content="first ask"),
+            store.record_message(role="assistant", content="first reply"),
+            store.record_message(role="user", content="bad steering"),
+            store.record_message(role="assistant", content="off-target"),
+        ]
+        agent._rebuild_messages_from_active_branch()
+        return agent, ids
+
+    def test_branch_with_explicit_turn_id(self, tmp_path: Path) -> None:
+        agent, ids = self._seed_agent(tmp_path)
+        first_user, first_reply, _bad_user, _off = ids
+        result = handle_branch(agent, str(first_reply))
+        assert "Forked at turn" in result
+        # State now reflects the rewound branch — only the first
+        # ask + reply remain in memory.
+        assert [m.content for m in agent.state.messages] == ["first ask", "first reply"]
+        # The store still has every row, including the off-branch ones.
+        assert agent.store is not None
+        all_ids = {m["id"] for m in agent.store.load_messages()}
+        assert all_ids == set(ids)
+        # The active head is at first_reply.
+        assert agent.store.get_active_head() == first_reply
+        # User-message metadata still carries the db_message_id so /undo
+        # would still see it.
+        user_msgs = [m for m in agent.state.messages if m.role == Role.USER]
+        assert user_msgs[0].metadata.get("db_message_id") == first_user
+
+    def test_branch_with_no_arg_forks_before_last_user(self, tmp_path: Path) -> None:
+        agent, ids = self._seed_agent(tmp_path)
+        _first_user, first_reply, _bad_user, _off = ids
+        result = handle_branch(agent, "")
+        assert "Forked at turn" in result
+        # The bad user turn is the leaf user; the parent of that user
+        # is the assistant reply, so the forked branch ends there.
+        assert agent.store is not None
+        assert agent.store.get_active_head() == first_reply
+        assert [m.content for m in agent.state.messages] == ["first ask", "first reply"]
+
+    def test_branch_with_invalid_turn_id_returns_error(self, tmp_path: Path) -> None:
+        agent, _ids = self._seed_agent(tmp_path)
+        result = handle_branch(agent, "not-an-int")
+        assert "expected an integer" in result
+        # State unchanged.
+        assert len(agent.state.messages) == 4
+
+    def test_branch_with_unknown_turn_returns_error(self, tmp_path: Path) -> None:
+        agent, _ids = self._seed_agent(tmp_path)
+        result = handle_branch(agent, "9999")
+        assert "not found" in result
+        assert len(agent.state.messages) == 4
+
+    def test_branch_no_user_turns_returns_error(self, tmp_path: Path) -> None:
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent._ensure_store()
+        store = agent.store
+        assert store is not None
+        store.record_message(role="assistant", content="orphan reply")
+        agent._rebuild_messages_from_active_branch()
+        result = handle_branch(agent, "")
+        assert "no user turns" in result.lower()
+
+
+class TestResumeFollowsBranch:
+    """A /branch made before quitting carries through to the next resume."""
+
+    def test_resume_loads_active_branch_only(self, tmp_path: Path) -> None:
+        # Seed messages, then rewind via /branch, then close and reopen.
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent._ensure_store()
+        store = agent.store
+        assert store is not None
+        a = store.record_message(role="user", content="a")
+        store.record_message(role="assistant", content="b")
+        store.record_message(role="user", content="c")
+        store.record_message(role="assistant", content="d")
+        agent._rebuild_messages_from_active_branch()
+        handle_branch(agent, str(a))
+        # Close and reopen.
+        store.close()
+
+        agent2 = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        loaded = agent2.load_state()
+        assert loaded is True
+        assert [m.content for m in agent2.state.messages] == ["a"]
 
 
 class TestV12Migration:

@@ -980,6 +980,38 @@ class CantripAgent:
             msg.metadata["db_message_id"] = row_id
         return row_id
 
+    def _rebuild_messages_from_active_branch(self) -> int:
+        """Reload ``state.messages`` from the store's currently active branch.
+
+        Phase 67.1 hook used by both resume (``load_state``) and
+        ``/branch`` (which moves the head pointer and then re-reads
+        the path).  Clears ``state.messages`` first so a partial
+        rehydration leaves nothing stale; rolls forward through the
+        branch ordering tool calls / results aren't restored
+        (the LLM only needs role + content to keep context, and
+        re-running tools on resume would double-pay).  Returns the
+        number of messages rehydrated.
+        """
+        self._ensure_store()
+        if self._store is None:
+            return 0
+        raw_messages = self._store.load_active_branch()
+        self.state.messages.clear()
+        for msg in raw_messages:
+            role_str = msg.get("role", "")
+            try:
+                role = Role(role_str)
+            except ValueError:
+                continue
+            content = msg.get("content", "")
+            if not content:
+                continue
+            restored = Message(role=role, content=str(content))
+            if role == Role.USER and msg.get("id") is not None:
+                restored.metadata["db_message_id"] = msg["id"]
+            self.state.messages.append(restored)
+        return len(self.state.messages)
+
     def _get_provider(self, purpose: str) -> LLMProvider:
         """Select the appropriate provider for a given purpose.
 
@@ -3177,25 +3209,7 @@ class CantripAgent:
         # before quitting carries through to resume; off-branch
         # messages stay in the DB and remain reachable via /tree.
         try:
-            raw_messages = self._store.load_active_branch()
-            for msg in raw_messages:
-                role_str = msg.get("role", "")
-                try:
-                    role = Role(role_str)
-                except ValueError:
-                    continue
-                content = msg.get("content", "")
-                if not content:
-                    continue
-                restored = Message(role=role, content=str(content))
-                # Re-stamp the db_message_id on user messages so
-                # /undo can still map a resumed turn back to its
-                # row.  Tool calls / results are not persisted on
-                # the in-memory message — the LLM doesn't need
-                # them rehydrated to continue the turn.
-                if role == Role.USER and msg.get("id") is not None:
-                    restored.metadata["db_message_id"] = msg["id"]
-                self.state.messages.append(restored)
+            self._rebuild_messages_from_active_branch()
             if self.state.messages:
                 log.info(
                     "Restored %d conversation messages from prior session",
