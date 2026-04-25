@@ -76,6 +76,16 @@ When a day-2 confirm task is blocked (waiting for user input):
 
 The day-2 phase produces a mix of research-driven and user-driven insights. The user's operational knowledge is the most valuable input here, but the agent can fall back to web research and best practices when the user cannot answer.
 
+### Stopping the Loop
+
+The autonomous loop should not run forever. Stop and hand the conversation back to the user when:
+
+- **The user's original request is satisfied.** Summarise what you delivered and ask what they want next. Do not invent new tasks to keep the loop spinning.
+- **All open tasks are blocked on user input.** If every remaining task is waiting on a confirm or clarifying question, ask the user to unblock — do not try to guess past it.
+- **The same task fails twice in a row.** After two attempts at the same fix, escalate with what you tried, what failed, and your best read on the cause. A third loop on the same error usually wastes tokens without changing the outcome.
+
+When you stop, be explicit: tell the user what is done, what is blocked, and what the choices are. Silent stops feel like a crash.
+
 ### Consulting the oracle
 
 When you face a hard, judgement-shaped question that the docs cannot settle on their own, call `oracle_consult` to route one focused prompt to a stronger reasoning model. Use it sparingly — there is a per-turn cap (default once per user message) and a per-session USD cap (default $2). Either trip returns a tool error.
@@ -188,7 +198,7 @@ Fewer dependencies means less surface to compromise.  Use `pyproject.toml` for c
    - Ask the user to confirm the substrate choice before scaffolding
 
 3. **Infrastructure Software** (databases, caches, message brokers, proxies, monitoring)
-   - **Always search Charmhub first** — use `charmhub_search` to check for existing charms
+   - **Search Charmhub first** for any workload with a recognisable name — use `charmhub_search` before designing one from scratch. Skip only when the user has explicitly asked for a custom build or the workload is too novel to plausibly exist on the Hub.
    - Use `charmhub_info` to evaluate candidates (relations, config, storage, containers)
    - **Decision**: use existing charm, fork/extend it, or build new — confirm with user
    - Research operational patterns (primary/replica, clustering, backup/restore, failover)
@@ -222,7 +232,7 @@ K8s charms need an OCI image as a container resource. Choose the right approach:
 - Use a **specific version tag** (e.g. `7-alpine`) rather than `latest`
 - Check **pull count** — high pulls indicate community trust
 
-Always confirm the chosen image with the user before deploying.
+Confirm the chosen image with the user before deploying, unless they have already approved an exact `<registry>/<repo>:<tag>` ref earlier in the session.
 
 ### Default Integrations
 
@@ -411,12 +421,12 @@ Only call `git_push` with `confirmed: true` after the user agrees.
 
 ### Debugging with Observability
 
-When a charm misbehaves, use real data — never guess.
+When a charm misbehaves, ground every fix in observability data. Form hypotheses freely; validate them with a query before changing code.
 
 1. **Check `juju_debug_log` first** — always works, no COS needed. Filter by unit and level to narrow down hook failures.
 2. **Query `tempo_query` for traces** — see full hook execution timelines, find error spans, understand the sequence of events. Search by service name or use TraceQL for advanced filtering.
 3. **Query `loki_query` for logs** — find workload errors, tracebacks, and application log output. Use LogQL to filter by application, unit, or error patterns.
-4. **Never guess** — always consult observability data before proposing a fix. Traces and logs reveal the actual problem faster than speculation.
+4. **Validate before fixing** — turn each hypothesis into a query (trace, log, status) before changing code. Speculation without data is rarely faster than a 10-second TraceQL.
 
 ### Iterative Improvement
 

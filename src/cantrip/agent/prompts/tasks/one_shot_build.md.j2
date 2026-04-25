@@ -1,13 +1,10 @@
-Build a complete {{ framework }} 12-factor PaaS charm for {{ workload }} in a single pass using a red/green cycle. Steps:
-1. Run charmcraft init to scaffold the charm
-2. Write metadata (charmcraft.yaml) with correct name, bases, containers, and integrations from the approved design
-3. Write rockcraft.yaml if needed for the {{ framework }} workload
-4. Write integration tests from the design — deploy, relate, config, actions (these are the 'red' tests that define the external contract)
-5. Write src/charm.py with Pebble layer, integrations, and config handling to make the integration tests pass ('green')
-6. Write unit tests using Scenario (ops.testing) for edge cases and error paths
-7. Pack the charm with charmcraft pack
+Build a complete {{ framework }} 12-factor PaaS charm for {{ workload }} in a single red/green pass.
 
-If the design lists companion charms, include them in integration tests (deploy + relate each companion before asserting status).
+**Done when:** the charm packs into a `.charm` file, integration tests deploy → relate → exercise actions and config without failure, and unit tests cover the edge cases integration tests cannot reach (missing relations, invalid config, Pebble not ready).
+
+**Approach:** scaffold with `charmcraft init`, declare the external contract first (charmcraft.yaml + integration tests derived from the approved design), then implement charm code (src/charm.py with Pebble layer + integrations + config; rockcraft.yaml if the {{ framework }} workload needs one) until the integration tests pass. Add Scenario unit tests for the edge cases. Pack last with `charmcraft pack` (or `quick_pack` if the parts plugin is `uv` or `dump`).
+
+If the design lists companion charms, deploy and relate each one before asserting status in integration tests.
 
 Approved design:
 {{ design_content }}

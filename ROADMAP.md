@@ -3075,6 +3075,119 @@ fallback; this phase tracks them so they don't rot.
 
 ---
 
+## Phase 82: Pre/Post Tool Captions — Inline Status Replacement
+
+**Goal:** When a tool is invoked, render an *intro* caption immediately
+(``"Packing the charm…"``, ``"Querying Tempo for the last 5 traces…"``)
+so the user sees something is happening, then *replace it in place*
+with the post-call caption (``"23 passed, 0 failed"``) once the tool
+returns.  Today the chat block only appears after the tool finishes,
+so long-running tools (``charmcraft_pack``, ``juju_wait``, web
+fetches) leave the user staring at silence between the agent's last
+text and the next visible event.
+
+This is the inverse of the Phase 75 caption — Phase 75 is "what just
+ran"; this phase adds "what's running now" and folds the two into a
+single inline block that updates once.  Inspired by OpenAI's GPT-5.5
+prompt-guidance recommendation (preambles before tool calls improve
+perceived responsiveness in agent rollouts) — we already ship the
+post-call half via Phases 75 and 81; the intro half closes the gap.
+
+### 82.1 Core — ``intro_caption`` hook + pending event
+
+- [ ] Add ``intro_caption(arguments)`` to ``Tool`` in
+  ``cantrip.agent.tools.base`` — optional method returning a
+  present-continuous string.  Default returns ``None`` so existing
+  tools keep working unchanged.
+- [ ] Synthesise a generic fallback (``"Running <tool_name>…"`` or
+  ``"<verb> <key>=<value>…"`` derived from
+  ``_CAPTION_KEY_PREFERENCE``) when no override is set.
+- [ ] Emit a new ``TOOL_INVOKED_PENDING`` event from the agent loop
+  and the subagent runner *before* dispatching the tool, carrying
+  the intro caption and the tool-call id.  ``TOOL_INVOKED`` keeps
+  its existing payload and is matched to the pending event by
+  tool-call id at the renderer.
+
+### 82.2 Bespoke intro captions for high-traffic tools
+
+- [ ] File-system: ``read_file`` → ``"Reading src/charm.py…"``,
+  ``write_file`` → ``"Writing tests/integration/test_charm.py…"``,
+  ``edit_file`` / ``multi_edit`` → ``"Editing <path>…"``.
+- [ ] Git: ``git_clone`` → ``"Cloning <url>…"``, ``git_commit`` →
+  ``"Committing…"``, ``git_push`` → ``"Pushing to <remote>/<branch>…"``.
+- [ ] Charm tooling: ``charmcraft_pack`` →
+  ``"Packing the charm…"``, ``quick_pack`` →
+  ``"Quick-packing…"``, ``charm_validate`` →
+  ``"Validating the charm…"``, ``charm_audit`` →
+  ``"Auditing the charm…"``.
+- [ ] Juju: ``juju_deploy`` → ``"Deploying <app>…"``,
+  ``juju_wait`` → ``"Waiting for <model> to settle…"``,
+  ``juju_refresh`` → ``"Refreshing <app>…"``,
+  ``juju_status`` → ``"Reading juju status…"``.
+- [ ] Acceptance / observability: ``run_charm_tests`` →
+  ``"Running unit tests…"`` / ``"Running integration tests…"``,
+  ``tempo_query`` → ``"Querying Tempo…"``, ``loki_query`` →
+  ``"Querying Loki…"``.
+- [ ] Web / registry: ``web_fetch`` → ``"Fetching <host>…"``,
+  ``registry_search`` → ``"Searching Docker Hub…"``,
+  ``registry_image_info`` → ``"Inspecting <image>…"``.
+
+### 82.3 Renderers — in-place update by tool-call id
+
+- [ ] TUI: render the pending block with a spinner glyph; replace
+  it with the ``TOOL_INVOKED`` line when the matching event
+  arrives.  No new chat lines — the block updates in place.
+- [ ] Web UI: same behaviour with a CSS spinner that swaps to the
+  Phase 75 success/failure colour cue on update.  Match the
+  event-bus contract documented in ``design/UI.md``.
+- [ ] Failure path: if the tool errors before producing a
+  ``TOOL_INVOKED`` (timeout, cancellation, dispatcher exception),
+  the pending block must still resolve — convert it to an error
+  line rather than leaving a dangling spinner.
+
+### 82.4 Tests
+
+- [ ] Unit: ``intro_caption`` default + per-tool overrides return
+  the expected strings; tool-call id round-trips between the
+  pending and final events.
+- [ ] Renderer integration: emit pending then final, assert the
+  rendered transcript contains exactly one inline block per tool
+  call (no duplicate lines).
+- [ ] Failure path: emit pending then a synthetic dispatcher
+  exception; assert the block becomes an error line, not an
+  orphan spinner.
+
+### What this phase is *not*
+
+- Not streaming tool *output* — only the caption is two-phase.
+  Tool results still arrive in one chunk.
+- Not a progress bar or token counter — Phase 31 covers cost
+  streaming and is separate.
+- Not a redesign of the post-call caption framework — Phases 75 /
+  81 own that surface.  This phase only adds the pre-call half
+  and the in-place update path.
+
+**Exit criteria:** invoking a slow tool (``charmcraft_pack``,
+``juju_wait``, ``web_fetch``) shows an immediate intro caption that
+updates in place to the post-call caption when the tool returns.
+``make check`` passes.  No regression in Phase 75 inline-block
+rendering.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Pending event hook | Phase 75 inline blocks | Reuses TOOL_INVOKED renderer |
+| Bespoke intro captions | Phase 81 (post-call captions) | Mirrors the same per-tool ergonomics |
+| In-place replacement | Phase 75 + Web UI event-bus parity | Both renderers need update-by-id |
+
+**Discovered:** While reviewing OpenAI's GPT-5.5 prompt-guidance
+recommendations, the "preambles before tool calls" pattern stood
+out as orthogonal to (but compatible with) Phase 75's post-call
+captions.  The user proposed folding them into a single inline
+block that transitions from intro to outcome.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -3152,4 +3265,5 @@ fallback; this phase tracks them so they don't rot.
 | M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |
 | M80: Stacked Policies | 80 ✓ | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
 | M81: Tool Caption Coverage | 81 | ``run_command``, the Juju tool family, and the acceptance/test reporters populate ``ToolResult.caption`` rather than relying on the Phase 75 fallback |
+| M82: Pre/Post Tool Captions | 82 | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

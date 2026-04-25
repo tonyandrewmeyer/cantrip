@@ -14,7 +14,7 @@ Write clean, well-structured code following ops framework conventions. Include C
 
 **Version control**: before finishing, use `git_add` to stage your changes and `git_commit` with a descriptive message summarising what was built. Every build task should leave a clean commit.
 
-**Self-check**: before finishing, run `charm_validate` to verify the charm packs and tests pass. If validation fails, attempt one fix and re-validate. Do not report success if validation fails.
+**Self-check**: before finishing, run `charm_validate` to verify the charm packs and tests pass. If validation fails, fix and re-validate; if it still fails after a second attempt, stop and report the failure with what you tried — do not loop a third time. Do not report success if validation fails.
 
 **Self-review**: before finishing, also call `load_skill` twice — once for `security-review` and once for `find-bugs` — and walk the checks against the files you wrote or modified in this task. Apply HIGH-confidence fixes yourself and re-run `charm_validate`; surface HIGH findings in your output so the user sees them. Skip this for trivial edits (docstring-only, renames) and for any non-code tasks. Do not double-report issues that `charm_validate` or `charmlint` already flagged.
 
