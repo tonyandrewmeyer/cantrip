@@ -13,6 +13,7 @@ on_this_page:
   - { anchor: "skill", label: "cantrip skill" }
   - { anchor: "checkpoints", label: "cantrip checkpoints" }
   - { anchor: "slash-commands", label: "Slash commands" }
+  - { anchor: "architect-mode", label: "Architect / editor mode" }
   - { anchor: "env-vars", label: "Environment variables" }
   - { anchor: "session-file", label: "Session file" }
 ---
@@ -179,6 +180,33 @@ Start the agent and build or improve a charm.
     are advisory, not gating. Use this flag if the linters are
     unavailable or the inline feedback is noisy in your
     workflow.
+  </dd>
+
+  <dt>--architect</dt>
+  <dd>
+    Phase 71.2 architect/editor two-model split. Each agent
+    turn runs in two passes: an <em>architect</em> pass on the
+    main model emits a plain-prose proposal (no tool calls),
+    then an <em>editor</em> pass on a cheaper model translates
+    the proposal into actual <code>fs_edit</code> /
+    <code>fs_write</code> tool calls. Both passes appear
+    separately in <code>/cost</code>. Toggle mid-session with
+    <code>/architect</code>. See
+    <a href="howto-architect-mode.html">Use architect mode</a>.
+  </dd>
+
+  <dt>--editor-provider NAME</dt>
+  <dd>
+    Override the editor provider when <code>--architect</code>
+    is on. Useful for hybrid combinations like architect=Claude,
+    editor=Gemini-Flash. Ignored without <code>--architect</code>.
+  </dd>
+
+  <dt>--editor-model SLUG</dt>
+  <dd>
+    Override the editor model slug when <code>--architect</code>
+    is on. Defaults to the configured editor provider's default
+    model. Ignored without <code>--architect</code>.
   </dd>
 </dl>
 
@@ -606,6 +634,37 @@ swap&mdash;they&rsquo;re session totals, not per-provider. Any
 cross-provider light routing (<code>--light-provider snap</code>
 etc.) drops in favour of same-family routing; callers who rely on
 a specific hybrid should restart the session.
+
+{#architect-mode}
+### Architect / editor mode
+
+<dl>
+  <dt><code>/architect</code></dt>
+  <dd>
+    Toggle the Phase 71.2 architect/editor split. With no
+    argument, flips on/off; <code>/architect on</code> and
+    <code>/architect off</code> are explicit. With a second
+    token, sets the editor (same syntax as
+    <code>/model</code>):
+    <code>/architect on claude</code>,
+    <code>/architect on claude/claude-haiku-4-5-20251001</code>.
+    See <a href="howto-architect-mode.html">Use architect mode</a>
+    for the design rationale and editor resolution rules.
+  </dd>
+</dl>
+
+When architect mode is on, every conversation-loop call splits
+into two passes: an <em>architect</em> pass on the main provider
+that emits a plain-prose proposal (no tool calls), then an
+<em>editor</em> pass on a cheaper provider that consumes the
+proposal and emits the actual <code>fs_edit</code> /
+<code>fs_write</code> calls. Both passes record usage attributed
+to their own provider, so <code>/cost</code> shows two model
+lines per turn. Both passes also fire transcript events
+(<code>architect_pass</code> / <code>editor_pass</code>) for
+audit. Streaming surfaces yield the editor's response as a
+single chunk &mdash; the architect's proposal is internal, not
+streamed to the user.
 
 {#share}
 ### Share session as a gist

@@ -100,6 +100,9 @@ class CantripApp(App):
         no_snapshots: bool = False,
         yolo: bool = False,
         no_auto_lint: bool = False,
+        architect: bool = False,
+        editor_provider: str | None = None,
+        editor_model: str | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -120,6 +123,9 @@ class CantripApp(App):
         self._no_snapshots = no_snapshots
         self._yolo = yolo
         self._no_auto_lint = no_auto_lint
+        self._architect = architect
+        self._editor_provider = editor_provider
+        self._editor_model = editor_model
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -346,6 +352,12 @@ class CantripApp(App):
             # default state is ``True``.
             if self._no_auto_lint:
                 self._agent.state.auto_lint = False
+
+            # Phase 71.2: architect/editor split (CLI flag → state).
+            if self._architect:
+                self._agent.state.architect_mode = True
+                self._agent.state.editor_provider = self._editor_provider
+                self._agent.state.editor_model = self._editor_model
 
             # Set improvement mode if --improve was passed.
             if self._improve_path is not None:

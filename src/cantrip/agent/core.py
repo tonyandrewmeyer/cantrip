@@ -807,8 +807,19 @@ class CantripAgent:
         target.write_text(content)
         log.info("Wrote CLAUDE.md to %s", charm_path)
 
-    def _record_usage(self, response: Response) -> int | None:
-        """Record token usage from a provider response if a store is active."""
+    def _record_usage(
+        self,
+        response: Response,
+        provider: LLMProvider | None = None,
+    ) -> int | None:
+        """Record token usage from a provider response if a store is active.
+
+        ``provider`` defaults to ``self.provider`` so existing call
+        sites stay unchanged; Phase 71.2 architect/editor passes pass
+        the specific pass's provider so ``/cost`` can break costs out
+        per-model.
+        """
+        attribution = provider or self.provider
         if response.usage:
             created = response.usage.get("cache_creation_input_tokens", 0) or 0
             read = response.usage.get("cache_read_input_tokens", 0) or 0
@@ -831,8 +842,8 @@ class CantripAgent:
         self._ensure_store()
         if self._store and response.usage:
             return self._store.record_usage(
-                provider=self.provider.name,
-                model=self.provider.model_name,
+                provider=attribution.name,
+                model=attribution.model_name,
                 prompt_tokens=response.usage.get("prompt_tokens", 0),
                 completion_tokens=response.usage.get("completion_tokens", 0),
             )
@@ -1336,15 +1347,211 @@ class CantripAgent:
         tools: list[llm.Tool] | None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        provider: LLMProvider | None = None,
     ) -> Response:
-        """Call provider.complete() with retry and linear backoff for transient errors."""
+        """Call provider.complete() with retry and linear backoff for transient errors.
+
+        ``provider`` overrides the default :attr:`self.provider`; used
+        by the Phase 71.2 architect/editor split to route the architect
+        pass through the main provider and the editor pass through a
+        cheaper one.
+        """
         return await complete_with_retry(
-            self.provider,
+            provider or self.provider,
             messages,
             tools,
             temperature=temperature,
             max_tokens=max_tokens,
         )
+
+    # ─── Phase 71.2: Architect / Editor two-model split ──────────────
+
+    _ARCHITECT_INSTRUCTION = (
+        "You are operating in *architect* mode for this turn.  Describe "
+        "the change you would make in plain prose: which file(s), what "
+        "to change, why.  Be specific about line ranges or symbols.  "
+        "Do NOT emit tool calls and do NOT write code blocks larger "
+        "than a few lines for illustration — a separate *editor* pass "
+        "will translate your proposal into the actual edits."
+    )
+
+    _EDITOR_INSTRUCTION_TEMPLATE = (
+        "Apply the architect's proposal below as concrete tool calls "
+        "(``write_file``, ``edit_file``, ``multi_edit``, …).  Edit "
+        "exactly the files the architect named; if the proposal is "
+        "ambiguous, read the relevant files first.  Do not redesign "
+        "the change.\n\n"
+        "<architect_proposal>\n{proposal}\n</architect_proposal>"
+    )
+
+    def _architect_provider(self) -> LLMProvider:
+        """Provider for the architect pass.
+
+        Always the main provider.  ``state.architect_consecutive_failures``
+        beyond the threshold also routes the *editor* pass through the
+        architect — see :meth:`_editor_provider`.
+        """
+        return self.provider
+
+    def _editor_provider(self) -> LLMProvider:
+        """Provider for the editor pass.
+
+        Resolution order:
+
+        1. Per-session override (``state.editor_provider`` /
+           ``editor_model``) — set explicitly via ``/architect on
+           provider/model``.  Constructed on-demand via
+           :func:`create_provider`; failures fall through to (2).
+        2. The session's existing light provider (the one used for
+           compaction etc.) when one is configured — same family,
+           cheaper variant.
+        3. Fallback to the main provider when no lighter variant is
+           available.  No cost saving in that case but the dual-pass
+           shape stays so the user sees the architect/editor split
+           in the transcript.
+
+        When the editor has failed too many turns in a row
+        (``architect_consecutive_failures >= architect_failure_threshold``)
+        the architect provider is used for both passes — the
+        documented escape hatch from a weak editor.
+        """
+        if self.state.architect_consecutive_failures >= self.state.architect_failure_threshold:
+            log.info(
+                "Editor escalated to architect provider after %d consecutive failures",
+                self.state.architect_consecutive_failures,
+            )
+            return self.provider
+        if self.state.editor_provider:
+            try:
+                return create_provider(
+                    self.state.editor_provider,
+                    self.state.editor_model,
+                )
+            except (ValueError, RuntimeError, OSError) as exc:
+                log.warning(
+                    "Editor provider override %s/%s failed (%s); falling back to light provider",
+                    self.state.editor_provider,
+                    self.state.editor_model,
+                    exc,
+                )
+        if self._light_provider is not None:
+            return self._light_provider
+        return self.provider
+
+    @staticmethod
+    def _all_tool_calls_failed(tool_results: list[llm.ToolResult]) -> bool:
+        """Predicate driving Phase 71.2 fall-through.
+
+        Returns ``True`` when *every* tool result in the list reports
+        ``is_error=True``, ``False`` for an empty list (no calls means
+        nothing to fail) or when at least one call succeeded.
+        """
+        if not tool_results:
+            return False
+        return all(r.is_error for r in tool_results)
+
+    def _record_architect_editor_event(
+        self,
+        kind: str,
+        response: Response,
+        provider: LLMProvider,
+    ) -> None:
+        """Persist an ``architect_pass`` / ``editor_pass`` transcript event.
+
+        Captures the provider/model attribution so downstream auditors
+        can reconstruct who-said-what without joining against the
+        ``token_usage`` table.  Best-effort: store errors are logged
+        and swallowed so a misconfigured store can't tear down the
+        agent loop.
+        """
+        self._ensure_store()
+        if not self._store:
+            return
+        usage = response.usage or {}
+        try:
+            self._store.record_event(
+                kind,
+                {
+                    "provider": provider.name,
+                    "model": provider.model_name,
+                    "prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
+                    "completion_tokens": int(usage.get("completion_tokens", 0) or 0),
+                    "tool_calls": len(response.tool_calls),
+                    "content_excerpt": (response.content or "")[:400],
+                },
+            )
+        except sqlite3.Error:
+            log.debug("record_event(%s) failed", kind, exc_info=True)
+
+    async def _run_architect_editor_turn(
+        self,
+        messages: list[Message],
+        llm_tools: list[llm.Tool] | None,
+    ) -> Response:
+        """Run a single conversation-loop step as architect → editor.
+
+        Returns a single :class:`Response` whose ``content`` is the
+        editor's text and whose ``tool_calls`` are what the editor
+        emitted.  Both passes get their usage recorded individually
+        (so ``/cost`` shows two model lines per turn) and a
+        transcript event each.
+
+        The architect pass passes ``tools=None`` so a strict
+        provider can't sneak a tool call in; the editor pass passes
+        the full ``llm_tools`` list and is the source of any actual
+        edits.
+
+        Used in place of a single ``_complete_with_retry`` call from
+        ``_run_conversation_loop`` and
+        ``_run_conversation_loop_streaming`` whenever
+        ``state.architect_mode`` is True.
+        """
+        architect_provider = self._architect_provider()
+        # Architect: prepend the architect instruction as a SYSTEM
+        # message so it's clear the request is "propose, don't act".
+        # Don't mutate the caller's list.
+        architect_msgs: list[Message] = list(messages) + [
+            Message(role=Role.SYSTEM, content=self._ARCHITECT_INSTRUCTION),
+        ]
+        architect_resp = await self._complete_with_retry(
+            architect_msgs,
+            tools=None,
+            provider=architect_provider,
+        )
+        self._record_usage(architect_resp, provider=architect_provider)
+        self._record_architect_editor_event("architect_pass", architect_resp, architect_provider)
+        try:
+            self._event_bus.publish(
+                ui_events.chat_message(
+                    role="system",
+                    content=(
+                        f"_Architect ({architect_provider.name}/"
+                        f"{architect_provider.model_name}) proposed_."
+                    ),
+                )
+            )
+        except Exception:  # noqa: BLE001 — UI hook must not break the loop.
+            log.debug("architect_pass UI publish failed", exc_info=True)
+
+        editor_provider = self._editor_provider()
+        proposal = architect_resp.content or "(no proposal text)"
+        # Editor: append the proposal as a synthetic USER message so
+        # the conversation alternates cleanly (the prior message ends
+        # ASSISTANT or TOOL — never USER — when this method is called).
+        editor_msgs: list[Message] = list(messages) + [
+            Message(
+                role=Role.USER,
+                content=self._EDITOR_INSTRUCTION_TEMPLATE.format(proposal=proposal),
+            )
+        ]
+        editor_resp = await self._complete_with_retry(
+            editor_msgs,
+            tools=llm_tools,
+            provider=editor_provider,
+        )
+        self._record_usage(editor_resp, provider=editor_provider)
+        self._record_architect_editor_event("editor_pass", editor_resp, editor_provider)
+        return editor_resp
 
     def _pause_executor(self) -> None:
         """Pause the background executor while handling a user message."""
@@ -1427,8 +1634,15 @@ class CantripAgent:
         messages = self._build_llm_messages(include_budget=True)
         llm_tools = self._tools_for_llm() if self._tools else None
 
-        response = await self._complete_with_retry(messages, llm_tools)
-        self._record_usage(response)
+        # Phase 71.2: when architect_mode is on, every LLM call routes
+        # through the dual-pass orchestrator.  Otherwise the existing
+        # single-call path runs unchanged.
+        if self.state.architect_mode:
+            self.state.architect_consecutive_failures = 0
+            response = await self._run_architect_editor_turn(messages, llm_tools)
+        else:
+            response = await self._complete_with_retry(messages, llm_tools)
+            self._record_usage(response)
 
         rounds = 0
         while response.tool_calls and rounds < MAX_TOOL_ROUNDS:
@@ -1562,10 +1776,23 @@ class CantripAgent:
                         },
                     )
 
+            # Phase 71.2: track editor-pass failures across rounds so
+            # the dual-pass orchestrator can escalate to the architect
+            # provider when the cheap editor keeps producing
+            # unapplyable patches.  Reset on a turn that succeeded.
+            if self.state.architect_mode:
+                if self._all_tool_calls_failed(tool_results):
+                    self.state.architect_consecutive_failures += 1
+                else:
+                    self.state.architect_consecutive_failures = 0
+
             # Call the LLM again with the updated history.
             messages = self._build_llm_messages(include_budget=True)
-            response = await self._complete_with_retry(messages, llm_tools)
-            self._record_usage(response)
+            if self.state.architect_mode:
+                response = await self._run_architect_editor_turn(messages, llm_tools)
+            else:
+                response = await self._complete_with_retry(messages, llm_tools)
+                self._record_usage(response)
 
         # Store the final assistant response.
         final_msg = Message(
@@ -1645,24 +1872,36 @@ class CantripAgent:
         messages = self._build_llm_messages(include_budget=True)
         llm_tools = self._tools_for_llm() if self._tools else None
 
-        # Stream the first LLM call.
-        accumulated = ""
-        final_chunk = Chunk(is_final=True)
-        async for chunk in self.provider.stream(messages=messages, tools=llm_tools):
-            if chunk.content:
-                accumulated += chunk.content
-                yield chunk.content
-            if chunk.is_final:
-                final_chunk = chunk
+        # Phase 71.2: architect mode bypasses streaming and runs a
+        # dual-pass turn instead.  We yield the editor's content as a
+        # single chunk; the architect's proposal is captured in the
+        # transcript via ``architect_pass``.  Streaming loses
+        # token-by-token rendering inside an architect-mode session,
+        # but the dual-pass overhead dominates that cosmetic cost.
+        if self.state.architect_mode:
+            self.state.architect_consecutive_failures = 0
+            response = await self._run_architect_editor_turn(messages, llm_tools)
+            if response.content:
+                yield response.content
+        else:
+            # Stream the first LLM call.
+            accumulated = ""
+            final_chunk = Chunk(is_final=True)
+            async for chunk in self.provider.stream(messages=messages, tools=llm_tools):
+                if chunk.content:
+                    accumulated += chunk.content
+                    yield chunk.content
+                if chunk.is_final:
+                    final_chunk = chunk
 
-        # Build a synthetic Response for bookkeeping.
-        response = Response(
-            content=accumulated,
-            tool_calls=final_chunk.tool_calls,
-            usage=final_chunk.usage,
-            metadata=final_chunk.metadata,
-        )
-        self._record_usage(response)
+            # Build a synthetic Response for bookkeeping.
+            response = Response(
+                content=accumulated,
+                tool_calls=final_chunk.tool_calls,
+                usage=final_chunk.usage,
+                metadata=final_chunk.metadata,
+            )
+            self._record_usage(response)
 
         rounds = 0
         while response.tool_calls and rounds < MAX_TOOL_ROUNDS:
@@ -1774,6 +2013,15 @@ class CantripAgent:
                         },
                     )
 
+            # Phase 71.2: same fall-through tracking as the
+            # non-streaming loop — count editor passes whose tools
+            # all failed so the next pass can escalate.
+            if self.state.architect_mode:
+                if self._all_tool_calls_failed(tool_results):
+                    self.state.architect_consecutive_failures += 1
+                else:
+                    self.state.architect_consecutive_failures = 0
+
             # Separate this round's text from the previous round's, since
             # each round is an independent LLM response with no leading
             # whitespace — without this, sentences run together visually.
@@ -1782,22 +2030,27 @@ class CantripAgent:
 
             # Stream the next LLM call.
             messages = self._build_llm_messages(include_budget=True)
-            accumulated = ""
-            final_chunk = Chunk(is_final=True)
-            async for chunk in self.provider.stream(messages=messages, tools=llm_tools):
-                if chunk.content:
-                    accumulated += chunk.content
-                    yield chunk.content
-                if chunk.is_final:
-                    final_chunk = chunk
+            if self.state.architect_mode:
+                response = await self._run_architect_editor_turn(messages, llm_tools)
+                if response.content:
+                    yield response.content
+            else:
+                accumulated = ""
+                final_chunk = Chunk(is_final=True)
+                async for chunk in self.provider.stream(messages=messages, tools=llm_tools):
+                    if chunk.content:
+                        accumulated += chunk.content
+                        yield chunk.content
+                    if chunk.is_final:
+                        final_chunk = chunk
 
-            response = Response(
-                content=accumulated,
-                tool_calls=final_chunk.tool_calls,
-                usage=final_chunk.usage,
-                metadata=final_chunk.metadata,
-            )
-            self._record_usage(response)
+                response = Response(
+                    content=accumulated,
+                    tool_calls=final_chunk.tool_calls,
+                    usage=final_chunk.usage,
+                    metadata=final_chunk.metadata,
+                )
+                self._record_usage(response)
 
         # Store the final assistant response.
         final_msg = Message(

@@ -402,6 +402,12 @@ def run_print(args: argparse.Namespace) -> int:
     if bool(getattr(args, "no_auto_lint", False)):
         agent.state.auto_lint = False
 
+    # Phase 71.2: architect/editor two-model split (CLI parity with REPL).
+    if bool(getattr(args, "architect", False)):
+        agent.state.architect_mode = True
+        agent.state.editor_provider = getattr(args, "editor_provider", None) or None
+        agent.state.editor_model = getattr(args, "editor_model", None) or None
+
     ralph_max = int(getattr(args, "ralph_max_iterations", 0) or 0)
     agent.state.ralph_max_iterations = ralph_max
     ralph_config = RalphConfig(max_iterations=ralph_max) if ralph_max != 0 else None

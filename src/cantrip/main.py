@@ -211,6 +211,43 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     run_parser.add_argument(
+        "--architect",
+        action="store_true",
+        dest="architect",
+        help=(
+            "Phase 71.2 architect/editor two-model split.  Each "
+            "agent turn runs in two passes: an *architect* pass on "
+            "the main model proposes the change in plain prose, "
+            "then a cheaper *editor* pass turns the proposal into "
+            "actual tool calls.  Both passes appear separately in "
+            "``/cost``.  Toggle mid-session with ``/architect``; "
+            "override the editor with "
+            "``/architect on <provider>/<model>``."
+        ),
+    )
+    run_parser.add_argument(
+        "--editor-provider",
+        dest="editor_provider",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Override the editor provider for ``--architect``.  Useful "
+            "for hybrid configurations like architect=Claude, "
+            "editor=Gemini-Flash.  Ignored without ``--architect``."
+        ),
+    )
+    run_parser.add_argument(
+        "--editor-model",
+        dest="editor_model",
+        default=None,
+        metavar="SLUG",
+        help=(
+            "Override the editor model slug for ``--architect``.  "
+            "Defaults to the configured editor provider's default "
+            "model.  Ignored without ``--architect``."
+        ),
+    )
+    run_parser.add_argument(
         "--print",
         "-p",
         dest="print_goal",
@@ -712,6 +749,9 @@ def _run(args: argparse.Namespace) -> int:
             no_snapshots=bool(getattr(args, "no_snapshots", False)),
             yolo=bool(getattr(args, "yolo", False)),
             no_auto_lint=bool(getattr(args, "no_auto_lint", False)),
+            architect=bool(getattr(args, "architect", False)),
+            editor_provider=getattr(args, "editor_provider", None),
+            editor_model=getattr(args, "editor_model", None),
         )
         app.run()
         _print_update_panel(app.pending_update_info)
