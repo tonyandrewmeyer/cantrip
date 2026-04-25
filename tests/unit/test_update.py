@@ -166,7 +166,7 @@ class TestCheckForUpdate:
         assert info is not None
         assert info.current == "0.1.0"
         assert info.latest == "0.2.0"
-        assert info.pypi_url == "https://pypi.org/project/cantrip/0.2.0/"
+        assert info.pypi_url == "https://pypi.org/project/juju-cantrip/0.2.0/"
         assert info.release_timestamp == "2026-04-01T12:00:00.000000Z"
 
     @pytest.mark.asyncio
@@ -568,10 +568,10 @@ class TestUpgradeCommand:
     @pytest.mark.parametrize(
         "method,expected",
         [
-            (update.InstallMethod.UV_TOOL, "uv tool upgrade cantrip"),
-            (update.InstallMethod.PIPX, "pipx upgrade cantrip"),
-            (update.InstallMethod.PIP_USER, "uv pip install --user --upgrade cantrip"),
-            (update.InstallMethod.PIP_VENV, "uv pip install --upgrade cantrip"),
+            (update.InstallMethod.UV_TOOL, "uv tool upgrade juju-cantrip"),
+            (update.InstallMethod.PIPX, "pipx upgrade juju-cantrip"),
+            (update.InstallMethod.PIP_USER, "uv pip install --user --upgrade juju-cantrip"),
+            (update.InstallMethod.PIP_VENV, "uv pip install --upgrade juju-cantrip"),
             (update.InstallMethod.SNAP, "snap refresh cantrip"),
         ],
     )
@@ -588,7 +588,7 @@ class TestUpgradeCommand:
             "detect_install_method",
             lambda: update.InstallMethod.PIPX,
         )
-        assert update.upgrade_command() == "pipx upgrade cantrip"
+        assert update.upgrade_command() == "pipx upgrade juju-cantrip"
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -990,7 +990,7 @@ class TestFormatCliNotice:
         defaults = {
             "current": "0.1.0",
             "latest": "0.2.0",
-            "pypi_url": "https://pypi.org/project/cantrip/0.2.0/",
+            "pypi_url": "https://pypi.org/project/juju-cantrip/0.2.0/",
             "release_timestamp": None,
         }
         defaults.update(overrides)
@@ -1000,8 +1000,8 @@ class TestFormatCliNotice:
         notice = update.format_cli_notice(self._info(), method=update.InstallMethod.UV_TOOL)
         assert "0.2.0" in notice
         assert "0.1.0" in notice
-        assert "https://pypi.org/project/cantrip/0.2.0/" in notice
-        assert "uv tool upgrade cantrip" in notice
+        assert "https://pypi.org/project/juju-cantrip/0.2.0/" in notice
+        assert "uv tool upgrade juju-cantrip" in notice
         # Two lines — keeps piped stdout short and predictable.
         assert notice.count("\n") == 1
 
@@ -1009,7 +1009,7 @@ class TestFormatCliNotice:
         notice = update.format_cli_notice(self._info(), method=update.InstallMethod.UNKNOWN)
         assert "usual installer" in notice
         assert "uv tool upgrade" not in notice
-        assert "https://pypi.org/project/cantrip/0.2.0/" in notice
+        assert "https://pypi.org/project/juju-cantrip/0.2.0/" in notice
 
     def test_yanked_install_changes_headline(self):
         notice = update.format_cli_notice(
@@ -1017,12 +1017,12 @@ class TestFormatCliNotice:
             method=update.InstallMethod.PIPX,
         )
         assert "yanked" in notice
-        assert "pipx upgrade cantrip" in notice
+        assert "pipx upgrade juju-cantrip" in notice
 
     def test_default_method_detects(self, monkeypatch):
         monkeypatch.setattr(update, "detect_install_method", lambda: update.InstallMethod.PIPX)
         notice = update.format_cli_notice(self._info())
-        assert "pipx upgrade cantrip" in notice
+        assert "pipx upgrade juju-cantrip" in notice
 
 
 class TestFormatSlashNotice:
@@ -1032,7 +1032,7 @@ class TestFormatSlashNotice:
         defaults = {
             "current": "0.1.0",
             "latest": "0.2.0",
-            "pypi_url": "https://pypi.org/project/cantrip/0.2.0/",
+            "pypi_url": "https://pypi.org/project/juju-cantrip/0.2.0/",
             "release_timestamp": None,
         }
         defaults.update(overrides)
@@ -1040,8 +1040,8 @@ class TestFormatSlashNotice:
 
     def test_renders_markdown_link_and_fenced_command(self):
         notice = update.format_slash_notice(self._info(), method=update.InstallMethod.UV_TOOL)
-        assert "<https://pypi.org/project/cantrip/0.2.0/>" in notice
-        assert "`uv tool upgrade cantrip`" in notice
+        assert "<https://pypi.org/project/juju-cantrip/0.2.0/>" in notice
+        assert "`uv tool upgrade juju-cantrip`" in notice
         # Restart reminder is load-bearing — the running process still
         # executes the old code after the user upgrades.
         assert "restart" in notice.lower()

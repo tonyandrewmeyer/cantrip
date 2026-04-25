@@ -939,7 +939,7 @@ class TestUpdateFollowup:
         info = update.UpdateInfo(
             current="0.1.0",
             latest="0.2.0",
-            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            pypi_url="https://pypi.org/project/juju-cantrip/0.2.0/",
             release_timestamp=None,
         )
         monkeypatch.setattr(update, "check_for_update", AsyncMock(return_value=info))
@@ -947,7 +947,7 @@ class TestUpdateFollowup:
         monkeypatch.setattr(update, "detect_install_method", lambda: update.InstallMethod.UV_TOOL)
         text = await slash_commands._run_update_slash_check()
         assert "0.2.0" in text
-        assert "uv tool upgrade cantrip" in text
+        assert "uv tool upgrade juju-cantrip" in text
         # The running process still executes the old code — the notice
         # says so explicitly because /update fires mid-session.
         assert "restart" in text.lower()

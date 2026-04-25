@@ -171,7 +171,7 @@ class TestIsCantripSourceTree:
 
     def test_returns_true_for_cantrip_pyproject(self, tmp_path: Path) -> None:
         (tmp_path / "pyproject.toml").write_text(
-            '[project]\nname = "cantrip"\n\n[project.scripts]\ncantrip = "cantrip.main:main"\n'
+            '[project]\nname = "juju-cantrip"\n\n[project.scripts]\ncantrip = "cantrip.main:main"\n'
         )
         assert cantrip_main._is_cantrip_source_tree(tmp_path) is True
 
@@ -219,7 +219,7 @@ class TestRun:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
-            '[project]\nname = "cantrip"\n\n[project.scripts]\ncantrip = "cantrip.main:main"\n'
+            '[project]\nname = "juju-cantrip"\n\n[project.scripts]\ncantrip = "cantrip.main:main"\n'
         )
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         rc = cantrip_main._run(_run_args(tmp_path))
@@ -393,7 +393,7 @@ class TestPrintUpdatePanel:
         info = update.UpdateInfo(
             current="0.1.0",
             latest="0.2.0",
-            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            pypi_url="https://pypi.org/project/juju-cantrip/0.2.0/",
             release_timestamp=None,
             release_notes_markdown="## 0.2.0\n\n- New feature.\n",
         )
@@ -404,7 +404,7 @@ class TestPrintUpdatePanel:
             cantrip_main._print_update_panel(info)
         out = capsys.readouterr().out
         assert "0.2.0" in out
-        assert "uv tool upgrade cantrip" in out
+        assert "uv tool upgrade juju-cantrip" in out
 
     def test_yanked_variant_mentions_yanked(self, capsys: pytest.CaptureFixture[str]) -> None:
         from cantrip import update
@@ -412,7 +412,7 @@ class TestPrintUpdatePanel:
         info = update.UpdateInfo(
             current="0.1.0",
             latest="0.2.0",
-            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            pypi_url="https://pypi.org/project/juju-cantrip/0.2.0/",
             release_timestamp=None,
             installed_yanked=True,
         )

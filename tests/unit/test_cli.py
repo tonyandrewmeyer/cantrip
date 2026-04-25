@@ -960,7 +960,7 @@ class TestPrintUpdateNotice:
         info = update.UpdateInfo(
             current="0.1.0",
             latest="0.2.0",
-            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            pypi_url="https://pypi.org/project/juju-cantrip/0.2.0/",
             release_timestamp=None,
         )
 
@@ -975,7 +975,7 @@ class TestPrintUpdateNotice:
             await cli._print_update_notice(task)
         out = capsys.readouterr().out
         assert "0.2.0" in out
-        assert "uv tool upgrade cantrip" in out
+        assert "uv tool upgrade juju-cantrip" in out
 
     @pytest.mark.asyncio
     async def test_silent_when_no_update(self, capsys: pytest.CaptureFixture[str]) -> None:
