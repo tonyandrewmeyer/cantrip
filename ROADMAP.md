@@ -4055,6 +4055,98 @@ on writes.
 
 ---
 
+## Phase 87: Bug-Hunt Follow-ups (2026-04-26)
+
+**Goal:** clean up the smaller polish items surfaced by an end-to-end
+exercise of the CLI surface (slash commands, ancillary subcommands,
+charmlint, quickpack, web UI, providers).  The headline bugs from
+that pass landed as straight fixes in the same session — five of
+them, covering print-mode slash dispatch, ``--print --json`` chat
+events, ``--print ""`` falling through to the REPL, ``charmlint`` on
+malformed YAML, and ``quickpack`` swallowing ``CalledProcessError``.
+The items below are the residual rough edges that didn't justify a
+direct fix in that pass and have not yet been triaged.
+
+### 87.1 ``/budget`` synonym for ``--max-tokens``
+
+The CLI flag is ``--max-tokens N`` (which splits evenly across
+prompt and completion).  ``/budget`` only accepts
+``--max-prompt-tokens`` and ``--max-completion-tokens`` — passing
+``/budget --max-tokens N`` produces the help text instead of doing
+the obvious thing.  Either accept the same alias mid-session or
+mention the per-direction caps in ``--max-tokens``'s ``--help``.
+
+### 87.2 Toggle-confirmation phrasing parity
+
+``/yolo`` and ``/architect`` use different phrasings for the
+"already in this state" path:
+
+- ``/yolo on`` (when on) → ``Already in yolo mode on.``
+- ``/architect on`` (when on) → ``Architect mode is already on.  Bare \`/architect\` toggles.``
+
+Pick one phrasing (probably the architect one, which actually tells
+the user how to flip the flag) and apply it to ``/yolo``,
+``/auto-commit``, ``/plan``/``/build`` if the same shape exists
+there too.
+
+### 87.3 ``compare`` should clarify that source code isn't compared
+
+``cantrip compare`` reports "identical" when two charms have wildly
+different ``src/charm.py`` contents because it only diffs structure,
+config, relations, actions, containers, and tests.  The argparse
+help line ("Diff two charm implementations (structure, config,
+relations, tests)") implies this, but the CLI output's structure
+section says ``(identical — same file/directory set)`` without
+clarifying that file *contents* aren't being read.  Either add a
+``--with-source`` mode or amend the structure-section caption to say
+"file/directory layout (not contents)".
+
+### 87.4 ``charmlint --strict`` exit-code documentation
+
+``--strict`` is documented as "Exit with code 2 if warnings are
+found", but the actual logic is errors → 1, strict + warnings → 2.
+When *both* errors and warnings are present, ``--strict`` returns 1
+(not 2).  Document this precedence in the ``--help`` text so CI
+authors know how to wire ``--strict`` into a multi-tier failure
+threshold.
+
+### 87.5 Update-check cache freshness
+
+The 24-hour TTL on ``~/.cache/cantrip/update.json`` means stale
+cache entries can outlive the underlying PyPI state (e.g. a yanked
+release or a downgrade re-tag).  ``/update`` already bypasses the
+cache, but the *startup* notice still trusts the file for a full day
+after it's written.  Two small improvements: (a) when
+``check_for_update`` writes a cache, also store the
+``current`` version it was checked against so a later ``cantrip``
+upgrade invalidates the cache automatically; (b) consider verifying
+the cached ``latest`` exists in PyPI's ``releases`` map before
+showing the notice, so a yanked tag stops nagging.
+
+### Exit criteria
+
+- 87.1 — ``/budget --max-tokens N`` either works or the help text
+  explains why it doesn't.
+- 87.2 — The five toggle handlers share a single
+  ``_already_in_state`` formatter or a table of canonical strings.
+- 87.3 — ``compare``'s output makes the "structure-only" scope
+  explicit; user can see that ``src/`` content is not diffed
+  without reading the source.
+- 87.4 — ``--help`` text and ``--strict`` doc agree on exit-code
+  semantics across the error/warning matrix.
+- 87.5 — The update cache survives a Cantrip upgrade without
+  re-nagging, and a yanked latest version is filtered out before
+  the startup notice fires.
+
+### What this phase is *not*
+
+- A general "fix every CLI rough edge" sweep — these are five
+  concrete observations from one exercise, not a backlog of every
+  inconsistency in the surface.  New rough edges go in their own
+  phases.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4135,4 +4227,5 @@ on writes.
 | M82: Pre/Post Tool Captions | 82 | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
 | M86: K8s/kubectl Research | 86 | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
+| M87: Bug-Hunt Follow-ups | 87 | Five residual rough edges from the 2026-04-26 end-to-end exercise (slash-budget alias, toggle phrasing, ``compare`` scope clarity, ``charmlint --strict`` doc, update-cache freshness) tracked and triaged |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

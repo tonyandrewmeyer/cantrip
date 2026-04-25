@@ -25,6 +25,35 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the role in the confirmation; the explicit ``/copy assistant``
   selector still surfaces ``no assistant messages`` when nothing
   matches.
+- **Print mode now dispatches slash commands instead of sending them
+  to the LLM.**  ``cantrip run --print "/help"`` previously routed
+  the literal string to the model, which would respond with whatever
+  it imagined ``/help`` should say.  The dispatcher now short-
+  circuits before ``process_message``, matching CLI/TUI/Web parity.
+- **``--print --json`` emits the user prompt and assistant reply as
+  ``chat_message`` events.**  NDJSON consumers previously saw only
+  metadata events (cache, status bar, tools) and had to derive the
+  conversation contents from elsewhere.  Both messages are now in
+  the event stream alongside the rest.
+- **``cantrip run --print ""`` now exits with the documented empty-
+  goal error instead of dropping into the interactive REPL.**  The
+  truthy check on ``args.print_goal`` treated the empty string as
+  "no print flag", silently switching modes mid-invocation; the
+  dispatch now uses ``is not None`` so print mode runs and surfaces
+  exit code 2.
+- **``charmlint`` reports a YAML parse error when ``charmcraft.yaml``
+  is malformed.**  Previously it claimed "No charmcraft.yaml or
+  metadata.yaml found" because ``_load_yaml`` swallowed
+  ``yaml.YAMLError`` and returned ``{}``, masking syntax errors as
+  missing files.  The parse failure now surfaces as a ``FATAL``
+  diagnostic with the original parser hint.
+- **``quickpack`` surfaces ``uv`` failures as friendly errors.**  A
+  failing ``uv venv`` / ``uv sync`` raised
+  ``subprocess.CalledProcessError`` which the CLI's exception
+  handler did not catch — users saw a Python traceback instead of
+  uv's stderr.  ``parts._run_uv`` wraps both calls and raises
+  ``RuntimeError`` carrying the underlying uv message so the
+  existing CLI handler renders it cleanly.
 
 ### Added
 - **``cantrip permissions test`` CLI — Amp parity, closes Phase 70.**

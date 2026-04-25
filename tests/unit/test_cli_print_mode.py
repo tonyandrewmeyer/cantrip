@@ -492,6 +492,78 @@ class TestRunAsync:
         assert "rate limited" in capsys.readouterr().err
 
     @pytest.mark.asyncio
+    async def test_json_mode_emits_user_and_assistant_chat_messages(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JSON consumers see the prompt and reply as chat_message events.
+
+        ``process_message`` doesn't publish either itself — the TUI
+        reads from the streaming yield path.  Print mode therefore has
+        to emit them or NDJSON consumers reconstruct nothing useful.
+        """
+        agent = _make_agent(tmp_path)
+
+        async def _fake_process(_message: str) -> str:
+            return "the answer is 42"
+
+        agent.process_message = _fake_process  # type: ignore[method-assign]
+        agent.start_executor = lambda: None  # type: ignore[method-assign]
+
+        async def _noop_stop():
+            return None
+
+        agent.stop_executor = _noop_stop  # type: ignore[method-assign]
+
+        rc = await print_mode._run_async(agent, "what's the answer?", json_output=True)
+
+        assert rc == 0
+        out = capsys.readouterr().out
+        events = [json.loads(line) for line in out.splitlines() if line]
+        roles = [
+            (e["data"].get("role"), e["data"].get("content"))
+            for e in events
+            if e["type"] == "chat_message"
+        ]
+        assert ("user", "what's the answer?") in roles
+        assert ("assistant", "the answer is 42") in roles
+
+    @pytest.mark.asyncio
+    async def test_slash_command_dispatched_not_sent_to_llm(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """``/help`` and friends must invoke the dispatcher, not the LLM.
+
+        Before the fix, a slash command in print mode was treated as a
+        normal user prompt and the model would hallucinate a help
+        message.  The dispatcher should short-circuit before
+        ``process_message`` is ever called.
+        """
+        agent = _make_agent(tmp_path)
+        called: list[str] = []
+
+        async def _fake_process(message: str) -> str:
+            called.append(message)
+            return "should never run"
+
+        agent.process_message = _fake_process  # type: ignore[method-assign]
+        agent.start_executor = lambda: None  # type: ignore[method-assign]
+
+        async def _noop_stop():
+            return None
+
+        agent.stop_executor = _noop_stop  # type: ignore[method-assign]
+
+        rc = await print_mode._run_async(agent, "/help", json_output=False)
+
+        assert rc == 0
+        assert called == []  # process_message must not run for a slash command.
+        out = capsys.readouterr().out
+        # The shared slash dispatcher always renders some recognisable
+        # help marker — be loose about exact text since /help wording
+        # evolves.
+        assert "/help" in out or "Slash commands" in out
+
+    @pytest.mark.asyncio
     async def test_drain_timeout_returns_one(
         self,
         tmp_path: Path,

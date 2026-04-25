@@ -791,8 +791,11 @@ def _run(args: argparse.Namespace) -> int:
     _install_unraisable_hook()
 
     # Phase 67.3: non-interactive print mode pre-empts TUI/Web/CLI
-    # entrypoints — it's its own dispatch path with no REPL.
-    if getattr(args, "print_goal", None):
+    # entrypoints — it's its own dispatch path with no REPL.  Use
+    # ``is not None`` so an explicit empty ``--print ""`` still selects
+    # print mode (where ``run_print`` surfaces the empty-goal error)
+    # rather than silently falling through to the interactive REPL.
+    if getattr(args, "print_goal", None) is not None:
         if getattr(args, "web", False):
             print(
                 "Error: --print and --web are mutually exclusive.",

@@ -45,6 +45,41 @@ class TestParts:
 
         assert not (prime_dir / "src").exists()
 
+    def test_uv_subprocess_failure_raises_runtime_error_with_stderr(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """A failed `uv` invocation should surface as a friendly RuntimeError.
+
+        Without the wrapper, ``subprocess.run(check=True)`` raises
+        ``CalledProcessError`` which the CLI's exception handler does
+        not catch — the user sees a Python traceback instead of the
+        actual ``uv sync`` failure message.
+        """
+        import subprocess
+
+        charm_dir = tmp_path / "charm"
+        charm_dir.mkdir()
+        prime_dir = tmp_path / "prime"
+        prime_dir.mkdir()
+
+        def _fail(cmd, **_kwargs):  # noqa: ANN001 — test stub mimics subprocess.run.
+            raise subprocess.CalledProcessError(
+                returncode=1,
+                cmd=cmd,
+                output="",
+                stderr="error: missing uv.lock\n",
+            )
+
+        with (
+            mock.patch("quickpack.parts.subprocess.run", side_effect=_fail),
+            pytest.raises(RuntimeError) as exc_info,
+        ):
+            parts.process_uv_part(charm_dir, prime_dir, {"source": "."})
+
+        # The wrapped error should preserve uv's stderr so the user
+        # sees *why* the pack failed.
+        assert "missing uv.lock" in str(exc_info.value)
+
     def test_process_dump_part(self, tmp_path: pathlib.Path) -> None:
         """Dump part should copy files respecting organize rules."""
         source = tmp_path / "extra"

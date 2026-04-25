@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from cantrip.agent import slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import TaskCategory, TaskStatus
 from cantrip.agent.ralph import RalphConfig, RalphOutcome, run_ralph
@@ -219,6 +220,24 @@ async def _run_async(
 
     agent.start_executor()
     try:
+        # Slash commands are surface-handled in the CLI / TUI / Web —
+        # mirror that here so ``cantrip run --print "/help"`` invokes
+        # the dispatcher rather than sending the literal string to the
+        # LLM (which produces a hallucinated answer).  When dispatch
+        # returns ``None`` the message is not a slash command and falls
+        # through to the normal goal path.
+        slash_result = slash_commands.dispatch(agent, goal)
+        if slash_result is not None:
+            return await _emit_slash_result(slash_result, json_output=json_output)
+
+        # JSON mode subscribers see the user's prompt as a chat_message
+        # event so consumers reconstructing the conversation don't have
+        # to re-derive it from argv.  The agent doesn't publish this
+        # itself — the TUI streams the prompt straight into its chat
+        # widget — so emit it here just before the turn starts.
+        if json_output:
+            _emit_event(ui_events.chat_message(role="user", content=goal))
+
         # Ralph mode wraps process_message in a bounded outer loop;
         # the same drain + confirmation gate runs after every
         # iteration so a stuck CONFIRM short-circuits the run.
@@ -256,16 +275,55 @@ async def _run_async(
             )
             return 1
 
-        # Final assistant text goes to stdout (without an event-style
-        # prefix in JSON mode — the assistant's reply already streamed
-        # as a chat_message event earlier).
-        if not json_output and response:
-            sys.stdout.write(f"\n{response}\n")
-            sys.stdout.flush()
+        # Final assistant text goes to stdout in human mode; in JSON
+        # mode it's emitted as a ``chat_message`` event so the consumer
+        # has structured access to the reply alongside the rest of the
+        # event stream.  ``process_message`` doesn't publish this event
+        # itself — the TUI reads from the streaming yield path instead.
+        if response:
+            if json_output:
+                _emit_event(ui_events.chat_message(role="assistant", content=response))
+            else:
+                sys.stdout.write(f"\n{response}\n")
+                sys.stdout.flush()
 
         return _final_exit_code(agent)
     finally:
         await agent.stop_executor()
+
+
+async def _emit_slash_result(
+    result: slash_commands.SlashResult,
+    *,
+    json_output: bool,
+) -> int:
+    """Render a dispatched slash result for ``--print`` consumers.
+
+    Mirrors the CLI's :func:`cli._print_slash_result` shape but writes
+    a ``chat_message`` event instead of plain text under ``--json`` so
+    NDJSON consumers see the slash output in the same channel as a
+    normal assistant reply.  Async ``followup`` work is awaited inline
+    so the run doesn't exit before the result arrives.
+    """
+    text = result.text
+    if json_output:
+        _emit_event(ui_events.chat_message(role="system", content=text))
+    elif text:
+        sys.stdout.write(f"{text}\n")
+        sys.stdout.flush()
+
+    if result.followup is not None:
+        try:
+            followup_text = await result.followup
+        except Exception as exc:  # noqa: BLE001 — surface any handler error
+            followup_text = f"Error: slash follow-up failed: {exc}"
+        if json_output:
+            _emit_event(ui_events.chat_message(role="system", content=followup_text))
+        elif followup_text:
+            sys.stdout.write(f"{followup_text}\n")
+            sys.stdout.flush()
+
+    return 0
 
 
 async def _run_ralph_loop(

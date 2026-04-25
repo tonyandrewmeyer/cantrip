@@ -135,6 +135,38 @@ def _verify_installed_attestations(
             )
 
 
+def _run_uv(
+    cmd: list[str],
+    *,
+    cwd: pathlib.Path,
+    env: dict[str, str] | None = None,
+) -> None:
+    """Run a ``uv`` invocation and re-raise failures with stderr context.
+
+    ``subprocess.run(check=True, capture_output=True)`` raises
+    ``CalledProcessError`` on a non-zero exit, but the CLI only catches
+    ``FileNotFoundError | ValueError | RuntimeError | OSError`` — letting
+    a uv failure (missing lock file, wheel build error, network
+    failure) bubble up as an unhandled traceback rather than a clean
+    error.  Translate it here so ``quickpack`` users see *why* uv
+    failed instead of a Python stack frame.
+    """
+    try:
+        subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        stdout = (exc.stdout or "").strip()
+        detail = stderr or stdout or f"exit code {exc.returncode}"
+        raise RuntimeError(f"`{' '.join(cmd)}` failed: {detail}") from exc
+
+
 def process_uv_part(
     charm_dir: pathlib.Path,
     prime_dir: pathlib.Path,
@@ -166,7 +198,7 @@ def process_uv_part(
     # Install Python dependencies via uv.
     venv_dir = prime_dir / "venv"
 
-    subprocess.run(
+    _run_uv(
         [
             "uv",
             "venv",
@@ -175,10 +207,7 @@ def process_uv_part(
             "python3",
             str(venv_dir),
         ],
-        cwd=str(charm_dir),
-        check=True,
-        capture_output=True,
-        text=True,
+        cwd=charm_dir,
     )
 
     sync_cmd = [
@@ -205,14 +234,7 @@ def process_uv_part(
         "VIRTUAL_ENV": str(venv_dir),
     }
 
-    subprocess.run(
-        sync_cmd,
-        cwd=str(charm_dir),
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    _run_uv(sync_cmd, cwd=charm_dir, env=env)
 
     # Clean up venv to match charmcraft's UV plugin behaviour:
     # remove python* binaries and extra scripts, keep only activate.
