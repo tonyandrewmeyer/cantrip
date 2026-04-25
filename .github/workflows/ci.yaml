@@ -138,7 +138,7 @@ jobs:
           persist-credentials: false
 
       - name: Cache cargo target
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7  # v4
         with:
           path: src/${{ matrix.crate }}/target
           key: ${{ runner.os }}-cargo-${{ matrix.crate }}-${{ hashFiles(format('src/{0}/Cargo.toml', matrix.crate), format('src/{0}/Cargo.lock', matrix.crate)) }}
