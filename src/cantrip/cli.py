@@ -223,6 +223,12 @@ def run_cli(args: argparse.Namespace) -> int:
         agent.state.editor_provider = getattr(args, "editor_provider", None) or None
         agent.state.editor_model = getattr(args, "editor_model", None) or None
 
+    # Phase 71.3: auto-commit-per-turn opt-out.  Inverted because the
+    # CLI flag is ``--no-auto-commit`` while the default state is
+    # ``True`` (every turn auto-commits).
+    if bool(getattr(args, "no_auto_commit", False)):
+        agent.state.git_auto_commit = False
+
     # Set improvement mode if --improve was passed.
     if improve_path is not None:
         from pathlib import Path

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How auto-commit-per-turn works &mdash; Cantrip</title>
+<meta name="description" content="Every turn that mutates files lands as a discrete git commit with a Cantrip co-author trailer; pre-existing dirty work commits separately.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-auto-commit.html" class="current">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Auto-commit per turn
+    </div>
+
+    <h1>Auto-commit per turn</h1>
+    <p class="subtitle">
+      Every turn that touches files lands as its own attributed git commit.
+    </p>
+
+<h2 id="when-to-use">When to use it</h2>
+<p>Auto-commit-per-turn is the default for a reason: it gives
+every charm a clean, attributed history without the human in the
+loop having to remember to commit. Three concrete moments where
+it earns its keep:</p>
+<ul>
+  <li><strong>Reviewing the agent's work.</strong>
+    <code>git log --oneline</code> reads as the session's
+    summary; each commit's body carries the user prompt that
+    triggered the edits.</li>
+  <li><strong>Reverting one bad turn without losing the rest.</strong>
+    <code>git revert HEAD</code> targets just the most recent
+    agent commit; earlier good work stays put.</li>
+  <li><strong>Sharing progress.</strong>
+    <code>git push</code> after a session ships a clean history
+    rather than a single sprawling "agent did stuff" commit.</li>
+</ul>
+
+<h2 id="how-it-works">How it works</h2>
+<p>Two hooks fire around every conversation-loop turn when
+<code>state.git_auto_commit</code> is on (the default):</p>
+<ol>
+  <li><strong>Pre-cantrip commit.</strong> If the working tree
+    is dirty when the user types, Cantrip commits the dirty
+    state first as
+    <code>chore(pre-cantrip): save in-progress work</code>.
+    This means your hand-edits never get squashed into the
+    agent's commit.  Untracked files participate too &mdash; the
+    pre-commit runs <code>git add -A</code>.</li>
+  <li><strong>Agent commit.</strong> After the final assistant
+    message lands, Cantrip walks the turn's tool calls for
+    <code>write_file</code> / <code>edit_file</code> /
+    <code>multi_edit</code>, stages the touched paths
+    explicitly via <code>git add -- &lt;paths&gt;</code> (no
+    catch-alls), and commits with a Cantrip co-author trailer.
+    The subject line is generated by the
+    <a href="howto-light-models.html">light provider</a>
+    when one is configured; without one we fall back to
+    <code>agent: &lt;truncated user message&gt;</code>.</li>
+</ol>
+
+<h2 id="commit-shape">Commit message shape</h2>
+<pre><code>feat(charm): add ops-tracing integration
+
+Prompt: Add ops-tracing to src/charm.py so we can trace hook execution
+in the dev model.
+
+Touched:
+  - src/charm.py
+  - charmcraft.yaml
+
+Co-Authored-By: Cantrip &lt;noreply@canonical.com&gt;</code></pre>
+<p>Subject line is capped at 72 characters, prompt is capped at
+~280 characters, the touched-file list truncates after 20
+entries with a "<em>and N more</em>" hint.</p>
+
+<h2 id="opt-out">Disabling auto-commit</h2>
+<p>Three ways:</p>
+<ul>
+  <li><strong>One session:</strong>
+    <code>cantrip run --no-auto-commit .</code></li>
+  <li><strong>Mid-session:</strong>
+    <code>/auto-commit off</code></li>
+  <li><strong>Re-enable mid-session:</strong>
+    <code>/auto-commit on</code></li>
+</ul>
+<p>When auto-commit is off, agent edits stay in the working
+tree until you commit them yourself. The pre-cantrip
+dirty-commit also skips, so a turn that starts with a dirty
+tree just runs the agent against that state.</p>
+
+<h2 id="undo">Interaction with /undo</h2>
+<p>Phase 68.1 <a href="howto-undo.html"><code>/undo</code></a>
+restores the working tree from the snapshot taken just before
+the user turn. Because snapshots and the user's repo are
+independent, the auto-commit's contents are still in
+<code>git log</code> after <code>/undo</code> &mdash; HEAD points
+at the agent commit but the working tree no longer matches it.</p>
+<p>To reconcile, run one of:</p>
+<ul>
+  <li><code>git reset --soft HEAD~1</code> &mdash; drop just the
+    Cantrip commit from history; the working tree (already
+    restored from the snapshot) becomes the new tip.</li>
+  <li><code>git revert --no-commit HEAD</code> &mdash; preserve
+    the commit in history but stage its inverse, ready for you
+    to commit as a "revert agent change" entry.</li>
+</ul>
+
+<h2 id="what-it-is-not">What auto-commit is <em>not</em></h2>
+<ul>
+  <li>Not a push. Cantrip never runs <code>git push</code>; the
+    user pushes when they're ready.</li>
+  <li>Not a snapshot replacement.
+    <a href="howto-undo.html">Phase 68.1 snapshots</a> still
+    fire — the snapshot system runs in a hidden parallel git
+    repo independent of your charm's repo.</li>
+  <li>Not a remote-history rewriter. Auto-commit creates new
+    commits on the current branch; it never amends, force-pushes,
+    or rewrites published history.</li>
+  <li>Not a GPG signer. The commits run with
+    <code>--no-gpg-sign</code> so an unattended session never
+    blocks on a passphrase prompt. Set
+    <code>CANTRIP_GPG_SIGN=1</code> to re-enable signing.</li>
+</ul>
+
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

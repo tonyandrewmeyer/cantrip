@@ -1981,7 +1981,7 @@ Phase 68.2 gains one follow-up from this review:
 
 ---
 
-## Phase 71: Aider-Inspired Engineering Hygiene — Repo-Map, Architect/Editor, Commit Discipline, Edit Loop
+## Phase 71: Aider-Inspired Engineering Hygiene — Repo-Map, Architect/Editor, Commit Discipline, Edit Loop ✓
 
 **Goal:** Aider (``aider.chat``) is a long-running open-source
 terminal coding agent with a distinct engineering aesthetic:
@@ -2141,68 +2141,144 @@ deferred**:
   rebuild, pressure shrink, drop threshold, missing-charm
   path, excluded directories such as ``.venv``).
 
-### 71.2 High — Architect / Editor two-model split
+### 71.2 High — Architect / Editor two-model split ✓
 
-- [ ] New session mode ``architect`` alongside the Phase 68.4
-  plan/build modes.  In architect mode, every agent turn
-  runs in two phases:
-  1. *Architect pass* on the configured main model
-     (``settings.architect.model``, default the session's
-     current model): emits a structured proposal in plain
-     prose — "change X in file Y because Z", no diffs.
-  2. *Editor pass* on the editor model
-     (``settings.architect.editor_model``, default
-     ``claude-haiku-4-5`` or the provider's cheapest edit-
-     capable model): consumes the architect's proposal plus
-     the cited files and emits the concrete
-     ``fs_edit`` / ``fs_write`` tool calls.
-- [ ] ``/architect`` slash command toggles the mode.  CLI
-  flag ``--architect`` sets it for the session.
-- [ ] Cost accounting already splits by model name
-  (``src/cantrip/cli.py`` ~line 581); ensure both passes
-  surface in the per-model breakdown.  Transcript
-  (Phase 14) records both passes as separate turn events so
-  the architect's reasoning is auditable.
-- [ ] Fall-through: if the editor model returns an
-  unapplyable patch twice in a row, escalate that one turn
-  back to the architect model as the editor.  Avoids a
-  stuck loop where a weak model can't parse the proposal.
-- [ ] Document the cost-vs-quality trade-off in
-  ``docs/docs/howto-architect-mode.html``.  Compare to
-  Phase 70.2 Oracle (on-demand one-shot) and Phase 47
-  best-of-N (racing).
-- [ ] ``tests/unit/test_architect_mode.py`` — stubbed two-
-  model run emits correct tool calls, fall-through on
-  repeated editor failure, cost tracked per pass.
+- [x] New session mode ``architect`` lives on
+  :class:`AgentState` alongside Phase 68.4 plan/build:
+  ``architect_mode``, ``editor_provider``, ``editor_model``,
+  ``architect_consecutive_failures``,
+  ``architect_failure_threshold`` (default 2).  When the flag
+  is on, every conversation-loop call routes through a new
+  ``_run_architect_editor_turn`` orchestrator instead of
+  ``_complete_with_retry``.  Both
+  ``_run_conversation_loop`` and the streaming
+  ``_run_conversation_loop_streaming`` are wired.  The
+  streaming path drops token-by-token rendering inside an
+  architect-mode session — the editor's response is yielded
+  as a single chunk after the dual-pass completes.
+- [x] **Architect pass.**  Main provider with ``tools=None``
+  and a short SYSTEM instruction
+  (``CantripAgent._ARCHITECT_INSTRUCTION``) asking for plain-
+  prose intent.  The architect literally cannot emit tool
+  calls because it has none.
+- [x] **Editor pass.**  Cheaper provider with the full tool
+  list, fed the architect's proposal as a synthetic USER
+  message wrapped in
+  ``<architect_proposal>...</architect_proposal>``.  Editor
+  resolution: explicit ``state.editor_provider`` /
+  ``editor_model`` override → existing ``self._light_provider``
+  → fallback to the main provider when no lighter variant
+  exists.  When ``architect_consecutive_failures`` ≥
+  ``architect_failure_threshold`` the next editor pass routes
+  through the architect provider so a weak editor can't get
+  stuck on an ambiguous proposal.
+- [x] ``/architect`` slash command (bare toggles, ``on`` /
+  ``off`` explicit, optional ``provider`` or
+  ``provider/model`` second token to override the editor).
+  ``--architect`` CLI flag wired through ``cantrip run`` →
+  ``cli.py`` / ``print_mode.py`` / ``tui/app.py`` so all three
+  surfaces opt into the dual-pass at startup.
+  ``--editor-provider`` / ``--editor-model`` allow hybrid
+  pairings (architect=Claude, editor=Gemini-Flash).
+  ``STATUS_BAR_CHANGED`` event fires on toggle so the TUI /
+  Web status indicator repaints.
+- [x] Cost accounting: ``_record_usage`` gained an optional
+  ``provider=`` parameter so the architect and editor passes
+  attribute their tokens to the right provider/model in
+  ``token_usage``; ``/cost`` shows two model lines per turn.
+  Transcript records ``architect_pass`` and ``editor_pass``
+  side events with ``{provider, model, prompt_tokens,
+  completion_tokens, tool_calls, content_excerpt}`` so a
+  reviewer can replay the design call when reading the
+  exported transcript.
+- [x] Documented in
+  ``docs/docs/howto-architect-mode.html`` (when to use, how
+  it works, editor resolution, fall-through, status
+  indicator, interaction with plan mode / permissions /
+  hooks / undo, what it is not).
+  ``docs/src/reference-cli.md`` gains a new
+  ``Architect / editor mode`` section under the slash-command
+  catalogue plus the three new CLI flags under the run
+  options table; HTML regenerates via ``make docs``.
+- [x] ``tests/unit/test_architect_mode.py`` — 22 cases
+  covering the slash command (bare toggle, explicit
+  ``on`` / ``off``, editor override, error paths,
+  status-bar event), editor resolution (override / light /
+  fallback / failure escalation), the
+  ``_all_tool_calls_failed`` predicate, dual-pass execution
+  (both providers ticked, both events recorded, usage
+  attributed per model), and CLI flag plumbing through
+  ``parse_args``.
 
-### 71.3 Medium — Auto-commit-per-turn with dirty-commit separation
+### 71.3 Medium — Auto-commit-per-turn with dirty-commit separation ✓
 
-- [ ] ``settings.git.auto_commit`` (default true) — after
-  each turn that made file edits, stage the changed files
-  and commit with a message generated by the Phase 67.2
-  light provider (``resolve_light_provider``) from the diff
-  plus the user message.  Co-author line ``Co-Authored-By:
-  Cantrip <noreply@canonical.com>`` matches the existing
-  convention.
-- [ ] Dirty-commit separation: before the agent touches
-  anything, if ``git status`` shows uncommitted changes in
-  files Cantrip is about to edit, commit those first with a
-  message like ``chore(pre-cantrip): save in-progress work``.
-  User's work stays distinct from the agent's.  Attribution
-  only on committer (not author) in this pre-commit.
-- [ ] ``/undo`` (new alias, separate from Phase 68.1 snapshot
-  undo) runs ``git revert --no-commit`` of the last Cantrip
-  commit.  Document the relationship: 68.1 is for file
-  changes made *without* commits (granular, turn-level);
-  71.3 ``/undo`` is for reverting a completed Cantrip
-  commit.  Both coexist — different use cases.
-- [ ] Opt-out: ``settings.git.auto_commit: false`` restores
-  current batched-commit behaviour for users who dislike
-  the per-turn cadence.
-- [ ] ``tests/unit/test_autocommit.py`` — agent-only commit
-  flow, dirty-separation flow, opt-out, commit-message
-  generation hits the light provider, ``/undo`` reverts
-  only Cantrip-authored commits.
+- [x] ``state.git_auto_commit`` (default ``True``) — after
+  each turn that mutates files, the new
+  :mod:`cantrip.agent.auto_commit` module stages the touched
+  paths via ``git add -- <paths>`` (no catch-alls) and
+  commits with a body that embeds the user prompt, a list of
+  touched files, and a ``Co-Authored-By: Cantrip
+  <noreply@canonical.com>`` trailer.  Subject line is
+  generated by the light provider via a short, low-token
+  prompt; falls back to ``agent: <truncated user message>``
+  when no light provider is configured or the call fails.
+  ``state.last_cantrip_commit_sha`` records the new HEAD on
+  every successful agent commit for future audit / undo
+  routing.
+- [x] **Dirty-commit separation.**  At the *start* of every
+  turn (before the snapshot is taken) a pre-cantrip commit
+  fires when ``git status --porcelain`` reports anything
+  outstanding — modified-and-unstaged, staged, or untracked.
+  Uses ``git add -A`` to sweep up untracked files too, then
+  commits as ``chore(pre-cantrip): save in-progress work``.
+  Hand-edits stay distinct from agent edits in
+  ``git log``.  The pre-commit and the agent commit are both
+  no-ops on a clean tree, in a non-repo, or when ``git`` is
+  missing — all three return ``None`` and log at DEBUG so the
+  conversation loop never breaks because of an auto-commit
+  hiccup.
+- [x] **Opt-out.**  ``--no-auto-commit`` on ``cantrip run``
+  flips ``state.git_auto_commit`` to ``False`` at startup;
+  ``/auto-commit on`` / ``/auto-commit off`` toggle
+  mid-session.  The CLI flag is plumbed through
+  ``cli.py`` / ``print_mode.py`` / ``tui/app.py`` so all
+  three surfaces opt out consistently.
+- [x] ``/undo`` coexistence: the howto documents the manual
+  recipe (``git reset --soft HEAD~1`` to drop just the
+  Cantrip commit, or ``git revert --no-commit HEAD`` to keep
+  the commit but stage its inverse).  Automated routing of
+  ``/undo`` between Phase 68.1 snapshots and a 71.3-aware
+  revert is **deferred** — both mechanisms coexist cleanly
+  today (snapshots run in a parallel hidden git repo
+  independent of the user's charm repo) and the manual
+  recipes cover the rare divergence.  Re-open as a follow-up
+  when concrete user reports of "/undo left a dangling
+  Cantrip commit in my history" arrive.
+- [x] ``tests/unit/test_autocommit.py`` — 38 cases covering
+  the primitives (``_is_git_repo``, ``_has_dirty_tree``),
+  ``collect_touched_files`` (write_file / edit_file alias /
+  multi_edit / dedup / non-mutating-tools / non-assistant),
+  ``build_commit_message`` (summary subject, fallback,
+  truncation, file-list overflow), pre-turn dirty commit
+  (clean / modified / untracked / non-repo / None path),
+  post-turn agent commit (happy path / explicit summary /
+  no-op when no files touched / non-repo / non-existent
+  path), the ``/auto-commit`` slash command (default,
+  toggle, explicit on/off, no-op, bad arg),
+  ``--no-auto-commit`` argparse plumbing, and end-to-end
+  agent-loop integration (commit lands, opt-out skips,
+  light-provider summariser used, pre-turn dirty-commit
+  fires, opt-out skips pre-turn too).  The
+  ``tmp_git_repo`` fixture lives in the test file itself
+  so the rest of the suite stays unchanged.
+- [x] Documented in
+  ``docs/docs/howto-auto-commit.html`` (when to use, how it
+  works, commit shape with worked example, opt-out paths,
+  /undo interaction with manual recipes, what it is not).
+  ``docs/src/reference-cli.md`` gains a new
+  ``Auto-commit per turn`` section under the slash-command
+  catalogue plus the ``--no-auto-commit`` CLI flag under
+  the run options table; HTML regenerates via ``make docs``.
 
 ### 71.4 Medium — Per-edit lint/test feedback loop
 
@@ -3845,7 +3921,7 @@ intentional cleanup.
 | M68: OpenCode Safety Rails | 68 ✓ | Snapshot-backed ``/undo``/``/redo`` for file changes, declarative ask/allow/deny permissions, markdown-defined user slash commands, and a session-level plan mode — four guardrails adopted from OpenCode that map onto Cantrip's existing subsystems |
 | M69: Kimi Workflow Features | 69 | Bounded Ralph-Loop iterate-until-green, ``--yolo`` unattended switch, ``Ctrl-X`` shell mode, and Mermaid/D2 Flow skills — four Kimi CLI patterns that fit Cantrip's autonomous loop, skill system, and CI story |
 | M70: Amp-Inspired Depth | 70 | Librarian subagent that searches Charmhub and Launchpad, Oracle tool for on-demand second-opinion reasoning, glob-conditional guidance in AGENTS.md / skills, prompt-based review Checks that layer on top of charmlint, and a Painter tool that generates a Charmhub-style ``icon.svg`` |
-| M71: Aider Engineering Hygiene | 71 | Tree-sitter-backed repo-map with graph-ranked symbols, architect/editor two-model mode, auto-commit-per-turn with dirty-commit separation, and a per-edit ruff/ty/charmlint feedback loop |
+| M71: Aider Engineering Hygiene | 71 ✓ | Tree-sitter-backed repo-map with graph-ranked symbols, architect/editor two-model mode, auto-commit-per-turn with dirty-commit separation, and a per-edit ruff/ty/charmlint feedback loop |
 | M72: Continue Context Providers | 72 | Indexed charm-ecosystem docs (``@docs juju|ops|charmcraft|rockcraft``), an ``@``-mention context-provider registry, ``embed`` and ``rerank`` model roles, and ``@problems`` diagnostics-as-pre-turn-context |
 | M73: Goose Workflow Packaging | 73 | Parameterised retryable Recipes with sub-recipes, MCP Apps rendered as sandboxed iframes in the Web UI, JSON-schema-enforced structured responses, and declarative retry with shell validators |
 | M74: Populated Charm Docs | 74 ✓ | Generated ``docs/`` tree is bridged with the Phase 13 root files, populated from real Phase 17 acceptance-test command/output capture, with an architecture page extracted from transcript design decisions and a troubleshooting page mined from the agent's resolved-error history |

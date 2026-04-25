@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
-from cantrip.agent import arena, custom_commands, sandbox
+from cantrip.agent import arena, auto_commit, custom_commands, sandbox
 from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.context import ContextManager, VirtualFileStore
@@ -1483,6 +1483,109 @@ class CantripAgent:
         except sqlite3.Error:
             log.debug("record_event(%s) failed", kind, exc_info=True)
 
+    # ─── Phase 71.3: Auto-commit-per-turn ─────────────────────────────
+
+    def _maybe_pre_turn_commit_dirty(self) -> None:
+        """Commit pre-existing dirty work before the agent runs.
+
+        Gated by ``state.git_auto_commit``; the actual git work
+        lives in :mod:`cantrip.agent.auto_commit` so the
+        conversation loop stays focused on its own concerns.
+        Failures inside the helper are non-fatal (logged at
+        DEBUG); we never want a broken auto-commit setup to break
+        the agent loop.
+        """
+        if not self.state.git_auto_commit:
+            return
+        try:
+            auto_commit.pre_turn_commit_dirty(self.state.charm_path)
+        except Exception:  # noqa: BLE001 — never break the loop.
+            log.debug("auto_commit pre-turn failed", exc_info=True)
+
+    async def _summarise_for_commit(
+        self,
+        user_message: str,
+        files: list[str],
+    ) -> str | None:
+        """Generate a one-line commit subject via the light provider.
+
+        Returns ``None`` when no light provider is configured or
+        when generation fails — :func:`auto_commit.build_commit_message`
+        falls back to a user-message-derived subject.  The prompt
+        is short to keep latency bounded; the subject is the only
+        thing we need (the body is composed by
+        :func:`auto_commit.build_commit_message` from raw inputs).
+        """
+        provider = self._light_provider or self.provider
+        prompt = (
+            "Write a single-line conventional-commit subject (≤72 "
+            "characters, imperative mood, no trailing period) for the "
+            "agent's edits below.  Return only the subject line — no "
+            "preamble, no markdown.\n\n"
+            f"User request: {user_message[:400]}\n"
+            f"Files touched: {', '.join(files[:10])}"
+        )
+        try:
+            response = await provider.complete(
+                messages=[Message(role=Role.USER, content=prompt)],
+                tools=None,
+                temperature=0.3,
+                max_tokens=80,
+            )
+        except Exception:  # noqa: BLE001 — fall back to derived subject.
+            log.debug("auto_commit summary generation failed", exc_info=True)
+            return None
+        if response and response.content:
+            self._record_usage(response, provider=provider)
+            return response.content
+        return None
+
+    async def _maybe_post_turn_commit_agent_edits(
+        self,
+        user_message: str,
+        turn_start_idx: int,
+    ) -> None:
+        """Commit files the agent touched in the just-finished turn.
+
+        Walks ``state.messages[turn_start_idx:]`` to pick out
+        file-mutating tool calls; if any fired, generates a commit
+        subject via the light provider and lands the commit on
+        ``state.charm_path`` with a Cantrip co-author trailer.
+        Stamps the resulting SHA on
+        ``state.last_cantrip_commit_sha`` for future audit.
+        """
+        if not self.state.git_auto_commit:
+            return
+        try:
+            turn_slice = self.state.messages[turn_start_idx:]
+            touched = auto_commit.collect_touched_files(turn_slice)
+            if not touched:
+                return
+            summary = await self._summarise_for_commit(user_message, touched)
+            sha = auto_commit.post_turn_commit_agent_edits(
+                self.state.charm_path,
+                turn_slice,
+                user_message,
+                summary=summary,
+            )
+            if sha:
+                self.state.last_cantrip_commit_sha = sha
+                self._ensure_store()
+                if self._store:
+                    try:
+                        self._store.record_event(
+                            "auto_commit",
+                            {
+                                "sha": sha,
+                                "files": touched[:50],
+                                "file_count": len(touched),
+                            },
+                        )
+                    except sqlite3.Error:
+                        log.debug("auto_commit event record failed", exc_info=True)
+        except Exception:  # noqa: BLE001 — never break the loop.
+            log.debug("auto_commit post-turn failed", exc_info=True)
+
     async def _run_architect_editor_turn(
         self,
         messages: list[Message],
@@ -1625,11 +1728,23 @@ class CantripAgent:
         # cost cap survive across turns intentionally.
         self.state.oracle_calls_this_turn = 0
 
+        # Phase 71.3: pre-turn dirty-commit so the agent's edits land
+        # on a clean base.  Runs before the snapshot is taken so the
+        # snapshot itself captures the post-pre-cantrip-commit state
+        # (working tree clean, history advanced).  No-op when
+        # ``git_auto_commit`` is off, when we're not in a git repo,
+        # or when the working tree is already clean.
+        self._maybe_pre_turn_commit_dirty()
+
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self._snapshot_before_user_turn(user_msg)
         self.state.messages.append(user_msg)
         self._record_message(user_msg)
+        # Track where this turn starts so the post-turn auto-commit
+        # only stages files the agent actually touched (rather than
+        # walking the whole history).
+        turn_start_idx = len(self.state.messages) - 1
 
         messages = self._build_llm_messages(include_budget=True)
         llm_tools = self._tools_for_llm() if self._tools else None
@@ -1809,6 +1924,13 @@ class CantripAgent:
             captured = _extract_proposed_changes(response.content or "")
             if captured:
                 self.state.plan_summary = captured
+
+        # Phase 71.3: agent commit lands at the very end of the turn,
+        # after the final assistant message is recorded so the body's
+        # "Touched:" list and the SHA stamped on ``state`` reflect the
+        # complete turn.  No-op when no file-mutating tools fired,
+        # when ``git_auto_commit`` is off, or when not in a git repo.
+        await self._maybe_post_turn_commit_agent_edits(user_message, turn_start_idx)
         return response
 
     async def _process_message_inner(self, user_message: str) -> str:
@@ -1863,11 +1985,16 @@ class CantripAgent:
         # cost cap survive across turns intentionally.
         self.state.oracle_calls_this_turn = 0
 
+        # Phase 71.3: pre-turn dirty-commit (see non-streaming loop
+        # for rationale).  Same hook drives both paths.
+        self._maybe_pre_turn_commit_dirty()
+
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self._snapshot_before_user_turn(user_msg)
         self.state.messages.append(user_msg)
         self._record_message(user_msg)
+        turn_start_idx = len(self.state.messages) - 1
 
         messages = self._build_llm_messages(include_budget=True)
         llm_tools = self._tools_for_llm() if self._tools else None
@@ -2060,6 +2187,10 @@ class CantripAgent:
         )
         self.state.messages.append(final_msg)
         self._record_message(final_msg)
+
+        # Phase 71.3: agent commit at end of streaming turn (mirrors
+        # the non-streaming loop).
+        await self._maybe_post_turn_commit_agent_edits(user_message, turn_start_idx)
 
     # -- Design confirmation ---------------------------------------------------
 
