@@ -151,6 +151,19 @@ class AgentState:
     oracle_calls_total: int = 0
     oracle_session_cost_usd: float = 0.0
 
+    # Phase 70.5: Painter — LLM-driven charm icon generation.
+    # ``icon_provider_name`` / ``icon_model`` override the defaults
+    # (``gemini`` / ``imagen-3.0-generate-002``); icon generation is
+    # rate-limited by ``icon_max_session_cost_usd`` (cumulative, USD)
+    # so iterating on a charm icon can't burn the session budget.
+    # ``icon_calls_total`` and ``icon_session_cost_usd`` are
+    # accumulators reset only across sessions.  Not persisted.
+    icon_provider_name: str | None = None
+    icon_model: str | None = None
+    icon_max_session_cost_usd: float = 1.0
+    icon_calls_total: int = 0
+    icon_session_cost_usd: float = 0.0
+
     # Phase 71.4: per-edit lint feedback.  When ``True`` the
     # primary-agent dispatcher runs ``ruff`` (Python), ``ty``
     # (Python types) and ``charmlint`` (charm YAML) against the

@@ -1973,44 +1973,108 @@ Five Amp features are explicitly **out of scope or deferred**:
   handler followup + empty-set message + arg validation +
   no-charm-path guard.
 
-### 70.5 Medium — Painter: charm icon generation
+### 70.5 Medium — Painter: charm icon generation ✓
 
-- [ ] New tool ``charm_icon_generate`` available during the
-  BUILD phase.  Inputs: workload name, one-line description,
-  optional palette hint, optional reference-image paths
-  (up to three, matching Amp's limit).  Output: an
-  ``icon.svg`` written to the charm root.
-- [ ] Backend: provider-agnostic image tool abstraction in
-  ``src/cantrip/llm/image.py`` (new) with at least one
-  implementation (Gemini image, as Amp uses, or whatever
-  Phase 48's multimodal work settles on).  Other providers
-  slot in behind the same interface.
-- [ ] Charmhub constraints baked into the system prompt for
-  the image call: square aspect, flat/simple style, high
-  contrast, legible at 64×64 and 32×32, no embedded text.
-  Regenerate-from-reference is supported so a charm team can
-  iterate against their visual language.
-- [ ] Output is emitted as raster first (PNG) and converted
-  to SVG via ``potrace`` or equivalent, with a warning to
-  the user that a designer hand-polish is still recommended
-  before release.  Reasoning: reliable SVG generation from
-  image models is still weak; rastering then tracing is the
-  honest path.
-- [ ] Invocation surface: ``/icon [description]`` slash
-  command for interactive use, plus an auto-invocation path
-  during ``cantrip run`` when the charm is missing a
-  non-default ``icon.svg`` at BUILD completion (asks first
-  via a CONFIRM task from Phase 64; never silently
-  overwrites an existing icon).
-- [ ] Cost accounting mirrors Oracle (70.2): a
-  ``max_icon_cost_per_session`` cap so nobody racks up a
-  bill iterating on icons.
-- [ ] Document in ``docs/docs/howto-charm-icon.html`` with
-  the Charmhub icon-style guidance and the
-  "designer-polish-before-release" disclaimer.
-- [ ] ``tests/unit/test_icon_generation.py`` — stubbed
-  image provider, output paths, CONFIRM integration, cost
-  cap, refusal to overwrite a non-default existing icon.
+- [x] New tool ``charm_icon_generate`` (lives in
+  ``src/cantrip/agent/tools/icon.py``) added to the BUILD
+  whitelist alongside the existing deterministic
+  ``generate_icon`` placeholder tool — they coexist
+  intentionally so a session without an image-provider API
+  key still has a working icon path.  Inputs: ``description``
+  (required), ``path``, ``charm_name``, ``palette_hint``,
+  ``force``.  Output: ``icon.svg`` written to the charm root.
+- [x] Backend abstraction lives in
+  ``src/cantrip/llm/image.py``: ``ImageResult`` dataclass +
+  ``ImageProvider`` ABC + ``create_image_provider(name, *,
+  model, api_key)`` factory.  First concrete implementation
+  is ``GeminiImageProvider`` calling
+  ``client.aio.models.generate_images`` for Imagen models
+  (default ``imagen-3.0-generate-002``).  Other providers
+  slot in by subclassing and registering in the factory.
+  Lazy SDK import keeps the cold-start cost zero when the
+  Painter isn't used.
+- [x] Charmhub constraints baked into the prompt the Painter
+  builds for every call (``_ICON_STYLE_PROMPT``): square,
+  flat, simple, high-contrast, legible at 64×64 and 32×32,
+  no embedded text.  Charm name + workload description +
+  optional palette hint are appended; the prompt is one
+  sentence the image provider can act on.
+- [x] Output is raster-first: the returned PNG is wrapped
+  inside a valid SVG envelope with an ``<image>`` element
+  carrying a base64 ``data:`` URL.  Charmhub accepts the
+  format; the doc page tells the user a designer-polish pass
+  is recommended before release.  A leading XML comment
+  carries the ``cantrip-icon-generated`` marker so successive
+  ``/icon`` calls can iterate freely on a Painter-generated
+  icon.  True vectorisation via ``potrace`` is intentionally
+  deferred — embedded PNG is the honest path until the
+  dependency cost is acceptable.
+- [x] Invocation surface: ``/icon [description]`` slash
+  command runs inline (not a queued task — the Painter is one
+  HTTP call).  Empty args show usage; missing charm path or
+  non-existent dir short-circuit cleanly.  Wired into
+  ``COMMAND_CATALOGUE``, ``SHARED_VERBS``, ``help_text``;
+  catalogue-drift test stays green.
+- [x] Cost accounting mirrors Oracle: new
+  ``state.icon_max_session_cost_usd`` (default ``$1.00``,
+  ~25 Imagen attempts at $0.04 each) plus
+  ``state.icon_session_cost_usd`` and ``state.icon_calls_total``
+  accumulators on ``AgentState``.  Tripping the cap returns a
+  structured tool error naming the spent amount and how to
+  raise it; counters stay untouched on a refused call.  No
+  per-turn cap (icons aren't easy to spam from one user
+  message; the session cap alone is enough).
+- [x] Refusal to overwrite real artwork:
+  ``_existing_icon_is_expendable`` treats files matching the
+  Phase 7 placeholder fingerprint or carrying our
+  ``cantrip-icon-generated`` marker as expendable; anything
+  else is refused unless ``force=true``.  The provider is not
+  called and no cost is charged when the refusal trips.
+- [x] Transcript event ``icon_generated`` recorded via the
+  store getter so the audit log captures every Painter call
+  with charm name, description, provider/model, cost, and
+  cumulative session spend.  Recording failure logs at
+  WARNING and never breaks the tool — the icon is already on
+  disk.
+- [x] Documented in
+  ``docs/docs/howto-charm-icon.html``: when to use Painter
+  vs. the deterministic placeholder, the cost cap, the
+  refusal logic, what the SVG envelope actually contains,
+  and the "designer-polish-before-release" disclaimer.
+  Card added to ``docs/src/index.md``; entry added to the
+  howto sidebar in ``docs/src/_site.yaml``.
+- [x] ``tests/unit/test_icon_generation.py`` (32 cases):
+  factory rejects unknown providers + missing API key;
+  ``_build_prompt`` always includes the style block;
+  ``_embed_png_in_svg`` produces valid XML carrying the
+  marker and the base64 payload; ``_existing_icon_is_expendable``
+  across missing/marker/placeholder/user-art cases; tool
+  happy-path writes SVG with the marker, accumulates cost,
+  passes the workload phrase into the prompt; charm-name
+  fallback to charmcraft.yaml then dir name; refusal-to-
+  overwrite-user-art and ``force=true`` overrides;
+  placeholder + own-marker overwrite without force; cost-cap
+  blocks before any provider call; ``ImageGenerationError``
+  surfaces cleanly (no cost, no file); transcript event
+  recorded; ``/icon`` slash dispatch (usage, missing charm
+  path, non-existent dir, followup wiring, catalogue
+  membership, end-to-end render).
+
+**Deferred:**
+- **Auto-invocation at BUILD completion** via a CONFIRM task
+  ("you don't have an icon — want me to paint one?").  Needs
+  the Phase 64 confirmation-task plumbing to wire cleanly.
+  Re-open when a real user reports "I keep forgetting to
+  paint an icon before publishing."
+- **Reference-image input** (up to three reference PNGs).
+  The abstraction supports `bytes`-typed extras but the
+  prompt path doesn't yet.  Add when a charm team asks for
+  brand-consistent iteration.
+- **True vectorisation via potrace** (or
+  ``svgtrace``/``vtracer``).  ``potrace`` needs the C
+  library + a Python binding; reliable enough but adds a
+  heavy dependency.  Re-open when the embedded-PNG path
+  earns concrete user complaints.
 
 ### What this phase is *not*
 

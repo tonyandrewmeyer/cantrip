@@ -94,6 +94,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/diagnostics", "Show ruff/ty/charmlint issues across the active charm"),
     CommandInfo("/review", "Run prompt-based review checks (judgment-based rules)"),
     CommandInfo("/search-charms", "Search Charmhub and Launchpad for existing charms"),
+    CommandInfo("/icon", "Generate a Charmhub-style icon.svg with the Painter"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -274,6 +275,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return _handle_review(agent, args)
     if verb == "/search-charms":
         return _handle_search_charms(args)
+    if verb == "/icon":
+        return _handle_icon(agent, args)
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -656,6 +659,11 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "projects matching *query*.  Quality flags surface stale or "
         "unmaintained hits; the agent can follow up with "
         "`charmhub_fetch` / `launchpad_fetch` to clone source.\n"
+        "- `/icon <description>` — Phase 70.5 Painter: generate a "
+        "Charmhub-style `icon.svg` for the active charm using an "
+        "image-generation provider (default: Imagen).  Refuses to "
+        "overwrite a non-placeholder existing icon; bounded by a "
+        "per-session USD cap (`state.icon_max_session_cost_usd`).\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
     custom = getattr(agent, "custom_commands", None) if agent is not None else None
@@ -2074,6 +2082,59 @@ async def _run_search_charms(query: str) -> str:
         sections.append(f"_Launchpad search failed: {launchpad_result.error}_")
 
     return "\n".join(sections)
+
+
+# ---------------------------------------------------------------------------
+# Phase 70.5 — /icon slash command (Painter)
+# ---------------------------------------------------------------------------
+
+
+def _handle_icon(agent: CantripAgent, args: str) -> SlashResult:
+    """Dispatch the ``/icon`` slash command.
+
+    Returns an immediate "painting…" prelude plus a followup that
+    invokes :class:`CharmIconGenerateTool` against the active charm
+    path and renders the per-call cost summary.  Cheap edge cases
+    (missing charm path, empty description) short-circuit before
+    spawning any image-provider call.
+    """
+    description = args.strip()
+    if not description:
+        return SlashResult(
+            text=(
+                "Usage: ``/icon <one-line workload description>`` — "
+                "generates a Charmhub-style icon.svg for the active "
+                "charm using the configured image provider (default: "
+                "Imagen).  Example: ``/icon a Postgres database "
+                "operator``."
+            )
+        )
+    charm_path: pathlib.Path | None = getattr(agent.state, "charm_path", None)
+    if charm_path is None:
+        return SlashResult(text="_Cannot paint icon: no charm path for this session._")
+    if not pathlib.Path(charm_path).is_dir():
+        return SlashResult(text=f"_Charm path does not exist: {charm_path}._")
+    return SlashResult(
+        text=f"Painting icon.svg for `{description}`…",
+        followup=_run_icon(agent, description, str(charm_path)),
+        markdown=True,
+    )
+
+
+async def _run_icon(agent: CantripAgent, description: str, charm_path: str) -> str:
+    """Invoke the Painter tool and render the result as Markdown."""
+    # Late import keeps the dispatcher cheap when the user never
+    # reaches for the Painter.
+    from cantrip.agent.tools.icon import CharmIconGenerateTool
+
+    tool = CharmIconGenerateTool(
+        state=agent.state,
+        store_getter=lambda: getattr(agent, "_store", None),
+    )
+    result = await tool.execute(description=description, path=charm_path)
+    if not result.success:
+        return f"_Painter failed: {result.error}_"
+    return result.output
 
 
 __all__ = [

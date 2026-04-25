@@ -24,6 +24,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   matches.
 
 ### Added
+- **Phase 70.5 Painter — LLM-driven charm icon generation.**  New
+  ``charm_icon_generate`` tool routes a Charmhub-style structured
+  prompt through an image-generation provider (default Imagen via
+  ``google-genai``) and writes the returned PNG into ``icon.svg`` as
+  an embedded ``<image>`` element.  Coexists with the deterministic
+  ``generate_icon`` placeholder so sessions without an
+  image-provider API key still have a working icon path.  New
+  ``/icon <description>`` slash command for interactive use.
+  Per-session USD cap via ``state.icon_max_session_cost_usd``
+  (default $1; ~25 attempts at the Imagen $0.04 per-image
+  estimate).  Refuses to overwrite a non-placeholder existing icon
+  unless ``force=true``.  Provider abstraction in
+  ``cantrip.llm.image`` makes adding OpenAI/Stability/Stable
+  Diffusion follow-on a one-class change.  Documented in
+  ``docs/docs/howto-charm-icon.html``.
 - **Phase 70.1 Librarian — Charmhub + Launchpad cross-charm search.**
   New ``TaskCategory.LIBRARIAN`` with a narrow read-only whitelist
   (``charmhub_search``, ``charmhub_info``, ``charmhub_fetch``,

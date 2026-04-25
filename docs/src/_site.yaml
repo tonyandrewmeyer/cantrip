@@ -16,6 +16,7 @@ sections:
       - { slug: howto-skills, label: "Add a custom skill" }
       - { slug: howto-mcp, label: "Configure MCP servers" }
       - { slug: howto-charm-library, label: "Search the charm library" }
+      - { slug: howto-charm-icon, label: "Generate a charm icon" }
       - { slug: howto-hooks, label: "Configure hooks" }
       - { slug: howto-undo, label: "Undo agent changes" }
       - { slug: howto-auto-commit, label: "Auto-commit per turn" }
