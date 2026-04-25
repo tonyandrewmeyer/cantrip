@@ -81,6 +81,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/hooks", "List configured hooks and invocation stats"),
     CommandInfo("/undo", "Roll back the last user turn (files + messages)"),
     CommandInfo("/redo", "Re-apply the most recently undone turn"),
+    CommandInfo("/branch", "Rewind to a prior turn and start a new branch"),
     CommandInfo("/plan", "Enter read-only plan mode (no file edits or shells)"),
     CommandInfo("/build", "Leave plan mode and resume executing changes"),
     CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
@@ -243,6 +244,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_undo(agent))
     if verb == "/redo":
         return SlashResult(text=handle_redo(agent))
+    if verb == "/branch":
+        return SlashResult(text=handle_branch(agent, args))
     if verb == "/plan":
         return SlashResult(text=handle_plan(agent))
     if verb == "/build":
@@ -596,6 +599,10 @@ def help_text(agent: CantripAgent | None = None) -> str:
         " unwind further.\n"
         "- `/redo` — re-apply the most recently undone turn."
         "  Cleared the moment a new user turn arrives.\n"
+        "- `/branch [turn-id]` — rewind to a prior turn and start a new"
+        " branch.  No argument forks before the most recent user turn"
+        " (handy after a bad steering message); off-branch messages stay"
+        " in the store and remain reachable.\n"
         "- `/plan` — enter read-only plan mode.  The agent can "
         "inspect files, git history, Juju state, and the web, but "
         "cannot edit or run shells.\n"
@@ -982,6 +989,69 @@ def handle_redo(agent: CantripAgent) -> str:
     return (
         f"Redid the last undo — restored **{paths_changed}** file(s), "
         f"re-added **{len(entry.removed_messages)}** message(s)."
+    )
+
+
+def handle_branch(agent: CantripAgent, args: str) -> str:
+    """Phase 67.1 ``/branch``: rewind to a prior turn and start a new branch.
+
+    With a turn id (``/branch 17``), moves the active head to that
+    message and rebuilds ``state.messages`` so the next prompt forks
+    off it.  Without an argument, picks the turn before the most
+    recent user message — handy after a bad steering message: the
+    user issues ``/branch`` and types a corrected instruction.
+
+    Off-branch messages stay in the SQLite store; ``/tree`` lists
+    them and re-activating any node restores that branch.  Unlike
+    ``/undo`` this command never deletes rows and never touches the
+    working tree.
+    """
+    store = agent.store
+    if store is None:
+        return "_No session store available — `/branch` needs a saved session._"
+
+    target: int | None = None
+    args_stripped = args.strip()
+    if args_stripped:
+        try:
+            target = int(args_stripped)
+        except ValueError:
+            return f"_`/branch` expected an integer turn id, got `{args_stripped}`._"
+        # Validate the target exists in this session before moving.
+        all_messages = {m["id"]: m for m in store.load_messages()}
+        if target not in all_messages:
+            return (
+                f"_Turn `{target}` not found in this session.  "
+                "Run `/tree` to see the turns you can fork from._"
+            )
+    else:
+        # Find the message before the most recent user turn.  Walk
+        # the active branch from the leaf back to skip the user
+        # message itself, then take its parent.
+        branch = store.load_active_branch()
+        last_user_idx: int | None = None
+        for i in range(len(branch) - 1, -1, -1):
+            if branch[i].get("role") == "user":
+                last_user_idx = i
+                break
+        if last_user_idx is None:
+            return "_Nothing to fork from — no user turns yet._"
+        # When the first message is the user turn, forking before it
+        # means an empty conversation; clearing the head matches that.
+        target = None if last_user_idx == 0 else int(branch[last_user_idx - 1]["id"])
+
+    previous_head = store.get_active_head()
+    store.set_active_head(target)
+    rebuilt = agent._rebuild_messages_from_active_branch()
+
+    if target is None:
+        return (
+            "Forked from before the first user turn — the conversation is now empty.  "
+            f"The previous branch (head `{previous_head}`) stays in the store."
+        )
+    return (
+        f"Forked at turn `{target}` — rebuilt **{rebuilt}** message(s) on the active branch.  "
+        f"The prior branch (head `{previous_head}`) is still reachable via `/tree`."
     )
 
 
@@ -1657,6 +1727,7 @@ __all__ = [
     "dispatch",
     "export_transcript",
     "format_cost",
+    "handle_branch",
     "handle_redo",
     "handle_undo",
     "help_text",
