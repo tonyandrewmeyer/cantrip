@@ -190,6 +190,89 @@ class TestRunCommandExecution:
         assert call_kwargs["cwd"] == "/tmp"
 
 
+class TestJujuCrashDump:
+    """Tests for the upstream-repro dump on crash-shaped juju exits."""
+
+    @pytest.mark.anyio
+    async def test_juju_crash_writes_dump(self, tool, tmp_path, monkeypatch):
+        """Exit code 46 with cmd_run.go in stderr triggers a dump."""
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+        # Skip the actual `juju version` subprocess in the test.
+        monkeypatch.setattr(
+            "cantrip.agent.tools.juju_subprocess.juju_version",
+            lambda: "juju 3.6.0",
+        )
+
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 46
+        mock_result.stdout = ""
+        mock_result.stderr = "2026/04/26 01:37:44.814792 cmd_run.go:178: oh no\n"
+
+        with mock.patch(
+            "cantrip.agent.tools.run_command.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = await tool.execute(command="juju status")
+
+        assert not result.success
+        assert result.data["returncode"] == 46
+
+        log_file = tmp_path / "cantrip" / "diagnostics.log"
+        assert log_file.exists()
+        body = log_file.read_text(encoding="utf-8")
+        assert "run_command:juju" in body
+        assert "exit 46" in body
+        assert "juju status" in body
+        assert "cmd_run.go" in body
+        assert "juju 3.6.0" in body
+
+        # Path is surfaced in both error (for the LLM) and output
+        # (visible in the transcript) so the user can find the dump.
+        assert "crash dump" in result.error
+        assert str(log_file) in result.output
+
+    @pytest.mark.anyio
+    async def test_normal_juju_failure_no_dump(self, tool, tmp_path, monkeypatch):
+        """Standard juju exit 1 with a routine error does not dump."""
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = 'ERROR model "foo" not found\n'
+
+        with mock.patch(
+            "cantrip.agent.tools.run_command.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = await tool.execute(command="juju status -m foo")
+
+        assert not result.success
+        log_file = tmp_path / "cantrip" / "diagnostics.log"
+        assert not log_file.exists()
+        assert "crash dump" not in result.error
+
+    @pytest.mark.anyio
+    async def test_non_juju_weird_exit_no_dump(self, tool, tmp_path, monkeypatch):
+        """A non-juju command's odd exit code does not trigger a juju dump."""
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 46
+        mock_result.stdout = ""
+        mock_result.stderr = "make: weird failure"
+
+        with mock.patch(
+            "cantrip.agent.tools.run_command.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = await tool.execute(command="make foo")
+
+        assert not result.success
+        log_file = tmp_path / "cantrip" / "diagnostics.log"
+        assert not log_file.exists()
+
+
 class TestRunCommandConstants:
     """Tests for module-level constants."""
 

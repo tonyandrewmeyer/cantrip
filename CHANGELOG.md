@@ -16,6 +16,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   upgrade hints now point at the new distribution name on PyPI.
 
 ### Added
+- **Crash-shaped juju exits dump full repro material to
+  ``diagnostics.log``.**  When a juju subprocess exits with an
+  unusual code (anything outside 0/1/2) or with stderr containing
+  Go runtime markers (``panic:``, ``runtime error:``,
+  ``cmd_run.go``, …) the verbatim cmd / cwd / returncode / stdout
+  / stderr / juju-version land in
+  ``$XDG_STATE_HOME/cantrip/diagnostics.log`` — survives
+  conversation-context turnover so users can file an upstream
+  juju bug with verbatim evidence.  Covers all three subprocess
+  paths: ``run_command``'s scoped runner, the Jubilant-backed
+  ``juju.py`` tools, and the shared ``run_juju`` helper used by
+  acceptance / chaos / scaling.  ``run_command`` also surfaces
+  the dump path in the tool result so the agent mentions it
+  inline.  ``looks_like_juju_crash`` heuristic + ``juju_version``
+  cache live in ``cantrip.agent.tools.juju_subprocess``;
+  ``cantrip.diagnostics.report_command_crash`` is the persistence
+  primitive (sibling of ``report_internal_error``).
 - **Phase 67.1: session tree rewind and branch.**  Conversations
   are now a tree.  ``/branch [turn-id]`` rewinds the active head
   to a prior turn and rebuilds in-memory messages from the new
