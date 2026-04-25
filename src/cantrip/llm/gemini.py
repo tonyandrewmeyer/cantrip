@@ -60,6 +60,11 @@ class GeminiProvider(LLMProvider):
         """Gemini 1.5+ models all accept inline image parts."""
         return True
 
+    @property
+    def supports_response_schema(self) -> bool:
+        """Gemini accepts ``response_mime_type`` + ``response_schema``."""
+        return True
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -84,6 +89,7 @@ class GeminiProvider(LLMProvider):
         gemini_tools: list[genai_types.Tool] | None,
         max_output_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> genai_types.GenerateContentConfig:
         """Build the generation config, applying Gemini 3 overrides when needed."""
         thinking_config = None
@@ -97,16 +103,27 @@ class GeminiProvider(LLMProvider):
             else:
                 thinking_config = genai_types.ThinkingConfig(include_thoughts=False)
 
-        return genai_types.GenerateContentConfig(
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-            system_instruction=system_prompt,
-            tools=gemini_tools,
-            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
+        # Phase 73.3: native structured-output enforcement.  Gemini
+        # rejects ``tools`` in the same request as ``response_schema``,
+        # so callers using a schema must hand-feed the data they want
+        # rather than mixing the two surfaces.  We pass the schema
+        # through verbatim — the SDK accepts plain dicts and converts
+        # them into the native ``Schema`` shape internally.
+        config_kwargs: dict[str, Any] = {
+            "temperature": temperature,
+            "max_output_tokens": max_output_tokens,
+            "system_instruction": system_prompt,
+            "tools": gemini_tools,
+            "automatic_function_calling": genai_types.AutomaticFunctionCallingConfig(
                 disable=True,
             ),
-            thinking_config=thinking_config,
-        )
+            "thinking_config": thinking_config,
+        }
+        if response_schema is not None:
+            config_kwargs["response_mime_type"] = "application/json"
+            config_kwargs["response_schema"] = response_schema
+
+        return genai_types.GenerateContentConfig(**config_kwargs)
 
     def _convert_messages(self, messages: list[Message]) -> list[genai_types.Content]:
         """Convert messages to Gemini format.
@@ -326,6 +343,7 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> Response:
         """Generate a completion."""
         system_prompt = self._get_system_prompt(messages)
@@ -337,6 +355,7 @@ class GeminiProvider(LLMProvider):
             gemini_tools,
             max_output_tokens=max_tokens,
             thinking_budget=thinking_budget,
+            response_schema=response_schema,
         )
 
         try:
@@ -414,6 +433,7 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion.
 
@@ -430,6 +450,7 @@ class GeminiProvider(LLMProvider):
             gemini_tools,
             max_output_tokens=max_tokens,
             thinking_budget=thinking_budget,
+            response_schema=response_schema,
         )
 
         tool_calls = []

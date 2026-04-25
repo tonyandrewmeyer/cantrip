@@ -170,6 +170,7 @@ class LLMProvider(ABC):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> Response:
         """Generate a completion.
 
@@ -177,6 +178,14 @@ class LLMProvider(ABC):
         default.  When *thinking_budget* is set, providers that support
         extended thinking will allocate that many tokens for internal
         reasoning before responding.
+
+        When *response_schema* is set (Phase 73.3), providers that
+        support native structured output (Gemini, OpenAI-compatible)
+        ask the model to return JSON conforming to the schema.
+        Providers without native support (Anthropic today) accept
+        the argument but rely on caller-side validation via
+        :func:`cantrip.llm.structured.complete_structured`.  The
+        :attr:`supports_response_schema` flag distinguishes the two.
         """
 
     @abstractmethod
@@ -187,6 +196,7 @@ class LLMProvider(ABC):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion.
 
@@ -194,6 +204,10 @@ class LLMProvider(ABC):
         default.  When *thinking_budget* is set, providers that support
         extended thinking will allocate that many tokens for internal
         reasoning before responding.
+
+        When *response_schema* is set, the provider applies native
+        structured-output enforcement when available.  See
+        :meth:`complete` for the full contract.
         """
 
     @property
@@ -209,6 +223,20 @@ class LLMProvider(ABC):
         panel should gate on this property — vision-blind providers
         raise ``NotImplementedError`` when they see an ``Image`` they
         can't forward.
+        """
+        return False
+
+    @property
+    def supports_response_schema(self) -> bool:
+        """Whether this provider applies *response_schema* natively (Phase 73.3).
+
+        ``True`` when the wire protocol enforces JSON-schema
+        conformance on the response (Gemini's
+        ``response_mime_type``/``response_schema``, OpenAI-
+        compatible's ``response_format``).  ``False`` when the
+        provider accepts the argument but cannot enforce it; callers
+        in that path get Cantrip-side validation only via
+        :func:`cantrip.llm.structured.complete_structured`.
         """
         return False
 

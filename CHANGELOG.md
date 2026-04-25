@@ -5,6 +5,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Structured JSON responses with schema enforcement
+  (Phase 73.3).**  New ``response_schema: dict | None`` parameter
+  on every ``LLMProvider.complete()`` and ``.stream()`` call;
+  Gemini wires it into ``response_mime_type`` +
+  ``response_schema``, OpenAI-compatible endpoints (Fireworks,
+  OpenRouter, vLLM, inference-snap) wrap it in the
+  ``response_format`` ``json_schema`` envelope, Anthropic
+  accepts the kwarg for interface parity but does not enforce
+  natively (no equivalent on the wire).  New high-level helper
+  ``cantrip.llm.structured.complete_structured(provider,
+  messages, schema, retries=1)`` calls the provider, parses
+  and validates the reply with ``jsonschema``, and on failure
+  feeds the malformed output + the schema back as a
+  corrective USER turn for one retry.  Four built-in schemas
+  in ``cantrip.llm.schemas``: ``PLANNER_BRIEFING``,
+  ``ORACLE_ANSWER``, ``CHECK_RESULT``, ``ACCEPTANCE_REPORT``.
+  ``provider.supports_response_schema`` distinguishes native
+  enforcement from caller-side validation.  Documented in
+  ``docs/src/reference-response-schemas.md``; covered by 35
+  unit tests in ``tests/unit/test_structured_response.py``.
 - **Per-edit lint feedback (Phase 71.4).**  After every
   successful ``write_file`` / ``edit_file`` / ``multi_edit``
   call the primary-agent dispatcher now runs ``ruff`` and

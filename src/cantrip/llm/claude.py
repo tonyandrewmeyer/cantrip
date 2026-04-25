@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator
+from typing import Any
 
 import anthropic
 
@@ -284,8 +285,18 @@ class ClaudeProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> Response:
-        """Generate a completion."""
+        """Generate a completion.
+
+        *response_schema* is accepted for interface parity (Phase
+        73.3) but not enforced natively — Anthropic has no
+        ``response_format`` analogue today.  Callers that need
+        structured output should wrap this provider with
+        :func:`cantrip.llm.structured.complete_structured`, which
+        handles validation and one corrective retry on its own.
+        """
+        del response_schema  # No native enforcement; see docstring.
         kwargs = self._build_kwargs(messages, tools, temperature, max_tokens, thinking_budget)
 
         try:
@@ -339,8 +350,14 @@ class ClaudeProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> AsyncIterator[Chunk]:
-        """Stream a completion."""
+        """Stream a completion.
+
+        *response_schema* is accepted for interface parity but not
+        enforced natively — see :meth:`complete` for the rationale.
+        """
+        del response_schema  # No native enforcement; see complete().
         kwargs = self._build_kwargs(messages, tools, temperature, max_tokens, thinking_budget)
 
         tool_calls: list[ToolCall] = []

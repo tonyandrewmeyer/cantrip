@@ -108,6 +108,7 @@ class FireworksProvider(OpenAICompatBase):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> Response:
         """Generate a completion, auto-streaming past Fireworks's non-stream cap.
 
@@ -128,6 +129,7 @@ class FireworksProvider(OpenAICompatBase):
                 temperature,
                 max_tokens=max_tokens,
                 thinking_budget=thinking_budget,
+                response_schema=response_schema,
             )
 
         content_parts: list[str] = []
@@ -140,6 +142,7 @@ class FireworksProvider(OpenAICompatBase):
             temperature,
             max_tokens=max_tokens,
             thinking_budget=thinking_budget,
+            response_schema=response_schema,
         ):
             if chunk.content:
                 content_parts.append(chunk.content)

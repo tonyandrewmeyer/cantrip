@@ -4810,34 +4810,63 @@ deferred**:
 
 ### 73.3 Medium — Structured JSON response with schema enforcement
 
-- [ ] New per-call option ``response_schema: dict`` on the
-  primary-agent turn API and every subagent-dispatch call.
-  When set, the provider is asked to return output
-  conforming to the JSON schema (using Anthropic's
-  structured output, OpenAI's ``response_format``, or the
-  equivalent per provider).  Validation runs in Cantrip
-  regardless — provider-native enforcement is an
-  optimisation, not a security boundary.
-- [ ] Built-in schemas shipped for common outputs:
-  - ``cantrip.schemas.planner_briefing`` — what the
-    planner returns to task dispatch
-  - ``cantrip.schemas.check_result`` — Phase 70.4 Checks
-    output (``pass | fail``, severity, evidence, message)
-  - ``cantrip.schemas.oracle_answer`` — Phase 70.2 Oracle
-    return shape
-  - ``cantrip.schemas.acceptance_report`` — Phase 17
-    acceptance-test report
-- [ ] Recipes (73.1) surface the primitive via their
-  ``response`` block.  Direct tool callers use
-  ``response_schema=`` on the provider call.
-- [ ] On validation failure after one provider retry,
-  surface the malformed output plus the schema to the
-  agent and ask for correction — a tool-result-shaped
-  error the agent can react to.
-- [ ] Document in ``docs/docs/reference-response-schemas.html``.
-- [ ] ``tests/unit/test_structured_response.py`` — happy
-  path, schema violation retry, final-failure shape,
-  provider-native vs. Cantrip-side validation parity.
+- [x] New per-call ``response_schema: dict | None``
+  parameter on every ``LLMProvider.complete()`` /
+  ``.stream()``.  Gemini routes it into
+  ``response_mime_type=application/json`` +
+  ``response_schema`` on ``GenerateContentConfig``;
+  OpenAI-compatible endpoints (Fireworks, OpenRouter,
+  vLLM, inference-snap) wrap it in the ``response_format``
+  ``json_schema`` envelope (``{name, schema, strict}``);
+  Anthropic accepts the kwarg for interface parity but
+  doesn't enforce — they have no ``response_format``
+  analogue today.  ``provider.supports_response_schema``
+  surfaces the native-vs-caller-side distinction.
+  Validation runs in Cantrip regardless via
+  :mod:`cantrip.llm.structured`, so the contract is the
+  same on every backend.
+- [x] Four built-in schemas in
+  :mod:`cantrip.llm.schemas` (``PLANNER_BRIEFING``,
+  ``ORACLE_ANSWER``, ``CHECK_RESULT``,
+  ``ACCEPTANCE_REPORT``) plus a ``BUILTIN_SCHEMAS``
+  registry for name-driven lookup (recipes, settings).
+  Each schema is a plain ``dict`` matching JSON Schema
+  draft 2020-12 — no Pydantic, no DSL, same surface
+  every provider already accepts.
+- [ ] **Deferred: migrate existing call sites onto the new
+  primitive.**  The planner (Phase 32) still parses
+  free-form JSON via regex + ``json.loads``; the oracle
+  (Phase 70.2) returns text; the acceptance tool (Phase
+  17) takes pre-assembled markdown rather than synthesising
+  a structured payload.  Each migration is its own commit
+  — call this out when those phases get follow-up work.
+  The primitive is available; consumers adopt at their
+  own pace.
+- [x] On validation failure, the
+  :func:`complete_structured` helper appends the malformed
+  reply as an ASSISTANT turn and a USER turn quoting the
+  schema + the validation error, then retries up to
+  ``retries`` times (default ``1``).  Final failure raises
+  ``StructuredOutputError`` carrying the *last* raw text,
+  the schema, and the underlying parser/validator
+  exception.
+- [x] Documented in
+  ``docs/docs/reference-response-schemas.html`` (new
+  Reference page) covering when to use a schema, the four
+  built-ins, the provider matrix, the
+  ``complete_structured`` entry point, and the validation
+  + retry semantics.
+- [x] ``tests/unit/test_structured_response.py`` (35 cases)
+  — happy path, markdown-fence stripping, JSON parse
+  failures, schema-violation triggers one retry with
+  corrective prompt, final failure surfaces the last
+  attempt's raw text, ``retries=0`` and negative-retry
+  guards, ``response_schema`` forwarded to the provider,
+  OpenAI-compat builds the correct ``response_format``
+  envelope (with title-derived ``name``), Gemini and
+  Fireworks claim native support while Anthropic does not,
+  every built-in schema accepts a canonical sample payload
+  and rejects an obvious violation.
 
 ### 73.4 Medium — Declarative retry with shell validators
 

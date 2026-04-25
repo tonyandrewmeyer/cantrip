@@ -68,6 +68,8 @@ class FakeProvider(LLMProvider):
         self._call_count = 0
         self.model_name = "fake-model"
         self._context_window_tokens = context_window_tokens
+        # Phase 73.3: last value passed to complete()/stream() for assertion.
+        self.last_response_schema: dict | None = None
 
     async def complete(
         self,
@@ -76,7 +78,12 @@ class FakeProvider(LLMProvider):
         temperature: float = 0.7,  # noqa: ARG002
         max_tokens: int | None = None,  # noqa: ARG002
         thinking_budget: int | None = None,  # noqa: ARG002
+        response_schema: dict | None = None,
     ) -> Response:
+        # Phase 73.3: capture the schema for assertion in tests; the
+        # fake never enforces it, callers should validate against the
+        # schema themselves.
+        self.last_response_schema = response_schema
         if self._call_count < len(self._responses):
             resp = self._responses[self._call_count]
             self._call_count += 1
@@ -90,7 +97,9 @@ class FakeProvider(LLMProvider):
         temperature: float = 0.7,  # noqa: ARG002
         max_tokens: int | None = None,  # noqa: ARG002
         thinking_budget: int | None = None,  # noqa: ARG002
+        response_schema: dict | None = None,
     ):
+        self.last_response_schema = response_schema
         if self._call_count < len(self._responses):
             resp = self._responses[self._call_count]
             self._call_count += 1
