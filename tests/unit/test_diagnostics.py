@@ -99,6 +99,80 @@ class TestReportInternalError:
         # Still returns a friendly chat string — does not propagate.
         assert "something went wrong" in result.lower()
 
+
+class TestReportCommandCrash:
+    """Tests for ``report_command_crash`` — non-exception subprocess dumps."""
+
+    def test_writes_full_dump_with_extra(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+
+        path = diagnostics.report_command_crash(
+            context="run_command:juju",
+            cmd=["juju", "status", "--model", "foo"],
+            returncode=46,
+            stdout="some stdout",
+            stderr="2026/04/26 01:37:44 cmd_run.go:178: oh no",
+            cwd="/tmp/charm",
+            extra={"juju_version": "juju 3.6.0"},
+        )
+
+        assert path == tmp_path / "cantrip" / "diagnostics.log"
+        body = path.read_text(encoding="utf-8")
+        assert "run_command:juju" in body
+        assert "exit 46" in body
+        assert "juju status --model foo" in body
+        assert "cwd: /tmp/charm" in body
+        assert "juju_version: juju 3.6.0" in body
+        assert "some stdout" in body
+        assert "cmd_run.go" in body
+
+    def test_accepts_string_cmd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+        diagnostics.report_command_crash(
+            context="x",
+            cmd="juju status",
+            returncode=99,
+            stdout="",
+            stderr="",
+        )
+        body = (tmp_path / "cantrip" / "diagnostics.log").read_text(encoding="utf-8")
+        assert "command: juju status" in body
+
+    def test_empty_streams_marked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+        diagnostics.report_command_crash(
+            context="x",
+            cmd=["juju"],
+            returncode=99,
+            stdout="",
+            stderr="",
+        )
+        body = (tmp_path / "cantrip" / "diagnostics.log").read_text(encoding="utf-8")
+        assert "--- stdout ---\n(empty)" in body
+        assert "--- stderr ---\n(empty)" in body
+
+    def test_swallows_write_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Putting cantrip/ underneath a *file* makes mkdir raise
+        # FileExistsError — exercises the OSError swallow path.  Dumps
+        # must never propagate (the caller already has an error to
+        # surface from the subprocess result).
+        blocked = tmp_path / "blocked"
+        blocked.write_text("not a directory")
+        monkeypatch.setenv("XDG_STATE_HOME", str(blocked))
+        # Returns the (non-existent) path without raising.
+        path = diagnostics.report_command_crash(
+            context="x",
+            cmd=["juju"],
+            returncode=99,
+            stdout="",
+            stderr="",
+        )
+        assert "diagnostics.log" in str(path)
+
+
+class TestLogSizeBounded:
     def test_log_size_bounded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # Pre-fill the log past the soft cap, then write again — the
         # head should be trimmed so the file stays bounded.

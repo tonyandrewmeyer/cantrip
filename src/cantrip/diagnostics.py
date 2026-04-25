@@ -30,8 +30,10 @@ import datetime
 import logging
 import os
 import pathlib
+import shlex
 import threading
 import traceback
+from collections.abc import Sequence
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +110,67 @@ def report_internal_error(context: str, exc: BaseException) -> str:
         f"The full traceback was written to `{path}` — please share "
         f"that file when reporting the issue."
     )
+
+
+def report_command_crash(
+    *,
+    context: str,
+    cmd: Sequence[str] | str,
+    returncode: int,
+    stdout: str,
+    stderr: str,
+    cwd: str | pathlib.Path | None = None,
+    extra: dict[str, str] | None = None,
+) -> pathlib.Path:
+    """Persist a crash-shaped subprocess failure for upstream reporting.
+
+    Used when a subprocess exits with a status that looks like an
+    internal error (juju panic, unknown exit code) and the verbatim
+    command, stdout, and stderr are worth keeping for the user to
+    file an upstream bug.  Unlike :func:`report_internal_error`, no
+    Python exception is involved — just the four pieces of evidence
+    an upstream tracker will ask for.
+
+    Returns the log path so the caller can mention it in the
+    user-facing error message.  Best-effort: write failures are
+    swallowed (the caller already has a useful error to surface).
+    """
+    path = log_path()
+    timestamp = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+    cmd_text = cmd if isinstance(cmd, str) else " ".join(shlex.quote(str(part)) for part in cmd)
+
+    lines = [
+        "",
+        "=" * 72,
+        f"{timestamp}  {context}  (exit {returncode})",
+        "-" * 72,
+        f"command: {cmd_text}",
+    ]
+    if cwd is not None:
+        lines.append(f"cwd: {cwd}")
+    if extra:
+        for key, value in extra.items():
+            lines.append(f"{key}: {value}")
+    lines.append("--- stdout ---")
+    lines.append(stdout if stdout else "(empty)")
+    lines.append("--- stderr ---")
+    lines.append(stderr if stderr else "(empty)")
+    entry = "\n".join(lines) + "\n"
+
+    with _LOCK:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _trim_if_needed(path, len(entry.encode("utf-8")))
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(entry)
+        except OSError as write_exc:
+            log.warning(
+                "diagnostics: cannot write crash dump to %s (%s)",
+                path,
+                write_exc,
+            )
+
+    return path
 
 
 def _trim_if_needed(path: pathlib.Path, incoming_bytes: int) -> None:

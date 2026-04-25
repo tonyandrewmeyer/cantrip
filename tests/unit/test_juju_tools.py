@@ -148,6 +148,47 @@ class TestJujuStatusTool:
         assert "App: redis (active)\n" in result.output
         assert "—" not in result.output
 
+    @pytest.mark.asyncio
+    async def test_crash_shaped_clierror_writes_dump(
+        self, tool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A crash-shaped ``CLIError`` from Jubilant lands in diagnostics.log.
+
+        Lets the user file an upstream juju bug with verbatim repro
+        material (cmd, returncode, stdout, stderr) even after the
+        agent's chat context has rolled over.
+        """
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+        monkeypatch.setattr(
+            "cantrip.agent.tools.juju._juju_version",
+            lambda: "juju 3.6.0",
+        )
+
+        crash = jubilant.CLIError(
+            46,
+            ["juju", "status"],
+            "",
+            "2026/04/26 01:37:44 cmd_run.go:178: oh no\n",
+        )
+
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant") as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.status = mock.MagicMock(side_effect=crash)
+            fake_jubilant.CLIError = jubilant.CLIError
+            fake_jubilant.TaskError = jubilant.TaskError
+            result = await tool.execute()
+
+        assert not result.success
+        log_file = tmp_path / "cantrip" / "diagnostics.log"
+        assert log_file.exists()
+        body = log_file.read_text(encoding="utf-8")
+        assert "jubilant:" in body
+        assert "exit 46" in body
+        assert "cmd_run.go" in body
+        assert "juju 3.6.0" in body
+
 
 class TestJujuAddModelTool:
     """Tests for JujuAddModelTool."""
