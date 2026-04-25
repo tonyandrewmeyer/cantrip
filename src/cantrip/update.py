@@ -54,11 +54,11 @@ import cantrip
 log = logging.getLogger(__name__)
 
 
-# Public PyPI JSON endpoint for the ``cantrip`` distribution.  The
+# Public PyPI JSON endpoint for the ``juju-cantrip`` distribution.  The
 # top-level URL (no ``/<version>/`` segment) returns ``info.version``
 # pointing at the latest release plus a ``releases`` map keyed by
 # version so we can extract upload timestamps without a second call.
-_PYPI_URL = "https://pypi.org/pypi/cantrip/json"
+_PYPI_URL = "https://pypi.org/pypi/juju-cantrip/json"
 
 # Repo slug for fetching ``CHANGELOG.md`` at the matching tag.  An
 # env-var override exists so tests don't hit the live GitHub raw
@@ -349,7 +349,7 @@ def _make_info_if_newer(
     return UpdateInfo(
         current=current,
         latest=latest,
-        pypi_url=f"https://pypi.org/project/cantrip/{latest}/",
+        pypi_url=f"https://pypi.org/project/juju-cantrip/{latest}/",
         release_timestamp=release_timestamp,
         release_notes_markdown=release_notes_markdown,
         installed_yanked=installed_yanked,
@@ -690,12 +690,12 @@ def detect_install_method() -> InstallMethod:
     if text.startswith("/snap/"):
         return InstallMethod.SNAP
 
-    # uv tool: ``~/.local/share/uv/tools/cantrip/bin/python`` and
+    # uv tool: ``~/.local/share/uv/tools/juju-cantrip/bin/python`` and
     # variants under ``/share/uv/tools/`` for system installs.
     if "/.local/share/uv/" in text or "/share/uv/tools/" in text:
         return InstallMethod.UV_TOOL
 
-    # pipx: ``~/.local/pipx/venvs/cantrip/bin/python`` — pipx may
+    # pipx: ``~/.local/pipx/venvs/juju-cantrip/bin/python`` — pipx may
     # also live under ``~/.local/share/pipx/`` on newer installs.
     if "/.local/pipx/" in text or "/.local/share/pipx/" in text or "/pipx/venvs/" in text:
         return InstallMethod.PIPX
@@ -722,10 +722,10 @@ def detect_install_method() -> InstallMethod:
 
 
 _UPGRADE_COMMANDS: dict[InstallMethod, str] = {
-    InstallMethod.UV_TOOL: "uv tool upgrade cantrip",
-    InstallMethod.PIPX: "pipx upgrade cantrip",
-    InstallMethod.PIP_USER: "uv pip install --user --upgrade cantrip",
-    InstallMethod.PIP_VENV: "uv pip install --upgrade cantrip",
+    InstallMethod.UV_TOOL: "uv tool upgrade juju-cantrip",
+    InstallMethod.PIPX: "pipx upgrade juju-cantrip",
+    InstallMethod.PIP_USER: "uv pip install --user --upgrade juju-cantrip",
+    InstallMethod.PIP_VENV: "uv pip install --upgrade juju-cantrip",
     InstallMethod.SNAP: "snap refresh cantrip",
 }
 
@@ -734,7 +734,7 @@ def upgrade_command(method: InstallMethod | None = None) -> str | None:
     """Return a copy-pasteable upgrade command for *method*.
 
     ``None`` (or :attr:`InstallMethod.UNKNOWN`) returns ``None`` so
-    callers can fall back to "visit https://pypi.org/project/cantrip/"
+    callers can fall back to "visit https://pypi.org/project/juju-cantrip/"
     rather than print a misleading command.
     """
     if method is None:

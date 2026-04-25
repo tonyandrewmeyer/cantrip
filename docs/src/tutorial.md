@@ -66,7 +66,7 @@ Before you begin, make sure you have:
 
 Install Cantrip as a standalone tool using `uv`:
 
-<pre><code><span class="prompt">$</span> uv tool install cantrip</code></pre>
+<pre><code><span class="prompt">$</span> uv tool install juju-cantrip</code></pre>
 
 Verify the installation:
 

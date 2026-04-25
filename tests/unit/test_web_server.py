@@ -1722,7 +1722,7 @@ class TestApiUpdateStatus:
         info = update.UpdateInfo(
             current="0.1.0",
             latest="0.2.0",
-            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            pypi_url="https://pypi.org/project/juju-cantrip/0.2.0/",
             release_timestamp="2026-04-21T00:00:00Z",
             release_notes_markdown="## 0.2.0\n\n- Nice.",
             installed_yanked=False,
@@ -1743,7 +1743,7 @@ class TestApiUpdateStatus:
                     payload = data["info"]
                     assert payload["latest"] == "0.2.0"
                     assert payload["current"] == "0.1.0"
-                    assert payload["upgrade_command"] == "uv tool upgrade cantrip"
+                    assert payload["upgrade_command"] == "uv tool upgrade juju-cantrip"
                     assert payload["install_method"] == "uv-tool"
                     assert payload["installed_yanked"] is False
 
@@ -1780,7 +1780,7 @@ class TestRunUpdateCheck:
         info = update.UpdateInfo(
             current="0.1.0",
             latest="0.2.0",
-            pypi_url="https://pypi.org/project/cantrip/0.2.0/",
+            pypi_url="https://pypi.org/project/juju-cantrip/0.2.0/",
             release_timestamp=None,
         )
         agent = _make_agent()
