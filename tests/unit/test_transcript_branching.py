@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.slash_commands import handle_branch
+from cantrip.agent.slash_commands import build_tree_nodes, handle_branch, handle_tree
 from cantrip.agent.store import SCHEMA_VERSION, SessionStore
 from cantrip.llm.base import Role
 from tests.conftest import FakeProvider
@@ -223,6 +223,110 @@ class TestResumeFollowsBranch:
         loaded = agent2.load_state()
         assert loaded is True
         assert [m.content for m in agent2.state.messages] == ["a"]
+
+
+class TestTreeBuilder:
+    """``build_tree_nodes`` produces a DFS traversal with depth markers."""
+
+    def test_linear_history_renders_as_flat(self) -> None:
+        msgs = [
+            {"id": 1, "role": "user", "content": "a", "parent_turn_id": None, "timestamp": "t1"},
+            {"id": 2, "role": "assistant", "content": "b", "parent_turn_id": 1, "timestamp": "t2"},
+            {"id": 3, "role": "user", "content": "c", "parent_turn_id": 2, "timestamp": "t3"},
+        ]
+        nodes = build_tree_nodes(msgs, active_branch_ids={1, 2, 3})
+        assert [(n.id, n.depth) for n in nodes] == [(1, 0), (2, 1), (3, 2)]
+        assert all(n.on_active_branch for n in nodes)
+
+    def test_fork_gets_indented_under_parent(self) -> None:
+        # 1 → 2 → 3 (the original branch) and 2 → 4 (fork).
+        msgs = [
+            {"id": 1, "role": "user", "content": "a", "parent_turn_id": None, "timestamp": "t1"},
+            {"id": 2, "role": "assistant", "content": "b", "parent_turn_id": 1, "timestamp": "t2"},
+            {"id": 3, "role": "user", "content": "c", "parent_turn_id": 2, "timestamp": "t3"},
+            {"id": 4, "role": "user", "content": "fork", "parent_turn_id": 2, "timestamp": "t4"},
+        ]
+        nodes = build_tree_nodes(msgs, active_branch_ids={1, 2, 4})
+        # Children visited in id order: 3 before 4.
+        assert [(n.id, n.depth) for n in nodes] == [(1, 0), (2, 1), (3, 2), (4, 2)]
+        actives = {n.id: n.on_active_branch for n in nodes}
+        assert actives == {1: True, 2: True, 3: False, 4: True}
+
+    def test_long_content_truncated(self) -> None:
+        long = "x" * 200
+        msgs = [
+            {"id": 1, "role": "user", "content": long, "parent_turn_id": None, "timestamp": "t"},
+        ]
+        nodes = build_tree_nodes(msgs, active_branch_ids={1})
+        assert len(nodes[0].label) <= 80
+        assert nodes[0].label.endswith("…")
+
+
+class TestTreeSlashCommand:
+    """``/tree`` produces a markdown summary with branch markers."""
+
+    def test_empty_session_returns_friendly_message(self, tmp_path: Path) -> None:
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent._ensure_store()
+        result = handle_tree(agent, "")
+        assert "No turns yet" in result
+
+    def test_lists_active_branch_with_marker(self, tmp_path: Path) -> None:
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent._ensure_store()
+        store = agent.store
+        assert store is not None
+        a = store.record_message(role="user", content="first ask")
+        store.record_message(role="assistant", content="first reply")
+        store.record_message(role="user", content="off-branch")
+        store.set_active_head(a)
+        result = handle_tree(agent, "")
+        # Active branch row gets `*`; off-branch row is unmarked.
+        assert "first ask" in result
+        assert "off-branch" in result
+        active_lines = [line for line in result.splitlines() if "first ask" in line]
+        assert active_lines and "*" in active_lines[0]
+        off_lines = [line for line in result.splitlines() if "off-branch" in line]
+        # The marker column should be a space (not `*`) for off-branch
+        # rows — be tolerant of indentation by checking for the row id.
+        assert off_lines and "*" not in off_lines[0].split("`", 1)[0]
+
+
+class TestTreePickerScreen:
+    """Smoke-check the TUI modal renders nodes with stable option ids."""
+
+    def test_option_ids_match_turn_ids(self) -> None:
+        from cantrip.agent.slash_commands import TreeNode
+        from cantrip.tui.screens.tree import TreePickerScreen
+
+        nodes = [
+            TreeNode(
+                depth=0,
+                id=42,
+                role="user",
+                label="hello",
+                timestamp="2026-04-26T10:00:00",
+                on_active_branch=True,
+            ),
+            TreeNode(
+                depth=1,
+                id=43,
+                role="assistant",
+                label="world",
+                timestamp="2026-04-26T10:00:01",
+                on_active_branch=True,
+            ),
+        ]
+        screen = TreePickerScreen(nodes)
+        # The screen builds options at compose time; spot-check the
+        # option-builder shared with compose so we don't require a
+        # running Textual app to verify ids round-trip.
+        for node in nodes:
+            option = TreePickerScreen._option_for(node)
+            assert option.id == str(node.id)
+            assert str(node.id) in str(option.prompt)
+            assert node.label in str(option.prompt)
+        assert screen._nodes == nodes
 
 
 class TestExportFollowsBranch:

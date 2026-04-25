@@ -845,6 +845,16 @@ class SessionStore:
                 log.warning("Skipping corrupt message row %s: %s", r["id"], exc)
         return result
 
+    def is_message_on_active_branch(self, message_id: int) -> bool:
+        """Return True if *message_id* is on the currently active branch.
+
+        Used by ``/tree`` to mark which nodes are part of the live
+        conversation versus historical forks.  Cheap walk — the branch
+        is at most as long as the conversation.
+        """
+        active_ids = {m["id"] for m in self.load_active_branch()}
+        return message_id in active_ids
+
     def load_active_branch(
         self,
         head: int | None = None,
