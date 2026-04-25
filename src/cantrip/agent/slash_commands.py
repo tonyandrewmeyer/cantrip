@@ -93,6 +93,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/map-refresh", "Rebuild the repository map and reprint"),
     CommandInfo("/diagnostics", "Show ruff/ty/charmlint issues across the active charm"),
     CommandInfo("/review", "Run prompt-based review checks (judgment-based rules)"),
+    CommandInfo("/search-charms", "Search Charmhub and Launchpad for existing charms"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -271,6 +272,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return _handle_diagnostics(agent, args)
     if verb == "/review":
         return _handle_review(agent, args)
+    if verb == "/search-charms":
+        return _handle_search_charms(args)
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -648,6 +651,11 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "- `/map-refresh` — discard the repo-map cache "
         "(`.cantrip-repomap.json`) and reparse from scratch.  "
         "Same compact-vs-full toggle as `/map`.\n"
+        "- `/search-charms <query>` — Phase 70.1 Librarian: search "
+        "Charmhub and Launchpad in parallel for existing charms or "
+        "projects matching *query*.  Quality flags surface stale or "
+        "unmaintained hits; the agent can follow up with "
+        "`charmhub_fetch` / `launchpad_fetch` to clone source.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
     custom = getattr(agent, "custom_commands", None) if agent is not None else None
@@ -1776,10 +1784,21 @@ def _handle_copy(agent: CantripAgent, args: str) -> SlashResult:
             None,
         )
         if target is None:
-            return SlashResult(
-                text="_Nothing to copy: no assistant messages in this session yet._"
-            )
-        label = "last assistant message"
+            # Fall back to the most recent message of any role rather
+            # than refusing — when the agent's first turn errors out
+            # before producing an assistant message, the user still
+            # sees content on screen and reasonably expects /copy to
+            # capture *something*.  The label makes the role explicit
+            # so it's clear what landed on the clipboard.
+            if selector == "assistant":
+                return SlashResult(
+                    text="_Nothing to copy: no assistant messages in this session yet._"
+                )
+            target = messages[-1]
+            role = (target.get("role") or "message").lower()
+            label = f"last {role} message (no assistant messages yet)"
+        else:
+            label = "last assistant message"
     elif selector == "last":
         target = messages[-1]
         role = (target.get("role") or "message").lower()
@@ -1992,6 +2011,69 @@ def export_transcript(agent: CantripAgent, args: str) -> str:
         return f"_Failed to write {destination}: {exc}._"
 
     return f"Exported transcript ({fmt}) to `{destination}`."
+
+
+# ---------------------------------------------------------------------------
+# Phase 70.1 — /search-charms slash command
+# ---------------------------------------------------------------------------
+
+
+def _handle_search_charms(args: str) -> SlashResult:
+    """Dispatch the ``/search-charms`` slash command.
+
+    Returns an immediate "searching…" prelude plus a followup that
+    queries Charmhub and Launchpad in parallel and renders both
+    result blocks together as Markdown.  Cheap — no source fetch is
+    triggered from the slash; the agent invokes ``charmhub_fetch``
+    / ``launchpad_fetch`` if it needs to read source.
+    """
+    query = args.strip()
+    if not query:
+        return SlashResult(
+            text=(
+                "Usage: ``/search-charms <query>`` — searches Charmhub and "
+                "Launchpad for existing charms or projects matching *query*."
+            )
+        )
+    return SlashResult(
+        text=f"Searching Charmhub and Launchpad for `{query}`…",
+        followup=_run_search_charms(query),
+        markdown=True,
+    )
+
+
+async def _run_search_charms(query: str) -> str:
+    """Query Charmhub + Launchpad concurrently; render combined Markdown."""
+    # Late imports keep the slash module's cold-start cheap when the
+    # user never reaches for the Librarian.
+    from cantrip.agent.tools.charmhub import CharmhubSearchTool
+    from cantrip.agent.tools.launchpad import LaunchpadSearchTool
+
+    charmhub_tool = CharmhubSearchTool()
+    launchpad_tool = LaunchpadSearchTool()
+
+    charmhub_result, launchpad_result = await asyncio.gather(
+        charmhub_tool.execute(query=query),
+        launchpad_tool.execute(query=query),
+        return_exceptions=False,
+    )
+
+    sections: list[str] = [f"# Charm-library search: `{query}`", ""]
+
+    sections.append("## Charmhub")
+    if charmhub_result.success:
+        sections.append(charmhub_result.output or "_No results._")
+    else:
+        sections.append(f"_Charmhub search failed: {charmhub_result.error}_")
+    sections.append("")
+
+    sections.append("## Launchpad")
+    if launchpad_result.success:
+        sections.append(launchpad_result.output or "_No results._")
+    else:
+        sections.append(f"_Launchpad search failed: {launchpad_result.error}_")
+
+    return "\n".join(sections)
 
 
 __all__ = [

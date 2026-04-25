@@ -29,6 +29,7 @@ class TaskCategory(enum.StrEnum):
     DEBUG = "debug"
     INFRA = "infra"
     CONFIRM = "confirm"
+    LIBRARIAN = "librarian"
 
 
 class ModelHint(enum.StrEnum):

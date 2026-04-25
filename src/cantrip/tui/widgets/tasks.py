@@ -16,6 +16,7 @@ from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 # Display order and labels for category groups.
 _CATEGORY_ORDER: list[tuple[TaskCategory, str]] = [
     (TaskCategory.RESEARCH, "Research"),
+    (TaskCategory.LIBRARIAN, "Librarian"),
     (TaskCategory.BUILD, "Build"),
     (TaskCategory.DEPLOY, "Deploy"),
     (TaskCategory.TEST, "Test"),

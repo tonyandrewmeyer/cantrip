@@ -54,7 +54,11 @@ def build_tools(
         QuickPackTool,
         ValidateTerraformTool,
     )
-    from cantrip.agent.tools.charmhub import CharmhubInfoTool, CharmhubSearchTool
+    from cantrip.agent.tools.charmhub import (
+        CharmhubFetchTool,
+        CharmhubInfoTool,
+        CharmhubSearchTool,
+    )
     from cantrip.agent.tools.charmlint_tool import CharmlintTool
     from cantrip.agent.tools.environment import (
         ConciergePrepareTool,
@@ -118,6 +122,7 @@ def build_tools(
         JujuTrustTool,
         JujuWaitTool,
     )
+    from cantrip.agent.tools.launchpad import LaunchpadFetchTool, LaunchpadSearchTool
     from cantrip.agent.tools.loadtest import GenerateLoadTestTool
     from cantrip.agent.tools.mcp_tool import MCPTool
     from cantrip.agent.tools.memory import build_memory_tools
@@ -211,9 +216,12 @@ def build_tools(
         # Web
         WebFetchTool(),
         WebSearchTool(),
-        # Charmhub
+        # Charmhub / Launchpad (Phase 70.1 Librarian)
         CharmhubSearchTool(),
         CharmhubInfoTool(),
+        CharmhubFetchTool(),
+        LaunchpadSearchTool(),
+        LaunchpadFetchTool(),
         # Registry
         RegistrySearchTool(),
         RegistryImageInfoTool(),
