@@ -165,10 +165,22 @@ class CharmlintTool(Tool):
             s = "s" if total != 1 else ""
             lines.append(f"Found {total} issue{s} ({', '.join(parts)})")
 
+        if total == 0:
+            caption = "clean"
+        else:
+            caption_parts: list[str] = []
+            if errors:
+                caption_parts.append(f"{errors} error{'s' if errors != 1 else ''}")
+            if warnings:
+                caption_parts.append(f"{warnings} warning{'s' if warnings != 1 else ''}")
+            if infos:
+                caption_parts.append(f"{infos} info")
+            caption = ", ".join(caption_parts)
         return ToolResult(
             success=True,
             output="\n".join(lines),
             data={**data, "backend": "rust"},
+            caption=caption,
         )
 
     @staticmethod
@@ -199,8 +211,24 @@ class CharmlintTool(Tool):
             lines.append("")
         lines.append(report.summary_line())
 
+        d = report.to_dict()
+        total = d.get("total", 0)
+        if total == 0:
+            caption = "clean"
+        else:
+            caption_parts: list[str] = []
+            if d.get("errors"):
+                n = d["errors"]
+                caption_parts.append(f"{n} error{'s' if n != 1 else ''}")
+            if d.get("warnings"):
+                n = d["warnings"]
+                caption_parts.append(f"{n} warning{'s' if n != 1 else ''}")
+            if d.get("info"):
+                caption_parts.append(f"{d['info']} info")
+            caption = ", ".join(caption_parts) or f"{total} issue{'s' if total != 1 else ''}"
         return ToolResult(
             success=True,
             output="\n".join(lines),
-            data={**report.to_dict(), "backend": "python"},
+            data={**d, "backend": "python"},
+            caption=caption,
         )

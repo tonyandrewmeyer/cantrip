@@ -261,8 +261,17 @@ class WebFetchTool(Tool):
         if llms_content:
             data["llms_txt_url"] = llms_url
 
+        # Strip protocol/scheme from caption for readability.
+        display_url = str(response.url)
+        for prefix in ("https://", "http://"):
+            if display_url.startswith(prefix):
+                display_url = display_url[len(prefix) :]
+                break
+        if len(display_url) > 60:
+            display_url = display_url[:59] + "…"
         return ToolResult(
             success=True,
             output=text,
             data=data,
+            caption=f"Fetched {display_url} ({len(text)} bytes)",
         )

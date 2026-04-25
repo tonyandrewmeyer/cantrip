@@ -477,6 +477,7 @@ class CharmcraftInitTool(Tool):
                     "tracing_injected": True,
                     "pre_commit_installed": True,
                 },
+                caption=f"Initialised {name} ({profile})",
             )
         except FileNotFoundError:
             return ToolResult(
@@ -836,6 +837,11 @@ class QuickPackTool(Tool):
         charm_files = sorted(out.glob("*.charm"))
         charm_file = charm_files[-1] if charm_files else None
 
+        if charm_file is not None:
+            size_mb = charm_file.stat().st_size / (1024 * 1024)
+            caption = f"Packed → {charm_file.name} ({size_mb:.1f} MB)"
+        else:
+            caption = "Packed charm (no .charm located)"
         return ToolResult(
             success=True,
             output=f"Packed charm successfully (rust): {charm_file.name if charm_file else '?'}",
@@ -844,6 +850,7 @@ class QuickPackTool(Tool):
                 "charm_file": str(charm_file) if charm_file else None,
                 "backend": "rust",
             },
+            caption=caption,
         )
 
     @staticmethod
@@ -859,6 +866,11 @@ class QuickPackTool(Tool):
 
             result_path = _pack.quick_pack(charm_path, **kwargs)
 
+            try:
+                size_mb = result_path.stat().st_size / (1024 * 1024)
+                caption = f"Packed → {result_path.name} ({size_mb:.1f} MB)"
+            except OSError:
+                caption = f"Packed → {result_path.name}"
             return ToolResult(
                 success=True,
                 output=f"Packed charm successfully: {result_path.name}",
@@ -867,6 +879,7 @@ class QuickPackTool(Tool):
                     "charm_file": str(result_path),
                     "backend": "python",
                 },
+                caption=caption,
             )
         except FileNotFoundError as e:
             return ToolResult(success=False, output="", error=str(e))

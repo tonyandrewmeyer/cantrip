@@ -361,6 +361,7 @@ class ActionExerciserTool(Tool):
             success=all_ok,
             output="\n".join(lines),
             error=None if all_ok else f"{total_fail} action(s) failed",
+            caption=f"{total_ok} passed, {total_fail} failed",
             data={
                 "app": app,
                 "actions_tested": len(results),
@@ -601,6 +602,7 @@ class RelationSmokeTool(Tool):
             success=all_ok,
             output="\n".join(lines),
             error=None if all_ok else f"{failed} relation(s) failed",
+            caption=f"{passed} passed, {failed} failed",
             data={
                 "app": app,
                 "endpoints_tested": len(tested),
@@ -784,6 +786,7 @@ class WorkloadEndpointTool(Tool):
             success=all_ok,
             output="\n".join(lines),
             error=None if all_ok else f"{failed} endpoint(s) failed",
+            caption=f"{passed} passed, {failed} failed",
             data={
                 "app": app,
                 "endpoints_tested": len(tested),
@@ -1116,6 +1119,7 @@ class ConfigVariationTool(Tool):
             success=all_ok,
             output="\n".join(lines),
             error=None if all_ok else f"{failed} config option(s) caused issues",
+            caption=f"{passed} passed, {failed} failed",
             data={
                 "app": app,
                 "options_tested": len(tested),
@@ -1304,6 +1308,7 @@ class ConfigUnderLoadTool(Tool):
             success=errors == 0,
             output="\n".join(lines),
             error=None if errors == 0 else f"{errors} probe(s) failed during config change",
+            caption=f"{probe_count - errors} ok, {errors} errored",
             data={
                 "app": app,
                 "config_key": config_key,
@@ -1454,4 +1459,7 @@ class AcceptanceReportTool(Tool):
                 "section_count": section_count,
                 "sections": section_summaries,
             },
+            caption=(
+                f"Wrote ACCEPTANCE.md ({section_count} section{'s' if section_count != 1 else ''})"
+            ),
         )

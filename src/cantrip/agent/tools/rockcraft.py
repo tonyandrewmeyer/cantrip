@@ -176,6 +176,11 @@ class RockcraftPackTool(Tool):
             rock_files = list(rock_path.glob("*.rock"))
             rock_file = rock_files[0] if rock_files else None
 
+            if rock_file is not None:
+                size_mb = rock_file.stat().st_size / (1024 * 1024)
+                caption = f"Packed → {rock_file.name} ({size_mb:.1f} MB)"
+            else:
+                caption = "Packed rock (no .rock located)"
             return ToolResult(
                 success=True,
                 output=f"Packed rock successfully\n{result.stdout}",
@@ -183,6 +188,7 @@ class RockcraftPackTool(Tool):
                     "path": str(rock_path),
                     "rock_file": str(rock_file) if rock_file else None,
                 },
+                caption=caption,
             )
         except subprocess.TimeoutExpired:
             return ToolResult(

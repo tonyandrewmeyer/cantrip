@@ -107,6 +107,9 @@ class CharmcraftUploadTool(Tool):
                 success=True,
                 output=result.stdout.strip(),
                 data={"revision": revision, "charm_file": str(charm_path)},
+                caption=f"Uploaded {charm_path.name} (rev {revision})"
+                if revision is not None
+                else f"Uploaded {charm_path.name}",
             )
         except subprocess.TimeoutExpired:
             return ToolResult(
@@ -227,6 +230,7 @@ class CharmcraftReleaseTool(Tool):
                 success=True,
                 output=result.stdout.strip() or f"Released {name} r{revision} to {channel}",
                 data={"name": name, "revision": revision, "channel": channel},
+                caption=f"Released {name} r{revision} → {channel}",
             )
         except subprocess.TimeoutExpired:
             return ToolResult(
@@ -454,6 +458,7 @@ class GenerateReadmeTool(Tool):
             success=True,
             output=f"Generated README.md ({len(readme_content)} bytes) at {readme_path}",
             data={"path": str(readme_path), "charm_name": charm_name},
+            caption=f"Wrote README.md ({len(readme_content)} bytes)",
         )
 
 
@@ -566,6 +571,7 @@ class GenerateIconTool(Tool):
             success=True,
             output=f"Generated placeholder icon.svg for '{charm_name}' at {icon_path}",
             data={"path": str(icon_path), "charm_name": charm_name},
+            caption=f"Wrote icon.svg ({charm_name})",
         )
 
 
@@ -690,6 +696,7 @@ class GenerateDiagramTool(Tool):
             success=True,
             output=(f"Generated architecture diagram for '{charm_name}' at {out_path}"),
             data={"path": str(out_path), "charm_name": charm_name},
+            caption=f"Wrote architecture.md ({charm_name})",
         )
 
 
@@ -1713,6 +1720,7 @@ class GenerateDocsTool(Tool):
                 "bridged": bridged,
                 "acceptance_populated": acceptance.is_populated,
             },
+            caption=f"Wrote {len(written)} doc{'s' if len(written) != 1 else ''}",
         )
 
 
@@ -1929,6 +1937,7 @@ class ExtractDesignDecisionsTool(Tool):
                 "decision_count": len(decisions),
                 "store_path": str(store_path),
             },
+            caption=f"{len(decisions)} decision{'s' if len(decisions) != 1 else ''}",
         )
 
 
@@ -2425,4 +2434,5 @@ class ExtractTroubleshootingTool(Tool):
                 "store_path": str(store_path),
                 "toctree_updated": toctree_updated,
             },
+            caption=f"{len(entries)} entr{'ies' if len(entries) != 1 else 'y'}",
         )

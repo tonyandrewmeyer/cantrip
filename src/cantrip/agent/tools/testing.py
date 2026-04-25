@@ -232,11 +232,24 @@ class RunCharmTestsTool(Tool):
         if coverage_pct is not None:
             data["coverage_pct"] = coverage_pct
 
+        # Caption: "12 passed, 1 failed" / "0 collected" / runner-fell-over
+        # case has no summary so synthesise from the exit code.
+        caption_parts = [
+            f"{summary[k]} {k}" for k in ("passed", "failed", "error", "skipped") if summary.get(k)
+        ]
+        if caption_parts:
+            caption = ", ".join(caption_parts)
+        elif success:
+            caption = "tests ran (no summary)"
+        else:
+            caption = f"tests failed (exit {result.returncode})"
+
         return ToolResult(
             success=success,
             output=output,
             error=None if success else f"Tests failed (exit code {result.returncode})",
             data=data,
+            caption=caption,
         )
 
 
@@ -525,4 +538,5 @@ class GenerateTestsTool(Tool):
                 "test_count": test_count,
                 "files": sorted(written),
             },
+            caption=f"Wrote {len(written)} file{'s' if len(written) != 1 else ''}, {test_count} tests",
         )

@@ -257,4 +257,5 @@ class FuzzTestTool(Tool):
                 "config_fuzz": config_cases,
                 "action_fuzz": action_cases,
             },
+            caption=f"{len(config_cases)} config cases, {len(action_cases)} action cases",
         )

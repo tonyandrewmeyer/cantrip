@@ -325,4 +325,5 @@ class GenerateLoadTestTool(Tool):
                 "files": sorted(written),
                 "has_k6": has_k6,
             },
+            caption=f"Wrote {len(written)} load-test file{'s' if len(written) != 1 else ''}",
         )

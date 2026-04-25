@@ -5,6 +5,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 81: tool-caption coverage and future-proof guard.**
+  ``run_command`` now captions ``"<base> (exit N)"`` plus a 40-char
+  output snippet so a failing call surfaces its error inline instead
+  of the formulaic fallback.  Juju write-side tools caption their
+  effect (``"Deployed redis to dev"``, ``"Set redis: debug=true"``,
+  ``"Integrated redis ↔ traefik"``, ``"4 apps, 1 blocked"``).  Test
+  harnesses (``run_charm_tests``, ``test_report``, ``chaos_test``,
+  ``scaling_test``, ``upgrade_test``, ``fuzz_charm``,
+  ``hook_benchmark``) and acceptance probes
+  (``action_exerciser``, ``relation_smoke_test``,
+  ``workload_endpoint_test``, ``config_variation_test``,
+  ``config_under_load_test``) caption pass/fail counts.
+  Drive-by captions for git plumbing (status / log / diff / init /
+  branch / checkout / add / stash), GitHub commands (PR create /
+  view / list, issue list, repo create / bootstrap), generators
+  (``generate_*``, ``extract_*``), ``charmcraft_init`` /
+  ``charmcraft_release`` / ``charmcraft_upload``,
+  ``charmhub_search`` / ``charmhub_info``, ``rockcraft_pack``,
+  ``multi_edit``, ``charmlint``, ``charm_sync``, ``web_fetch``,
+  ``web_search``, ``charm_audit``, ``acceptance_report``.  The
+  share of registered tools populating ``ToolResult.caption`` rose
+  from 28 / 111 to 73 / 111.  A new ``TestCaptionCoverage``
+  walks every ``Tool`` instance from ``build_tools()`` and fails
+  when a new tool is neither captioned nor on the explicit
+  ``_FALLBACK_OK`` allowlist, so future tools must make that
+  choice deliberately.
 - **`setup_local_registry` tool + canonical k8s as default substrate.**
   The agent now treats the canonical ``k8s`` snap as the default
   substrate for new K8s charm work; ``microk8s`` is reserved for

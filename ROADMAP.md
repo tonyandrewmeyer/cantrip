@@ -3006,50 +3006,104 @@ files only and does not dispatch on provider.
 
 ---
 
-## Phase 81: Tool Caption Coverage — Shell, Juju, Acceptance
+## Phase 81: Tool Caption Coverage — Shell, Juju, Acceptance ✓
 
 **Goal:** Phase 75.6 shipped rich captions for the file-system,
 git, and charm-tooling categories and left three groups on the
 formulaic ``tool_name(arg=value)`` fallback as drive-by work.
 Track them here so the improvement doesn't rot.  Each subsection
 is small (one tool or a small family) and each can land
-independently.  Pick them up when the underlying tool is touched
-for any other reason; until then the fallback keeps captions
-readable.
+independently.
 
-### 81.1 Low — ``run_command`` caption
+The phase grew beyond the original three categories: while
+trimming the fallback list a coverage test was added that walks
+every registered ``Tool`` and fails if a new tool is silently
+falling back, so the choice between rich caption and fallback is
+a visible code-review decision.  In the same pass the highest-
+value drive-bys (git plumbing, GitHub commands, generators,
+test harnesses, ``rockcraft_pack``, ``charmcraft_init``,
+``charmcraft_release``, ``charmcraft_upload``, ``multi_edit``,
+``charmlint``, ``charm_sync``, ``web_fetch``, ``web_search``)
+also landed.  Captioned tools went from 28 to 73 of 111.
 
-- [ ] Populate ``ToolResult.caption`` in
-  ``cantrip.agent.tools.run_command`` with the exit code and a
-  short output summary (first ~40 chars of stdout, stripped, with
-  newlines collapsed).  Failing commands surface the start of the
-  error in the chat block instead of the formulaic
-  ``run_command(cmd=...)`` fallback.
-- [ ] Tests in ``tests/unit/test_tool_captions.py`` covering
-  success / non-zero exit / empty output / multi-line output
-  (newline collapse).
+### 81.1 Low — ``run_command`` caption ✓
 
-### 81.2 Low — Juju tool captions
+- [x] Populated ``ToolResult.caption`` in
+  ``cantrip.agent.tools.run_command``: ``"<base> (exit N)"``,
+  optionally followed by ``": <40-char snippet>"`` of the
+  combined stdout/stderr.  Failing commands surface the start
+  of the error in the chat block instead of the formulaic
+  ``run_command(cmd=...)`` fallback.  Newlines are collapsed
+  to spaces; snippets above 40 chars truncate with ``…``.
+- [x] Four cases in ``tests/unit/test_tool_captions.py`` —
+  success-with-output, success-no-output, failure-with-error,
+  newline-collapse + truncate.
 
-- [ ] ``juju_deploy`` → ``"Deployed redis to dev-model"``.
-- [ ] ``juju_config`` → ``"Set redis/0 debug=true"`` (or
-  ``"Reset redis debug"`` on ``--reset``).
-- [ ] ``juju_status`` → ``"4 apps, 1 blocked"`` summary
-  derived from the parsed status.
-- [ ] ``juju_integrate`` → ``"Integrated redis ↔ traefik"``;
-  ``juju_remove_relation`` → ``"Removed redis ↔ traefik"``.
-- [ ] Tests in ``tests/unit/test_tool_captions.py`` (stub jubilant
-  responses) for each of the five.
+### 81.2 Low — Juju tool captions ✓
 
-### 81.3 Low — Acceptance / test tool captions
+- [x] ``juju_deploy`` → ``"Deployed <name>"``, with
+  ``"to <model>"`` appended when an explicit model is supplied.
+  Falls back to the charm's stem when no ``app_name`` is given.
+- [x] ``juju_config`` → ``"Set <app>: <key>=<value>"`` for a
+  single value, ``"Set <app>: N values"`` otherwise.  Read
+  mode (no values) emits ``"Read <app> config"``.
+- [x] ``juju_status`` → ``"N app(s)"``, with ``", M blocked"``
+  appended when any application is in ``blocked`` state.
+- [x] ``juju_relate`` → ``"Integrated <app1> ↔ <app2>"``.
+  (The roadmap's ``juju_remove_relation`` was a misnomer —
+  the deletion path lives in ``juju_remove_application``,
+  which stays on fallback because the destruction details are
+  carried by the user-supplied argument.)
+- [x] Eight cases in ``test_tool_captions.py`` covering status
+  pluralisation, deploy-with-model and stem-fallback, relate,
+  config single/multiple/get.
 
-- [ ] ``run_charm_tests`` → ``"12 passed, 1 failed"`` parsed
-  from the pytest summary line.
-- [ ] ``charm_audit`` → ``"2 issues"`` (or ``"clean"`` on a
-  clean run).
-- [ ] ``acceptance_report`` → short verdict (``"PASSED"`` /
-  ``"FAILED — 2 of 6 endpoints"``).
-- [ ] Tests in ``tests/unit/test_tool_captions.py`` for each.
+### 81.3 Low — Acceptance / test tool captions ✓
+
+- [x] ``run_charm_tests`` parses the pytest summary line and
+  emits ``"<P> passed, <F> failed"``-style captions, with
+  fallbacks for runners that emit no summary
+  (``"tests ran (no summary)"``) and for runner failures
+  (``"tests failed (exit N)"``).
+- [x] ``charm_audit`` → ``"clean"`` on a finding-free run,
+  ``"<N> issue(s)"`` otherwise (singular/plural agreement).
+- [x] ``acceptance_report`` → ``"Wrote ACCEPTANCE.md
+  (<N> section(s))"``.  ``action_exerciser``,
+  ``relation_smoke_test``, ``workload_endpoint_test``,
+  ``config_variation_test``, ``config_under_load_test`` also
+  caption their pass/fail counts so the per-charm acceptance
+  matrix reads cleanly in the chat.
+- [x] Seven cases in ``test_tool_captions.py``.
+
+### 81.4 Medium — Future-proof caption coverage ✓
+
+Discovered while trimming ``_FALLBACK_OK``.  The original 84-tool
+fallback list was too coarse — most tools had clear one-line
+verdicts available.
+
+- [x] New ``TestCaptionCoverage`` test in
+  ``test_tool_captions.py`` walks every ``Tool`` instance from
+  ``build_tools()``, inspects its source for a ``caption``
+  reference, and fails when a tool is neither captioned nor
+  on the explicit ``_FALLBACK_OK`` allowlist.  New tools must
+  either populate ``result.caption`` on the success path or
+  add their name to ``_FALLBACK_OK`` with a one-line
+  justification, so the choice is a visible review decision.
+- [x] Drive-by captions for the highest-value remaining tools:
+  git plumbing (status / log / diff / init / branch / checkout
+  / add / stash), GitHub commands (PR create / view / list,
+  issue list, repo create / bootstrap), generators
+  (``generate_readme`` / ``generate_icon`` / ``generate_diagram``
+  / ``generate_docs`` / ``generate_load_test`` /
+  ``generate_tests`` / ``extract_design_decisions`` /
+  ``extract_troubleshooting``), test harnesses
+  (``test_report``, ``scaling_test``, ``upgrade_test``,
+  ``fuzz_charm``, ``chaos_test``, ``hook_benchmark``),
+  acceptance probes (the four listed under 81.3),
+  ``charmcraft_init`` / ``charmcraft_release`` /
+  ``charmcraft_upload``, ``charmhub_search`` / ``charmhub_info``,
+  ``rockcraft_pack``, ``multi_edit``, ``charmlint``,
+  ``charm_sync``, ``web_fetch``, ``web_search``, ``quick_pack``.
 
 ### What this phase is *not*
 
@@ -3061,7 +3115,8 @@ readable.
 
 **Exit criteria:** all three categories populate
 ``ToolResult.caption`` on the success path, with tests pinning
-the shape.  ``make check`` passes throughout.
+the shape.  ``make check`` passes throughout.  **Met.**  Coverage
+test in 81.4 catches future omissions.
 
 **Dependencies:**
 | Item | Depends On | Notes |
@@ -3069,6 +3124,7 @@ the shape.  ``make check`` passes throughout.
 | ``run_command`` (81.1) | Phase 75 framework | One tool; smallest change |
 | Juju captions (81.2) | Phase 75 framework | Five tools; mostly stub-driven tests |
 | Acceptance captions (81.3) | Phase 17 reporters | Parses existing reporter output |
+| Coverage test (81.4) | 81.1–81.3 | Follow-up; catches new tools without captions |
 
 **Discovered:** Phase 75.6 closed with three categories on the
 fallback; this phase tracks them so they don't rot.
@@ -3264,6 +3320,6 @@ block that transitions from intro to outcome.
 | M78: Observability Hardening | 78 ✓ | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
 | M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |
 | M80: Stacked Policies | 80 ✓ | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
-| M81: Tool Caption Coverage | 81 | ``run_command``, the Juju tool family, and the acceptance/test reporters populate ``ToolResult.caption`` rather than relying on the Phase 75 fallback |
+| M81: Tool Caption Coverage | 81 ✓ | ``run_command``, the Juju tool family, and the acceptance/test reporters populate ``ToolResult.caption`` rather than relying on the Phase 75 fallback; coverage test forces the rich-caption-vs-fallback choice for new tools |
 | M82: Pre/Post Tool Captions | 82 | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

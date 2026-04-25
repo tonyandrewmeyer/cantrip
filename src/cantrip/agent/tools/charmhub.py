@@ -129,6 +129,7 @@ class CharmhubSearchTool(Tool):
             success=True,
             output=output,
             data={"results": formatted, "total": total, "query": query},
+            caption=f"{total} charm{'s' if total != 1 else ''} for {query!r}",
         )
 
 
@@ -290,6 +291,13 @@ class CharmhubInfoTool(Tool):
                 lines.append(f"- **{opt_name}** ({opt_type}): {opt_desc}")
             lines.append("")
 
+        # Caption with charm name + a summary preview when present.
+        caption = f"{name}"
+        if summary:
+            preview = summary.replace("\n", " ").strip()
+            if len(preview) > 50:
+                preview = preview[:49] + "…"
+            caption = f"{name}: {preview}"
         return ToolResult(
             success=True,
             output="\n".join(lines),
@@ -299,4 +307,5 @@ class CharmhubInfoTool(Tool):
                 "config": config,
                 "summary": summary,
             },
+            caption=caption,
         )

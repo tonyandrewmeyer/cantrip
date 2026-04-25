@@ -216,6 +216,7 @@ class HookBenchmarkTool(Tool):
         return ToolResult(
             success=True,
             output=report,
+            caption=f"{len(timings)} hooks, {len(slow_hooks)} slow",
             data={
                 "total_hooks": len(timings),
                 "slow_hooks": len(slow_hooks),

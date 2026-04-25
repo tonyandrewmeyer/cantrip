@@ -295,3 +295,483 @@ class TestCharmToolingCaptions:
         assert result.caption is not None
         assert "charm_validate" in result.caption
         assert "PASSED" in result.caption
+
+
+# ===========================================================================
+# Shell (Phase 81.1)
+# ===========================================================================
+
+
+class TestRunCommandCaption:
+    @pytest.mark.asyncio
+    async def test_success_caption_with_snippet(self, temp_dir) -> None:
+        from cantrip.agent.tools.run_command import RunCommandTool
+
+        fake_runner = mock.MagicMock()
+        fake_runner.run.return_value = mock.MagicMock(
+            returncode=0,
+            stdout="all good\n",
+            stderr="",
+        )
+        tool = RunCommandTool(sandbox_runner=fake_runner)
+        result = await tool.execute(command="make lint", cwd=str(temp_dir))
+
+        assert result.success
+        assert result.caption == "make (exit 0): all good"
+
+    @pytest.mark.asyncio
+    async def test_success_no_output_caption(self, temp_dir) -> None:
+        from cantrip.agent.tools.run_command import RunCommandTool
+
+        fake_runner = mock.MagicMock()
+        fake_runner.run.return_value = mock.MagicMock(
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+        tool = RunCommandTool(sandbox_runner=fake_runner)
+        result = await tool.execute(command="make", cwd=str(temp_dir))
+
+        assert result.success
+        assert result.caption == "make (exit 0)"
+
+    @pytest.mark.asyncio
+    async def test_failure_caption_includes_error_snippet(self, temp_dir) -> None:
+        from cantrip.agent.tools.run_command import RunCommandTool
+
+        fake_runner = mock.MagicMock()
+        fake_runner.run.return_value = mock.MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="error: thing went wrong",
+        )
+        tool = RunCommandTool(sandbox_runner=fake_runner)
+        result = await tool.execute(command="make test", cwd=str(temp_dir))
+
+        assert not result.success
+        assert result.caption is not None
+        assert result.caption.startswith("make (exit 1)")
+        assert "error: thing went wrong" in result.caption
+
+    @pytest.mark.asyncio
+    async def test_caption_collapses_newlines_and_truncates(self, temp_dir) -> None:
+        from cantrip.agent.tools.run_command import RunCommandTool
+
+        fake_runner = mock.MagicMock()
+        fake_runner.run.return_value = mock.MagicMock(
+            returncode=0,
+            stdout="line one\nline two with a lot of additional content here too\n",
+            stderr="",
+        )
+        tool = RunCommandTool(sandbox_runner=fake_runner)
+        result = await tool.execute(command="make all", cwd=str(temp_dir))
+
+        assert result.success
+        # Newlines collapsed to spaces; truncated with ellipsis past 40 chars.
+        assert result.caption is not None
+        assert "\n" not in result.caption
+        assert "…" in result.caption
+
+
+# ===========================================================================
+# Juju (Phase 81.2)
+# ===========================================================================
+
+
+class TestJujuCaptions:
+    @pytest.mark.asyncio
+    async def test_status_caption_pluralisation(self) -> None:
+        from cantrip.agent.tools import juju as juju_mod
+        from cantrip.agent.tools.juju import JujuStatusTool
+
+        fake_status = mock.MagicMock()
+        fake_status.model.name = "dev-model"
+        # Four apps; one blocked.
+        active_app = mock.MagicMock()
+        active_app.app_status.current = "active"
+        active_app.units = {}
+        blocked_app = mock.MagicMock()
+        blocked_app.app_status.current = "blocked"
+        blocked_app.units = {}
+        fake_status.apps = {
+            "redis": active_app,
+            "traefik": active_app,
+            "postgres": active_app,
+            "mysql": blocked_app,
+        }
+        with (
+            mock.patch.object(juju_mod, "_juju_available", return_value=True),
+            mock.patch.object(juju_mod, "jubilant", create=True) as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.status = mock.MagicMock(return_value=fake_status)
+            fake_jubilant.CLIError = Exception
+            fake_jubilant.TaskError = Exception
+            result = await JujuStatusTool().execute()
+
+        assert result.success
+        assert result.caption == "4 apps, 1 blocked"
+
+    @pytest.mark.asyncio
+    async def test_status_caption_singular_no_blocked(self) -> None:
+        from cantrip.agent.tools import juju as juju_mod
+        from cantrip.agent.tools.juju import JujuStatusTool
+
+        fake_status = mock.MagicMock()
+        fake_status.model.name = "dev-model"
+        only_app = mock.MagicMock()
+        only_app.app_status.current = "active"
+        only_app.units = {}
+        fake_status.apps = {"redis": only_app}
+        with (
+            mock.patch.object(juju_mod, "_juju_available", return_value=True),
+            mock.patch.object(juju_mod, "jubilant", create=True) as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.status = mock.MagicMock(return_value=fake_status)
+            fake_jubilant.CLIError = Exception
+            fake_jubilant.TaskError = Exception
+            result = await JujuStatusTool().execute()
+
+        assert result.success
+        assert result.caption == "1 app"
+
+    @pytest.mark.asyncio
+    async def test_deploy_caption_with_app_name_and_model(self) -> None:
+        from cantrip.agent.tools import juju as juju_mod
+        from cantrip.agent.tools.juju import JujuDeployTool
+
+        with (
+            mock.patch.object(juju_mod, "_juju_available", return_value=True),
+            mock.patch.object(juju_mod, "jubilant", create=True) as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.deploy = mock.MagicMock(return_value=None)
+            fake_jubilant.CLIError = Exception
+            fake_jubilant.TaskError = Exception
+            result = await JujuDeployTool().execute(
+                charm="redis-k8s",
+                app_name="my-redis",
+                model="dev",
+            )
+
+        assert result.success
+        assert result.caption == "Deployed my-redis to dev"
+
+    @pytest.mark.asyncio
+    async def test_deploy_caption_falls_back_to_charm_stem(self) -> None:
+        from cantrip.agent.tools import juju as juju_mod
+        from cantrip.agent.tools.juju import JujuDeployTool
+
+        with (
+            mock.patch.object(juju_mod, "_juju_available", return_value=True),
+            mock.patch.object(juju_mod, "jubilant", create=True) as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.deploy = mock.MagicMock(return_value=None)
+            fake_jubilant.CLIError = Exception
+            fake_jubilant.TaskError = Exception
+            result = await JujuDeployTool().execute(charm="postgresql-k8s")
+
+        assert result.success
+        assert result.caption == "Deployed postgresql-k8s"
+
+    @pytest.mark.asyncio
+    async def test_relate_caption(self) -> None:
+        from cantrip.agent.tools import juju as juju_mod
+        from cantrip.agent.tools.juju import JujuRelateTool
+
+        with (
+            mock.patch.object(juju_mod, "_juju_available", return_value=True),
+            mock.patch.object(juju_mod, "jubilant", create=True) as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.integrate = mock.MagicMock(return_value=None)
+            fake_jubilant.CLIError = Exception
+            fake_jubilant.TaskError = Exception
+            result = await JujuRelateTool().execute(app1="redis", app2="traefik")
+
+        assert result.success
+        assert result.caption == "Integrated redis ↔ traefik"
+
+    @pytest.mark.asyncio
+    async def test_config_set_single_value_caption(self) -> None:
+        from cantrip.agent.tools import juju as juju_mod
+        from cantrip.agent.tools.juju import JujuConfigTool
+
+        with (
+            mock.patch.object(juju_mod, "_juju_available", return_value=True),
+            mock.patch.object(juju_mod, "jubilant", create=True) as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.config = mock.MagicMock(return_value=None)
+            fake_jubilant.CLIError = Exception
+            fake_jubilant.TaskError = Exception
+            result = await JujuConfigTool().execute(
+                app_name="redis",
+                values={"debug": "true"},
+            )
+
+        assert result.success
+        assert result.caption == "Set redis: debug=true"
+
+    @pytest.mark.asyncio
+    async def test_config_set_multiple_values_caption(self) -> None:
+        from cantrip.agent.tools import juju as juju_mod
+        from cantrip.agent.tools.juju import JujuConfigTool
+
+        with (
+            mock.patch.object(juju_mod, "_juju_available", return_value=True),
+            mock.patch.object(juju_mod, "jubilant", create=True) as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.config = mock.MagicMock(return_value=None)
+            fake_jubilant.CLIError = Exception
+            fake_jubilant.TaskError = Exception
+            result = await JujuConfigTool().execute(
+                app_name="redis",
+                values={"debug": "true", "replicas": "3"},
+            )
+
+        assert result.success
+        assert result.caption == "Set redis: 2 values"
+
+    @pytest.mark.asyncio
+    async def test_config_get_caption(self) -> None:
+        from cantrip.agent.tools import juju as juju_mod
+        from cantrip.agent.tools.juju import JujuConfigTool
+
+        with (
+            mock.patch.object(juju_mod, "_juju_available", return_value=True),
+            mock.patch.object(juju_mod, "jubilant", create=True) as fake_jubilant,
+        ):
+            fake_jubilant.Juju.return_value.config = mock.MagicMock(return_value={"debug": False})
+            fake_jubilant.CLIError = Exception
+            fake_jubilant.TaskError = Exception
+            result = await JujuConfigTool().execute(app_name="redis")
+
+        assert result.success
+        assert result.caption == "Read redis config"
+
+
+# ===========================================================================
+# Acceptance / audit / testing (Phase 81.3)
+# ===========================================================================
+
+
+class TestAcceptanceCaptions:
+    @pytest.mark.asyncio
+    async def test_run_charm_tests_caption(self, temp_dir) -> None:
+        from cantrip.agent.tools.testing import RunCharmTestsTool
+
+        # Set up enough of a charm dir that the tool reaches the subprocess call.
+        (temp_dir / "tox.ini").write_text("")
+        (temp_dir / "tests" / "unit").mkdir(parents=True)
+
+        with (
+            mock.patch("cantrip.agent.tools.testing.shutil.which", return_value="/usr/bin/python"),
+            mock.patch("cantrip.agent.tools.testing.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = mock.MagicMock(
+                returncode=0,
+                stdout="=== 12 passed, 1 failed in 0.5s ===\n",
+                stderr="",
+            )
+            result = await RunCharmTestsTool().execute(path=str(temp_dir))
+
+        # Tests "failed" — exit code 0 in this stub, but we read the summary.
+        assert result.caption == "12 passed, 1 failed"
+
+    @pytest.mark.asyncio
+    async def test_run_charm_tests_no_summary_caption(self, temp_dir) -> None:
+        from cantrip.agent.tools.testing import RunCharmTestsTool
+
+        (temp_dir / "tox.ini").write_text("")
+        (temp_dir / "tests" / "unit").mkdir(parents=True)
+
+        with (
+            mock.patch("cantrip.agent.tools.testing.shutil.which", return_value="/usr/bin/python"),
+            mock.patch("cantrip.agent.tools.testing.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+            result = await RunCharmTestsTool().execute(path=str(temp_dir))
+
+        assert result.caption == "tests ran (no summary)"
+
+    @pytest.mark.asyncio
+    async def test_charm_audit_caption_clean(self, temp_dir) -> None:
+        from cantrip.agent.tools import audit as audit_mod
+        from cantrip.agent.tools.audit import CharmAuditTool
+
+        (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
+
+        with mock.patch.object(audit_mod, "_charmlint_to_audit_report") as fake_report:
+            fake_report.return_value = ("# Audit Report\n", {}, {"total_issues": 0})
+            result = await CharmAuditTool().execute(path=str(temp_dir))
+
+        assert result.success
+        assert result.caption == "clean"
+
+    @pytest.mark.asyncio
+    async def test_charm_audit_caption_issues(self, temp_dir) -> None:
+        from cantrip.agent.tools import audit as audit_mod
+        from cantrip.agent.tools.audit import CharmAuditTool
+
+        (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
+
+        with mock.patch.object(audit_mod, "_charmlint_to_audit_report") as fake_report:
+            fake_report.return_value = ("# Audit Report\n", {}, {"total_issues": 2})
+            result = await CharmAuditTool().execute(path=str(temp_dir))
+
+        assert result.success
+        assert result.caption == "2 issues"
+
+    @pytest.mark.asyncio
+    async def test_charm_audit_caption_singular(self, temp_dir) -> None:
+        from cantrip.agent.tools import audit as audit_mod
+        from cantrip.agent.tools.audit import CharmAuditTool
+
+        (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
+
+        with mock.patch.object(audit_mod, "_charmlint_to_audit_report") as fake_report:
+            fake_report.return_value = ("# Audit Report\n", {}, {"total_issues": 1})
+            result = await CharmAuditTool().execute(path=str(temp_dir))
+
+        assert result.caption == "1 issue"
+
+    @pytest.mark.asyncio
+    async def test_acceptance_report_caption(self, temp_dir) -> None:
+        from cantrip.agent.tools.acceptance import AcceptanceReportTool
+
+        result = await AcceptanceReportTool().execute(
+            app="redis",
+            path=str(temp_dir),
+            actions="## Actions\n",
+            relations="## Relations\n",
+            endpoints="## Endpoints\n",
+        )
+        assert result.success
+        assert result.caption == "Wrote ACCEPTANCE.md (3 sections)"
+
+    @pytest.mark.asyncio
+    async def test_acceptance_report_caption_singular(self, temp_dir) -> None:
+        from cantrip.agent.tools.acceptance import AcceptanceReportTool
+
+        result = await AcceptanceReportTool().execute(
+            app="redis",
+            path=str(temp_dir),
+            actions="## Actions\n",
+        )
+        assert result.success
+        assert result.caption == "Wrote ACCEPTANCE.md (1 section)"
+
+
+# ===========================================================================
+# Future-proofing — every registered Tool must be classified
+# ===========================================================================
+
+
+# Tools that intentionally rely on the formulaic ``tool_name(arg=value)``
+# fallback rather than populating ``ToolResult.caption`` directly.  Each
+# entry is a deliberate decision: the formulaic shape ("benchmark(path=foo)")
+# already conveys what the tool did, and a hand-written caption wouldn't add
+# meaningful information beyond that.
+#
+# Adding to this list requires reviewer judgement — prefer populating a
+# real caption when the tool's effect would be clearer with one
+# (file count, status verdict, deployed name, etc.).  See ``base.py``
+# :class:`ToolResult` docstring and Phase 75 for the rationale.
+_FALLBACK_OK: frozenset[str] = frozenset(
+    {
+        # Framework analysis — single ``path`` argument; output is a
+        # long structured report.
+        "analyse_framework",
+        # Bundle deploy — wraps Juju with a single bundle path.
+        "bundle_deploy",
+        # Concierge environment prep — long status walls, not one-line
+        # achievements.
+        "concierge_prepare",
+        "concierge_status",
+        # Terraform tools — single-path scaffolding / validation.
+        "generate_terraform",
+        "validate_terraform",
+        # Juju write-side actions and read-only probes whose value is
+        # the data (or where a count would lose specificity).  Captioned
+        # drive-bys for a future micro-pass.
+        "juju_add_model",
+        "juju_consume",
+        "juju_debug_log",
+        "juju_destroy_model",
+        "juju_dispatch",
+        "juju_get_app_config",
+        "juju_list_offers",
+        "juju_list_secrets",
+        "juju_offer",
+        "juju_read_relation_data",
+        "juju_refresh",
+        "juju_remove_application",
+        "juju_run_action",
+        "juju_show_secret",
+        "juju_show_unit",
+        "juju_ssh",
+        "juju_stream_logs",
+        "juju_trust",
+        "juju_wait",
+        # Inference and registry probes — the value is in the listing.
+        "list_inference_snaps",
+        "registry_image_info",
+        "registry_search",
+        "rockcraft_init",
+        "skopeo_registry_push",
+        # Observability — long query results.  ``loki_query(query=...)``
+        # and ``tempo_query(trace_id=...)`` fallbacks are clearer than
+        # any synthetic summary.
+        "loki_query",
+        "tempo_query",
+        # PR review tools — wrap gh; argument shape is enough.
+        "pr_review",
+        "pr_review_reply",
+        # Operational readiness — long Markdown report; no one-line summary.
+        "operational_readiness",
+        # Rodney / Showboat — accessibility / CSS audit tools, output is
+        # the report.
+        "rodney",
+        "showboat",
+        # Workspace info — listing tool; fallback ``workspace_info(path=...)``
+        # is enough.
+        "workspace_info",
+    }
+)
+
+
+class TestCaptionCoverage:
+    """Every registered Tool must populate caption or be on _FALLBACK_OK.
+
+    Adding a new tool? Either:
+      1. Set ``result.caption = "..."`` (or ``ToolResult(..., caption=...)``)
+         on the success path.  Match the existing style: short, active verb,
+         specific count/target where possible.
+      2. Add the tool's ``name`` to ``_FALLBACK_OK`` above with a one-line
+         comment explaining why the formulaic fallback is enough.
+
+    The fallback (``tool_name(path=foo)``) is always a safe default — this
+    test exists so the choice between rich caption and fallback is a
+    visible review decision, not silent omission.
+    """
+
+    def test_every_registered_tool_classified(self) -> None:
+        import inspect
+
+        from cantrip.agent.tools import build_tools
+
+        unclassified: list[str] = []
+        for tool in build_tools():
+            try:
+                source = inspect.getsource(type(tool))
+            except (OSError, TypeError):
+                continue
+            populates_caption = "caption" in source
+            in_fallback = tool.name in _FALLBACK_OK
+            if not populates_caption and not in_fallback:
+                unclassified.append(tool.name)
+        if unclassified:
+            joined = ", ".join(sorted(unclassified))
+            pytest.fail(
+                "These tools neither populate ToolResult.caption nor appear in "
+                f"_FALLBACK_OK: {joined}.  Either populate `result.caption = ...` "
+                "on the success path or add the tool's name to _FALLBACK_OK with "
+                "a one-line justification."
+            )

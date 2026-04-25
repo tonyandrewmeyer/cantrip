@@ -159,6 +159,7 @@ class ChaosTestTool(Tool):
                 "disruption": disruption,
                 "recovered": recovery,
             },
+            caption=(f"{disruption}: {'recovered' if recovery else 'did not recover'}"),
         )
 
     @staticmethod

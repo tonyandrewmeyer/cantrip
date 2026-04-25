@@ -203,6 +203,7 @@ class TestReportTool(Tool):
         return ToolResult(
             success=all_passed,
             output=report,
+            caption=f"{total_passed} passed, {total_failed} failed",
             data={
                 "total_passed": total_passed,
                 "total_failed": total_failed,

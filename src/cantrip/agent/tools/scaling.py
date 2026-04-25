@@ -195,6 +195,7 @@ class ScalingTestTool(Tool):
             success=all_ok,
             output="\n".join(report_lines),
             error=None if all_ok else "Scaling test failed — check report for details",
+            caption=f"scaling {app}: {'PASS' if all_ok else 'FAIL'}",
             data={
                 "app": app,
                 "initial_units": initial_count,

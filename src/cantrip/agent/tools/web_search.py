@@ -216,4 +216,5 @@ class WebSearchTool(Tool):
             success=True,
             output=output,
             data={"result_count": len(results)},
+            caption=f"{len(results)} result{'s' if len(results) != 1 else ''}",
         )

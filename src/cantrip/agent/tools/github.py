@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 from typing import Any
@@ -118,6 +119,7 @@ class GhRepoCreateTool(Tool):
                 success=True,
                 output=result.stdout.strip(),
                 data={"name": name, "private": private},
+                caption=f"Created {name}{' (private)' if private else ''}",
             )
         except subprocess.TimeoutExpired:
             return ToolResult(
@@ -211,10 +213,17 @@ class GhPrCreateTool(Tool):
                     error=result.stderr or "gh pr create failed",
                 )
 
+            # Extract the PR number from the URL gh prints on success
+            # ("https://github.com/owner/repo/pull/42") so the caption
+            # carries the actionable identifier instead of the title.
+            stdout = result.stdout.strip()
+            pr_match = re.search(r"/pull/(\d+)", stdout)
+            caption = f"Created PR #{pr_match.group(1)}" if pr_match else f"Created PR: {title}"
             return ToolResult(
                 success=True,
-                output=result.stdout.strip(),
+                output=stdout,
                 data={"title": title},
+                caption=caption,
             )
         except subprocess.TimeoutExpired:
             return ToolResult(
@@ -307,10 +316,15 @@ class GhIssueListTool(Tool):
             output = result.stdout.strip()
             if not output:
                 output = "No issues found."
+                caption = f"no {state} issues"
+            else:
+                count = sum(1 for line in output.splitlines() if line.strip())
+                caption = f"{count} {state} issue{'s' if count != 1 else ''}"
 
             return ToolResult(
                 success=True,
                 output=output,
+                caption=caption,
             )
         except subprocess.TimeoutExpired:
             return ToolResult(
@@ -389,7 +403,16 @@ class GhPrListTool(Tool):
                     error=result.stderr or "gh pr list failed",
                 )
             output = result.stdout.strip()
-            return ToolResult(success=True, output=output or "No pull requests found.")
+            if not output:
+                caption = f"no {state} PRs"
+            else:
+                count = sum(1 for line in output.splitlines() if line.strip())
+                caption = f"{count} {state} PR{'s' if count != 1 else ''}"
+            return ToolResult(
+                success=True,
+                output=output or "No pull requests found.",
+                caption=caption,
+            )
         except subprocess.TimeoutExpired:
             return ToolResult(success=False, output="", error="gh pr list timed out")
 
@@ -481,9 +504,24 @@ class GhPrViewTool(Tool):
                     if len(body) > 500:
                         preview += "\n…(truncated)"
                     lines.append(f"\n{preview}")
-                return ToolResult(success=True, output="\n".join(lines), data=data)
+                title = data.get("title", "") or ""
+                if len(title) > 50:
+                    title = title[:49] + "…"
+                caption = (
+                    f"PR #{data.get('number')}: {title}" if title else f"PR #{data.get('number')}"
+                )
+                return ToolResult(
+                    success=True,
+                    output="\n".join(lines),
+                    data=data,
+                    caption=caption,
+                )
             except json.JSONDecodeError:
-                return ToolResult(success=True, output=result.stdout.strip())
+                return ToolResult(
+                    success=True,
+                    output=result.stdout.strip(),
+                    caption=f"PR #{pr_number}",
+                )
         except subprocess.TimeoutExpired:
             return ToolResult(success=False, output="", error="gh pr view timed out")
 
@@ -797,10 +835,22 @@ class GhRepoBootstrapTool(Tool):
         if not summary_lines:
             summary_lines.append("Nothing to do (all steps disabled).")
 
+        caption_parts: list[str] = []
+        if written:
+            caption_parts.append(f"wrote {len(written)}")
+        if skipped:
+            caption_parts.append(f"skipped {len(skipped)}")
+        if protection_applied:
+            caption_parts.append("protection applied")
+        if warnings:
+            caption_parts.append(f"{len(warnings)} warning{'s' if len(warnings) != 1 else ''}")
+        caption = ", ".join(caption_parts) if caption_parts else "no changes"
+
         return ToolResult(
             success=not warnings,
             output="\n".join(summary_lines),
             error="\n".join(warnings) if warnings else None,
+            caption=caption,
             data={
                 "written": written,
                 "skipped": skipped,

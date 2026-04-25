@@ -197,6 +197,7 @@ class GitInitTool(Tool):
         result = _run_git(["init"], cwd=path)
         if result.success:
             result.data = {"path": path}
+            result.caption = f"Initialised git in {path}"
         return result
 
 
@@ -226,7 +227,24 @@ class GitStatusTool(Tool):
 
     async def execute(self, path: str = ".") -> ToolResult:
         """Run git status."""
-        return _run_git(["status"], cwd=path)
+        # Use --porcelain for stable parsing of file states; the tool's
+        # output keeps the human-readable form.
+        porcelain = _run_git(["status", "--porcelain"], cwd=path)
+        result = _run_git(["status"], cwd=path)
+        if result.success and porcelain.success:
+            entries = [line for line in porcelain.output.splitlines() if line]
+            if not entries:
+                result.caption = "clean"
+            else:
+                modified = sum(1 for e in entries if e[:2].strip() and not e.startswith("??"))
+                untracked = sum(1 for e in entries if e.startswith("??"))
+                parts = []
+                if modified:
+                    parts.append(f"{modified} modified")
+                if untracked:
+                    parts.append(f"{untracked} untracked")
+                result.caption = ", ".join(parts)
+        return result
 
 
 class GitDiffTool(Tool):
@@ -282,6 +300,19 @@ class GitDiffTool(Tool):
         result = _run_git(args, cwd=path)
         if result.success and not result.output:
             result.output = "No changes."
+            result.caption = "no changes"
+            return result
+        if result.success:
+            plus = 0
+            minus = 0
+            for line in result.output.splitlines():
+                if line.startswith("+++") or line.startswith("---"):
+                    continue
+                if line.startswith("+"):
+                    plus += 1
+                elif line.startswith("-"):
+                    minus += 1
+            result.caption = f"+{plus} −{minus}"
         return result
 
 
@@ -347,6 +378,17 @@ class GitLogTool(Tool):
         result = _run_git(args, cwd=path)
         if result.success and not result.output:
             result.output = "No commits yet."
+            result.caption = "no commits"
+            return result
+        if result.success:
+            if oneline:
+                # Each line is one commit in oneline mode.
+                count = sum(1 for line in result.output.splitlines() if line.strip())
+                result.caption = f"{count} commit{'s' if count != 1 else ''}"
+            else:
+                # Default `git log` format: count "commit <sha>" lines.
+                count = sum(1 for line in result.output.splitlines() if line.startswith("commit "))
+                result.caption = f"{count} commit{'s' if count != 1 else ''}"
         return result
 
 
@@ -391,6 +433,7 @@ class GitAddTool(Tool):
         result = _run_git(["add", "--", *files], cwd=path)
         if result.success:
             result.output = f"Staged {len(files)} file(s)."
+            result.caption = f"Staged {len(files)} file{'s' if len(files) != 1 else ''}"
         return result
 
 
@@ -566,10 +609,18 @@ class GitBranchTool(Tool):
     ) -> ToolResult:
         """Create or list branches."""
         if name:
-            return _run_git(["checkout", "-b", name], cwd=path)
+            result = _run_git(["checkout", "-b", name], cwd=path)
+            if result.success:
+                result.caption = f"Created branch {name}"
+            return result
         result = _run_git(["branch", "--list", "-a"], cwd=path)
         if result.success and not result.output:
             result.output = "No branches found."
+            result.caption = "no branches"
+            return result
+        if result.success:
+            count = sum(1 for line in result.output.splitlines() if line.strip())
+            result.caption = f"{count} branch{'es' if count != 1 else ''}"
         return result
 
 
@@ -608,7 +659,10 @@ class GitCheckoutTool(Tool):
         path: str = ".",
     ) -> ToolResult:
         """Switch branches."""
-        return _run_git(["checkout", branch], cwd=path)
+        result = _run_git(["checkout", branch], cwd=path)
+        if result.success:
+            result.caption = f"Switched to {branch}"
+        return result
 
 
 class GitStashTool(Tool):
@@ -673,4 +727,14 @@ class GitStashTool(Tool):
                 result.output = "Changes stashed."
             elif action == "list":
                 result.output = "No stashes."
+        if result.success:
+            if action == "push":
+                result.caption = "Stashed changes"
+            elif action == "pop":
+                result.caption = "Popped stash"
+            else:  # list
+                count = sum(1 for line in result.output.splitlines() if line.strip())
+                result.caption = (
+                    f"{count} stash{'es' if count != 1 else ''}" if count else "no stashes"
+                )
         return result

@@ -95,10 +95,20 @@ class JujuStatusTool(Tool):
                     unit_status = unit.workload_status.current or "unknown"
                     output_lines.append(f"  - {unit_name}: {unit_status}")
 
+            app_count = len(status.apps)
+            blocked = sum(
+                1
+                for app in status.apps.values()
+                if (app.app_status.current or "").lower() == "blocked"
+            )
+            caption_parts = [f"{app_count} app{'s' if app_count != 1 else ''}"]
+            if blocked:
+                caption_parts.append(f"{blocked} blocked")
             return ToolResult(
                 success=True,
                 output="\n".join(output_lines),
                 data={"model": status.model.name, "apps": list(status.apps.keys())},
+                caption=", ".join(caption_parts),
             )
         except TimeoutError:
             return ToolResult(
@@ -243,10 +253,15 @@ class JujuDeployTool(Tool):
                 timeout=300,
             )
 
+            display_name = app_name or Path(charm).stem
+            caption = f"Deployed {display_name}"
+            if model:
+                caption += f" to {model}"
             return ToolResult(
                 success=True,
                 output=f"Deployed {charm}" + (f" as {app_name}" if app_name else ""),
                 data={"charm": charm, "app_name": app_name or charm},
+                caption=caption,
             )
         except TimeoutError:
             return ToolResult(
@@ -652,6 +667,7 @@ class JujuRelateTool(Tool):
                 success=True,
                 output=f"Created relation: {app1} <-> {app2}",
                 data={"app1": app1, "app2": app2},
+                caption=f"Integrated {app1} ↔ {app2}",
             )
         except TimeoutError:
             return ToolResult(
@@ -1170,10 +1186,16 @@ class JujuConfigTool(Tool):
             result = await _run_juju(juju.config, app_name, values=values)
 
             if values:
+                if len(values) == 1:
+                    k, v = next(iter(values.items()))
+                    caption = f"Set {app_name}: {k}={v}"
+                else:
+                    caption = f"Set {app_name}: {len(values)} values"
                 return ToolResult(
                     success=True,
                     output=f"Config updated for {app_name}: {values}",
                     data={"app_name": app_name, "values": values},
+                    caption=caption,
                 )
 
             # Get mode — format the returned config for display.
@@ -1181,6 +1203,7 @@ class JujuConfigTool(Tool):
                 success=True,
                 output=json.dumps(result, indent=2, default=str),
                 data={"app_name": app_name, "config": result},
+                caption=f"Read {app_name} config",
             )
         except TimeoutError:
             return ToolResult(
@@ -1422,6 +1445,7 @@ class CharmSyncTool(Tool):
                     + "\n".join(f"  {n}" for n in synced_names)
                 ),
                 data={"files_synced": len(files), "files": synced_names},
+                caption=f"Synced {len(files)} file{'s' if len(files) != 1 else ''} → {unit}",
             )
         except TimeoutError:
             return ToolResult(

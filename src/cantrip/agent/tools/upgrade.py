@@ -251,6 +251,7 @@ class UpgradeTestTool(Tool):
             success=all_ok,
             output="\n".join(report_lines),
             error=None if all_ok else "Upgrade test failed — see report",
+            caption=f"upgrade {app}: {'PASS' if all_ok else 'FAIL'}",
             data={
                 "app": app,
                 "pre_status": pre_current,

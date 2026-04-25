@@ -269,8 +269,12 @@ class CharmAuditTool(Tool):
 
         report_text, findings, data = _charmlint_to_audit_report(charm_dir, charm_name)
 
+        total = data.get("total_issues", 0)
+        caption = "clean" if total == 0 else f"{total} issue{'s' if total != 1 else ''}"
+
         return ToolResult(
             success=True,
             output=report_text,
             data=data,
+            caption=caption,
         )

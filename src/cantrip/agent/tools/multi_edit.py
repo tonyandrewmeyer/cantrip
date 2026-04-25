@@ -118,10 +118,17 @@ class MultiEditTool(PathAwareTool):
             applied += 1
             results.append(f"Edit {i + 1}: replaced in {file_path}")
 
+        # Count distinct files touched for a richer caption than just edit count.
+        touched = sorted({edit.get("file_path", "") for edit in edits if edit.get("file_path")})
+        if len(touched) == 1:
+            caption = f"{applied} edit{'s' if applied != 1 else ''} in {touched[0]}"
+        else:
+            caption = f"{applied} edit{'s' if applied != 1 else ''} across {len(touched)} files"
         return ToolResult(
             success=True,
             output="\n".join(results),
             data={"applied": applied, "total": len(edits)},
+            caption=caption,
         )
 
 
