@@ -729,6 +729,38 @@ fills past 80% of the context window the budget halves; past 95%
 it drops entirely so a near-full window isn't carrying a
 bird's-eye view it can't act on.
 
+### Review checks
+
+<dl>
+  <dt><code>/review</code></dt>
+  <dd>
+    Run every loaded prompt-based Check against the active charm.
+    Each Check is one structured LLM call (the
+    <code>CHECK_RESULT</code> schema constrains the reply to
+    <code>{status, severity, message, evidence?, suggested_fix?}</code>),
+    so the report is uniform regardless of which model you're
+    using.  Failures appear first, then errors (couldn't reach a
+    verdict), then skipped (no matching files), then passes.  When
+    the active charm also has linter diagnostics, they appear
+    underneath as a <em>Deterministic checks</em> section so you
+    see one combined view.
+  </dd>
+</dl>
+
+Checks are loaded from three layered locations (later wins on name
+conflict): bundled defaults shipped with Cantrip, then
+<code>~/.config/cantrip/checks/*.md</code> (user scope), then
+<code>&lt;charm&gt;/.cantrip/checks/*.md</code> (repo scope).  Each
+file is YAML frontmatter plus a markdown body — see
+<a href="https://github.com/tonyandrewmeyer/cantrip/blob/main/design/CHECKS.md">design/CHECKS.md</a>
+for the schema and the boundary with <code>charmlint</code>
+(roughly: <code>charmlint</code> for AST/regex rules,
+<code>/review</code> for "an experienced human would notice this
+is off but you can't write it as a regex").
+
+Three checks ship by default: <code>charm-readme-coherence</code>,
+<code>action-ergonomics</code>, <code>relation-data-hygiene</code>.
+
 ### Project diagnostics
 
 <dl>

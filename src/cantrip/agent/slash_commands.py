@@ -87,6 +87,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/map", "Show top-ranked repository files (`/map full` for everything)"),
     CommandInfo("/map-refresh", "Rebuild the repository map and reprint"),
     CommandInfo("/diagnostics", "Show ruff/ty/charmlint issues across the active charm"),
+    CommandInfo("/review", "Run prompt-based review checks (judgment-based rules)"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -244,6 +245,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_map_refresh(agent, args), markdown=True)
     if verb == "/diagnostics":
         return _handle_diagnostics(agent, args)
+    if verb == "/review":
+        return _handle_review(agent, args)
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -1260,6 +1263,76 @@ def handle_map_refresh(agent: CantripAgent, args: str = "") -> str:
         shown_count=shown,
         footer_hint=footer,
     )
+
+
+def _handle_review(agent: CantripAgent, args: str) -> SlashResult:
+    """``/review``: run all loaded prompt-based checks against the charm.
+
+    Each check is one structured LLM call (Phase 70.4); results are
+    aggregated into a single Markdown report.  When the active charm
+    also has linter diagnostics (Phase 72.4 ruff/ty/charmlint), they
+    appear underneath as a deterministic-checks section so the user
+    sees one combined view.
+
+    ``args`` is reserved for future filters (severity, name pattern);
+    today an unknown arg returns a usage hint rather than silently
+    ignoring it so the user doesn't think their filter ran.
+    """
+    from cantrip.agent import checks, lint_context
+
+    if args.strip():
+        return SlashResult(
+            text=(
+                "**Usage:** ``/review`` — runs every loaded check.  "
+                "Per-check filters are not implemented yet."
+            ),
+            markdown=True,
+        )
+
+    charm_path = getattr(agent.state, "charm_path", None)
+    if charm_path is None:
+        return SlashResult(
+            text=(
+                "**Cannot run /review:** no charm path for this session.  "
+                "Open a charm with the CLI and try again."
+            ),
+            markdown=True,
+        )
+
+    provider = getattr(agent, "provider", None)
+    if provider is None:
+        return SlashResult(
+            text="**Cannot run /review:** no LLM provider attached to this agent.",
+            markdown=True,
+        )
+
+    charm_root = pathlib.Path(charm_path)
+
+    async def _run() -> str:
+        index = checks.CheckIndex(project_root=charm_root)
+        discovered = index.discover()
+        if not discovered and not index.shadows:
+            return (
+                "_No checks configured._  Drop a markdown file under "
+                "``.cantrip/checks/`` (repo) or "
+                "``~/.config/cantrip/checks/`` (user) to add one — "
+                "see ``design/CHECKS.md`` for the schema."
+            )
+        report = await checks.run_all_checks(
+            discovered,
+            provider=provider,
+            charm_root=charm_root,
+            shadows=index.shadows,
+        )
+        sections = [report.to_text()]
+        diag = await lint_context.gather_project_diagnostics(charm_root)
+        if not diag.is_empty():
+            sections.append("---")
+            sections.append(diag.to_text(header="Deterministic checks"))
+        return "\n\n".join(sections)
+
+    prelude = "Running review checks…"
+    return SlashResult(text=prelude, followup=_run(), markdown=True)
 
 
 def _handle_diagnostics(agent: CantripAgent, args: str) -> SlashResult:

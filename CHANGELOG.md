@@ -5,6 +5,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Prompt-based review checks (Phase 70.4).**  New
+  ``/review`` slash command runs every loaded *Check* — a
+  markdown file with YAML frontmatter that asks the LLM to
+  evaluate one judgment-based rule against the active charm.
+  Each Check is one structured LLM call constrained by the
+  ``CHECK_RESULT`` schema (Phase 73.3), so the reply is
+  always ``{status, severity, message, evidence?,
+  suggested_fix?}``.  Three layered discovery locations,
+  later-wins on name conflict: bundled defaults under
+  ``src/cantrip/checks/``, user scope at
+  ``~/.config/cantrip/checks/``, repo scope at
+  ``<charm>/.cantrip/checks/``.  Quiet shadowing surfaces a
+  diagnostic in the report so a team can see they've
+  replaced a default.  Three built-in checks ship with
+  Cantrip: ``charm-readme-coherence``, ``action-ergonomics``,
+  ``relation-data-hygiene``.  ``/review`` aggregates the
+  Check report with the Phase 72.4 deterministic
+  ruff/ty/charmlint diagnostics into one combined view.
+  Documented in ``design/CHECKS.md`` (boundary with
+  ``charmlint``, file format, runtime contract);
+  ``docs/src/reference-cli.md`` covers the slash command.
+  Covered by 29 unit tests in
+  ``tests/unit/test_prompt_checks.py``.
 - **Project-wide diagnostics as pre-turn context
   (Phase 72.4).**  New ``/diagnostics`` slash command runs
   ``ruff`` + ``ty`` + ``charmlint`` across the active charm

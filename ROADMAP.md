@@ -3955,36 +3955,51 @@ Five Amp features are explicitly **out of scope or deferred**:
 
 ### 70.4 Medium — Prompt-based review checks
 
-- [ ] New file type: ``.cantrip/checks/*.md`` (repo) and
-  ``~/.config/cantrip/checks/*.md`` (user).  YAML frontmatter:
-  ``name``, ``description``, ``severity`` (low / medium /
-  high / critical), ``globs`` (optional; scope to matching
-  files), ``tools`` (optional; limit which tools the check
-  subagent can call, defaults to read-only).
-- [ ] Checks run during the review phase (Phase 10 existing-
-  charm improvement, Phase 17 acceptance testing, and any
-  user-invoked ``/review``) as prompt-driven subagent
-  queries: each check is one LLM call against the matching
-  files, returning ``{pass | fail, severity, message,
-  evidence}``.
-- [ ] Distinct from ``charmlint`` (Phase 24, deterministic
-  AST rules): Checks handle judgment-based rules — "is the
-  upgrade path coherent?", "does the charm narrative match
-  what the code does?", "are action names user-friendly?".
-  Document the boundary in ``design/CHECKS.md`` (new) so
-  authors know which mechanism fits their rule.
-- [ ] Precedence: repo checks override user checks with the
-  same ``name``.  Never silently replace a built-in — surface
-  a diagnostic so a team can see they've shadowed a default.
-- [ ] Ship three built-in checks as examples: charm README
-  coherence, action ergonomics, relation-data hygiene.
-  Seed more via the Phase 34 Code Quality Skills work.
-- [ ] Output aggregated into a single review report (reusing
-  the Phase 24 text/JSON reporter shape) so charmlint output
-  and Checks output share one summary view.
-- [ ] ``tests/unit/test_prompt_checks.py`` — frontmatter
-  parse, glob scoping, severity propagation, stubbed-LLM
-  pass/fail paths, precedence rules.
+- [x] New file type: ``.cantrip/checks/*.md`` (repo),
+  ``~/.config/cantrip/checks/*.md`` (user), and
+  ``src/cantrip/checks/*.md`` (bundled defaults — third
+  layer not in original spec but needed so the three example
+  checks can ship with Cantrip).  YAML frontmatter: ``name``,
+  ``description``, ``severity``, ``globs``, ``tools``.  All
+  fields except ``name`` and ``description`` are optional;
+  unknown severities coerce to the default ``warning`` with
+  a log warning.  ``tools`` is parsed but reserved — runtime
+  is one LLM call per check, no tool use yet.
+- [x] Checks run as one structured LLM call per rule,
+  constrained by :data:`cantrip.llm.schemas.CHECK_RESULT`,
+  returning ``{status: pass|fail, severity, message,
+  evidence?, suggested_fix?}``.  Phase 10 existing-charm
+  improvement and Phase 17 acceptance testing still need to
+  call into the runner — deferred to follow-up work; the
+  user-invoked ``/review`` surface lands now.
+- [x] Distinct from ``charmlint`` (Phase 24, deterministic
+  AST rules): documented boundary lives in
+  ``design/CHECKS.md`` (new — covers when to write a Check
+  vs. a charmlint rule, file format, precedence,
+  runtime contract, future work).
+- [x] Precedence: bundled → user → repo (later wins).  When
+  a name collides, both prior layers' files surface as
+  shadow diagnostics in the report so a team sees they've
+  replaced a default.
+- [x] Ship three built-in checks: ``charm-readme-coherence``,
+  ``action-ergonomics``, ``relation-data-hygiene``.  Each is
+  a single ``.md`` file with frontmatter + body prompt.
+- [x] ``/review`` aggregates the Check report with
+  :func:`cantrip.agent.lint_context.gather_project_diagnostics`
+  output (Phase 72.4) into a single combined Markdown view —
+  the operator sees Checks first, then a "Deterministic
+  checks" section underneath.
+- [x] ``tests/unit/test_prompt_checks.py`` — 29 cases:
+  frontmatter parse + missing-field errors + severity
+  coercion + comma-separated tools + missing-delimiter
+  guards, three-layer precedence with shadow diagnostics,
+  malformed-file skip, bundled checks discoverable, glob
+  scoping (basename / path / ``**`` / cap), runner pass /
+  fail / skipped / error paths, severity fallback, provider
+  failure isolation, prompt includes rule body and file
+  contents, aggregated report orders failures first, slash
+  handler followup + empty-set message + arg validation +
+  no-charm-path guard.
 
 ### 70.5 Medium — Painter: charm icon generation
 
