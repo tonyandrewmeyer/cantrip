@@ -1143,14 +1143,21 @@ def _format_map_response(
     *,
     shown_count: int | None = None,
     footer_hint: str | None = None,
+    fenced: bool = True,
 ) -> str:
     """Build a Markdown-formatted response for the /map family.
 
     The dispatcher returns this with ``markdown=True`` so the chat
-    surface renders the bold header, fenced code block, and inline
-    code spans as formatting rather than literal characters.  Inside
-    a fenced code block Markdown treats ``[relation]`` and
-    ``list[int]`` as literal text — no Rich escape needed.
+    surface renders the bold header, fenced code block (when
+    ``fenced=True``), and inline code spans as formatting rather
+    than literal characters.
+
+    ``fenced=False`` skips the triple-backtick wrapper so a body
+    that already contains its own Markdown structure (per-file
+    headings, bullet lists) renders with visible landmarks all the
+    way down — important for ``/map full``, where a single fenced
+    block scrolls past the viewport and looks unformatted to the
+    user.
 
     ``shown_count`` and ``footer_hint`` produce a "showing N of M
     files; use /map full for the rest" footer when the response is a
@@ -1160,7 +1167,7 @@ def _format_map_response(
         header = f"**{headline}** (showing {shown_count} of {file_count} files)"
     else:
         header = f"**{headline}** ({file_count} files)"
-    body = f"{header}\n\n```\n{rendered}\n```"
+    body = f"{header}\n\n```\n{rendered}\n```" if fenced else f"{header}\n\n{rendered}"
     if footer_hint:
         body += f"\n\n{footer_hint}"
     return body
@@ -1192,8 +1199,13 @@ def handle_map(agent: CantripAgent, args: str = "") -> str:
     try:
         rm.build()
         if _wants_full_map(args):
-            rendered = rm.render_full()
-            return _format_map_response("Repository map", rendered, len(rm.rankings))
+            rendered = rm.render_full_markdown()
+            return _format_map_response(
+                "Repository map",
+                rendered,
+                len(rm.rankings),
+                fenced=False,
+            )
         rendered = rm.render_summary()
     except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
         return diagnostics.report_internal_error("/map", exc)
@@ -1224,8 +1236,13 @@ def handle_map_refresh(agent: CantripAgent, args: str = "") -> str:
     try:
         rm.build(force=True)
         if _wants_full_map(args):
-            rendered = rm.render_full()
-            return _format_map_response("Repository map rebuilt", rendered, len(rm.rankings))
+            rendered = rm.render_full_markdown()
+            return _format_map_response(
+                "Repository map rebuilt",
+                rendered,
+                len(rm.rankings),
+                fenced=False,
+            )
         rendered = rm.render_summary()
     except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
         return diagnostics.report_internal_error("/map-refresh", exc)

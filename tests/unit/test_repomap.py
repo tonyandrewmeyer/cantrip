@@ -460,13 +460,13 @@ class TestRepoMap:
         rm = RepoMap(tmp_path)
         rm.build()
 
-        # Body opens a fenced code block and uses Markdown bold for
-        # the header.
+        # Body uses Markdown bold for the header and per-file
+        # ``###`` headings so the formatting renders in the chat.
         agent = MagicMock()
         agent.repo_map = rm
         text = handle_map(agent, "full")
         assert "**Repository map**" in text
-        assert "```" in text
+        assert "### `" in text  # Per-file Markdown section heading.
 
         # Dispatcher attaches markdown=True so the surface renders it.
         # Use a fully mocked agent + custom_commands so dispatch's
@@ -594,7 +594,11 @@ class TestRepoMap:
         # And the compact body is much smaller than the full render.
         assert len(text) < len(rm.render_full())
 
-    def test_handle_map_full_returns_full_render(self, tmp_path: Path) -> None:
+    def test_handle_map_full_returns_markdown_sections(self, tmp_path: Path) -> None:
+        # ``/map full`` formats each file as a Markdown ``###`` heading
+        # plus bullet-point symbols so a long output keeps visible
+        # navigation landmarks instead of dissolving into one monospace
+        # wall once scrolled past the top.
         from unittest.mock import MagicMock
 
         from cantrip.agent.slash_commands import handle_map
@@ -606,8 +610,18 @@ class TestRepoMap:
         agent.repo_map = rm
 
         text = handle_map(agent, "full")
-        # Body contains a per-file symbol line, not just a summary.
+        # Body contains per-file symbol lines.
         assert "MyCharm.__init__" in text or "build_layer" in text
+        # And each file is its own Markdown section, not buried
+        # inside a single fenced code block.
+        assert "### `src/charm.py`" in text or "### `src/handlers.py`" in text
+        # The body is NOT wrapped in a single fenced code block —
+        # that's the shape that scrolled badly in the chat panel.
+        # (The summary/footer paths still use fences for short
+        # blocks; the full path opts out.)
+        opening_fences = text.count("\n```\n")
+        # No raw triple-fence pairs around the whole body.
+        assert opening_fences == 0
 
     def test_dispatch_catches_handler_exceptions(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

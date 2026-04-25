@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from cantrip.repomap.graph import FileRanking, rank_files
-from cantrip.repomap.render import render, render_summary
+from cantrip.repomap.render import render, render_full_markdown, render_summary
 from cantrip.repomap.symbols import (
     FileSymbols,
     Symbol,
@@ -236,6 +236,20 @@ class RepoMap:
         if not self._rankings:
             return ""
         return render(self._rankings, token_budget=self._token_budget)
+
+    def render_full_markdown(self) -> str:
+        """Render the full map as Markdown sections — used by ``/map full`` chat output.
+
+        Each file becomes a heading with bullet items for its
+        symbols, so the user keeps visible navigation landmarks as
+        they scroll through the output.  The plain
+        :meth:`render_full` view stays the right shape for the
+        system prompt, where token efficiency matters more than
+        scroll affordances.
+        """
+        if not self._rankings:
+            return ""
+        return render_full_markdown(self._rankings)
 
     def render_summary(self, *, top_n: int = 8) -> str:
         """Render a one-line-per-file summary of the top *top_n* ranked files.

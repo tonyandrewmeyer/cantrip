@@ -101,6 +101,30 @@ def _format_symbol(sym: Symbol) -> str:
     return f"[{label}] {name}{sym.signature}"
 
 
+def render_full_markdown(rankings: list[FileRanking]) -> str:
+    r"""Render the full map as Markdown sections, one heading per file.
+
+    The plain :func:`render` output is a single text block that's
+    fine inside the system prompt but reads as a wall of monospace
+    when shown in a chat panel — once the user scrolls past the
+    top, no visible landmarks remain.  This variant emits a
+    Markdown ``### `<path>``` heading per file followed by
+    bullet-point symbol lines, so every section keeps a visible
+    boundary as the user scrolls through the output.
+    """
+    parts: list[str] = []
+    for ranking in rankings:
+        symbols = _select_symbols(ranking.symbols)
+        if not symbols:
+            continue
+        parts.append(f"### `{ranking.file}`")
+        parts.append("")
+        for sym in symbols:
+            parts.append(f"- `{_format_symbol(sym)}`")
+        parts.append("")
+    return "\n".join(parts).rstrip()
+
+
 def render_summary(rankings: list[FileRanking], *, top_n: int = 8) -> str:
     """Render a one-line-per-file summary for the chat surface.
 
