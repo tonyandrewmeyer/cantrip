@@ -573,7 +573,7 @@ async def check_for_update(
     use_cache: bool = True,
     include_release_notes: bool = True,
 ) -> UpdateInfo | None:
-    """Return :class:`UpdateInfo` if PyPI has a newer ``cantrip`` release.
+    """Return :class:`UpdateInfo` if PyPI has a newer ``juju-cantrip`` release.
 
     Returns ``None`` when:
 
@@ -753,10 +753,10 @@ def _headline(info: UpdateInfo) -> str:
     """
     if info.installed_yanked:
         return (
-            f"Your installed cantrip {info.current} has been yanked; "
+            f"Your installed juju-cantrip {info.current} has been yanked; "
             f"upgrading to {info.latest} is recommended."
         )
-    return f"A newer cantrip is available: {info.latest} (you have {info.current})."
+    return f"A newer juju-cantrip is available: {info.latest} (you have {info.current})."
 
 
 def format_cli_notice(info: UpdateInfo, *, method: InstallMethod | None = None) -> str:
