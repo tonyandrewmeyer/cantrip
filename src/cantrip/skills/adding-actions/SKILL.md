@@ -1,6 +1,7 @@
 ---
 name: adding-actions
 description: Implementing Juju actions for operational tasks in charms
+globs: [actions.yaml, charmcraft.yaml, metadata.yaml, src/charm.py, src/**/charm.py]
 ---
 
 # Adding Actions to Charms

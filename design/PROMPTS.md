@@ -140,6 +140,60 @@ assert the full rendered output of each generator against a known-
 good fixture — adding a new generator means adding a fixture, not a
 separate snapshot file.
 
+## Glob-conditional guidance (Phase 70.3)
+
+A skill's frontmatter may declare a `globs:` list to gate inclusion
+in the system prompt's *Available Skills* index.  Skills without
+`globs:` are unconditional (the historical behaviour); skills with
+globs only appear in the index when at least one *current-turn file
+path* matches.  See [SKILLS.md](SKILLS.md#glob-conditional-loading)
+for the frontmatter shape and matching rules.
+
+The "current-turn file path" predicate, implemented in
+`agent.core.CantripAgent._current_turn_files`, is the union of
+three sources:
+
+1. **Files cited by recent fs tool calls.**  The same 20-message
+   window the memory writer scans (`_collect_recent_file_citations`):
+   `read_file`, `write_file`, `edit_file`, `multi_edit`.  Resolved
+   against `state.charm_path` and required to exist on disk — this
+   filter mirrors the memory writer's "only cite real files" rule.
+2. **File-path-shaped tokens in recent user messages.**
+   `_extract_user_mentioned_files` runs a conservative regex over the
+   last six user messages.  Tokens must contain a slash *or* end in
+   a known charm-relevant extension
+   (`_PATH_LIKE_EXTENSIONS`) *or* be one of the bare names in
+   `_PATH_LIKE_BARENAMES` (`Makefile`, `Dockerfile`, …).  Existence
+   on disk is *not* required — a user asking to "edit
+   `metadata.yaml`" should pull the metadata skill before the file
+   is created.
+3. **The active task's title and description.**  The same regex is
+   applied to whichever task is currently `ACTIVE` in the work
+   queue (or, lacking one, the next ready task) — planner-emitted
+   tasks routinely name the file in scope.
+
+Why these three?  Together they cover the cases that determine
+which guidance is *useful right now*: what the agent has just
+touched, what the user just asked about, and what the work queue
+says is in flight.  Sources outside this set (transcript memory
+recalls, virtual files) are not included — they would dilute the
+signal more than they sharpen it.
+
+Matching is anchored.  A path-shaped pattern (containing `/`) must
+match starting from the first segment of the path's relative form
+under `charm_path` (or its full POSIX form when no charm root is
+available).  Bare patterns like `metadata.yaml` or `*.py` match the
+basename only.  This avoids surprise hits — `tests/integration/**`
+won't accidentally match a sibling clone on disk under
+`/home/.../sibling-charm/tests/integration/`.
+
+The filter is observable.  When a globbed skill is loaded or
+skipped, `agent.core.CantripAgent._record_skill_filtering` writes
+a `skill_filter` event to the session store with `loaded`,
+`skipped`, and `files`.  Events are deduplicated against the
+previous turn — the transcript only records *changes* in the
+filter outcome, so a long stable session doesn't drown in noise.
+
 ## What a prompt is *not*
 
 - **Not a skill.**  Prompts frame the conversation; skills

@@ -1,6 +1,7 @@
 ---
 name: relation-data-design
 description: Designing and implementing relation data bags for charm integrations
+globs: [metadata.yaml, charmcraft.yaml, src/charm.py, src/**/charm.py, lib/**]
 ---
 
 # Relation Data Bag Design

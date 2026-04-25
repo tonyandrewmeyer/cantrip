@@ -1,7 +1,8 @@
 """Skills discovery and loading following the agentskills.io pattern."""
 
+import fnmatch
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -44,6 +45,17 @@ class SkillMetadata:
     # missing.  Accepts a YAML list or a comma-separated string in
     # frontmatter — the same coercion that applies to ``tools``.
     mcp_servers: list[str] = field(default_factory=list)
+    # Optional glob list for conditional inclusion in the system
+    # prompt (Phase 70.3).  When non-empty, the skill only enters the
+    # prompt index when at least one current-turn file path matches
+    # one of these globs.  An empty list means unconditional —
+    # backwards-compatible with skills that pre-date this field.
+    # Matching semantics: patterns containing ``/`` are matched
+    # against the path relative to the charm root (with ``**``
+    # support for any number of path segments); bare patterns like
+    # ``metadata.yaml`` or ``*.py`` are matched against the
+    # basename.  Same coercion as ``tools`` and ``mcp_servers``.
+    globs: list[str] = field(default_factory=list)
 
 
 def _default_external_skill_dirs() -> list[Path]:
@@ -200,7 +212,12 @@ class SkillsIndex:
         raw = metadata.path.read_text()
         return self._extract_body(raw)
 
-    def format_for_prompt(self) -> str:
+    def format_for_prompt(
+        self,
+        *,
+        current_files: Sequence[Path] | None = None,
+        charm_path: Path | None = None,
+    ) -> str:
         """Render an XML block listing all skills for inclusion in a system prompt.
 
         Skills with declared MCP server dependencies (Phase 50.4) get a
@@ -209,12 +226,28 @@ class SkillsIndex:
         per-server availability check still happens in
         ``LoadSkillTool`` — the prompt index doesn't filter, it just
         informs.
+
+        When a skill declares ``globs:`` in its frontmatter (Phase 70.3),
+        it only appears in the rendered index if at least one of
+        ``current_files`` matches at least one of its globs.  Skills
+        without globs are always included.  ``current_files=None`` (or
+        an empty sequence) disables filtering entirely — every skill is
+        rendered.  This preserves backwards compatibility for callers
+        that don't yet thread file context through.
         """
         if not self._skills:
             return ""
 
+        skills_to_render = self._filter_by_globs(
+            self.list_skills(),
+            current_files=current_files,
+            charm_path=charm_path,
+        )
+        if not skills_to_render:
+            return ""
+
         lines = ["<available_skills>"]
-        for skill in self.list_skills():
+        for skill in skills_to_render:
             lines.append("  <skill>")
             lines.append(f"    <name>{skill.name}</name>")
             lines.append(f"    <description>{skill.description}</description>")
@@ -224,6 +257,69 @@ class SkillsIndex:
             lines.append("  </skill>")
         lines.append("</available_skills>")
         return "\n".join(lines)
+
+    def filtering_report(
+        self,
+        *,
+        current_files: Sequence[Path],
+        charm_path: Path | None = None,
+    ) -> dict[str, list[str]]:
+        """Return a structured record of which globbed skills loaded.
+
+        The result has three keys:
+
+        - ``loaded``: skill names with ``globs:`` whose globs matched
+          one of ``current_files`` and so entered the prompt.
+        - ``skipped``: skill names with ``globs:`` whose globs did not
+          match any of ``current_files`` and so were filtered out.
+        - ``files``: the file paths that participated in the match
+          decision (string-formatted for transcript serialisation).
+
+        Skills without ``globs:`` are unconditional and intentionally
+        omitted from this report — they're not interesting from an
+        audit perspective.  Designed to be recorded as a transcript
+        side event by the caller (Phase 70.3 observability).
+        """
+        loaded: list[str] = []
+        skipped: list[str] = []
+        for skill in self.list_skills():
+            if not skill.globs:
+                continue
+            if _any_glob_matches(skill.globs, current_files, charm_path):
+                loaded.append(skill.name)
+            else:
+                skipped.append(skill.name)
+        return {
+            "loaded": loaded,
+            "skipped": skipped,
+            "files": [str(p) for p in current_files],
+        }
+
+    def _filter_by_globs(
+        self,
+        skills: list[SkillMetadata],
+        *,
+        current_files: Sequence[Path] | None,
+        charm_path: Path | None,
+    ) -> list[SkillMetadata]:
+        """Apply ``globs:`` frontmatter to *skills* and return survivors.
+
+        Skills without globs always pass through.  Skills with globs
+        are included only when at least one of ``current_files``
+        matches one of the globs.  When ``current_files`` is ``None``,
+        no filtering is applied — every skill survives.
+        """
+        if current_files is None:
+            return skills
+
+        survivors: list[SkillMetadata] = []
+        for skill in skills:
+            if not skill.globs:
+                survivors.append(skill)
+                continue
+            if _any_glob_matches(skill.globs, current_files, charm_path):
+                survivors.append(skill)
+        return survivors
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -309,6 +405,7 @@ class SkillsIndex:
 
         tools = _coerce_string_list(data.get("tools"))
         mcp_servers = _coerce_string_list(data.get("mcp_servers"))
+        globs = _coerce_string_list(data.get("globs"))
 
         return SkillMetadata(
             name=str(name),
@@ -317,6 +414,7 @@ class SkillsIndex:
             source=source,
             tools=tools,
             mcp_servers=mcp_servers,
+            globs=globs,
         )
 
     @staticmethod
@@ -361,3 +459,88 @@ def _coerce_string_list(value: object) -> list[str]:
 # Legacy internal name — kept as an alias so any stale import path keeps
 # working.  Prefer ``_coerce_string_list`` in new code.
 _coerce_tools = _coerce_string_list
+
+
+def _any_glob_matches(
+    patterns: Sequence[str],
+    paths: Sequence[Path],
+    charm_path: Path | None,
+) -> bool:
+    """Return ``True`` when any *path* matches any *pattern*.
+
+    Used by :class:`SkillsIndex` to decide whether a skill with
+    ``globs:`` frontmatter should enter the system prompt this turn
+    (Phase 70.3).  Splits semantic between bare and path-shaped
+    patterns so charm authors can write the most natural form:
+
+    - ``metadata.yaml`` (no slash) matches any path whose **basename**
+      is ``metadata.yaml``.  Bare ``*.py`` matches any Python file.
+    - ``tests/integration/**`` (contains a slash) matches paths whose
+      **relative location** under ``charm_path`` matches the glob.
+      ``**`` is a special segment that matches zero or more path
+      components, the same way ``git`` and ``pathspec`` interpret it.
+
+    Path-shaped patterns are *anchored*: the relative path under
+    ``charm_path`` (or the absolute POSIX form when no charm root is
+    available, or the path is outside it) must match starting from
+    the first segment.  This avoids surprise hits like
+    ``tests/integration/**`` accidentally matching a sibling clone
+    on disk.
+    """
+    for path in paths:
+        for pattern in patterns:
+            if _glob_matches(pattern, path, charm_path):
+                return True
+    return False
+
+
+def _glob_matches(pattern: str, path: Path, charm_path: Path | None) -> bool:
+    """Return ``True`` when *path* matches the single *pattern*.
+
+    See :func:`_any_glob_matches` for the matching semantics.
+    """
+    if "/" in pattern:
+        relative = _path_relative_to(path, charm_path)
+        if relative is None:
+            relative = path.as_posix().lstrip("/")
+        return _segments_match(pattern.split("/"), relative.split("/"))
+    return fnmatch.fnmatchcase(path.name, pattern)
+
+
+def _path_relative_to(path: Path, charm_path: Path | None) -> str | None:
+    """Return *path* as a POSIX string relative to *charm_path*.
+
+    Returns ``None`` when ``charm_path`` is missing or *path* sits
+    outside of it — the caller falls back to the absolute POSIX form
+    so a glob can still match an out-of-tree file by its tail
+    segments.
+    """
+    if charm_path is None:
+        return None
+    try:
+        return path.relative_to(charm_path).as_posix()
+    except ValueError:
+        return None
+
+
+def _segments_match(pat: list[str], path: list[str]) -> bool:
+    """Match path *segments* against pattern segments with ``**`` support.
+
+    ``**`` matches zero or more path segments (so
+    ``tests/integration/**`` matches both ``tests/integration/foo.py``
+    and ``tests/integration``).  All other segments use
+    :func:`fnmatch.fnmatchcase` so per-segment shell wildcards
+    (``*``, ``?``, ``[abc]``) work as authors expect.
+    """
+    if not pat:
+        return not path
+    head, *rest = pat
+    if head == "**":
+        if not rest:
+            return True
+        return any(_segments_match(rest, path[i:]) for i in range(len(path) + 1))
+    if not path:
+        return False
+    if not fnmatch.fnmatchcase(path[0], head):
+        return False
+    return _segments_match(rest, path[1:])

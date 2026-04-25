@@ -1,6 +1,7 @@
 ---
 name: scenario-tests
 description: Writing unit tests for charms with ops.testing (Scenario)
+globs: [tests/unit/**, src/charm.py, src/**/charm.py]
 ---
 
 # Writing Unit Tests with Scenario

@@ -182,6 +182,100 @@ _PROPOSED_CHANGES_RE = re.compile(
 )
 
 
+#: File extensions worth picking up from user messages when scanning
+#: for path-shaped tokens (Phase 70.3 conditional guidance).  Anchored
+#: to charm-relevant types — Python, charm metadata YAML, the charm
+#: rock/snap manifests, docs, and the standard Python project files.
+#: Lower-case match; we coerce the extracted token before comparison.
+_PATH_LIKE_EXTENSIONS = frozenset(
+    {
+        "py",
+        "yaml",
+        "yml",
+        "toml",
+        "md",
+        "json",
+        "txt",
+        "j2",
+        "cfg",
+        "ini",
+        "sh",
+        "svg",
+        "rock",
+        "rst",
+    }
+)
+
+#: Bare filenames worth matching even without an extension match — these
+#: are charm-canonical files an author refers to by name in plain
+#: prose ("look at metadata.yaml", "actions are wrong").  Kept narrow so
+#: a stray "README" in conversation doesn't trigger every skill.
+_PATH_LIKE_BARENAMES = frozenset(
+    {
+        "Makefile",
+        "Dockerfile",
+        "Justfile",
+        "Procfile",
+        "Rockfile",
+    }
+)
+
+#: Captures path-shaped tokens in user messages.  Conservative: the
+#: token must contain a slash or end in a known extension, and must
+#: not start or end on a separator-like character.  Backticks and
+#: quotes around paths (``a markdown ``conventional`` shape``) are
+#: stripped by the caller before this regex runs.
+_PATH_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_/.-])"
+    r"(?P<path>[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.[A-Za-z0-9]{1,8}"
+    r"|(?:[A-Za-z0-9_-]+/)+[A-Za-z0-9_.-]+)"
+    r"(?![A-Za-z0-9_/.-])"
+)
+
+
+def _extract_user_mentioned_files(text: str, charm_path: Path | None) -> list[Path]:
+    """Pick file-path-shaped tokens out of *text*.
+
+    Powers Phase 70.3 conditional guidance: a user message naming
+    ``metadata.yaml`` should pull the metadata-authoring skill into
+    the prompt even if the agent has not yet touched that file on
+    disk.  Returns ``Path`` objects resolved against ``charm_path``
+    when relative; existence on disk is *not* required because the
+    user might be asking for a file that does not exist yet.
+
+    Tokens are filtered to a charm-relevant extension set
+    (:data:`_PATH_LIKE_EXTENSIONS`) plus a small list of
+    extensionless filenames (:data:`_PATH_LIKE_BARENAMES`) so
+    arbitrary words like ``today.is`` or version strings like
+    ``1.2.3`` don't pull skills in.
+    """
+    if not text:
+        return []
+
+    # Strip backticks and surrounding quotes so ``"src/charm.py"`` and
+    # ``\`metadata.yaml\``` tokens land cleanly in the matcher.
+    cleaned = text.replace("`", " ").replace('"', " ").replace("'", " ")
+
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for match in _PATH_TOKEN_RE.finditer(cleaned):
+        raw = match.group("path").strip(".")
+        if not raw:
+            continue
+        suffix = raw.rsplit(".", 1)[-1].lower() if "." in raw else ""
+        basename = raw.rsplit("/", 1)[-1]
+        if suffix not in _PATH_LIKE_EXTENSIONS and basename not in _PATH_LIKE_BARENAMES:
+            continue
+        candidate = Path(raw)
+        if not candidate.is_absolute() and charm_path is not None:
+            candidate = charm_path / candidate
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
+    return ordered
+
+
 def _extract_proposed_changes(content: str) -> str | None:
     """Return the body of a ``## Proposed changes`` section or ``None``.
 
@@ -311,6 +405,12 @@ class CantripAgent:
         self._memory_manager_cache: MemoryManager | None = None
         self._auto_writer_cache: AutoWriter | None = None
         self._memory_background_tasks: set[asyncio.Task[Any]] = set()
+        # Phase 70.3: dedupe transcript events for glob-conditional skill
+        # filtering.  ``_build_system_prompt`` is hot — re-emitting an
+        # identical decision every turn would drown the transcript.  We
+        # remember the last (loaded, skipped) signature and only record
+        # when the set actually changes.
+        self._last_skill_filter_signature: tuple[tuple[str, ...], tuple[str, ...]] | None = None
         self._mcp_registry_cache: MCPRegistry | None = None
         self._mcp_started: bool = False
         self._mcp_marketplace_sources_cache: list[MarketplaceSource] | None = None
@@ -559,6 +659,93 @@ class CantripAgent:
             for tc in msg.tool_calls:
                 tool_calls.append({"name": tc.name, "arguments": tc.arguments})
         return collect_file_citations(tool_calls, base_path=self.state.charm_path)
+
+    def _current_turn_files(self, *, max_messages: int = 6) -> list[Path]:
+        """Collect file paths in the active conversational context.
+
+        Used by Phase 70.3 glob-conditional skill loading: the result
+        is fed to :meth:`SkillsIndex.format_for_prompt` so skills with
+        ``globs:`` frontmatter only enter the prompt when something
+        the agent is currently looking at matches.
+
+        The set is the union of three sources, in priority order:
+
+        1. Files cited by recent ``read_file`` / ``write_file`` /
+           ``edit_file`` / ``multi_edit`` tool calls (existing
+           :meth:`_collect_recent_file_citations`, capped to the same
+           20-message window the memory writer uses).
+        2. File-path-shaped tokens in the most recent user messages,
+           extracted by :func:`_extract_user_mentioned_files`.  These
+           need not exist on disk yet — a user asking "edit
+           ``metadata.yaml`` to add an interface" should pull the
+           metadata skill *before* the file is created.
+        3. The active task's title, scanned by the same regex —
+           planner-emitted tasks often name the file in scope.
+
+        Duplicates are removed while preserving first-seen order.
+        """
+        seen: set[Path] = set()
+        ordered: list[Path] = []
+
+        for path in self._collect_recent_file_citations():
+            if path not in seen:
+                seen.add(path)
+                ordered.append(path)
+
+        message_texts: list[str] = []
+        for msg in reversed(self.state.messages):
+            if len(message_texts) >= max_messages:
+                break
+            if msg.role == Role.USER and msg.content:
+                message_texts.append(msg.content)
+
+        active_task = next(
+            (t for t in self._work_queue.all_tasks() if t.status == TaskStatus.ACTIVE),
+            None,
+        )
+        if active_task is None:
+            active_task = self._work_queue.next_ready()
+        if active_task is not None:
+            message_texts.append(active_task.title)
+            if active_task.description:
+                message_texts.append(active_task.description)
+
+        for text in message_texts:
+            for path in _extract_user_mentioned_files(text, self.state.charm_path):
+                if path not in seen:
+                    seen.add(path)
+                    ordered.append(path)
+
+        return ordered
+
+    def _record_skill_filtering(self, current_files: list[Path]) -> None:
+        """Record which globbed skills loaded vs. were skipped this turn.
+
+        Phase 70.3 observability: writes a ``skill_filter`` side event
+        to the session store so a user can audit "why did this skill
+        fire?".  Deduplicated against the previous turn — if the same
+        set of skills loads and the same set is skipped, no event is
+        emitted (the transcript stays focused on actual changes).
+        Skills without ``globs:`` frontmatter are unconditional and
+        intentionally absent from this report.
+        """
+        if not any(s.globs for s in self._skills_index.list_skills()):
+            return
+        report = self._skills_index.filtering_report(
+            current_files=current_files,
+            charm_path=self.state.charm_path,
+        )
+        signature = (tuple(report["loaded"]), tuple(report["skipped"]))
+        if signature == self._last_skill_filter_signature:
+            return
+        self._last_skill_filter_signature = signature
+        store = self._store
+        if store is None:
+            return
+        try:
+            store.record_event("skill_filter", report)
+        except sqlite3.Error:
+            log.debug("skill_filter event recording failed", exc_info=True)
 
     def _ensure_store(self) -> None:
         """Initialise the session store on first need."""
@@ -896,6 +1083,12 @@ class CantripAgent:
         """
         compact = self.provider.max_tools is not None
         memory_index = self._memory_manager.render_prompt_index() or None
+        current_files = self._current_turn_files()
+        skills_index = self._skills_index.format_for_prompt(
+            current_files=current_files,
+            charm_path=self.state.charm_path,
+        )
+        self._record_skill_filtering(current_files)
         prompt = build_system_prompt(
             charm_name=self.state.charm_name,
             charm_path=str(self.state.charm_path) if self.state.charm_path else None,
@@ -904,7 +1097,7 @@ class CantripAgent:
             dev_model=self.state.dev_model,
             cos_model=self.state.cos_model,
             recent_decisions=[d.to_dict() for d in self.state.decisions],
-            skills_index=self._skills_index.format_for_prompt(),
+            skills_index=skills_index,
             memory_index=memory_index,
             environment_ready=self.state.environment_ready,
             watcher_enabled=self.state.watcher_enabled,

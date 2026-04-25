@@ -1,6 +1,7 @@
 ---
 name: harness-migration
 description: Migrating deprecated ops.testing.Harness tests to state-transition (Scenario) tests
+globs: [tests/unit/**, tests/test_*.py]
 ---
 
 <!--

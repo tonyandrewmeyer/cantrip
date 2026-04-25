@@ -5,6 +5,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Glob-conditional skill loading (Phase 70.3).**  Skills can
+  now declare a ``globs:`` list in their frontmatter (e.g.
+  ``globs: [tests/integration/**]`` on the Jubilant skill,
+  ``globs: [metadata.yaml, charmcraft.yaml, src/charm.py,
+  src/**/charm.py]`` on the metadata-/config-authoring
+  skills).  Such skills only enter the system prompt's
+  ``<available_skills>`` block when at least one *current-turn
+  file path* matches one of their globs — the union of files
+  cited by recent fs tool calls, file-path-shaped tokens in
+  recent user messages, and the active task's title /
+  description.  Skills without ``globs:`` stay unconditional,
+  so existing skills don't change behaviour.  Bare patterns
+  (``metadata.yaml``, ``*.py``) match by basename;
+  path-shaped patterns are anchored at the charm root with
+  ``**`` matching zero or more path segments.  The decision is
+  observable: ``CantripAgent`` writes a ``skill_filter`` event
+  to the session store with ``loaded``, ``skipped``, and the
+  file context every time the outcome changes (deduped against
+  the previous turn so a steady-state session stays quiet).
+  Six bundled skills opt in: ``scenario-tests``,
+  ``jubilant-tests``, ``adding-config``, ``adding-actions``,
+  ``relation-data-design``, ``harness-migration``.  Documented
+  in ``design/SKILLS.md`` (frontmatter schema and matching
+  rules) and ``design/PROMPTS.md`` (predicate definition and
+  observability).
+
 - **Oracle — on-demand second-opinion consult (Phase 70.2).**
   New ``oracle_consult`` tool routes one focused question to a
   stronger reasoning model (default ``claude/claude-opus-4-7``

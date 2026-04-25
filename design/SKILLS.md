@@ -43,9 +43,70 @@ description: Writing unit tests for charms with ops.testing (Scenario)
   the system prompt's `<available_skills>` block, and in the tool
   descriptions the LLM uses to decide which skill to load.  Keep it
   under ~120 characters; the LLM sees all descriptions at once.
-- Any other keys are ignored today.  Phase 50 (Skills interop) may
-  adopt the cross-vendor `tools:` field; preserve forward
-  compatibility by not picking names that collide.
+- **`tools`** (optional) — cross-vendor allowlist (Phase 50 interop).
+  Accepted as a YAML list or a comma-separated string.  Cantrip's
+  loader does not enforce it; round-tripping with other agents
+  preserves the field intact.
+- **`mcp_servers`** (optional) — names of MCP servers this skill
+  depends on (Phase 50.4).  When the skill is loaded with a
+  configured server missing, `LoadSkillTool` prepends a warning
+  banner naming the gap.
+- **`globs`** (optional) — list of file-path globs that scope the
+  skill to specific files (Phase 70.3).  See *Glob-conditional
+  loading* below.  Accepted as a YAML list or a comma-separated
+  string; absent or empty means unconditional (the default).
+- Any other keys are ignored today.
+
+## Glob-conditional loading
+
+A skill can opt into being shown to the agent *only when relevant*
+by adding a `globs:` list to its frontmatter:
+
+```yaml
+---
+name: scenario-tests
+description: Writing unit tests for charms with ops.testing (Scenario)
+globs: [tests/unit/**, src/charm.py, src/**/charm.py]
+---
+```
+
+`SkillsIndex.format_for_prompt(current_files=…)` only emits a
+`<skill>` entry for a globbed skill when at least one of the
+`current_files` matches at least one of its globs.  Skills without
+`globs:` stay unconditional, so existing skills don't change
+behaviour.
+
+**Matching rules:**
+
+- A pattern containing `/` is a *path-shaped* glob.  It is anchored
+  at the charm root: the file's path *relative to* `charm_path`
+  must match starting from the first segment.  `**` matches zero
+  or more path segments anywhere it appears.
+- A pattern with no `/` is a *bare* glob.  It matches the file's
+  basename only — so `metadata.yaml` matches `<charm>/metadata.yaml`
+  and `<charm>/sub/metadata.yaml` alike, and `*.py` matches every
+  Python file regardless of depth.
+- All per-segment matching uses `fnmatch.fnmatchcase` semantics
+  (`*`, `?`, `[abc]`, case-sensitive).
+
+**Sources of "current files":**  defined precisely in
+[PROMPTS.md](PROMPTS.md#glob-conditional-guidance-phase-703) — fs
+tool citations, user-message file mentions, and the active task's
+title/description.  When `current_files` is `None` (callers that
+haven't been threaded through), filtering is bypassed entirely — a
+backwards-compatibility escape hatch.
+
+**Observability.**  When a globbed skill loads or is skipped,
+`CantripAgent` records a `skill_filter` transcript event with the
+`loaded`, `skipped`, and `files` lists, deduped against the prior
+turn so a steady-state session stays quiet.  Use this to audit
+"why did this skill fire?" after a session.
+
+**When *not* to use globs:**  if a skill's guidance applies broadly
+across charm work (security review, debugging, scaffolding, the
+charmcraft expert reference), leave the field off.  Globs are for
+skills whose advice is genuinely scoped to a file — not a soft
+"this might be relevant" hint.
 
 The parser is forgiving about missing or malformed skills — a warning
 is logged and the skill is skipped rather than failing the whole

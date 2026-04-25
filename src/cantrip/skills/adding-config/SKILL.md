@@ -1,6 +1,7 @@
 ---
 name: adding-config
 description: Adding and validating charm configuration options
+globs: [config.yaml, charmcraft.yaml, metadata.yaml, src/charm.py, src/**/charm.py]
 ---
 
 # Adding Configuration Options

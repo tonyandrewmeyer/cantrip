@@ -1,6 +1,7 @@
 ---
 name: jubilant-tests
 description: Writing integration tests for charms with Jubilant + pytest-jubilant
+globs: [tests/integration/**]
 ---
 
 # Writing Integration Tests with Jubilant
