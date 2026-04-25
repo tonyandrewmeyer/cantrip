@@ -171,6 +171,21 @@ class TestParseToolCalls:
         )
         assert parsed[0].arguments == {}
 
+    def test_null_name_coerced_to_empty_string(self):
+        # Some OpenAI-compat providers (e.g. Fireworks) emit `name: null` on
+        # tool-call entries; downstream callers do `len(tc.name)` so the
+        # parser must hand back a string.
+        parsed = OpenAICompatBase._parse_tool_calls(
+            [
+                {
+                    "id": None,
+                    "function": {"name": None, "arguments": "{}"},
+                },
+            ]
+        )
+        assert parsed[0].id == ""
+        assert parsed[0].name == ""
+
 
 class TestFireworksProbe:
     """FireworksProvider lifts capability flags from /models."""

@@ -80,6 +80,20 @@ class OpenAICompatBase(LLMProvider):
         return self._supports_vision
 
     @property
+    def supports_response_schema(self) -> bool:
+        """Whether this provider applies ``response_schema`` natively.
+
+        OpenAI-compatible endpoints — vLLM, Fireworks, OpenRouter,
+        the inference snap — all accept the ``response_format``
+        ``json_schema`` envelope that
+        :meth:`_build_request_body` emits.  Backends that ignore the
+        field still satisfy the contract because Cantrip-side
+        validation in :func:`cantrip.llm.structured.complete_structured`
+        catches non-conforming output regardless.
+        """
+        return True
+
+    @property
     def _error_label(self) -> str:
         """Short label used in error messages.  Defaults to the provider name."""
         return self.name
@@ -223,6 +237,7 @@ class OpenAICompatBase(LLMProvider):
         stream: bool = False,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the JSON request body for a chat completion."""
         system_prompt, api_messages = self._convert_messages(messages)
@@ -256,6 +271,21 @@ class OpenAICompatBase(LLMProvider):
             if api_tools:
                 body["tools"] = api_tools
 
+        # Phase 73.3: native structured-output enforcement.  Wrap the
+        # caller's schema in OpenAI's ``json_schema`` envelope.  vLLM,
+        # Fireworks, and OpenRouter all converge on this shape; back-
+        # ends that ignore the field return free-form JSON which the
+        # caller-side validator in ``cantrip.llm.structured`` catches.
+        if response_schema is not None:
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_schema.get("title", "response"),
+                    "schema": response_schema,
+                    "strict": True,
+                },
+            }
+
         return body
 
     @staticmethod
@@ -272,8 +302,8 @@ class OpenAICompatBase(LLMProvider):
                     arguments = {}
             tool_calls.append(
                 ToolCall(
-                    id=tc.get("id", ""),
-                    name=func.get("name", ""),
+                    id=tc.get("id") or "",
+                    name=func.get("name") or "",
                     arguments=arguments,
                 )
             )
@@ -298,6 +328,7 @@ class OpenAICompatBase(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> Response:
         """Generate a completion via the OpenAI-compatible API."""
         body = self._build_request_body(
@@ -306,6 +337,7 @@ class OpenAICompatBase(LLMProvider):
             temperature,
             max_tokens=max_tokens,
             thinking_budget=thinking_budget,
+            response_schema=response_schema,
         )
 
         try:
@@ -359,6 +391,7 @@ class OpenAICompatBase(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> AsyncIterator[Chunk]:
         """Stream a completion via SSE."""
         body = self._build_request_body(
@@ -368,6 +401,7 @@ class OpenAICompatBase(LLMProvider):
             stream=True,
             max_tokens=max_tokens,
             thinking_budget=thinking_budget,
+            response_schema=response_schema,
         )
 
         tool_calls_acc: dict[int, dict[str, str]] = {}
@@ -403,15 +437,17 @@ class OpenAICompatBase(LLMProvider):
                         idx = tc_delta.get("index", 0)
                         if idx not in tool_calls_acc:
                             tool_calls_acc[idx] = {
-                                "id": tc_delta.get("id", ""),
+                                "id": tc_delta.get("id") or "",
                                 "name": "",
                                 "arguments": "",
                             }
-                        func = tc_delta.get("function", {})
-                        if "name" in func:
-                            tool_calls_acc[idx]["name"] = func["name"]
-                        if "arguments" in func:
-                            tool_calls_acc[idx]["arguments"] += func["arguments"]
+                        func = tc_delta.get("function") or {}
+                        name = func.get("name")
+                        if name:
+                            tool_calls_acc[idx]["name"] = name
+                        args_delta = func.get("arguments")
+                        if args_delta:
+                            tool_calls_acc[idx]["arguments"] += args_delta
 
                     reasoning = delta.get("reasoning_content")
                     if reasoning:
