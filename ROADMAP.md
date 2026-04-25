@@ -3514,6 +3514,271 @@ remembers.
 
 ---
 
+## Phase 85: Structure and Style Sweep — Tame the Giants, Mirror the Layout
+
+**Goal:** A mid-2026 structure review found that the package
+spine is sound — `llm/`, `mcp/`, `repomap/`, `tui/`, `web/`,
+`agent/tools/`, `agent/planner/`, `agent/prompts/` are all
+intentional cuts and `__init__.py` files stay empty (no
+implicit re-exports).  But several modules have grown into
+load-bearing giants: `agent/core.py` is a 3 379-line god class
+holding `CantripAgent` with 21 properties and ~90 methods;
+`tui/app.py` is 1 859 lines of `CantripApp`; `agent/tools/
+publishing.py` ships a 502-line `generate_docs_scaffold`
+function that builds a docs tree by f-string concatenation;
+`main.py:parse_args` is one 452-line block.  Meanwhile
+`agent/` has accumulated 47 flat modules with obvious families
+that want subpackages (memory, commands, triage, persistence)
+and `tests/unit/` keeps 167 test files at one flat level
+despite `src/` being well-nested.  Style adherence is close —
+no `Optional[X]`, no US spellings, almost no TODOs — but two
+small drifts have crept in (`from pathlib import Path` is
+split 51/27 against `import pathlib`, four `except Exception`
+clauses lack the rationale comment the others carry).  This
+phase picks the right things off in the right order: cheap
+sweeps first, mechanical folder moves next, behaviour-changing
+decomposition last.
+
+### 85.1 Sweep — close the small style drifts
+
+- [ ] Replace `from datetime import datetime` at
+  `src/cantrip/tui/widgets/chat.py:6` with `import datetime`
+  and update call sites in that file.  This is the only
+  `from datetime import datetime` left in `src/cantrip/`.
+- [ ] Annotate or narrow the four `except Exception` clauses
+  that lack a rationale comment to match the project's
+  established `# noqa: BLE001 - <reason>` pattern (the other
+  24 already do): `src/cantrip/hooks.py:845`,
+  `src/cantrip/agent/github_issues.py:354`,
+  `src/cantrip/agent/core.py:881`,
+  `src/cantrip/agent/executor.py:772`.  Prefer narrowing to a
+  specific exception when the call site supports it; only fall
+  back to `Exception` with a documented reason.
+- [ ] Decide the `Path` / `dataclass` import policy and apply
+  it.  The codebase is currently split (51 files use
+  `from pathlib import Path`, 27 use `import pathlib`; same
+  for `dataclass`/`dataclasses`).  Either: (a) carve `Path`
+  and `@dataclass` out as runtime exceptions in
+  `AGENTS.md` and leave the present mix; or (b) commit to
+  module-only imports and codemod the minority side.  Whatever
+  the choice, document it in `AGENTS.md` and resolve the
+  inconsistency.
+
+### 85.2 Move — `agent/memory/` subpackage
+
+- [ ] Convert the four-file memory family into a subpackage:
+  `agent/memory.py` (1 017 lines) becomes `agent/memory/
+  core.py`; `agent/memory_writer.py` →
+  `agent/memory/writer.py`; `agent/memory_export.py` →
+  `agent/memory/export.py`; `agent/memory_commands.py` →
+  `agent/memory/commands.py`.
+- [ ] Re-export the public surface (currently
+  `MemoryEntry`, `MemoryManager`, plus the writer/export
+  entry points imported by `agent/core.py`) from
+  `agent/memory/__init__.py` so import sites elsewhere change
+  by one segment, not by symbol.
+- [ ] Update test imports and move
+  `tests/unit/test_memory*.py` (4 files) into
+  `tests/unit/agent/memory/` to mirror.
+- [ ] Run `make check` and `make unit`; confirm no behavioural
+  drift.
+
+### 85.3 Move — `agent/commands/` subpackage
+
+- [ ] Group the slash-command handlers into one folder:
+  `agent/slash_commands.py` (1 663 lines) →
+  `agent/commands/slash.py`; `agent/custom_commands.py` →
+  `agent/commands/custom.py`; `agent/memory_commands.py`
+  (already moving to `agent/memory/` in 85.2 — keep it there
+  and re-export from `agent/commands/__init__.py` if the
+  dispatcher prefers a single entry point);
+  `agent/mcp_commands.py` → `agent/commands/mcp.py`.
+- [ ] If `agent/commands/slash.py` is still >1 000 lines after
+  the move, split the bigger handler clusters out:
+  `commands/budget.py`, `commands/cost.py`, `commands/map.py`,
+  `commands/share.py`, `commands/transcript.py`.  Keep
+  `dispatch()` and `_dispatch_inner()` in
+  `commands/__init__.py` so the entry point stays singular.
+
+### 85.4 Decompose — `CantripAgent` god class
+
+- [ ] Extract one cohort at a time as a delegate object held
+  by `CantripAgent`.  The seven natural cohorts (with rough
+  line ranges in `agent/core.py`):
+  1. **MCP lifecycle** (lines 2911-3025) — `mcp_registry`,
+     `mcp_marketplace_sources`, `mcp_marketplace_loader`,
+     `start_mcp`, `complete_mcp_elicitation`, `stop_mcp`.
+     Most self-contained; do this one first.
+  2. **Executor lifecycle** (2786-2910) — `executor_running`,
+     `start_executor`, `stop_executor`, plus the wrapper
+     callbacks.
+  3. **Watcher lifecycle** (2023-2150) — `watcher_running`,
+     `start_watcher`, `stop_watcher`, `route_watcher_event`,
+     `process_watcher_event`.
+  4. **Issue triage** (2152-2270) — `issue_triage_running`,
+     `start_issue_triage`, `stop_issue_triage`,
+     `retriage_issues`, `comment_on_issue`,
+     `check_upstream`.
+  5. **Arena** (2388-2480) — `active_arena`,
+     `begin_arena`, `handle_arena_pick`.
+  6. **Confirmations router** (2480-2780) —
+     `handle_race_confirmation`, `handle_push_confirmation`,
+     `handle_pr_creation`, `handle_repo_bootstrap`,
+     `handle_triage_confirmation`,
+     `should_offer_bootstrap`,
+     `build_repo_bootstrap_confirm_task`.
+  7. **Session persistence** (3026-3290) —
+     `save_state`, `preview_session`, `transcript_tail`,
+     `archive_session`, `load_state`,
+     `build_resume_summary`.
+- [ ] For each extraction: introduce a focused class in its
+  own module (e.g. `agent/mcp_controller.py`,
+  `agent/watcher_controller.py`, `agent/arena_controller.py`,
+  `agent/confirmations.py`, `agent/persistence/session.py`),
+  hold an instance on `CantripAgent` as
+  `self._mcp` / `self._watcher` / etc., keep the existing
+  property/method names on `CantripAgent` as one-line
+  delegators (so the public surface used by `cli.py`,
+  `tui/app.py`, `web/server.py`, `slash_commands.py`,
+  `print_mode.py` does not move).
+- [ ] After all seven cohorts move, `agent/core.py` should
+  drop below 1 500 lines and contain mostly `process_message`,
+  `process_message_streaming`, `prepare`, `warm_up`, the
+  property accessors, and the run-time hooks.  Re-check the
+  number; the goal is comprehensibility, not a target line
+  count.
+- [ ] No public-API rename in this phase.  Each step must
+  preserve external behaviour and import paths so the diff
+  reviews as a pure refactor.
+
+### 85.5 Decompose — `BackgroundExecutor` and `CantripApp`
+
+- [ ] `agent/executor.py` (1 713 lines) already shows clean
+  internal cohorts: split `_DefaultGitService` (lines 146-258)
+  to `agent/executor/git_service.py`,
+  `_DefaultEnvironmentChecker` (260-285) and
+  `_DefaultFollowupPlanner` (287-298) to
+  `agent/executor/policies.py`, `_SessionStoreAdapter`
+  (299-330) to `agent/executor/store_adapter.py`.  Leave
+  `BackgroundExecutor` itself in `agent/executor/core.py`
+  (or `agent/executor.py` if the rest is small enough).
+- [ ] `tui/app.py` (1 859 lines) is one `CantripApp` class
+  with 83 methods.  Group action handlers by surface — chat
+  actions, status actions, screen-switching actions,
+  watcher/executor actions — and lift each group into a
+  module under `tui/actions/` that takes the app instance as
+  argument.  Keep `compose()`, `on_mount()`, and Textual
+  reactive plumbing in `tui/app.py`.
+
+### 85.6 Decompose — function-level giants
+
+- [ ] `src/cantrip/agent/tools/publishing.py:1108
+  generate_docs_scaffold` (502 lines).  Currently emits
+  ~30 documentation files via inline f-string concatenation.
+  Move the templated content out alongside the existing
+  Jinja templates the prompts subsystem uses: create
+  `src/cantrip/charm/docs_templates/` (or extend
+  `src/cantrip/charm/templates/`) with one `.md.j2` /
+  `.rst.j2` per generated file, and reduce the function to a
+  loop that walks the template list and renders each.
+  Acceptance-artefact substitution stays in the renderer; the
+  templates carry only the static skeleton.
+- [ ] `src/cantrip/main.py:46 parse_args` (452 lines).
+  Argparse setup is naturally splittable: extract one
+  `_add_X_options(parser)` helper per subsystem (model,
+  session, hooks, web, watcher, etc.), keep the top-level
+  `parse_args` as a slim composition of those helpers.  No
+  CLI behaviour change.
+- [ ] `src/cantrip/agent/tools/rockcraft.py:915
+  _deploy_k8s_registry` (128 lines) and the four `juju.py`
+  `execute()` methods that exceed 100 lines (lines 188,
+  1381, 1821, 2048): extract the body into
+  module-private helpers per logical phase.  These do not
+  block the phase; they are the next-cleanest one-shot
+  improvements once the bigger moves above land.
+
+### 85.7 Move — top-level Python files into packages
+
+- [ ] `src/cantrip/hooks.py` (946 lines) →
+  `src/cantrip/hooks/` with at least
+  `hooks/runner.py` (the executor + stats), `hooks/config.py`
+  (loading/parsing), and `hooks/types.py` (the dataclasses).
+  Re-export the public API from `hooks/__init__.py`.
+- [ ] `src/cantrip/update.py` (817 lines) → `update/` with
+  `update/check.py`, `update/install.py`, `update/release.py`
+  (or whatever the existing internal cohorts suggest after a
+  closer read).
+- [ ] `src/cantrip/main.py` (1 080 lines) — once 85.6 has
+  removed the `parse_args` block, decide whether the
+  remaining `_run` plus helpers warrants a package or stays
+  flat.  Likely stays flat at ~600 lines; defer this bullet
+  if so.
+
+### 85.8 Mirror — `tests/unit/` folder structure
+
+- [ ] Move test files into folders that mirror `src/cantrip/`
+  for the heaviest groups.  Concretely:
+  `tests/unit/agent/` (catch-all for non-grouped agent tests),
+  `tests/unit/agent/memory/` (already covered in 85.2),
+  `tests/unit/agent/commands/`, `tests/unit/agent/tools/`,
+  `tests/unit/llm/`, `tests/unit/mcp/`, `tests/unit/tui/`,
+  `tests/unit/web/`, `tests/unit/repomap/`.  The 167-flat-
+  files state at the top level of `tests/unit/` is the
+  symptom; the goal is that browsing the test tree gives
+  the same shape as browsing `src/`.
+- [ ] Keep the existing sub-folders in place (`executor/`,
+  `subagent/`, `planner/`, `charm_tools/`, `charmlint/`,
+  `quickpack/`) — they're already correctly grouped.
+- [ ] Rename one ambiguous pair: `tests/unit/test_tool_caption.py`
+  (helper unit-tests) and `tests/unit/test_tool_captions.py`
+  (per-tool integration tests) differ only by an `s`.  Pick
+  unambiguous names — e.g. `test_caption_builder.py` and
+  `test_caption_coverage.py`.
+- [ ] Run `make unit` after the moves; pytest discovery is
+  path-relative so this is mostly a `git mv` exercise plus
+  `__init__.py` housekeeping.
+
+### What this phase is *not*
+
+- Not a behaviour change.  Every step here should land as a
+  pure refactor — same public API on `CantripAgent`,
+  `CantripApp`, and the slash-command dispatcher; same CLI
+  flags; same test outcomes.
+- Not a rewrite of `agent/tools/`.  The big tool modules
+  (`publishing.py`, `juju.py`, `observability.py`,
+  `acceptance.py`, `charm.py`) are large because Cantrip
+  delegates a lot of charm work to them; their internal
+  shape is fine.  Only `generate_docs_scaffold` (a single
+  template-y function) is called out for decomposition.
+- Not a hunt for unused code.  If 85.4's delegation reveals
+  dead methods, fix them in passing; do not let it expand
+  into a wider sweep.
+- Not a renaming pass.  Symbol names stay; only file/folder
+  layout moves.
+
+**Exit criteria:** `agent/core.py` is below 1 500 lines and
+no longer holds the seven cohorts in 85.4; `agent/memory/`
+exists as a subpackage; `tests/unit/` has folders that
+mirror `src/cantrip/` for the heaviest groups; the four
+documented `except Exception` clauses carry rationale
+comments; `from datetime import datetime` is gone from
+`src/cantrip/`; the `Path` / `dataclass` import policy is
+either unified or explicitly carved out in `AGENTS.md`;
+`make check` and `make unit` pass throughout; no public
+import path on the `cantrip.agent` surface has changed.
+
+**Discovered:** Mid-2026 structure-review pass after a heavy
+run of feature phases (67–84).  The review confirmed the
+package spine is sound but flagged four specific giants
+(`agent/core.py`, `tui/app.py`, `agent/tools/publishing.py`,
+`main.py:parse_args`), one missing subpackage (`agent/
+memory/`), and a flat `tests/unit/` that no longer matches
+the layered `src/`.  Sweeping these together rather than
+file-by-file keeps the diff comprehensible as a single
+intentional cleanup.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
