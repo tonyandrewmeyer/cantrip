@@ -22,7 +22,7 @@ classifiers = [
 
 dependencies = [
     # TUI
-    "textual>=8.2.1",
+    "textual>=8.2.3",
     # LLM providers
     "google-genai>=1.69.0",        # Gemini
     "anthropic>=0.86.0",           # Claude
