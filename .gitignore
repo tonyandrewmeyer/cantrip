@@ -63,6 +63,7 @@ Thumbs.db
 .cantrip
 .cantrip-shm
 .cantrip-wal
+.cantrip-repomap.json
 
 # Claude Code local worktrees (experimental branches), runtime locks, and
 # per-user settings overrides (tool/command permissions specific to one dev)

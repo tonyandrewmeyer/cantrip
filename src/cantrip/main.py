@@ -131,8 +131,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         dest="max_iterations",
         help=(
-            "Phase 55.3 per-goal budget: hard cap on LLM request count "
-            "before the work queue blocks.  Also settable via "
+            "Per-goal budget: hard cap on LLM request count before the "
+            "work queue blocks.  Also settable via "
             "``CANTRIP_MAX_ITERATIONS`` env var."
         ),
     )
@@ -142,10 +142,10 @@ def parse_args() -> argparse.Namespace:
         default=None,
         dest="max_tokens",
         help=(
-            "Phase 55.3 per-goal budget: hard cap on total (prompt + "
-            "completion) tokens before the work queue blocks.  Splits "
-            "evenly across prompt and completion caps.  Also settable "
-            "via ``CANTRIP_MAX_TOKENS`` env var."
+            "Per-goal budget: hard cap on total (prompt + completion) "
+            "tokens before the work queue blocks.  Splits evenly across "
+            "prompt and completion caps.  Also settable via "
+            "``CANTRIP_MAX_TOKENS`` env var."
         ),
     )
     run_parser.add_argument(
@@ -160,10 +160,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="no_snapshots",
         help=(
-            "Phase 68.1: disable per-turn working-tree snapshots. "
-            "By default Cantrip commits the charm tree into a hidden "
-            "git repo before every user turn so `/undo` and `/redo` "
-            "can roll back agent edits.  Use this flag (or set "
+            "Disable per-turn working-tree snapshots.  By default "
+            "Cantrip commits the charm tree into a hidden git repo "
+            "before every user turn so `/undo` and `/redo` can roll "
+            "back agent edits.  Use this flag (or set "
             "`CANTRIP_SNAPSHOTS=false`) when working in a monorepo "
             "where snapshotting is too slow."
         ),
@@ -174,11 +174,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="yolo",
         help=(
-            "Phase 69.2: unattended mode. Auto-approve every Phase "
-            "68.2 `ask` permission for the session so CI scripts "
-            "don't stall on prompts.  `deny` rules still block — "
-            "review your `permissions.yaml` before a destructive "
-            "run.  Toggle mid-session with `/yolo`."
+            "Unattended mode: auto-approve every `ask` permission "
+            "for the session so CI scripts don't stall on prompts.  "
+            "`deny` rules still block — review your `permissions.yaml` "
+            "before a destructive run.  Toggle mid-session with "
+            "`/yolo`."
         ),
     )
     run_parser.add_argument(
@@ -188,12 +188,12 @@ def parse_args() -> argparse.Namespace:
         dest="ralph_max_iterations",
         metavar="N",
         help=(
-            "Phase 69.1: bounded iterate-until-green Ralph Loop. "
-            "Re-seed the agent up to N times until it emits "
-            "``STOP`` on a line by itself or stall detection trips. "
-            "0 (default) disables the loop; -1 is unlimited (still "
-            "bounded by stall detection and an internal safety "
-            "ceiling).  Most useful in ``--print`` runs."
+            "Bounded iterate-until-green Ralph Loop.  Re-seed the "
+            "agent up to N times until it emits ``STOP`` on a line "
+            "by itself or stall detection trips.  0 (default) "
+            "disables the loop; -1 is unlimited (still bounded by "
+            "stall detection and an internal safety ceiling).  Most "
+            "useful in ``--print`` runs."
         ),
     )
     run_parser.add_argument(
@@ -203,9 +203,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="GOAL",
         help=(
-            "Phase 67.3: non-interactive print mode. Run the autonomous "
-            "loop to accomplish ``<GOAL>`` without a TUI; emit progress "
-            "to stdout and exit when the work queue drains.  Combine with "
+            "Non-interactive print mode.  Run the autonomous loop to "
+            "accomplish ``<GOAL>`` without a TUI; emit progress to "
+            "stdout and exit when the work queue drains.  Combine with "
             "``--json`` for a script-friendly NDJSON event stream and "
             "``--yolo`` for unattended CI runs that auto-approve every "
             "ask permission."
@@ -216,11 +216,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="json_output",
         help=(
-            "Phase 67.3: emit ``cantrip.ui.events`` payloads as "
-            "newline-delimited JSON on stdout, one event per line.  Only "
-            "honoured with ``--print``.  See "
-            "``docs/docs/reference-cli.html`` for the documented event "
-            "schema."
+            "Emit ``cantrip.ui.events`` payloads as newline-delimited "
+            "JSON on stdout, one event per line.  Only honoured with "
+            "``--print``.  See ``docs/docs/reference-cli.html`` for "
+            "the documented event schema."
         ),
     )
     run_parser.add_argument(

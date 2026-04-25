@@ -1150,19 +1150,22 @@ class CantripAgent:
 
         Returns ``None`` when there's nothing to inject so the Jinja
         ``{% if repo_map %}`` block stays out of the prompt entirely.
-        Catches OS errors so a transient parse failure can't take down
-        the conversation loop.
+        Failures are swallowed: the repo-map is a navigation aid; it
+        must never break the conversation loop.  Anything more
+        targeted than a bare ``Exception`` would risk a future
+        regression where a new error type slips through and kills
+        every turn.
         """
         rm = self.repo_map
         if rm is None:
             return None
         try:
             rm.build()
-        except OSError as exc:
-            log.debug("repomap: build failed: %s", exc)
+            pressure = self._context_manager.context_pressure(self.state.messages)
+            rendered = rm.render_for_prompt(context_pressure=pressure)
+        except Exception as exc:  # noqa: BLE001 — best-effort; never block a turn.
+            log.warning("repomap: render skipped (%s: %s)", type(exc).__name__, exc)
             return None
-        pressure = self._context_manager.context_pressure(self.state.messages)
-        rendered = rm.render_for_prompt(context_pressure=pressure)
         return rendered or None
 
     # Tools that are always included when the provider has a tool limit.

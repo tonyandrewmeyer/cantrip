@@ -224,9 +224,7 @@ class SnapshotManager:
         try:
             exclude_path.parent.mkdir(parents=True, exist_ok=True)
             exclude_path.write_text(
-                "# Cantrip-managed exclusions (Phase 68.1).\n"
-                + "\n".join(_EXCLUDE_PATTERNS)
-                + "\n",
+                "# Cantrip-managed exclusions.\n" + "\n".join(_EXCLUDE_PATTERNS) + "\n",
             )
         except OSError as exc:
             log.warning("Failed to write snapshot exclude file: %s", exc)

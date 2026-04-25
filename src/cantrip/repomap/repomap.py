@@ -36,8 +36,12 @@ _PRESSURE_SHRINK_THRESHOLD = 0.80
 #: better off compacting than reading another bird's-eye view.
 _PRESSURE_DROP_THRESHOLD = 0.95
 
-_CACHE_FILENAME = "repomap.json"
-_CACHE_DIR = ".cantrip"
+# Sibling of the session SQLite file at ``<charm>/.cantrip``, matching
+# the ``.cantrip-audit.jsonl`` pattern.  Putting the repomap cache
+# *inside* ``.cantrip/`` would collide with the SQLite file when the
+# charm has an existing session — ``mkdir`` would raise
+# FileExistsError on every turn.
+_CACHE_FILENAME = ".cantrip-repomap.json"
 
 # Directories we never descend into when discovering source files.
 _SKIP_DIRECTORIES = {
@@ -254,7 +258,7 @@ class RepoMap:
     # -- cache ---------------------------------------------------------
 
     def _cache_path(self) -> Path:
-        return self._repo_root / _CACHE_DIR / _CACHE_FILENAME
+        return self._repo_root / _CACHE_FILENAME
 
     def _load_cache(self) -> None:
         path = self._cache_path()
@@ -275,11 +279,6 @@ class RepoMap:
 
     def _save_cache(self) -> None:
         path = self._cache_path()
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            log.debug("repomap: cannot create cache dir %s: %s", path.parent, exc)
-            return
         payload = {
             "version": 1,
             "generated_at": self._last_built_at,

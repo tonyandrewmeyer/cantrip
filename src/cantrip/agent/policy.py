@@ -562,8 +562,7 @@ class PolicyEnforcer:
             elif verdict is PolicyAction.REVIEW:
                 log.info(
                     "Tool %r requires human approval under policy %r; "
-                    "hidden from subagent until an approval rule is added "
-                    "(see Phase 68.2)",
+                    "hidden from subagent until an approval rule is added.",
                     tool.name,
                     self.policy.name,
                 )

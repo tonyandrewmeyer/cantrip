@@ -367,18 +367,32 @@ class TestRepoMap:
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
         rm.build()
-        cache = tmp_path / ".cantrip" / "repomap.json"
+        cache = tmp_path / ".cantrip-repomap.json"
         assert cache.exists()
         data = json.loads(cache.read_text(encoding="utf-8"))
         assert data["version"] == 1
         files = {entry["file"] for entry in data["entries"]}
         assert "src/charm.py" in files
 
+    def test_cache_path_does_not_collide_with_session_db(self, tmp_path: Path) -> None:
+        # The session SQLite store lives at ``<charm>/.cantrip``.  The
+        # repo-map cache must be a sibling so it doesn't try to mkdir
+        # over that file on every turn.
+        _make_charm(tmp_path)
+        # Pre-create a file at the would-be-collision path.
+        (tmp_path / ".cantrip").write_text("fake session db")
+        rm = RepoMap(tmp_path)
+        rm.build()
+        # Cache wrote successfully despite ``.cantrip`` existing as a file.
+        assert (tmp_path / ".cantrip-repomap.json").exists()
+        # The fake session DB is untouched.
+        assert (tmp_path / ".cantrip").read_text() == "fake session db"
+
     def test_cache_invalidates_on_mtime_change(self, tmp_path: Path) -> None:
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
         rm.build()
-        original_mtime = (tmp_path / ".cantrip" / "repomap.json").stat().st_mtime_ns
+        original_mtime = (tmp_path / ".cantrip-repomap.json").stat().st_mtime_ns
 
         # Mutate one file with a new symbol.
         target = tmp_path / "src" / "handlers.py"
