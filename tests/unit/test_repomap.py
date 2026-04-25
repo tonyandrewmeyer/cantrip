@@ -531,6 +531,35 @@ class TestRepoMap:
         # The user's own src/charm.py still ranks.
         assert "src/charm.py" in files
 
+    def test_dispatch_catches_handler_exceptions(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Last-resort safety net: even if a handler raises *before*
+        # its own try/except can catch (e.g. accessing a property),
+        # the dispatcher logs to diagnostics and returns a friendly
+        # SlashResult instead of letting the exception escape.
+        from unittest.mock import MagicMock, PropertyMock
+
+        from cantrip.agent import slash_commands
+
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+        agent = MagicMock()
+        # Simulate a property getter that raises (the kind of failure
+        # that would bypass handle_map's internal try/except).
+        type(agent).repo_map = PropertyMock(side_effect=ValueError("property exploded"))
+
+        result = slash_commands.dispatch(agent, "/map")
+
+        # We get a SlashResult, not a propagating exception.
+        assert result is not None
+        assert "something went wrong" in result.text.lower()
+        # And the diagnostic log captured the real stack.
+        log_path = tmp_path / "state" / "cantrip" / "diagnostics.log"
+        body = log_path.read_text(encoding="utf-8")
+        assert "ValueError: property exploded" in body
+        assert "/map" in body
+
 
 # ---------------------------------------------------------------------------
 # Helpers

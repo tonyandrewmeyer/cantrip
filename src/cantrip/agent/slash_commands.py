@@ -148,7 +148,24 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
     Returns ``None`` when *message* is not a slash command handled
     here — the caller decides whether to try a surface-specific
     handler or pass the message to the LLM.
+
+    Any exception raised by an individual handler is caught here,
+    persisted to the diagnostics log via
+    :func:`cantrip.diagnostics.report_internal_error`, and replaced
+    with a friendly chat string.  This is the last line of defence
+    so a slash bug never crashes the surface even if the
+    individual handler forgot its own try/except.
     """
+    verb = message.partition(" ")[0].lower()
+    try:
+        return _dispatch_inner(agent, message)
+    except Exception as exc:  # noqa: BLE001 — last-resort safety net.
+        chat_message = diagnostics.report_internal_error(verb or "slash dispatch", exc)
+        return SlashResult(text=chat_message)
+
+
+def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
+    """Route *message* to the matching slash handler — see :func:`dispatch`."""
     verb, _, args = message.partition(" ")
     verb = verb.lower()
     if verb in {"/help", "?"}:
