@@ -696,7 +696,7 @@ passes throughout.
 
 ---
 
-## Phase 48: Multimodal Observability Diagnostics
+## Phase 48: Multimodal Observability Diagnostics ✓
 
 **Goal:** Let the agent reason visually about the artefacts charm operators
 actually look at — Grafana panels, Tempo trace waterfalls, Juju status trees,
@@ -904,18 +904,25 @@ textually.
   CLIError surfaces cleanly, happy path with caption / data / image
   attachment / blocked-apps highlighting, empty model still renders).
 
-### 48.5 Low — Headless browser integration
+### 48.5 Low — Headless browser integration (deferred)
 
 - [ ] Optional `workload_screenshot` tool that spawns headless Chromium
   against a workload endpoint discovered by Phase 17.3 and returns the
-  rendered page as PNG
-- [ ] Off by default; requires an explicit config flag because of the
-  dependency footprint
+  rendered page as PNG.  **Deferred** — Playwright / pyppeteer pulls
+  in a Chromium binary the size of the rest of Cantrip's runtime
+  combined, and 48.2 / 48.3 / 48.4 already cover the operationally
+  important visual surfaces (Grafana panels, Tempo waterfalls, Juju
+  status trees).  Workload web UIs are the long tail; the cost-benefit
+  isn't there until a charm author asks for it.  Phase 17.3's
+  `workload_endpoint_test` already exercises HTTP endpoints
+  functionally without screenshots.  Re-open when (a) a concrete
+  case shows the agent needs to *see* a workload UI to debug it, or
+  (b) Playwright lands as a transitive dep elsewhere.
 
 **Exit criteria:** Providers support image input, the observability tools
 return diagnostically useful PNGs alongside text captions, and subagents can
 reason about Grafana/Tempo/Juju-status visually. `make check` passes
-throughout.
+throughout.  **Met:** 48.1–48.4 ship; 48.5 is explicitly deferred above.
 
 **Dependencies:**
 | Item | Depends On | Notes |
@@ -928,7 +935,7 @@ throughout.
 
 ---
 
-## Phase 49: Subprocess Sandboxing Hardening
+## Phase 49: Subprocess Sandboxing Hardening ✓
 
 **Goal:** Isolate subprocess execution so a hallucinated or compromised shell
 command cannot touch files or processes outside its intended scope. Today
@@ -1075,7 +1082,9 @@ applicable to Cantrip.
 **Exit criteria:** Untrusted subprocess execution runs under PID/mount
 namespace isolation with a per-tool network opt-out and deny-rule hardening
 against common bypass wrappers. macOS has a best-effort equivalent via
-`sandbox-exec`. `make check` passes throughout.
+`sandbox-exec`. `make check` passes throughout.  **Met:** 49.1 / 49.2 /
+49.4 / 49.5 ship; 49.3 is explicitly deferred above (the namespace-only
+sandbox covers the exit clause's "fall back" fallback).
 
 **Dependencies:**
 | Item | Depends On | Notes |
@@ -6010,8 +6019,8 @@ files only and does not dispatch on provider.
 | M45: MCP Client | 45 | Cantrip can attach third-party MCP servers with OAuth, elicitation, and category-scoped tool access |
 | M46: User Hooks | 46 | Users configure pre/post lifecycle hooks with conditional filters; PreCompact can block compaction |
 | M47: Best-of-N | 47 | High-value tasks optionally race multiple models and commit the test-pass-scored winner |
-| M48: Multimodal Debug | 48 | Providers accept images; Grafana/Tempo/Juju-status rendering tools return PNGs the agent reasons about |
-| M49: Sandboxed Shell | 49 | Untrusted subprocesses run under PID/mount namespaces with deny-rule and syscall hardening |
+| M48: Multimodal Debug | 48 ✓ | Providers accept images; Grafana/Tempo/Juju-status rendering tools return PNGs the agent reasons about |
+| M49: Sandboxed Shell | 49 ✓ | Untrusted subprocesses run under PID/mount namespaces with deny-rule and syscall hardening |
 | M50: Skills Interop | 50 | Standard-format skills import and export round-trip; MCP-aware skills resolve dependencies at load time |
 | M51: Team Research | 51 | Written assessment of whether and how Cantrip should support teams working on a charm, with architecture sketches and a next-step recommendation |
 | M52: Durable Subagents | 52 ✓ | Subagent LLM turns and tool calls checkpoint into SQLite; interrupted tasks resume from the last completed step instead of re-burning tokens |
