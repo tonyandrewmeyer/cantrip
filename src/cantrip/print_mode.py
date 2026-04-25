@@ -408,6 +408,10 @@ def run_print(args: argparse.Namespace) -> int:
         agent.state.editor_provider = getattr(args, "editor_provider", None) or None
         agent.state.editor_model = getattr(args, "editor_model", None) or None
 
+    # Phase 71.3: auto-commit-per-turn opt-out.
+    if bool(getattr(args, "no_auto_commit", False)):
+        agent.state.git_auto_commit = False
+
     ralph_max = int(getattr(args, "ralph_max_iterations", 0) or 0)
     agent.state.ralph_max_iterations = ralph_max
     ralph_config = RalphConfig(max_iterations=ralph_max) if ralph_max != 0 else None

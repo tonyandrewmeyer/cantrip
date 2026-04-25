@@ -163,6 +163,19 @@ class AgentState:
     # startup or directly on ``state.auto_lint``.
     auto_lint: bool = True
 
+    # Phase 71.3: auto-commit-per-turn.  When ``True``, every turn
+    # that mutates files lands as a discrete, attributed git commit
+    # with a ``Co-Authored-By: Cantrip`` trailer.  Pre-existing
+    # dirty work commits separately as ``chore(pre-cantrip): save
+    # in-progress work`` so the user's hand-edits stay distinct
+    # from the agent's edits in ``git log``.  Toggled via
+    # ``--no-auto-commit`` at startup or ``/auto-commit on|off``
+    # mid-session.  ``last_cantrip_commit_sha`` records the most
+    # recent agent-authored commit so future audit / undo logic
+    # can find it without re-walking ``git log``.
+    git_auto_commit: bool = True
+    last_cantrip_commit_sha: str | None = None
+
     # Phase 71.2: architect/editor two-model split.  When ``True``,
     # every LLM call in the conversation loop runs through two
     # passes: an *architect* pass on the main provider that emits

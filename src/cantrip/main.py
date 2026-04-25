@@ -248,6 +248,20 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     run_parser.add_argument(
+        "--no-auto-commit",
+        action="store_true",
+        dest="no_auto_commit",
+        help=(
+            "Disable Phase 71.3 per-turn auto-commit.  By default "
+            "every turn that mutates files lands as a discrete git "
+            "commit in the charm repo with a Cantrip co-author "
+            "trailer; pre-existing dirty work commits separately "
+            "as ``chore(pre-cantrip)``.  Use this flag (or "
+            "``/auto-commit off`` mid-session) when you prefer to "
+            "batch agent edits into your own commits."
+        ),
+    )
+    run_parser.add_argument(
         "--print",
         "-p",
         dest="print_goal",
@@ -752,6 +766,7 @@ def _run(args: argparse.Namespace) -> int:
             architect=bool(getattr(args, "architect", False)),
             editor_provider=getattr(args, "editor_provider", None),
             editor_model=getattr(args, "editor_model", None),
+            no_auto_commit=bool(getattr(args, "no_auto_commit", False)),
         )
         app.run()
         _print_update_panel(app.pending_update_info)

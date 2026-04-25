@@ -17,6 +17,7 @@ sections:
       - { slug: howto-mcp, label: "Configure MCP servers" }
       - { slug: howto-hooks, label: "Configure hooks" }
       - { slug: howto-undo, label: "Undo agent changes" }
+      - { slug: howto-auto-commit, label: "Auto-commit per turn" }
       - { slug: howto-permissions, label: "Configure tool permissions" }
       - { slug: howto-custom-commands, label: "Define custom slash commands" }
       - { slug: howto-plan-mode, label: "Use plan mode" }

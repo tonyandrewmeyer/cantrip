@@ -103,6 +103,7 @@ class CantripApp(App):
         architect: bool = False,
         editor_provider: str | None = None,
         editor_model: str | None = None,
+        no_auto_commit: bool = False,
     ):
         """Initialise the app."""
         super().__init__()
@@ -126,6 +127,7 @@ class CantripApp(App):
         self._architect = architect
         self._editor_provider = editor_provider
         self._editor_model = editor_model
+        self._no_auto_commit = no_auto_commit
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -358,6 +360,10 @@ class CantripApp(App):
                 self._agent.state.architect_mode = True
                 self._agent.state.editor_provider = self._editor_provider
                 self._agent.state.editor_model = self._editor_model
+
+            # Phase 71.3: auto-commit-per-turn opt-out.
+            if self._no_auto_commit:
+                self._agent.state.git_auto_commit = False
 
             # Set improvement mode if --improve was passed.
             if self._improve_path is not None:

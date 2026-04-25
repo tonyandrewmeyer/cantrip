@@ -86,6 +86,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/plan", "Enter read-only plan mode (no file edits or shells)"),
     CommandInfo("/build", "Leave plan mode and resume executing changes"),
     CommandInfo("/architect", "Toggle architect/editor two-model split"),
+    CommandInfo("/auto-commit", "Toggle per-turn auto-commit of agent edits"),
     CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
     CommandInfo("/map", "Show top-ranked repository files (`/map full` for everything)"),
@@ -256,6 +257,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_build(agent))
     if verb == "/architect":
         return SlashResult(text=handle_architect(agent, args))
+    if verb == "/auto-commit":
+        return SlashResult(text=handle_auto_commit(agent, args))
     if verb == "/yolo":
         return SlashResult(text=handle_yolo(agent, args))
     if verb == "/ralph":
@@ -624,6 +627,12 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "plan and produces tool calls.  Both passes appear "
         "separately in `/cost`.  Optional second token overrides the "
         "editor (e.g. `/architect on claude/claude-haiku-4-5-20251001`).\n"
+        "- `/auto-commit [on|off]` — toggle per-turn auto-commit.  "
+        "When on, every turn that mutates files lands as a discrete "
+        "git commit with a Cantrip co-author trailer; pre-existing "
+        "dirty work commits separately as `chore(pre-cantrip)`.  "
+        "`--no-auto-commit` on the command line disables it at "
+        "startup.\n"
         "- `/yolo [on|off]` — toggle unattended mode: every `ask` "
         "permission auto-approves for the rest of the session.  "
         "`deny` rules still block.  `--yolo` on the command line "
@@ -1341,6 +1350,47 @@ def _describe_editor(agent: CantripAgent) -> str:
     if light is not None:
         return f"{light.name}/{light.model_name}"
     return f"{agent.provider.name}/{agent.provider.model_name}"
+
+
+def handle_auto_commit(agent: CantripAgent, args: str) -> str:
+    """Phase 71.3 ``/auto-commit``: toggle per-turn auto-commit.
+
+    Bare ``/auto-commit`` flips the flag; ``/auto-commit on`` and
+    ``/auto-commit off`` are explicit.  When on, every turn that
+    mutates files lands as a discrete git commit with a Cantrip
+    co-author trailer; pre-existing dirty work commits separately
+    as ``chore(pre-cantrip): save in-progress work``.
+
+    The toggle is sticky for the session and not persisted; restart
+    Cantrip with ``--no-auto-commit`` to start fresh sessions with
+    auto-commit disabled.
+    """
+    token = args.strip().lower()
+    if token in {"on", "enable", "true", "1"}:
+        target = True
+    elif token in {"off", "disable", "false", "0"}:
+        target = False
+    elif token == "":
+        target = not agent.state.git_auto_commit
+    else:
+        return (
+            "Usage: `/auto-commit` toggles, `/auto-commit on` enables, "
+            "`/auto-commit off` disables."
+        )
+
+    if target == agent.state.git_auto_commit:
+        return f"Auto-commit is already {'on' if target else 'off'}."
+
+    agent.state.git_auto_commit = target
+    if target:
+        return (
+            "**Auto-commit on.**  Every turn that touches files will "
+            "land as a discrete git commit with a Cantrip co-author "
+            "trailer; pre-existing dirty work commits first."
+        )
+    return (
+        "**Auto-commit off.**  Agent edits stay in the working tree and you choose when to commit."
+    )
 
 
 def handle_yolo(agent: CantripAgent, args: str) -> str:
