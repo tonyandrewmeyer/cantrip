@@ -14,7 +14,7 @@ from cantrip.agent.state import AgentState, Decision
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -46,6 +46,13 @@ CREATE TABLE IF NOT EXISTS session (
     emergencies_attempted INTEGER NOT NULL DEFAULT 0,
     cycle_detected INTEGER NOT NULL DEFAULT 0,
     budget_exhausted INTEGER NOT NULL DEFAULT 0,
+    -- Phase 67.1: leaf message of the currently active conversation
+    -- branch.  NULL for sessions with no messages yet; rebuilt to the
+    -- highest message id at v12 migration time so existing transcripts
+    -- read as a degenerate single-branch tree.  Updated on every
+    -- record_message (advance) and delete_messages_from (rewind);
+    -- /branch overrides it directly.
+    active_head_message_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -94,6 +101,11 @@ CREATE TABLE IF NOT EXISTS messages (
     tool_results TEXT,
     metadata TEXT,
     token_usage_id INTEGER,
+    -- Phase 67.1: parent in the session tree.  NULL marks a root
+    -- (the first message recorded).  /branch and /undo move the
+    -- session.active_head_message_id pointer; the rows themselves
+    -- are never deleted by branching, only by /undo.
+    parent_turn_id INTEGER,
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -166,6 +178,26 @@ def _truncate(text: str, max_bytes: int = _MAX_CONTENT_BYTES) -> str:
     return truncated + f"\n\n[truncated — {len(text)} characters total]"
 
 
+def _message_row_to_dict(row: sqlite3.Row) -> dict[str, object]:
+    """Convert a messages-table row to the dict shape callers expect.
+
+    Centralised so :meth:`SessionStore.load_messages` (full tree) and
+    :meth:`SessionStore.load_active_branch` (single path) decode rows
+    the same way and gain new columns in lockstep.
+    """
+    return {
+        "id": row["id"],
+        "role": row["role"],
+        "content": row["content"],
+        "tool_calls": _safe_json_load(row["tool_calls"]),
+        "tool_results": _safe_json_load(row["tool_results"]),
+        "metadata": _safe_json_load(row["metadata"]),
+        "token_usage_id": row["token_usage_id"],
+        "parent_turn_id": row["parent_turn_id"],
+        "timestamp": row["timestamp"],
+    }
+
+
 def _memory_row_to_dict(row: sqlite3.Row) -> dict[str, object]:
     """Convert a memory table row to a plain dict with decoded JSON fields."""
     return {
@@ -217,6 +249,14 @@ class SessionStore:
             self._conn.commit()
         else:
             self._apply_migrations()
+
+        # Indexes that depend on columns added by migrations live here so
+        # ``executescript(_SCHEMA_SQL)`` above doesn't try to index a
+        # column that hasn't been added yet on a pre-migration database.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_messages_parent ON messages(parent_turn_id)"
+        )
+        self._conn.commit()
 
     def _apply_migrations(self) -> None:
         """Apply incremental schema migrations based on stored version."""
@@ -352,6 +392,48 @@ class SessionStore:
             if "budget_exhausted" not in cols:
                 self._conn.execute(
                     "ALTER TABLE session ADD COLUMN budget_exhausted INTEGER NOT NULL DEFAULT 0"
+                )
+
+        if current < 12:
+            # v12: session-tree rewind/branch (Phase 67.1).  Adds the
+            # tree topology — a parent pointer on every message and a
+            # leaf pointer on the session — and backfills both so an
+            # existing flat transcript reads as a degenerate single-
+            # branch tree (every row's parent is the previous row by
+            # id; the active head is the highest id).
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(messages)").fetchall()}
+            if "parent_turn_id" not in cols:
+                self._conn.execute("ALTER TABLE messages ADD COLUMN parent_turn_id INTEGER")
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_messages_parent ON messages(parent_turn_id)"
+                )
+                # Backfill: chain rows by ascending id.  LAG isn't
+                # available on every shipped sqlite version so we
+                # walk the rowset in Python — every existing transcript
+                # is small enough that a single pass is fine.
+                rows = self._conn.execute("SELECT id FROM messages ORDER BY id").fetchall()
+                previous: int | None = None
+                for row in rows:
+                    if previous is not None:
+                        self._conn.execute(
+                            "UPDATE messages SET parent_turn_id = ? WHERE id = ?",
+                            (previous, row[0]),
+                        )
+                    previous = row[0]
+            session_cols = {
+                r[1] for r in self._conn.execute("PRAGMA table_info(session)").fetchall()
+            }
+            if "active_head_message_id" not in session_cols:
+                self._conn.execute("ALTER TABLE session ADD COLUMN active_head_message_id INTEGER")
+            # Point the active head at the latest message so resume
+            # picks up exactly where it left off.
+            head_row = self._conn.execute("SELECT MAX(id) FROM messages").fetchone()
+            head_id = head_row[0] if head_row else None
+            session_row = self._conn.execute("SELECT id FROM session WHERE id = 1").fetchone()
+            if session_row is not None:
+                self._conn.execute(
+                    "UPDATE session SET active_head_message_id = ? WHERE id = 1",
+                    (head_id,),
                 )
 
         if current < SCHEMA_VERSION:
@@ -638,12 +720,21 @@ class SessionStore:
         metadata: dict[str, object] | None = None,
         token_usage_id: int | None = None,
     ) -> int:
-        """Persist a single conversation message. Returns the row ID."""
-        cursor = self._db.execute(
+        """Persist a single conversation message. Returns the row ID.
+
+        Phase 67.1: appends to whichever branch ``active_head_message_id``
+        currently points at.  The new row's ``parent_turn_id`` is the
+        head; the head is then advanced to the new row.  A NULL head
+        means an empty session, so the new row becomes the root.
+        """
+        db = self._db
+        head = self.get_active_head()
+        cursor = db.execute(
             """\
             INSERT INTO messages
-                (role, content, tool_calls, tool_results, metadata, token_usage_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (role, content, tool_calls, tool_results, metadata,
+                 token_usage_id, parent_turn_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 role,
@@ -652,11 +743,56 @@ class SessionStore:
                 json.dumps(tool_results) if tool_results else None,
                 json.dumps(metadata) if metadata else None,
                 token_usage_id,
+                head,
             ),
         )
-        self._db.commit()
         assert cursor.lastrowid is not None
-        return cursor.lastrowid
+        new_id = cursor.lastrowid
+        self.set_active_head(new_id, commit=False)
+        db.commit()
+        return new_id
+
+    def get_active_head(self) -> int | None:
+        """Return the message id at the leaf of the active branch.
+
+        ``None`` for sessions with no messages.  Used by
+        :meth:`record_message` (to chain new rows to the right parent),
+        :meth:`load_active_branch` (to walk back from the leaf), and
+        ``/branch`` / ``/tree`` (which override it).
+        """
+        row = self._db.execute(
+            "SELECT active_head_message_id FROM session WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            return None
+        head = row["active_head_message_id"]
+        return int(head) if head is not None else None
+
+    def set_active_head(self, message_id: int | None, *, commit: bool = True) -> None:
+        """Move the active-head pointer to *message_id*.
+
+        Creates the session row if it doesn't yet exist (the very first
+        ``record_message`` call lands here before
+        :meth:`save_session` has run).  ``commit=False`` lets callers
+        batch the head update with another write — :meth:`record_message`
+        and :meth:`delete_messages_from` use that to keep the message
+        insert / delete and the head update in a single transaction.
+        """
+        db = self._db
+        existing = db.execute("SELECT id FROM session WHERE id = 1").fetchone()
+        if existing is None:
+            db.execute(
+                "INSERT INTO session (id, active_head_message_id) VALUES (1, ?)",
+                (message_id,),
+            )
+        else:
+            db.execute(
+                "UPDATE session SET active_head_message_id = ?, "
+                "updated_at = datetime('now') WHERE id = 1",
+                (message_id,),
+            )
+        if commit:
+            db.commit()
 
     def delete_messages_from(self, message_id: int) -> int:
         """Delete the message with *message_id* and every later message.
@@ -665,35 +801,92 @@ class SessionStore:
         history alongside the in-memory ``state.messages`` slice.
         Returns the number of rows deleted so the caller can sanity-
         check that something actually moved.
+
+        Phase 67.1: also rewinds ``active_head_message_id`` to the
+        parent of the deleted row (or ``NULL`` when the deletion
+        empties the session).  Without this, the head would still
+        reference a row that no longer exists and the next
+        ``record_message`` would write a dangling parent pointer.
         """
-        cursor = self._db.execute(
+        db = self._db
+        parent_row = db.execute(
+            "SELECT parent_turn_id FROM messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+        new_head: int | None = None
+        if parent_row is not None and parent_row["parent_turn_id"] is not None:
+            new_head = int(parent_row["parent_turn_id"])
+        cursor = db.execute(
             "DELETE FROM messages WHERE id >= ?",
             (message_id,),
         )
-        self._db.commit()
-        return cursor.rowcount or 0
+        deleted = cursor.rowcount or 0
+        if deleted:
+            self.set_active_head(new_head, commit=False)
+        db.commit()
+        return deleted
 
     def load_messages(self) -> list[dict[str, object]]:
-        """Load all conversation messages ordered by ID."""
+        """Load every persisted conversation message in id order.
+
+        Phase 67.1: this returns the *full* tree (every branch ever
+        recorded), not just the active branch.  Resume / context
+        rebuilding wants only the active branch — call
+        :meth:`load_active_branch` for that.  ``/tree`` and the
+        transcript exporter call this method to render or summarise
+        every branch the user can switch back to.
+        """
         rows = self._db.execute("SELECT * FROM messages ORDER BY id").fetchall()
         result: list[dict[str, object]] = []
         for r in rows:
             try:
-                result.append(
-                    {
-                        "id": r["id"],
-                        "role": r["role"],
-                        "content": r["content"],
-                        "tool_calls": _safe_json_load(r["tool_calls"]),
-                        "tool_results": _safe_json_load(r["tool_results"]),
-                        "metadata": _safe_json_load(r["metadata"]),
-                        "token_usage_id": r["token_usage_id"],
-                        "timestamp": r["timestamp"],
-                    }
-                )
+                result.append(_message_row_to_dict(r))
             except (json.JSONDecodeError, KeyError) as exc:
                 log.warning("Skipping corrupt message row %s: %s", r["id"], exc)
         return result
+
+    def load_active_branch(self) -> list[dict[str, object]]:
+        """Load the messages on the currently active branch, in order.
+
+        Walks parent pointers from ``active_head_message_id`` back to a
+        ``NULL`` parent (the root) and reverses, yielding the
+        conversation as the agent saw it.  Returns an empty list when
+        the session has no messages or the head pointer is dangling
+        (which shouldn't happen under normal operation but the call
+        is on the resume path so it must not raise).
+
+        For sessions persisted before the v12 migration, the migration
+        backfilled a degenerate single-branch tree, so this returns the
+        same ordered list ``load_messages`` used to.
+        """
+        head = self.get_active_head()
+        if head is None:
+            return []
+        chain: list[dict[str, object]] = []
+        seen: set[int] = set()
+        current: int | None = head
+        while current is not None:
+            if current in seen:
+                # Cycle guard.  A well-formed tree can't cycle, but a
+                # corrupt or hand-edited DB shouldn't crash the agent.
+                log.warning("Cycle detected in message tree at id %s", current)
+                break
+            seen.add(current)
+            row = self._db.execute(
+                "SELECT * FROM messages WHERE id = ?",
+                (current,),
+            ).fetchone()
+            if row is None:
+                log.warning("Active branch references missing message id %s", current)
+                break
+            try:
+                chain.append(_message_row_to_dict(row))
+            except (json.JSONDecodeError, KeyError) as exc:
+                log.warning("Skipping corrupt message row %s on active branch: %s", current, exc)
+            parent = row["parent_turn_id"]
+            current = int(parent) if parent is not None else None
+        chain.reverse()
+        return chain
 
     # ── Subagent message recording ───────────────────────────────────────
 
