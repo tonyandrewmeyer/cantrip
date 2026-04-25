@@ -105,7 +105,9 @@ skopeo copy --insecure-policy --dest-tls-verify=false \
   docker://localhost:32000/my-app:latest
 ```
 
-Use the `skopeo_registry_push` tool. The default registry is `localhost:32000` — the MicroK8s built-in registry.
+Use the `skopeo_registry_push` tool. The default registry is `localhost:32000` — but **call `local_registry_status` first** to confirm a local registry is reachable. Only **MicroK8s with the `registry` add-on** ships one out of the box; on the Canonical `k8s` snap you must either deploy a registry charm into the model, push to a public registry like `ghcr.io`, or import the rock directly into the cluster's containerd via `sudo k8s ctr images import <rock>`.
+
+If the cluster will repeatedly pull a public image, mirror it once with `registry_mirror` so subsequent deploys go through the local registry instead of hitting Docker Hub rate limits.
 
 ### 7. Pack the Charm
 

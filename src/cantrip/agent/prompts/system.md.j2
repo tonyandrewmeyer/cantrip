@@ -209,6 +209,10 @@ K8s charms need an OCI image as a container resource. Choose the right approach:
 1. `registry_search` — find candidate images on Docker Hub
 2. `registry_image_info` — inspect tags, sizes, architectures, and update dates
 
+**Verifying an image before deploy** — call `registry_image_exists` once you have an exact `<registry>/<repo>:<tag>` ref. It runs `skopeo inspect` (no Docker daemon) and short-circuits the `ImagePullBackOff` loop when the tag was never pushed or the repo doesn't exist on the chosen registry.
+
+**Local-registry substrate caveat** — `localhost:32000` only works on **MicroK8s with the registry add-on enabled**. The Canonical `k8s` snap has no built-in registry. Call `local_registry_status` before assuming a local registry exists; on `k8s`-snap dev boxes, mirror to a public registry (ghcr.io) or deploy a registry charm into the model. On rate-limited public registries (Docker Hub), `registry_mirror` copies an image into the local registry once so subsequent deploys pull from `localhost:32000` instead of going over the public internet.
+
 **Evaluation heuristics:**
 - Prefer **official** images (`[official]` badge) over community alternatives
 - Prefer images **updated recently** (within the last few months)

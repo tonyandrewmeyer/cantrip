@@ -5,6 +5,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **OCI image tooling: pre-deploy verification, mirror, local-registry probe.**
+  Three new daemon-free image tools land in
+  ``cantrip.agent.tools.rockcraft``, all wrapping skopeo (no Docker
+  engine touched):
+  - ``registry_image_exists(image_ref)`` runs ``skopeo inspect`` and
+    surfaces digest / architecture / layer count, or the verbatim
+    skopeo error (``manifest unknown``, ``name unknown``, ``no such
+    host``).  Use before ``juju_deploy`` to short-circuit the
+    ``ImagePullBackOff`` loop when the image reference is wrong or
+    the tag was never pushed.
+  - ``registry_mirror(source, target?)`` runs ``skopeo copy`` from
+    any registry to any other.  Default target is
+    ``localhost:32000/<basename>:<tag>`` derived from the source, so
+    "mirror docker.io into the local registry" is one call.  Auto-
+    enables ``--src/dest-tls-verify=false`` for ``localhost:``
+    endpoints (the microk8s registry serves plain HTTP).
+  - ``local_registry_status(url?)`` probes ``/v2/`` over HTTP then
+    HTTPS and reports whether a local registry is reachable.
+    Substrate-aware: detects microk8s vs the Canonical ``k8s`` snap
+    on PATH and tailors the failure message ("enable the microk8s
+    add-on" vs "k8s snap has none — push to ghcr.io, deploy a
+    registry charm, or ``sudo k8s ctr images import``").
+  Wired into RESEARCH / BUILD / DEPLOY subagent categories; system
+  prompt and ``twelve-factor`` skill updated with the substrate
+  caveat so the agent stops assuming ``localhost:32000`` is always
+  there.  Twelve unit tests cover the three tools end-to-end.
 - **``fix-broken-juju-k8s`` skill and ``concierge_restore`` tool.**
   When Juju, the ``k8s`` snap, microk8s, LXD, or concierge wedges
   on a dev machine, the agent loads the new skill to triage (snap

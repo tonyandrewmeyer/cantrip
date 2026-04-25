@@ -5,9 +5,13 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
+import httpx
 import pytest
 
 from cantrip.agent.tools.rockcraft import (
+    LocalRegistryStatusTool,
+    RegistryImageExistsTool,
+    RegistryMirrorTool,
     RockcraftInitTool,
     RockcraftPackTool,
     SkopeoRegistryPushTool,
@@ -437,3 +441,346 @@ class TestSkopeoRegistryPushTool:
 
         assert result.success
         assert result.data["image_url"] == "localhost:32000/my-app:latest"
+
+
+class TestRegistryImageExistsTool:
+    """Tests for RegistryImageExistsTool — short-circuits ImagePullBackOff."""
+
+    @pytest.fixture
+    def tool(self):
+        return RegistryImageExistsTool()
+
+    @pytest.mark.asyncio
+    async def test_skopeo_not_installed(self, tool):
+        """Error when skopeo is not on PATH."""
+        with mock.patch("cantrip.agent.tools.rockcraft.shutil.which", return_value=None):
+            result = await tool.execute(image_ref="docker.io/library/redis:7-alpine")
+
+        assert not result.success
+        assert "skopeo not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_image_exists_returns_metadata(self, tool):
+        """Successful inspect returns digest, architecture, layer count."""
+        manifest = {
+            "Digest": "sha256:abcd1234",
+            "Architecture": "amd64",
+            "Created": "2026-01-01T00:00:00Z",
+            "Layers": ["layer1", "layer2", "layer3"],
+        }
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = '{"Digest": "sha256:abcd1234", "Architecture": "amd64", "Created": "2026-01-01T00:00:00Z", "Layers": ["layer1", "layer2", "layer3"]}'  # noqa: E501
+        mock_result.stderr = ""
+        del manifest  # consumed via the JSON string above
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                return_value="/usr/bin/skopeo",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.subprocess.run",
+                return_value=mock_result,
+            ),
+        ):
+            result = await tool.execute(image_ref="docker.io/library/redis:7-alpine")
+
+        assert result.success
+        assert result.data["exists"] is True
+        assert result.data["digest"] == "sha256:abcd1234"
+        assert result.data["architecture"] == "amd64"
+        assert result.data["layers"] == 3
+
+    @pytest.mark.asyncio
+    async def test_strips_docker_prefix(self, tool):
+        """Accepts ``docker://...`` refs and feeds them as bare to skopeo."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "{}"
+        mock_result.stderr = ""
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                return_value="/usr/bin/skopeo",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            await tool.execute(image_ref="docker://docker.io/library/redis:7")
+
+        argv = mock_run.call_args[0][0]
+        assert "docker://docker.io/library/redis:7" in argv
+        # Make sure we didn't accidentally end up with a double prefix.
+        assert "docker://docker://docker.io/library/redis:7" not in argv
+
+    @pytest.mark.asyncio
+    async def test_localhost_auto_insecure(self, tool):
+        """Localhost references auto-enable ``--tls-verify=false``."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "{}"
+        mock_result.stderr = ""
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                return_value="/usr/bin/skopeo",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            await tool.execute(image_ref="localhost:32000/my-app:latest")
+
+        argv = mock_run.call_args[0][0]
+        assert "--tls-verify=false" in argv
+
+    @pytest.mark.asyncio
+    async def test_image_not_found_reports_clear_error(self, tool):
+        """``manifest unknown`` from skopeo surfaces verbatim."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "manifest unknown\n"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                return_value="/usr/bin/skopeo",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.subprocess.run",
+                return_value=mock_result,
+            ),
+        ):
+            result = await tool.execute(image_ref="docker.io/library/nonexistent:99")
+
+        assert not result.success
+        assert "manifest unknown" in result.error
+        assert result.data["exists"] is False
+
+
+class TestRegistryMirrorTool:
+    """Tests for RegistryMirrorTool — copy from public to local registry."""
+
+    @pytest.fixture
+    def tool(self):
+        return RegistryMirrorTool()
+
+    @pytest.mark.asyncio
+    async def test_skopeo_not_installed(self, tool):
+        with mock.patch("cantrip.agent.tools.rockcraft.shutil.which", return_value=None):
+            result = await tool.execute(source="docker.io/library/redis:7-alpine")
+
+        assert not result.success
+        assert "skopeo not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_default_target_derived_from_source(self, tool):
+        """No ``target`` → mirror to ``localhost:32000/<basename>``."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                return_value="/usr/bin/skopeo",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            result = await tool.execute(source="docker.io/library/redis:7-alpine")
+
+        assert result.success
+        assert result.data["target"] == "localhost:32000/redis:7-alpine"
+        argv = mock_run.call_args[0][0]
+        assert "docker://docker.io/library/redis:7-alpine" in argv
+        assert "docker://localhost:32000/redis:7-alpine" in argv
+        # Local target → dest TLS verification off.
+        assert "--dest-tls-verify=false" in argv
+        # Public source → src TLS verification on (no flag).
+        assert "--src-tls-verify=false" not in argv
+
+    @pytest.mark.asyncio
+    async def test_default_tag_when_source_has_none(self, tool):
+        """``source: nginx`` (no tag) defaults to ``latest`` on target."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                return_value="/usr/bin/skopeo",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.subprocess.run",
+                return_value=mock_result,
+            ),
+        ):
+            result = await tool.execute(source="docker.io/library/nginx")
+
+        assert result.data["target"] == "localhost:32000/nginx:latest"
+
+    @pytest.mark.asyncio
+    async def test_explicit_target_used_verbatim(self, tool):
+        """``target='ghcr.io/...'`` overrides the default localhost target."""
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                return_value="/usr/bin/skopeo",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.subprocess.run",
+                return_value=mock_result,
+            ) as mock_run,
+        ):
+            result = await tool.execute(
+                source="docker.io/library/redis:7",
+                target="ghcr.io/me/redis:7",
+            )
+
+        assert result.data["target"] == "ghcr.io/me/redis:7"
+        argv = mock_run.call_args[0][0]
+        # No insecure flags — both ends are real registries with TLS.
+        assert "--src-tls-verify=false" not in argv
+        assert "--dest-tls-verify=false" not in argv
+
+    @pytest.mark.asyncio
+    async def test_failure_surfaces_skopeo_stderr(self, tool):
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "unauthorized: access denied"
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                return_value="/usr/bin/skopeo",
+            ),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.subprocess.run",
+                return_value=mock_result,
+            ),
+        ):
+            result = await tool.execute(source="ghcr.io/private/image:1")
+
+        assert not result.success
+        assert "unauthorized" in result.error
+
+
+class TestLocalRegistryStatusTool:
+    """Tests for LocalRegistryStatusTool — substrate-aware probe."""
+
+    @pytest.fixture
+    def tool(self):
+        return LocalRegistryStatusTool()
+
+    @pytest.mark.asyncio
+    async def test_registry_reachable_http(self, tool):
+        """200 on ``/v2/`` → registry is alive."""
+        mock_response = mock.MagicMock()
+        mock_response.status_code = 200
+        mock_client = mock.MagicMock()
+        mock_client.__enter__ = mock.MagicMock(return_value=mock_client)
+        mock_client.__exit__ = mock.MagicMock(return_value=False)
+        mock_client.get = mock.MagicMock(return_value=mock_response)
+
+        with (
+            mock.patch("cantrip.agent.tools.rockcraft.httpx.Client", return_value=mock_client),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/microk8s" if b == "microk8s" else None,
+            ),
+        ):
+            result = await tool.execute()
+
+        assert result.success
+        assert result.data["available"] is True
+        assert result.data["substrate_hint"] == "microk8s"
+        assert result.data["scheme"] == "http"
+
+    @pytest.mark.asyncio
+    async def test_registry_reachable_via_https_fallback(self, tool):
+        """HTTP fails, HTTPS returns 401 → still considered reachable."""
+        responses = [httpx.ConnectError("nope"), mock.MagicMock(status_code=401)]
+        mock_client = mock.MagicMock()
+        mock_client.__enter__ = mock.MagicMock(return_value=mock_client)
+        mock_client.__exit__ = mock.MagicMock(return_value=False)
+
+        def _get(_url):
+            r = responses.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        mock_client.get = _get
+
+        with (
+            mock.patch("cantrip.agent.tools.rockcraft.httpx.Client", return_value=mock_client),
+            mock.patch("cantrip.agent.tools.rockcraft.shutil.which", return_value=None),
+        ):
+            result = await tool.execute()
+
+        assert result.success
+        assert result.data["scheme"] == "https"
+
+    @pytest.mark.asyncio
+    async def test_no_registry_on_k8s_snap_explains_alternatives(self, tool):
+        """k8s snap with no registry → error names the three options."""
+        mock_client = mock.MagicMock()
+        mock_client.__enter__ = mock.MagicMock(return_value=mock_client)
+        mock_client.__exit__ = mock.MagicMock(return_value=False)
+        mock_client.get = mock.MagicMock(side_effect=httpx.ConnectError("no host"))
+
+        with (
+            mock.patch("cantrip.agent.tools.rockcraft.httpx.Client", return_value=mock_client),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/k8s" if b == "k8s" else None,
+            ),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert result.data["available"] is False
+        assert result.data["substrate_hint"] == "k8s"
+        # Surfaces all three escape hatches.
+        assert "ghcr.io" in result.error or "public registry" in result.error
+        assert "registry-k8s" in result.error or "registry charm" in result.error
+        assert "ctr images import" in result.error
+
+    @pytest.mark.asyncio
+    async def test_no_registry_on_microk8s_suggests_enabling_addon(self, tool):
+        """microk8s with the registry add-on disabled → suggest enabling it."""
+        mock_client = mock.MagicMock()
+        mock_client.__enter__ = mock.MagicMock(return_value=mock_client)
+        mock_client.__exit__ = mock.MagicMock(return_value=False)
+        mock_client.get = mock.MagicMock(side_effect=httpx.ConnectError("no host"))
+
+        with (
+            mock.patch("cantrip.agent.tools.rockcraft.httpx.Client", return_value=mock_client),
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/microk8s" if b == "microk8s" else None,
+            ),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "microk8s enable registry" in result.error

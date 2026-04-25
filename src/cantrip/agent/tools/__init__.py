@@ -150,6 +150,9 @@ def build_tools(
     )
     from cantrip.agent.tools.report import TestReportTool
     from cantrip.agent.tools.rockcraft import (
+        LocalRegistryStatusTool,
+        RegistryImageExistsTool,
+        RegistryMirrorTool,
         RockcraftInitTool,
         RockcraftPackTool,
         SkopeoRegistryPushTool,
@@ -216,6 +219,9 @@ def build_tools(
         RockcraftInitTool(),
         RockcraftPackTool(),
         SkopeoRegistryPushTool(),
+        RegistryImageExistsTool(),
+        RegistryMirrorTool(),
+        LocalRegistryStatusTool(),
         # Environment
         ConciergePrepareTool(),
         ConciergeStatusTool(),
