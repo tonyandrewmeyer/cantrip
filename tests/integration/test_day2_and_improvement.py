@@ -449,7 +449,11 @@ class TestBuildResumeSummary:
 
     @pytest.mark.asyncio
     async def test_summary_injected_into_messages(self, tmp_path: Path):
-        """build_resume_summary appends the summary as a USER message."""
+        """build_resume_summary appends the summary as a SYSTEM message.
+
+        Phase 31.11 switched from USER to SYSTEM to avoid breaking the
+        alternating user/assistant pattern that some providers require.
+        """
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
         agent.state.charm_name = "redis-k8s"
@@ -458,5 +462,5 @@ class TestBuildResumeSummary:
         agent.build_resume_summary()
 
         assert len(agent.state.messages) == initial_count + 1
-        assert agent.state.messages[-1].role.value == "user"
+        assert agent.state.messages[-1].role.value == "system"
         assert "Session resumed" in agent.state.messages[-1].content
