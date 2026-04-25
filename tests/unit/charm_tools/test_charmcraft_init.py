@@ -75,6 +75,25 @@ class TestCharmcraftInitGitignore:
         assert content.count(".cantrip") == 1
         assert content.count(".source/") == 1
 
+    @pytest.mark.asyncio
+    async def test_path_already_named_after_charm_is_not_nested(self, tool, temp_dir):
+        """When path already ends with name, scaffold in-place — no name/name nesting.
+
+        Regression: sprint mode pre-sets state.charm_path to ``workspace/charm_name``,
+        so the agent calls ``charmcraft_init(path=charm_path, name=charm_name)`` and
+        we should not create another ``charm_name`` subdirectory below it.
+        """
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+
+        with self._mock_charmcraft():
+            result = await tool.execute(name="test-charm", path=str(charm_dir))
+
+        assert result.success
+        assert result.data["path"] == str(charm_dir)
+        assert not (charm_dir / "test-charm").exists()
+        assert (charm_dir / ".gitignore").exists()
+
 
 class TestCharmcraftInitOpsTracing:
     """Tests for ops-tracing injection in CharmcraftInitTool."""

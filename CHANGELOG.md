@@ -749,6 +749,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   frames.
 
 ### Fixed
+- **``charmcraft_init`` no longer creates a redundant
+  ``charm_name/charm_name`` directory.**  Sprint mode pre-sets
+  ``state.charm_path`` to ``workspace/charm_name`` so subsequent
+  tasks have a stable cwd, but the tool then unconditionally
+  appended ``name`` to ``path``, scaffolding into
+  ``workspace/charm_name/charm_name`` and leaving the outer
+  directory holding only Cantrip metadata and a stray ``git_init``.
+  ``CharmcraftInitTool.execute`` now skips the append when
+  ``Path(path).name == name``, preserving the parent-dir →
+  ``parent/name`` semantics for callers that pass a workspace
+  while making the tool idempotent against the pre-named case.
 - **``FireworksProvider.complete()`` auto-streams past the 4 096-token
   non-streaming cap.**  Fireworks rejects non-streaming requests
   with ``max_tokens > 4096`` (``"Requests with max_tokens > 4096
