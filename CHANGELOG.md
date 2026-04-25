@@ -5,6 +5,34 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Ralph Loop — bounded iterate-until-green outer loop
+  (Phase 69.1).**  New ``cantrip run --ralph N`` flag (and
+  ``/ralph [N|off]`` slash command) wraps the autonomous loop
+  in a refinement pass that re-feeds the goal up to N times
+  until the agent emits ``STOP`` on a line by itself.
+  ``--ralph -1`` runs unlimited (bounded internally by a
+  safety ceiling of 200 iterations and stall detection).
+  Stall detection compares response signatures (SHA-256 hash
+  of trimmed reply, truncated) and working-tree signatures
+  (``git rev-parse HEAD`` + ``git status --porcelain``,
+  hashed) across consecutive iterations — two
+  indistinguishable passes exit early with status 1 rather
+  than burn the iteration cap on no-ops.  When git isn't
+  available the loop falls back to response-only stall
+  detection.  Re-seed prompts preserve the original user
+  goal verbatim across iterations (capped at 1500-char
+  iteration-N-1 summary) so the target doesn't drift.
+  Four new event types — ``ralph_iteration_started``,
+  ``ralph_converged``, ``ralph_stalled``,
+  ``ralph_exhausted`` — frame the loop in the print-mode
+  NDJSON stream and the TUI progress display.  Composes with
+  ``--print --json --yolo`` for unattended CI refinement
+  runs that fail the build when convergence doesn't happen.
+  Documented in the new
+  [Run a Ralph loop](docs/docs/howto-ralph.html) how-to with
+  CI-composition examples, the convergence-signal matching
+  rules, and the prompt shape on iteration N.
+
 - **Non-interactive print mode for CI and shell pipelines
   (Phase 67.3).**  New ``cantrip run --print "<goal>"`` (alias
   ``-p``) drives one goal through the autonomous loop with no

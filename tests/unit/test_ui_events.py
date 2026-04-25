@@ -261,6 +261,10 @@ class TestBusBroadcastContract:
             ).type,
             events.permission_decided(tool_name="fs_read", outcome="deny", reason="x").type,
             events.permission_auto_approved(tool_name="fs_read", reason="x").type,
+            events.ralph_iteration_started(iteration=1, max_iterations=5, goal="x").type,
+            events.ralph_converged(iteration=1, signal="STOP").type,
+            events.ralph_stalled(iteration=2, reason="x").type,
+            events.ralph_exhausted(iteration=3, cap=3).type,
         }
         enum_types = set(events.EventType)
         assert factory_types == enum_types

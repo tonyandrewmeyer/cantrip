@@ -182,6 +182,21 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     run_parser.add_argument(
+        "--ralph",
+        type=int,
+        default=0,
+        dest="ralph_max_iterations",
+        metavar="N",
+        help=(
+            "Phase 69.1: bounded iterate-until-green Ralph Loop. "
+            "Re-seed the agent up to N times until it emits "
+            "``STOP`` on a line by itself or stall detection trips. "
+            "0 (default) disables the loop; -1 is unlimited (still "
+            "bounded by stall detection and an internal safety "
+            "ceiling).  Most useful in ``--print`` runs."
+        ),
+    )
+    run_parser.add_argument(
         "--print",
         "-p",
         dest="print_goal",

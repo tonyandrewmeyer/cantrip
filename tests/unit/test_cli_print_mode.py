@@ -39,6 +39,7 @@ def _make_args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
         "yolo": False,
         "print_goal": "build a charm",
         "json_output": False,
+        "ralph_max_iterations": 0,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -373,10 +374,11 @@ class TestRunPrint:
         # ``AsyncMock``.  The side_effect must be a coroutine function
         # for AsyncMock to await it; a plain function that returns a
         # coroutine would leak unawaited.
-        async def _capture_run(agent, goal, json_output):
+        async def _capture_run(agent, goal, json_output, ralph_config=None):
             captured["yolo"] = agent.state.yolo_mode
             captured["goal"] = goal
             captured["json"] = json_output
+            captured["ralph"] = ralph_config
             return 0
 
         with (
@@ -577,6 +579,7 @@ class TestMainDispatch:
             path=tmp_path,
             print_goal="do it",
             json_output=False,
+            ralph_max_iterations=0,
         )
         with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}, clear=False):
             rc = main._run(args)

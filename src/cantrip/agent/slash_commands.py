@@ -82,6 +82,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/plan", "Enter read-only plan mode (no file edits or shells)"),
     CommandInfo("/build", "Leave plan mode and resume executing changes"),
     CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
+    CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -207,6 +208,8 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_build(agent))
     if verb == "/yolo":
         return SlashResult(text=handle_yolo(agent, args))
+    if verb == "/ralph":
+        return SlashResult(text=handle_ralph(agent, args))
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -549,6 +552,10 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "permission auto-approves for the rest of the session.  "
         "`deny` rules still block.  `--yolo` on the command line "
         "enables it at startup.\n"
+        "- `/ralph [N|off]` — bounded iterate-until-green loop "
+        "(Ralph).  Re-feeds the goal up to N times until the agent "
+        "emits `STOP` or stall detection trips.  Engages inside "
+        "`cantrip run --print --ralph N`.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
     custom = getattr(agent, "custom_commands", None) if agent is not None else None
@@ -1031,6 +1038,64 @@ def handle_yolo(agent: CantripAgent, args: str) -> str:
             "Flip back with `/yolo off`."
         )
     return "**Yolo mode off.**  `ask` rules prompt again as usual."
+
+
+def handle_ralph(agent: CantripAgent, args: str) -> str:
+    """Phase 69.1 ``/ralph N``: enable the bounded iterate-until-green loop.
+
+    Stamps ``state.ralph_max_iterations`` on the agent so the next
+    print-mode invocation (or future TUI integration) picks it up.
+    Bare ``/ralph`` reports the current setting.  ``/ralph off``
+    or ``/ralph 0`` disables.  Any positive integer is the new cap;
+    ``-1`` is unlimited.
+
+    Mid-session in the TUI the flag is informational — the actual
+    refinement loop only fires inside ``cantrip run --print``
+    (where there's no human to drive iteration manually).  We still
+    accept the slash command in the TUI so a session can record
+    its intended Ralph cap for later or to flip the audit-trail
+    flag explicitly.
+    """
+    token = args.strip().lower()
+    current = agent.state.ralph_max_iterations
+    if token == "":
+        if current == 0:
+            return (
+                "Ralph loop is **off**.  Run `/ralph N` to set a cap, or "
+                "`cantrip run --ralph N --print '<goal>'` for unattended "
+                "refinement."
+            )
+        if current < 0:
+            return "Ralph loop is **on** with no iteration cap (`-1` = unlimited)."
+        return f"Ralph loop is **on** with a cap of {current} iteration(s)."
+
+    if token in {"off", "disable", "false", "0"}:
+        new_value = 0
+    else:
+        try:
+            new_value = int(token)
+        except ValueError:
+            return (
+                "Usage: `/ralph` shows the cap, `/ralph N` sets it, "
+                "`/ralph off` or `/ralph 0` disables, `/ralph -1` is "
+                "unlimited."
+            )
+
+    agent.state.ralph_max_iterations = new_value
+
+    if new_value == 0:
+        return "**Ralph loop off.**  Single-shot runs only."
+    if new_value < 0:
+        return (
+            "**Ralph loop on (unlimited).**  Loop until the agent emits "
+            "`STOP` or stall detection trips.  Bounded internally by a "
+            "safety ceiling so a stuck agent can't run forever."
+        )
+    return (
+        f"**Ralph loop on, cap = {new_value}.**  Re-feeds the goal up to "
+        f"{new_value} time(s) until the agent emits `STOP` on its own "
+        "line."
+    )
 
 
 def _handle_share(agent: CantripAgent) -> SlashResult:

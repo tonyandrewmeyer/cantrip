@@ -43,6 +43,10 @@ class EventType(enum.StrEnum):
     SNAPSHOT_RESTORED = "snapshot_restored"
     PERMISSION_DECIDED = "permission_decided"
     PERMISSION_AUTO_APPROVED = "permission_auto_approved"
+    RALPH_ITERATION_STARTED = "ralph_iteration_started"
+    RALPH_CONVERGED = "ralph_converged"
+    RALPH_STALLED = "ralph_stalled"
+    RALPH_EXHAUSTED = "ralph_exhausted"
 
 
 @dataclass(frozen=True)
@@ -610,4 +614,74 @@ def mcp_elicitation_request(
             "requested_schema": requested_schema,
             "url": url,
         },
+    )
+
+
+def ralph_iteration_started(
+    *,
+    iteration: int,
+    max_iterations: int | None,
+    goal: str,
+) -> Event:
+    """Build a ``RALPH_ITERATION_STARTED`` event.
+
+    Phase 69.1: emitted at the top of each Ralph refinement pass
+    (Kimi-style bounded iterate-until-green).  ``max_iterations``
+    is ``None`` for unlimited runs (``--ralph -1``) so the TUI can
+    render ``N/?`` instead of ``N/-1``.  ``goal`` is the original
+    user prompt — kept verbatim across iterations so the audit
+    trail records the actual target instead of the re-seeded
+    framing.
+    """
+    return Event(
+        type=EventType.RALPH_ITERATION_STARTED,
+        payload={
+            "iteration": iteration,
+            "max_iterations": max_iterations,
+            "goal": goal,
+        },
+    )
+
+
+def ralph_converged(*, iteration: int, signal: str) -> Event:
+    """Build a ``RALPH_CONVERGED`` event.
+
+    Phase 69.1: emitted when the agent's response on iteration
+    ``N`` contains the convergence signal (default ``STOP``).
+    Pairs with ``RALPH_ITERATION_STARTED`` for the
+    "iteration N of M" status line.
+    """
+    return Event(
+        type=EventType.RALPH_CONVERGED,
+        payload={"iteration": iteration, "signal": signal},
+    )
+
+
+def ralph_stalled(*, iteration: int, reason: str) -> Event:
+    """Build a ``RALPH_STALLED`` event.
+
+    Phase 69.1: emitted when two consecutive iterations produce an
+    identical response and (when git is available) leave the
+    working tree unchanged.  Stops the loop early so a
+    misbehaving session doesn't burn the iteration cap on
+    no-ops.  ``reason`` is the human-readable explanation
+    surfaced in the chat.
+    """
+    return Event(
+        type=EventType.RALPH_STALLED,
+        payload={"iteration": iteration, "reason": reason},
+    )
+
+
+def ralph_exhausted(*, iteration: int, cap: int) -> Event:
+    """Build a ``RALPH_EXHAUSTED`` event.
+
+    Phase 69.1: emitted when the iteration cap fires before the
+    convergence signal does and stall detection didn't trip
+    either.  ``cap`` is the user-supplied cap (``-1`` for
+    unlimited; the safety ceiling is internal and not surfaced).
+    """
+    return Event(
+        type=EventType.RALPH_EXHAUSTED,
+        payload={"iteration": iteration, "cap": cap},
     )

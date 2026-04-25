@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import TaskCategory, TaskStatus
+from cantrip.agent.ralph import RalphConfig, RalphOutcome, run_ralph
 from cantrip.hooks import HookRunner
 from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError
@@ -92,6 +93,21 @@ def _emit_progress(event: ui_events.Event) -> None:
     elif et == ui_events.EventType.POLICY_RATE_LIMITED:
         cap = p.get("cap", "?")
         sys.stdout.write(f"[rate-limit] policy cap reached ({cap})\n")
+    elif et == ui_events.EventType.RALPH_ITERATION_STARTED:
+        n = p.get("iteration", "?")
+        m = p.get("max_iterations") or "∞"
+        sys.stdout.write(f"[ralph] iteration {n}/{m}\n")
+    elif et == ui_events.EventType.RALPH_CONVERGED:
+        n = p.get("iteration", "?")
+        sig = p.get("signal", "?")
+        sys.stdout.write(f"[ralph] converged at iteration {n} (signal: {sig})\n")
+    elif et == ui_events.EventType.RALPH_STALLED:
+        n = p.get("iteration", "?")
+        reason = p.get("reason", "no progress")
+        sys.stdout.write(f"[ralph] stalled at iteration {n} — {reason}\n")
+    elif et == ui_events.EventType.RALPH_EXHAUSTED:
+        n = p.get("iteration", "?")
+        sys.stdout.write(f"[ralph] exhausted after {n} iteration(s)\n")
     else:
         return
     sys.stdout.flush()
@@ -185,8 +201,15 @@ async def _run_async(
     goal: str,
     *,
     json_output: bool,
+    ralph_config: RalphConfig | None = None,
 ) -> int:
-    """Inner async runner — drives one goal through the agent and drains."""
+    """Inner async runner — drives one goal through the agent and drains.
+
+    When ``ralph_config`` is enabled the goal is wrapped in a
+    bounded iterate-until-green outer loop (Phase 69.1) and the
+    drain-and-confirm checks run *between* every iteration so a
+    stuck CONFIRM doesn't burn the iteration cap.
+    """
     agent.event_bus.bind_loop(asyncio.get_running_loop())
 
     if json_output:
@@ -196,6 +219,17 @@ async def _run_async(
 
     agent.start_executor()
     try:
+        # Ralph mode wraps process_message in a bounded outer loop;
+        # the same drain + confirmation gate runs after every
+        # iteration so a stuck CONFIRM short-circuits the run.
+        if ralph_config is not None and ralph_config.is_enabled():
+            return await _run_ralph_loop(
+                agent,
+                goal,
+                ralph_config,
+                json_output=json_output,
+            )
+
         try:
             response = await agent.process_message(goal)
         except ProviderError as exc:
@@ -232,6 +266,76 @@ async def _run_async(
         return _final_exit_code(agent)
     finally:
         await agent.stop_executor()
+
+
+async def _run_ralph_loop(
+    agent: CantripAgent,
+    goal: str,
+    config: RalphConfig,
+    *,
+    json_output: bool,
+) -> int:
+    """Drive ``run_ralph`` with a print-mode-aware iteration callback.
+
+    Between every iteration we drain the work queue and check for
+    pending confirmations — same gates as the non-Ralph path,
+    just applied per pass.  A confirmation showing up mid-run
+    aborts the loop (``run_ralph`` doesn't see the abort; we raise
+    ``_RalphAbortError`` from the callback to bail out of the
+    refinement loop cleanly).
+    """
+    abort_message: dict[str, str] = {}
+
+    async def _between_iterations(_iteration: int, _response: str) -> None:
+        drained = await _drain_queue(agent)
+        if not drained:
+            abort_message["error"] = (
+                f"Timed out after {_DRAIN_TIMEOUT_SECONDS}s with tasks still running."
+            )
+            raise _RalphAbortError()
+        pending = _pending_confirmations(agent)
+        if pending:
+            abort_message["error"] = _format_pending_confirmations(pending)
+            raise _RalphAbortError()
+
+    try:
+        result = await run_ralph(
+            process_message=agent.process_message,
+            goal=goal,
+            config=config,
+            event_bus=agent.event_bus,
+            charm_path=agent.state.charm_path,
+            on_iteration=_between_iterations,
+        )
+    except _RalphAbortError:
+        print(abort_message.get("error", "Ralph loop aborted."), file=sys.stderr)
+        return 1
+    except ProviderError as exc:
+        print(f"Provider error: {exc}", file=sys.stderr)
+        return 1
+
+    if not json_output and result.final_response:
+        sys.stdout.write(f"\n{result.final_response}\n")
+        sys.stdout.flush()
+
+    if result.outcome == RalphOutcome.STALLED:
+        # A stall is a "could not make progress" outcome — surface
+        # it as a non-zero exit so CI doesn't silently treat a
+        # no-op iteration as success.
+        return 1
+    if result.outcome == RalphOutcome.EXHAUSTED:
+        return 1
+    return _final_exit_code(agent)
+
+
+class _RalphAbortError(RuntimeError):
+    """Sentinel raised from the iteration callback to abort the loop.
+
+    Carrying state via an exception keeps the public ``run_ralph``
+    signature clean (no return-channel kwargs) and means the
+    callback's ``raise`` matches what asyncio will already do for
+    cancellation.
+    """
 
 
 def run_print(args: argparse.Namespace) -> int:
@@ -294,6 +398,10 @@ def run_print(args: argparse.Namespace) -> int:
     if bool(getattr(args, "yolo", False)):
         agent.state.yolo_mode = True
 
+    ralph_max = int(getattr(args, "ralph_max_iterations", 0) or 0)
+    agent.state.ralph_max_iterations = ralph_max
+    ralph_config = RalphConfig(max_iterations=ralph_max) if ralph_max != 0 else None
+
     # Resume any persisted session silently so a print-mode invocation
     # in a charm directory picks up where the last interactive run
     # left off.  This is also how pre-existing CONFIRM tasks become
@@ -306,7 +414,14 @@ def run_print(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        return asyncio.run(_run_async(agent, goal, json_output=json_output))
+        return asyncio.run(
+            _run_async(
+                agent,
+                goal,
+                json_output=json_output,
+                ralph_config=ralph_config,
+            )
+        )
     except KeyboardInterrupt:
         print("\n[interrupted]", file=sys.stderr)
         return 130

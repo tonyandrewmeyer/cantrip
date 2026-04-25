@@ -3459,36 +3459,84 @@ Four Kimi features are explicitly **out of scope**:
   speculative loop-control question and belongs in a research
   phase if ever.
 
-### 69.1 High — Ralph Loop: bounded iterate-until-green
+### 69.1 High — Ralph Loop: bounded iterate-until-green ✓
 
-- [ ] Add a ``ralph`` config block to the existing session /
-  run configuration with ``max_iterations`` (default 0 =
-  disabled; ``-1`` = unlimited matching Kimi semantics) and
-  ``convergence``:  a short string the agent must emit to
-  declare the loop complete (default ``STOP``).
-- [ ] Integrate at the *outer* loop boundary: after the work
-  queue drains and ``make check`` + integration tests have
-  been attempted, if a Ralph goal is active and neither the
-  convergence signal nor the iteration cap has been reached,
-  re-seed the queue from the original goal prompt plus a
-  short "last iteration's results" summary and run again.
-- [ ] Convergence detection: if two consecutive iterations
-  produce the same test outcome, same failing test set, and
-  the agent makes no file edits, surface a "Ralph stalled"
-  event and exit the loop — don't burn tokens on no-ops.
-  This mirrors what Kimi's convergence detection guards
-  against.
-- [ ] Wire into ``cantrip run --print`` (Phase 67.3) as
-  ``--ralph N`` so unattended runs can iterate without
-  prompting.  Interactive TUI gets ``/ralph <N>`` to enable
-  mid-session.
-- [ ] Emit ``ralph_iteration_started`` / ``ralph_converged`` /
-  ``ralph_stalled`` / ``ralph_exhausted`` events so the TUI
-  status bar and transcript audit trail show iteration N/M.
-- [ ] ``tests/unit/test_ralph_loop.py`` — happy-path
-  convergence, iteration cap trip, stall detection, re-seeding
-  preserves the original user goal verbatim (don't corrupt
-  the prompt across iterations).
+- [x] Added ``RalphConfig`` (frozen dataclass) carrying
+  ``max_iterations`` and ``convergence_signal`` (default
+  ``STOP``) plus an ``is_enabled()`` helper.  Kimi semantics:
+  ``0`` disables (single-shot pass-through), ``-1`` is
+  unlimited bounded by an internal safety ceiling of 200
+  iterations, positive integers cap the run.  Lives in
+  ``src/cantrip/agent/ralph.py`` and is constructed from
+  ``state.ralph_max_iterations`` (new ``AgentState`` field).
+- [x] Outer-loop integration via the new ``run_ralph()``
+  coroutine: each iteration calls a caller-supplied
+  ``MessageProcessor`` (typically ``agent.process_message``);
+  iteration ``N>1`` re-seeds with a framed prompt that
+  preserves the original user goal verbatim plus a truncated
+  summary of iteration ``N-1``'s response (capped at 1500
+  chars to keep the prompt bounded).  ``on_iteration``
+  callback hook lets ``cantrip.print_mode`` drain the work
+  queue and surface pending CONFIRM tasks between
+  iterations — so a stuck confirmation aborts the loop
+  cleanly via ``_RalphAbortError``.
+- [x] Convergence detection: ``has_converged()`` matches the
+  signal as a standalone line (``STOP\n``) *or* a whitespace-
+  separated word — substring matches inside larger words
+  (``STOPPED``) deliberately do not trigger.  Stall
+  detection: ``_is_stalled()`` compares response signatures
+  (SHA-256 of trimmed text, truncated to 16 hex chars) and
+  working-tree signatures (``git rev-parse HEAD`` plus
+  ``git status --porcelain=v1 -z``, hashed) across
+  consecutive iterations.  When git is unavailable both
+  tree sigs are ``None`` and stall detection falls back to
+  response-only matching, which still trips on identical
+  replies.  Hashing keeps memory bounded across long runs.
+- [x] Wired into ``cantrip run --print`` as ``--ralph N`` on
+  the run subparser, then through ``run_print`` →
+  ``_run_async`` → ``_run_ralph_loop``.  Slash command
+  ``/ralph [N|off]`` stamps the cap on
+  ``state.ralph_max_iterations`` mid-session: bare reports
+  current setting, ``off``/``0`` disables, ``-1`` is
+  unlimited, anything else parses as an int (bad arguments
+  return a usage line).  The TUI invocation is informational
+  — the actual refinement loop fires only inside print mode,
+  where there's no human to drive iteration manually.
+- [x] Four new ``EventType`` entries +
+  ``ralph_iteration_started`` / ``ralph_converged`` /
+  ``ralph_stalled`` / ``ralph_exhausted`` factories on
+  ``cantrip.ui.events``.  ``max_iterations`` is ``None`` in
+  the iteration-started payload for unlimited runs so the
+  TUI can render ``N/?`` instead of ``N/-1``.  Print mode's
+  human-readable progress emitter renders each event as a
+  short ``[ralph] iteration N/M`` / ``[ralph] converged at
+  iteration N (signal: STOP)`` line; the JSON stream emits
+  the full payload one event per line.
+- [x] ``tests/unit/test_ralph_loop.py`` — 51 cases covering
+  ``RalphConfig`` defaults, ``has_converged()`` matching
+  rules (own line, standalone word, no substring inside
+  word, custom signals with internal whitespace), happy-path
+  convergence on iterations 1 / 3 / N, iteration-cap
+  exhaustion (``EXHAUSTED`` outcome), stall detection (with
+  and without git), re-seeding preserves the original goal
+  verbatim plus iteration-N framing, lifecycle event
+  emission per pass, ``on_iteration`` callback firing and
+  abort-via-exception, ``_tree_signature`` for git repos
+  (skip when git unavailable), every ``/ralph`` slash form
+  (bare reports, positive cap, ``-1`` unlimited, ``off``,
+  ``0``, bad arg returns usage), help-text and catalogue
+  drift, print-mode integration through ``_run_async``
+  (drives multiple iterations, exhaustion returns ``1``,
+  stall returns ``1``), and ``--ralph`` argparse plumbing
+  through ``main.parse_args``.
+- [x] Documented in ``docs/docs/howto-ralph.html`` with the
+  "when to use" framing, the convergence-signal matching
+  rules, the stall-detection rationale, exit codes, the
+  full prompt shape on iteration N, and a CI-composition
+  example.  Added ``--ralph`` flag to the CLI reference,
+  four new event types to the print-mode event schema
+  table, a ``/ralph`` section to the slash-commands list,
+  and updated every how-to sidebar + the docs index card.
 
 ### 69.2 High — ``/yolo`` and ``--yolo`` unattended mode ✓
 

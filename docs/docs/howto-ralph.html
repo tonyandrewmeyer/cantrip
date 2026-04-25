@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to run a Ralph loop &mdash; Cantrip</title>
+<meta name="description" content="Use --ralph N (or /ralph N) to run a bounded iterate-until-green loop: re-feed the goal until the agent emits STOP, with stall detection guarding against no-ops.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-ralph.html" class="current">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+      <li><a href="howto-print-mode.html">Print mode</a></li>
+      <li><a href="howto-unattended.html">Unattended mode</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Run a Ralph loop
+    </div>
+
+    <h1>Run a Ralph loop</h1>
+    <p class="subtitle">
+      Re-feed the goal up to <code>N</code> times until the agent emits
+      <code>STOP</code> on its own line &mdash; with stall detection so a
+      no-op iteration ends the run early.
+    </p>
+
+<h2 id="when-to-use">When to use it</h2>
+<p>The Ralph Loop is an outer wrapper on the autonomous loop.  It
+re-feeds the same goal across iterations &mdash; useful when one
+pass isn't enough but you don't want to sit and prompt the agent
+manually.  Three concrete shapes:</p>
+<ul>
+  <li><strong>"Make this charm pass <code>make check</code>."</strong>
+    The agent often needs to fix one error, run tests, see the
+    next, and iterate.  Ralph automates the loop.</li>
+  <li><strong>Build-test-fix cycles in CI.</strong>  Pair with
+    <code>--print --yolo</code> for a non-interactive run that
+    refines until tests pass or the cap fires.</li>
+  <li><strong>Multi-step refactors.</strong>  "Migrate this charm
+    from reactive to ops" rarely converges in a single
+    conversation; Ralph gives you a bounded "keep trying"
+    primitive.</li>
+</ul>
+<p>Don't use Ralph for read-only or one-shot questions.  An audit
+that finishes in one pass should not run a second.  Setting the cap
+too high turns into a token-burn machine.</p>
+
+<h2 id="how-to-enable">How to enable it</h2>
+<pre><code><span class="prompt">$</span> cantrip run --print "Charm this Flask app" --ralph 5
+<span class="prompt">$</span> cantrip run --print --json --yolo --ralph 10 "Pack and deploy"
+<span class="prompt">$</span> cantrip run /path/to/charm
+<span class="prompt">&gt;</span> /ralph 5
+<span class="prompt">&gt;</span> /ralph off</code></pre>
+<p><code>--ralph N</code> on the run subparser sets the iteration
+cap.  In the TUI, <code>/ralph N</code> stamps the cap on the
+session for the next print-mode invocation.  The slash command
+shows the current cap when called bare; <code>/ralph off</code>
+disables.</p>
+<p>Three values matter:</p>
+<dl>
+  <dt><code>0</code> (default)</dt>
+  <dd>Ralph disabled.  Single-shot run; same behaviour as before
+    Phase 69.1.</dd>
+  <dt><code>N &gt; 0</code></dt>
+  <dd>Cap at <code>N</code> iterations.  Convergence or stall
+    detection can end the run earlier; iteration <code>N</code>
+    that doesn't converge exits with status <code>1</code> and a
+    <code>RALPH_EXHAUSTED</code> event.</dd>
+  <dt><code>-1</code></dt>
+  <dd>Unlimited.  Run until the agent emits the convergence
+    signal or stall detection trips.  Bounded internally by a
+    safety ceiling of 200 iterations so a stuck agent can't run
+    forever.</dd>
+</dl>
+
+<h2 id="convergence-signal">The convergence signal</h2>
+<p>Each iteration ends with the agent's response.  If that
+response contains <code>STOP</code> on a line by itself <em>or</em>
+as a standalone whitespace-separated token, Ralph treats it as
+convergence and exits with status <code>0</code>.</p>
+<p>Examples that converge:</p>
+<pre><code>All tests pass.
+STOP</code></pre>
+<pre><code>Run finished: 12 unit tests, 4 integration tests, 0 failures.
+The charm is ready to merge.
+
+STOP</code></pre>
+<p>Examples that <em>don't</em> converge:</p>
+<pre><code>Tests STOPPED early due to a panic — investigating.</code></pre>
+<p>(<code>STOPPED</code> is not <code>STOP</code> &mdash; substring
+matching inside a word is deliberately disallowed so the agent
+can't end the loop accidentally.)</p>
+<p>The signal is currently fixed at <code>STOP</code>.  Future
+config blocks may make it user-configurable per session.</p>
+
+<h2 id="stall-detection">Stall detection</h2>
+<p>If iteration <code>N</code> produces an identical response to
+iteration <code>N-1</code> <em>and</em> (when git is available)
+leaves the working tree in the same state &mdash; same
+<code>HEAD</code>, same <code>git status --porcelain</code>
+output &mdash; Ralph exits with status <code>1</code> and a
+<code>RALPH_STALLED</code> event.  The reasoning: an iteration
+that didn't change the response or the files isn't refining
+anything; running the cap out would just burn tokens.</p>
+<p>When the working directory isn't a git repo (or git isn't
+available), stall detection falls back to response-only
+matching.  That's slightly noisier &mdash; an agent that says
+"I made progress on X" twice with subtly different wording won't
+trip the stall &mdash; but identical replies still do.</p>
+
+<h2 id="exit-codes">Exit codes</h2>
+<dl>
+  <dt><code>0</code></dt>
+  <dd>The agent emitted the convergence signal and every queued
+    task settled into <code>done</code>.</dd>
+  <dt><code>1</code></dt>
+  <dd>The cap fired before convergence
+    (<code>RALPH_EXHAUSTED</code>) or stall detection tripped
+    (<code>RALPH_STALLED</code>) or any task ended in
+    <code>failed</code> / <code>blocked</code>.  Ralph treats
+    "didn't actually finish" as a failure for CI purposes.</dd>
+</dl>
+
+<h2 id="events">Lifecycle events</h2>
+<p>Under <code>--print --json</code>, four event types frame the
+loop in the NDJSON stream:</p>
+<dl>
+  <dt><code>ralph_iteration_started</code></dt>
+  <dd>Fires at the top of each pass with
+    <code>iteration</code>, <code>max_iterations</code> (or
+    <code>null</code> for unlimited), and the original
+    <code>goal</code> verbatim.</dd>
+  <dt><code>ralph_converged</code></dt>
+  <dd>Fires when the convergence signal is found.  Carries the
+    iteration number and the <code>signal</code> string that
+    matched.</dd>
+  <dt><code>ralph_stalled</code></dt>
+  <dd>Fires when two consecutive iterations are
+    indistinguishable.  Carries a human-readable
+    <code>reason</code> for the stall.</dd>
+  <dt><code>ralph_exhausted</code></dt>
+  <dd>Fires when the iteration cap fires before convergence and
+    the run hadn't stalled.  Carries the iteration count and
+    the user-supplied <code>cap</code>.</dd>
+</dl>
+<p>The <a href="reference-cli.html#print-events">print-mode event
+schema</a> documents the full payload shape.</p>
+
+<h2 id="prompt-shape">What the agent sees on iteration N</h2>
+<p>Iteration 1 receives the user's goal verbatim.  Iteration
+<code>N &gt; 1</code> receives a re-seeded prompt that bookends
+the goal with status framing:</p>
+<pre><code>This is Ralph iteration 2.
+Original goal:
+Charm this Flask app
+
+Last iteration's final response (for context):
+… (truncated to 1500 chars) …
+
+Continue refining toward the original goal.  When the goal is
+complete, emit `STOP` on a line by itself to end the loop.</code></pre>
+<p>The original goal is preserved verbatim across iterations
+&mdash; the loop never re-summarises or paraphrases it, since
+re-summarisation tends to drift the target over multiple
+passes.</p>
+
+<h2 id="composing">Composing in CI</h2>
+<p>A typical CI invocation pairs Ralph with print mode and yolo:</p>
+<pre><code><span class="prompt">$</span> cantrip run \
+    --print "Pack and deploy the charm, run integration tests" \
+    --json \
+    --yolo \
+    --ralph 8 \
+    --max-iterations 50 \
+    /workspace/my-charm \
+    | tee build.ndjson \
+    | jq 'select(.type | startswith("ralph_"))'</code></pre>
+<p>The <code>jq</code> filter narrows the live event stream to
+just the Ralph lifecycle events &mdash; useful for the build log.
+Exit-code propagation lets the CI job decide pass/fail.</p>
+
+<h2 id="reference">Related references</h2>
+<ul>
+  <li><a href="reference-cli.html#run">cantrip run</a> &mdash;
+    flag list including <code>--ralph N</code>.</li>
+  <li><a href="reference-cli.html#print-events">Print-mode event
+    schema</a> &mdash; payload shape for every event type
+    Ralph emits.</li>
+  <li><a href="howto-print-mode.html">Run a single goal
+    non-interactively</a> &mdash; the print mode that Ralph
+    composes with.</li>
+  <li><a href="howto-unattended.html">Run Cantrip unattended</a>
+    &mdash; <code>--yolo</code>, the natural companion for
+    Ralph in CI.</li>
+</ul>
+
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

@@ -22,6 +22,7 @@ sections:
       - { slug: howto-plan-mode, label: "Use plan mode" }
       - { slug: howto-unattended, label: "Run Cantrip unattended" }
       - { slug: howto-print-mode, label: "Run a single goal non-interactively" }
+      - { slug: howto-ralph, label: "Run a Ralph loop" }
       - { slug: howto-feelings, label: "Convene the inner parliament" }
 
   reference:

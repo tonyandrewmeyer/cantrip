@@ -212,6 +212,18 @@ cantrip --help
     a prompt would hang the run. See
     <a href="howto-unattended.html">Run Cantrip unattended</a>.
   </dd>
+  <dt>--ralph N</dt>
+  <dd>
+    Phase 69.1: bounded iterate-until-green Ralph Loop. Re-feed
+    the agent up to <code>N</code> times until it emits
+    <code>STOP</code> on a line by itself or stall detection
+    trips.  <code>0</code> (default) disables the loop;
+    <code>-1</code> is unlimited (still bounded by stall
+    detection and an internal safety ceiling of 200).  Most
+    useful in <code>--print</code> runs &mdash; pairs with
+    <code>--yolo</code> for unattended refinement.  See
+    <a href="howto-ralph.html">Run a Ralph loop</a>.
+  </dd>
 </dl>
 <h2 id="print-mode">Print mode</h2>
 <p><code>cantrip run --print "&lt;goal&gt;"</code> (alias
@@ -394,6 +406,27 @@ object with three top-level keys:</p>
   <td><code>request_id</code>, <code>server_name</code>,
     <code>mode</code>, <code>message</code>,
     <code>requested_schema</code>, <code>url</code>.</td>
+</tr>
+<tr>
+  <td><code>ralph_iteration_started</code></td>
+  <td>Top of each Ralph refinement pass.</td>
+  <td><code>iteration</code>, <code>max_iterations</code>
+    (or <code>null</code> for unlimited), <code>goal</code>.</td>
+</tr>
+<tr>
+  <td><code>ralph_converged</code></td>
+  <td>Convergence signal found in the agent's reply.</td>
+  <td><code>iteration</code>, <code>signal</code>.</td>
+</tr>
+<tr>
+  <td><code>ralph_stalled</code></td>
+  <td>Two consecutive iterations indistinguishable.</td>
+  <td><code>iteration</code>, <code>reason</code>.</td>
+</tr>
+<tr>
+  <td><code>ralph_exhausted</code></td>
+  <td>Iteration cap fired before convergence.</td>
+  <td><code>iteration</code>, <code>cap</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -853,6 +886,24 @@ subagent dispatch sees <em>ask</em> permissions as already-
 approved &mdash; pair it with a repo
 <code>permissions.yaml</code> that explicitly denies anything
 you do not want to auto-approve.</p>
+<h3 id="ralph-loop">Ralph loop</h3>
+<dl>
+  <dt><code>/ralph [N|off]</code></dt>
+  <dd>
+    Bounded iterate-until-green loop (Phase 69.1).  Bare
+    <code>/ralph</code> reports the current cap;
+    <code>/ralph N</code> sets it; <code>/ralph off</code>
+    (or <code>/ralph 0</code>) disables; <code>/ralph -1</code>
+    is unlimited.  The actual refinement loop only fires inside
+    <code>cantrip run --print</code> &mdash; in the TUI the
+    slash command stamps the cap on the session for the next
+    print-mode invocation.  See
+    <a href="howto-ralph.html">Run a Ralph loop</a>.
+  </dd>
+</dl>
+<p><code>cantrip run --ralph N</code> on the command line is the
+equivalent at startup; combine with <code>--print --yolo</code>
+for unattended refinement in CI.</p>
 <p>Snapshots are on by default. Disable per-session with
 <code>--no-snapshots</code> on the command line or
 <code>CANTRIP_SNAPSHOTS=false</code> in the environment.

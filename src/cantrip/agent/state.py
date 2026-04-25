@@ -122,6 +122,17 @@ class AgentState:
     # flag; sticky for the session and not persisted.
     yolo_mode: bool = False
 
+    # Phase 69.1: Ralph Loop refinement cap.  ``0`` disables the
+    # outer iterate-until-green loop (single-shot); ``-1`` means
+    # unlimited (the loop is bounded only by convergence /
+    # stall detection); positive integers cap the run.  Toggled
+    # via ``/ralph N`` or ``--ralph N`` on the run subparser; the
+    # convergence signal defaults to ``STOP`` and is currently not
+    # user-configurable per session.  Sticky for the session, not
+    # persisted across restarts (a CI run picks up its cap from
+    # the CLI flag every time).
+    ralph_max_iterations: int = 0
+
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
 
