@@ -129,6 +129,23 @@ class TestShouldOfferBootstrap:
             assert agent.should_offer_bootstrap() is True
         cb.assert_called_once_with(str(tmp_path))
 
+    def test_false_when_bootstrap_task_already_in_queue(self, tmp_path: Path) -> None:
+        # The queue is restored from disk across sessions, so a previously
+        # offered bootstrap task (any status) must suppress re-offer —
+        # otherwise ``add_task`` would raise on the duplicate ID.
+        agent = _agent(tmp_path)
+        agent.state.github_repo = None
+        agent.work_queue.add_task(
+            AgentTask(
+                id="bootstrap-repo-foo-operator",
+                title="Create GitHub repo foo-operator?",
+                category=TaskCategory.CONFIRM,
+                description="…",
+            )
+        )
+        with patch("cantrip.agent.core.can_bootstrap", return_value=True):
+            assert agent.should_offer_bootstrap() is False
+
 
 # ---------------------------------------------------------------------------
 # comment_on_issue

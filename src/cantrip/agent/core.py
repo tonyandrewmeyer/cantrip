@@ -2614,9 +2614,14 @@ class CantripAgent:
 
         Bootstrap is offered when a charm has been built (or is being
         improved) but no GitHub remote is configured and ``gh`` is
-        available.
+        available.  We also suppress the offer if a bootstrap CONFIRM
+        task already exists in the queue — the queue is persisted across
+        sessions, so a previously skipped/approved/pending offer must
+        not be re-emitted (it would collide on the deterministic task ID).
         """
         if self.state.github_repo:
+            return False
+        if any(t.id.startswith(BOOTSTRAP_CONFIRM_PREFIX) for t in self._work_queue.all_tasks()):
             return False
         charm_path = str(self.state.charm_path) if self.state.charm_path else None
         return can_bootstrap(charm_path)
