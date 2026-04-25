@@ -3880,34 +3880,78 @@ Five Amp features are explicitly **out of scope or deferred**:
   refuses every call), but no slash command exposes the
   toggle.  File a follow-up if a user wants ``/oracle off``.
 
-### 70.3 Medium — Glob-conditional guidance frontmatter
+### 70.3 Medium — Glob-conditional guidance frontmatter ✓
 
-- [ ] Extend the loader for ``AGENTS.md`` / ``CLAUDE.md`` and
-  Phase 33 skill frontmatter to recognise a ``globs:`` field.
-  Accept a list of globs; guidance is included in the prompt
-  only when at least one current-turn file path matches.
-- [ ] "Current-turn file path" = the active task's file
-  context (charm source files touched, files mentioned in
-  the user message, files the agent has read in this turn).
-  Define the predicate precisely in ``design/PROMPTS.md``.
-- [ ] Backwards-compatible default: guidance without a
-  ``globs:`` key stays unconditional (current behaviour).
-- [ ] Examples shipped in ``AGENTS.md`` and in the charming
-  skill library:
-  - ``globs: [metadata.yaml, charmcraft.yaml]`` on the
-    metadata-authoring guidance
-  - ``globs: [tests/integration/**]`` on the Jubilant /
-    no-harness reminder
-  - ``globs: ["src/charm.py", "src/**/charm.py"]`` on the
-    lifecycle-event guidance
-- [ ] Observability: the transcript records which globs
-  matched and which guidance blocks therefore loaded, so
-  users can audit "why did this skill fire?".
-- [ ] ``tests/unit/test_conditional_guidance.py`` — match,
-  non-match, multiple-glob-one-match, backwards-compat,
-  transcript annotation.
-- [ ] Document in ``design/PROMPTS.md`` and in the skill
-  authoring reference under ``design/SKILLS.md``.
+- [x] Extend the skill frontmatter loader to recognise a
+  ``globs:`` field.  Accepted as a YAML list or a comma-
+  separated string; coerced via ``_coerce_string_list``
+  alongside ``tools`` and ``mcp_servers``.  Guidance is
+  included in the system prompt's ``<available_skills>``
+  block only when at least one current-turn file path
+  matches.  AGENTS.md / CLAUDE.md auto-load was *not*
+  reachable without a separate architectural change
+  (today AGENTS.md is a developer file and CLAUDE.md is
+  generated per charm but never re-read).  Folded down to
+  "skills only" for this phase; revisit if a future task
+  starts loading either file into the prompt.
+- [x] "Current-turn file path" predicate, defined in
+  ``design/PROMPTS.md`` and implemented in
+  ``CantripAgent._current_turn_files``: the union of (a)
+  files cited by recent fs tool calls (existing
+  ``_collect_recent_file_citations`` from the memory
+  writer, 20-message window); (b) path-shaped tokens in
+  the last six user messages
+  (``_extract_user_mentioned_files``, regex-based, no
+  fs-existence requirement so a "edit metadata.yaml"
+  request loads the metadata skill *before* the file
+  exists); (c) the active task's title / description.
+- [x] Backwards-compatible default: skills without a
+  ``globs:`` key stay unconditional.  ``format_for_prompt``
+  with ``current_files=None`` (the legacy call shape)
+  bypasses filtering entirely so existing callers stay on
+  the historical "all skills always" behaviour.
+- [x] Examples shipped on six bundled skills:
+  ``scenario-tests`` (``tests/unit/**, src/charm.py,
+  src/**/charm.py``), ``jubilant-tests``
+  (``tests/integration/**``), ``adding-config``
+  (``config.yaml, charmcraft.yaml, metadata.yaml,
+  src/charm.py, src/**/charm.py``), ``adding-actions``
+  (``actions.yaml, charmcraft.yaml, metadata.yaml,
+  src/charm.py, src/**/charm.py``),
+  ``relation-data-design`` (``metadata.yaml,
+  charmcraft.yaml, src/charm.py, src/**/charm.py,
+  lib/**``), ``harness-migration`` (``tests/unit/**,
+  tests/test_*.py``).  Broad-applicability skills
+  (``charmcraft``, ``observability``, ``find-bugs``,
+  ``charm-debug``, …) intentionally remain unconditional.
+- [x] Observability: ``CantripAgent._record_skill_filtering``
+  writes a ``skill_filter`` transcript event with
+  ``loaded``, ``skipped``, and ``files`` whenever the
+  filter outcome changes — deduplicated against the
+  previous turn via an in-memory signature so a stable
+  session stays quiet.
+- [x] ``tests/unit/test_conditional_guidance.py`` (30 cases)
+  — frontmatter parsing (YAML list, comma-string, absent,
+  malformed); glob matcher (bare basename, extension
+  wildcard, ``**`` zero-or-more, ``**`` middle, anchored
+  out-of-tree, no-charm-root, short-circuit, no-paths);
+  ``format_for_prompt`` filtering (no-files-bypass,
+  matching, non-matching, multi-glob-one-match,
+  empty-files-still-filters); ``filtering_report``
+  loaded/skipped split; ``_extract_user_mentioned_files``
+  (basenames, relative paths, backticks/quotes, version
+  strings, arbitrary words with dots, dedup, empty); and
+  agent-level transcript event recording (first-filter,
+  dedup-on-unchanged, re-emit-on-change,
+  no-event-when-no-globbed-skills).
+- [x] Documented in ``design/PROMPTS.md`` (new
+  *Glob-conditional guidance* section: predicate
+  definition with the three sources, anchoring rules,
+  observability) and ``design/SKILLS.md`` (frontmatter
+  schema gains ``globs:``, ``tools:``, and ``mcp_servers:``
+  fields plus a *Glob-conditional loading* section with
+  matching rules and the "when not to use globs"
+  guidance).
 
 ### 70.4 Medium — Prompt-based review checks
 
