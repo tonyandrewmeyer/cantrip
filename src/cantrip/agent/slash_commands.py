@@ -82,6 +82,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/undo", "Roll back the last user turn (files + messages)"),
     CommandInfo("/redo", "Re-apply the most recently undone turn"),
     CommandInfo("/branch", "Rewind to a prior turn and start a new branch"),
+    CommandInfo("/tree", "Show the session as a tree of turns and branches"),
     CommandInfo("/plan", "Enter read-only plan mode (no file edits or shells)"),
     CommandInfo("/build", "Leave plan mode and resume executing changes"),
     CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
@@ -246,6 +247,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_redo(agent))
     if verb == "/branch":
         return SlashResult(text=handle_branch(agent, args))
+    if verb == "/tree":
+        return SlashResult(text=handle_tree(agent, args), markdown=True)
     if verb == "/plan":
         return SlashResult(text=handle_plan(agent))
     if verb == "/build":
@@ -603,6 +606,9 @@ def help_text(agent: CantripAgent | None = None) -> str:
         " branch.  No argument forks before the most recent user turn"
         " (handy after a bad steering message); off-branch messages stay"
         " in the store and remain reachable.\n"
+        "- `/tree` — render the session as an indented tree of turns,"
+        " marking the active branch with `*` and showing turn ids you"
+        " can pass to `/branch`.\n"
         "- `/plan` — enter read-only plan mode.  The agent can "
         "inspect files, git history, Juju state, and the web, but "
         "cannot edit or run shells.\n"
@@ -1053,6 +1059,114 @@ def handle_branch(agent: CantripAgent, args: str) -> str:
         f"Forked at turn `{target}` — rebuilt **{rebuilt}** message(s) on the active branch.  "
         f"The prior branch (head `{previous_head}`) is still reachable via `/tree`."
     )
+
+
+@dataclass(frozen=True)
+class TreeNode:
+    """A turn rendered for the ``/tree`` view.
+
+    ``depth`` is the indent level (root is 0); ``id`` is the message
+    db row id used by ``/branch``; ``label`` is the one-line
+    description shown on the row; ``on_active_branch`` lets the
+    renderer mark live nodes versus historical forks.
+    """
+
+    depth: int
+    id: int
+    role: str
+    label: str
+    timestamp: str
+    on_active_branch: bool
+
+
+def build_tree_nodes(
+    messages: list[dict[str, object]],
+    active_branch_ids: set[int],
+) -> list[TreeNode]:
+    """Render a flat message list as a depth-first tree traversal.
+
+    Pure function so the TUI modal can reuse the rendering rule the
+    text ``/tree`` produces.  *messages* is the full row dump from
+    ``SessionStore.load_messages``; *active_branch_ids* is the set
+    of ids currently on the live branch (so the renderer can mark
+    them).  Children are visited in id order, which matches the
+    chronological order rows were recorded — newer forks appear
+    later under their shared parent.
+    """
+    by_id: dict[int, dict[str, object]] = {}
+    children: dict[int | None, list[int]] = {}
+    for msg in messages:
+        msg_id = msg.get("id")
+        if not isinstance(msg_id, int):
+            continue
+        by_id[msg_id] = msg
+        parent = msg.get("parent_turn_id")
+        parent_key = parent if isinstance(parent, int) else None
+        children.setdefault(parent_key, []).append(msg_id)
+    for kids in children.values():
+        kids.sort()
+
+    nodes: list[TreeNode] = []
+
+    def visit(node_id: int, depth: int) -> None:
+        msg = by_id[node_id]
+        content = str(msg.get("content") or "").splitlines()
+        first_line = content[0].strip() if content else ""
+        if len(first_line) > 80:
+            first_line = first_line[:77] + "…"
+        nodes.append(
+            TreeNode(
+                depth=depth,
+                id=node_id,
+                role=str(msg.get("role") or ""),
+                label=first_line or "(empty)",
+                timestamp=str(msg.get("timestamp") or ""),
+                on_active_branch=node_id in active_branch_ids,
+            )
+        )
+        for child_id in children.get(node_id, []):
+            visit(child_id, depth + 1)
+
+    for root_id in children.get(None, []):
+        visit(root_id, 0)
+
+    return nodes
+
+
+def handle_tree(agent: CantripAgent, _args: str) -> str:
+    """Phase 67.1 ``/tree``: render the session as a tree of turns.
+
+    Lists every persisted turn, grouped under its parent in id order.
+    Each row shows the turn id, role, a marker (``*``) for nodes on
+    the active branch, the first line of the message, and the
+    timestamp.  Pair with ``/branch <id>`` to fork from any node.
+    The TUI surface replaces this with an interactive picker; CLI
+    and Web see the text form.
+    """
+    store = agent.store
+    if store is None:
+        return "_No session store available — `/tree` needs a saved session._"
+
+    messages = store.load_messages()
+    if not messages:
+        return "_No turns yet — `/tree` will populate after the first message._"
+
+    active_ids = {m["id"] for m in store.load_active_branch()}
+    nodes = build_tree_nodes(messages, active_ids)
+
+    lines = [
+        "**Session tree** — `*` marks the active branch, `/branch <id>` forks from any turn.",
+        "",
+    ]
+    for node in nodes:
+        prefix = "  " * node.depth
+        marker = "*" if node.on_active_branch else " "
+        timestamp = node.timestamp[:19] if node.timestamp else ""
+        lines.append(
+            f"{prefix}{marker} `{node.id}` **{node.role}** — {node.label}"
+            + (f"  _({timestamp})_" if timestamp else "")
+        )
+    return "\n".join(lines)
 
 
 def handle_plan(agent: CantripAgent) -> str:
@@ -1727,8 +1841,11 @@ __all__ = [
     "dispatch",
     "export_transcript",
     "format_cost",
+    "TreeNode",
+    "build_tree_nodes",
     "handle_branch",
     "handle_redo",
+    "handle_tree",
     "handle_undo",
     "help_text",
 ]

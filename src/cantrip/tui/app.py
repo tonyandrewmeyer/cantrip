@@ -1500,6 +1500,10 @@ class CantripApp(App):
             self._handle_feelings_command(message, chat)
             return
 
+        if message.split(" ", 1)[0] == "/tree":
+            self._handle_tree_command(chat)
+            return
+
         # Blind A/B arena is pending — capture A/B/tie/skip picks before
         # anything else so a one-letter reply doesn't get forwarded to
         # the LLM or a slash dispatcher.
@@ -1577,6 +1581,40 @@ class CantripApp(App):
             if msg.role == Role.ASSISTANT:
                 return str(msg.metadata.get("_thinking_content", ""))
         return ""
+
+    def _handle_tree_command(self, chat: chat_widget.ChatWidget) -> None:
+        """Phase 67.1: open the tree picker and fork from the chosen turn.
+
+        The shared ``handle_tree`` produces the markdown text used by
+        CLI / Web; the TUI overrides with an interactive modal so the
+        user can pick a node directly.  The selection round-trips
+        through ``handle_branch`` so the activate / rebuild logic
+        stays in one place.
+        """
+        from cantrip.tui.screens.tree import TreePickerScreen
+
+        if self._agent is None or self._agent.store is None:
+            chat.add_system_message(
+                "_No session store available — `/tree` needs a saved session._"
+            )
+            return
+        store = self._agent.store
+        messages = store.load_messages()
+        if not messages:
+            chat.add_system_message(
+                "_No turns yet — `/tree` will populate after the first message._"
+            )
+            return
+        active_ids = {m["id"] for m in store.load_active_branch()}
+        nodes = slash_commands.build_tree_nodes(messages, active_ids)
+
+        def _on_picked(turn_id: int | None) -> None:
+            if turn_id is None:
+                return
+            text = slash_commands.handle_branch(self._agent, str(turn_id))
+            chat.add_system_message(text)
+
+        self.push_screen(TreePickerScreen(nodes), _on_picked)
 
     def _handle_feelings_command(self, message: str, chat: chat_widget.ChatWidget) -> None:
         """Dispatch a parliament run from a ``/feelings [emotions...]`` message.
