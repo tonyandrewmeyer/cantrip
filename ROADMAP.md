@@ -3424,6 +3424,96 @@ deliberately rather than copy-pasting blindly.
 
 ---
 
+## Phase 84: Deferred-Item Sweep — Catalogue and Re-evaluate
+
+**Goal:** Roadmap and archive both accumulate explicit deferrals —
+sub-phases or sub-tasks shipped *minus* a piece that was scoped
+out with a "revisit when…" condition.  Recent examples that
+prompted this phase:
+
+- 67.1 — Amp-style ``@@`` prior-session picker (waiting on a
+  session registry that doesn't exist).
+- 67.2 — TUI hotkey + favourites cycling for ``/model``
+  (waiting on a concrete ergonomic case).
+- 71.4 — ``pytest --collect-only`` on touched files
+  (waiting on a different scope decision).
+- 73.x — migrate existing call sites onto the new structured-
+  output API.
+- Multiple archived phases ("deferred to a follow-up", "needs
+  in-loop integration", etc.) where the revisit trigger was
+  recorded but no scheduled re-read of the trigger was set up.
+
+Without a recurring sweep, deferrals turn into forgotten todos.
+This phase exists so we have a place to (re-)check them.
+
+### 84.1 Build the deferred-item index
+
+- [ ] Grep ``ROADMAP.md`` and ``ROADMAP_ARCHIVE.md`` for the
+  explicit-deferral markers we already use: ``Deferred:``,
+  ``defer pending``, ``revisit when``, ``re-open when``,
+  ``deferred follow-up``, ``follow-up phase``.  Capture the
+  surrounding context (which phase, which sub-task) and the
+  stated revisit trigger for each hit.
+- [ ] Save the catalogue as ``design/DEFERRED.md`` — a flat
+  table with columns *Phase / Sub-task*, *What was deferred*,
+  *Revisit trigger*, *Notes*.  One row per deferral.  This is
+  the artefact the next pass reads.
+
+### 84.2 Re-evaluate each deferral
+
+- [ ] For each entry: has the revisit trigger fired?  Three
+  buckets per row.
+  - **Trigger fired** — open a new sub-phase or task to land
+    the work, link it back to the deferral, mark the row as
+    re-opened.
+  - **Trigger not fired** — leave the deferral in place but
+    refresh the trigger description if the original wording is
+    stale.
+  - **No longer relevant** — the underlying need disappeared,
+    the world moved on, or the surrounding phase's verdict
+    changed.  Delete the deferral entry and the original
+    bullet, with a one-line note in the archive explaining the
+    drop.
+- [ ] Stamp the audit date on ``design/DEFERRED.md`` after the
+  pass so the next sweep knows what it's looking back over.
+
+### 84.3 Schedule the next sweep
+
+- [ ] Pick a cadence that matches the rate at which deferrals
+  arrive — quarterly seems right based on the current rate.
+  Record the cadence in ``design/DEFERRED.md`` and use the
+  ``/schedule`` background-agent surface to fire a reminder
+  rather than relying on someone to remember.
+
+### What this phase is *not*
+
+- Not a place to *do* the deferred work.  84.2's "trigger
+  fired" bucket opens a follow-up phase or task; the actual
+  implementation lands in that phase, not here.
+- Not a vehicle for re-litigating *closed* phases.  If a phase
+  shipped with an exit decision ("ship", "defer", "drop"), the
+  decision stands until evidence appears that the world
+  changed.  The sweep records evidence; it does not relitigate.
+- Not a documentation rewrite.  ``design/DEFERRED.md`` is a
+  flat audit log, not a narrative.
+
+**Exit criteria (per pass):** ``design/DEFERRED.md`` is
+up-to-date with the current set of deferrals, every row is
+labelled fired / not-fired / dropped, and any "fired" rows have
+a concrete follow-up phase or task linked.  The next sweep date
+is on the calendar.
+
+**Discovered:** While closing Phase 67.1 the ``@@`` prior-
+session picker was marked deferred pending a session registry.
+Skimming ``ROADMAP_ARCHIVE.md`` afterwards turned up dozens of
+similar deferrals scattered across phases without a re-read
+plan — e.g. observability pieces in Phase 41, decisions in
+Phase 73, scope cuts in Phase 71.  Without a periodic sweep
+those deferrals would silently rot into todos no one
+remembers.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -3502,4 +3592,5 @@ deliberately rather than copy-pasting blindly.
 | M80: Stacked Policies | 80 ✓ | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
 | M81: Tool Caption Coverage | 81 ✓ | ``run_command``, the Juju tool family, and the acceptance/test reporters populate ``ToolResult.caption`` rather than relying on the Phase 75 fallback; coverage test forces the rich-caption-vs-fallback choice for new tools |
 | M82: Pre/Post Tool Captions | 82 | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
+| M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
