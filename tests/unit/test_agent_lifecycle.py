@@ -204,7 +204,7 @@ class TestLoadStateBranches:
 
         store.load_session = MagicMock(return_value=loaded)
         store.load_compaction_counters = MagicMock(return_value=(0, 0, False, False))
-        store.load_messages = MagicMock(
+        store.load_active_branch = MagicMock(
             return_value=[
                 {"role": "not_a_role", "content": "dropped"},
                 {"role": "user", "content": ""},  # empty content dropped

@@ -3088,7 +3088,7 @@ class CantripAgent:
         if self._store is None:
             return []
         try:
-            raw = self._store.load_messages()
+            raw = self._store.load_active_branch()
         except (sqlite3.Error, KeyError, ValueError):
             return []
         result: list[Message] = []
@@ -3173,8 +3173,11 @@ class CantripAgent:
             log.warning("Failed to restore compaction counters")
 
         # Restore conversation history so the LLM retains context.
+        # Phase 67.1: load only the active branch so a /branch made
+        # before quitting carries through to resume; off-branch
+        # messages stay in the DB and remain reachable via /tree.
         try:
-            raw_messages = self._store.load_messages()
+            raw_messages = self._store.load_active_branch()
             for msg in raw_messages:
                 role_str = msg.get("role", "")
                 try:
@@ -3184,7 +3187,15 @@ class CantripAgent:
                 content = msg.get("content", "")
                 if not content:
                     continue
-                self.state.messages.append(Message(role=role, content=str(content)))
+                restored = Message(role=role, content=str(content))
+                # Re-stamp the db_message_id on user messages so
+                # /undo can still map a resumed turn back to its
+                # row.  Tool calls / results are not persisted on
+                # the in-memory message — the LLM doesn't need
+                # them rehydrated to continue the turn.
+                if role == Role.USER and msg.get("id") is not None:
+                    restored.metadata["db_message_id"] = msg["id"]
+                self.state.messages.append(restored)
             if self.state.messages:
                 log.info(
                     "Restored %d conversation messages from prior session",
