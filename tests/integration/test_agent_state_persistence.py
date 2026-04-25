@@ -54,8 +54,8 @@ class TestAgentStatePersistence:
         assert total["completion_tokens"] == 25
 
     @pytest.mark.asyncio
-    async def test_messages_not_persisted(self, tmp_path: Path):
-        """Messages are not persisted across sessions (by design)."""
+    async def test_messages_persisted_across_sessions(self, tmp_path: Path):
+        """Messages survive a save/load cycle (Phase 31.11)."""
         provider = FakeProvider([Response(content="Reply")])
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
         await agent.process_message("Hello")
@@ -64,4 +64,6 @@ class TestAgentStatePersistence:
 
         agent2 = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         agent2.load_state()
-        assert len(agent2.state.messages) == 0
+        assert len(agent2.state.messages) == 2
+        assert agent2.state.messages[0].content == "Hello"
+        assert agent2.state.messages[1].content == "Reply"

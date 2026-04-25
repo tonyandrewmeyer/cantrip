@@ -4,6 +4,7 @@ These tests require a running Juju controller (``juju status`` must work).
 They do NOT require an LLM API key.
 """
 
+import json
 import shutil
 import subprocess
 import tempfile
@@ -30,7 +31,41 @@ def _juju_status_works() -> bool:
         return False
 
 
+def _live_model_name() -> str | None:
+    """Return the short name of any non-controller model on the live controller.
+
+    Used by tests that need a real model to query but should not assume a
+    specific name is present.  Returns None when juju is not reachable or
+    the controller has only its bookkeeping ``controller`` model.
+    """
+    if not shutil.which("juju"):
+        return None
+    try:
+        result = subprocess.run(
+            ["juju", "models", "--format", "json"],
+            capture_output=True,
+            timeout=15,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    current = payload.get("current-model")
+    if isinstance(current, str) and current and not current.endswith("/controller"):
+        return current.split("/", 1)[-1]
+    for entry in payload.get("models") or ():
+        short = entry.get("short-name")
+        if isinstance(short, str) and short and short != "controller":
+            return short
+    return None
+
+
 _JUJU_LIVE = _juju_status_works()
+_JUJU_MODEL = _live_model_name()
 
 # Skip the entire module if juju is not available.
 pytestmark = pytest.mark.skipif(
@@ -63,8 +98,10 @@ class TestJujuTools:
     @pytest.mark.skipif(not _JUJU_LIVE, reason="juju controller not reachable")
     async def test_juju_status_named_model(self, tool_map: dict) -> None:
         """juju_status works with an explicit model name."""
+        if _JUJU_MODEL is None:
+            pytest.skip("no non-controller model available on live controller")
         tool = tool_map["juju_status"]
-        result: ToolResult = await tool.execute(model="dev")
+        result: ToolResult = await tool.execute(model=_JUJU_MODEL)
         assert result.success
 
     @pytest.mark.asyncio
@@ -81,10 +118,11 @@ class TestJujuTools:
         tool = tool_map.get("juju_list_models")
         if tool is None:
             pytest.skip("juju_list_models tool not available")
+        if _JUJU_MODEL is None:
+            pytest.skip("no non-controller model available on live controller")
         result: ToolResult = await tool.execute()
         assert result.success
-        # The dev model should appear in the output.
-        assert "dev" in result.output
+        assert _JUJU_MODEL in result.output
 
 
 class TestFileTools:

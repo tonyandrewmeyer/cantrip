@@ -596,23 +596,29 @@ one provider is exhausted and we want to keep running on another.
 """
 
 
+PROVIDER_KEY_ENV: dict[str, str] = {
+    "gemini": "GEMINI_API_KEY",
+    "claude": "ANTHROPIC_API_KEY",
+    "fireworks": "FIREWORKS_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+"""All e2e-supported providers and the env var that gates each one."""
+
+
 def make_provider(name: str) -> LLMProvider:
     """Instantiate a provider by name, skipping the test if keys are missing.
 
     The concrete provider can be overridden per-run by setting the
-    ``CANTRIP_E2E_PROVIDER`` environment variable to ``gemini`` or
-    ``claude`` — tests themselves don't need to know which one.
+    ``CANTRIP_E2E_PROVIDER`` environment variable to any of the names in
+    :data:`PROVIDER_KEY_ENV` — tests themselves don't need to know which
+    one.
     """
     import os
 
     from cantrip.llm import create_provider
 
     resolved = os.environ.get(_PROVIDER_ENV_VAR) or name
-    env_map = {
-        "gemini": "GEMINI_API_KEY",
-        "claude": "ANTHROPIC_API_KEY",
-    }
-    env = env_map.get(resolved)
+    env = PROVIDER_KEY_ENV.get(resolved)
     if env is None:
         pytest.skip(f"unknown e2e provider: {resolved!r}")
     if not os.environ.get(env):

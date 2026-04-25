@@ -119,8 +119,19 @@ class TestJujuLive:
         assert result.success, f"config get failed: {result.error}"
 
     @pytest.mark.asyncio
-    async def test_add_and_destroy_model(self):
-        """JujuAddModelTool + JujuDestroyModelTool round-trip."""
+    async def test_add_and_destroy_model(self, monkeypatch: pytest.MonkeyPatch):
+        """JujuAddModelTool + JujuDestroyModelTool round-trip.
+
+        Phase 80.5 added a destructive-command gate on
+        ``juju_destroy_model``; it refuses unless a policy layer sets
+        ``approve_destructive: true``.  This test exists to verify the
+        destroy path actually destroys, so we approve via monkeypatch
+        rather than touching the user's real policy directory.
+        """
+        from cantrip.agent import policy
+
+        monkeypatch.setattr(policy, "destructive_gate", lambda _tool_name, **_kwargs: (True, ""))
+
         model_name = f"live-roundtrip-{int(time.time())}"
 
         add_tool = JujuAddModelTool()
