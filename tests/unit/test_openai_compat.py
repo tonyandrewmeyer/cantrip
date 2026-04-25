@@ -409,6 +409,7 @@ class TestReasoningContent:
         ]
 
         mock_resp = MagicMock()
+        mock_resp.is_error = False
         mock_resp.raise_for_status = MagicMock()
         mock_resp.aiter_lines = MagicMock(return_value=_async_iter(sse_lines))
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -443,6 +444,7 @@ class TestReasoningContent:
         ]
 
         mock_resp = MagicMock()
+        mock_resp.is_error = False
         mock_resp.raise_for_status = MagicMock()
         mock_resp.aiter_lines = MagicMock(return_value=_async_iter(sse_lines))
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -506,6 +508,7 @@ class TestReasoningContent:
         ]
 
         mock_resp = MagicMock()
+        mock_resp.is_error = False
         mock_resp.raise_for_status = MagicMock()
         mock_resp.aiter_lines = MagicMock(return_value=_async_iter(sse_lines))
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -518,6 +521,47 @@ class TestReasoningContent:
 
         finals = [c for c in chunks if c.is_final]
         assert finals[0].metadata == {}
+
+    @pytest.mark.asyncio
+    async def test_stream_error_response_is_read_before_raise(self):
+        """4xx/5xx responses must be read before raise_for_status fires.
+
+        Regression: when the upstream returned an error mid-stream the
+        old code raised an HTTPStatusError whose ``response.text``
+        access in turn raised ``ResponseNotRead`` — the original error
+        body was lost and the user saw ``Attempted to access streaming
+        response content`` instead of a useful provider message.
+        """
+        provider = _DummyProvider()
+
+        error_response = httpx.Response(
+            status_code=401,
+            request=httpx.Request("POST", "http://dummy/v1/chat/completions"),
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.is_error = True
+        mock_resp.aread = AsyncMock(
+            side_effect=lambda: error_response.read() or None,
+        )
+        mock_resp.raise_for_status = MagicMock(
+            side_effect=httpx.HTTPStatusError(
+                "401 Unauthorized",
+                request=error_response.request,
+                response=error_response,
+            ),
+        )
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+        provider.client.stream = MagicMock(return_value=mock_resp)
+
+        with pytest.raises(ProviderError) as exc:
+            async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
+                pass
+        # The error surfaces the upstream status, not the swallowed
+        # ResponseNotRead.
+        assert "401" in str(exc.value)
+        mock_resp.aread.assert_awaited_once()
 
 
 class TestFireworksNonStreamingCap:
