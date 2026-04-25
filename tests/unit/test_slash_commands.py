@@ -628,12 +628,31 @@ class TestCopy:
         assert result.clipboard_text is None
         assert "no messages" in result.text
 
-    def test_no_assistant_messages(
+    def test_no_assistant_messages_falls_back_to_last_message(
         self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
     ) -> None:
+        # When the first turn errors before the agent produces an
+        # assistant message, ``/copy`` should still capture something
+        # rather than refusing — fall back to the most recent message
+        # and label the role so the user knows what landed on the
+        # clipboard.
         self._seed_messages(session_store, [("user", "hello")])
         agent = _fake_agent(memory_manager, charm_path=tmp_path)
         result = dispatch(agent, "/copy")
+        assert result is not None
+        assert result.clipboard_text == "hello"
+        assert "no assistant messages yet" in result.text
+        assert "user" in result.text
+
+    def test_explicit_assistant_with_no_assistant_messages_refuses(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        # ``/copy assistant`` is an explicit role request — keep the
+        # refusal so the user knows their selector found nothing
+        # rather than silently copying a different role.
+        self._seed_messages(session_store, [("user", "hello")])
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/copy assistant")
         assert result is not None
         assert result.clipboard_text is None
         assert "no assistant messages" in result.text

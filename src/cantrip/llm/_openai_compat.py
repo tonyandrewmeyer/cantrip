@@ -410,6 +410,15 @@ class OpenAICompatBase(LLMProvider):
 
         try:
             async with self.client.stream("POST", "/chat/completions", json=body) as resp:
+                # Streaming responses don't load the body until the
+                # caller iterates.  When the server returns 4xx/5xx
+                # we still want ``_raise_http_error`` to be able to
+                # quote the body, so read it before raising — without
+                # this, ``raise_for_status`` raises an HTTPStatusError
+                # whose ``.response.text`` access then raises
+                # ``ResponseNotRead`` and the original error is lost.
+                if resp.is_error:
+                    await resp.aread()
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):

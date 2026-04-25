@@ -676,6 +676,7 @@ class TestStream:
         ]
 
         mock_resp = MagicMock()
+        mock_resp.is_error = False
         mock_resp.raise_for_status = MagicMock()
         mock_resp.aiter_lines = MagicMock(return_value=_async_iter(sse_lines))
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -708,6 +709,7 @@ class TestStream:
         ]
 
         mock_resp = MagicMock()
+        mock_resp.is_error = False
         mock_resp.raise_for_status = MagicMock()
         mock_resp.aiter_lines = MagicMock(return_value=_async_iter(sse_lines))
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -736,6 +738,7 @@ class TestStream:
         ]
 
         mock_resp = MagicMock()
+        mock_resp.is_error = False
         mock_resp.raise_for_status = MagicMock()
         mock_resp.aiter_lines = MagicMock(return_value=_async_iter(sse_lines))
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)

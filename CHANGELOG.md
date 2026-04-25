@@ -4,6 +4,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **OpenAI-compatible providers no longer swallow streaming errors as
+  ``ResponseNotRead``.**  When an upstream returned a 4xx/5xx during
+  ``client.stream(...)``, the shared ``_raise_http_error`` helper
+  read ``exc.response.text`` from a streaming response that hadn't
+  been loaded — httpx then raised ``Attempted to access streaming
+  response content, without having called ``read()``.`` and the real
+  status (rate-limit, auth failure, content-policy refusal) was lost.
+  The stream block now reads the body before ``raise_for_status``
+  fires, so the user sees the upstream's actual error.  Affects
+  every provider that subclasses ``OpenAICompatBase`` (OpenAI,
+  OpenRouter, Fireworks, the local inference snap).
+- **``/copy`` no longer refuses when the agent's first turn errored
+  before producing an assistant message.**  With no argument it
+  now falls back to the most recent message of any role and labels
+  the role in the confirmation; the explicit ``/copy assistant``
+  selector still surfaces ``no assistant messages`` when nothing
+  matches.
+
 ### Added
 - **Phase 70.1 Librarian — Charmhub + Launchpad cross-charm search.**
   New ``TaskCategory.LIBRARIAN`` with a narrow read-only whitelist
