@@ -3811,41 +3811,74 @@ Five Amp features are explicitly **out of scope or deferred**:
   fixture set — no live Charmhub hits in unit tests.
 - [ ] Document in ``docs/docs/howto-charm-library.html``.
 
-### 70.2 High — Oracle: on-demand second-opinion model
+### 70.2 High — Oracle: on-demand second-opinion model ✓
 
-- [ ] New primary-agent tool ``oracle_consult(question: str,
-  context_hint: str = "")``.  When invoked, it spins up a
-  one-shot provider call on a user-configured "oracle" model
-  (default ``claude-opus-4-7`` with reasoning on, overridable
-  via ``settings.oracle_model``), injects a compact context
-  bundle (active task, last N messages, the question), and
-  returns the raw answer plus token/cost accounting.  No
-  tools are given to the oracle call — it's a pure reasoning
-  query.
-- [ ] The oracle call *does not* enter ``state.messages`` on
-  the main session — it returns a tool result like any other
-  tool, so the main context stays focused.  The transcript
-  (Phase 14) captures the full oracle prompt+response as an
-  annotated side event so nothing is lost for audit.
-- [ ] Per-turn budget: a ``max_oracle_calls_per_turn`` config
-  (default 1) and a ``max_oracle_cost_per_session`` cap
-  (default $2).  Exceeding either returns a tool error the
-  main agent sees and explains in its summary.  Avoids the
-  "agent spams the expensive model" failure mode.
-- [ ] Distinct from Phase 47 (best-of-N racing) and ``/arena``
-  (A/B compare): Oracle is a *one prompt, one answer,
-  continue* pattern.  Document the three in
-  ``docs/docs/explanation-multi-model.html`` so users know
-  which to reach for.
-- [ ] Prompt guidance in ``src/cantrip/agent/prompts/system.py``
-  tells the primary agent when to consult the oracle: charm
-  architecture choices, security-relevant design, library
-  vs. custom-code trade-offs, reactive-vs-ops migration
-  heuristics.  Not: "what's the syntax of X" (docs do that
-  for free).
-- [ ] ``tests/unit/test_oracle.py`` — budget enforcement,
-  transcript recording, no main-context contamination,
-  stubbed provider so tests don't cost real money.
+- [x] New primary-agent tool ``oracle_consult(question: str,
+  context_hint: str = "")`` in
+  ``src/cantrip/agent/tools/oracle.py``.  Spins up a one-shot
+  provider call on a configurable "oracle" model (default
+  ``claude/claude-opus-4-7`` with reasoning on; overridable
+  via ``state.oracle_provider_name`` / ``state.oracle_model``),
+  injects a compact context bundle (active charm task, last
+  six messages capped at 800 chars each, optional caller
+  ``context_hint``, the question), and returns the answer plus
+  the response usage and an estimated USD cost.  No tools are
+  given to the oracle call — it's a pure reasoning query.
+  ``thinking_budget=8000``, ``max_tokens=4096``,
+  ``temperature=0.2``.
+- [x] The oracle call *does not* enter ``state.messages`` on
+  the main session — it returns a ``ToolResult`` like any
+  other tool, so the main context stays focused.  The
+  transcript (Phase 14) captures the full oracle prompt
+  + response + usage + cost as an ``oracle_consult`` side
+  event so nothing is lost for audit; missing-store and
+  refused-call paths are best-effort and don't fail the tool.
+- [x] Per-turn budget ``state.oracle_max_calls_per_turn``
+  (default ``1``) resets at the top of each conversation turn
+  in both ``_run_conversation_loop`` and the streaming variant
+  via ``state.oracle_calls_this_turn = 0``.  Per-session cap
+  ``state.oracle_max_session_cost_usd`` (default ``$2``)
+  accumulates ``estimate_cost`` results across the session.
+  Exceeding either returns a structured tool error naming the
+  exhausted budget and how to raise it; counters stay untouched
+  on a refused call.
+- [x] Distinct from Phase 47 (best-of-N racing) and ``/arena``
+  (A/B compare): Oracle is the *one prompt, one answer,
+  continue* pattern.  Documented side-by-side in
+  ``docs/docs/explanation-race.html`` (sidebar label updated
+  to "Multi-model patterns") with a three-column comparison
+  table, an ``#oracle`` section covering defaults, budget
+  model and rationale, and an ``oracle_consult`` entry in the
+  transcript-events catalogue.  Tool catalogue updated under
+  ``docs/docs/reference-tools.html``.
+- [x] Prompt guidance in
+  ``src/cantrip/agent/prompts/system.md.j2`` under "Consulting
+  the oracle" names the four use cases the tool earns its
+  keep on (charm-architecture, security-relevant design,
+  library-vs-custom trade-offs, reactive→ops migration) and
+  the three it doesn't (syntax lookups, routine implementation
+  steps, obvious yes/no).
+- [x] ``tests/unit/test_oracle.py`` (13 cases) — happy path
+  (provenance footer, cost accounting against Opus 4.7
+  pricing, state-driven model overrides, data payload), no
+  main-context contamination, per-turn cap blocks second call
+  and resets on simulated turn boundary, per-session cost cap
+  refuses up-front, empty-question rejection, transcript
+  side-event recording (with-store, without-store,
+  refused-call).  Stubbed provider factory keeps tests off
+  real money.
+
+**Deferred:**
+- ``settings.oracle_model`` config-file surface — the
+  ROADMAP draft mentioned a settings layer that doesn't exist
+  yet in Cantrip; runtime overrides via ``state.*`` cover the
+  sticky-per-session use case today.  When a generic settings
+  file lands (Phase 68.2 permission YAML is the closest
+  analogue), point ``state.oracle_*`` defaults at it.
+- A ``settings.oracle_max_calls_per_turn=0`` "off" knob — the
+  current implementation already supports this (cap of zero
+  refuses every call), but no slash command exposes the
+  toggle.  File a follow-up if a user wants ``/oracle off``.
 
 ### 70.3 Medium — Glob-conditional guidance frontmatter
 
