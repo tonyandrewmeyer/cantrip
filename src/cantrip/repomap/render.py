@@ -101,6 +101,42 @@ def _format_symbol(sym: Symbol) -> str:
     return f"[{label}] {name}{sym.signature}"
 
 
+def render_summary(rankings: list[FileRanking], *, top_n: int = 8) -> str:
+    """Render a one-line-per-file summary for the chat surface.
+
+    The full :func:`render` output is overwhelming on a charm with
+    many vendored libs or test fixtures — five thousand-plus
+    characters of nested symbols dominate the chat window.  This
+    summary surfaces the *top_n* highest-ranked files with a short
+    label of what each one defines so the user can scan it in two
+    seconds and dig deeper with ``/map full`` if needed.
+
+    Format: one column of file paths, one column of "(N defs)
+    primary symbol, ..." derived from the same ordered kinds the
+    full renderer uses.  Files with no surfaceable symbols are
+    skipped.
+    """
+    out: list[str] = []
+    shown = 0
+    for ranking in rankings:
+        if shown >= top_n:
+            break
+        if not ranking.symbols:
+            continue
+        primaries = _select_symbols(ranking.symbols)
+        if not primaries:
+            continue
+        first = _format_symbol(primaries[0])
+        # Trim long signatures so the summary stays one line per file.
+        if len(first) > 80:
+            first = first[:77] + "..."
+        more = len(ranking.symbols) - 1
+        suffix = f", +{more} more" if more > 0 else ""
+        out.append(f"  {ranking.file}  —  {first}{suffix}")
+        shown += 1
+    return "\n".join(out)
+
+
 def _truncate_block(block: str, char_budget: int) -> str:
     """Cut a single oversized file block at a line boundary."""
     if char_budget <= 0:

@@ -681,22 +681,30 @@ how-to.
 <dl>
   <dt><code>/map</code></dt>
   <dd>
-    Print the graph-ranked symbol map of the active charm — the
-    same view the agent receives on every turn. Files are ordered
-    by PageRank over a reference graph (caller → callee, plus
-    YAML interface names from <code>charmcraft.yaml</code>); each
-    file lists its top classes, functions, methods, config
-    options, actions, and relations. Use it to confirm what the
-    agent thinks the repo looks like before asking it to navigate.
+    Print a compact summary of the top-ranked files in the active
+    charm — one line per file with the file's primary symbol and
+    a "+N more" hint.  Files are ordered by PageRank over a
+    reference graph (caller → callee, plus YAML interface names
+    from <code>charmcraft.yaml</code>).  Use this to confirm what
+    the agent thinks the repo looks like before asking it to
+    navigate.
   </dd>
 
-  <dt><code>/map-refresh</code></dt>
+  <dt><code>/map full</code></dt>
   <dd>
-    Discard the cache at <code>.cantrip/repomap.json</code> and
-    reparse every source file from scratch. Normal builds are
-    incremental (only files whose mtime changed get reparsed); a
-    refresh is useful after a large rename or when the cache
-    looks stale.
+    Print the full per-file symbol breakdown — the same wall-of-
+    text view the agent receives in its system prompt on every
+    turn.  Useful for digging into a specific area; overwhelming
+    as the default in a small chat panel.
+  </dd>
+
+  <dt><code>/map-refresh</code> / <code>/map-refresh full</code></dt>
+  <dd>
+    Discard the cache at <code>.cantrip-repomap.json</code> and
+    reparse every source file from scratch, then print the
+    compact (or full) summary.  Normal builds are incremental
+    (only files whose mtime changed get reparsed); a refresh is
+    useful after a large rename or when the cache looks stale.
   </dd>
 </dl>
 

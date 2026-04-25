@@ -531,6 +531,76 @@ class TestRepoMap:
         # The user's own src/charm.py still ranks.
         assert "src/charm.py" in files
 
+    def test_render_summary_one_line_per_file(self, tmp_path: Path) -> None:
+        # Default ``/map`` view: one line per file with the primary
+        # symbol and a "+N more" hint.  Stays well under the
+        # full-render character count so a small chat panel isn't
+        # swamped by a wall of text.
+        _make_charm(tmp_path)
+        rm = RepoMap(tmp_path)
+        rm.build()
+
+        summary = rm.render_summary(top_n=8)
+        full = rm.render_full()
+
+        # Summary is dramatically shorter than the full output.
+        assert len(summary) < len(full) // 2
+        # One line per file.
+        lines = [line for line in summary.splitlines() if line.strip()]
+        assert len(lines) >= 1
+        # Each line is a single line (no embedded newlines after
+        # split) and reasonably short.
+        for line in lines:
+            assert "\n" not in line
+            assert len(line) <= 120
+
+    def test_render_summary_caps_top_n(self, tmp_path: Path) -> None:
+        # When there are more files than the cap, only top_n appear.
+        _make_charm(tmp_path)
+        # Add several extra files so we have more than top_n with symbols.
+        for i in range(15):
+            (tmp_path / f"extra_{i}.py").write_text(f"class Extra{i}: pass\n")
+        rm = RepoMap(tmp_path)
+        rm.build()
+        summary = rm.render_summary(top_n=5)
+        lines = [line for line in summary.splitlines() if line.strip()]
+        assert len(lines) <= 5
+
+    def test_handle_map_default_is_compact(self, tmp_path: Path) -> None:
+        # The slash command default is the compact summary plus a
+        # footer pointing at ``/map full`` for the wall-of-text view.
+        from unittest.mock import MagicMock
+
+        from cantrip.agent.slash_commands import handle_map
+
+        _make_charm(tmp_path)
+        rm = RepoMap(tmp_path)
+        rm.build()
+        agent = MagicMock()
+        agent.repo_map = rm
+
+        text = handle_map(agent, "")
+        assert "Repository map" in text
+        # Footer hint surfaces the deeper view.
+        assert "/map full" in text
+        # And the compact body is much smaller than the full render.
+        assert len(text) < len(rm.render_full())
+
+    def test_handle_map_full_returns_full_render(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+
+        from cantrip.agent.slash_commands import handle_map
+
+        _make_charm(tmp_path)
+        rm = RepoMap(tmp_path)
+        rm.build()
+        agent = MagicMock()
+        agent.repo_map = rm
+
+        text = handle_map(agent, "full")
+        # Body contains a per-file symbol line, not just a summary.
+        assert "MyCharm.__init__" in text or "build_layer" in text
+
     def test_dispatch_catches_handler_exceptions(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

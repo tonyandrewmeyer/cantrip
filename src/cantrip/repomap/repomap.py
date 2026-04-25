@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from cantrip.repomap.graph import FileRanking, rank_files
-from cantrip.repomap.render import render
+from cantrip.repomap.render import render, render_summary
 from cantrip.repomap.symbols import (
     FileSymbols,
     Symbol,
@@ -232,10 +232,20 @@ class RepoMap:
         return render(self._rankings, token_budget=budget)
 
     def render_full(self) -> str:
-        """Render the map at the full configured budget — used by ``/map``."""
+        """Render the map at the full configured budget — used by ``/map full``."""
         if not self._rankings:
             return ""
         return render(self._rankings, token_budget=self._token_budget)
+
+    def render_summary(self, *, top_n: int = 8) -> str:
+        """Render a one-line-per-file summary of the top *top_n* ranked files.
+
+        The default chat output for ``/map``.  See
+        :func:`cantrip.repomap.render.render_summary` for the format.
+        """
+        if not self._rankings:
+            return ""
+        return render_summary(self._rankings, top_n=top_n)
 
     # -- internals -----------------------------------------------------
 

@@ -84,8 +84,8 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/build", "Leave plan mode and resume executing changes"),
     CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
-    CommandInfo("/map", "Show the graph-ranked repository symbol map"),
-    CommandInfo("/map-refresh", "Force a rebuild of the repository symbol map"),
+    CommandInfo("/map", "Show top-ranked repository files (`/map full` for everything)"),
+    CommandInfo("/map-refresh", "Rebuild the repository map and reprint"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -231,9 +231,9 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
     if verb == "/ralph":
         return SlashResult(text=handle_ralph(agent, args))
     if verb == "/map":
-        return SlashResult(text=handle_map(agent))
+        return SlashResult(text=handle_map(agent, args))
     if verb == "/map-refresh":
-        return SlashResult(text=handle_map_refresh(agent))
+        return SlashResult(text=handle_map_refresh(agent, args))
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -580,10 +580,13 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "(Ralph).  Re-feeds the goal up to N times until the agent "
         "emits `STOP` or stall detection trips.  Engages inside "
         "`cantrip run --print --ralph N`.\n"
-        "- `/map` — print the graph-ranked repository symbol map.  "
-        "The same view the agent sees on every turn.\n"
-        "- `/map-refresh` — force a full rebuild of the repo-map "
-        "cache (`.cantrip/repomap.json`) and reprint it.\n"
+        "- `/map` — print a compact summary of the top-ranked "
+        "repository files (one line per file, primary symbol "
+        "shown).  Use `/map full` for the per-file symbol "
+        "breakdown the agent sees on every turn.\n"
+        "- `/map-refresh` — discard the repo-map cache "
+        "(`.cantrip-repomap.json`) and reparse from scratch.  "
+        "Same compact-vs-full toggle as `/map`.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
     custom = getattr(agent, "custom_commands", None) if agent is not None else None
@@ -1126,7 +1129,14 @@ def handle_ralph(agent: CantripAgent, args: str) -> str:
     )
 
 
-def _format_map_response(headline: str, rendered: str, file_count: int) -> str:
+def _format_map_response(
+    headline: str,
+    rendered: str,
+    file_count: int,
+    *,
+    shown_count: int | None = None,
+    footer_hint: str | None = None,
+) -> str:
     """Build a chat-safe response for the /map family of slash commands.
 
     System messages render the body as Rich markup (``MessageWidget``
@@ -1136,21 +1146,40 @@ def _format_map_response(headline: str, rendered: str, file_count: int) -> str:
     be silently stripped (best case) or trigger a ``MarkupError``
     that crashes the surface (worst case).  ``rich.markup.escape``
     rewrites ``[`` as ``\\[`` so every bracket renders verbatim.
+
+    ``shown_count`` and ``footer_hint`` produce a "showing N of M
+    files; use /map full for the rest" footer when the response is a
+    summary view.
     """
     from rich.markup import escape as rich_escape
 
     safe = rich_escape(rendered)
-    return f"**{headline}** ({file_count} files)\n\n```\n{safe}\n```"
+    if shown_count is not None and shown_count < file_count:
+        header = f"**{headline}** (showing {shown_count} of {file_count} files)"
+    else:
+        header = f"**{headline}** ({file_count} files)"
+    body = f"{header}\n\n```\n{safe}\n```"
+    if footer_hint:
+        body += f"\n\n{footer_hint}"
+    return body
 
 
-def handle_map(agent: CantripAgent) -> str:
-    """``/map``: print the graph-ranked symbol map.
+def _wants_full_map(args: str) -> bool:
+    """``/map full`` (or ``/map -v``, ``/map all``) opts in to the wall-of-text view."""
+    return args.strip().lower() in {"full", "-v", "--verbose", "all"}
 
-    Shows the same view the agent receives on every turn (sized at
-    the full configured budget — context-pressure shrinking only
-    applies to the in-prompt copy).  Any unexpected exception lands
-    in the diagnostics log; the user sees a friendly notice with the
-    log path so they can hand it to a developer.
+
+def handle_map(agent: CantripAgent, args: str = "") -> str:
+    """``/map``: graph-ranked repository symbol map.
+
+    Default output is a compact summary (top files with their
+    primary symbol).  ``/map full`` prints the full per-file
+    breakdown — useful for digging into a specific area but
+    overwhelming as the default in a small chat panel.
+
+    Any unexpected exception lands in the diagnostics log; the
+    user sees a friendly notice with the log path so they can hand
+    it to a developer.
     """
     rm = agent.repo_map
     if rm is None:
@@ -1160,7 +1189,10 @@ def handle_map(agent: CantripAgent) -> str:
         )
     try:
         rm.build()
-        rendered = rm.render_full()
+        if _wants_full_map(args):
+            rendered = rm.render_full()
+            return _format_map_response("Repository map", rendered, len(rm.rankings))
+        rendered = rm.render_summary()
     except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
         return diagnostics.report_internal_error("/map", exc)
     if not rendered:
@@ -1168,21 +1200,44 @@ def handle_map(agent: CantripAgent) -> str:
             "Repository map is empty — no parseable Python or charm "
             "metadata found under the active charm path."
         )
-    return _format_map_response("Repository map", rendered, len(rm.rankings))
+    shown = rendered.count("\n") + 1
+    footer = "Use `/map full` for the per-file symbol breakdown."
+    return _format_map_response(
+        "Repository map",
+        rendered,
+        len(rm.rankings),
+        shown_count=shown,
+        footer_hint=footer,
+    )
 
 
-def handle_map_refresh(agent: CantripAgent) -> str:
-    """``/map-refresh``: discard cache and reparse everything."""
+def handle_map_refresh(agent: CantripAgent, args: str = "") -> str:
+    """``/map-refresh``: discard the cache and reparse from scratch.
+
+    Same compact-vs-full toggle as ``/map``.
+    """
     rm = agent.repo_map
     if rm is None:
         return "No repository map: this session has no active charm path."
     try:
-        rendered = agent.refresh_repo_map()
+        rm.build(force=True)
+        if _wants_full_map(args):
+            rendered = rm.render_full()
+            return _format_map_response("Repository map rebuilt", rendered, len(rm.rankings))
+        rendered = rm.render_summary()
     except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
         return diagnostics.report_internal_error("/map-refresh", exc)
     if not rendered:
         return "Repository map rebuilt — no parseable files found under the active charm path."
-    return _format_map_response("Repository map rebuilt", rendered, len(rm.rankings))
+    shown = rendered.count("\n") + 1
+    footer = "Use `/map-refresh full` for the per-file symbol breakdown."
+    return _format_map_response(
+        "Repository map rebuilt",
+        rendered,
+        len(rm.rankings),
+        shown_count=shown,
+        footer_hint=footer,
+    )
 
 
 def _handle_share(agent: CantripAgent) -> SlashResult:

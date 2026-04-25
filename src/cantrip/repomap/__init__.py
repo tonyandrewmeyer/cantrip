@@ -21,7 +21,12 @@ from cantrip.repomap.repomap import (
 )
 from cantrip.repomap.symbols import Symbol, SymbolKind
 
+# Public default for ``/map`` summary — small enough to stay readable
+# in a typical TUI chat panel; ``/map full`` bypasses it.
+DEFAULT_SUMMARY_TOP_N = 8
+
 __all__ = [
+    "DEFAULT_SUMMARY_TOP_N",
     "DEFAULT_TOKEN_BUDGET",
     "RepoMap",
     "Symbol",
