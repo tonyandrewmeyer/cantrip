@@ -1108,13 +1108,30 @@ def handle_ralph(agent: CantripAgent, args: str) -> str:
     )
 
 
+def _format_map_response(headline: str, rendered: str, file_count: int) -> str:
+    """Build a chat-safe response for the /map family of slash commands.
+
+    System messages render the body as Rich markup (``MessageWidget``
+    in ``cantrip.tui.widgets.chat``).  Bracketed tokens like
+    ``[relation]`` and Python type annotations like ``list[int]``
+    look like Rich style tags, so without escaping they would either
+    be silently stripped (best case) or trigger a ``MarkupError``
+    that crashes the surface (worst case).  ``rich.markup.escape``
+    rewrites ``[`` as ``\\[`` so every bracket renders verbatim.
+    """
+    from rich.markup import escape as rich_escape
+
+    safe = rich_escape(rendered)
+    return f"**{headline}** ({file_count} files)\n\n```\n{safe}\n```"
+
+
 def handle_map(agent: CantripAgent) -> str:
-    """Phase 71.1 ``/map``: print the graph-ranked symbol map.
+    """``/map``: print the graph-ranked symbol map.
 
     Shows the same view the agent receives on every turn (sized at
     the full configured budget — context-pressure shrinking only
-    applies to the in-prompt copy).  Returns a friendly notice when
-    no charm is active or the map is empty.
+    applies to the in-prompt copy).  Failures are reported in-line
+    so the slash command can never crash the surface.
     """
     rm = agent.repo_map
     if rm is None:
@@ -1122,25 +1139,33 @@ def handle_map(agent: CantripAgent) -> str:
             "No repository map: this session has no active charm path.  "
             "Open a charm and try again, or set the path with the CLI."
         )
-    rm.build()
-    rendered = rm.render_full()
+    try:
+        rm.build()
+        rendered = rm.render_full()
+    except Exception as exc:  # noqa: BLE001 — surface, don't crash.
+        log.warning("/map build failed: %s", exc, exc_info=True)
+        return f"Repository map build failed: {type(exc).__name__}: {exc}"
     if not rendered:
         return (
             "Repository map is empty — no parseable Python or charm "
             "metadata found under the active charm path."
         )
-    return f"**Repository map** ({len(rm.rankings)} files)\n\n```\n{rendered}\n```"
+    return _format_map_response("Repository map", rendered, len(rm.rankings))
 
 
 def handle_map_refresh(agent: CantripAgent) -> str:
-    """Phase 71.1 ``/map-refresh``: discard cache and reparse everything."""
+    """``/map-refresh``: discard cache and reparse everything."""
     rm = agent.repo_map
     if rm is None:
         return "No repository map: this session has no active charm path."
-    rendered = agent.refresh_repo_map()
+    try:
+        rendered = agent.refresh_repo_map()
+    except Exception as exc:  # noqa: BLE001 — surface, don't crash.
+        log.warning("/map-refresh failed: %s", exc, exc_info=True)
+        return f"Repository map rebuild failed: {type(exc).__name__}: {exc}"
     if not rendered:
         return "Repository map rebuilt — no parseable files found under the active charm path."
-    return f"**Repository map rebuilt** ({len(rm.rankings)} files)\n\n```\n{rendered}\n```"
+    return _format_map_response("Repository map rebuilt", rendered, len(rm.rankings))
 
 
 def _handle_share(agent: CantripAgent) -> SlashResult:

@@ -443,6 +443,46 @@ class TestRepoMap:
         assert rm.rankings == []
         assert rm.render_for_prompt() == ""
 
+    def test_handle_map_escapes_rich_markup(self, tmp_path: Path) -> None:
+        # System messages render their body as Rich markup, so the
+        # bracketed kind labels (``[relation]``, ``[container]``) and
+        # Python type annotations (``list[int]``) must be escaped or
+        # Rich will silently strip them — and on some inputs raise.
+        from unittest.mock import MagicMock
+
+        from rich.markup import render as rich_render
+
+        from cantrip.agent.slash_commands import handle_map
+
+        _make_charm(tmp_path)
+        # Build a real RepoMap so the bracketed labels are present.
+        rm = RepoMap(tmp_path)
+        rm.build()
+
+        agent = MagicMock()
+        agent.repo_map = rm
+        text = handle_map(agent)
+        # The escaped form contains ``\[relation]`` literally.
+        assert r"\[relation]" in text or r"\[config-option]" in text
+        # And rendering through Rich preserves the original brackets.
+        rendered_back = str(rich_render(text))
+        assert "[relation]" in rendered_back or "[config-option]" in rendered_back
+
+    def test_handle_map_never_raises_on_build_failure(self, tmp_path: Path) -> None:
+        # If the repo-map build blows up for any reason, the slash
+        # command must surface a string, never propagate.
+        from unittest.mock import MagicMock
+
+        from cantrip.agent.slash_commands import handle_map
+
+        broken_rm = MagicMock()
+        broken_rm.build.side_effect = RuntimeError("boom")
+        agent = MagicMock()
+        agent.repo_map = broken_rm
+        result = handle_map(agent)
+        assert "build failed" in result.lower()
+        assert "RuntimeError" in result
+
     def test_skips_excluded_directories(self, tmp_path: Path) -> None:
         _make_charm(tmp_path)
         # Create a venv with code that should be ignored.
