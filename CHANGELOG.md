@@ -4,7 +4,36 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **PyPI distribution renamed to ``juju-cantrip``.**  The
+  ``cantrip`` name on PyPI was claimed by an unrelated semantic-layer
+  project before we published, so the distribution moves to
+  ``juju-cantrip``.  Install with ``uv tool install juju-cantrip``;
+  the CLI command (``cantrip``), the import package (``cantrip``),
+  the snap (``cantrip``), and the config/cache directories
+  (``~/.config/cantrip``, ``~/.cache/cantrip``) all keep the old
+  name.  Update checker, install-method detection, and post-REPL
+  upgrade hints now point at the new distribution name on PyPI.
+
 ### Added
+- **Phase 67.1: session tree rewind and branch.**  Conversations
+  are now a tree.  ``/branch [turn-id]`` rewinds the active head
+  to a prior turn and rebuilds in-memory messages from the new
+  path; without an argument it forks before the most recent user
+  turn (the typical "bad steering message" recovery).  ``/tree``
+  renders the session as a depth-first traversal — every surface
+  gets a markdown form showing turn ids and an active-branch
+  marker; the TUI overrides with an interactive
+  ``OptionList`` picker that round-trips through ``/branch``.
+  ``export-transcript`` defaults to the active branch and accepts
+  ``--branch <turn-id>`` to walk a different leaf.  Off-branch
+  rows stay in the SQLite store; only ``/undo`` deletes.  Schema
+  v12 adds ``parent_turn_id`` to ``messages`` plus an
+  ``active_head_message_id`` pointer on the session row;
+  pre-v12 transcripts migrate to a degenerate single-branch
+  tree on first open.  Closes Phase 67.  The Amp-style ``@@``
+  prior-session picker is deferred until a session registry
+  lands — the in-session-only shape would mis-set expectations.
 - **Escape cancels the in-flight agent turn.**  TUI binds
   <kbd>Esc</kbd> alongside the existing <kbd>Ctrl+C</kbd> on the
   main view (both call ``action_cancel_agent``); modal screens

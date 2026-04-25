@@ -270,6 +270,17 @@ Export a session transcript from a `.cantrip` file.
     timestamp (e.g. <code>2026-04-15T10:00:00Z</code>).
   </dd>
 
+  <dt>--branch TURN_ID</dt>
+  <dd>
+    Export the conversation path leading to a specific turn id
+    (Phase 67.1).  Without this flag, the export follows the
+    session's currently active branch — a forked session
+    therefore exports only the active path by default.
+    Off-branch turns stay reachable: list them with
+    <code>/tree</code> and re-export with
+    <code>--branch &lt;id&gt;</code> when needed.
+  </dd>
+
   <dt>--page-size N</dt>
   <dd>
     Split HTML output into pages of N conversation messages each.
@@ -720,6 +731,36 @@ for configuration.
   </dd>
 </dl>
 
+{#branching}
+### Branch and tree
+
+Phase 67.1 turns the conversation history into a tree.
+<code>/undo</code> deletes; <code>/branch</code> rewinds without
+deleting, so every dead end stays reachable.
+
+<dl>
+  <dt><code>/branch [turn-id]</code></dt>
+  <dd>
+    Move the active head to a prior turn and rebuild the
+    in-memory conversation from that point. With no argument,
+    forks before the most recent user turn — the typical
+    recovery from a bad steering message. Off-branch turns stay
+    in the SQLite store and remain reachable through
+    <code>/tree</code> and
+    <code>export-transcript --branch &lt;id&gt;</code>.
+  </dd>
+
+  <dt><code>/tree</code></dt>
+  <dd>
+    Render the session as an indented tree of turns. Every
+    surface gets a markdown form with turn ids and an active-
+    branch marker (<code>*</code>); the TUI replaces it with an
+    interactive picker — Enter on a row dispatches
+    <code>/branch &lt;id&gt;</code>, Escape leaves the active
+    branch alone.
+  </dd>
+</dl>
+
 Snapshots are on by default. Disable per-session with
 <code>--no-snapshots</code> on the command line or
 <code>CANTRIP_SNAPSHOTS=false</code> in the environment.
@@ -911,9 +952,9 @@ non-blocking notice:
 
 The upgrade command is installer-aware. Cantrip inspects
 `sys.executable` to pick among
-`uv tool upgrade cantrip`, `pipx upgrade cantrip`,
-`uv pip install --user --upgrade cantrip`,
-`uv pip install --upgrade cantrip`, and
+`uv tool upgrade juju-cantrip`, `pipx upgrade juju-cantrip`,
+`uv pip install --user --upgrade juju-cantrip`,
+`uv pip install --upgrade juju-cantrip`, and
 `snap refresh cantrip`. When nothing matches the
 notice falls back to the PyPI URL rather than guess.
 

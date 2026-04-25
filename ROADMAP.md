@@ -1010,7 +1010,7 @@ completion.
 
 ---
 
-## Phase 67: Pi-Inspired Session and Scripting Features
+## Phase 67: Pi-Inspired Session and Scripting Features ✓
 
 **Goal:** Pi (``pi.dev``) is a minimal, extension-first coding agent.
 Its core is deliberately small; features other agents bake in
@@ -1073,45 +1073,62 @@ Two Pi features are explicitly **out of scope**:
   bigger commitment than the print-mode event stream covers, and
   we have no use case yet.
 
-### 67.1 High — Session tree: rewind and branch
+### 67.1 High — Session tree: rewind and branch ✓
 
-- [ ] Audit ``src/cantrip/transcripts/`` (or the equivalent SQLite
-  layer from Phase 14) for the assumptions that sessions are
-  linear.  Likely candidates: resume logic in
-  ``src/cantrip/agent/core.py`` that loads messages in insertion
-  order, and any summariser that walks ``state.messages`` as a
-  list.  Write the findings into the phase before changing code.
-- [ ] Add a ``parent_turn_id`` column (nullable; ``NULL`` means
-  "root") to the turn table.  Backfill existing rows to form a
-  degenerate linear tree.  Add an index on ``(session_id,
-  parent_turn_id)``.
-- [ ] Add ``/branch [turn-id]`` — forks from the given turn (or
-  the one before the last user message, if omitted) and makes
-  the forked branch active.  ``state.messages`` is rebuilt from
-  the new active path.
-- [ ] Add ``/tree`` — opens a TUI modal that renders the session
-  as an indented tree with timestamps and the first line of each
-  user message; ``Enter`` activates a node.  Non-destructive —
-  the original branch stays in the DB.
-- [ ] Export already operates per-session; update
-  ``export-transcript`` to take an optional ``--branch
-  <turn-id>`` filter so a branched session exports only the
-  active path (default: the currently active branch).
-- [ ] ``@@`` prompt affordance (from Amp): typing ``@@`` in
-  the TUI chat input opens a fuzzy search over the user's
-  prior sessions and branches (title, first user message,
-  date, active charm) and inserts a reference token
-  ``@S-<session-id>`` or ``@T-<turn-id>`` into the message.
-  On send, the referenced branch's last assistant summary
-  (or a configurable window of messages) is prepended as a
-  "cited-thread" block so the agent can draw on the prior
-  context without the user copy-pasting.  Reuses the tree
-  modal's picker widget — one UI, two entry points.
-- [ ] ``tests/unit/test_transcript_branching.py`` — round-trip
-  branch/rewind, assert the original branch is still reachable,
-  resume picks the last active branch; ``@@`` inserts a
-  reference token and the referenced context is materialised
-  exactly once on send.
+- [x] Audited ``src/cantrip/agent/store.py``, ``core.py``,
+  ``transcript/export.py``, and ``context.py`` for linear-session
+  assumptions: ``load_messages`` did ``ORDER BY id``;
+  ``load_state`` walked the result as a flat list; export and
+  ``transcript_tail`` did the same; the compaction path operated on
+  the in-memory list (which is rebuilt branch-aware now, so it gets
+  the right slice for free).  Findings drove the schema and resume
+  changes below.
+- [x] Added ``parent_turn_id`` (nullable; ``NULL`` = root) to
+  ``messages`` plus an index on ``parent_turn_id``.  ``session``
+  gained ``active_head_message_id``.  v12 migration backfills the
+  parent chain row-by-row so existing transcripts read as a
+  degenerate linear tree, and points the head at the last existing
+  message.  The index is created in a post-migration step so
+  ``executescript`` doesn't hit a column-not-yet-added error on
+  pre-v12 databases.  No ``session_id`` column on messages — the
+  store is single-session per ``.cantrip`` file (``CHECK (id = 1)``
+  on the session row).
+- [x] ``/branch [turn-id]`` rewinds the active head to the given
+  turn (or the parent of the most recent user turn when no
+  argument is supplied), then rebuilds ``state.messages`` from
+  ``load_active_branch``.  Off-branch rows stay in SQLite — they
+  remain reachable through ``/tree`` and ``--branch`` re-export.
+  ``/undo`` continues to delete via ``delete_messages_from``,
+  which now rewinds the head to the parent of the deleted leaf so
+  the next ``record_message`` doesn't dangle.
+- [x] ``/tree`` ships in two forms.  The shared markdown form lists
+  every persisted turn grouped under its parent, marks the active
+  branch with ``*``, and exposes turn ids the user can pass to
+  ``/branch``.  The TUI surface intercepts the verb and opens
+  ``TreePickerScreen`` instead — an ``OptionList`` modal whose
+  Enter result round-trips through ``handle_branch`` so the
+  activate / rebuild logic stays centralised.
+- [x] ``export-transcript`` now defaults to the currently active
+  branch and accepts ``--branch <turn-id>`` to walk a different
+  leaf.  ``load_active_branch`` gained an explicit ``head``
+  parameter to back the new selector; off-branch rows stay
+  exportable when the user wants them.
+- [x] ``tests/unit/test_transcript_branching.py`` covers the round
+  trip: head advance, branch/rewind round-trip, ``/undo``-style
+  delete rewind, dangling-head tolerance on resume, ``/branch``
+  with explicit and implicit turn ids, ``/tree`` rendering with
+  active-branch markers, the TUI picker's option-id stability, the
+  v11→v12 migration, the active-branch default on export, and
+  ``--branch`` walking an explicit leaf.
+- [ ] **Deferred: ``@@`` prompt affordance.**  The Amp-style
+  cross-session picker needs a session registry Cantrip doesn't
+  yet maintain (``~/.config/cantrip/sessions.json`` or similar)
+  so ``@@`` can find sessions outside the active charm directory.
+  In-session ``@T-<id>`` would be a smaller win but the spec is
+  about *prior* sessions, so shipping an in-session-only version
+  would mis-set expectations.  Re-open when a session registry
+  lands or when concrete user reports of "wish I could quote that
+  branch I had two days ago" arrive.
 
 ### 67.2 Medium — Mid-session model switching ✓
 
@@ -3469,7 +3486,7 @@ deliberately rather than copy-pasting blindly.
 | M64: Polite Repo Bootstrap | 64 ✓ | Create-GitHub-repo offer moved out of the main chat and suggests ``<workload>-operator`` by default |
 | M65: Right-Panel Tidy | 65 | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
 | M66: Transcript/Log Visible | 66 ✓ | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
-| M67: Pi-Inspired Sessions | 67 | Session tree rewind/branch, mid-session ``/model``, ``cantrip run --print --json`` for scripts, and ``/share`` to secret gist — four gaps the Pi coding agent fills that charm authors also hit |
+| M67: Pi-Inspired Sessions | 67 ✓ | Session tree rewind/branch, mid-session ``/model``, ``cantrip run --print --json`` for scripts, and ``/share`` to secret gist — four gaps the Pi coding agent fills that charm authors also hit |
 | M68: OpenCode Safety Rails | 68 ✓ | Snapshot-backed ``/undo``/``/redo`` for file changes, declarative ask/allow/deny permissions, markdown-defined user slash commands, and a session-level plan mode — four guardrails adopted from OpenCode that map onto Cantrip's existing subsystems |
 | M69: Kimi Workflow Features | 69 | Bounded Ralph-Loop iterate-until-green, ``--yolo`` unattended switch, ``Ctrl-X`` shell mode, and Mermaid/D2 Flow skills — four Kimi CLI patterns that fit Cantrip's autonomous loop, skill system, and CI story |
 | M70: Amp-Inspired Depth | 70 | Librarian subagent that searches Charmhub and Launchpad, Oracle tool for on-demand second-opinion reasoning, glob-conditional guidance in AGENTS.md / skills, prompt-based review Checks that layer on top of charmlint, and a Painter tool that generates a Charmhub-style ``icon.svg`` |
