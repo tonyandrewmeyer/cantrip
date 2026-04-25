@@ -77,6 +77,7 @@ from cantrip.agent.tools import Tool, ToolResult, build_tools
 from cantrip.agent.tools.planning import (
     detect_cos_juju_model,
     detect_current_juju_model,
+    juju_model_substrate,
 )
 from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.hooks import (
@@ -2040,8 +2041,23 @@ class CantripAgent:
         """
         if self._watcher is not None and self._watcher.running:
             return True
+        substrate = self.state.charm_type
+        # If a previously-set dev_model belongs to the wrong substrate
+        # (e.g. LXD model for a k8s charm), drop it so auto-detect can
+        # pick a matching one.  When ``charm_type`` is unknown we trust
+        # whatever the user/state had.
+        if self.state.dev_model and substrate:
+            actual = juju_model_substrate(self.state.dev_model)
+            if actual is not None and actual != substrate:
+                log.info(
+                    "Dev model '%s' is %s but charm is %s — re-detecting",
+                    self.state.dev_model,
+                    actual,
+                    substrate,
+                )
+                self.state.dev_model = None
         if not self.state.dev_model:
-            detected = detect_current_juju_model()
+            detected = detect_current_juju_model(prefer_substrate=substrate)
             if detected:
                 self.state.dev_model = detected
             else:

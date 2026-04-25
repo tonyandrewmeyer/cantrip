@@ -119,11 +119,33 @@ class PlanTasksTool(Tool):
 
         self._queue.add_tasks(tasks)
 
+        # Persist charm_name and charm_type from the planning context first
+        # so that downstream auto-detection can prefer the right substrate.
+        if context.charm_name and not self._state.charm_name:
+            self._state.charm_name = context.charm_name
+        if context.charm_type and not self._state.charm_type:
+            self._state.charm_type = context.charm_type
+
         # Sprint path: eagerly set state so deploy tasks can proceed
         # without the conversation LLM needing to set things up.
         if is_sprint(context):
+            substrate = self._state.charm_type
+            # If a previously-detected dev_model has the wrong substrate
+            # (e.g. an LXD model when the charm is k8s), drop it and
+            # re-detect — the original guess was made before charm_type
+            # was known.
+            if self._state.dev_model and substrate:
+                actual = juju_model_substrate(self._state.dev_model)
+                if actual is not None and actual != substrate:
+                    log.info(
+                        "Sprint: dev_model '%s' is %s but charm is %s — re-detecting",
+                        self._state.dev_model,
+                        actual,
+                        substrate,
+                    )
+                    self._state.dev_model = None
             if not self._state.dev_model:
-                detected = detect_current_juju_model()
+                detected = detect_current_juju_model(prefer_substrate=substrate)
                 if detected:
                     self._state.dev_model = detected
                     log.info("Sprint: auto-detected dev model '%s'", detected)
@@ -133,12 +155,6 @@ class PlanTasksTool(Tool):
                 self._state.charm_path = expected_path
                 log.info("Sprint: set charm_path to '%s'", expected_path)
 
-        # Persist charm_name and charm_type from the planning context.
-        if context.charm_name and not self._state.charm_name:
-            self._state.charm_name = context.charm_name
-        if context.charm_type and not self._state.charm_type:
-            self._state.charm_type = context.charm_type
-
         summary = _format_plan_summary(tasks)
         return ToolResult(
             success=True,
@@ -147,15 +163,31 @@ class PlanTasksTool(Tool):
         )
 
 
-def detect_current_juju_model() -> str | None:
-    """Return the name of the currently active (starred) Juju model.
+_SKIP_MODELS = frozenset({"controller", "cos"})
 
-    Prefers the model marked as current (``*`` in ``juju models``).
-    Skips the controller model and ``cos`` (which is for observability).
+
+def _substrate_for_model_type(model_type: str | None) -> str | None:
+    """Translate a Juju ``model-type`` into the cantrip substrate label.
+
+    ``caas`` is Kubernetes; ``iaas`` is machine (lxd, MAAS, openstack, …).
+    Anything else is unknown.
+    """
+    if model_type == "caas":
+        return "k8s"
+    if model_type == "iaas":
+        return "machine"
+    return None
+
+
+def _list_juju_models() -> tuple[str | None, list[dict[str, Any]]]:
+    """Return ``(current_model, models)`` from ``juju models --format=json``.
+
+    Returns ``(None, [])`` if Juju is unavailable or the call fails — callers
+    treat that as "no Juju on this host" and skip auto-detection.
     """
     juju = shutil.which("juju")
     if not juju:
-        return None
+        return None, []
     try:
         result = subprocess.run(
             [juju, "models", "--format=json"],
@@ -164,27 +196,78 @@ def detect_current_juju_model() -> str | None:
             timeout=10,
         )
         if result.returncode != 0:
-            return None
+            return None, []
         data = json.loads(result.stdout)
-        current_model = data.get("current-model")
-        models = data.get("models", [])
-
-        # Prefer the current model if it's not controller/cos.
-        skip = {"controller", "cos"}
-        if current_model and current_model not in skip:
-            return current_model
-
-        # Otherwise pick the first non-controller, non-cos model.
-        for model in models:
-            if model.get("is-controller"):
-                continue
-            name = model.get("short-name", "")
-            if name in skip:
-                continue
-            if name:
-                return name
     except (subprocess.TimeoutExpired, OSError, ValueError, KeyError):
+        return None, []
+    return data.get("current-model"), data.get("models", []) or []
+
+
+def detect_current_juju_model(prefer_substrate: str | None = None) -> str | None:
+    """Return the name of an active Juju model suitable for ``dev_model``.
+
+    Prefers the model marked as current (``*`` in ``juju models``) and
+    skips the controller model and ``cos`` (which is for observability).
+
+    When ``prefer_substrate`` is ``"k8s"`` or ``"machine"``, models whose
+    ``model-type`` matches that substrate are preferred (k8s ↔ ``caas``,
+    machine ↔ ``iaas``).  This stops auto-detection picking, say, an
+    LXD model when the charm under development is a Kubernetes charm.
+    If no model matches the preferred substrate the function falls back
+    to the first non-controller, non-cos model so behaviour without Juju
+    type metadata stays stable.
+    """
+    current_model, models = _list_juju_models()
+    if not models and not current_model:
         return None
+
+    candidates: list[tuple[str, str | None]] = []
+    for model in models:
+        if model.get("is-controller"):
+            continue
+        name = model.get("short-name") or ""
+        if not name or name in _SKIP_MODELS:
+            continue
+        candidates.append((name, _substrate_for_model_type(model.get("model-type"))))
+
+    def _matches(substrate: str | None) -> bool:
+        return prefer_substrate is None or substrate == prefer_substrate
+
+    # Prefer the current model when it is eligible and matches the substrate.
+    if current_model and current_model not in _SKIP_MODELS:
+        for name, substrate in candidates:
+            if name == current_model and _matches(substrate):
+                return name
+
+    # Otherwise the first substrate-matching candidate.
+    for name, substrate in candidates:
+        if _matches(substrate):
+            return name
+
+    # No substrate-matching candidate: fall back to the legacy behaviour so
+    # callers without a substrate preference (or against older Juju that
+    # omits ``model-type``) keep getting an answer.
+    if prefer_substrate is not None:
+        if current_model and current_model not in _SKIP_MODELS:
+            return current_model
+        for name, _ in candidates:
+            return name
+    return None
+
+
+def juju_model_substrate(model_name: str) -> str | None:
+    """Return the substrate label (``"k8s"``/``"machine"``) of ``model_name``.
+
+    Used to validate an already-set ``dev_model`` against a known
+    ``charm_type``.  Returns ``None`` when Juju is unavailable, the
+    model is unknown, or its ``model-type`` is not recognised.
+    """
+    if not model_name:
+        return None
+    _, models = _list_juju_models()
+    for model in models:
+        if model.get("short-name") == model_name:
+            return _substrate_for_model_type(model.get("model-type"))
     return None
 
 

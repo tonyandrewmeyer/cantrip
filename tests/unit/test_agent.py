@@ -1004,7 +1004,7 @@ class TestWatcherIntegration:
         agent = CantripAgent(provider=provider)
         monkeypatch.setattr(
             "cantrip.agent.core.detect_current_juju_model",
-            lambda: None,
+            lambda **_kwargs: None,
         )
 
         assert agent.start_watcher() is False
@@ -1018,7 +1018,7 @@ class TestWatcherIntegration:
         agent = CantripAgent(provider=provider)
         monkeypatch.setattr(
             "cantrip.agent.core.detect_current_juju_model",
-            lambda: "detected-model",
+            lambda **_kwargs: "detected-model",
         )
 
         result = agent.start_watcher()
@@ -1074,6 +1074,71 @@ class TestWatcherIntegration:
         assert result is True
         assert agent.watcher_running
         assert agent.state.watcher_enabled
+
+        await agent.stop_watcher()
+
+    @pytest.mark.asyncio
+    async def test_start_watcher_passes_substrate_to_detector(self, monkeypatch):
+        """When charm_type is set, detect_current_juju_model gets prefer_substrate."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.charm_type = "k8s"
+
+        seen: dict[str, str | None] = {}
+
+        def _detect(prefer_substrate: str | None = None) -> str | None:
+            seen["prefer_substrate"] = prefer_substrate
+            return "auto-k8s"
+
+        monkeypatch.setattr("cantrip.agent.core.detect_current_juju_model", _detect)
+
+        assert agent.start_watcher() is True
+        assert seen["prefer_substrate"] == "k8s"
+        assert agent.state.dev_model == "auto-k8s"
+
+        await agent.stop_watcher()
+
+    @pytest.mark.asyncio
+    async def test_start_watcher_drops_wrong_substrate_dev_model(self, monkeypatch):
+        """A stale LXD dev_model is replaced when the charm is k8s."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "stale-lxd"
+        agent.state.charm_type = "k8s"
+
+        monkeypatch.setattr(
+            "cantrip.agent.core.juju_model_substrate",
+            lambda name: "machine" if name == "stale-lxd" else None,
+        )
+        monkeypatch.setattr(
+            "cantrip.agent.core.detect_current_juju_model",
+            lambda **_kwargs: "fresh-k8s",
+        )
+
+        assert agent.start_watcher() is True
+        assert agent.state.dev_model == "fresh-k8s"
+
+        await agent.stop_watcher()
+
+    @pytest.mark.asyncio
+    async def test_start_watcher_keeps_dev_model_when_substrate_unknown(self, monkeypatch):
+        """Without charm_type, an existing dev_model is left alone."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "user-chosen"
+        # charm_type intentionally unset.
+
+        called = {"detect": 0}
+
+        def _detect(**_kwargs) -> str | None:
+            called["detect"] += 1
+            return "should-not-be-used"
+
+        monkeypatch.setattr("cantrip.agent.core.detect_current_juju_model", _detect)
+
+        assert agent.start_watcher() is True
+        assert agent.state.dev_model == "user-chosen"
+        assert called["detect"] == 0
 
         await agent.stop_watcher()
 
