@@ -84,16 +84,26 @@ class JujuStatusTool(Tool):
             juju = jubilant.Juju(model=model)
             status = await _run_juju(juju.status)
 
-            # Format output
+            # Format output. Status messages are included verbatim so the
+            # agent can act on operator hints like
+            # ``Run `juju trust <app> --scope=cluster```.
             output_lines = [f"Model: {status.model.name}"]
 
             for app_name, app in status.apps.items():
                 status_str = app.app_status.current or "unknown"
-                output_lines.append(f"\nApp: {app_name} ({status_str})")
+                app_msg = (app.app_status.message or "").strip()
+                app_line = f"\nApp: {app_name} ({status_str})"
+                if app_msg:
+                    app_line += f" — {app_msg}"
+                output_lines.append(app_line)
 
                 for unit_name, unit in app.units.items():
                     unit_status = unit.workload_status.current or "unknown"
-                    output_lines.append(f"  - {unit_name}: {unit_status}")
+                    unit_msg = (unit.workload_status.message or "").strip()
+                    unit_line = f"  - {unit_name}: {unit_status}"
+                    if unit_msg:
+                        unit_line += f" — {unit_msg}"
+                    output_lines.append(unit_line)
 
             app_count = len(status.apps)
             blocked = sum(
