@@ -43,7 +43,8 @@ _PRESSURE_DROP_THRESHOLD = 0.95
 # FileExistsError on every turn.
 _CACHE_FILENAME = ".cantrip-repomap.json"
 
-# Directories we never descend into when discovering source files.
+# Directory names we never descend into when discovering source files,
+# matched anywhere in the tree.
 _SKIP_DIRECTORIES = {
     ".git",
     ".venv",
@@ -60,6 +61,19 @@ _SKIP_DIRECTORIES = {
     ".tox",
     "htmlcov",
 }
+
+# Relative paths from the charm root that we skip wholesale.
+# ``lib/charms/`` holds vendored interface libraries pulled in via
+# ``charmcraft fetch-libs`` — third-party code that's API surface but
+# not what the author edits.  Indexing them swamps the map (a typical
+# charm vendors ten or more libs, each contributing a class for every
+# event type it defines) without giving the agent useful navigation
+# targets.  ``.cantrip-worktrees/`` holds parallel subagent worktrees
+# (Phase 44) and would double-count every symbol.
+_SKIP_PATH_PREFIXES = (
+    "lib/charms/",
+    ".cantrip-worktrees/",
+)
 
 
 @dataclasses.dataclass
@@ -244,8 +258,12 @@ class RepoMap:
     def _discover_files(self) -> list[Path]:
         results: list[Path] = []
         for path in _walk(self._repo_root, _SKIP_DIRECTORIES):
-            if path.suffix == ".py" or is_charm_metadata(path):
-                results.append(path)
+            if path.suffix != ".py" and not is_charm_metadata(path):
+                continue
+            rel = self._relative(path)
+            if any(rel.startswith(prefix) for prefix in _SKIP_PATH_PREFIXES):
+                continue
+            results.append(path)
         results.sort()
         return results
 

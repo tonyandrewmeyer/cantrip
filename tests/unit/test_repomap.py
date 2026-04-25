@@ -6,6 +6,8 @@ import json
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from cantrip.repomap import DEFAULT_TOKEN_BUDGET, RepoMap, SymbolKind
 from cantrip.repomap.graph import build_graph, pagerank, rank_files
 from cantrip.repomap.render import render
@@ -468,20 +470,40 @@ class TestRepoMap:
         rendered_back = str(rich_render(text))
         assert "[relation]" in rendered_back or "[config-option]" in rendered_back
 
-    def test_handle_map_never_raises_on_build_failure(self, tmp_path: Path) -> None:
+    def test_handle_map_never_raises_on_build_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # If the repo-map build blows up for any reason, the slash
-        # command must surface a string, never propagate.
+        # command must surface a friendly chat string and write the
+        # full traceback to the diagnostics log — never propagate
+        # the exception or leak the stack into the chat.
         from unittest.mock import MagicMock
 
         from cantrip.agent.slash_commands import handle_map
+
+        # Redirect the diagnostics log into tmp_path.
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
         broken_rm = MagicMock()
         broken_rm.build.side_effect = RuntimeError("boom")
         agent = MagicMock()
         agent.repo_map = broken_rm
         result = handle_map(agent)
-        assert "build failed" in result.lower()
-        assert "RuntimeError" in result
+
+        # Chat response is friendly and points at the log.
+        assert "something went wrong" in result.lower()
+        assert "diagnostics.log" in result
+        # And does *not* leak the stack into the chat.
+        assert "RuntimeError" not in result
+        assert "Traceback" not in result
+
+        # The log file got the full traceback.
+        log_path = tmp_path / "state" / "cantrip" / "diagnostics.log"
+        assert log_path.exists()
+        body = log_path.read_text(encoding="utf-8")
+        assert "RuntimeError: boom" in body
+        assert "Traceback" in body
+        assert "/map" in body
 
     def test_skips_excluded_directories(self, tmp_path: Path) -> None:
         _make_charm(tmp_path)
@@ -492,6 +514,22 @@ class TestRepoMap:
         rm.build()
         files = {r.file for r in rm.rankings}
         assert not any(f.startswith(".venv/") for f in files)
+
+    def test_skips_lib_charms_vendored_dir(self, tmp_path: Path) -> None:
+        # ``lib/charms/<name>/v<N>/<lib>.py`` holds vendored interface
+        # libraries from other charms (charmcraft fetch-libs).  They're
+        # third-party API surface, not user-edited code, and indexing
+        # them swamps the map.  Must be skipped.
+        _make_charm(tmp_path)
+        vendored = tmp_path / "lib" / "charms" / "tempo_k8s" / "v0"
+        vendored.mkdir(parents=True)
+        (vendored / "tracing.py").write_text("class TracingEndpointProvider:\n    pass\n")
+        rm = RepoMap(tmp_path)
+        rm.build()
+        files = {r.file for r in rm.rankings}
+        assert not any(f.startswith("lib/charms/") for f in files)
+        # The user's own src/charm.py still ranks.
+        assert "src/charm.py" in files
 
 
 # ---------------------------------------------------------------------------

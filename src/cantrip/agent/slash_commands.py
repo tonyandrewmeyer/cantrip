@@ -29,6 +29,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cantrip import diagnostics
 from cantrip import update as update_module
 from cantrip.agent import custom_commands, mcp_commands, memory_commands, sandbox
 from cantrip.agent.goal_budget import GoalBudget, format_summary, measure_usage
@@ -1130,8 +1131,9 @@ def handle_map(agent: CantripAgent) -> str:
 
     Shows the same view the agent receives on every turn (sized at
     the full configured budget — context-pressure shrinking only
-    applies to the in-prompt copy).  Failures are reported in-line
-    so the slash command can never crash the surface.
+    applies to the in-prompt copy).  Any unexpected exception lands
+    in the diagnostics log; the user sees a friendly notice with the
+    log path so they can hand it to a developer.
     """
     rm = agent.repo_map
     if rm is None:
@@ -1142,9 +1144,8 @@ def handle_map(agent: CantripAgent) -> str:
     try:
         rm.build()
         rendered = rm.render_full()
-    except Exception as exc:  # noqa: BLE001 — surface, don't crash.
-        log.warning("/map build failed: %s", exc, exc_info=True)
-        return f"Repository map build failed: {type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
+        return diagnostics.report_internal_error("/map", exc)
     if not rendered:
         return (
             "Repository map is empty — no parseable Python or charm "
@@ -1160,9 +1161,8 @@ def handle_map_refresh(agent: CantripAgent) -> str:
         return "No repository map: this session has no active charm path."
     try:
         rendered = agent.refresh_repo_map()
-    except Exception as exc:  # noqa: BLE001 — surface, don't crash.
-        log.warning("/map-refresh failed: %s", exc, exc_info=True)
-        return f"Repository map rebuild failed: {type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
+        return diagnostics.report_internal_error("/map-refresh", exc)
     if not rendered:
         return "Repository map rebuilt — no parseable files found under the active charm path."
     return _format_map_response("Repository map rebuilt", rendered, len(rm.rankings))
