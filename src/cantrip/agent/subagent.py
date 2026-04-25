@@ -278,6 +278,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "local_registry_status",
             "generate_readme",
             "generate_icon",
+            "charm_icon_generate",
             "generate_docs",
             "generate_diagram",
             "generate_load_test",

@@ -95,6 +95,7 @@ def build_tools(
     )
     from cantrip.agent.tools.glob import GlobTool
     from cantrip.agent.tools.grep import GrepTool
+    from cantrip.agent.tools.icon import CharmIconGenerateTool
     from cantrip.agent.tools.inference import ListInferenceSnapsTool
     from cantrip.agent.tools.juju import (
         BundleDeployTool,
@@ -330,6 +331,7 @@ def build_tools(
         tools.append(ManageTasksTool(queue=queue))
     if state is not None:
         tools.append(OracleTool(state=state, store_getter=store_getter))
+        tools.append(CharmIconGenerateTool(state=state, store_getter=store_getter))
     if memory_manager is not None:
         tools.extend(build_memory_tools(memory_manager))
     if mcp_registry is not None:

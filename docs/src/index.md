@@ -103,6 +103,16 @@ section: index
     </p>
   </a>
 
+  <a href="howto-charm-icon.html" class="doc-card">
+    <span class="doc-card-label">How-to</span>
+    <h3>Generate a charm icon</h3>
+    <p>
+      Paint a Charmhub-style <code>icon.svg</code> for a charm via
+      <code>/icon</code> &mdash; LLM-driven, square, designer-polish
+      recommended; bounded by a per-session USD cap.
+    </p>
+  </a>
+
   <a href="howto-hooks.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Configure hooks</h3>
