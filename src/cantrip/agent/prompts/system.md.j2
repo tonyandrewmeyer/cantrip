@@ -625,6 +625,16 @@ Use the `load_skill` tool to load full instructions when you need detailed guida
 
 {{ skills_index }}
 {% endif %}
+{% if repo_map %}
+
+## Repository Map
+
+Graph-ranked view of the most-referenced symbols in the active charm repo.  Use it to jump to the right file before reaching for `grep`.  Files in chat already take precedence — the map is a navigation aid, not a substitute for reading source.
+
+```
+{{ repo_map }}
+```
+{% endif %}
 {% if memory_index %}
 
 ## Memory Index

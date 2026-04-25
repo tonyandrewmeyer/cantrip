@@ -676,6 +676,36 @@ will not appear in <code>git status</code> or be touched by
 [Undo agent changes](howto-undo.html) for the full
 how-to.
 
+### Repository map
+
+<dl>
+  <dt><code>/map</code></dt>
+  <dd>
+    Print the graph-ranked symbol map of the active charm — the
+    same view the agent receives on every turn. Files are ordered
+    by PageRank over a reference graph (caller → callee, plus
+    YAML interface names from <code>charmcraft.yaml</code>); each
+    file lists its top classes, functions, methods, config
+    options, actions, and relations. Use it to confirm what the
+    agent thinks the repo looks like before asking it to navigate.
+  </dd>
+
+  <dt><code>/map-refresh</code></dt>
+  <dd>
+    Discard the cache at <code>.cantrip/repomap.json</code> and
+    reparse every source file from scratch. Normal builds are
+    incremental (only files whose mtime changed get reparsed); a
+    refresh is useful after a large rename or when the cache
+    looks stale.
+  </dd>
+</dl>
+
+The map injects automatically into the system prompt under a
+configurable token budget (default 1500). When the conversation
+fills past 80% of the context window the budget halves; past 95%
+it drops entirely so a near-full window isn't carrying a
+bird's-eye view it can't act on.
+
 {#env-vars}
 ## Environment variables
 

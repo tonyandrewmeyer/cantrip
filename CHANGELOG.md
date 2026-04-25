@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Repository map — graph-ranked symbols (Phase 71.1).**
+  New ``src/cantrip/repomap/`` subsystem parses the active
+  charm with stdlib ``ast`` (Python) and ``pyyaml`` (charm
+  metadata, config, actions, charmcraft YAML), builds a
+  file-level reference graph, and runs a hand-rolled PageRank
+  pass to surface the most-cited files and their top symbols.
+  The rendered map is injected into the system prompt under
+  ``## Repository Map`` with a configurable token budget
+  (default 1500); the budget halves above 80% context
+  pressure and drops to zero above 95% so a near-full window
+  isn't carrying a bird's-eye view it can't act on.  Per-file
+  parse results are cached to ``.cantrip/repomap.json`` and
+  invalidated by mtime — incremental rebuilds reparse only
+  changed files.  Two new slash commands: ``/map`` (print the
+  current view) and ``/map-refresh`` (force a full rebuild).
+  Stdlib ``ast`` keeps the dependency budget at zero — no
+  ``tree-sitter`` or ``networkx`` added.  Documented in
+  ``docs/src/reference-cli.md``; covered by 29 unit tests.
 - **Glob-conditional skill loading (Phase 70.3).**  Skills can
   now declare a ``globs:`` list in their frontmatter (e.g.
   ``globs: [tests/integration/**]`` on the Jubilant skill,

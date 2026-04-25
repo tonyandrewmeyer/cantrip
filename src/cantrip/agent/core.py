@@ -97,6 +97,7 @@ from cantrip.mcp import (
     load_marketplace_sources,
 )
 from cantrip.mcp import load_configs as load_mcp_configs
+from cantrip.repomap import RepoMap
 from cantrip.ui import events as ui_events
 from cantrip.ui import flavour
 
@@ -439,6 +440,11 @@ class CantripAgent:
         # opt out via ``--no-snapshots`` pay no init cost.  Lives on
         # the agent so the slash-command dispatcher can reach it.
         self._snapshot_manager_cache: SnapshotManager | None = None
+
+        # Phase 71.1: graph-ranked symbol map of the active charm repo.
+        # Lazy — sessions without a charm path skip it entirely; the
+        # first ``_build_system_prompt`` call kicks off the parse.
+        self._repo_map_cache: RepoMap | None = None
 
         # Phase 68.3: load user-defined slash commands from
         # ``.cantrip/commands/*.md`` + ``~/.config/cantrip/commands/*.md``
@@ -1089,6 +1095,7 @@ class CantripAgent:
             charm_path=self.state.charm_path,
         )
         self._record_skill_filtering(current_files)
+        repo_map = None if compact else self._render_repo_map()
         prompt = build_system_prompt(
             charm_name=self.state.charm_name,
             charm_path=str(self.state.charm_path) if self.state.charm_path else None,
@@ -1101,11 +1108,62 @@ class CantripAgent:
             memory_index=memory_index,
             environment_ready=self.state.environment_ready,
             watcher_enabled=self.state.watcher_enabled,
+            repo_map=repo_map,
             compact=compact,
         )
         if self.state.plan_mode:
             prompt = f"{prompt}\n\n{_PLAN_MODE_GUIDANCE}"
         return prompt
+
+    @property
+    def repo_map(self) -> RepoMap | None:
+        """The repo-map for the active charm, if one is configured.
+
+        Built lazily on first access; subsequent calls reuse the cache.
+        Returns ``None`` when no charm path is set or the path doesn't
+        exist on disk — slash commands and tests rely on this to skip
+        the section gracefully.
+        """
+        if self.state.charm_path is None:
+            return None
+        if not self.state.charm_path.exists():
+            return None
+        if self._repo_map_cache is None:
+            self._repo_map_cache = RepoMap(self.state.charm_path)
+        return self._repo_map_cache
+
+    def refresh_repo_map(self) -> str:
+        """Force a full rebuild of the repo-map.
+
+        Used by ``/map-refresh``.  Returns the rendered map at the
+        full configured budget, or the empty string when no charm is
+        active.
+        """
+        rm = self.repo_map
+        if rm is None:
+            return ""
+        rm.build(force=True)
+        return rm.render_full()
+
+    def _render_repo_map(self) -> str | None:
+        """Build (incremental) and render the repo-map for prompt injection.
+
+        Returns ``None`` when there's nothing to inject so the Jinja
+        ``{% if repo_map %}`` block stays out of the prompt entirely.
+        Catches OS errors so a transient parse failure can't take down
+        the conversation loop.
+        """
+        rm = self.repo_map
+        if rm is None:
+            return None
+        try:
+            rm.build()
+        except OSError as exc:
+            log.debug("repomap: build failed: %s", exc)
+            return None
+        pressure = self._context_manager.context_pressure(self.state.messages)
+        rendered = rm.render_for_prompt(context_pressure=pressure)
+        return rendered or None
 
     # Tools that are always included when the provider has a tool limit.
     _CORE_TOOL_NAMES: set[str] = {

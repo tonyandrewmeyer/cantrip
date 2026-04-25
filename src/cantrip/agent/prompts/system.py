@@ -95,6 +95,7 @@ def build_system_prompt(
     memory_index: str | None = None,
     environment_ready: bool | None = None,
     watcher_enabled: bool | None = None,
+    repo_map: str | None = None,
     compact: bool = False,
 ) -> str:
     """Build the full system prompt with current context.
@@ -114,6 +115,8 @@ def build_system_prompt(
             section small.
         environment_ready: Whether the dev environment is fully provisioned.
         watcher_enabled: Whether the event-driven watcher is active.
+        repo_map: Pre-rendered, token-budgeted graph-ranked symbol view of
+            the active charm repo (Phase 71.1).  ``None`` skips the section.
 
     Returns:
         Complete system prompt with context.
@@ -144,4 +147,5 @@ def build_system_prompt(
         memory_index=_sanitise(memory_index),
         environment_ready=environment_ready,
         watcher_enabled=watcher_enabled,
+        repo_map=repo_map,
     )

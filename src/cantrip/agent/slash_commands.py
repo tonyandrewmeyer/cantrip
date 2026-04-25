@@ -83,6 +83,8 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/build", "Leave plan mode and resume executing changes"),
     CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
+    CommandInfo("/map", "Show the graph-ranked repository symbol map"),
+    CommandInfo("/map-refresh", "Force a rebuild of the repository symbol map"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -210,6 +212,10 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_yolo(agent, args))
     if verb == "/ralph":
         return SlashResult(text=handle_ralph(agent, args))
+    if verb == "/map":
+        return SlashResult(text=handle_map(agent))
+    if verb == "/map-refresh":
+        return SlashResult(text=handle_map_refresh(agent))
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -556,6 +562,10 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "(Ralph).  Re-feeds the goal up to N times until the agent "
         "emits `STOP` or stall detection trips.  Engages inside "
         "`cantrip run --print --ralph N`.\n"
+        "- `/map` — print the graph-ranked repository symbol map "
+        "(Phase 71.1).  The same view the agent sees on every turn.\n"
+        "- `/map-refresh` — force a full rebuild of the repo-map "
+        "cache (`.cantrip/repomap.json`) and reprint it.\n"
         "- `/quit`, `/exit` — leave cantrip cleanly."
     )
     custom = getattr(agent, "custom_commands", None) if agent is not None else None
@@ -1096,6 +1106,41 @@ def handle_ralph(agent: CantripAgent, args: str) -> str:
         f"{new_value} time(s) until the agent emits `STOP` on its own "
         "line."
     )
+
+
+def handle_map(agent: CantripAgent) -> str:
+    """Phase 71.1 ``/map``: print the graph-ranked symbol map.
+
+    Shows the same view the agent receives on every turn (sized at
+    the full configured budget — context-pressure shrinking only
+    applies to the in-prompt copy).  Returns a friendly notice when
+    no charm is active or the map is empty.
+    """
+    rm = agent.repo_map
+    if rm is None:
+        return (
+            "No repository map: this session has no active charm path.  "
+            "Open a charm and try again, or set the path with the CLI."
+        )
+    rm.build()
+    rendered = rm.render_full()
+    if not rendered:
+        return (
+            "Repository map is empty — no parseable Python or charm "
+            "metadata found under the active charm path."
+        )
+    return f"**Repository map** ({len(rm.rankings)} files)\n\n```\n{rendered}\n```"
+
+
+def handle_map_refresh(agent: CantripAgent) -> str:
+    """Phase 71.1 ``/map-refresh``: discard cache and reparse everything."""
+    rm = agent.repo_map
+    if rm is None:
+        return "No repository map: this session has no active charm path."
+    rendered = agent.refresh_repo_map()
+    if not rendered:
+        return "Repository map rebuilt — no parseable files found under the active charm path."
+    return f"**Repository map rebuilt** ({len(rm.rankings)} files)\n\n```\n{rendered}\n```"
 
 
 def _handle_share(agent: CantripAgent) -> SlashResult:

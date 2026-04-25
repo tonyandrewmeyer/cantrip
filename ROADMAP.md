@@ -4158,42 +4158,79 @@ deferred**:
   ``docs/docs/`` pages plus the system prompt; no
   vector-index build required.
 
-### 71.1 High — Repo-map with graph-ranked symbols
+### 71.1 High — Repo-map with graph-ranked symbols ✓
 
-- [ ] New subsystem under ``src/cantrip/repomap/`` that parses
-  a charm repo with ``tree-sitter`` (Python, YAML, TOML,
-  Rockcraft/Charmcraft YAML via the generic YAML parser,
-  plus Markdown for hook scripts) and extracts class,
-  function, and top-level config-key symbols with their
-  signatures.  Use the existing ``tree-sitter-languages``
-  Python bindings — don't build our own parser.
-- [ ] Build a reference graph: edges run from callers to
-  callees, from config keys to their consumers, and from
-  ``metadata.yaml`` interface names to the charmlibs that
-  provide them.  Rank nodes with a PageRank pass (NetworkX
-  is already available or trivial to add).  Cache to
-  ``.cantrip/repomap.json``; invalidate on file mtime
-  changes.
-- [ ] Render as a compact text block (symbol + one-line
-  signature, grouped by file) fitting a configurable token
-  budget (default 1500 for charm-sized repos; Aider's 1000
-  default is tuned for larger codebases but charms pull in
-  charmlib interfaces and dashboards worth indexing).
-- [ ] Inject into the system prompt on every turn, *under*
-  the Phase 32 planner context so the agent sees the map
-  consistently.  When a file is in the chat, its full text
-  takes precedence — no need for a map entry to duplicate
-  what's already in context.
-- [ ] ``/map`` slash command prints the current map;
-  ``/map-refresh`` forces a rebuild.  Transparency for
-  "what does the agent think this repo looks like?"
-- [ ] Dynamic sizing: when the chat context is tight
-  (Phase 40 compaction threshold approaching), shrink the
-  map budget.  When the chat is fresh, allow it to expand.
-  Mirror Aider's behaviour.
-- [ ] ``tests/unit/test_repomap.py`` — parse a fixture charm,
-  assert symbol extraction, assert ranking order stable for
-  a known graph, assert cache invalidates on file change.
+- [x] New subsystem under ``src/cantrip/repomap/``
+  (``symbols.py`` / ``graph.py`` / ``render.py`` /
+  ``repomap.py``) that parses Python with stdlib ``ast`` and
+  charm metadata (``charmcraft.yaml`` / ``metadata.yaml`` /
+  ``config.yaml`` / ``actions.yaml``) with ``pyyaml``.
+  Stdlib ``ast`` is used in place of ``tree-sitter`` /
+  ``tree-sitter-languages`` so the dependency budget stays
+  at zero — extending to non-Python sources later is a one-
+  module addition behind the same ``parse_*_file`` interface.
+  Symbols carry kind (class / function / method / config-
+  option / action / relation / container / storage /
+  resource), signature (parenthesised parameters with
+  annotations, base classes, interface names), and
+  qualifier (enclosing class for methods).  TOML and
+  Markdown are deferred — neither carries a charm-symbol
+  surface today; revisit if hook scripts become a thing.
+- [x] Reference graph runs caller-file → definer-file with
+  edge weights spread across ambiguous definers; charm
+  metadata interface names participate as references so
+  ``requires.tracing`` in ``metadata.yaml`` connects to the
+  charmlib that provides the interface.  PageRank
+  (hand-rolled power iteration, damping 0.85, ~30 iterations
+  to convergence on charm-sized graphs) ranks files.
+  NetworkX is *not* added — the implementation is ~30 lines
+  and avoids dragging in a heavy dep.  Per-file parse
+  results cache to ``.cantrip/repomap.json`` keyed by
+  mtime_ns; incremental rebuilds reparse only changed files.
+- [x] Renderer (``render.py``) groups symbols by file with
+  one heading line and indented symbol lines; classes first,
+  then free functions, methods, then YAML kinds.  Token
+  budget tracked via ``len(text) / 4`` (matches the rest of
+  Cantrip's char-per-token estimate).  ``_MAX_SYMBOLS_PER_FILE
+  = 12`` keeps one heavy file from monopolising the output
+  even with a fat budget.  Default budget 1500 tokens per
+  the roadmap.
+- [x] System prompt injection lives in
+  ``CantripAgent._build_system_prompt``: a new
+  ``repo_map=`` kwarg flows through ``build_system_prompt``
+  and into ``system.md.j2`` under a fenced
+  ``## Repository Map`` block right after Available Skills.
+  The compact prompt path (``provider.max_tools is not
+  None``) skips the map entirely.  Files cited inline by
+  the chat already take precedence — the map is a
+  navigation aid documented as such.
+- [x] ``/map`` (print the current view at the full
+  configured budget) and ``/map-refresh`` (force a complete
+  rebuild and reprint) registered in
+  ``cantrip.agent.slash_commands``; both added to
+  ``COMMAND_CATALOGUE``, ``SHARED_VERBS``, and ``help_text``.
+- [x] Dynamic sizing keys off
+  ``ContextManager.context_pressure(messages)`` (new helper
+  returning ``estimate_tokens / context_window``):
+  ``RepoMap.render_for_prompt(context_pressure=…)`` halves
+  the budget at ≥80% pressure and drops the section
+  entirely at ≥95%.  Mirrors the 0.80 compaction threshold.
+- [x] ``tests/unit/test_repomap.py`` — 29 cases covering
+  Python parsing (classes, methods, free functions, nested
+  function suppression, syntax error tolerance, signature
+  with annotations and defaults, relative path
+  normalisation, inheritance-as-reference), charm-metadata
+  parsing (relations / config / actions, interface
+  signatures, malformed YAML), graph (referenced files
+  outrank unreferenced, self-edges dropped, PageRank
+  determinism, hub-and-spoke ordering, empty-graph,
+  dangling-node mass redistribution), rendering (empty
+  rankings, zero budget, ``class`` keyword formatting,
+  truncation under tight budget), and the orchestrator
+  (Python + YAML pickup, render contains key symbols, cache
+  file written, mtime-keyed incremental invalidation, force
+  rebuild, pressure shrink, drop threshold, missing-charm
+  path, excluded directories such as ``.venv``).
 
 ### 71.2 High — Architect / Editor two-model split
 

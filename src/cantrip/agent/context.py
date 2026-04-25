@@ -309,6 +309,16 @@ class ContextManager:
         """Estimate the total token count across all messages."""
         return estimate_message_tokens(messages)
 
+    def context_pressure(self, messages: list[Message]) -> float:
+        """Fraction of the context window currently in use (0.0 — 1.0+).
+
+        Used by the repo-map (Phase 71.1) to shrink or drop the
+        graph-ranked symbol view as the conversation fills up.  Values
+        above 1.0 are possible if the conversation has grown past the
+        window — the caller should treat that as "drop entirely".
+        """
+        return self.estimate_tokens(messages) / self._context_window
+
     def virtualise_message(self, message: Message) -> Message:
         """Replace oversized content with a virtual file pointer.
 
