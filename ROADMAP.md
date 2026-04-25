@@ -4297,29 +4297,56 @@ deferred**:
 
 ### 71.4 Medium — Per-edit lint/test feedback loop
 
-- [ ] After each ``fs_edit`` / ``fs_write`` that touches a
-  Python file, run ``ruff check --output-format=json`` and
-  ``ty check --output-format json`` on the touched paths
-  (not the whole repo — incremental).  If either reports
-  errors, feed them back as a tool result the agent can
-  react to before the turn completes.
-- [ ] For YAML files (``metadata.yaml``, ``charmcraft.yaml``,
-  ``actions.yaml``, etc.), run ``charmlint`` on the touched
-  files (Phase 24).  Same feedback path.
-- [ ] For charm test files (``tests/**/*.py``), optionally
-  run the touched test file with ``pytest --collect-only``
-  to catch import errors cheaply before a full run.
-- [ ] ``settings.auto_lint`` (default true) and
-  ``settings.auto_test.collect_only`` (default true) —
-  escape hatches.  A failing lint doesn't block the turn;
-  the agent sees the diagnostics and may or may not
-  choose to fix, same as Aider's UX.
-- [ ] Distinct from Phase 12 red/green (goal-level test
+- [x] After each ``write_file`` / ``edit_file`` /
+  ``multi_edit`` that touches a Python file, run ``ruff
+  check --output-format=json`` and ``ty check
+  --output-format=concise`` (ty has no JSON sink yet — the
+  concise format is parsed in
+  ``src/cantrip/agent/tools/post_edit_lint.py``) on the
+  touched paths.  Diagnostics are appended to the tool
+  result as a "Lint diagnostics (post-edit):" block and
+  also surfaced structurally in
+  ``result.data["diagnostics"]``.  Failing lint never
+  demotes the original tool result — file edits succeed
+  even when the linter complains.
+- [x] For charm-shaped YAML (``metadata.yaml``,
+  ``charmcraft.yaml``, ``actions.yaml``, ``config.yaml``,
+  ``manifest.yaml``), run ``charmlint`` against the charm
+  directory.  Prefers the Rust binary for speed (same
+  probe as :class:`CharmlintTool`), falls back to the
+  Python library, and degrades silently when neither is
+  installed (the skipped note is folded into the report
+  so the agent knows the absence of diagnostics is "not
+  checked", not "all clear").
+- [ ] **Deferred: ``pytest --collect-only`` on touched
+  test files.**  The roadmap lists this as optional
+  ("optionally run the touched test file with ``pytest
+  --collect-only`` to catch import errors cheaply").
+  Holding it back until a concrete case surfaces — the
+  ``ruff`` / ``ty`` pair already catches the common
+  import-typo failure mode without spinning up a pytest
+  session.  ``state.auto_test_collect_only`` is not yet
+  wired; reopen this checkbox when we add it.
+- [x] ``state.auto_lint`` (default ``True``) — escape
+  hatch.  Set on ``state`` mid-session, or pass
+  ``--no-auto-lint`` (REPL, TUI, Web, ``--print``) at
+  startup.  Subagent callers go through ``execute_tool``
+  without the keyword arguments and are not subject to
+  the hook, so subagent transcripts stay focused.
+- [x] Distinct from Phase 12 red/green (goal-level test
   gating) and Phase 69.1 Ralph Loop (outer iterate-until-
-  green).  This is a *within-turn* quality signal.
-- [ ] ``tests/unit/test_auto_lint.py`` — touching a Python
-  file surfaces ruff errors; touching ``metadata.yaml``
-  surfaces a charmlint warning; opt-out skips the run.
+  green).  This is a *within-turn* quality signal — the
+  agent sees the lint output in the same tool-result
+  payload as the file write and can self-correct before
+  the next round.
+- [x] ``tests/unit/test_auto_lint.py`` (30 cases) —
+  touching a Python file surfaces ruff diagnostics;
+  touching ``metadata.yaml`` surfaces a charmlint
+  warning; opt-out via ``state.auto_lint = False`` and
+  via the bare-arg ``execute_tool`` call (subagent path)
+  both skip the run; failed edits don't trigger lint;
+  ``ty`` concise-format parser, report-rendering, missing
+  binary and Python-fallback paths all covered.
 
 ### What this phase is *not*
 

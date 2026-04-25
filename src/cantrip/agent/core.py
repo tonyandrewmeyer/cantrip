@@ -1205,10 +1205,23 @@ class CantripAgent:
         ]
 
     async def _execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
-        """Execute a tool by name."""
+        """Execute a tool by name.
+
+        Forwards the per-edit lint flag (Phase 71.4) and the active
+        charm directory so :func:`execute_tool` can append ruff /
+        ty / charmlint diagnostics to file-edit results.  Subagent
+        callers go through :mod:`cantrip.agent.subagent`, which
+        uses ``execute_tool`` directly without these arguments.
+        """
         from cantrip.agent.tools.base import execute_tool
 
-        return await execute_tool(self._tool_map, name, arguments)
+        return await execute_tool(
+            self._tool_map,
+            name,
+            arguments,
+            auto_lint=self.state.auto_lint,
+            charm_path=self.state.charm_path,
+        )
 
     def _publish_activity(self, label: str) -> None:
         """Publish a status-bar activity update (e.g. "running: charmcraft_pack").

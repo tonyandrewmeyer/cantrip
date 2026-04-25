@@ -208,6 +208,11 @@ def run_cli(args: argparse.Namespace) -> int:
     if bool(getattr(args, "yolo", False)):
         agent.state.yolo_mode = True
 
+    # Phase 71.4: per-edit lint feedback.  Default on; ``--no-auto-lint``
+    # opts out for users who find the inline diagnostics noisy.
+    if bool(getattr(args, "no_auto_lint", False)):
+        agent.state.auto_lint = False
+
     # Set improvement mode if --improve was passed.
     if improve_path is not None:
         from pathlib import Path

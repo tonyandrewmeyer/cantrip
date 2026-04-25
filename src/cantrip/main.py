@@ -169,6 +169,20 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     run_parser.add_argument(
+        "--no-auto-lint",
+        action="store_true",
+        dest="no_auto_lint",
+        help=(
+            "Disable per-edit lint feedback.  By default Cantrip "
+            "runs ``ruff`` and ``ty`` on every Python file the "
+            "agent writes, and ``charmlint`` on charm YAML, then "
+            "appends the diagnostics to the tool result so the "
+            "agent reacts in the same turn.  Use this flag when "
+            "the linters are unavailable or the feedback is "
+            "noisy in your workflow."
+        ),
+    )
+    run_parser.add_argument(
         "--yolo",
         "-y",
         action="store_true",
@@ -688,6 +702,7 @@ def _run(args: argparse.Namespace) -> int:
             max_tokens=getattr(args, "max_tokens", None),
             no_snapshots=bool(getattr(args, "no_snapshots", False)),
             yolo=bool(getattr(args, "yolo", False)),
+            no_auto_lint=bool(getattr(args, "no_auto_lint", False)),
         )
         app.run()
         _print_update_panel(app.pending_update_info)

@@ -890,6 +890,10 @@ def run_web(args: argparse.Namespace) -> int:
     if bool(getattr(args, "yolo", False)):
         agent.state.yolo_mode = True
 
+    # Phase 71.4: per-edit lint feedback opt-out.
+    if bool(getattr(args, "no_auto_lint", False)):
+        agent.state.auto_lint = False
+
     port = getattr(args, "web_port", _DEFAULT_PORT)
 
     try:

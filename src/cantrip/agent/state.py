@@ -151,6 +151,18 @@ class AgentState:
     oracle_calls_total: int = 0
     oracle_session_cost_usd: float = 0.0
 
+    # Phase 71.4: per-edit lint feedback.  When ``True`` the
+    # primary-agent dispatcher runs ``ruff`` (Python), ``ty``
+    # (Python types) and ``charmlint`` (charm YAML) against the
+    # touched file after every successful ``write_file`` /
+    # ``edit_file`` / ``multi_edit`` call and appends any
+    # diagnostics to the tool result so the agent reacts in the
+    # same turn.  Failing diagnostics never demote the original
+    # tool result — the file edit succeeded, the lint is advisory.
+    # Sticky for the session; toggled via ``--no-auto-lint`` at
+    # startup or directly on ``state.auto_lint``.
+    auto_lint: bool = True
+
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
 

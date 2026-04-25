@@ -398,6 +398,10 @@ def run_print(args: argparse.Namespace) -> int:
     if bool(getattr(args, "yolo", False)):
         agent.state.yolo_mode = True
 
+    # Phase 71.4: per-edit lint feedback opt-out.
+    if bool(getattr(args, "no_auto_lint", False)):
+        agent.state.auto_lint = False
+
     ralph_max = int(getattr(args, "ralph_max_iterations", 0) or 0)
     agent.state.ralph_max_iterations = ralph_max
     ralph_config = RalphConfig(max_iterations=ralph_max) if ralph_max != 0 else None

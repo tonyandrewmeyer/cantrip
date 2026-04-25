@@ -1,14 +1,31 @@
 """Base tool interface for agent tools."""
 
+from __future__ import annotations
+
 import logging
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from cantrip.llm.base import Image
 
+if TYPE_CHECKING:
+    from cantrip.agent.tools.post_edit_lint import DiagnosticsReport
+
 log = logging.getLogger(__name__)
+
+# Tools that the post-edit lint hook (Phase 71.4) recognises as
+# producing file changes worth re-linting.  Kept as a module-level
+# constant so the dispatcher's quick-check stays a hash-set lookup.
+_EDIT_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "multi_edit",
+    }
+)
 
 
 @dataclass
@@ -94,7 +111,7 @@ _CAPTION_VALUE_MAX = 60
 def build_tool_caption(
     tool_name: str,
     arguments: dict[str, Any] | None,
-    result: "ToolResult | None" = None,
+    result: ToolResult | None = None,
 ) -> str:
     """Return a one-line human caption for a tool invocation.
 
@@ -149,18 +166,31 @@ def tool_to_schema(tool: Tool) -> dict[str, Any]:
 
 
 async def execute_tool(
-    tool_map: dict[str, Tool], name: str, arguments: dict[str, Any]
+    tool_map: dict[str, Tool],
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    auto_lint: bool = False,
+    charm_path: Path | None = None,
 ) -> ToolResult:
     """Look up and execute a tool by name with error handling.
 
     Shared by the main conversation loop and subagent runners.
+
+    When *auto_lint* is true and the tool is one of the recognised
+    file-editing tools (Phase 71.4), the result is enriched with
+    diagnostics from ``ruff`` / ``ty`` / ``charmlint`` against the
+    touched paths.  Diagnostics are advisory: a successful edit stays
+    successful even when the linter complains.  Subagent callers
+    leave *auto_lint* at its default ``False`` so the heavyweight
+    feedback loop fires only on the primary agent's turn.
     """
     tool = tool_map.get(name)
     if not tool:
         return ToolResult(success=False, output="", error=f"Unknown tool: {name}")
 
     try:
-        return await tool.execute(**arguments)
+        result = await tool.execute(**arguments)
     except TypeError as exc:
         return ToolResult(
             success=False,
@@ -178,3 +208,56 @@ async def execute_tool(
     ) as exc:
         log.warning("Tool %s raised %s: %s", name, type(exc).__name__, exc)
         return ToolResult(success=False, output="", error=f"Tool execution failed: {exc}")
+
+    if auto_lint and result.success and name in _EDIT_TOOL_NAMES:
+        await _apply_post_edit_diagnostics(
+            tool_name=name,
+            arguments=arguments,
+            result=result,
+            base_path=getattr(tool, "base_path", None),
+            charm_path=charm_path,
+        )
+
+    return result
+
+
+async def _apply_post_edit_diagnostics(
+    *,
+    tool_name: str,
+    arguments: dict[str, Any],
+    result: ToolResult,
+    base_path: Path | None,
+    charm_path: Path | None,
+) -> None:
+    """Run post-edit linters and fold their report into *result*.
+
+    Mutates *result* in place — appends a diagnostics block to
+    ``result.output`` and stashes the structured payload under
+    ``result.data["diagnostics"]`` so UI surfaces and tests can read
+    it without re-parsing.  Failures inside the lint pipeline are
+    swallowed: this hook never demotes a successful edit.
+    """
+    # Late import keeps tools/base.py free of the lint subsystem
+    # at module import time — relevant for the cold-start budget.
+    from cantrip.agent.tools.post_edit_lint import (
+        collect_touched_paths,
+        run_post_edit_diagnostics,
+    )
+
+    paths = collect_touched_paths(tool_name, arguments, base_path)
+    if not paths:
+        return
+
+    try:
+        report: DiagnosticsReport = await run_post_edit_diagnostics(paths, charm_path=charm_path)
+    except (OSError, ValueError, RuntimeError) as exc:
+        log.warning("Post-edit diagnostics raised %s: %s", type(exc).__name__, exc)
+        return
+
+    if report.is_empty():
+        return
+
+    text_block = report.to_text()
+    if text_block:
+        result.output = (result.output + "\n\n" + text_block) if result.output else text_block
+    result.data["diagnostics"] = report.to_data()

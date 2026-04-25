@@ -98,6 +98,7 @@ class CantripApp(App):
         max_tokens: int | None = None,
         no_snapshots: bool = False,
         yolo: bool = False,
+        no_auto_lint: bool = False,
     ):
         """Initialise the app."""
         super().__init__()
@@ -117,6 +118,7 @@ class CantripApp(App):
         self._max_tokens = max_tokens
         self._no_snapshots = no_snapshots
         self._yolo = yolo
+        self._no_auto_lint = no_auto_lint
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -337,6 +339,12 @@ class CantripApp(App):
             # syncs the flag onto the freshly-built PermissionManager.
             if self._yolo:
                 self._agent.state.yolo_mode = True
+
+            # Phase 71.4: per-edit lint feedback opt-out.  Inverted
+            # because the CLI flag is ``--no-auto-lint`` while the
+            # default state is ``True``.
+            if self._no_auto_lint:
+                self._agent.state.auto_lint = False
 
             # Set improvement mode if --improve was passed.
             if self._improve_path is not None:

@@ -165,6 +165,21 @@ Start the agent and build or improve a charm.
     monorepo where snapshotting is too slow. See
     <a href="howto-undo.html">Undo agent changes</a>.
   </dd>
+
+  <dt>--no-auto-lint</dt>
+  <dd>
+    Disable per-edit lint feedback. By default Cantrip runs
+    <code>ruff</code> and <code>ty</code> on every Python file
+    the agent writes, and <code>charmlint</code> on charm YAML
+    (<code>metadata.yaml</code>, <code>charmcraft.yaml</code>,
+    <code>actions.yaml</code>, <code>config.yaml</code>), then
+    appends the diagnostics to the tool result so the agent
+    can react to lint and type errors in the same turn. Edits
+    succeed even when the linter reports issues — diagnostics
+    are advisory, not gating. Use this flag if the linters are
+    unavailable or the inline feedback is noisy in your
+    workflow.
+  </dd>
 </dl>
 
 {#compare}

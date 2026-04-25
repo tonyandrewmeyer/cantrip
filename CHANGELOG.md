@@ -5,6 +5,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Per-edit lint feedback (Phase 71.4).**  After every
+  successful ``write_file`` / ``edit_file`` / ``multi_edit``
+  call the primary-agent dispatcher now runs ``ruff`` and
+  ``ty`` on touched Python files and ``charmlint`` against
+  the charm directory when charm-shaped YAML
+  (``metadata.yaml`` / ``charmcraft.yaml`` / ``actions.yaml``
+  / ``config.yaml``) was edited.  Diagnostics are appended
+  to the tool result so the agent reacts in the same turn
+  instead of waiting for ``make check``; structured form
+  lands in ``result.data["diagnostics"]`` for UI surfaces
+  that want counts.  Failed edits never trigger lint; lint
+  failures (missing binary, timeout) never demote a
+  successful edit.  Disable with ``--no-auto-lint`` or by
+  setting ``state.auto_lint = False``.  Subagent callers
+  bypass the hook by default to keep their transcripts
+  focused.  New module
+  ``src/cantrip/agent/tools/post_edit_lint.py``; covered
+  by 30 unit tests in ``tests/unit/test_auto_lint.py``;
+  documented under *Behaviour* in
+  ``docs/src/reference-cli.md``.
 - **Repository map — graph-ranked symbols (Phase 71.1).**
   New ``src/cantrip/repomap/`` subsystem parses the active
   charm with stdlib ``ast`` (Python) and ``pyyaml`` (charm
