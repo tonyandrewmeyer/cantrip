@@ -91,7 +91,7 @@ class HelpScreen(ModalScreen):
                     "F9        Transcript\n"
                     "Ctrl+F    Search chat\n"
                     "Ctrl+L    Clear chat\n"
-                    "Ctrl+C    Cancel operation\n"
+                    "Ctrl+C    Cancel operation (also: Esc)\n"
                     "q         Quit"
                 )
 

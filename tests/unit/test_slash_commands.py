@@ -594,6 +594,123 @@ class TestShare:
         assert "gh gist create" in result
 
 
+class TestCopy:
+    """Phase 76 — ``/copy`` puts a chat message on the system clipboard."""
+
+    def _seed_messages(self, store: SessionStore, msgs: list[tuple[str, str]]) -> None:
+        """Append (role, content) pairs to the live session store."""
+        for role, content in msgs:
+            store.record_message(role=role, content=content)
+
+    def test_missing_charm_path(self, memory_manager: MemoryManager) -> None:
+        agent = _fake_agent(memory_manager, charm_path=None)
+        result = dispatch(agent, "/copy")
+        assert result is not None
+        assert result.clipboard_text is None
+        assert "no charm path" in result.text
+
+    def test_missing_cantrip_db(self, memory_manager: MemoryManager, tmp_path: Path) -> None:
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        agent = _fake_agent(memory_manager, charm_path=empty)
+        result = dispatch(agent, "/copy")
+        assert result is not None
+        assert result.clipboard_text is None
+        assert "no `.cantrip`" in result.text
+
+    def test_no_messages_yet(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        del session_store
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/copy")
+        assert result is not None
+        assert result.clipboard_text is None
+        assert "no messages" in result.text
+
+    def test_no_assistant_messages(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        self._seed_messages(session_store, [("user", "hello")])
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/copy")
+        assert result is not None
+        assert result.clipboard_text is None
+        assert "no assistant messages" in result.text
+
+    def test_default_copies_last_assistant_body(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        self._seed_messages(
+            session_store,
+            [
+                ("user", "hi"),
+                ("assistant", "first reply"),
+                ("user", "more"),
+                ("assistant", "**second reply** with markdown"),
+            ],
+        )
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/copy")
+        assert result is not None
+        assert result.clipboard_text == "**second reply** with markdown"
+        assert "last assistant message" in result.text
+        # Confirmation includes a character count so the user knows
+        # something concrete landed in the clipboard.
+        assert "chars" in result.text
+
+    def test_last_grabs_any_role(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        self._seed_messages(
+            session_store,
+            [
+                ("assistant", "earlier reply"),
+                ("user", "the user's last message"),
+            ],
+        )
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/copy last")
+        assert result is not None
+        assert result.clipboard_text == "the user's last message"
+        assert "user" in result.text
+
+    def test_explicit_index(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        self._seed_messages(
+            session_store,
+            [("user", "one"), ("assistant", "two"), ("user", "three")],
+        )
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/copy 2")
+        assert result is not None
+        assert result.clipboard_text == "two"
+        assert "#2" in result.text
+
+    def test_index_out_of_range(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        self._seed_messages(session_store, [("user", "only")])
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/copy 99")
+        assert result is not None
+        assert result.clipboard_text is None
+        assert "out of range" in result.text
+
+    def test_invalid_argument_shows_usage(
+        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+    ) -> None:
+        # Seed at least one message so the dispatch reaches the
+        # selector parser instead of bailing on "no messages yet".
+        self._seed_messages(session_store, [("user", "hi")])
+        agent = _fake_agent(memory_manager, charm_path=tmp_path)
+        result = dispatch(agent, "/copy banana")
+        assert result is not None
+        assert result.clipboard_text is None
+        assert "Usage" in result.text
+
+
 class TestArena:
     """/arena returns usage when bare and a followup when given a prompt."""
 

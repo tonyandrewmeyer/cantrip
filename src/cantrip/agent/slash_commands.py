@@ -75,6 +75,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/model", "Show or switch the active model"),
     CommandInfo("/export", "Export the live session transcript"),
     CommandInfo("/share", "Upload the session as a secret GitHub gist"),
+    CommandInfo("/copy", "Copy a chat message to the system clipboard"),
     CommandInfo("/update", "Check PyPI for a newer release"),
     CommandInfo("/sandbox", "Show subprocess sandbox status"),
     CommandInfo("/hooks", "List configured hooks and invocation stats"),
@@ -143,12 +144,21 @@ class SlashResult:
     code blocks, lists.  Default ``False`` keeps every existing
     handler on the literal-text path; opt in by handlers that
     specifically want formatting (``/map``).
+
+    ``clipboard_text`` is the Phase 76 system-clipboard payload.
+    Surfaces with a clipboard channel (TUI uses Textual's OSC 52
+    helper; CLI writes OSC 52 to the controlling tty; the Web UI
+    has no equivalent server-pushed channel and ignores it) copy
+    the value when set.  ``text`` still renders as a confirmation
+    so the user sees something happened even when the clipboard
+    write is silently discarded by the terminal.
     """
 
     text: str
     followup: Awaitable[str] | None = None
     quit: bool = False
     markdown: bool = False
+    clipboard_text: str | None = None
 
 
 def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
@@ -221,6 +231,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=export_transcript(agent, args))
     if verb == "/share":
         return _handle_share(agent)
+    if verb == "/copy":
+        return _handle_copy(agent, args)
     if verb == "/update":
         return _handle_update(args)
     if verb == "/sandbox":
@@ -569,6 +581,10 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "- `/share` — upload the HTML transcript as a secret GitHub"
         " gist via `gh` and return the URL.  Falls back to a local"
         " path + the exact `gh` command when `gh` is unavailable.\n"
+        "- `/copy [last|N]` — copy a chat message to the system"
+        " clipboard.  Bare `/copy` grabs the last assistant message;"
+        " `/copy last` grabs the last message of any role; `/copy 7`"
+        " grabs message 7 (1-based, matches `/export markdown`).\n"
         "- `/update` — check PyPI for a newer Cantrip release right"
         " now (cache-bypassing).  `/update --no-check` disables the"
         " auto-check; `/update --check` re-enables it.\n"
@@ -1370,6 +1386,85 @@ def _handle_diagnostics(agent: CantripAgent, args: str) -> SlashResult:
 
     prelude = "Running ruff / ty / charmlint…"
     return SlashResult(text=prelude, followup=_run(), markdown=True)
+
+
+def _handle_copy(agent: CantripAgent, args: str) -> SlashResult:
+    """Copy a single chat message to the system clipboard (Phase 76).
+
+    With no argument, picks the most recent assistant message.
+    With ``last`` (any role), picks the most recent message regardless
+    of role.  With a positive integer ``N``, picks the N-th message in
+    1-based session order (useful when the user can see the index in
+    an export but not in the live chat -- ``/export markdown`` to
+    cross-reference).
+
+    Returns a :class:`SlashResult` whose ``text`` is a one-line
+    confirmation and whose ``clipboard_text`` carries the rendered
+    Markdown for the surface to put on the user's clipboard.  Falls
+    back to embedding the body in ``text`` when copy is not viable
+    (no charm path, no messages) so the user still sees an
+    actionable response.
+    """
+    charm_path: pathlib.Path | None = getattr(agent.state, "charm_path", None)
+    if charm_path is None:
+        return SlashResult(text="_Cannot copy: no charm path for this session._")
+    db_path = charm_path / ".cantrip"
+    if not db_path.exists():
+        return SlashResult(text=f"_Cannot copy: no `.cantrip` file at {charm_path}._")
+
+    # Lazy import: keeps the slash module importable even when the
+    # transcript renderers' optional deps are unusual.
+    from cantrip.transcript import export as transcript_export
+    from cantrip.transcript.markdown import render_message
+
+    data = transcript_export.load_transcript(db_path)
+    messages = data.messages
+    if not messages:
+        return SlashResult(text="_Nothing to copy: this session has no messages yet._")
+
+    selector = args.strip().lower()
+    target: dict | None = None
+    label: str
+    if selector in ("", "assistant"):
+        target = next(
+            (m for m in reversed(messages) if (m.get("role") or "").lower() == "assistant"),
+            None,
+        )
+        if target is None:
+            return SlashResult(
+                text="_Nothing to copy: no assistant messages in this session yet._"
+            )
+        label = "last assistant message"
+    elif selector == "last":
+        target = messages[-1]
+        role = (target.get("role") or "message").lower()
+        label = f"last {role} message"
+    else:
+        try:
+            index = int(selector)
+        except ValueError:
+            return SlashResult(
+                text=(
+                    "_Usage: `/copy` (last assistant message), `/copy last` "
+                    "(last message of any role), or `/copy <N>` (1-based "
+                    "message index)._"
+                )
+            )
+        if index < 1 or index > len(messages):
+            return SlashResult(
+                text=f"_Cannot copy: message index {index} out of range (1..{len(messages)})._"
+            )
+        target = messages[index - 1]
+        label = f"message #{index} ({(target.get('role') or 'unknown').lower()})"
+
+    body = render_message(target, include_header=False).strip()
+    if not body:
+        return SlashResult(text=f"_Nothing to copy: the {label} has no body._")
+
+    return SlashResult(
+        text=f"Copied {label} to clipboard ({len(body)} chars).",
+        clipboard_text=body,
+    )
 
 
 def _handle_share(agent: CantripAgent) -> SlashResult:

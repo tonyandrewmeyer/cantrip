@@ -876,6 +876,12 @@ const cantrip = (() => {
       if (openKey) {
         e.preventDefault();
         _closeOverlay(openKey);
+        return;
+      }
+      const thinking = thinkingEl();
+      if (thinking && !thinking.hidden) {
+        e.preventDefault();
+        cancelTurn();
       }
       return;
     }

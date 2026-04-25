@@ -891,6 +891,43 @@ class TestTuiWidgets:
                 assert input_widget.disabled is False
 
     @pytest.mark.asyncio
+    async def test_escape_cancels_agent_response(self):
+        """Escape cancels a running agent response worker (Claude-Code-style)."""
+        import asyncio
+
+        p1, p2, mock_agent = _patch_app()
+
+        async def _slow_stream(_msg: str):
+            await asyncio.sleep(10)
+            yield "never"
+
+        mock_agent.process_message_streaming = _slow_stream
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                input_widget = pilot.app.query_one("#chat-input")
+                input_widget.value = "Hi"
+                await pilot.press("enter")
+                await pilot.pause(delay=0.3)
+
+                assert input_widget.disabled is True
+
+                await pilot.press("escape")
+                await pilot.pause(delay=0.5)
+
+                assert input_widget.disabled is False
+
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                scroll = chat.query_one("#chat-scroll")
+                messages = scroll.query(MessageWidget)
+                system_msgs = [
+                    w
+                    for w in messages
+                    if w.message.role == MessageRole.SYSTEM
+                    and "cancelled" in w.message.content.lower()
+                ]
+                assert len(system_msgs) >= 1
+
+    @pytest.mark.asyncio
     async def test_streaming_chunks_append_to_same_widget(self):
         """Multi-chunk streaming response assembles into one assistant message."""
         p1, p2, mock_agent = _patch_app()

@@ -5,7 +5,30 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
-- **Phase 81: 100 % tool-caption coverage and future-proof guard.**
+- **Escape cancels the in-flight agent turn.**  TUI binds
+  <kbd>Esc</kbd> alongside the existing <kbd>Ctrl+C</kbd> on the
+  main view (both call ``action_cancel_agent``); modal screens
+  keep their own Esc-closes-modal binding because Textual checks
+  the focused widget first.  Web UI extends its global Esc
+  handler so that, when no overlay is open and the thinking
+  indicator is visible, Esc fires the same ``cancel_request``
+  the Cancel button does.  Brings parity with the Claude Code
+  cancel-on-Escape habit users already have.
+- **Phase 76: ``/copy`` slash command — copy any chat message to the
+  system clipboard.**  Bare ``/copy`` grabs the last assistant
+  message; ``/copy last`` grabs the most recent message regardless
+  of role; ``/copy <N>`` grabs the N-th message in 1-based session
+  order (indices line up with ``/export markdown``).  The TUI uses
+  Textual's ``App.copy_to_clipboard``; the CLI writes OSC 52
+  directly to the controlling tty so copy works through tmux,
+  screen, and ssh.  When OSC 52 is unavailable (piped stdout,
+  tmux without ``set-clipboard on``) the CLI prints the body
+  inline so nothing is lost.  The Web UI inlines the payload in a
+  fenced code block — browsers block server-pushed clipboard
+  writes without a fresh user gesture, so server-side copy isn't
+  viable there.  Phase 76 closes; the Toad-inspired block-cursor
+  rewrite is documented as a deferred follow-up in
+  ``design/UI.md``.
   Every registered ``Tool`` (111 of them) now populates
   ``ToolResult.caption`` on its success path, replacing the
   formulaic ``tool_name(arg=value)`` fallback with a one-line

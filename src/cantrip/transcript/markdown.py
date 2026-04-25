@@ -5,6 +5,40 @@ import json
 from cantrip.transcript import export as export_mod
 
 
+def render_message(msg: dict, *, include_header: bool = True) -> str:
+    """Render a single transcript message as Markdown.
+
+    Used by the whole-transcript :func:`render_markdown` and by the
+    ``/copy`` slash command (Phase 76) which puts one message on the
+    clipboard.  Setting *include_header* to ``False`` drops the
+    ``### ROLE (timestamp)`` heading -- ``/copy`` does this so a
+    paste into a chat or PR description is just the body.
+    """
+    parts: list[str] = []
+    if include_header:
+        role = msg.get("role", "unknown").upper()
+        ts = msg.get("timestamp", "")
+        parts.append(f"### {role} ({ts})\n")
+    if msg.get("content"):
+        parts.append(msg["content"])
+    for tc in msg.get("tool_calls") or []:
+        args_json = json.dumps(tc.get("arguments", {}), indent=2)
+        parts.append(
+            f"\n<details><summary>Tool: {tc.get('name', 'unknown')}"
+            f"</summary>\n\n"
+            f"```json\n{args_json}\n```\n"
+            f"</details>"
+        )
+    for tr in msg.get("tool_results") or []:
+        prefix = "Error" if tr.get("is_error") else "Result"
+        parts.append(
+            f"\n<details><summary>{prefix}</summary>\n\n"
+            f"```\n{tr.get('content', '')}\n```\n"
+            f"</details>"
+        )
+    return "\n".join(parts)
+
+
 def render_markdown(data: export_mod.TranscriptData) -> str:
     """Render transcript data as Markdown."""
     sections: list[str] = []
@@ -33,31 +67,7 @@ def render_markdown(data: export_mod.TranscriptData) -> str:
     # Conversation.
     sections.append("\n## Conversation\n")
     for msg in data.messages:
-        role = msg.get("role", "unknown").upper()
-        ts = msg.get("timestamp", "")
-        sections.append(f"### {role} ({ts})\n")
-        if msg.get("content"):
-            sections.append(msg["content"])
-        if msg.get("tool_calls"):
-            for tc in msg["tool_calls"]:
-                args_json = json.dumps(
-                    tc.get("arguments", {}),
-                    indent=2,
-                )
-                sections.append(
-                    f"\n<details><summary>Tool: {tc.get('name', 'unknown')}"
-                    f"</summary>\n\n"
-                    f"```json\n{args_json}\n```\n"
-                    f"</details>"
-                )
-        if msg.get("tool_results"):
-            for tr in msg["tool_results"]:
-                prefix = "Error" if tr.get("is_error") else "Result"
-                sections.append(
-                    f"\n<details><summary>{prefix}</summary>\n\n"
-                    f"```\n{tr.get('content', '')}\n```\n"
-                    f"</details>"
-                )
+        sections.append(render_message(msg))
 
     # Events.
     if data.events:

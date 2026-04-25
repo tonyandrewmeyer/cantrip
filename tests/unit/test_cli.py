@@ -85,9 +85,11 @@ class TestSlashCompleter:
 
     def test_completer_returns_matches_in_order(self) -> None:
         completer = cli._make_slash_completer(self._verbs())
-        # ``/c`` matches exactly ``/cost``.
-        assert completer("/c", 0) == "/cost"
-        assert completer("/c", 1) is None
+        # ``/c`` matches both ``/copy`` and ``/cost``; alphabetic order
+        # determines readline's cycle order.
+        assert completer("/c", 0) == "/copy"
+        assert completer("/c", 1) == "/cost"
+        assert completer("/c", 2) is None
 
     def test_completer_is_case_insensitive(self) -> None:
         completer = cli._make_slash_completer(self._verbs())
@@ -151,8 +153,9 @@ class TestSlashCompleter:
 
         fake_readline.set_completer.assert_called_once()
         (completer_arg,), _ = fake_readline.set_completer.call_args
-        # The callable that was registered should actually complete ``/c``.
-        assert completer_arg("/c", 0) == "/cost"
+        # The callable that was registered should actually complete
+        # ``/c`` -- ``/copy`` sorts before ``/cost`` alphabetically.
+        assert completer_arg("/c", 0) == "/copy"
         fake_readline.set_completer_delims.assert_called_once_with(" \t\n")
         fake_readline.parse_and_bind.assert_called_once_with("tab: complete")
 

@@ -2855,52 +2855,104 @@ on a user-specified predicate, distinct from Ralph Loop.
 
 ---
 
-## Phase 76: Copy-Friendly Chat — Toad-Inspired
+## Phase 76: Copy-Friendly Chat — Toad-Inspired ✓
 
 **Goal:** Make it easy to copy chunks of the chat window — a
 single agent message, a single tool block, a whole turn.  Today
 the TUI relies on the terminal's own copy machinery (``Ctrl+Shift+
 C`` in most terminals), which breaks when Cantrip is running
 inside a multiplexer or when multiple surfaces are on screen.
-Toad (Charm's AI agent) has well-regarded per-block copy
+Toad (Will McGugan's TUI agent, built on Textual; not Charm
+despite some early conflation) has well-regarded per-block copy
 affordances — inspect what they do and adapt what fits.
 
-**This is primarily an investigation phase.**  Ship one concrete
-improvement if one reads as obviously right during the review;
-otherwise document findings and move on without premature
-design.
+**This was primarily an investigation phase.**  Shipped the
+smallest concrete win and wrote up the rest in ``design/UI.md``
+under *Copy-Friendly Chat (Phase 76)* so a future phase has a
+starting point if user demand surfaces.
 
-### 76.1 Research — What Toad does
+### 76.1 Research — What Toad does ✓
 
-- [ ] Install / read about Toad's per-block copy behaviour:
-  what gestures, what clipboard formats (plain text, Markdown,
-  rich), what scope (one message / one turn / selection range).
-- [ ] Catalogue the friction points in Cantrip's current
-  TUI-copy flow that real users hit (ghost terminal +
-  tmux/screen + remote ssh all mangle different bits).
+- [x] Researched Toad's public surface (``willmcgugan.github.io``
+  announcement + released posts, ``batrachianai/toad`` GitHub,
+  InfoQ writeup, HN thread).  Distinctive UX: a Jupyter-style
+  block cursor over the conversation that lets users copy a cell
+  to the clipboard or push it back into the prompt.  Beyond that:
+  per-block SVG export (Textual screenshot trick) and ungarbled
+  scrollback (architectural, not a copy feature).  No public
+  evidence of OSC 52, format pickers, or hover affordances.
+- [x] Catalogued Cantrip's current copy-friction points: zero
+  clipboard infrastructure (no ``pyperclip``, no OSC 52 helper);
+  TUI ``ChatWidget`` is a flat ``ScrollableContainer`` of
+  ``Static`` children with no focus model or per-message DOM
+  attribute; ``/export`` exists but writes the whole transcript
+  to a file rather than pulling out a single message; ``/share``
+  uploads as a gist but again whole-session.
 
-### 76.2 Design — What fits Cantrip
+### 76.2 Design — What fits Cantrip ✓
 
-- [ ] Pick the subset of Toad's affordances that maps cleanly
-  onto Textual.  Candidates: per-widget copy keybinding;
-  visible ``[copy]`` affordance on hover / focus; a ``/copy
-  last-message`` / ``/copy last-tool-result`` slash command;
-  OSC 52 clipboard escape support for ssh/tmux.
-- [ ] Decide the default Markdown-vs-plain-text policy — agent
-  messages are typically Markdown, but the user probably wants
-  plain text when pasting into Slack vs Markdown when pasting
-  into an issue tracker.
+- [x] Picked the smallest concrete affordance that does NOT
+  require a chat-widget refactor: a ``/copy`` slash command,
+  Markdown-only, with OSC 52 underneath so it survives tmux /
+  screen / ssh.  Block-cursor mode (Toad's headline feature) is
+  deliberately deferred — it would mean refactoring
+  ``ChatWidget`` to focusable per-block widgets, mirroring the
+  same model in the Solid Web UI, and adding cursor state in
+  both surfaces.  Documented the reasoning in ``design/UI.md``
+  with a *what would change the verdict* list so a future phase
+  has clear triggers.
+- [x] Markdown-vs-plain-text policy: ship Markdown only.  Toad
+  ships one format; we ship one format.  Adding a picker would
+  mostly add UI, not value.
 
-### 76.3 Implement — The one thing worth shipping now
+### 76.3 Implement — The one thing worth shipping now ✓
 
-- [ ] Ship whichever affordance from 76.2 has the clearest
-  win.  If nothing rises above the bar, write up findings in
-  ``design/UI.md`` and close the phase without shipping.
+- [x] ``cantrip.clipboard`` module — ``osc52_sequence(text)``
+  returns the universal terminal-clipboard escape;
+  ``write_to_terminal(text)`` emits it to ``sys.__stdout__``
+  (bypassing Textual's stdout interception) when the destination
+  is a tty, returns ``False`` otherwise so callers can fall back
+  cleanly.  Truncates at 75 KB to stay below xterm's OSC 52 cap.
+- [x] ``cantrip.transcript.markdown.render_message(msg, *,
+  include_header=False)`` extracted from the whole-transcript
+  ``render_markdown`` so ``/copy`` and ``/export markdown``
+  share one renderer.
+- [x] ``SlashResult`` gains a ``clipboard_text: str | None``
+  field; surfaces inspect it after rendering ``text``.  TUI
+  delegates to Textual's ``App.copy_to_clipboard`` (handles tmux
+  passthrough wrap); CLI calls ``clipboard.write_to_terminal``
+  with a fall-back to printing the body inline; Web inlines
+  the payload in a fenced code block (browser permissions block
+  server-pushed ``navigator.clipboard.writeText`` without a
+  fresh user gesture).
+- [x] ``/copy`` slash command: bare grabs the last assistant
+  message; ``/copy last`` grabs the most recent of any role;
+  ``/copy <N>`` grabs the 1-based session index (matches
+  ``/export markdown``).  Edge cases: missing charm path,
+  missing ``.cantrip``, no messages, no assistant messages,
+  out-of-range index, non-integer argument all return a
+  human-readable string with ``clipboard_text`` left ``None``.
+- [x] ``COMMAND_CATALOGUE`` + ``help_text`` updated;
+  ``/help`` documents the verb; the catalogue-drift test
+  enforces consistency.
+- [x] ``docs/src/reference-cli.md`` gets a *Copy a chat
+  message to the system clipboard* section under the slash-
+  command catalogue, including the tmux ``set-clipboard on``
+  prerequisite; HTML regenerated; ``make docs-check`` passes.
+- [x] Tests: ``TestCopy`` (9 cases) on the dispatcher covering
+  every edge case, plus ``test_clipboard.py`` (6 cases) on the
+  OSC 52 module — round-trip, unicode, oversize truncation,
+  tty / non-tty / OSError write paths.  Two existing CLI
+  completer tests updated to reflect ``/copy`` sorting before
+  ``/cost`` alphabetically.
 
 **Exit criteria:** Either (a) a concrete copy affordance lands
 and is documented, or (b) a written assessment in ``design/UI.md``
 explains why the current flow is sufficient and what would
-change that.  ``make check`` passes regardless.
+change that.  ``make check`` passes regardless.  Closed by
+shipping (a) — ``/copy`` lands as the concrete affordance — and
+(b) — ``design/UI.md`` writes up everything else as deferred so
+the next phase has clear triggers.
 
 **Dependencies:**
 | Item | Depends On | Notes |
@@ -3273,6 +3325,88 @@ block that transitions from intro to outcome.
 
 ---
 
+## Phase 83: Pause-and-Edit Interrupt — Research
+
+**Goal:** Today's interrupt (<kbd>Ctrl+C</kbd> / <kbd>Esc</kbd> in
+the TUI, the Cancel button or <kbd>Esc</kbd> in the Web UI) is a
+*hard* cancel: ``asyncio.Task.cancel()`` unwinds the in-flight
+turn, the agent forgets what it was doing past the last persisted
+event, and the user has to retype a redirected instruction from
+scratch.  Some peers (Claude Code, Cursor, Aider) instead let the
+user *pause* the agent mid-turn, edit or amend the running
+instruction, and resume — the agent keeps the partial reasoning
+context and folds the edit in.  This phase decides whether
+Cantrip should add such a mode and, if so, what the smallest
+viable shape is.
+
+### 83.1 Research — survey peer interrupt models
+
+- [ ] Catalogue how Claude Code, Cursor, Aider, Goose, and Amp
+  handle mid-turn interruption: hard cancel, soft pause, edit-in-
+  place, queue-next-instruction, or some combination.  Note the
+  keybinding, the surfaced affordance, and what state the agent
+  preserves across the interrupt (tool-call buffer? assistant
+  partial text? reasoning trace?).
+- [ ] Inventory user complaints / feature requests in those
+  projects' issue trackers for "lost my context after Ctrl+C" or
+  "wish I could amend mid-turn" — a small number of high-signal
+  asks is the trigger to pursue this.
+
+### 83.2 Design — what would "pause and edit" mean for Cantrip
+
+- [ ] Identify the resumable unit.  Cantrip's loop interleaves
+  model calls and tool calls; pausing *between* steps is cheap
+  (just stop dispatching the next step) but pausing *during* a
+  long tool call (``charmcraft_pack``, ``juju_wait``) is harder —
+  the tool keeps running unless we kill it.  Decide which is the
+  product.
+- [ ] Sketch the TUI affordance.  Options: (a) <kbd>Esc</kbd>
+  pauses, second <kbd>Esc</kbd> cancels — chord-style; (b) a
+  dedicated keybind (<kbd>Ctrl+P</kbd>?) for pause; (c) an
+  on-screen "Pause" button alongside the thinking indicator.
+  Note the collision risk with Phase 76 (``/copy``) and the
+  modal-Escape behaviour from Phase 65.
+- [ ] Sketch the message-flow change.  When the user types into
+  a paused turn, where does the edit go: prepended to the next
+  user turn, replacing the in-flight system note, or injected as
+  a tool-result-style synthetic message?  Each shape has a
+  different effect on the model's understanding of what just
+  happened.
+
+### 83.3 Decision — ship, defer, or drop
+
+- [ ] Write up findings in ``design/PAUSE_AND_EDIT.md`` (mirror
+  the Phase 39 ACP write-up format): peer survey table,
+  decision, and revisit triggers.
+- [ ] If "ship": carve out a Phase 83b implementation phase with
+  concrete agent-loop, TUI, Web UI, and event-bus deltas.
+- [ ] If "defer / drop": record the reason and the conditions
+  that would re-open it (e.g. user reports "I keep losing my
+  half-built design when I cancel", or a peer ships a clearly
+  better pattern worth copying).
+
+### What this phase is *not*
+
+- Not a commitment to ship pause-and-edit.  This phase is a
+  decision gate; Phase 82 already covers the inline-status side
+  of mid-turn responsiveness.
+- Not a rework of the existing cancel path.  Hard cancel via
+  <kbd>Ctrl+C</kbd> / <kbd>Esc</kbd> stays as-is regardless of
+  outcome.
+
+**Exit criteria:** ``design/PAUSE_AND_EDIT.md`` exists and lands
+on a verdict (ship / defer / drop) with explicit revisit
+triggers.  If the verdict is "ship", a Phase 83b implementation
+phase is scoped.
+
+**Discovered:** While adding the <kbd>Esc</kbd> cancel binding
+to bring the TUI in line with Claude Code's cancel habit, the
+user noted that Claude Code's *fuller* interrupt model also
+permits editing the in-flight instruction.  Worth deciding on
+deliberately rather than copy-pasting blindly.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -3344,7 +3478,7 @@ block that transitions from intro to outcome.
 | M73: Goose Workflow Packaging | 73 | Parameterised retryable Recipes with sub-recipes, MCP Apps rendered as sandboxed iframes in the Web UI, JSON-schema-enforced structured responses, and declarative retry with shell validators |
 | M74: Populated Charm Docs | 74 ✓ | Generated ``docs/`` tree is bridged with the Phase 13 root files, populated from real Phase 17 acceptance-test command/output capture, with an architecture page extracted from transcript design decisions and a troubleshooting page mined from the agent's resolved-error history |
 | M75: Inline Tool Blocks | 75 ✓ | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
-| M76: Copy-Friendly Chat | 76 | Toad-inspired per-block copy affordances either ship (keybinding, slash command, OSC 52, or similar) or a written assessment in ``design/UI.md`` explains why the current flow is sufficient |
+| M76: Copy-Friendly Chat | 76 ✓ | Toad-inspired per-block copy affordances either ship (keybinding, slash command, OSC 52, or similar) or a written assessment in ``design/UI.md`` explains why the current flow is sufficient |
 | M77: Reasoning Content Surfaced | 77 ✓ | OpenAI-compatible reasoning deltas (Kimi K2, DeepSeek-R1, GLM reasoning variants) are captured and rendered like Claude's extended thinking rather than silently dropped |
 | M78: Observability Hardening | 78 ✓ | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
 | M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |

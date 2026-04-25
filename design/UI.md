@@ -132,6 +132,7 @@ and do not flow through the shared dispatcher.
 | `/cost` | Token usage and estimated cost. |
 | `/arena <prompt>` | Blind A/B compare two models; reply **A** / **B** / **tie** / **skip**. |
 | `/export [html\|jsonl\|markdown] [path]` | Export the live transcript. |
+| `/copy [last\|N]` | Copy a chat message to the system clipboard via OSC 52. |
 | `/update` | Force a cache-bypassing PyPI check; prints the result. |
 | `/update --no-check` | Persist `update_check_disabled = true` in `~/.config/cantrip/settings.json`. |
 | `/update --check` | Clear the persistent opt-out. |
@@ -143,6 +144,78 @@ so a slow PyPI doesn't freeze the chat.  The running process still executes
 the old code until restarted; the notice calls that out explicitly.
 `CANTRIP_NO_UPDATE_CHECK=1` at the process level shadows the settings-file
 toggle and stays in force for the session.
+
+## Copy-Friendly Chat (Phase 76)
+
+Inspired by Will McGugan's [Toad](https://github.com/batrachianai/toad)
+agent, which exposes a Jupyter-style block cursor over the chat history
+so users can navigate cells, copy them, or push them back into the
+prompt.  Phase 76 investigated this pattern for Cantrip and shipped
+the smallest concrete win: a `/copy` slash command that puts a chat
+message on the system clipboard via OSC 52.  This section records what
+was considered and what was deliberately deferred so a future phase
+has a starting point if user demand surfaces.
+
+### What shipped
+
+* **`/copy [last|N]`** — copies a single message body, rendered as
+  Markdown.  Default target is the most recent assistant message;
+  `last` selects any role; `N` selects 1-based session index.  See
+  `reference-cli.md` for full syntax.
+* **OSC 52 emitter** in `cantrip.clipboard` — universal terminal
+  clipboard escape that survives tmux, screen, and ssh when the
+  terminal cooperates.  TUI uses Textual's `App.copy_to_clipboard`
+  helper (Textual already understands the tmux passthrough wrap);
+  CLI writes directly to `sys.__stdout__`.  Falls back to inline
+  printing when the destination isn't a tty.
+* **Web UI** inlines the payload in a fenced code block so browser
+  select-and-copy works.  Server-pushed `navigator.clipboard.writeText`
+  was rejected because the browser permissions policy requires a
+  fresh user gesture; the SSE-delivered slash response doesn't
+  qualify.
+
+### What was deliberately deferred
+
+* **Block-cursor navigation over the conversation** (Toad's headline
+  feature).  Cantrip's `ChatWidget` is a flat `ScrollableContainer`
+  of `Static` children, not a `ListView` of focusable per-block
+  widgets.  Adopting block-cursor mode would require refactoring the
+  chat widget to focusable per-message widgets, adding cursor state,
+  rebuilding scroll-to-focus logic, and mirroring the same model in
+  the Solid Web UI.  That's a medium-to-large change that should
+  only happen if there's a concrete user-friction signal —
+  "scrolling back and re-running a turn is painful" or "I want to
+  cite an earlier message in a new prompt".  None has surfaced
+  yet; revisit when (or if) one does.
+* **Push back into the prompt composer** (Toad's reuse half).
+  Without block-cursor navigation there's no obvious gesture; the
+  closest existing affordance is `@@` proposed in Phase 67.1's
+  session-tree work.  If that lands, a `/recall N` or similar
+  variant on `/copy` becomes natural — log it then.
+* **Hover/focus `[copy]` affordances on individual blocks** in
+  either TUI or Web.  The TUI has no per-block focus model
+  (ditto block-cursor); the Web UI has per-message DOM containers
+  but no `data-message-id` attribute today.  Adding a per-block
+  copy button is plausible Web-only future work; deferred until
+  a user asks.
+* **Markdown-vs-plain-text format picker.**  Toad ships one format
+  (clipboard text); we ship one format (Markdown body).  Adding a
+  picker would mostly add UI, not value.
+
+### What would change the verdict
+
+A future phase should reopen this work when one of:
+
+* A user asks to "copy and edit an earlier turn" or "rewind to a
+  prior message" — both pull in block-cursor navigation directly.
+* The session-tree work in Phase 67.1 lands and the `@@` affordance
+  proves popular — that's the cue to add `/copy` integration with
+  the same picker so reuse-into-prompt and reuse-as-clipboard
+  share one widget.
+* Multiple users report that `/copy <N>` indices are too clumsy
+  because the live chat doesn't display indices — solving that
+  needs either visible per-block indices (cheap) or focusable
+  blocks (block-cursor).
 
 ## Alternative Views
 

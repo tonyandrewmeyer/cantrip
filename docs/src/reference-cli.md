@@ -619,6 +619,45 @@ session is never blocked by a missing dependency. Cantrip does
 not run its own hosting service; the gist lives on GitHub under
 the authenticated user.
 
+{#copy}
+### Copy a chat message to the system clipboard
+
+<dl>
+  <dt><code>/copy</code></dt>
+  <dd>
+    Copy the most recent assistant message body, rendered as
+    Markdown, to the system clipboard.  The TUI uses Textual's
+    <code>App.copy_to_clipboard</code> helper; the CLI writes an
+    OSC 52 escape directly to the controlling terminal so the
+    copy works through tmux, screen, and ssh.
+  </dd>
+  <dt><code>/copy last</code></dt>
+  <dd>
+    Copy the last message of <em>any</em> role (including the
+    user's own most recent message).  Useful when an agent reply
+    interleaves with a tool block and you want the latest visible
+    line.
+  </dd>
+  <dt><code>/copy &lt;N&gt;</code></dt>
+  <dd>
+    Copy the N-th message in 1-based session order.  Indices line
+    up with <code>/export markdown</code> output so you can
+    cross-reference if you need to copy something earlier in the
+    transcript.
+  </dd>
+</dl>
+
+For copy to actually reach the clipboard through tmux, your
+<code>tmux.conf</code> needs <code>set -g set-clipboard on</code>
+and tmux 3.2 or later.  Most modern terminal emulators (kitty,
+alacritty, foot, iTerm2, gnome-terminal, Windows Terminal)
+accept OSC 52 by default.  When the controlling terminal isn't a
+tty (piped stdout, headless CI), the CLI prints the message body
+inline so the user can still grab it manually.  The Web UI has
+no equivalent server-pushed clipboard channel; <code>/copy</code>
+inlines the payload in a fenced code block for browser
+select-and-copy instead.
+
 ### MCP (Model Context Protocol)
 
 Inspect configured MCP servers and discover new ones from

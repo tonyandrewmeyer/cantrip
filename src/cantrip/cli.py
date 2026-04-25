@@ -422,6 +422,14 @@ async def _repl(agent: CantripAgent) -> None:
         shared_result = slash_commands.dispatch(agent, user_input)
         if shared_result is not None:
             _print_slash_result(shared_result.text, markdown=shared_result.markdown)
+            if shared_result.clipboard_text is not None:
+                from cantrip import clipboard as clipboard_mod
+
+                if not clipboard_mod.write_to_terminal(shared_result.clipboard_text):
+                    # The tty rejected OSC 52 (e.g. piped stdout, or a
+                    # terminal with set-clipboard off in tmux).  Print
+                    # the body so the user can still copy it manually.
+                    print(f"\n{shared_result.clipboard_text}\n")
             if shared_result.followup is not None:
                 try:
                     followup_text = await shared_result.followup

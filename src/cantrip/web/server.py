@@ -149,7 +149,19 @@ def _handle_shared_slash_command(app: web.Application, agent: CantripAgent, cont
     if result is None:
         return False
     _broadcast_chat(app, "user", content)
-    _broadcast_chat(app, "system", result.text)
+    body = result.text
+    if result.clipboard_text is not None:
+        # Browsers block server-pushed clipboard writes (the relevant
+        # navigator.clipboard.writeText call needs a fresh user
+        # gesture), so the Web UI inlines the payload in a fenced
+        # block instead.  The user's normal browser select+copy path
+        # works on it; the TUI / CLI handle clipboard writes for real.
+        body = (
+            f"{result.text}\n\nNo browser-side clipboard channel; "
+            f"select and copy from below.\n\n```\n"
+            f"{result.clipboard_text}\n```"
+        )
+    _broadcast_chat(app, "system", body)
     if result.followup is not None:
         asyncio.create_task(_broadcast_followup(app, result.followup))
     return True

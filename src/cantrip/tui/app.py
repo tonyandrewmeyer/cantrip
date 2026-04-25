@@ -79,6 +79,7 @@ class CantripApp(App):
         Binding("ctrl+l", "clear_chat", "Clear"),
         Binding("ctrl+f", "search_chat", "Search", priority=True),
         Binding("ctrl+c", "cancel_agent", "Cancel", show=False),
+        Binding("escape", "cancel_agent", "Cancel", show=False),
     ]
 
     def __init__(
@@ -1621,6 +1622,12 @@ class CantripApp(App):
         if result is None:
             return False
         chat.add_system_message(result.text, markdown=result.markdown)
+        if result.clipboard_text is not None:
+            # Textual's App.copy_to_clipboard owns OSC 52 negotiation
+            # against the host terminal -- preferred over writing the
+            # escape ourselves because Textual already understands the
+            # tmux passthrough wrap.
+            self.copy_to_clipboard(result.clipboard_text)
         if result.followup is not None:
             self.run_worker(result.followup, name="mcp_marketplace", exclusive=False)
         if result.quit:
