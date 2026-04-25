@@ -247,10 +247,19 @@ concierge status
 
 ### Choosing a Preset
 
-1. **Use `dev` for general charm development** — includes everything most developers need
-2. **Use `machine` for traditional charms** — no K8s overhead
-3. **Use `k8s` or `microk8s` for K8s-only work** — lighter than `dev`
-4. **Use `crafts` for build servers** — minimal installation for building only
+1. **Prefer `k8s` over `microk8s` for Kubernetes work.**  The
+   canonical `k8s` snap is the recommended default substrate for
+   new charm development.  Reach for `microk8s` only when the user
+   has explicitly asked for it, or when an existing dev box is
+   already on it.  The two are not interchangeable from the
+   registry standpoint — `microk8s` has a built-in registry add-on
+   at `localhost:32000`, whereas the `k8s` snap has none and you
+   need to deploy a registry charm with `setup_local_registry`.
+2. **Use `dev` for general charm development** — includes everything most developers need
+3. **Use `machine` for traditional charms** — no K8s overhead
+4. **Use `k8s` for Kubernetes-only work** — lighter than `dev`, uses the canonical `k8s` snap
+5. **Use `microk8s` only when explicitly requested** — same Juju surface, different substrate
+6. **Use `crafts` for build servers** — minimal installation for building only
 
 ### Configuration Management
 

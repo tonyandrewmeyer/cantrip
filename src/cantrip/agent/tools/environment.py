@@ -386,6 +386,7 @@ class ConciergeRestoreTool(Tool):
                     "Concierge is not installed. "
                     "Install it with: sudo snap install concierge --channel latest/edge"
                 ),
+                caption="concierge not installed",
             )
 
         # Gate behind the destructive-policy layer.  Restore tears down
@@ -405,6 +406,7 @@ class ConciergeRestoreTool(Tool):
                     "(``~/.config/cantrip/policies/*.yaml`` or "
                     "``<charm>/cantrip.policies.yaml``) to enable it."
                 ),
+                caption="concierge_restore needs approve_destructive",
             )
 
         if _concierge_already_running():
@@ -417,6 +419,7 @@ class ConciergeRestoreTool(Tool):
                     "(check with `pgrep -a concierge`)."
                 ),
                 data={"concierge_running": True},
+                caption="another concierge already running",
             )
 
         try:
@@ -426,6 +429,7 @@ class ConciergeRestoreTool(Tool):
                 success=False,
                 output="",
                 error="Concierge restore timed out after 600 seconds.",
+                caption="concierge restore timed out",
             )
 
         if rc != 0:
@@ -433,9 +437,11 @@ class ConciergeRestoreTool(Tool):
                 success=False,
                 output=stdout,
                 error=f"Concierge restore failed (exit {rc}): {stderr.strip()}",
+                caption=f"concierge restore exit {rc}",
             )
 
         return ToolResult(
             success=True,
             output=f"Environment restored.\n{stdout.strip()}",
+            caption="Environment restored",
         )

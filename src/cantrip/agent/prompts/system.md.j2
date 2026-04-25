@@ -211,7 +211,9 @@ K8s charms need an OCI image as a container resource. Choose the right approach:
 
 **Verifying an image before deploy** — call `registry_image_exists` once you have an exact `<registry>/<repo>:<tag>` ref. It runs `skopeo inspect` (no Docker daemon) and short-circuits the `ImagePullBackOff` loop when the tag was never pushed or the repo doesn't exist on the chosen registry.
 
-**Local-registry substrate caveat** — `localhost:32000` only works on **MicroK8s with the registry add-on enabled**. The Canonical `k8s` snap has no built-in registry. Call `local_registry_status` before assuming a local registry exists; on `k8s`-snap dev boxes, mirror to a public registry (ghcr.io) or deploy a registry charm into the model. On rate-limited public registries (Docker Hub), `registry_mirror` copies an image into the local registry once so subsequent deploys pull from `localhost:32000` instead of going over the public internet.
+**Substrate default** — Kubernetes charm work uses the canonical `k8s` snap (concierge `k8s` or `dev` preset). MicroK8s is the legacy alternative; reach for it only when the user has explicitly asked, or when an existing dev box is already on it.
+
+**Local-registry substrate caveat** — `localhost:32000` only works on **MicroK8s with the registry add-on enabled**. The canonical `k8s` snap has no built-in registry. Call `local_registry_status` before assuming a local registry exists; on `k8s`-snap dev boxes, call `setup_local_registry` to deploy a registry charm into the dev model (the tool surfaces the containerd-trust sudo block to apply once). Avoid pushing to a public registry unless the image is already there or the user has asked for it; `registry_mirror` is for rate-limited cases (Docker Hub) where copying once into the local registry saves repeated round-trips.
 
 **Evaluation heuristics:**
 - Prefer **official** images (`[official]` badge) over community alternatives

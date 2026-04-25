@@ -283,6 +283,7 @@ class RunCommandTool(Tool):
                         "Docker engine.  If the cluster is already "
                         "broken, load the 'fix-broken-juju-k8s' skill."
                     ),
+                    caption=f"Blocked install: {blocked}",
                 )
 
         # Wrapper denylist takes precedence over the allowlist so that
@@ -386,6 +387,17 @@ class RunCommandTool(Tool):
         if truncated:
             output = output[:_MAX_OUTPUT_CHARS] + "\n\n(output truncated)"
 
+        # Caption: "<base> (exit N)" or "<base> (exit N): <40-char snippet>".
+        # Newlines are collapsed so the caption stays on one line in the
+        # chat block; failing commands surface the start of their error
+        # without the user having to open the transcript.
+        snippet = output.strip().replace("\n", " ")
+        if len(snippet) > 40:
+            snippet = snippet[:39] + "…"
+        caption = f"{base} (exit {result.returncode})"
+        if snippet:
+            caption = f"{caption}: {snippet}"
+
         return ToolResult(
             success=result.returncode == 0,
             output=output.strip(),
@@ -396,4 +408,5 @@ class RunCommandTool(Tool):
                 "returncode": result.returncode,
                 "truncated": truncated,
             },
+            caption=caption,
         )

@@ -1,5 +1,6 @@
 """Rockcraft and OCI registry tools."""
 
+import asyncio
 import json
 import os
 import shutil
@@ -8,8 +9,10 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import jubilant
 
 from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.agent.tools.juju_subprocess import juju_available as _juju_available
 
 # The microk8s registry add-on exposes the in-cluster registry at this
 # host:port on the dev box.  Canonical's ``k8s`` snap does NOT ship an
@@ -365,6 +368,7 @@ class RegistryImageExistsTool(Tool):
                 success=False,
                 output="",
                 error="skopeo not found. Is it installed?",
+                caption="skopeo not installed",
             )
 
         ref = _strip_registry_scheme(image_ref)
@@ -391,6 +395,7 @@ class RegistryImageExistsTool(Tool):
                 success=False,
                 output="",
                 error=f"skopeo inspect timed out probing {ref}",
+                caption=f"skopeo inspect timed out: {ref}",
             )
 
         if result.returncode != 0:
@@ -406,6 +411,7 @@ class RegistryImageExistsTool(Tool):
                 output="",
                 error=f"Image '{ref}' not pullable: {stderr or 'unknown error'}",
                 data={"image_ref": ref, "exists": False},
+                caption=f"Image not found: {ref}",
             )
 
         # ``skopeo inspect`` returns JSON metadata.  Parse it so the
@@ -441,6 +447,7 @@ class RegistryImageExistsTool(Tool):
                 "created": created,
                 "layers": layers,
             },
+            caption=f"Image exists: {ref}",
         )
 
 
@@ -524,6 +531,7 @@ class RegistryMirrorTool(Tool):
                 success=False,
                 output="",
                 error="skopeo not found. Is it installed?",
+                caption="skopeo not installed",
             )
 
         source_ref = _strip_registry_scheme(source)
@@ -566,6 +574,7 @@ class RegistryMirrorTool(Tool):
                 success=False,
                 output="",
                 error=f"skopeo copy timed out copying {source_ref} → {target_ref}",
+                caption=f"skopeo copy timed out: {source_ref}",
             )
 
         if result.returncode != 0:
@@ -574,12 +583,14 @@ class RegistryMirrorTool(Tool):
                 output=result.stdout,
                 error=(result.stderr.strip() or "skopeo copy failed"),
                 data={"source": source_ref, "target": target_ref},
+                caption=f"skopeo copy failed: {source_ref}",
             )
 
         return ToolResult(
             success=True,
             output=f"Mirrored {source_ref} → {target_ref}\n{result.stdout}",
             data={"source": source_ref, "target": target_ref, "image_url": target_ref},
+            caption=f"Mirrored {source_ref} → {target_ref}",
         )
 
 
@@ -659,6 +670,7 @@ class LocalRegistryStatusTool(Tool):
                         "scheme": scheme,
                         "substrate_hint": substrate_hint,
                     },
+                    caption=f"Registry reachable at {host_port}",
                 )
 
         # Tailor the "not available" message to the substrate so the
@@ -695,20 +707,372 @@ class LocalRegistryStatusTool(Tool):
                 "url": host_port,
                 "substrate_hint": substrate_hint,
             },
+            caption=f"No registry at {host_port} ({substrate_hint})",
         )
 
     @staticmethod
     def _guess_substrate() -> str:
-        """Return ``"microk8s"`` / ``"k8s"`` / ``"unknown"`` based on snaps on PATH.
+        """Return ``"k8s"`` / ``"microk8s"`` / ``"unknown"`` based on snaps on PATH.
 
-        The microk8s and ``k8s`` snaps install distinct CLI binaries
-        (``microk8s`` and ``k8s`` respectively).  We check both rather
-        than picking one — a dev box can have both installed
-        side-by-side, in which case ``microk8s`` wins because it ships
-        the registry add-on.
+        The microk8s and ``k8s`` snaps install distinct CLI binaries.
+        On a box where both are installed (rare), the canonical ``k8s``
+        snap wins — it is the recommended substrate for new charm work,
+        and the user's standing preference per project policy.
         """
-        if shutil.which("microk8s"):
-            return "microk8s"
         if shutil.which("k8s"):
             return "k8s"
+        if shutil.which("microk8s"):
+            return "microk8s"
         return "unknown"
+
+
+def _guess_substrate() -> str:
+    """Module-level substrate detector — wraps the static method above
+    so other tools can call it without an instance.
+    """
+    return LocalRegistryStatusTool._guess_substrate()
+
+
+# Containerd ``hosts.d`` template used by the ``k8s`` snap to tell its
+# bundled containerd which insecure registries to trust.  Spelled out
+# as a plain template (not a dynamic config object) because the file
+# format is simple and we surface the rendered text to the operator
+# rather than writing it ourselves — no sudo file write inside the
+# tool.  See https://github.com/containerd/containerd/blob/main/docs/hosts.md.
+_HOSTS_TOML_TEMPLATE = """\
+server = "http://{host}"
+
+[host."http://{host}"]
+  capabilities = ["pull", "resolve"]
+  skip_verify = true
+"""
+
+
+class SetupLocalRegistryTool(Tool):
+    """Set up a local OCI registry on the dev cluster.
+
+    Substrate-aware:
+
+    - **microk8s**: enables the built-in ``registry`` add-on, which
+      brings up an in-cluster registry at ``localhost:32000``.  One
+      ``sudo microk8s enable registry`` and you're done.
+    - **canonical k8s snap**: deploys a registry charm into the dev
+      Juju model and waits for ``active``.  After the deploy, the
+      cluster's containerd needs to be told to trust the registry as
+      an insecure HTTP endpoint — the tool does *not* write to
+      ``/var/snap/k8s/...`` itself; instead it surfaces the exact
+      ``sudo`` block for the operator to apply once.  This keeps the
+      tool's blast radius limited to "deployed a charm" and lets the
+      operator audit the trust change.
+
+    Use this when ``local_registry_status`` reports no registry is
+    reachable and the user wants to push private rocks to a local
+    destination instead of a public registry.
+    """
+
+    @property
+    def name(self) -> str:
+        return "setup_local_registry"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Set up a local OCI registry. On microk8s, enables the built-in "
+            "add-on at localhost:32000. On the canonical k8s snap, deploys a "
+            "registry charm into the dev Juju model and surfaces the "
+            "containerd-trust sudo block the operator must apply. Use when "
+            "local_registry_status reports no registry is reachable."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "charm_name": {
+                    "type": "string",
+                    "description": (
+                        "Charm name to deploy as the registry on the canonical "
+                        "k8s snap (must be a Kubernetes charm).  Default "
+                        "'docker-registry-k8s'.  Other candidates seen in the "
+                        "wild: 'oci-registry-k8s', 'registry-k8s'.  If the "
+                        "default does not exist on Charmhub, run charmhub_search "
+                        "with query='registry' first to pick one."
+                    ),
+                    "default": "docker-registry-k8s",
+                },
+                "app_name": {
+                    "type": "string",
+                    "description": "Application name for the deployed registry.",
+                    "default": "local-registry",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Juju model to deploy into (default: current model).",
+                },
+                "channel": {
+                    "type": "string",
+                    "description": "Charmhub channel for the registry charm.",
+                    "default": "latest/stable",
+                },
+                "wait_timeout": {
+                    "type": "integer",
+                    "description": "Seconds to wait for the registry to reach active.",
+                    "default": 600,
+                },
+            },
+        }
+
+    async def execute(
+        self,
+        charm_name: str = "docker-registry-k8s",
+        app_name: str = "local-registry",
+        model: str | None = None,
+        channel: str = "latest/stable",
+        wait_timeout: int = 600,
+    ) -> ToolResult:
+        """Dispatch to the substrate-specific setup path."""
+        substrate = _guess_substrate()
+
+        if substrate == "microk8s":
+            return await self._enable_microk8s_registry()
+        if substrate == "k8s":
+            return await self._deploy_k8s_registry(
+                charm_name=charm_name,
+                app_name=app_name,
+                model=model,
+                channel=channel,
+                wait_timeout=wait_timeout,
+            )
+        return ToolResult(
+            success=False,
+            output="",
+            error=(
+                "Cannot detect a supported substrate (neither 'microk8s' nor "
+                "'k8s' on PATH).  Run concierge_prepare with preset='k8s' "
+                "first, then retry."
+            ),
+            data={"substrate_hint": "unknown"},
+            caption="No substrate detected",
+        )
+
+    async def _enable_microk8s_registry(self) -> ToolResult:
+        """Run ``sudo microk8s enable registry``."""
+        proc = await asyncio.create_subprocess_exec(
+            "sudo",
+            "microk8s",
+            "enable",
+            "registry",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=180)
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return ToolResult(
+                success=False,
+                output="",
+                error="microk8s enable registry timed out after 180 seconds.",
+                caption="microk8s enable registry timed out",
+            )
+
+        if proc.returncode != 0:
+            return ToolResult(
+                success=False,
+                output=stdout.decode(),
+                error=(
+                    "microk8s enable registry failed: "
+                    + (stderr.decode().strip() or "(no stderr)")
+                ),
+                caption="microk8s enable registry failed",
+            )
+
+        return ToolResult(
+            success=True,
+            output=(
+                "microk8s registry add-on enabled at localhost:32000.\n"
+                "Push rocks with skopeo_registry_push and reference them "
+                "as 'localhost:32000/<name>:<tag>' in juju_deploy."
+            ),
+            data={
+                "url": "localhost:32000",
+                "substrate": "microk8s",
+                "needs_containerd_trust": False,
+            },
+            caption="Enabled microk8s registry at localhost:32000",
+        )
+
+    async def _deploy_k8s_registry(
+        self,
+        *,
+        charm_name: str,
+        app_name: str,
+        model: str | None,
+        channel: str,
+        wait_timeout: int,
+    ) -> ToolResult:
+        """Deploy a registry charm into the dev model on canonical k8s."""
+        if not _juju_available():
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    "Juju CLI not found.  Bootstrap a controller first via "
+                    "concierge_prepare with preset='k8s'."
+                ),
+                caption="Juju CLI not found",
+            )
+
+        try:
+            juju = jubilant.Juju(model=model)
+
+            # If the registry is already deployed in this model, reuse
+            # it.  Saves a 5-minute deploy on every retry of the
+            # surrounding "set up local registry" workflow.
+            try:
+                status = juju.status()
+            except jubilant.CLIError as exc:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"Cannot reach Juju controller: {exc}",
+                    caption="Juju controller unreachable",
+                )
+
+            existing = status.apps.get(app_name)
+            if existing is not None:
+                url = self._registry_url(existing)
+                return ToolResult(
+                    success=True,
+                    output=(
+                        f"Registry already deployed as '{app_name}' "
+                        f"(charm={existing.charm}).  In-cluster address: {url}.\n"
+                        + self._containerd_trust_block(url)
+                    ),
+                    data={
+                        "url": url,
+                        "substrate": "k8s",
+                        "already_deployed": True,
+                        "needs_containerd_trust": True,
+                        "app_name": app_name,
+                    },
+                    caption=f"Reused {app_name} at {url}",
+                )
+
+            # Deploy the charm.  Failures here are usually "charm not
+            # found on Charmhub" or "wrong substrate" — surface verbatim
+            # so the agent can retry with a different ``charm_name``.
+            try:
+                juju.deploy(charm_name, app_name, channel=channel)
+            except jubilant.CLIError as exc:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=(
+                        f"Failed to deploy '{charm_name}' as '{app_name}': {exc}.\n"
+                        "If the charm name is unknown to Charmhub, run "
+                        "charmhub_search with query='registry' to find a valid one."
+                    ),
+                    data={"charm_name": charm_name},
+                    caption=f"juju deploy {charm_name} failed",
+                )
+
+            try:
+                juju.wait(jubilant.all_active, timeout=wait_timeout)
+            except jubilant.WaitError as exc:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=(
+                        f"Registry charm did not reach active within {wait_timeout}s: {exc}.\n"
+                        "Check juju_status / juju_debug_log for the unit; the "
+                        "charm may be blocked on a config requirement."
+                    ),
+                    caption=f"{app_name} did not reach active",
+                )
+
+            status = juju.status()
+            app = status.apps.get(app_name)
+            if app is None:
+                # Should not happen — wait succeeded — but fail loudly if it does.
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=(
+                        f"Deploy succeeded but '{app_name}' is missing from "
+                        "juju status.  Inspect manually with juju_status."
+                    ),
+                    caption=f"{app_name} missing post-deploy",
+                )
+
+            url = self._registry_url(app)
+            return ToolResult(
+                success=True,
+                output=(
+                    f"Deployed '{charm_name}' as '{app_name}' on canonical k8s.\n"
+                    f"In-cluster registry address: {url}\n\n" + self._containerd_trust_block(url)
+                ),
+                data={
+                    "url": url,
+                    "substrate": "k8s",
+                    "already_deployed": False,
+                    "needs_containerd_trust": True,
+                    "app_name": app_name,
+                    "charm_name": charm_name,
+                },
+                caption=f"Deployed {charm_name} at {url}",
+            )
+        except (jubilant.CLIError, jubilant.TaskError, OSError) as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Registry setup failed: {exc}",
+                caption="setup_local_registry failed",
+            )
+
+    @staticmethod
+    def _registry_url(app: jubilant.statustypes.AppStatus) -> str:
+        """Best-effort ``host:port`` for the deployed registry charm.
+
+        Tries (in order): the app's ``address`` (cluster IP for k8s
+        charms), the leader unit's ``public_address``, the leader
+        unit's ``address``.  Default port 5000 — the canonical OCI
+        registry port; charms that use a different port can be
+        recognised from ``open_ports`` and the URL adjusted by the
+        caller.
+        """
+        port = "5000"
+        candidates: list[str] = []
+        if app.address:
+            candidates.append(app.address)
+        for unit in app.units.values():
+            if unit.public_address:
+                candidates.append(unit.public_address)
+            if unit.address:
+                candidates.append(unit.address)
+            for entry in unit.open_ports or ():
+                # ``open_ports`` is a list of ``"5000/tcp"`` strings —
+                # use the first one we see as the port hint.
+                head = entry.split("/", 1)[0]
+                if head.isdigit():
+                    port = head
+                    break
+        host = candidates[0] if candidates else "<registry-address-pending>"
+        return f"{host}:{port}"
+
+    @staticmethod
+    def _containerd_trust_block(url: str) -> str:
+        """Render the sudo block the operator runs to trust the registry."""
+        rendered = _HOSTS_TOML_TEMPLATE.format(host=url)
+        return (
+            "Next step — tell the cluster's containerd to trust this insecure registry:\n\n"
+            f"  sudo mkdir -p /var/snap/k8s/common/etc/containerd/hosts.d/{url}\n"
+            f"  sudo tee /var/snap/k8s/common/etc/containerd/hosts.d/{url}/hosts.toml >/dev/null <<'EOF'\n"
+            f"{rendered}EOF\n"
+            "  sudo snap restart k8s.containerd\n\n"
+            "After containerd restarts, push rocks via skopeo_registry_push "
+            f"(registry={url!r}) and reference them in juju_deploy as "
+            f"'{url}/<image>:<tag>'."
+        )

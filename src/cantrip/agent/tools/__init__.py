@@ -155,6 +155,7 @@ def build_tools(
         RegistryMirrorTool,
         RockcraftInitTool,
         RockcraftPackTool,
+        SetupLocalRegistryTool,
         SkopeoRegistryPushTool,
     )
     from cantrip.agent.tools.rodney import RodneyTool
@@ -222,6 +223,7 @@ def build_tools(
         RegistryImageExistsTool(),
         RegistryMirrorTool(),
         LocalRegistryStatusTool(),
+        SetupLocalRegistryTool(),
         # Environment
         ConciergePrepareTool(),
         ConciergeStatusTool(),

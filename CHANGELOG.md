@@ -5,6 +5,31 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`setup_local_registry` tool + canonical k8s as default substrate.**
+  The agent now treats the canonical ``k8s`` snap as the default
+  substrate for new K8s charm work; ``microk8s`` is reserved for
+  cases where the user has explicitly asked, or an existing dev
+  box is already on it.  The concierge skill, the system prompt,
+  and the twelve-factor skill all carry the new preference.
+  ``LocalRegistryStatusTool._guess_substrate`` flips its tie-break
+  from microk8s-wins to k8s-wins when both snaps are on PATH.
+
+  The new ``setup_local_registry`` tool dispatches by substrate:
+  on microk8s it shells out to ``sudo microk8s enable registry``
+  (one-step setup, registry at ``localhost:32000``); on the
+  canonical ``k8s`` snap it deploys a registry charm into the dev
+  Juju model (default ``docker-registry-k8s``, override via
+  ``charm_name``), waits for ``active``, parses the cluster IP +
+  open port from ``juju status``, and surfaces the exact
+  ``hosts.toml`` block the operator pastes into
+  ``/var/snap/k8s/common/etc/containerd/hosts.d/<host>:<port>/``
+  to make the cluster trust the registry as insecure HTTP.  The
+  tool reuses an existing app of the same name when one is found,
+  so re-running on a half-set-up environment is idempotent.  Wired
+  into the INFRA subagent category alongside the other concierge /
+  registry tools.  Eight new unit tests cover the substrate-
+  dispatch, deploy-and-wait, already-deployed reuse, charm-not-
+  found, wait-failure, and tie-break-prefers-k8s paths.
 - **OCI image tooling: pre-deploy verification, mirror, local-registry probe.**
   Three new daemon-free image tools land in
   ``cantrip.agent.tools.rockcraft``, all wrapping skopeo (no Docker

@@ -14,6 +14,7 @@ from cantrip.agent.tools.rockcraft import (
     RegistryMirrorTool,
     RockcraftInitTool,
     RockcraftPackTool,
+    SetupLocalRegistryTool,
     SkopeoRegistryPushTool,
 )
 
@@ -784,3 +785,241 @@ class TestLocalRegistryStatusTool:
 
         assert not result.success
         assert "microk8s enable registry" in result.error
+
+
+class TestSetupLocalRegistryTool:
+    """Tests for SetupLocalRegistryTool — substrate-aware registry setup."""
+
+    @pytest.fixture
+    def tool(self):
+        return SetupLocalRegistryTool()
+
+    @pytest.fixture
+    def fake_proc(self):
+        """Build a mocked async subprocess."""
+
+        def _build(returncode: int = 0, stdout: bytes = b"", stderr: bytes = b""):
+            proc = mock.MagicMock()
+            proc.communicate = mock.AsyncMock(return_value=(stdout, stderr))
+            proc.wait = mock.AsyncMock(return_value=returncode)
+            proc.returncode = returncode
+            return proc
+
+        return _build
+
+    @pytest.mark.asyncio
+    async def test_unknown_substrate(self, tool):
+        """Neither k8s nor microk8s on PATH → clear error."""
+        with mock.patch("cantrip.agent.tools.rockcraft.shutil.which", return_value=None):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "Cannot detect" in result.error
+        assert result.data["substrate_hint"] == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_microk8s_enables_addon(self, tool, fake_proc):
+        """microk8s detected → runs ``sudo microk8s enable registry``."""
+        proc = fake_proc(returncode=0, stdout=b"Addon enabled\n")
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/microk8s" if b == "microk8s" else None,
+            ),
+            mock.patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec,
+        ):
+            result = await tool.execute()
+
+        assert result.success
+        assert result.data["url"] == "localhost:32000"
+        assert result.data["substrate"] == "microk8s"
+        assert result.data["needs_containerd_trust"] is False
+        # Verify we shelled out as ``sudo microk8s enable registry``.
+        argv = mock_exec.call_args[0]
+        assert argv[0] == "sudo"
+        assert argv[1] == "microk8s"
+        assert "registry" in argv
+
+    @pytest.mark.asyncio
+    async def test_microk8s_failure(self, tool, fake_proc):
+        """microk8s enable failure surfaces stderr."""
+        proc = fake_proc(returncode=1, stderr=b"infer-addon: not found")
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/microk8s" if b == "microk8s" else None,
+            ),
+            mock.patch("asyncio.create_subprocess_exec", return_value=proc),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "infer-addon: not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_k8s_no_juju(self, tool):
+        """k8s substrate but no Juju → clear error pointing at concierge_prepare."""
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/k8s" if b == "k8s" else None,
+            ),
+            mock.patch("cantrip.agent.tools.rockcraft._juju_available", return_value=False),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "Juju CLI not found" in result.error
+        assert "concierge_prepare" in result.error
+
+    @pytest.mark.asyncio
+    async def test_k8s_already_deployed(self, tool):
+        """If the registry app already exists in the model, reuse it."""
+        existing = mock.MagicMock()
+        existing.charm = "docker-registry-k8s"
+        existing.address = "10.152.183.42"
+        unit = mock.MagicMock()
+        unit.public_address = "10.152.183.42"
+        unit.address = "10.1.0.5"
+        unit.open_ports = ["5000/tcp"]
+        existing.units = {"local-registry/0": unit}
+
+        status = mock.MagicMock()
+        status.apps = {"local-registry": existing}
+
+        juju = mock.MagicMock()
+        juju.status.return_value = status
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/k8s" if b == "k8s" else None,
+            ),
+            mock.patch("cantrip.agent.tools.rockcraft._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.rockcraft.jubilant.Juju", return_value=juju),
+        ):
+            result = await tool.execute()
+
+        assert result.success
+        assert result.data["already_deployed"] is True
+        assert result.data["needs_containerd_trust"] is True
+        assert result.data["url"] == "10.152.183.42:5000"
+        # Reused — must not have called deploy.
+        juju.deploy.assert_not_called()
+        # Trust block surfaces in the output for the operator.
+        assert "hosts.toml" in result.output
+        assert "snap restart k8s.containerd" in result.output
+
+    @pytest.mark.asyncio
+    async def test_k8s_fresh_deploy_success(self, tool):
+        """No existing app → deploy, wait for active, surface URL + trust block."""
+        unit = mock.MagicMock()
+        unit.public_address = ""
+        unit.address = "10.152.183.99"
+        unit.open_ports = ["5000/tcp"]
+        deployed_app = mock.MagicMock()
+        deployed_app.charm = "docker-registry-k8s"
+        deployed_app.address = "10.152.183.99"
+        deployed_app.units = {"local-registry/0": unit}
+
+        empty_status = mock.MagicMock()
+        empty_status.apps = {}
+        post_deploy_status = mock.MagicMock()
+        post_deploy_status.apps = {"local-registry": deployed_app}
+
+        juju = mock.MagicMock()
+        juju.status.side_effect = [empty_status, post_deploy_status]
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/k8s" if b == "k8s" else None,
+            ),
+            mock.patch("cantrip.agent.tools.rockcraft._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.rockcraft.jubilant.Juju", return_value=juju),
+        ):
+            result = await tool.execute(charm_name="docker-registry-k8s")
+
+        assert result.success
+        assert result.data["already_deployed"] is False
+        assert result.data["needs_containerd_trust"] is True
+        assert result.data["url"] == "10.152.183.99:5000"
+        juju.deploy.assert_called_once()
+        juju.wait.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_k8s_deploy_charm_not_found(self, tool):
+        """Wrong / missing charm name → surfaces a clear retry hint."""
+        empty_status = mock.MagicMock()
+        empty_status.apps = {}
+
+        juju = mock.MagicMock()
+        juju.status.return_value = empty_status
+
+        import jubilant
+
+        juju.deploy.side_effect = jubilant.CLIError(
+            returncode=1,
+            cmd=["juju", "deploy", "nonexistent"],
+            stderr='charm "nonexistent" not found on Charmhub',
+        )
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/k8s" if b == "k8s" else None,
+            ),
+            mock.patch("cantrip.agent.tools.rockcraft._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.rockcraft.jubilant.Juju", return_value=juju),
+        ):
+            result = await tool.execute(charm_name="nonexistent")
+
+        assert not result.success
+        assert "Failed to deploy" in result.error
+        assert "charmhub_search" in result.error
+
+    @pytest.mark.asyncio
+    async def test_k8s_wait_failure(self, tool):
+        """Charm deploys but never reaches active → surface what happened."""
+        empty_status = mock.MagicMock()
+        empty_status.apps = {}
+        juju = mock.MagicMock()
+        juju.status.return_value = empty_status
+
+        import jubilant
+
+        juju.wait.side_effect = jubilant.WaitError("timed out waiting for active")
+
+        with (
+            mock.patch(
+                "cantrip.agent.tools.rockcraft.shutil.which",
+                side_effect=lambda b: "/snap/bin/k8s" if b == "k8s" else None,
+            ),
+            mock.patch("cantrip.agent.tools.rockcraft._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.rockcraft.jubilant.Juju", return_value=juju),
+        ):
+            result = await tool.execute()
+
+        assert not result.success
+        assert "did not reach active" in result.error
+        assert "juju_debug_log" in result.error
+
+    @pytest.mark.asyncio
+    async def test_substrate_prefers_k8s_over_microk8s(self, tool):
+        """When both snaps are on PATH, k8s wins (project policy)."""
+
+        def fake_which(binary):
+            return f"/snap/bin/{binary}" if binary in {"k8s", "microk8s"} else None
+
+        with (
+            mock.patch("cantrip.agent.tools.rockcraft.shutil.which", side_effect=fake_which),
+            mock.patch("cantrip.agent.tools.rockcraft._juju_available", return_value=False),
+        ):
+            result = await tool.execute()
+
+        # The k8s branch returns a "Juju CLI not found" error; the
+        # microk8s branch would have shelled out to enable the add-on.
+        # The error wording confirms we routed to k8s.
+        assert "Juju CLI not found" in result.error

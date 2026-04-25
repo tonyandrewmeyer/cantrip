@@ -105,9 +105,14 @@ skopeo copy --insecure-policy --dest-tls-verify=false \
   docker://localhost:32000/my-app:latest
 ```
 
-Use the `skopeo_registry_push` tool. The default registry is `localhost:32000` — but **call `local_registry_status` first** to confirm a local registry is reachable. Only **MicroK8s with the `registry` add-on** ships one out of the box; on the Canonical `k8s` snap you must either deploy a registry charm into the model, push to a public registry like `ghcr.io`, or import the rock directly into the cluster's containerd via `sudo k8s ctr images import <rock>`.
+Use the `skopeo_registry_push` tool. The default registry is `localhost:32000` — but **call `local_registry_status` first** to confirm a local registry is reachable. The canonical `k8s` snap (the preferred substrate) does **not** ship a registry, so the typical first-run on a fresh `k8s` dev box looks like:
 
-If the cluster will repeatedly pull a public image, mirror it once with `registry_mirror` so subsequent deploys go through the local registry instead of hitting Docker Hub rate limits.
+1. `local_registry_status` → reports "no registry, k8s snap detected"
+2. `setup_local_registry` → deploys a registry charm into the dev model and prints the sudo block for containerd trust
+3. Apply the sudo block once (operator action)
+4. `skopeo_registry_push` to the URL `setup_local_registry` returned
+
+Only fall back to MicroK8s (`microk8s enable registry`) if the user has explicitly asked for that substrate. Avoid public registries (ghcr.io, Docker Hub) unless the image is already there or the user has pointed you at one — `registry_mirror` handles the rate-limit case where copying a public image into the local registry once saves repeated round-trips.
 
 ### 7. Pack the Charm
 

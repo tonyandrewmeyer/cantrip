@@ -424,6 +424,8 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "concierge_prepare",
             "concierge_status",
             "concierge_restore",
+            "setup_local_registry",
+            "local_registry_status",
             "juju_add_model",
             "juju_destroy_model",
             "gh_repo_create",
