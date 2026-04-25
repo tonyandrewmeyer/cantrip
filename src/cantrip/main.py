@@ -182,6 +182,33 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     run_parser.add_argument(
+        "--print",
+        "-p",
+        dest="print_goal",
+        default=None,
+        metavar="GOAL",
+        help=(
+            "Phase 67.3: non-interactive print mode. Run the autonomous "
+            "loop to accomplish ``<GOAL>`` without a TUI; emit progress "
+            "to stdout and exit when the work queue drains.  Combine with "
+            "``--json`` for a script-friendly NDJSON event stream and "
+            "``--yolo`` for unattended CI runs that auto-approve every "
+            "ask permission."
+        ),
+    )
+    run_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help=(
+            "Phase 67.3: emit ``cantrip.ui.events`` payloads as "
+            "newline-delimited JSON on stdout, one event per line.  Only "
+            "honoured with ``--print``.  See "
+            "``docs/docs/reference-cli.html`` for the documented event "
+            "schema."
+        ),
+    )
+    run_parser.add_argument(
         "--theme",
         type=str,
         default=None,
@@ -593,6 +620,19 @@ def _run(args: argparse.Namespace) -> int:
     # inference-snap needs no API key (local model).
 
     _install_unraisable_hook()
+
+    # Phase 67.3: non-interactive print mode pre-empts TUI/Web/CLI
+    # entrypoints — it's its own dispatch path with no REPL.
+    if getattr(args, "print_goal", None):
+        if getattr(args, "web", False):
+            print(
+                "Error: --print and --web are mutually exclusive.",
+                file=sys.stderr,
+            )
+            return 2
+        from cantrip.print_mode import run_print
+
+        return run_print(args)
 
     if getattr(args, "web", False):
         if improve_path is not None:

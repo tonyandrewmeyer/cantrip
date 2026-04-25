@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to run Cantrip non-interactively &mdash; Cantrip</title>
+<meta name="description" content="Use cantrip run --print to drive one goal end-to-end with no TUI, --json to stream events for scripts, --yolo for unattended CI.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html" class="current">Run a single goal non-interactively</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Run a single goal non-interactively
+    </div>
+
+    <h1>Run a single goal non-interactively</h1>
+    <p class="subtitle">
+      <code>cantrip run --print "&lt;goal&gt;"</code> drives one goal through the
+      agent loop with no TUI, prints progress to stdout, and exits when the
+      work queue drains.
+    </p>
+
+<h2 id="when-to-use">When to use it</h2>
+<p>Print mode replaces the TUI with a single-shot CLI invocation:</p>
+<ul>
+  <li><strong>CI charm-build jobs.</strong> The runner kicks off
+    <code>cantrip run --print --json --yolo "pack and deploy"</code>,
+    streams the NDJSON event log for the build summary, and reads
+    the exit code to decide whether to fail the job.</li>
+  <li><strong>Shell pipelines.</strong>
+    <code>cantrip run --print --json … | jq 'select(.type == "task_updated")'</code>
+    surfaces only the events you care about, without writing a custom
+    log parser for the TUI's terminal output.</li>
+  <li><strong>One-off goals.</strong> "Add an `ops-tracing`
+    integration to this charm" is a goal that finishes; you don't
+    need a long-running session to express it.</li>
+</ul>
+<p>If you want a conversation, stay in the TUI or
+<code>--no-tui</code> CLI mode &mdash; print mode runs the goal once
+and exits.</p>
+
+<h2 id="how-to-enable">How to enable it</h2>
+<pre><code><span class="prompt">$</span> cantrip run --print "Add ops-tracing to this charm"
+<span class="prompt">$</span> cantrip run -p "Audit and fix charm" /path/to/charm
+<span class="prompt">$</span> cantrip run --print --json "Pack the charm" | tee events.ndjson</code></pre>
+<p>The <code>--print</code> flag (alias <code>-p</code>) takes the
+goal as its argument. The positional charm-path argument still
+works; combine it with <code>--print</code> to point at a charm in a
+non-current directory.</p>
+
+<h2 id="json-stream">The JSON event stream</h2>
+<p>With <code>--json</code>, every
+<a href="https://github.com/tonyandrewmeyer/cantrip/blob/main/src/cantrip/ui/events.py">cantrip.ui.events</a>
+payload writes one NDJSON line to stdout. The schema is the same one
+the TUI and Web UIs subscribe to, exposed as a stable contract:</p>
+<pre><code>{"type": "task_updated", "data": {"id": "abc", "title": "...", "status": "active", ...}, "timestamp": 1730000000.0}
+{"type": "chat_message", "data": {"role": "assistant", "content": "..."}, "timestamp": 1730000001.5}
+{"type": "permission_decided", "data": {"tool_name": "run_command", "outcome": "deny", ...}, "timestamp": 1730000002.0}
+{"type": "permission_auto_approved", "data": {"tool_name": "git_push", "reason": "yolo", ...}, "timestamp": 1730000003.0}
+</code></pre>
+<p>Top-level fields are always
+<code>type</code> (the
+<code>EventType</code> string), <code>data</code> (the payload
+object), and <code>timestamp</code> (UNIX seconds, fractional). The
+event types print mode emits include:</p>
+<ul>
+  <li><code>task_updated</code> &mdash; a queued task changed status
+    or category.</li>
+  <li><code>chat_message</code> &mdash; the agent or a subagent
+    produced text.</li>
+  <li><code>tool_invoked</code> &mdash; one tool call boundary, with
+    the caption and duration.</li>
+  <li><code>permission_decided</code>,
+    <code>permission_auto_approved</code> &mdash; declarative-policy
+    outcomes (Phase 68.2 / 69.2).</li>
+  <li><code>compaction_started</code>,
+    <code>compaction_completed</code> &mdash; context manager fold
+    points (Phase 78.2).</li>
+  <li><code>goal_budget_exceeded</code>,
+    <code>policy_rate_limited</code> &mdash; hard stops the run
+    encountered.</li>
+  <li><code>snapshot_created</code>,
+    <code>snapshot_restored</code> &mdash; per-turn working-tree
+    snapshots (Phase 68.1).</li>
+</ul>
+<p>For the full list see
+<a href="reference-cli.html#print-events">the print-mode event
+schema</a> in the CLI reference.</p>
+
+<h2 id="confirmations">Confirmations refuse the run by default</h2>
+<p>Print mode is unattended by definition &mdash; nobody is watching
+for a CONFIRM prompt. If a previously-resumed session has unresolved
+confirmations, or one appears mid-run, the runner exits non-zero
+with the list:</p>
+<pre><code>Refusing to run unattended: pending confirmations would block the queue.
+Re-run with --yolo to auto-approve `ask` permissions, or resolve them
+interactively in the TUI/CLI mode first.
+
+Pending confirmations:
+  - [c1] Approve git push origin main</code></pre>
+<p>The fix is one of:</p>
+<ul>
+  <li><strong>Pass <code>--yolo</code>.</strong> Auto-approves every
+    Phase 68.2 <em>ask</em> permission for the run. <em>Deny</em>
+    rules still block. See
+    <a href="howto-unattended.html">Run Cantrip unattended</a> for
+    the safety story.</li>
+  <li><strong>Resolve interactively first.</strong> Launch
+    <code>cantrip run /path/to/charm</code>, accept or reject the
+    pending CONFIRM, then re-run print mode.</li>
+  <li><strong>Tighten the policy.</strong> Convert the rule that
+    triggered the <em>ask</em> into an explicit <code>allow</code>
+    or <code>deny</code> in
+    <code>.cantrip/permissions.yaml</code>; the run no longer needs
+    <code>--yolo</code>.</li>
+</ul>
+
+<h2 id="exit-codes">Exit codes</h2>
+<dl>
+  <dt><code>0</code></dt>
+  <dd>The work queue drained with every task in <code>done</code>
+    status (or no tasks were created).</dd>
+  <dt><code>1</code></dt>
+  <dd>One or more tasks finished in <code>failed</code> or
+    <code>blocked</code> status, the provider returned an error, the
+    drain timed out, or pending confirmations blocked the run.</dd>
+  <dt><code>2</code></dt>
+  <dd>CLI argument error &mdash; an empty goal, or
+    <code>--print</code> combined with <code>--web</code>.</dd>
+  <dt><code>130</code></dt>
+  <dd>Interrupted by Ctrl-C.</dd>
+</dl>
+
+<h2 id="composing">Composing print mode in a script</h2>
+<p>A typical CI shell invocation:</p>
+<pre><code><span class="prompt">$</span> cantrip run \
+    --print "Pack and deploy the charm, run integration tests" \
+    --json \
+    --yolo \
+    --max-iterations 50 \
+    /workspace/my-charm \
+    | tee build.ndjson \
+    | jq 'select(.type == "chat_message" and .data.role == "assistant") | .data.content'</code></pre>
+<p>The <code>tee</code> keeps the full event log for later
+inspection; the <code>jq</code> filter prints only the agent's
+chat replies for the build log. Exit-code propagation lets the CI
+job decide whether the build counts as green.</p>
+
+<h2 id="reference">Related references</h2>
+<ul>
+  <li><a href="reference-cli.html#run">cantrip run</a> &mdash; the
+    full flag list on the <code>run</code> subcommand.</li>
+  <li><a href="reference-cli.html#print-events">Print-mode event
+    schema</a> &mdash; reference for every NDJSON event type.</li>
+  <li><a href="howto-unattended.html">Run Cantrip unattended</a>
+    &mdash; companion guide for <code>--yolo</code>.</li>
+  <li><a href="howto-permissions.html">Configure tool
+    permissions</a> &mdash; the policy that decides which tool
+    calls auto-approve under yolo.</li>
+</ul>
+
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

@@ -5,6 +5,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Non-interactive print mode for CI and shell pipelines
+  (Phase 67.3).**  New ``cantrip run --print "<goal>"`` (alias
+  ``-p``) drives one goal through the autonomous loop with no
+  TUI, prints progress to stdout, and exits when the work
+  queue drains.  Pair with ``--json`` to stream every
+  ``cantrip.ui.events`` payload as newline-delimited JSON on
+  stdout (one event per line, ``{type, data, timestamp}``
+  shape) — the schema covers all 19 event types and is
+  treated as a stable public surface.  Pair with ``--yolo``
+  for an unattended run that auto-approves every Phase 68.2
+  ``ask`` permission.  Pending CONFIRM tasks (Phase 64) refuse
+  the run by default with a non-zero exit and a list of the
+  unresolved confirmations: an up-front check covers
+  resumed-session state and a post-drain re-check catches
+  anything created mid-run.  Exit codes follow the unix
+  convention — ``0`` for full queue drain with every task
+  ``done``, ``1`` for any failed/blocked task or refused
+  confirmation, ``2`` for CLI argument error, ``130`` for
+  Ctrl-C.  Shipped as a new ``src/cantrip/print_mode.py``
+  module that branches in ``main._run`` ahead of the
+  TUI/Web/CLI dispatcher, plus ``--print``/``--json`` flags
+  on the ``run`` subparser and a documented event schema in
+  ``docs/docs/reference-cli.html``.  Documented in the new
+  [Run a single goal non-interactively](docs/docs/howto-print-mode.html)
+  how-to.
+
 - **Unattended ("yolo") mode that auto-approves every ``ask``
   permission (Phase 69.2).**  New ``cantrip run --yolo`` / ``-y``
   flag and ``/yolo [on|off]`` slash command flip the session

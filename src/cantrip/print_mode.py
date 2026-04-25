@@ -1,0 +1,312 @@
+"""Phase 67.3 — non-interactive print mode for ``cantrip run --print``.
+
+Drives a single autonomous goal through the agent loop with no TUI:
+*goal in*, *NDJSON or human-readable progress out*, exit when the work
+queue drains.  Intended for CI scripts and shell pipelines — Pi's
+``pi -p "query"`` is the closest analogue.
+
+The event-stream format emitted under ``--json`` is the same set of
+:class:`cantrip.ui.events.EventType` payloads the TUI / Web consume,
+serialised one per line as ``{"type": "...", "data": {...},
+"timestamp": ...}``.  Documented in
+``docs/docs/reference-cli.html`` — once shipped, the schema is
+treated as a stable public surface.
+
+Pending CONFIRM tasks (Phase 64) block a print-mode run by default:
+the runner refuses to proceed and exits non-zero with the list of
+unresolved confirmations.  ``--yolo`` (Phase 69.2) is the explicit
+opt-in that auto-approves every Phase 68.2 ``ask`` and so removes
+the most common source of CONFIRM tasks.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from cantrip.agent.core import CantripAgent
+from cantrip.agent.queue import TaskCategory, TaskStatus
+from cantrip.hooks import HookRunner
+from cantrip.llm import create_provider, resolve_light_provider
+from cantrip.llm.base import ProviderError
+from cantrip.ui import events as ui_events
+
+if TYPE_CHECKING:
+    from cantrip.agent.queue import AgentTask
+
+log = logging.getLogger(__name__)
+
+# How long to wait for the work queue to fully drain after the
+# conversation loop returns before forcing shutdown.  Long enough for
+# a typical build-deploy-test cycle, short enough that a stuck queue
+# doesn't hang a CI job indefinitely.
+_DRAIN_TIMEOUT_SECONDS = 30 * 60
+
+
+def _emit_event(event: ui_events.Event) -> None:
+    """Write one event to stdout as a single NDJSON line.
+
+    ``Event.to_json`` already produces a compact JSON object; the only
+    thing we add is a newline and a flush so that downstream consumers
+    (``jq``, ``grep``, line-buffered pipes) see each event the moment
+    the agent emits it rather than at process exit.
+    """
+    sys.stdout.write(event.to_json())
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def _emit_progress(event: ui_events.Event) -> None:
+    """Render a subset of events as one short human-readable line.
+
+    Mirrors the TUI's task-spinner cadence: task transitions, the
+    final assistant message, permission decisions.  Events that don't
+    carry actionable progress (cache metrics, watcher heartbeats) are
+    deliberately skipped — print mode is for "tell me what the agent
+    just did", not "show me everything".
+    """
+    et = event.type
+    p = event.payload
+    if et == ui_events.EventType.TASK_UPDATED:
+        title = p.get("title", "?")
+        status = p.get("status", "?")
+        category = p.get("category", "?")
+        sys.stdout.write(f"[task:{category}] {title} — {status}\n")
+    elif et == ui_events.EventType.CHAT_MESSAGE:
+        role = p.get("role", "?")
+        content = p.get("content", "")
+        sys.stdout.write(f"[{role}] {content}\n")
+    elif et == ui_events.EventType.PERMISSION_DECIDED:
+        outcome = p.get("outcome", "?")
+        tool = p.get("tool_name", "?")
+        sys.stdout.write(f"[permission] {tool} — {outcome}\n")
+    elif et == ui_events.EventType.PERMISSION_AUTO_APPROVED:
+        tool = p.get("tool_name", "?")
+        sys.stdout.write(f"[permission] {tool} — auto-approved (yolo)\n")
+    elif et == ui_events.EventType.GOAL_BUDGET_EXCEEDED:
+        sys.stdout.write(f"[budget] {p.get('reason', 'budget exceeded')}\n")
+    elif et == ui_events.EventType.POLICY_RATE_LIMITED:
+        cap = p.get("cap", "?")
+        sys.stdout.write(f"[rate-limit] policy cap reached ({cap})\n")
+    else:
+        return
+    sys.stdout.flush()
+
+
+def _format_pending_confirmations(tasks: list[AgentTask]) -> str:
+    """Return a human-readable summary of unresolved CONFIRM tasks."""
+    lines = [
+        "Refusing to run unattended: pending confirmations would block the queue.",
+        "Re-run with --yolo to auto-approve `ask` permissions, or resolve them",
+        "interactively in the TUI/CLI mode first.",
+        "",
+        "Pending confirmations:",
+    ]
+    for task in tasks:
+        lines.append(f"  - [{task.id}] {task.title}")
+    return "\n".join(lines)
+
+
+def _pending_confirmations(agent: CantripAgent) -> list[AgentTask]:
+    """Return every CONFIRM task that hasn't yet been resolved.
+
+    Both PENDING and BLOCKED CONFIRM tasks count — they all need a
+    user decision before the queue can move on, and a print-mode run
+    has no way to provide one.
+    """
+    pending: list[AgentTask] = []
+    for task in agent.work_queue.all_tasks():
+        if task.category != TaskCategory.CONFIRM:
+            continue
+        if task.status in (TaskStatus.PENDING, TaskStatus.BLOCKED):
+            pending.append(task)
+    return pending
+
+
+async def _drain_queue(agent: CantripAgent) -> bool:
+    """Wait for the work queue to fully drain.
+
+    Returns ``True`` if every task settled into ``DONE`` or ``FAILED``
+    (or there were no tasks to begin with), ``False`` if the timeout
+    fired with work still in flight.
+
+    A CONFIRM task in ``PENDING`` / ``BLOCKED`` short-circuits the
+    drain: print mode has no way to resolve a confirmation, so
+    waiting on one would hang the run forever.  The runner re-checks
+    for confirmations after the drain returns and surfaces them as
+    the refusal message.
+    """
+    queue = agent.work_queue
+    if not queue.all_tasks():
+        return True
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _DRAIN_TIMEOUT_SECONDS
+    while loop.time() < deadline:
+        tasks = queue.all_tasks()
+        confirms = [
+            t
+            for t in tasks
+            if t.category == TaskCategory.CONFIRM
+            and t.status in (TaskStatus.PENDING, TaskStatus.BLOCKED)
+        ]
+        if confirms:
+            # Defer to the post-drain confirmation check — there's no
+            # progress to make until the user resolves these.
+            return True
+        in_flight = [t for t in tasks if t.status in (TaskStatus.PENDING, TaskStatus.ACTIVE)]
+        if not in_flight:
+            return True
+        await asyncio.sleep(0.5)
+    return False
+
+
+def _final_exit_code(agent: CantripAgent) -> int:
+    """Return 0 when every task succeeded, 1 when any failed.
+
+    Tasks left in ``BLOCKED`` count as failures for print-mode purposes
+    — a CI run that finishes with a blocked task did not actually
+    complete the goal.  Empty queues are still success: a goal that
+    needed no follow-up work (a read-only question, say) shouldn't
+    fail just because no tasks were created.
+    """
+    tasks = agent.work_queue.all_tasks()
+    for task in tasks:
+        if task.status in (TaskStatus.FAILED, TaskStatus.BLOCKED):
+            return 1
+    return 0
+
+
+async def _run_async(
+    agent: CantripAgent,
+    goal: str,
+    *,
+    json_output: bool,
+) -> int:
+    """Inner async runner — drives one goal through the agent and drains."""
+    agent.event_bus.bind_loop(asyncio.get_running_loop())
+
+    if json_output:
+        agent.event_bus.subscribe(None, _emit_event)
+    else:
+        agent.event_bus.subscribe(None, _emit_progress)
+
+    agent.start_executor()
+    try:
+        try:
+            response = await agent.process_message(goal)
+        except ProviderError as exc:
+            print(f"Provider error: {exc}", file=sys.stderr)
+            return 1
+
+        # The conversation loop returns once the model stops issuing
+        # tool calls; outstanding work in the queue still needs to run.
+        drained = await _drain_queue(agent)
+
+        # Re-check for confirmations queued *during* the run — a
+        # subagent that hits a destructive tool gate can produce a
+        # CONFIRM task even with --yolo if the rule is ``deny`` (yolo
+        # only flips ``ask``).
+        pending = _pending_confirmations(agent)
+        if pending:
+            print(_format_pending_confirmations(pending), file=sys.stderr)
+            return 1
+
+        if not drained:
+            print(
+                f"Timed out after {_DRAIN_TIMEOUT_SECONDS}s with tasks still running.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # Final assistant text goes to stdout (without an event-style
+        # prefix in JSON mode — the assistant's reply already streamed
+        # as a chat_message event earlier).
+        if not json_output and response:
+            sys.stdout.write(f"\n{response}\n")
+            sys.stdout.flush()
+
+        return _final_exit_code(agent)
+    finally:
+        await agent.stop_executor()
+
+
+def run_print(args: argparse.Namespace) -> int:
+    """Entry point for ``cantrip run --print "<goal>"`` (Phase 67.3).
+
+    Builds a headless agent, refuses up-front if the resumed session
+    has unresolved CONFIRM tasks (per the roadmap's "default to refuse
+    and exit non-zero" rule), then drives the goal through one
+    conversation turn plus a queue drain.  Returns the exit code the
+    surrounding ``main()`` propagates back to the shell.
+    """
+    goal: str = args.print_goal
+    if not goal or not goal.strip():
+        print("Error: --print requires a non-empty goal string.", file=sys.stderr)
+        return 2
+
+    json_output = bool(getattr(args, "json_output", False))
+
+    try:
+        snap_name = getattr(args, "snap", "gemma3")
+        light_snap_name = getattr(args, "light_snap", None)
+        base_url = getattr(args, "base_url", None)
+        provider = create_provider(
+            args.provider, args.model, snap_name=snap_name, base_url=base_url
+        )
+    except (ValueError, ProviderError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    light_provider, _ = resolve_light_provider(
+        provider,
+        args.provider,
+        light_provider_name=getattr(args, "light_provider", None),
+        light_model_override=args.light_model,
+        snap_name=snap_name,
+        light_snap_name=light_snap_name,
+    )
+
+    charm_path: Path = Path(args.path)
+
+    agent = CantripAgent(
+        provider=provider,
+        charm_path=charm_path,
+        light_provider=light_provider,
+        hook_runner=HookRunner.from_disk(repo_root=charm_path),
+    )
+
+    # Per-goal budget (Phase 55.3) and snapshot opt-out (Phase 68.1)
+    # behave the same in print mode as in the REPL.
+    from cantrip.agent.goal_budget import from_cli_args
+    from cantrip.agent.snapshots import snapshots_enabled
+
+    agent.state.goal_budget = from_cli_args(
+        max_iterations=getattr(args, "max_iterations", None),
+        max_tokens=getattr(args, "max_tokens", None),
+    )
+    agent.state.snapshot_enabled = snapshots_enabled(
+        no_snapshots_flag=bool(getattr(args, "no_snapshots", False)),
+    )
+    if bool(getattr(args, "yolo", False)):
+        agent.state.yolo_mode = True
+
+    # Resume any persisted session silently so a print-mode invocation
+    # in a charm directory picks up where the last interactive run
+    # left off.  This is also how pre-existing CONFIRM tasks become
+    # visible to the up-front refusal check below.
+    agent.load_state()
+
+    pending = _pending_confirmations(agent)
+    if pending and not agent.state.yolo_mode:
+        print(_format_pending_confirmations(pending), file=sys.stderr)
+        return 1
+
+    try:
+        return asyncio.run(_run_async(agent, goal, json_output=json_output))
+    except KeyboardInterrupt:
+        print("\n[interrupted]", file=sys.stderr)
+        return 130
