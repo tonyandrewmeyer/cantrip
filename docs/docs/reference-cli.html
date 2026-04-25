@@ -646,6 +646,30 @@ configurable token budget (default 1500). When the conversation
 fills past 80% of the context window the budget halves; past 95%
 it drops entirely so a near-full window isn't carrying a
 bird's-eye view it can't act on.</p>
+<h3>Project diagnostics</h3>
+<dl>
+  <dt><code>/diagnostics</code></dt>
+  <dd>
+    Run <code>ruff</code>, <code>ty</code>, and (if the directory
+    looks like a charm) <code>charmlint</code> across the active
+    charm and print the issues grouped by severity.  Output is
+    capped at ~1500 tokens with a "<em>N more issues suppressed</em>"
+    footer when the project has more issues than fit.  Result is
+    cached for 30 seconds so repeated calls in the same turn don't
+    re-run the linters.
+  </dd>
+  <dt><code>/diagnostics --refresh</code></dt>
+  <dd>
+    Force a fresh lint pass, bypassing the 30-second cache &mdash;
+    useful right after editing files outside the agent's tools.
+  </dd>
+</dl>
+<p>The same aggregator runs automatically when the autonomous loop
+starts a BUILD or DEBUG subagent, so the agent begins each task
+already knowing what's broken.  Tools that aren't installed are
+listed as <code>[skipped]</code> notes rather than silently
+masking issues &mdash; a missing <code>ty</code> doesn't look the same
+as &quot;all clear.&quot;</p>
 <h2 id="env-vars">Environment variables</h2>
 <table>
 <thead>

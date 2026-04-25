@@ -86,6 +86,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
     CommandInfo("/map", "Show top-ranked repository files (`/map full` for everything)"),
     CommandInfo("/map-refresh", "Rebuild the repository map and reprint"),
+    CommandInfo("/diagnostics", "Show ruff/ty/charmlint issues across the active charm"),
     CommandInfo("/quit", "Leave Cantrip"),
     CommandInfo("/exit", "Leave Cantrip"),
 )
@@ -241,6 +242,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_map(agent, args), markdown=True)
     if verb == "/map-refresh":
         return SlashResult(text=handle_map_refresh(agent, args), markdown=True)
+    if verb == "/diagnostics":
+        return _handle_diagnostics(agent, args)
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -1257,6 +1260,43 @@ def handle_map_refresh(agent: CantripAgent, args: str = "") -> str:
         shown_count=shown,
         footer_hint=footer,
     )
+
+
+def _handle_diagnostics(agent: CantripAgent, args: str) -> SlashResult:
+    """``/diagnostics``: project-wide ruff/ty/charmlint snapshot.
+
+    Result is cached for 30 s by the underlying aggregator so a quick
+    re-run reads the cache; ``--refresh`` forces a re-lint when the
+    user has just edited files outside the agent's tools and wants
+    fresh output.  Returns Markdown so severity headers render
+    distinctly in chat surfaces that style ``**bold**``.
+    """
+    # Lazy import: keeps slash_commands.py importable in environments
+    # where the lint runners' optional binaries aren't on PATH and
+    # the import-time cost is paid only when the command is invoked.
+    from cantrip.agent import lint_context
+
+    charm_path = getattr(agent.state, "charm_path", None)
+    if charm_path is None:
+        return SlashResult(
+            text=(
+                "**Cannot run /diagnostics:** no charm path for this session.  "
+                "Open a charm with the CLI and try again."
+            ),
+            markdown=True,
+        )
+
+    force_refresh = args.strip().lower() in {"--refresh", "refresh", "-f"}
+
+    async def _run() -> str:
+        block = await lint_context.gather_project_diagnostics(
+            pathlib.Path(charm_path),
+            force_refresh=force_refresh,
+        )
+        return f"**Project diagnostics**\n\n{block.to_text()}"
+
+    prelude = "Running ruff / ty / charmlint…"
+    return SlashResult(text=prelude, followup=_run(), markdown=True)
 
 
 def _handle_share(agent: CantripAgent) -> SlashResult:

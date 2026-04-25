@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Project-wide diagnostics as pre-turn context
+  (Phase 72.4).**  New ``/diagnostics`` slash command runs
+  ``ruff`` + ``ty`` + ``charmlint`` across the active charm
+  and prints the issues grouped by severity, capped at
+  ~1500 tokens with a "<em>N more issues suppressed</em>"
+  footer when there are too many to fit.  Results cached for
+  30 seconds; ``--refresh`` forces a fresh pass.  The same
+  aggregator runs automatically when the autonomous loop
+  starts a BUILD or DEBUG subagent — the briefing now ends
+  with a "Current diagnostics" section, so the agent begins
+  each task already knowing what's broken.  Tools that
+  aren't installed surface as ``[skipped]`` notes rather
+  than silently masking issues.  New module
+  ``cantrip.agent.lint_context`` reuses the Phase 71.4
+  per-edit runners; covered by 26 unit tests in
+  ``tests/unit/test_diagnostics_context.py``.  Documented
+  in ``docs/src/reference-cli.md``.  The ``@``-mention
+  surface (``@problems``) lands with Phase 72.2.
 - **Structured JSON responses with schema enforcement
   (Phase 73.3).**  New ``response_schema: dict | None`` parameter
   on every ``LLMProvider.complete()`` and ``.stream()`` call;

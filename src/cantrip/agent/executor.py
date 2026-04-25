@@ -10,7 +10,7 @@ import subprocess
 import time
 from collections.abc import Callable
 
-from cantrip.agent import race, routing
+from cantrip.agent import lint_context, race, routing
 from cantrip.agent.autodeploy import followup_tasks
 from cantrip.agent.goal_budget import check_budget
 from cantrip.agent.permissions import (
@@ -1061,6 +1061,7 @@ class BackgroundExecutor:
         fp_before = self._fingerprint(effective_path)
 
         context = self._build_context(task, effective_path)
+        await self._attach_diagnostics_brief(context)
         max_rounds = MAX_BUILD_ROUNDS if task.category == TaskCategory.BUILD else None
         subagent = Subagent(
             context,
@@ -1306,6 +1307,7 @@ class BackgroundExecutor:
                 id=f"{parent_task.id}__{spec.candidate_id}",
             )
             context = self._build_context(shadow_task, work_path)
+            await self._attach_diagnostics_brief(context)
             # BUILD tasks get the extended round budget that non-race BUILD
             # subagents already enjoy; other categories use the default.
             extra: dict[str, int] = {}
@@ -1653,6 +1655,33 @@ class BackgroundExecutor:
             prior_results=prior_results,
             design_content=design_content,
         )
+
+    async def _attach_diagnostics_brief(self, context: SubagentContext) -> None:
+        """Attach a compact ruff/ty/charmlint snapshot to *context* (Phase 72.4).
+
+        BUILD and DEBUG subagents start a turn already knowing what's
+        broken across the project; other categories skip the lint pass
+        because the cost wouldn't pay back (RESEARCH doesn't edit;
+        DEPLOY operates on built artefacts; TEST runs its own
+        pytest).  Failures inside the aggregator never block subagent
+        launch — the briefing simply omits the section.
+        """
+        if context.task.category not in (TaskCategory.BUILD, TaskCategory.DEBUG):
+            return
+        if not context.charm_path:
+            return
+        try:
+            block = await lint_context.gather_project_diagnostics(pathlib.Path(context.charm_path))
+        except (OSError, RuntimeError, TimeoutError) as exc:
+            # The aggregator already absorbs missing binaries / parse
+            # failures into ``skipped`` notes, so reaching this branch
+            # implies the asyncio plumbing itself failed.  Log and
+            # carry on without the section.
+            log.warning("Diagnostics brief unavailable for %s: %s", context.task.title, exc)
+            return
+        if block.is_empty():
+            return
+        context.diagnostics_text = block.to_text()
 
     # -- Usage tracking ------------------------------------------------------
 

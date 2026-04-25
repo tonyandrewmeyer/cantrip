@@ -927,7 +927,15 @@ class TestCommandCatalogue:
         """
         import ast
 
-        source = inspect.getsource(slash_commands.dispatch)
+        # The dispatch entry point is a thin try/except wrapper around
+        # ``_dispatch_inner`` (Phase 7 hardening), which is where the
+        # ``if verb == "/foo":`` literals actually live.  Read both so
+        # the drift test stays accurate if someone moves a verb back.
+        source = (
+            inspect.getsource(slash_commands.dispatch)
+            + "\n"
+            + inspect.getsource(slash_commands._dispatch_inner)
+        )
         tree = ast.parse(source)
         dispatched: set[str] = {
             node.value
@@ -936,7 +944,7 @@ class TestCommandCatalogue:
             and isinstance(node.value, str)
             and node.value.startswith("/")
         }
-        assert dispatched, "Expected at least one /-verb literal in dispatch()."
+        assert dispatched, "Expected at least one /-verb literal in dispatcher source."
         catalogue_verbs = {cmd.verb for cmd in slash_commands.COMMAND_CATALOGUE}
         missing = dispatched - catalogue_verbs
         assert not missing, (

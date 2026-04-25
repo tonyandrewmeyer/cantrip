@@ -446,6 +446,10 @@ class SubagentContext:
     decisions: list[dict[str, Any]] = field(default_factory=list)
     prior_results: dict[str, str] = field(default_factory=dict)
     design_content: str | None = None
+    # Phase 72.4 — pre-rendered project diagnostics (ruff/ty/charmlint),
+    # attached for BUILD/DEBUG tasks so the subagent prompt can show
+    # what was already broken before this task started.
+    diagnostics_text: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -770,6 +774,8 @@ def _build_subagent_prompt(context: SubagentContext) -> str:
 
     sections.extend(_guidance_sections(task))
     sections.extend(_handoff_sections(context))
+    if context.diagnostics_text:
+        sections.append(f"## Current diagnostics\n\n{context.diagnostics_text}")
     sections.append(_COMPLETION_INSTRUCTION)
 
     return "\n\n".join(sections)

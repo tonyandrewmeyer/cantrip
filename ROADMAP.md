@@ -4585,7 +4585,7 @@ deferred**:
 
 ### 72.4 Medium — Diagnostics-as-pre-turn-context (``@problems``)
 
-- [ ] ``@problems`` context provider (registered in 72.2)
+- [~] ``@problems`` context provider (registered in 72.2)
   runs, on expansion:
   - ``ruff check --output-format=json .`` (or just the
     charm's ``src/`` and ``tests/`` to keep it cheap)
@@ -4594,20 +4594,37 @@ deferred**:
   and emits a compact block grouping issues by severity and
   file, capped at 1500 tokens (longer reports get
   summarised with a "N more issues suppressed; run
-  ``cantrip lint`` for the full list").
-- [ ] Caching: run results cached for 30 seconds so
-  repeated ``@problems`` in the same turn doesn't re-run
-  the linters.
-- [ ] ``/diagnostics`` slash command for the same output
-  without an inline context-provider mention — a focused
-  "what's the state of things?" view.
-- [ ] Autonomous-loop integration: when the planner
-  (Phase 32) starts a new BUILD task, it calls the same
-  diagnostics aggregator and includes the result in the
-  task briefing — so the agent starts knowing what's
-  broken.  Different entry point, same output format.
-- [ ] ``tests/unit/test_diagnostics_context.py`` — JSON
-  parse per linter, aggregation, truncation, cache TTL.
+  ``cantrip lint`` for the full list").  **Aggregator,
+  truncation, and "N more suppressed" footer landed in
+  ``cantrip.agent.lint_context``; the ``@problems`` mention
+  surface waits on the Phase 72.2 ``@``-provider registry.**
+- [x] Caching: run results cached for 30 seconds in
+  :class:`cantrip.agent.lint_context.DiagnosticsCache`
+  (TTL=30 s, keyed on resolved charm path, ``--refresh`` /
+  ``force_refresh=True`` bypass).
+- [x] ``/diagnostics`` slash command for the same output
+  without an inline context-provider mention — registered
+  in :data:`cantrip.agent.slash_commands.COMMAND_CATALOGUE`,
+  rendered as Markdown so the severity headers stay legible
+  in chat surfaces.
+- [x] Autonomous-loop integration: BUILD and DEBUG
+  subagents pick up a "## Current diagnostics" section in
+  their briefing via
+  :meth:`BackgroundExecutor._attach_diagnostics_brief`,
+  using the same shared cache so a quick ``/diagnostics``
+  immediately before a BUILD launch doesn't pay for the
+  linters twice.  Other categories skip the lint pass —
+  RESEARCH doesn't edit, DEPLOY operates on built artefacts,
+  TEST runs its own pytest.
+- [x] ``tests/unit/test_diagnostics_context.py`` — 26
+  cases: JSON-parse-equivalent runner stubbing, multi-tool
+  aggregation, severity-priority sort, tail truncation with
+  honest count, TTL eviction, ``force_refresh``, runner
+  crash isolation, charmlint skip without ``metadata.yaml``,
+  charm-root fallback when ``src/`` and ``tests/`` are
+  absent, subagent prompt picks up ``diagnostics_text``,
+  slash handler followup path, RESEARCH skipped, aggregator
+  failure does not abort subagent launch.
 
 ### What this phase is *not*
 
