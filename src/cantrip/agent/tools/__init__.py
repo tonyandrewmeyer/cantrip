@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,7 @@ def build_tools(
     queue: Any = None,
     memory_manager: MemoryManager | None = None,
     mcp_registry: MCPRegistry | None = None,
+    store_getter: Callable[[], Any] | None = None,
 ) -> list[Tool]:
     """Build all agent tool instances.
 
@@ -129,6 +131,7 @@ def build_tools(
         RegistrySearchTool,
     )
     from cantrip.agent.tools.operational_readiness import OperationalReadinessTool
+    from cantrip.agent.tools.oracle import OracleTool
     from cantrip.agent.tools.planning import PlanTasksTool
     from cantrip.agent.tools.pr_review import PrReviewReplyTool, PrReviewTool
     from cantrip.agent.tools.publishing import (
@@ -302,6 +305,8 @@ def build_tools(
     if provider is not None and state is not None and queue is not None:
         tools.append(PlanTasksTool(provider=provider, state=state, queue=queue))
         tools.append(ManageTasksTool(queue=queue))
+    if state is not None:
+        tools.append(OracleTool(state=state, store_getter=store_getter))
     if memory_manager is not None:
         tools.extend(build_memory_tools(memory_manager))
     if mcp_registry is not None:

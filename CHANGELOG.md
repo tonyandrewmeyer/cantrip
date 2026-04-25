@@ -5,6 +5,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Oracle — on-demand second-opinion consult (Phase 70.2).**
+  New ``oracle_consult`` tool routes one focused question to a
+  stronger reasoning model (default ``claude/claude-opus-4-7``
+  with reasoning on; overridable via ``state.oracle_provider_name``
+  / ``state.oracle_model``) and returns the answer without
+  committing the main session to it.  The call does **not**
+  enter ``state.messages`` — the answer comes back as a tool
+  result the agent restates in its next reply.  The transcript
+  records the full exchange (question, context hint, answer,
+  usage, cost) as an ``oracle_consult`` event for audit.
+  Two budgets stop the agent burning money on the expensive
+  model: ``state.oracle_max_calls_per_turn`` (default ``1``,
+  resets at the top of every conversation turn) and
+  ``state.oracle_max_session_cost_usd`` (default ``$2``,
+  cumulative).  Either trip returns a structured tool error.
+  System-prompt guidance names the four use cases the oracle
+  earns its keep on (charm-architecture, security-relevant
+  design, library-vs-custom trade-offs, reactive→ops migration)
+  and the three it doesn't (syntax lookups, routine
+  implementation steps, obvious yes/no questions).
+  Distinct from Phase 47 best-of-N racing (full subagent loops
+  with a scoring rubric) and ``/arena`` (blind A/B preference
+  capture) — Oracle is the *one prompt, one answer, continue*
+  pattern.  The three are documented side-by-side in
+  [Multi-model patterns](docs/docs/explanation-race.html).
+
 - **Ralph Loop — bounded iterate-until-green outer loop
   (Phase 69.1).**  New ``cantrip run --ralph N`` flag (and
   ``/ralph [N|off]`` slash command) wraps the autonomous loop

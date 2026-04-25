@@ -133,6 +133,24 @@ class AgentState:
     # the CLI flag every time).
     ralph_max_iterations: int = 0
 
+    # Phase 70.2: Oracle — on-demand consult of a stronger model.
+    # ``oracle_provider_name`` / ``oracle_model`` override the
+    # defaults (``claude`` / ``claude-opus-4-7``).  The two budget
+    # caps stop the agent spamming the expensive model: at most
+    # ``oracle_max_calls_per_turn`` invocations between user
+    # messages, and at most ``oracle_max_session_cost_usd`` USD
+    # across the whole session (cumulative).  The ``oracle_*``
+    # counters track usage; ``oracle_calls_this_turn`` resets at
+    # the top of each conversation turn, the rest are session
+    # totals.  Not persisted — every CI run starts fresh.
+    oracle_provider_name: str | None = None
+    oracle_model: str | None = None
+    oracle_max_calls_per_turn: int = 1
+    oracle_max_session_cost_usd: float = 2.0
+    oracle_calls_this_turn: int = 0
+    oracle_calls_total: int = 0
+    oracle_session_cost_usd: float = 0.0
+
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
 

@@ -1,18 +1,19 @@
 ---
-title: "Best-of-N racing and Arena mode — Cantrip"
-description: "Why Cantrip runs multiple models on the same task, how the scoring rubric ranks them, and how blind A/B Arena captures preferences."
-h1: "Best-of-N racing and Arena mode"
-subtitle: "Two ways to pit models against one another: an objective Best-of-N race scored by measurable charm quality, and a blind A/B <code>/arena</code> that captures human preference."
+title: "Multi-model patterns: racing, arena, oracle — Cantrip"
+description: "Three ways Cantrip uses more than one model on the same problem: objective Best-of-N racing, blind A/B Arena preference capture, and on-demand Oracle consults."
+h1: "Multi-model patterns: racing, arena, oracle"
+subtitle: "Three shapes for involving more than one model: an objective Best-of-N race scored by measurable charm quality, a blind A/B <code>/arena</code> that captures human preference, and an on-demand <code>oracle_consult</code> for one-shot second opinions."
 section: explanation
-breadcrumb_label: "Racing and Arena"
+breadcrumb_label: "Multi-model"
 on_this_page:
   - { anchor: "why-race", label: "Why race at all" }
-  - { anchor: "two-mechanisms", label: "Two mechanisms" }
+  - { anchor: "two-mechanisms", label: "Three mechanisms" }
   - { anchor: "scoring", label: "The scoring rubric" }
   - { anchor: "signals", label: "What each signal measures" }
   - { anchor: "viability", label: "Viability and tie-breaking" }
   - { anchor: "config", label: "RaceConfig and cost gates" }
   - { anchor: "arena", label: "Blind A/B Arena" }
+  - { anchor: "oracle", label: "Oracle consults" }
   - { anchor: "events", label: "Transcript events" }
   - { anchor: "limits", label: "Current limits" }
 ---
@@ -51,19 +52,21 @@ best today” argument: you don’t have to choose in
 advance if you race them and let the rubric decide.
 
 {#two-mechanisms}
-## Two mechanisms, same goal
+## Three mechanisms, same goal
 
-Cantrip exposes two racing shapes. They share the name, but the
-implementations and intended uses are distinct.
+Cantrip exposes three multi-model shapes. They share the goal of
+"don’t bet the session on a single model" but the implementations
+and intended uses are distinct.
 
-| | Best-of-N race | Blind A/B Arena |
-|---|---|---|
-| **Module** | `cantrip.agent.race` | `cantrip.agent.arena` |
-| **Per candidate** | Full subagent loop with tools | Single provider completion, no tools |
-| **Scope** | Per `TaskCategory` (BUILD, DESIGN, …) | One-off, user-triggered |
-| **Winner** | Rubric score against charm outputs | You pick, blind to model names |
-| **Outcome** | Winner’s worktree merged back | Preference written to global memory |
-| **Trigger** | Automatic, per `RaceConfig` | `/arena <prompt>` |
+| | Best-of-N race | Blind A/B Arena | Oracle consult |
+|---|---|---|---|
+| **Module** | `cantrip.agent.race` | `cantrip.agent.arena` | `cantrip.agent.tools.oracle` |
+| **Per call** | Full subagent loop with tools | Single provider completion, no tools | Single provider completion, no tools |
+| **Scope** | Per `TaskCategory` (BUILD, DESIGN, …) | One-off, user-triggered | One-off, agent-triggered |
+| **Picks the answer** | Rubric score against charm outputs | You pick, blind to model names | The oracle’s answer is the answer |
+| **Outcome** | Winner’s worktree merged back | Preference written to global memory | Tool result the agent cites |
+| **Trigger** | Automatic, per `RaceConfig` | `/arena <prompt>` | Agent calls `oracle_consult` |
+| **Effect on chat history** | Winner’s turns enter the transcript | Neither side enters `state.messages` | Does not enter `state.messages` |
 
 {#scoring}
 ## The scoring rubric
@@ -279,6 +282,87 @@ tokens. It also requires a configured light provider
 (`--light-provider` or
 `CANTRIP_LIGHT_PROVIDER`).
 
+{#oracle}
+## Oracle consults
+
+`oracle_consult` is a tool the *agent* calls during a session
+when it hits a hard, judgement-shaped question that the docs
+cannot settle on their own. The tool sends a single focused
+question — plus a compact context bundle (active charm,
+caller-supplied hint, last few messages) — to a stronger
+reasoning model and returns the answer. The main session
+keeps running on its current model.
+
+The intended uses are deliberately narrow:
+
+- Charm-architecture choices (Path A / B / C is unclear,
+  peer-relation topology, leader-election placement,
+  sidecar-vs-separate-charm).
+- Security-relevant design (secret rotation, TLS termination,
+  RBAC boundary).
+- Library-vs-custom-code trade-offs (use a charmlib, vendor a
+  slice, write it yourself).
+- Reactive-to-ops migration heuristics.
+
+Not for syntax lookups or routine implementation steps — the
+docs and the active skill cover those without paying the oracle
+tax. The system prompt names both lists so the agent reaches
+for the oracle only when the call is justified.
+
+### Defaults
+
+| Knob | Default |
+|---|---|
+| Provider | `claude` |
+| Model | `claude-opus-4-7` |
+| Reasoning budget | 8000 tokens |
+| Output cap | 4096 tokens |
+| Temperature | 0.2 |
+| Per-turn call cap | 1 |
+| Per-session cost cap | $2 |
+
+The provider and model can be overridden per-session via
+`state.oracle_provider_name` and `state.oracle_model`. The
+caps live on `AgentState` too — raise them when a session
+genuinely benefits from more consults, not as a blanket policy.
+
+### Budget model
+
+Two caps protect the session:
+
+- **Per-turn cap.** `state.oracle_max_calls_per_turn`
+  (default `1`) limits invocations between user messages.
+  The counter resets at the top of every conversation turn so
+  the agent gets a fresh allowance with each user steering
+  message.
+- **Per-session cap.** `state.oracle_max_session_cost_usd`
+  (default `$2`) is a cumulative USD ceiling. Cost is computed
+  by [`cantrip.llm.pricing.estimate_cost`](explanation-architecture.html)
+  from the response’s usage payload, so the meter is grounded
+  in real billing rather than a fixed per-call charge.
+
+Either cap returns a structured tool error the agent sees and
+explains in its summary. No half-state: a refused call leaves
+the counters untouched.
+
+### Why not just compaction-aware in-line context?
+
+Oracle is not a replacement for thoughtful prompting on the
+primary model. The pattern earns its keep when the agent has
+already spent context on the problem and a *fresh* heavyweight
+reading produces a better answer than yet more turns on the
+running session. Picking it for routine work would be expensive
+and pointless; picking it for one well-formed architecture
+question is the whole point.
+
+The oracle’s answer does not enter `state.messages`. It comes
+back as a tool result, which means: (a) the main context window
+stays focused on the work in progress; (b) the agent must
+*restate* the recommendation in its next text reply rather than
+silently quoting the oracle. The transcript records the full
+exchange (question, context hint, answer, usage, cost) as an
+`oracle_consult` event so audits keep nothing lost.
+
 {#events}
 ## Transcript events
 
@@ -322,6 +406,19 @@ can reconstruct what happened after the fact.
     &mdash; join against <code>subagent_messages</code> on that key
     to read any loser&rsquo;s full tool-call trace, not just the
     winner&rsquo;s.
+  </dd>
+
+  <dt><code>oracle_consult</code></dt>
+  <dd>
+    One row per Oracle call. Carries <code>provider</code>,
+    <code>model</code>, the verbatim <code>question</code> and
+    <code>context_hint</code>, the <code>answer</code>,
+    the response <code>usage</code> dict, and
+    <code>cost_usd</code>. <code>calls_this_turn</code>,
+    <code>calls_total</code>, and <code>session_cost_usd</code>
+    capture the budget meters at the moment of the call so an
+    auditor can reconstruct cap-trip events without replaying the
+    full session.
   </dd>
 </dl>
 

@@ -43,8 +43,6 @@
     <h4>On this page</h4>
     <ul>
       <li><a href="#run">cantrip run</a></li>
-      <li><a href="#print-mode">Print mode</a></li>
-      <li><a href="#print-events">Print-mode event schema</a></li>
       <li><a href="#compare">cantrip compare</a></li>
       <li><a href="#export-transcript">export-transcript</a></li>
       <li><a href="#hooks">cantrip hooks</a></li>
@@ -151,24 +149,6 @@ cantrip --help
   <dd>
     Port for the Web UI. Default: <code>8471</code>.
   </dd>
-  <dt>--print GOAL, -p GOAL</dt>
-  <dd>
-    Non-interactive print mode: drive a single goal end-to-end with
-    no TUI, write progress to stdout, and exit when the work queue
-    drains. Combine with <code>--json</code> for an NDJSON event
-    stream and <code>--yolo</code> for unattended CI.
-    See <a href="howto-print-mode.html">Run a single goal
-    non-interactively</a> and the <a href="#print-events">event
-    schema</a> below.
-  </dd>
-  <dt>--json</dt>
-  <dd>
-    With <code>--print</code>, emit
-    <a href="https://github.com/tonyandrewmeyer/cantrip/blob/main/src/cantrip/ui/events.py"><code>cantrip.ui.events</code></a>
-    payloads as newline-delimited JSON on stdout, one event per
-    line. Documented schema; treated as a stable public surface.
-    No-op without <code>--print</code>.
-  </dd>
   <dt>--theme THEME</dt>
   <dd>
     TUI colour theme. Options: <code>cantrip</code>,
@@ -204,235 +184,7 @@ cantrip --help
     monorepo where snapshotting is too slow. See
     <a href="howto-undo.html">Undo agent changes</a>.
   </dd>
-  <dt>--yolo, -y</dt>
-  <dd>
-    Unattended mode: auto-approve every Phase 68.2
-    <em>ask</em> permission for the session.
-    <em>Deny</em> rules still block. Use for CI scripts where
-    a prompt would hang the run. See
-    <a href="howto-unattended.html">Run Cantrip unattended</a>.
-  </dd>
-  <dt>--ralph N</dt>
-  <dd>
-    Phase 69.1: bounded iterate-until-green Ralph Loop. Re-feed
-    the agent up to <code>N</code> times until it emits
-    <code>STOP</code> on a line by itself or stall detection
-    trips.  <code>0</code> (default) disables the loop;
-    <code>-1</code> is unlimited (still bounded by stall
-    detection and an internal safety ceiling of 200).  Most
-    useful in <code>--print</code> runs &mdash; pairs with
-    <code>--yolo</code> for unattended refinement.  See
-    <a href="howto-ralph.html">Run a Ralph loop</a>.
-  </dd>
 </dl>
-<h2 id="print-mode">Print mode</h2>
-<p><code>cantrip run --print "&lt;goal&gt;"</code> (alias
-<code>-p</code>) replaces the TUI with a single-shot CLI invocation:
-the agent loop runs once, drains the work queue, and exits with a
-status code that reflects task success or failure. Designed for CI
-jobs and shell pipelines where a long-lived REPL doesn't fit.</p>
-<p>Combine with:</p>
-<ul>
-  <li><code>--json</code> &mdash; serialise every event-bus payload
-    to stdout as one NDJSON object per line (see
-    <a href="#print-events">schema</a>).</li>
-  <li><code>--yolo</code> &mdash; auto-approve every Phase 68.2
-    <em>ask</em> permission so a CI job doesn't stall on a
-    confirmation. <em>Deny</em> rules still block.</li>
-  <li><code>--max-iterations</code> /
-    <code>--max-tokens</code> &mdash; cap the run with the same
-    per-goal budget the TUI uses.</li>
-</ul>
-<p>Pending CONFIRM tasks (Phase 64) refuse the run by default: the
-runner exits non-zero with the list of unresolved confirmations.
-<code>--yolo</code> opts in; resolving them interactively first is
-the alternative.</p>
-<h3>Exit codes</h3>
-<dl>
-  <dt><code>0</code></dt>
-  <dd>Queue drained with every task in <code>done</code>, or no
-    tasks were created.</dd>
-  <dt><code>1</code></dt>
-  <dd>One or more tasks finished in <code>failed</code> or
-    <code>blocked</code> status, the provider returned an error,
-    the drain timed out, or pending confirmations blocked the
-    run.</dd>
-  <dt><code>2</code></dt>
-  <dd>CLI argument error (empty goal, or <code>--print</code> with
-    <code>--web</code>).</dd>
-  <dt><code>130</code></dt>
-  <dd>Interrupted by Ctrl-C.</dd>
-</dl>
-<h2 id="print-events">Print-mode event schema</h2>
-<p>Each line on stdout under <code>--print --json</code> is one JSON
-object with three top-level keys:</p>
-<dl>
-  <dt><code>type</code></dt>
-  <dd>One of the
-    <a href="https://github.com/tonyandrewmeyer/cantrip/blob/main/src/cantrip/ui/events.py"><code>EventType</code></a>
-    string values listed below.</dd>
-  <dt><code>data</code></dt>
-  <dd>The event-specific payload object.</dd>
-  <dt><code>timestamp</code></dt>
-  <dd>UNIX seconds with fractional component (epoch float).</dd>
-</dl>
-<p>Event types and their payload keys:</p>
-<table>
-<thead>
-<tr><th><code>type</code></th><th>When it fires</th><th>Key payload fields</th></tr>
-</thead>
-<tbody>
-<tr>
-  <td><code>task_updated</code></td>
-  <td>A queued task changed status, category, or result.</td>
-  <td><code>id</code>, <code>title</code>, <code>status</code>,
-    <code>category</code>, <code>description</code>,
-    <code>result</code>, <code>blocked_reason</code>,
-    <code>worktree_path</code>, <code>subagent_phase</code>,
-    <code>subagent_started_at</code>.</td>
-</tr>
-<tr>
-  <td><code>tasks_snapshot</code></td>
-  <td>Bulk task list, e.g. on resume.</td>
-  <td><code>tasks</code> (list of task dicts).</td>
-</tr>
-<tr>
-  <td><code>chat_message</code></td>
-  <td>Agent or system text.</td>
-  <td><code>role</code>, <code>content</code>.</td>
-</tr>
-<tr>
-  <td><code>thinking_changed</code></td>
-  <td>The agent started or stopped a request.</td>
-  <td><code>active</code>.</td>
-</tr>
-<tr>
-  <td><code>tool_invoked</code></td>
-  <td>One tool call boundary.</td>
-  <td><code>tool_name</code>, <code>caption</code>,
-    <code>success</code>, <code>duration_ms</code>,
-    <code>source</code>.</td>
-</tr>
-<tr>
-  <td><code>permission_decided</code></td>
-  <td>Phase 68.2 declarative-policy outcome (allow / ask / deny /
-    ask-approved / ask-denied / ask-timeout).</td>
-  <td><code>tool_name</code>, <code>outcome</code>,
-    <code>reason</code>, <code>request_id</code>,
-    <code>task_id</code>, <code>source</code>,
-    <code>command</code>.</td>
-</tr>
-<tr>
-  <td><code>permission_auto_approved</code></td>
-  <td>Yolo mode auto-approved an <code>ask</code>.</td>
-  <td><code>tool_name</code>, <code>reason</code>,
-    <code>request_id</code>, <code>command</code>.</td>
-</tr>
-<tr>
-  <td><code>compaction_started</code> /
-    <code>compaction_completed</code></td>
-  <td>Context-window fold points.</td>
-  <td><code>tokens_before</code>, <code>tokens_after</code>,
-    <code>source</code>, <code>kind</code>.</td>
-</tr>
-<tr>
-  <td><code>cache_metrics_updated</code></td>
-  <td>Provider returned cache stats.</td>
-  <td><code>cache_creation_tokens</code>,
-    <code>cache_read_tokens</code>,
-    <code>cache_total_tokens</code>, <code>hit_pct</code>.</td>
-</tr>
-<tr>
-  <td><code>goal_budget_exceeded</code></td>
-  <td>Per-goal iteration / token budget tripped.</td>
-  <td><code>task_id</code>, <code>reason</code>.</td>
-</tr>
-<tr>
-  <td><code>policy_rate_limited</code></td>
-  <td>Per-goal tool-call cap tripped.</td>
-  <td><code>task_id</code>, <code>tool_calls_made</code>,
-    <code>cap</code>, <code>policy_name</code>.</td>
-</tr>
-<tr>
-  <td><code>snapshot_created</code> /
-    <code>snapshot_restored</code></td>
-  <td>Phase 68.1 working-tree snapshot lifecycle.</td>
-  <td><code>turn_id</code>, <code>sha</code>,
-    <code>paths_changed</code>, <code>direction</code>.</td>
-</tr>
-<tr>
-  <td><code>memory_written</code> /
-    <code>memory_recalled</code></td>
-  <td>Durable-memory writes and reads.</td>
-  <td><code>title</code>, <code>scope</code>, <code>kind</code>,
-    <code>source</code>, <code>reasoning</code>.</td>
-</tr>
-<tr>
-  <td><code>juju_status_changed</code></td>
-  <td>Live Juju status snapshot.</td>
-  <td>Variable; mirrors the snapshot dict.</td>
-</tr>
-<tr>
-  <td><code>watcher_event</code></td>
-  <td>Event watcher fired.</td>
-  <td><code>source</code>, <code>category</code>,
-    <code>summary</code>, <code>detail</code>, <code>app</code>,
-    <code>unit</code>.</td>
-</tr>
-<tr>
-  <td><code>status_bar_changed</code></td>
-  <td>UI mode / status flipped (yolo, plan, etc.).</td>
-  <td>Variable subset of <code>task_label</code>,
-    <code>cos_health</code>, <code>test_summary</code>,
-    <code>watcher_status</code>, <code>mode</code>.</td>
-</tr>
-<tr>
-  <td><code>preflight_updated</code></td>
-  <td>Preflight check progressed.</td>
-  <td><code>group_index</code>, <code>item_index</code>,
-    <code>status</code>.</td>
-</tr>
-<tr>
-  <td><code>model_switched</code></td>
-  <td>Mid-session <code>/model</code> swap (Phase 67.2).</td>
-  <td><code>provider</code>, <code>model</code>,
-    <code>previous_provider</code>,
-    <code>previous_model</code>,
-    <code>context_window</code>.</td>
-</tr>
-<tr>
-  <td><code>mcp_elicitation_request</code></td>
-  <td>MCP server asked for structured input.</td>
-  <td><code>request_id</code>, <code>server_name</code>,
-    <code>mode</code>, <code>message</code>,
-    <code>requested_schema</code>, <code>url</code>.</td>
-</tr>
-<tr>
-  <td><code>ralph_iteration_started</code></td>
-  <td>Top of each Ralph refinement pass.</td>
-  <td><code>iteration</code>, <code>max_iterations</code>
-    (or <code>null</code> for unlimited), <code>goal</code>.</td>
-</tr>
-<tr>
-  <td><code>ralph_converged</code></td>
-  <td>Convergence signal found in the agent's reply.</td>
-  <td><code>iteration</code>, <code>signal</code>.</td>
-</tr>
-<tr>
-  <td><code>ralph_stalled</code></td>
-  <td>Two consecutive iterations indistinguishable.</td>
-  <td><code>iteration</code>, <code>reason</code>.</td>
-</tr>
-<tr>
-  <td><code>ralph_exhausted</code></td>
-  <td>Iteration cap fired before convergence.</td>
-  <td><code>iteration</code>, <code>cap</code>.</td>
-</tr>
-</tbody>
-</table>
-<p>The schema is treated as a stable public surface: new event types
-may be added in future releases, but existing keys won't be removed
-or renamed without a deprecation cycle.</p>
 <h2 id="compare">cantrip compare</h2>
 <p>Diff two charm implementations along four dimensions and print a
 human-readable report. Useful for evaluating a Cantrip-generated
@@ -515,13 +267,7 @@ straight to drift.</p>
 <code>~/.config/cantrip/hooks.yaml</code> or
 <code>cantrip.hooks.yaml</code>. See
 <a href="howto-hooks.html">How to configure hooks</a> for the
-schema. For the declarative allow/ask/deny layer that runs
-after hooks, see
-<a href="howto-permissions.html">How to configure tool
-permissions</a>. For per-charm slash verbs loaded from
-markdown files, see
-<a href="howto-custom-commands.html">How to define custom
-slash commands</a>.</p>
+schema.</p>
 <h3 id="hooks-test">cantrip hooks test</h3>
 <p>Fires a synthetic event against the loaded hook config and
 prints per-hook results &mdash; exit code, duration,
@@ -843,67 +589,6 @@ for configuration.</p>
     the moment a new user turn arrives.
   </dd>
 </dl>
-<h3 id="plan-mode">Plan mode</h3>
-<dl>
-  <dt><code>/plan</code></dt>
-  <dd>
-    Enter read-only plan mode. The agent can inspect files, git
-    history, Juju state, memory, and the web, but every other
-    tool returns a refused <code>ToolResult</code> with a
-    "plan mode &mdash; switch to <code>/build</code>" message.
-    Session-scoped and sticky. The status bar tints to signal
-    the mode.
-  </dd>
-  <dt><code>/build</code></dt>
-  <dd>
-    Leave plan mode. Re-feeds the most recently captured
-    <em>Proposed changes</em> section as context so the agent
-    picks up where planning left off. See
-    <a href="howto-plan-mode.html">Use plan mode</a> for the
-    allow-list and the <em>Proposed changes</em> contract.
-  </dd>
-</dl>
-<h3 id="yolo-mode">Unattended (yolo) mode</h3>
-<dl>
-  <dt><code>/yolo [on|off]</code></dt>
-  <dd>
-    Toggle unattended mode. With yolo on, every
-    <a href="howto-permissions.html">Phase 68.2</a>
-    <em>ask</em> permission auto-approves instead of parking
-    on a CONFIRM task &mdash; useful for CI scripts and
-    non-interactive runs. <em>Deny</em> rules still block.
-    Every auto-approval emits a
-    <code>permission_auto_approved</code> event, so the
-    transcript records the rule that would otherwise have
-    prompted. The status bar tints a distinct colour and
-    renders a "YOLO MODE &mdash; confirmations off" badge.
-    See <a href="howto-unattended.html">Run Cantrip unattended</a>.
-  </dd>
-</dl>
-<p><code>cantrip run --yolo</code> (or <code>-y</code>) on the
-command line enables the mode at startup so the first
-subagent dispatch sees <em>ask</em> permissions as already-
-approved &mdash; pair it with a repo
-<code>permissions.yaml</code> that explicitly denies anything
-you do not want to auto-approve.</p>
-<h3 id="ralph-loop">Ralph loop</h3>
-<dl>
-  <dt><code>/ralph [N|off]</code></dt>
-  <dd>
-    Bounded iterate-until-green loop (Phase 69.1).  Bare
-    <code>/ralph</code> reports the current cap;
-    <code>/ralph N</code> sets it; <code>/ralph off</code>
-    (or <code>/ralph 0</code>) disables; <code>/ralph -1</code>
-    is unlimited.  The actual refinement loop only fires inside
-    <code>cantrip run --print</code> &mdash; in the TUI the
-    slash command stamps the cap on the session for the next
-    print-mode invocation.  See
-    <a href="howto-ralph.html">Run a Ralph loop</a>.
-  </dd>
-</dl>
-<p><code>cantrip run --ralph N</code> on the command line is the
-equivalent at startup; combine with <code>--print --yolo</code>
-for unattended refinement in CI.</p>
 <p>Snapshots are on by default. Disable per-session with
 <code>--no-snapshots</code> on the command line or
 <code>CANTRIP_SNAPSHOTS=false</code> in the environment.

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Best-of-N racing and Arena mode &mdash; Cantrip</title>
-<meta name="description" content="Why Cantrip runs multiple models on the same task, how the scoring rubric ranks them, and how blind A/B Arena captures preferences.">
+<title>Multi-model patterns: racing, arena, oracle &mdash; Cantrip</title>
+<meta name="description" content="Three ways Cantrip uses more than one model on the same problem: objective Best-of-N racing, blind A/B Arena preference capture, and on-demand Oracle consults.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
@@ -43,18 +43,19 @@
       <li><a href="explanation-quickpack-rs.html">Quickpack Rust backend</a></li>
       <li><a href="explanation-charmlint-rs.html">Charmlint Rust backend</a></li>
       <li><a href="explanation-emotions.html">Emotion subagents</a></li>
-      <li><a href="explanation-race.html" class="current">Racing and Arena</a></li>
+      <li><a href="explanation-race.html" class="current">Multi-model patterns</a></li>
       <li><a href="explanation-tui-screens.html">TUI screens and shortcuts</a></li>
     </ul>
     <h4>On this page</h4>
     <ul>
       <li><a href="#why-race">Why race at all</a></li>
-      <li><a href="#two-mechanisms">Two mechanisms</a></li>
+      <li><a href="#two-mechanisms">Three mechanisms</a></li>
       <li><a href="#scoring">The scoring rubric</a></li>
       <li><a href="#signals">What each signal measures</a></li>
       <li><a href="#viability">Viability and tie-breaking</a></li>
       <li><a href="#config">RaceConfig and cost gates</a></li>
       <li><a href="#arena">Blind A/B Arena</a></li>
+      <li><a href="#oracle">Oracle consults</a></li>
       <li><a href="#events">Transcript events</a></li>
       <li><a href="#limits">Current limits</a></li>
     </ul>
@@ -62,12 +63,12 @@
 
   <main id="main" class="doc-content">
     <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>Explanation<span class="sep">/</span>Racing and Arena
+      <a href="index.html">Docs</a><span class="sep">/</span>Explanation<span class="sep">/</span>Multi-model
     </div>
 
-    <h1>Best-of-N racing and Arena mode</h1>
+    <h1>Multi-model patterns: racing, arena, oracle</h1>
     <p class="subtitle">
-      Two ways to pit models against one another: an objective Best-of-N race scored by measurable charm quality, and a blind A/B <code>/arena</code> that captures human preference.
+      Three shapes for involving more than one model: an objective Best-of-N race scored by measurable charm quality, a blind A/B <code>/arena</code> that captures human preference, and an on-demand <code>oracle_consult</code> for one-shot second opinions.
     </p>
 
 <div class="callout-warn callout">
@@ -98,15 +99,17 @@ running several models on the same task and picking the winner
 is a natural fit. It also sidesteps the &ldquo;which model is
 best today&rdquo; argument: you don&rsquo;t have to choose in
 advance if you race them and let the rubric decide.</p>
-<h2 id="two-mechanisms">Two mechanisms, same goal</h2>
-<p>Cantrip exposes two racing shapes. They share the name, but the
-implementations and intended uses are distinct.</p>
+<h2 id="two-mechanisms">Three mechanisms, same goal</h2>
+<p>Cantrip exposes three multi-model shapes. They share the goal of
+&quot;don&rsquo;t bet the session on a single model&quot; but the implementations
+and intended uses are distinct.</p>
 <table>
 <thead>
 <tr>
 <th></th>
 <th>Best-of-N race</th>
 <th>Blind A/B Arena</th>
+<th>Oracle consult</th>
 </tr>
 </thead>
 <tbody>
@@ -114,31 +117,43 @@ implementations and intended uses are distinct.</p>
 <td><strong>Module</strong></td>
 <td><code>cantrip.agent.race</code></td>
 <td><code>cantrip.agent.arena</code></td>
+<td><code>cantrip.agent.tools.oracle</code></td>
 </tr>
 <tr>
-<td><strong>Per candidate</strong></td>
+<td><strong>Per call</strong></td>
 <td>Full subagent loop with tools</td>
+<td>Single provider completion, no tools</td>
 <td>Single provider completion, no tools</td>
 </tr>
 <tr>
 <td><strong>Scope</strong></td>
 <td>Per <code>TaskCategory</code> (BUILD, DESIGN, &hellip;)</td>
 <td>One-off, user-triggered</td>
+<td>One-off, agent-triggered</td>
 </tr>
 <tr>
-<td><strong>Winner</strong></td>
+<td><strong>Picks the answer</strong></td>
 <td>Rubric score against charm outputs</td>
 <td>You pick, blind to model names</td>
+<td>The oracle&rsquo;s answer is the answer</td>
 </tr>
 <tr>
 <td><strong>Outcome</strong></td>
 <td>Winner&rsquo;s worktree merged back</td>
 <td>Preference written to global memory</td>
+<td>Tool result the agent cites</td>
 </tr>
 <tr>
 <td><strong>Trigger</strong></td>
 <td>Automatic, per <code>RaceConfig</code></td>
 <td><code>/arena &lt;prompt&gt;</code></td>
+<td>Agent calls <code>oracle_consult</code></td>
+</tr>
+<tr>
+<td><strong>Effect on chat history</strong></td>
+<td>Winner&rsquo;s turns enter the transcript</td>
+<td>Neither side enters <code>state.messages</code></td>
+<td>Does not enter <code>state.messages</code></td>
 </tr>
 </tbody>
 </table>
@@ -363,6 +378,104 @@ against identical configurations produces no signal and wastes
 tokens. It also requires a configured light provider
 (<code>--light-provider</code> or
 <code>CANTRIP_LIGHT_PROVIDER</code>).</p>
+<h2 id="oracle">Oracle consults</h2>
+<p><code>oracle_consult</code> is a tool the <em>agent</em> calls during a session
+when it hits a hard, judgement-shaped question that the docs
+cannot settle on their own. The tool sends a single focused
+question &mdash; plus a compact context bundle (active charm,
+caller-supplied hint, last few messages) &mdash; to a stronger
+reasoning model and returns the answer. The main session
+keeps running on its current model.</p>
+<p>The intended uses are deliberately narrow:</p>
+<ul>
+<li>Charm-architecture choices (Path A / B / C is unclear,
+peer-relation topology, leader-election placement,
+sidecar-vs-separate-charm).</li>
+<li>Security-relevant design (secret rotation, TLS termination,
+RBAC boundary).</li>
+<li>Library-vs-custom-code trade-offs (use a charmlib, vendor a
+slice, write it yourself).</li>
+<li>Reactive-to-ops migration heuristics.</li>
+</ul>
+<p>Not for syntax lookups or routine implementation steps &mdash; the
+docs and the active skill cover those without paying the oracle
+tax. The system prompt names both lists so the agent reaches
+for the oracle only when the call is justified.</p>
+<h3>Defaults</h3>
+<table>
+<thead>
+<tr>
+<th>Knob</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Provider</td>
+<td><code>claude</code></td>
+</tr>
+<tr>
+<td>Model</td>
+<td><code>claude-opus-4-7</code></td>
+</tr>
+<tr>
+<td>Reasoning budget</td>
+<td>8000 tokens</td>
+</tr>
+<tr>
+<td>Output cap</td>
+<td>4096 tokens</td>
+</tr>
+<tr>
+<td>Temperature</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>Per-turn call cap</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Per-session cost cap</td>
+<td>$2</td>
+</tr>
+</tbody>
+</table>
+<p>The provider and model can be overridden per-session via
+<code>state.oracle_provider_name</code> and <code>state.oracle_model</code>. The
+caps live on <code>AgentState</code> too &mdash; raise them when a session
+genuinely benefits from more consults, not as a blanket policy.</p>
+<h3>Budget model</h3>
+<p>Two caps protect the session:</p>
+<ul>
+<li><strong>Per-turn cap.</strong> <code>state.oracle_max_calls_per_turn</code>
+(default <code>1</code>) limits invocations between user messages.
+The counter resets at the top of every conversation turn so
+the agent gets a fresh allowance with each user steering
+message.</li>
+<li><strong>Per-session cap.</strong> <code>state.oracle_max_session_cost_usd</code>
+(default <code>$2</code>) is a cumulative USD ceiling. Cost is computed
+by <a href="explanation-architecture.html"><code>cantrip.llm.pricing.estimate_cost</code></a>
+from the response&rsquo;s usage payload, so the meter is grounded
+in real billing rather than a fixed per-call charge.</li>
+</ul>
+<p>Either cap returns a structured tool error the agent sees and
+explains in its summary. No half-state: a refused call leaves
+the counters untouched.</p>
+<h3>Why not just compaction-aware in-line context?</h3>
+<p>Oracle is not a replacement for thoughtful prompting on the
+primary model. The pattern earns its keep when the agent has
+already spent context on the problem and a <em>fresh</em> heavyweight
+reading produces a better answer than yet more turns on the
+running session. Picking it for routine work would be expensive
+and pointless; picking it for one well-formed architecture
+question is the whole point.</p>
+<p>The oracle&rsquo;s answer does not enter <code>state.messages</code>. It comes
+back as a tool result, which means: (a) the main context window
+stays focused on the work in progress; (b) the agent must
+<em>restate</em> the recommendation in its next text reply rather than
+silently quoting the oracle. The transcript records the full
+exchange (question, context hint, answer, usage, cost) as an
+<code>oracle_consult</code> event so audits keep nothing lost.</p>
 <h2 id="events">Transcript events</h2>
 <p>Races and arenas emit structured events alongside the regular
 task updates. They land in the session transcript so a reviewer
@@ -400,6 +513,18 @@ can reconstruct what happened after the fact.</p>
     &mdash; join against <code>subagent_messages</code> on that key
     to read any loser&rsquo;s full tool-call trace, not just the
     winner&rsquo;s.
+  </dd>
+  <dt><code>oracle_consult</code></dt>
+  <dd>
+    One row per Oracle call. Carries <code>provider</code>,
+    <code>model</code>, the verbatim <code>question</code> and
+    <code>context_hint</code>, the <code>answer</code>,
+    the response <code>usage</code> dict, and
+    <code>cost_usd</code>. <code>calls_this_turn</code>,
+    <code>calls_total</code>, and <code>session_cost_usd</code>
+    capture the budget meters at the moment of the call so an
+    auditor can reconstruct cap-trip events without replaying the
+    full session.
   </dd>
 </dl>
 <h2 id="limits">Current limits and planned work</h2>

@@ -127,67 +127,6 @@
       to stdin.
     </p>
   </a>
-  <a href="howto-permissions.html" class="doc-card">
-    <span class="doc-card-label">How-to</span>
-    <h3>Configure tool permissions</h3>
-    <p>
-      Write an allow/ask/deny policy in
-      <code>.cantrip/permissions.yaml</code> &mdash; glob on tool
-      name, shell command, or file path; per-agent overrides;
-      transfers from OpenCode.
-    </p>
-  </a>
-  <a href="howto-custom-commands.html" class="doc-card">
-    <span class="doc-card-label">How-to</span>
-    <h3>Define custom slash commands</h3>
-    <p>
-      Drop a markdown file into <code>.cantrip/commands/</code>
-      and it becomes a new <code>/verb</code> &mdash; YAML
-      frontmatter, <code>$1</code> positionals, <code>@path</code>
-      file includes, and permission-gated shell expansion.
-    </p>
-  </a>
-  <a href="howto-plan-mode.html" class="doc-card">
-    <span class="doc-card-label">How-to</span>
-    <h3>Use plan mode</h3>
-    <p>
-      Flip the session into a read-only stance with
-      <code>/plan</code>.  The agent can read code, Juju state,
-      and the web, but can't edit or run shells.  It emits a
-      <em>Proposed changes</em> summary that <code>/build</code>
-      resumes from.
-    </p>
-  </a>
-  <a href="howto-unattended.html" class="doc-card">
-    <span class="doc-card-label">How-to</span>
-    <h3>Run Cantrip unattended</h3>
-    <p>
-      Use <code>--yolo</code> or <code>/yolo</code> in CI scripts
-      so every <em>ask</em> permission auto-approves; <em>deny</em>
-      rules still block and every auto-approval lands in the
-      audit trail.
-    </p>
-  </a>
-  <a href="howto-print-mode.html" class="doc-card">
-    <span class="doc-card-label">How-to</span>
-    <h3>Run a single goal non-interactively</h3>
-    <p>
-      <code>cantrip run --print "&lt;goal&gt;"</code> drives the
-      autonomous loop with no TUI &mdash; pair with
-      <code>--json</code> for an NDJSON event stream and
-      <code>--yolo</code> for unattended CI.
-    </p>
-  </a>
-  <a href="howto-ralph.html" class="doc-card">
-    <span class="doc-card-label">How-to</span>
-    <h3>Run a Ralph loop</h3>
-    <p>
-      <code>--ralph N</code> wraps the autonomous loop in a
-      bounded iterate-until-green outer pass.  Re-feeds the
-      goal until the agent emits <code>STOP</code>; stall
-      detection guards against no-op iterations.
-    </p>
-  </a>
   <a href="howto-feelings.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Convene the inner parliament</h3>

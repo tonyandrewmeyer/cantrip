@@ -882,6 +882,7 @@ class CantripAgent:
             queue=self._work_queue,
             memory_manager=self._memory_manager,
             mcp_registry=self._mcp_registry_cache,
+            store_getter=lambda: self._store,
         )
 
     def _build_system_prompt(self) -> str:
@@ -1112,6 +1113,11 @@ class CantripAgent:
                     },
                 )
 
+        # Phase 70.2: oracle's per-turn budget resets here so each
+        # user message gets a fresh allowance.  Session totals and
+        # cost cap survive across turns intentionally.
+        self.state.oracle_calls_this_turn = 0
+
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self._snapshot_before_user_turn(user_msg)
@@ -1324,6 +1330,11 @@ class CantripAgent:
                         "charm_name": self.state.charm_name,
                     },
                 )
+
+        # Phase 70.2: oracle's per-turn budget resets here so each
+        # user message gets a fresh allowance.  Session totals and
+        # cost cap survive across turns intentionally.
+        self.state.oracle_calls_this_turn = 0
 
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)

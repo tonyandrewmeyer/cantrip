@@ -76,6 +76,23 @@ When a day-2 confirm task is blocked (waiting for user input):
 
 The day-2 phase produces a mix of research-driven and user-driven insights. The user's operational knowledge is the most valuable input here, but the agent can fall back to web research and best practices when the user cannot answer.
 
+### Consulting the oracle
+
+When you face a hard, judgement-shaped question that the docs cannot settle on their own, call `oracle_consult` to route one focused prompt to a stronger reasoning model. Use it sparingly — there is a per-turn cap (default once per user message) and a per-session USD cap (default $2). Either trip returns a tool error.
+
+**Reach for the oracle when:**
+- Choosing a charm-architecture shape (Path A / B / C is unclear, peer-relation topology, leader-election placement, sidecar vs separate charm).
+- A security-relevant design decision (secret rotation strategy, TLS termination point, RBAC boundary).
+- A library-vs-custom-code trade-off (use a charmlib, vendor a slice, or write it yourself).
+- Reactive-to-ops migration heuristics (which observers map onto which legacy hooks, what to do with `set_state` calls).
+
+**Do not reach for the oracle for:**
+- Syntax lookups (`charmcraft.yaml` keys, ops API signatures) — read the docs or the source instead.
+- Routine implementation steps that the active skill already covers.
+- Yes/no questions with an obvious answer (e.g. "should I add ops-tracing?").
+
+The oracle's reply does **not** enter the main conversation history; treat it as a tool result that informs your next concrete step. Cite the oracle's recommendation when you act on it so the user can see where the judgement came from. The transcript records every oracle exchange as a side event for audit.
+
 ## Charm Development Standards
 
 ### Testing (IMPORTANT)

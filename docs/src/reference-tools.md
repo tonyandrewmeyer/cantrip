@@ -236,6 +236,7 @@ visible to the user but are important for how the agent operates.
 |---|---|
 | `plan_tasks` | Decompose an intent into a task plan using the LLM |
 | `manage_tasks` | Inspect, cancel, or reprioritise tasks in the work queue |
+| `oracle_consult` | Route one focused question to a stronger reasoning model and return the answer without committing the main session to it; bounded by a per-turn call cap and a per-session USD cap (see [multi-model patterns](explanation-race.html#oracle)) |
 | `load_skill` | Load a specialised skill prompt for the current task |
 | `workspace_info` | Read a `cantrip.workspace.yaml` manifest (charms, cross-charm relations, shared config) from the current tree or any ancestor directory |
 | `virtual_file_read` | Read a compressed virtual file from context |
