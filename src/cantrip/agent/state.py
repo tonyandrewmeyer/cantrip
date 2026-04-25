@@ -163,6 +163,30 @@ class AgentState:
     # startup or directly on ``state.auto_lint``.
     auto_lint: bool = True
 
+    # Phase 71.2: architect/editor two-model split.  When ``True``,
+    # every LLM call in the conversation loop runs through two
+    # passes: an *architect* pass on the main provider that emits
+    # a plain-prose proposal (no tools), then an *editor* pass on
+    # a cheaper provider that consumes the proposal and emits the
+    # actual ``fs_edit`` / ``fs_write`` tool calls.  Saves cost on
+    # BUILD turns where the expensive thinking happens once and the
+    # mechanical edits run on a cheap model.  When the
+    # ``editor_provider`` / ``editor_model`` overrides are unset
+    # the editor falls back to ``resolve_light_provider``'s
+    # same-family choice; if no lighter variant exists the editor
+    # ends up on the main provider (no cost saving but the dual-
+    # pass shape stays).  Toggled via ``/architect`` or the
+    # ``--architect`` CLI flag.  ``architect_consecutive_failures``
+    # tracks the per-turn count of editor passes whose tool calls
+    # all failed; after ``architect_failure_threshold`` consecutive
+    # failures the next editor pass is escalated to the architect
+    # provider so a weak model can't get stuck.
+    architect_mode: bool = False
+    editor_provider: str | None = None
+    editor_model: str | None = None
+    architect_consecutive_failures: int = 0
+    architect_failure_threshold: int = 2
+
     messages: list[Message] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
 

@@ -213,6 +213,16 @@ def run_cli(args: argparse.Namespace) -> int:
     if bool(getattr(args, "no_auto_lint", False)):
         agent.state.auto_lint = False
 
+    # Phase 71.2: architect/editor two-model split.  When enabled at
+    # startup, every conversation-loop call becomes a propose→edit
+    # pair.  Optional ``--editor-provider`` / ``--editor-model``
+    # overrides plug into ``state.editor_provider`` / ``editor_model``
+    # so the dual-pass orchestrator constructs the editor on demand.
+    if bool(getattr(args, "architect", False)):
+        agent.state.architect_mode = True
+        agent.state.editor_provider = getattr(args, "editor_provider", None) or None
+        agent.state.editor_model = getattr(args, "editor_model", None) or None
+
     # Set improvement mode if --improve was passed.
     if improve_path is not None:
         from pathlib import Path

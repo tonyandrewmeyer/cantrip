@@ -85,6 +85,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/tree", "Show the session as a tree of turns and branches"),
     CommandInfo("/plan", "Enter read-only plan mode (no file edits or shells)"),
     CommandInfo("/build", "Leave plan mode and resume executing changes"),
+    CommandInfo("/architect", "Toggle architect/editor two-model split"),
     CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
     CommandInfo("/map", "Show top-ranked repository files (`/map full` for everything)"),
@@ -253,6 +254,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_plan(agent))
     if verb == "/build":
         return SlashResult(text=handle_build(agent))
+    if verb == "/architect":
+        return SlashResult(text=handle_architect(agent, args))
     if verb == "/yolo":
         return SlashResult(text=handle_yolo(agent, args))
     if verb == "/ralph":
@@ -614,6 +617,13 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "cannot edit or run shells.\n"
         "- `/build` — leave plan mode and resume executing changes."
         "  Re-feeds the last *Proposed changes* summary as context.\n"
+        "- `/architect [on|off] [provider[/model]]` — toggle the "
+        "architect/editor two-model split.  Each turn runs as "
+        "*propose → edit*: the architect (main model) emits a plain-"
+        "prose plan, then the editor (cheaper model) consumes the "
+        "plan and produces tool calls.  Both passes appear "
+        "separately in `/cost`.  Optional second token overrides the "
+        "editor (e.g. `/architect on claude/claude-haiku-4-5-20251001`).\n"
         "- `/yolo [on|off]` — toggle unattended mode: every `ask` "
         "permission auto-approves for the rest of the session.  "
         "`deny` rules still block.  `--yolo` on the command line "
@@ -1230,6 +1240,107 @@ def handle_build(agent: CantripAgent) -> str:
     except (TypeError, ValueError, RuntimeError, AttributeError):
         log.exception("status_bar_changed publish failed on /build")
     return f"**Build mode on.**  Every tool is available again.{resume_note}"
+
+
+def handle_architect(agent: CantripAgent, args: str) -> str:
+    """Phase 71.2 ``/architect``: toggle architect/editor two-model split.
+
+    Bare ``/architect`` flips the flag; ``/architect on`` and
+    ``/architect off`` are explicit forms.  An optional second token
+    sets the editor provider/model in the same syntax as ``/model``
+    (``provider`` or ``provider/model``).  When toggled on without
+    an explicit editor, ``resolve_light_provider`` picks a same-
+    family cheaper variant.  When no lighter variant exists the
+    editor falls back to the main provider (no cost saving but the
+    dual-pass shape stays).
+
+    Examples::
+
+        /architect              # toggle on/off
+        /architect on           # enable
+        /architect on claude/claude-haiku-4-5-20251001
+        /architect off
+    """
+    tokens = args.strip().split(maxsplit=1)
+    if not tokens:
+        target = not agent.state.architect_mode
+        editor_spec = ""
+    else:
+        first = tokens[0].lower()
+        if first in {"on", "enable", "true", "1"}:
+            target = True
+        elif first in {"off", "disable", "false", "0"}:
+            target = False
+        else:
+            return (
+                "Usage: `/architect` toggles, `/architect on` enables, "
+                "`/architect off` disables.  An optional second token "
+                "(`provider` or `provider/model`) overrides the editor."
+            )
+        editor_spec = tokens[1].strip() if len(tokens) > 1 else ""
+
+    if editor_spec and not target:
+        return "_Editor override only makes sense with `/architect on`._"
+
+    if editor_spec:
+        provider_name, _, model_slug = editor_spec.partition("/")
+        provider_name = provider_name.strip()
+        model_slug = model_slug.strip() or None
+        if provider_name not in _MODEL_SWITCH_PROVIDERS:
+            return (
+                f"Unknown editor provider `{provider_name}`.  Known "
+                f"providers: `{'`, `'.join(sorted(_MODEL_SWITCH_PROVIDERS))}`."
+            )
+        agent.state.editor_provider = provider_name
+        agent.state.editor_model = model_slug
+
+    if target == agent.state.architect_mode and not editor_spec:
+        return (
+            f"Architect mode is already {'on' if target else 'off'}.  Bare `/architect` toggles."
+        )
+
+    agent.state.architect_mode = target
+    agent.state.architect_consecutive_failures = 0
+    if not target:
+        # Drop any explicit editor override on disable so the next
+        # enable starts from the same-family default.
+        agent.state.editor_provider = None
+        agent.state.editor_model = None
+
+    try:
+        agent.event_bus.publish(
+            ui_events.status_bar_changed(mode="architect" if target else "build")
+        )
+    except (TypeError, ValueError, RuntimeError, AttributeError):
+        log.exception("status_bar_changed publish failed on /architect")
+
+    if not target:
+        return "**Architect mode off.**  Single-model conversation resumed."
+
+    editor_label = _describe_editor(agent)
+    return (
+        f"**Architect mode on.**  Architect: "
+        f"`{agent.provider.name}/{agent.provider.model_name}` — "
+        f"Editor: `{editor_label}`.  Each turn now runs as "
+        "*propose → edit*; both passes appear separately in `/cost`."
+    )
+
+
+def _describe_editor(agent: CantripAgent) -> str:
+    """One-line label for the current editor provider/model.
+
+    Reads ``state.editor_provider`` / ``editor_model`` first; falls
+    back to the resolved light provider when no explicit override is
+    set; falls back to the main provider when no lighter variant
+    exists either (the no-saving case).
+    """
+    if agent.state.editor_provider:
+        slug = agent.state.editor_model or "<default>"
+        return f"{agent.state.editor_provider}/{slug}"
+    light = getattr(agent, "_light_provider", None)
+    if light is not None:
+        return f"{light.name}/{light.model_name}"
+    return f"{agent.provider.name}/{agent.provider.model_name}"
 
 
 def handle_yolo(agent: CantripAgent, args: str) -> str:
