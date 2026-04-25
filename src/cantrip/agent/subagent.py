@@ -157,7 +157,7 @@ _PROTECTED_ROUNDS = 2
 _SUBAGENT_TEMPERATURE = 0.5
 
 # Categories routed to the light (cheaper) model.
-_LIGHT_CATEGORIES = frozenset({TaskCategory.RESEARCH, TaskCategory.INFRA})
+_LIGHT_CATEGORIES = frozenset({TaskCategory.RESEARCH, TaskCategory.INFRA, TaskCategory.LIBRARIAN})
 
 
 class ProviderThrottle:
@@ -438,6 +438,27 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
             "git_checkout",
         }
     ),
+    # Phase 70.1 — Librarian: read-only Charmhub / Launchpad search so the
+    # primary agent can cite existing charms instead of reinventing them.
+    # Filesystem tools are present so the subagent can navigate fetched
+    # source under ``~/.cache/cantrip/charm-library/``; nothing here writes.
+    TaskCategory.LIBRARIAN: frozenset(
+        {
+            "charmhub_search",
+            "charmhub_info",
+            "charmhub_fetch",
+            "launchpad_search",
+            "launchpad_fetch",
+            "web_fetch",
+            "web_search",
+            "read_file",
+            "list_directory",
+            "grep",
+            "glob",
+            "virtual_file_read",
+            "virtual_file_search",
+        }
+    ),
     # CONFIRM tasks are handled by the conversation loop, not subagents.
 }
 
@@ -483,6 +504,7 @@ _CATEGORY_GUIDANCE: dict[TaskCategory, str] = {
     TaskCategory.TEST: _load_guidance("test.md"),
     TaskCategory.DEBUG: _load_guidance("debug.md"),
     TaskCategory.INFRA: _load_guidance("infra.md"),
+    TaskCategory.LIBRARIAN: _load_guidance("librarian.md"),
 }
 
 _DEMO_GUIDANCE = _load_guidance("demo.md")

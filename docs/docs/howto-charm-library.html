@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to search the charm library &mdash; Cantrip</title>
+<meta name="description" content="Use the Phase 70.1 Librarian subagent to find existing Charmhub and Launchpad charms before reinventing them.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-charm-library.html" class="current">Search the charm library</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
+      <li><a href="reference-tools.html">Agent tools</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Search the charm library
+    </div>
+
+    <h1>Search the charm library</h1>
+    <p class="subtitle">
+      Find existing Charmhub and Launchpad charms before building your own.
+    </p>
+
+<h2 id="why">Why a Librarian subagent?</h2>
+<p>When the autonomous loop reaches a <em>Research</em> phase (&quot;how should we
+charm this LDAP service?&quot;), the wrong answer is &quot;build it from
+scratch.&quot;  The right answer is &quot;find the five most maintained existing
+charms that already do this, and reuse what we can.&quot;</p>
+<p>The <strong>Librarian</strong> is a read-only subagent introduced in Phase 70.1.
+It searches Charmhub and Launchpad in parallel, applies a quality
+filter, and returns ranked excerpts with citations the primary agent
+can paste into its design document.</p>
+<h2 id="what-it-does">What the Librarian can and can't do</h2>
+<p>The Librarian's tool whitelist is deliberately narrow:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>charmhub_search</code></td>
+<td>Full-text search across published charms; returns name, summary, publisher, channel risk, last-release date, and quality flags.</td>
+</tr>
+<tr>
+<td><code>charmhub_info</code></td>
+<td>Fetch a single charm's relations, config options, storage, and containers.</td>
+</tr>
+<tr>
+<td><code>charmhub_fetch</code></td>
+<td>Clone the charm's upstream Git repository (shallow) into the local cache for <code>read_file</code>/<code>grep</code>/<code>glob</code> inspection.</td>
+</tr>
+<tr>
+<td><code>launchpad_search</code></td>
+<td>Full-text search across Launchpad projects (catches unpublished or in-progress work).</td>
+</tr>
+<tr>
+<td><code>launchpad_fetch</code></td>
+<td>Clone a Git-hosted Launchpad project into the same cache (Bazaar projects are flagged but not auto-fetched).</td>
+</tr>
+<tr>
+<td><code>web_fetch</code>, <code>web_search</code></td>
+<td>Fallback for context that isn't in either catalogue.</td>
+</tr>
+<tr>
+<td><code>read_file</code>, <code>list_directory</code>, <code>grep</code>, <code>glob</code></td>
+<td>Browse the cache (the only filesystem the Librarian can touch).</td>
+</tr>
+</tbody>
+</table>
+<p>The Librarian <strong>cannot</strong> edit files, run commands, push branches, or
+make any other state-changing call.  This makes it safe to run
+unattended during research.</p>
+<h2 id="cache">Where the cache lives</h2>
+<p>Fetched sources land at <code>~/.cache/cantrip/charm-library/</code>:</p>
+<pre><code>~/.cache/cantrip/charm-library/
+├── charmhub/
+│   ├── postgresql-k8s/
+│   │   ├── _cache_meta.json
+│   │   ├── src/charm.py
+│   │   └── &hellip;
+│   └── redis-k8s/
+│       └── &hellip;
+└── launchpad/
+    └── kafka-operator/
+        └── &hellip;
+</code></pre>
+<p>The <code>_cache_meta.json</code> sidecar records the upstream URL, fetched-at
+timestamp, and revision (for Charmhub).  Cached entries are reused
+within 7 days; pass <code>force=true</code> to <code>charmhub_fetch</code>/<code>launchpad_fetch</code>
+to refetch sooner.</p>
+<p>Override the cache directory by setting <code>CANTRIP_CHARM_LIBRARY_DIR</code>
+(useful in CI sandboxes that don't share <code>$HOME</code>).</p>
+<h2 id="manual">Search manually with <code>/search-charms</code></h2>
+<p>The <code>/search-charms</code> slash command runs Charmhub and Launchpad search
+in parallel and renders both result blocks together as Markdown:</p>
+<pre><code><span class="prompt">cantrip&gt;</span> /search-charms ldap sidecar</code></pre>
+<p>The output for each Charmhub hit carries quality flags so you can
+spot stale or borderline candidates at a glance:</p>
+<pre><code>- **glauth-k8s** (databases) &mdash; LDAP server with REST config [by Canonical] [recently-maintained, channel-stable, publisher-canonical]
+- **slapd-charm** &mdash; Older OpenLDAP charm [stale, channel-edge]
+</code></pre>
+<p>Quality flag vocabulary:</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>recently-maintained</code></td>
+<td>At least one release in the last 12 months.</td>
+</tr>
+<tr>
+<td><code>stale</code></td>
+<td>No release in the last 12 months.</td>
+</tr>
+<tr>
+<td><code>channel-stable</code> / <code>channel-candidate</code> / <code>channel-beta</code> / <code>channel-edge</code></td>
+<td>Risk of the charm's default-release channel.</td>
+</tr>
+<tr>
+<td><code>publisher-canonical</code> / <code>publisher-verified</code></td>
+<td>Publisher carries a Charmhub validation badge.</td>
+</tr>
+<tr>
+<td><code>vcs-git</code> / <code>vcs-bazaar</code></td>
+<td>Launchpad project's VCS type.</td>
+</tr>
+</tbody>
+</table>
+<p><code>/search-charms</code> is cheap &mdash; no source clone is triggered.  When you
+need the source, ask the agent to call <code>charmhub_fetch &lt;name&gt;</code> or
+<code>launchpad_fetch &lt;name&gt;</code> directly.</p>
+<h2 id="output-contract">The output contract</h2>
+<p>When the Librarian runs autonomously (the planner queues a <code>librarian</code>
+task during Research), it writes its findings as Markdown using a
+fixed shape so the primary agent can quote it verbatim:</p>
+<pre><code class="language-markdown">## glauth-k8s
+
+- **source_url**: https://github.com/canonical/glauth-k8s-operator
+- **why_this_matches**: Provides an LDAP backend over a Kubernetes
+  sidecar with the same Pebble layer pattern we'd otherwise have to
+  reinvent.
+- **quality_flags**: recently-maintained, channel-stable, publisher-canonical
+- **snippet**:
+
+  &gt; GLAuth charm bundles an LDAP server with REST configuration,
+  &gt; suitable for sidecar deployment alongside other Kubernetes
+  &gt; workloads.
+</code></pre>
+<p>Findings flow into the design document the primary agent assembles for
+the user &mdash; every cited charm carries a real URL and an author-supplied
+summary.</p>
+<h2 id="integration">When the Librarian runs automatically</h2>
+<p>During Research-phase work, the planner emits a <code>librarian</code> task
+ahead of the operational-discovery synthesis when the workload's shape
+suggests an existing charm could substitute.  The result lands as a
+prior-task summary in the design subagent's prompt.</p>
+<p>You don't have to do anything for this &mdash; the integration is opaque to
+the user.  <code>/search-charms</code> is the manual override when you want to
+double-check the agent's coverage or look up something during a
+conversation.</p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

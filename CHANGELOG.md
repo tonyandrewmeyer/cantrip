@@ -5,6 +5,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 70.1 Librarian — Charmhub + Launchpad cross-charm search.**
+  New ``TaskCategory.LIBRARIAN`` with a narrow read-only whitelist
+  (``charmhub_search``, ``charmhub_info``, ``charmhub_fetch``,
+  ``launchpad_search``, ``launchpad_fetch``, ``web_fetch``,
+  ``web_search``, plus read-only fs).  ``charmhub_search`` now
+  surfaces quality flags (``recently-maintained`` / ``stale``,
+  ``channel-stable``, ``publisher-canonical``).  New
+  ``charmhub_fetch`` and ``launchpad_fetch`` clone upstream sources
+  shallow into ``~/.cache/cantrip/charm-library/`` (overridable via
+  ``CANTRIP_CHARM_LIBRARY_DIR``) with a 7-day TTL.  New
+  ``/search-charms <query>`` slash command runs both backends in
+  parallel.  Documented in
+  ``docs/docs/howto-charm-library.html``.
 - **``juju_cli`` escape-hatch tool — Jubilant-backed wrapper for
   arbitrary juju subcommands.**  Routes through
   :meth:`jubilant.Juju.cli` and bypasses the ``run_command`` sandbox.

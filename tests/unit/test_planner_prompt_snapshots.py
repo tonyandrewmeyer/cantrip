@@ -31,17 +31,17 @@ _CANONICAL_CONTEXT = PlanningContext(
 # the end of Phase 53.1.  Update these only when the templates change
 # intentionally.
 _EXPECTED_SHAS = {
-    "planning": "28106149f28916df9aa32971540de859a847cb32f43d6f0ec9ded1beeca6c0ee",
-    "design_to_build": "69bc63a9427c52b58e5b8c81a27d45dd5084d0aa424405c7f8095e330dfb539c",
-    "day2_to_build": "3c8d21b0e3742a93cd9f62497fad95e8aa782355aa5d35e5dcadafe79af46765",
-    "replanning": "92391d65816f3707e405a621128aa9358e5f247709e2c7628d25adc0f4b0abe4",
+    "planning": "569a95628ed0487c2fa441fa11d4629b86eae5441c301aa625a0c7962ec59927",
+    "design_to_build": "9842c92af6254e51807998ce0a2d619371f6ac7a7c24ae660d10629d85ddf3ef",
+    "day2_to_build": "b1495ce751204a0ba6a54fbce3e073ea2c90dc169fae043bb636ea22d3fcb7f1",
+    "replanning": "4a7c7d4477d930b19f2f551c493e1c15ecc7e313dcd4a7fb995a7dff9c4335d3",
 }
 
 _EXPECTED_LENGTHS = {
-    "planning": 4488,
-    "design_to_build": 2785,
-    "day2_to_build": 2413,
-    "replanning": 4730,
+    "planning": 4499,
+    "design_to_build": 2796,
+    "day2_to_build": 2424,
+    "replanning": 4741,
 }
 
 

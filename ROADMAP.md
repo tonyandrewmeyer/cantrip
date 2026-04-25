@@ -1669,41 +1669,119 @@ Five Amp features are explicitly **out of scope or deferred**:
   on top of Phase 69.3 shell mode — revisit there if the need
   shows up.
 
-### 70.1 High — Librarian: Charmhub and Launchpad cross-charm search
+### 70.1 High — Librarian: Charmhub and Launchpad cross-charm search ✓
 
-- [ ] New read-only subagent under ``src/cantrip/agent/subagents/``
-  (name ``librarian`` or ``charm_search`` — pick during design).
-  Tools limited to a small whitelist: ``charmhub_search``,
-  ``charmhub_fetch``, ``launchpad_search``, ``launchpad_fetch``,
-  ``webfetch`` (fallback), and read-only fs tools scoped to
-  a cache directory.
-- [ ] ``charmhub_search`` tool hits the Charmhub API
-  (``api.charmhub.io``; document the exact endpoints in the
-  phase) for name/keyword/topic search, returns structured
-  hits with charm name, maintainer, last-release date, tags,
-  and a quality signal (has-tests, publishes-to-latest, uses
-  ops-vs-reactive).
-- [ ] ``charmhub_fetch`` pulls a charm's source tarball (or
-  Launchpad/GitHub URL from the charm's metadata) into a
-  read-only cache under ``~/.cache/cantrip/charm-library/``
-  and returns a navigable file tree.  TTL on the cache; never
-  writes outside the cache path.
-- [ ] Filters: the subagent is told "find charms that use X"
-  where X is the user's problem shape — the agent applies
-  a quality filter (maintained within last 12 months,
-  non-draft, has ``src/charm.py`` or equivalent) before
-  surfacing excerpts.
-- [ ] Output contract: every hit comes back as
-  ``{charm, source_url, snippet, why_this_matches,
-  quality_flags}`` so the primary agent can cite without
-  paraphrasing.  Citations land in the transcript (Phase 14).
-- [ ] Invocation: primary agent dispatches during
-  RESEARCH-phase tasks; user can force via a new
-  ``/search-charms <query>`` slash command.  Results feed
-  the design document (Phase 5).
-- [ ] ``tests/unit/test_librarian.py`` against a recorded
-  fixture set — no live Charmhub hits in unit tests.
-- [ ] Document in ``docs/docs/howto-charm-library.html``.
+- [x] New ``TaskCategory.LIBRARIAN`` — Cantrip's pattern is one
+  ``Subagent`` class with a category-keyed tool whitelist and
+  a per-category guidance file, so a new "subagent" is a new
+  category.  Whitelist (read-only): ``charmhub_search``,
+  ``charmhub_info``, ``charmhub_fetch``, ``launchpad_search``,
+  ``launchpad_fetch``, ``web_fetch``, ``web_search``, plus the
+  read-only fs tools (``read_file``, ``list_directory``,
+  ``grep``, ``glob``, ``virtual_file_*``).  No write/edit/run
+  tools.  Guidance lives in
+  ``src/cantrip/agent/prompts/subagent/librarian.md`` and is
+  loaded into ``_CATEGORY_GUIDANCE`` like every other category.
+  Routes through the light provider via ``_LIGHT_CATEGORIES``.
+- [x] ``charmhub_search`` enhanced to surface quality signals
+  on every hit: ``last_release_date`` (from
+  ``default-release.channel.released-at``), ``risk`` and
+  ``channel`` (from ``default-release.channel.{risk,name}``),
+  ``publisher_validation`` (from ``result.publisher.validation``),
+  and ``source_url`` (from ``result.links.source``).  The new
+  ``_quality_flags`` helper distils these into a short
+  vocabulary (``recently-maintained`` / ``stale``,
+  ``channel-stable`` / ``channel-edge``,
+  ``publisher-canonical`` / ``publisher-verified``) that the
+  Librarian renders inline in the search output.  Stale =
+  released >12 months ago.
+- [x] ``charmhub_fetch`` clones a charm's upstream source via
+  ``git clone --depth=1 --filter=blob:none`` into
+  ``~/.cache/cantrip/charm-library/charmhub/<name>/``.  Picks
+  the URL from ``result.links.source`` (falls back to
+  ``issues`` then ``website`` so a charm with only an issue
+  tracker still resolves).  Writes a ``_cache_meta.json``
+  sidecar with the fetched-at timestamp + revision; returns a
+  navigable top-level listing capped at 30 entries.  Cache TTL
+  is 7 days; pass ``force=true`` to refetch.  ``git`` absence
+  surfaces a clean error rather than a traceback.  Override the
+  cache root with ``CANTRIP_CHARM_LIBRARY_DIR`` for sandboxed
+  CI runs.
+- [x] ``launchpad_search`` + ``launchpad_fetch`` (new
+  ``cantrip.agent.tools.launchpad`` module) cover projects
+  that haven't been published to Charmhub.  Search hits
+  ``api.launchpad.net/devel/projects?ws.op=search&text=…``;
+  fetch follows the project's VCS field — Git projects clone
+  from ``git.launchpad.net/<name>``, Bazaar projects surface
+  a clear refusal with the web link so the user can browse.
+  Both share the ``charm_library`` cache helper with the
+  Charmhub fetch.
+- [x] Cache helper ``cantrip.agent.tools.charm_library``:
+  ``cache_root()``, ``entry_path(source, name)``, ``meta_path``,
+  ``read_meta``, ``record_fetch``, ``is_fresh`` — single source
+  of truth for cache layout, freshness, and metadata.  Path
+  segments are flattened (``foo/bar`` → ``foo-bar``) to keep
+  the layout one-level deep and prevent traversal-shaped
+  attacks.
+- [x] ``/search-charms <query>`` slash command runs Charmhub
+  and Launchpad search in parallel via ``asyncio.gather`` and
+  renders both blocks under one combined Markdown header.  No
+  source clone is triggered from the slash; the agent invokes
+  ``charmhub_fetch`` / ``launchpad_fetch`` if it needs the
+  source.  Failures on either side surface inline so the other
+  side's results still render.  Wired into
+  ``COMMAND_CATALOGUE`` + ``SHARED_VERBS`` so the
+  catalogue-drift test stays green; ``help_text`` documents
+  the verb under the slash-command catalogue.
+- [x] Output contract documented in the Librarian guidance
+  (``prompts/subagent/librarian.md``): every hit emits
+  ``## <name>`` + ``- **source_url**`` + ``- **why_this_matches**``
+  + ``- **quality_flags**`` + ``- **snippet**`` so the primary
+  agent can cite verbatim.  ``why_this_matches`` requires
+  reasoning so the tools surface ``quality_flags`` and the
+  agent fills in the rest.
+- [x] Planner stays aware of the new category — the planner
+  templates inject ``_VALID_CATEGORIES`` derived from
+  ``TaskCategory``, so the LLM planner can queue
+  ``librarian`` tasks naturally.  Snapshot tests refreshed
+  for the +11-char drift in each of the four planner prompts.
+- [x] ``tests/unit/test_librarian.py`` (32 cases): LIBRARIAN
+  whitelist + guidance + light routing; quality-flag
+  derivation across every signal permutation;
+  ``charmhub_search`` end-to-end with the new fields;
+  ``charm_library`` cache (env override, name flattening,
+  sidecar round-trip, fresh / expired / missing / corrupt
+  freshness checks); ``charmhub_fetch`` (cache hit, missing
+  source link, 404, happy-path clone with sidecar verification,
+  git-missing error path); ``launchpad_search`` (happy path,
+  empty results, HTTP error); ``launchpad_fetch`` (Bazaar
+  refusal, no-VCS error, Git happy path); ``/search-charms``
+  slash dispatch (empty args usage line, followup wiring,
+  combined render, single-backend failure, catalogue
+  membership).
+- [x] Documented in ``docs/docs/howto-charm-library.html`` —
+  what the Librarian can and can't do, the cache layout +
+  override env var, manual ``/search-charms`` walkthrough
+  with the quality-flag table, the output contract, and how
+  the Librarian gets invoked autonomously.  Card added to
+  ``docs/src/index.md``; entry added to the howto sidebar
+  in ``docs/src/_site.yaml``.
+
+**Deferred:**
+- Filtering on "has ``src/charm.py``" / ops-vs-reactive
+  *post-fetch* — the spec mentions this as a quality filter
+  but the cleanest implementation reads the cached source
+  after a fetch.  Today the agent can do this manually with
+  ``read_file`` + ``glob`` against the cache; folding it into
+  ``charmhub_fetch`` as an automatic post-clone scan is a
+  small follow-up worth doing once the Librarian sees real
+  use.
+- Charm-tarball download via the Charmhub ``download`` URL
+  rather than git-clone of source — the tarball contains the
+  *built* artefact (``manifest.yaml``, packed wheels) and
+  doesn't include ``src/`` until very recent revisions.
+  Source-via-git is the right surface for the Librarian's
+  read-source use case.
 
 ### 70.2 High — Oracle: on-demand second-opinion model ✓
 
