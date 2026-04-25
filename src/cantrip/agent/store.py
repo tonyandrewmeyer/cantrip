@@ -845,21 +845,27 @@ class SessionStore:
                 log.warning("Skipping corrupt message row %s: %s", r["id"], exc)
         return result
 
-    def load_active_branch(self) -> list[dict[str, object]]:
-        """Load the messages on the currently active branch, in order.
+    def load_active_branch(
+        self,
+        head: int | None = None,
+    ) -> list[dict[str, object]]:
+        """Load the messages on a branch, in order.
 
-        Walks parent pointers from ``active_head_message_id`` back to a
-        ``NULL`` parent (the root) and reverses, yielding the
-        conversation as the agent saw it.  Returns an empty list when
-        the session has no messages or the head pointer is dangling
-        (which shouldn't happen under normal operation but the call
-        is on the resume path so it must not raise).
+        Without an argument, walks from ``active_head_message_id``
+        back to a ``NULL`` parent (the root) and reverses, yielding
+        the conversation as the agent saw it.  Pass ``head`` to walk
+        an explicit leaf — the export path uses this for ``--branch
+        <turn-id>``.  Returns an empty list when the session has no
+        messages or the leaf is missing (which shouldn't happen under
+        normal operation but the call is on the resume path so it
+        must not raise).
 
         For sessions persisted before the v12 migration, the migration
-        backfilled a degenerate single-branch tree, so this returns the
-        same ordered list ``load_messages`` used to.
+        backfilled a degenerate single-branch tree, so the default
+        call returns the same ordered list ``load_messages`` used to.
         """
-        head = self.get_active_head()
+        if head is None:
+            head = self.get_active_head()
         if head is None:
             return []
         chain: list[dict[str, object]] = []

@@ -48,6 +48,7 @@ def load_transcript(
     task_id: str | None = None,
     phase: str | None = None,
     since: str | None = None,
+    branch: int | None = None,
 ) -> TranscriptData:
     """Load transcript data from a .cantrip SQLite file.
 
@@ -62,6 +63,13 @@ def load_transcript(
 
     *since* — include only messages and events at or after the given
     ISO 8601 timestamp.
+
+    *branch* — Phase 67.1: export the conversation path leading to
+    a specific turn id rather than the currently active branch.
+    Without this, the export follows the session's active head, so
+    a forked session exports only the active path (off-branch
+    turns are reachable via ``/tree`` and a deliberate
+    ``--branch <id>`` re-export).
     """
     session_store = store_mod.SessionStore(db_path)
     session_store.open()
@@ -74,8 +82,11 @@ def load_transcript(
             data.charm_name = session.charm_name or ""
             data.charm_path = str(session.charm_path) if session.charm_path else ""
 
-        # Load conversation messages, with optional time filter.
-        all_messages = session_store.load_messages()
+        # Load conversation messages on the chosen branch, with
+        # optional time filter.  Off-branch rows are deliberately
+        # excluded — the export should reflect a single linear
+        # conversation, not every dead end the user explored.
+        all_messages = session_store.load_active_branch(head=branch)
         if since:
             data.messages = [m for m in all_messages if str(m.get("timestamp", "")) >= since]
         else:

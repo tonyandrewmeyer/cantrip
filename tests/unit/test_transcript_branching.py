@@ -225,6 +225,49 @@ class TestResumeFollowsBranch:
         assert [m.content for m in agent2.state.messages] == ["a"]
 
 
+class TestExportFollowsBranch:
+    """``load_transcript`` defaults to the active branch and respects --branch."""
+
+    def test_default_export_excludes_off_branch_messages(self, tmp_path: Path) -> None:
+        from cantrip.transcript.export import load_transcript
+
+        db_path = tmp_path / ".cantrip"
+        s = SessionStore(db_path)
+        s.open()
+        try:
+            a = s.record_message(role="user", content="a")
+            s.record_message(role="assistant", content="b")
+            s.record_message(role="user", content="c-bad")
+            s.record_message(role="assistant", content="d-bad")
+            # Rewind to a so b/c/d become off-branch.
+            s.set_active_head(a)
+        finally:
+            s.close()
+
+        data = load_transcript(db_path)
+        assert [m["content"] for m in data.messages] == ["a"]
+
+    def test_explicit_branch_id_walks_that_path(self, tmp_path: Path) -> None:
+        from cantrip.transcript.export import load_transcript
+
+        db_path = tmp_path / ".cantrip"
+        s = SessionStore(db_path)
+        s.open()
+        try:
+            a = s.record_message(role="user", content="a")
+            s.record_message(role="assistant", content="b")
+            c = s.record_message(role="user", content="c")
+            s.record_message(role="assistant", content="d")
+            # Active head stays at d.  --branch=c should yield a→b→c.
+            assert s.get_active_head() != c
+            assert a is not None
+        finally:
+            s.close()
+
+        data = load_transcript(db_path, branch=c)
+        assert [m["content"] for m in data.messages] == ["a", "b", "c"]
+
+
 class TestV12Migration:
     """A pre-v12 .cantrip file gains the parent chain on first open."""
 
