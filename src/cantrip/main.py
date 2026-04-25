@@ -794,9 +794,11 @@ def _print_update_panel(info: object) -> None:
 
     command = update.upgrade_command()
     if info.installed_yanked:
-        title = f"Cantrip {info.current} has been yanked — upgrade to {info.latest} recommended"
+        title = (
+            f"juju-cantrip {info.current} has been yanked — upgrade to {info.latest} recommended"
+        )
     else:
-        title = f"A newer Cantrip is available: {info.latest} (you have {info.current})"
+        title = f"A newer juju-cantrip is available: {info.latest} (you have {info.current})"
 
     body_parts: list[str] = [f"PyPI: {info.pypi_url}"]
     if command is not None:
