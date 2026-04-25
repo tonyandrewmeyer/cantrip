@@ -1612,7 +1612,7 @@ class CantripApp(App):
         result = slash_commands.dispatch(self._agent, message)
         if result is None:
             return False
-        chat.add_system_message(result.text)
+        chat.add_system_message(result.text, markdown=result.markdown)
         if result.followup is not None:
             self.run_worker(result.followup, name="mcp_marketplace", exclusive=False)
         if result.quit:

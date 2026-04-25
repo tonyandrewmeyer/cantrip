@@ -135,11 +135,18 @@ class SlashResult:
     ``quit`` signals that the surface should terminate after rendering
     ``text``.  Surfaces that can cleanly shut down (CLI REPL, TUI) act
     on it; the Web surface ignores it.
+
+    ``markdown`` requests that the surface render ``text`` as
+    Markdown instead of literal text — bold, code spans, fenced
+    code blocks, lists.  Default ``False`` keeps every existing
+    handler on the literal-text path; opt in by handlers that
+    specifically want formatting (``/map``).
     """
 
     text: str
     followup: Awaitable[str] | None = None
     quit: bool = False
+    markdown: bool = False
 
 
 def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
@@ -231,9 +238,9 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
     if verb == "/ralph":
         return SlashResult(text=handle_ralph(agent, args))
     if verb == "/map":
-        return SlashResult(text=handle_map(agent, args))
+        return SlashResult(text=handle_map(agent, args), markdown=True)
     if verb == "/map-refresh":
-        return SlashResult(text=handle_map_refresh(agent, args))
+        return SlashResult(text=handle_map_refresh(agent, args), markdown=True)
     if verb in {"/quit", "/exit"}:
         return SlashResult(text="Goodbye!", quit=True)
     # Phase 68.3: fall through to user-defined commands discovered
@@ -1137,28 +1144,23 @@ def _format_map_response(
     shown_count: int | None = None,
     footer_hint: str | None = None,
 ) -> str:
-    """Build a chat-safe response for the /map family of slash commands.
+    """Build a Markdown-formatted response for the /map family.
 
-    System messages render the body as Rich markup (``MessageWidget``
-    in ``cantrip.tui.widgets.chat``).  Bracketed tokens like
-    ``[relation]`` and Python type annotations like ``list[int]``
-    look like Rich style tags, so without escaping they would either
-    be silently stripped (best case) or trigger a ``MarkupError``
-    that crashes the surface (worst case).  ``rich.markup.escape``
-    rewrites ``[`` as ``\\[`` so every bracket renders verbatim.
+    The dispatcher returns this with ``markdown=True`` so the chat
+    surface renders the bold header, fenced code block, and inline
+    code spans as formatting rather than literal characters.  Inside
+    a fenced code block Markdown treats ``[relation]`` and
+    ``list[int]`` as literal text — no Rich escape needed.
 
     ``shown_count`` and ``footer_hint`` produce a "showing N of M
     files; use /map full for the rest" footer when the response is a
     summary view.
     """
-    from rich.markup import escape as rich_escape
-
-    safe = rich_escape(rendered)
     if shown_count is not None and shown_count < file_count:
         header = f"**{headline}** (showing {shown_count} of {file_count} files)"
     else:
         header = f"**{headline}** ({file_count} files)"
-    body = f"{header}\n\n```\n{safe}\n```"
+    body = f"{header}\n\n```\n{rendered}\n```"
     if footer_hint:
         body += f"\n\n{footer_hint}"
     return body

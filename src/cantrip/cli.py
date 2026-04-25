@@ -131,6 +131,30 @@ def _print_preflight_event(event: PreflightEvent) -> None:
     print(f"  {icon} {event.message}")
 
 
+def _print_slash_result(text: str, *, markdown: bool) -> None:
+    """Print a slash-command result, rendering Markdown when requested.
+
+    Routes through Rich's Markdown renderer when the handler set
+    ``markdown=True`` so bold headers, fenced code blocks, and
+    inline code spans display as formatting rather than literal
+    asterisks and backticks.  Falls back to plain ``print`` when
+    Rich isn't available — keeps the CLI useable in stripped-down
+    environments.
+    """
+    if not markdown:
+        print(f"\n{text}\n")
+        return
+    try:
+        from rich.console import Console
+        from rich.markdown import Markdown
+
+        Console().print()
+        Console().print(Markdown(text))
+        Console().print()
+    except ImportError:
+        print(f"\n{text}\n")
+
+
 def run_cli(args: argparse.Namespace) -> int:
     """Run Cantrip in CLI mode."""
     try:
@@ -388,9 +412,11 @@ async def _repl(agent: CantripAgent) -> None:
         # in every surface.  The CLI prints the text directly and, if
         # there's an async follow-up (e.g. `/mcp marketplace`), awaits
         # it inline so the user sees the result before the next prompt.
+        # When the handler set ``markdown=True``, route through Rich so
+        # the bold headers and fenced code blocks render as formatting.
         shared_result = slash_commands.dispatch(agent, user_input)
         if shared_result is not None:
-            print(f"\n{shared_result.text}\n")
+            _print_slash_result(shared_result.text, markdown=shared_result.markdown)
             if shared_result.followup is not None:
                 try:
                     followup_text = await shared_result.followup

@@ -445,30 +445,38 @@ class TestRepoMap:
         assert rm.rankings == []
         assert rm.render_for_prompt() == ""
 
-    def test_handle_map_escapes_rich_markup(self, tmp_path: Path) -> None:
-        # System messages render their body as Rich markup, so the
+    def test_handle_map_renders_under_markdown(self, tmp_path: Path) -> None:
+        # The /map output is delivered with ``markdown=True`` on the
+        # SlashResult, and inside a Markdown fenced code block the
         # bracketed kind labels (``[relation]``, ``[container]``) and
-        # Python type annotations (``list[int]``) must be escaped or
-        # Rich will silently strip them — and on some inputs raise.
+        # Python type annotations (``list[int]``) display literally —
+        # no Rich escape needed.  Verify the body opens a fenced
+        # block and contains the bracketed tokens unescaped.
         from unittest.mock import MagicMock
 
-        from rich.markup import render as rich_render
-
-        from cantrip.agent.slash_commands import handle_map
+        from cantrip.agent.slash_commands import dispatch, handle_map
 
         _make_charm(tmp_path)
-        # Build a real RepoMap so the bracketed labels are present.
         rm = RepoMap(tmp_path)
         rm.build()
 
+        # Body opens a fenced code block and uses Markdown bold for
+        # the header.
         agent = MagicMock()
         agent.repo_map = rm
-        text = handle_map(agent)
-        # The escaped form contains ``\[relation]`` literally.
-        assert r"\[relation]" in text or r"\[config-option]" in text
-        # And rendering through Rich preserves the original brackets.
-        rendered_back = str(rich_render(text))
-        assert "[relation]" in rendered_back or "[config-option]" in rendered_back
+        text = handle_map(agent, "full")
+        assert "**Repository map**" in text
+        assert "```" in text
+
+        # Dispatcher attaches markdown=True so the surface renders it.
+        # Use a fully mocked agent + custom_commands so dispatch's
+        # fall-through doesn't try real registry lookups.
+        from cantrip.agent.custom_commands import CustomCommandRegistry
+
+        agent.custom_commands = CustomCommandRegistry(commands=())
+        result = dispatch(agent, "/map full")
+        assert result is not None
+        assert result.markdown is True
 
     def test_handle_map_never_raises_on_build_failure(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
