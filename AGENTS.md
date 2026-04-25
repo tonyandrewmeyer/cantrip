@@ -25,6 +25,8 @@ make all       # format + check
 make coverage  # Unit tests with coverage report
 ```
 
+**Always use `make unit` for the full suite.** It runs `pytest -n auto` via `pytest-xdist` for ~4× parallel speedup. Direct `uv run pytest tests/unit/` runs serially and takes 4+ minutes instead of <1 minute. The file/function commands below are only for single-target runs.
+
 ## File-Scoped Commands
 
 | Task | Command |
