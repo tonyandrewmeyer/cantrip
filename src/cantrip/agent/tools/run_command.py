@@ -1,9 +1,9 @@
 """Scoped command runner — runs only pre-approved commands."""
 
+import pathlib
 import re
 import shlex
 import subprocess
-from pathlib import Path
 from typing import Any
 
 from cantrip.agent.sandbox import SandboxedRunner, SandboxPolicy
@@ -166,7 +166,7 @@ class RunCommandTool(Tool):
         self,
         *,
         allowlist: frozenset[str] | None = None,
-        base_path: Path | None = None,
+        base_path: pathlib.Path | None = None,
         sandbox_runner: SandboxedRunner | None = None,
     ) -> None:
         self._allowlist = allowlist if allowlist is not None else DEFAULT_ALLOWLIST
@@ -346,7 +346,7 @@ class RunCommandTool(Tool):
 
         # Validate cwd is within the project tree when a base path is set.
         if self._base_path is not None:
-            resolved_cwd = Path(cwd).resolve()
+            resolved_cwd = pathlib.Path(cwd).resolve()
             base_resolved = self._base_path.resolve()
             if not resolved_cwd.is_relative_to(base_resolved):
                 return ToolResult(
@@ -358,12 +358,12 @@ class RunCommandTool(Tool):
         runner = self._sandbox_runner or SandboxedRunner()
         policy = SandboxPolicy(
             network=False,
-            read_write_paths=(Path(cwd).resolve(),),
+            read_write_paths=(pathlib.Path(cwd).resolve(),),
         )
         try:
             result = runner.run(
                 parts,
-                cwd=Path(cwd),
+                cwd=pathlib.Path(cwd),
                 policy=policy,
                 timeout=timeout,
             )

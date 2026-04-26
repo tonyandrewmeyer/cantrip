@@ -5,8 +5,8 @@ Covers ``start_executor`` / ``stop_executor``, ``build_resume_summary``,
 ``_on_mcp_elicitation`` bridge, and ``complete_mcp_elicitation``.
 """
 
+import pathlib
 import sqlite3
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,7 +19,7 @@ from cantrip.ui import events as ui_events
 from tests.conftest import FakeProvider
 
 
-def _agent(tmp_path: Path | None = None) -> CantripAgent:
+def _agent(tmp_path: pathlib.Path | None = None) -> CantripAgent:
     return CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
 
 
@@ -31,7 +31,7 @@ def _agent(tmp_path: Path | None = None) -> CantripAgent:
 class TestExecutorLifecycle:
     """Executor start / stop plumbing."""
 
-    def test_start_creates_executor_and_subscribes_callback(self, tmp_path: Path) -> None:
+    def test_start_creates_executor_and_subscribes_callback(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         fake_executor = MagicMock()
         fake_executor.running = False
@@ -45,7 +45,7 @@ class TestExecutorLifecycle:
         fake_executor.start.assert_called_once()
         assert agent._executor is fake_executor
 
-    def test_start_max_concurrency_threaded_to_executor(self, tmp_path: Path) -> None:
+    def test_start_max_concurrency_threaded_to_executor(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch("cantrip.agent.core.BackgroundExecutor") as cls:
             cls.return_value.running = False
@@ -53,7 +53,7 @@ class TestExecutorLifecycle:
         kwargs = cls.call_args.kwargs
         assert kwargs["max_concurrency"] == 5
 
-    def test_start_is_noop_when_already_running(self, tmp_path: Path) -> None:
+    def test_start_is_noop_when_already_running(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         existing = MagicMock()
         existing.running = True
@@ -62,7 +62,7 @@ class TestExecutorLifecycle:
             agent.start_executor()
         cls.assert_not_called()
 
-    def test_work_queue_publishes_to_bus_after_start(self, tmp_path: Path) -> None:
+    def test_work_queue_publishes_to_bus_after_start(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch("cantrip.agent.core.BackgroundExecutor") as cls:
             cls.return_value.running = False
@@ -77,7 +77,7 @@ class TestExecutorLifecycle:
         assert captured[0].payload["id"] == "t1"
 
     @pytest.mark.asyncio
-    async def test_stop_executor_clears_reference(self, tmp_path: Path) -> None:
+    async def test_stop_executor_clears_reference(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         fake = MagicMock()
         fake.stop = AsyncMock()
@@ -103,7 +103,7 @@ class TestBuildResumeSummary:
         agent = _agent()
         assert agent.build_resume_summary() is None
 
-    def test_summarises_charm_and_decisions(self, tmp_path: Path) -> None:
+    def test_summarises_charm_and_decisions(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.charm_name = "my-charm"
         agent.state.charm_type = "k8s"
@@ -124,7 +124,7 @@ class TestBuildResumeSummary:
         assert agent.state.messages[-1].role == Role.SYSTEM
         assert agent.state.messages[-1].content == summary
 
-    def test_summarises_task_progress(self, tmp_path: Path) -> None:
+    def test_summarises_task_progress(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.charm_name = "c"
 
@@ -151,7 +151,7 @@ class TestBuildResumeSummary:
 class TestLoadStateBranches:
     """load_state error-handling + message/task restoration."""
 
-    def test_sqlite_error_clears_store(self, tmp_path: Path) -> None:
+    def test_sqlite_error_clears_store(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         # Inject a broken store.
         broken = MagicMock()
@@ -161,7 +161,7 @@ class TestLoadStateBranches:
         assert agent.load_state() is False
         assert agent._store is None
 
-    def test_restores_messages_and_resets_active_tasks(self, tmp_path: Path) -> None:
+    def test_restores_messages_and_resets_active_tasks(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
 
         # Seed a previous session and save it.
@@ -188,7 +188,7 @@ class TestLoadStateBranches:
         assert Role.USER in roles
         assert Role.ASSISTANT in roles
 
-    def test_message_with_invalid_role_skipped(self, tmp_path: Path) -> None:
+    def test_message_with_invalid_role_skipped(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent._ensure_store()
         store = agent._store
@@ -226,7 +226,7 @@ class TestLoadStateBranches:
 class TestMcpPlumbing:
     """``mcp_registry`` / ``mcp_marketplace_*`` / ``start_mcp`` / ``stop_mcp``."""
 
-    def test_mcp_registry_is_lazy_and_cached(self, tmp_path: Path) -> None:
+    def test_mcp_registry_is_lazy_and_cached(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with (
             patch("cantrip.agent.core.load_mcp_configs", return_value=[]),
@@ -240,7 +240,7 @@ class TestMcpPlumbing:
         assert r1 is r2
         cls.assert_called_once()
 
-    def test_mcp_marketplace_sources_cached(self, tmp_path: Path) -> None:
+    def test_mcp_marketplace_sources_cached(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
             "cantrip.agent.core.load_marketplace_sources",
@@ -251,7 +251,7 @@ class TestMcpPlumbing:
         loader.assert_called_once()
         assert one == two
 
-    def test_mcp_marketplace_loader_is_lazy(self, tmp_path: Path) -> None:
+    def test_mcp_marketplace_loader_is_lazy(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
             "cantrip.agent.core.MarketplaceLoader",
@@ -263,7 +263,7 @@ class TestMcpPlumbing:
         cls.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_start_mcp_idempotent(self, tmp_path: Path) -> None:
+    async def test_start_mcp_idempotent(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         fake = MagicMock()
         fake.start_all = AsyncMock()
@@ -275,13 +275,13 @@ class TestMcpPlumbing:
         fake.set_elicitation_callback.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_stop_mcp_noop_when_registry_uninitialised(self, tmp_path: Path) -> None:
+    async def test_stop_mcp_noop_when_registry_uninitialised(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent._mcp_registry_cache = None
         await agent.stop_mcp()  # must not raise
 
     @pytest.mark.asyncio
-    async def test_stop_mcp_calls_stop_all(self, tmp_path: Path) -> None:
+    async def test_stop_mcp_calls_stop_all(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         fake = MagicMock()
         fake.stop_all = AsyncMock()
@@ -299,7 +299,7 @@ class TestMcpPlumbing:
 class TestMcpElicitation:
     """The elicitation request → event bus bridge."""
 
-    def test_unknown_request_type_is_ignored(self, tmp_path: Path) -> None:
+    def test_unknown_request_type_is_ignored(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         # Not an ElicitationRequest — bridge should short-circuit.
         captured: list = []
@@ -310,7 +310,7 @@ class TestMcpElicitation:
         agent._on_mcp_elicitation("not-a-request")
         assert captured == []
 
-    def test_valid_request_published_to_bus(self, tmp_path: Path) -> None:
+    def test_valid_request_published_to_bus(self, tmp_path: pathlib.Path) -> None:
         from cantrip.mcp.elicitation import ElicitationRequest
 
         agent = _agent(tmp_path)
@@ -332,12 +332,12 @@ class TestMcpElicitation:
         assert captured[0].payload["request_id"] == "r1"
         assert captured[0].payload["server_name"] == "s"
 
-    def test_complete_without_registry_returns_false(self, tmp_path: Path) -> None:
+    def test_complete_without_registry_returns_false(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent._mcp_registry_cache = None
         assert agent.complete_mcp_elicitation("r1", "accept") is False
 
-    def test_complete_forwards_to_registry(self, tmp_path: Path) -> None:
+    def test_complete_forwards_to_registry(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         fake = MagicMock()
         fake.complete_elicitation.return_value = True

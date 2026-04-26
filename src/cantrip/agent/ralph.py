@@ -24,9 +24,9 @@ import dataclasses
 import enum
 import hashlib
 import logging
+import pathlib
 import subprocess
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 
 from cantrip.ui import events as ui_events
 
@@ -102,7 +102,7 @@ def _response_signature(response: str) -> str:
     return hashlib.sha256(response.strip().encode("utf-8")).hexdigest()[:16]
 
 
-def _tree_signature(charm_path: Path | None) -> str | None:
+def _tree_signature(charm_path: pathlib.Path | None) -> str | None:
     """Return a short hash of the working tree's tracked + dirty files.
 
     Used by stall detection to answer "did this iteration touch
@@ -219,7 +219,7 @@ async def run_ralph(
     goal: str,
     config: RalphConfig,
     event_bus: ui_events.EventBus | None = None,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
     on_iteration: Callable[[int, str], Awaitable[None]] | None = None,
 ) -> RalphResult:
     """Drive a Ralph loop and return the eventual outcome.

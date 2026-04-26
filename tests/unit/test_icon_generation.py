@@ -16,7 +16,7 @@ exercised.
 from __future__ import annotations
 
 import base64
-from pathlib import Path
+import pathlib
 from unittest.mock import MagicMock
 
 import pytest
@@ -101,7 +101,7 @@ def _make_tool(
 
 
 @pytest.fixture
-def charm_dir(tmp_path: Path) -> Path:
+def charm_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     """A minimal charm directory with a charmcraft.yaml so the tool can read the name."""
     (tmp_path / "charmcraft.yaml").write_text("name: myapp\ntype: charm\n")
     return tmp_path
@@ -184,20 +184,20 @@ class TestEmbedPngInSvg:
 class TestExistingIconIsExpendable:
     """Overwrite gating: keep user art, replace placeholders / our outputs."""
 
-    def test_missing_file_is_expendable(self, tmp_path: Path) -> None:
+    def test_missing_file_is_expendable(self, tmp_path: pathlib.Path) -> None:
         assert _existing_icon_is_expendable(tmp_path / "icon.svg")
 
-    def test_marker_file_is_expendable(self, tmp_path: Path) -> None:
+    def test_marker_file_is_expendable(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "icon.svg"
         path.write_text(f"<!-- {_GENERATED_MARKER} -->\n<svg/>\n")
         assert _existing_icon_is_expendable(path)
 
-    def test_placeholder_fingerprint_is_expendable(self, tmp_path: Path) -> None:
+    def test_placeholder_fingerprint_is_expendable(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "icon.svg"
         path.write_text(f"<svg>{_PLACEHOLDER_FINGERPRINT}</svg>\n")
         assert _existing_icon_is_expendable(path)
 
-    def test_unrelated_user_art_protected(self, tmp_path: Path) -> None:
+    def test_unrelated_user_art_protected(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "icon.svg"
         path.write_text("<svg><path d='custom'/></svg>\n")
         assert not _existing_icon_is_expendable(path)
@@ -212,7 +212,7 @@ class TestCharmIconGenerate:
     """Exercises the tool's success path, refusal logic, and cost accounting."""
 
     @pytest.mark.asyncio
-    async def test_empty_description_rejected(self, charm_dir: Path) -> None:
+    async def test_empty_description_rejected(self, charm_dir: pathlib.Path) -> None:
         tool, _, _ = _make_tool()
         result = await tool.execute(description="", path=str(charm_dir))
         assert not result.success
@@ -226,14 +226,14 @@ class TestCharmIconGenerate:
         assert "Charm directory not found" in result.error
 
     @pytest.mark.asyncio
-    async def test_happy_path_writes_svg(self, charm_dir: Path) -> None:
+    async def test_happy_path_writes_svg(self, charm_dir: pathlib.Path) -> None:
         tool, stub, state = _make_tool()
         result = await tool.execute(
             description="PostgreSQL database",
             path=str(charm_dir),
         )
         assert result.success, result.error
-        icon_path = Path(result.data["path"])
+        icon_path = pathlib.Path(result.data["path"])
         assert icon_path == charm_dir / "icon.svg"
         content = icon_path.read_text()
         assert _GENERATED_MARKER in content
@@ -249,7 +249,7 @@ class TestCharmIconGenerate:
         assert "myapp" in prompt
 
     @pytest.mark.asyncio
-    async def test_charm_name_falls_back_to_dir_name(self, tmp_path: Path) -> None:
+    async def test_charm_name_falls_back_to_dir_name(self, tmp_path: pathlib.Path) -> None:
         # No charmcraft.yaml — should use directory name.
         tool, _, _ = _make_tool()
         result = await tool.execute(description="x", path=str(tmp_path))
@@ -257,7 +257,7 @@ class TestCharmIconGenerate:
         assert result.data["charm_name"] == tmp_path.name
 
     @pytest.mark.asyncio
-    async def test_explicit_charm_name_overrides_yaml(self, charm_dir: Path) -> None:
+    async def test_explicit_charm_name_overrides_yaml(self, charm_dir: pathlib.Path) -> None:
         tool, _, _ = _make_tool()
         result = await tool.execute(
             description="x",
@@ -268,7 +268,7 @@ class TestCharmIconGenerate:
         assert result.data["charm_name"] == "overridden"
 
     @pytest.mark.asyncio
-    async def test_refuses_to_overwrite_user_art(self, charm_dir: Path) -> None:
+    async def test_refuses_to_overwrite_user_art(self, charm_dir: pathlib.Path) -> None:
         # Pre-existing icon that doesn't match the placeholder shape.
         (charm_dir / "icon.svg").write_text("<svg><path d='custom'/></svg>")
         tool, stub, state = _make_tool()
@@ -280,7 +280,7 @@ class TestCharmIconGenerate:
         assert state.icon_session_cost_usd == 0.0
 
     @pytest.mark.asyncio
-    async def test_force_overwrites_user_art(self, charm_dir: Path) -> None:
+    async def test_force_overwrites_user_art(self, charm_dir: pathlib.Path) -> None:
         (charm_dir / "icon.svg").write_text("<svg><path d='custom'/></svg>")
         tool, _, _ = _make_tool()
         result = await tool.execute(description="x", path=str(charm_dir), force=True)
@@ -288,21 +288,21 @@ class TestCharmIconGenerate:
         assert _GENERATED_MARKER in (charm_dir / "icon.svg").read_text()
 
     @pytest.mark.asyncio
-    async def test_overwrites_placeholder_without_force(self, charm_dir: Path) -> None:
+    async def test_overwrites_placeholder_without_force(self, charm_dir: pathlib.Path) -> None:
         (charm_dir / "icon.svg").write_text(f'<svg>{_PLACEHOLDER_FINGERPRINT} r="120"/></svg>')
         tool, _, _ = _make_tool()
         result = await tool.execute(description="x", path=str(charm_dir))
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_overwrites_own_marker_without_force(self, charm_dir: Path) -> None:
+    async def test_overwrites_own_marker_without_force(self, charm_dir: pathlib.Path) -> None:
         (charm_dir / "icon.svg").write_text(f"<!-- {_GENERATED_MARKER} -->\n<svg/>\n")
         tool, _, _ = _make_tool()
         result = await tool.execute(description="x", path=str(charm_dir))
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_cost_cap_blocks_call(self, charm_dir: Path) -> None:
+    async def test_cost_cap_blocks_call(self, charm_dir: pathlib.Path) -> None:
         state = AgentState()
         state.icon_session_cost_usd = 5.0
         state.icon_max_session_cost_usd = 1.0
@@ -314,7 +314,7 @@ class TestCharmIconGenerate:
         assert stub.called_with == []
 
     @pytest.mark.asyncio
-    async def test_image_generation_error_surfaces_cleanly(self, charm_dir: Path) -> None:
+    async def test_image_generation_error_surfaces_cleanly(self, charm_dir: pathlib.Path) -> None:
         stub = _StubImageProvider(raise_on_call=ImageGenerationError("safety filter blocked"))
         tool, _, state = _make_tool(provider=stub)
         result = await tool.execute(description="x", path=str(charm_dir))
@@ -325,14 +325,14 @@ class TestCharmIconGenerate:
         assert not (charm_dir / "icon.svg").exists()
 
     @pytest.mark.asyncio
-    async def test_provider_construction_failure_surfaces(self, charm_dir: Path) -> None:
+    async def test_provider_construction_failure_surfaces(self, charm_dir: pathlib.Path) -> None:
         tool, _, _ = _make_tool(raise_factory=ValueError("no API key"))
         result = await tool.execute(description="x", path=str(charm_dir))
         assert not result.success
         assert "Failed to construct image provider" in result.error
 
     @pytest.mark.asyncio
-    async def test_records_transcript_event(self, charm_dir: Path) -> None:
+    async def test_records_transcript_event(self, charm_dir: pathlib.Path) -> None:
         store = MagicMock()
         state = AgentState()
 
@@ -362,7 +362,7 @@ class TestCharmIconGenerate:
 class _FakeAgent:
     """Minimal agent stand-in for the /icon dispatcher."""
 
-    def __init__(self, charm_path: Path | None) -> None:
+    def __init__(self, charm_path: pathlib.Path | None) -> None:
         self.state = AgentState()
         self.state.charm_path = charm_path
 
@@ -371,7 +371,7 @@ class TestIconSlash:
     """The /icon dispatcher must short-circuit cleanly on every edge case."""
 
     def test_empty_args_returns_usage(self) -> None:
-        result = slash_commands._handle_icon(_FakeAgent(Path("/tmp")), "")
+        result = slash_commands._handle_icon(_FakeAgent(pathlib.Path("/tmp")), "")
         assert result.followup is None
         assert "Usage" in result.text
 
@@ -380,13 +380,13 @@ class TestIconSlash:
         assert result.followup is None
         assert "no charm path" in result.text.lower()
 
-    def test_charm_path_does_not_exist_short_circuits(self, tmp_path: Path) -> None:
+    def test_charm_path_does_not_exist_short_circuits(self, tmp_path: pathlib.Path) -> None:
         bogus = tmp_path / "nope"
         result = slash_commands._handle_icon(_FakeAgent(bogus), "redis")
         assert result.followup is None
         assert "does not exist" in result.text.lower()
 
-    def test_with_description_returns_followup(self, charm_dir: Path) -> None:
+    def test_with_description_returns_followup(self, charm_dir: pathlib.Path) -> None:
         result = slash_commands._handle_icon(_FakeAgent(charm_dir), "redis db")
         assert result.followup is not None
         assert "Painting" in result.text
@@ -395,7 +395,7 @@ class TestIconSlash:
 
     @pytest.mark.asyncio
     async def test_followup_invokes_painter_and_renders(
-        self, charm_dir: Path, monkeypatch: pytest.MonkeyPatch
+        self, charm_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Patch the slash module's runner so we can inject a stub
         # provider without needing a real Imagen API key.

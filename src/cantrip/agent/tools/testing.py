@@ -1,9 +1,9 @@
 """Charm test runner and test template generation tools."""
 
+import pathlib
 import re
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -75,7 +75,7 @@ def _truncate_output(output: str) -> str:
     return f"[...truncated — showing last {_TAIL_LINES} lines...]\n" + "\n".join(tail)
 
 
-def _build_pytest_target(test_dir: Path, pattern: str | None) -> list[str]:
+def _build_pytest_target(test_dir: pathlib.Path, pattern: str | None) -> list[str]:
     """Build the pytest positional arguments from an optional pattern.
 
     Supports three forms:
@@ -164,7 +164,7 @@ class RunCharmTestsTool(Tool):
         pattern: str | None = None,
     ) -> ToolResult:
         """Run charm tests using tox or pytest."""
-        charm_path = Path(path).resolve()
+        charm_path = pathlib.Path(path).resolve()
         if not charm_path.is_dir():
             return ToolResult(
                 success=False,
@@ -481,7 +481,7 @@ class GenerateTestsTool(Tool):
 
     async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate integration test files in the charm directory."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,

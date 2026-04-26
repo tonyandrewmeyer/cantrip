@@ -8,8 +8,8 @@ advisory).
 """
 
 import contextlib
+import pathlib
 import re
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -95,7 +95,7 @@ _DOC_CHECKS: list[tuple[str, str, str]] = [
 # ---------------------------------------------------------------------------
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
+def _load_yaml(path: pathlib.Path) -> dict[str, Any]:
     """Load a YAML file, returning an empty dict on failure."""
     if not path.exists():
         return {}
@@ -113,7 +113,7 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def _check_status_reporting(
-    python_files: list[Path],
+    python_files: list[pathlib.Path],
 ) -> list[tuple[str, bool, str]]:
     """Check whether the charm sets status for expected conditions."""
     results: list[tuple[str, bool, str]] = []
@@ -229,7 +229,7 @@ def _check_config_quality(
 
 
 def _check_documentation(
-    charm_dir: Path,
+    charm_dir: pathlib.Path,
     readme_content: str,
 ) -> list[tuple[str, bool, str]]:
     """Check documentation presence and completeness."""
@@ -263,7 +263,7 @@ def _check_documentation(
 
 def _check_reliability(
     actions: dict[str, Any],
-    python_files: list[Path],
+    python_files: list[pathlib.Path],
 ) -> list[tuple[str, bool, str]]:
     """Check reliability-related features."""
     results: list[tuple[str, bool, str]] = []
@@ -305,7 +305,7 @@ def _check_reliability(
 def _check_maintainability(
     metadata: dict[str, Any],
     actions: dict[str, Any],
-    python_files: list[Path],
+    python_files: list[pathlib.Path],
 ) -> list[tuple[str, bool, str]]:
     """Check maintainability-related features."""
     results: list[tuple[str, bool, str]] = []
@@ -367,7 +367,7 @@ def _check_maintainability(
 
 def _check_security(
     metadata: dict[str, Any],
-    python_files: list[Path],
+    python_files: list[pathlib.Path],
     actions: dict[str, Any],
 ) -> list[tuple[str, bool, str]]:
     """Check security-related features."""
@@ -600,9 +600,9 @@ def _format_readiness_report(
 # ---------------------------------------------------------------------------
 
 
-def _collect_python_files(charm_dir: Path) -> list[Path]:
+def _collect_python_files(charm_dir: pathlib.Path) -> list[pathlib.Path]:
     """Collect all Python files in src/ and lib/ directories."""
-    files: list[Path] = []
+    files: list[pathlib.Path] = []
     for subdir in ("src", "lib"):
         d = charm_dir / subdir
         if d.is_dir():
@@ -647,7 +647,7 @@ class OperationalReadinessTool(Tool):
 
     async def execute(self, path: str = ".") -> ToolResult:
         """Run operational readiness checks on a charm directory."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,

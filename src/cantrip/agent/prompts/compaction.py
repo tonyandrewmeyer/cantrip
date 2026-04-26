@@ -6,9 +6,9 @@ plain markdown (no variable substitution) and loaded once on first
 access.
 """
 
-from pathlib import Path
+import pathlib
 
-_PROMPT_PATH = Path(__file__).parent / "compaction.md"
+_PROMPT_PATH = pathlib.Path(__file__).parent / "compaction.md"
 
 # Lazy cache — populated on first call to avoid import-time I/O.
 _CACHED: str | None = None

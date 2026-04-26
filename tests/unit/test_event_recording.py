@@ -1,6 +1,6 @@
 """Tests for event log recording hooks."""
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -11,7 +11,7 @@ class TestEventRecordingInExecutor:
     """Verify that task status changes are recorded as events."""
 
     @pytest.fixture
-    def store(self, tmp_path: Path):
+    def store(self, tmp_path: pathlib.Path):
         s = SessionStore(tmp_path / ".cantrip")
         s.open()
         yield s

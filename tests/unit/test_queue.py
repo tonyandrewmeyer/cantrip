@@ -1,8 +1,8 @@
 """Tests for the work queue and agent task model."""
 
 import datetime
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -13,13 +13,13 @@ from cantrip.agent.store import SessionStore
 
 
 @pytest.fixture
-def db_path(tmp_path: Path) -> Path:
+def db_path(tmp_path: pathlib.Path) -> pathlib.Path:
     """Return a temporary database path."""
     return tmp_path / ".cantrip"
 
 
 @pytest.fixture
-def store(db_path: Path) -> Iterator[SessionStore]:
+def store(db_path: pathlib.Path) -> Iterator[SessionStore]:
     """Return an open SessionStore backed by a temporary file."""
     s = SessionStore(db_path)
     s.open()

@@ -7,12 +7,12 @@ once and every consumer receives the update.
 
 import asyncio
 import contextlib
+import dataclasses
 import enum
 import json
 import logging
 import time
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass, field
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class EventType(enum.StrEnum):
     RALPH_EXHAUSTED = "ralph_exhausted"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class Event:
     """An immutable, JSON-serialisable UI event.
 
@@ -59,7 +59,7 @@ class Event:
 
     type: EventType
     payload: dict[str, Any]
-    timestamp: float = field(default_factory=time.time)
+    timestamp: float = dataclasses.field(default_factory=time.time)
 
     def to_json(self) -> str:
         """Serialise for WebSocket transport."""

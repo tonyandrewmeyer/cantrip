@@ -1,6 +1,6 @@
 """Executor tests: execution."""
 
-from pathlib import Path
+import pathlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -41,7 +41,7 @@ class TestBuildContext:
     def test_context_copies_state_fields(self) -> None:
         state = AgentState(
             charm_name="redis-k8s",
-            charm_path=Path("/tmp/redis-k8s"),
+            charm_path=pathlib.Path("/tmp/redis-k8s"),
             charm_type="k8s",
             framework="flask",
             dev_model="dev",

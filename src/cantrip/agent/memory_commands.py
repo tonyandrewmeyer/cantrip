@@ -18,9 +18,9 @@ that includes the help text rather than silently failing.
 
 from __future__ import annotations
 
+import pathlib
 import re
 import shlex
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cantrip.agent import memory_export
@@ -60,7 +60,7 @@ def handle_memory(
     manager: MemoryManager,
     args: str,
     *,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
 ) -> str:
     """Handle the ``/memory …`` command and its subcommands."""
     tokens = shlex.split(args.strip(), posix=True) if args.strip() else []
@@ -85,12 +85,14 @@ def handle_memory(
     return _format_entry_list(entries)
 
 
-def _handle_export(manager: MemoryManager, tokens: list[str], *, charm_path: Path | None) -> str:
+def _handle_export(
+    manager: MemoryManager, tokens: list[str], *, charm_path: pathlib.Path | None
+) -> str:
     """Handle ``/memory export <name> <output_path> [scope]``."""
     if len(tokens) < 2:
         return _error("expected `<name> <output_path> [scope]`. " + memory_help_text())
     name = tokens[0]
-    output_path = Path(tokens[1]).expanduser()
+    output_path = pathlib.Path(tokens[1]).expanduser()
     scope: str | None = None
     if len(tokens) >= 3:
         candidate = tokens[2].lower()
@@ -118,12 +120,12 @@ def _handle_export(manager: MemoryManager, tokens: list[str], *, charm_path: Pat
 
 
 def _handle_export_markdown(
-    manager: MemoryManager, tokens: list[str], *, charm_path: Path | None
+    manager: MemoryManager, tokens: list[str], *, charm_path: pathlib.Path | None
 ) -> str:
     """Handle ``/memory export-md <output_dir> [scope]``."""
     if not tokens:
         return _error("expected `<output_dir> [scope]`. " + memory_help_text())
-    output_dir = Path(tokens[0]).expanduser()
+    output_dir = pathlib.Path(tokens[0]).expanduser()
     scope: str | None = None
     if len(tokens) >= 2:
         candidate = tokens[1].lower()
@@ -150,7 +152,7 @@ def _handle_import(manager: MemoryManager, tokens: list[str]) -> str:
     """Handle ``/memory import <source_path> [target_scope]``."""
     if not tokens:
         return _error("expected `<source_path> [target_scope]`. " + memory_help_text())
-    source = Path(tokens[0]).expanduser()
+    source = pathlib.Path(tokens[0]).expanduser()
     target_scope = "global"
     if len(tokens) >= 2:
         candidate = tokens[1].lower()

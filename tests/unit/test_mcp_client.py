@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
 import sys
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import pytest
 
@@ -20,7 +20,7 @@ from cantrip.mcp.types import TransportKind
 
 # Project root — ``python -m tests.unit.mcp_stub_server`` only resolves
 # when invoked from here, and xdist workers may have a different cwd.
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _stub_config(name: str = "stub", **overrides: object) -> ServerConfig:

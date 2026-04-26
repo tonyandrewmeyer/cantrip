@@ -5,12 +5,12 @@ bootstrap GitHub repositories, and monitor PR feedback using subprocess
 calls.  These run at the orchestrator level (not via subagent tools).
 """
 
+import dataclasses
 import json
 import logging
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
 
@@ -498,7 +498,7 @@ def gh_issue_comment(repo: str, issue_number: int, body: str) -> tuple[bool, str
     return True, result.stdout.strip()
 
 
-@dataclass
+@dataclasses.dataclass
 class PrReviewComment:
     """A review comment on a pull request."""
 
@@ -510,7 +510,7 @@ class PrReviewComment:
     state: str = ""
 
 
-@dataclass
+@dataclasses.dataclass
 class PrFeedback:
     """Aggregated feedback from a pull request."""
 
@@ -518,7 +518,7 @@ class PrFeedback:
     pr_url: str
     state: str  # OPEN, CLOSED, MERGED
     review_decision: str  # APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, ""
-    comments: list[PrReviewComment] = field(default_factory=list)
+    comments: list[PrReviewComment] = dataclasses.field(default_factory=list)
 
     @property
     def needs_changes(self) -> bool:

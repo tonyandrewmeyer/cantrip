@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -267,7 +267,7 @@ class TestPolicyFromDict:
 class TestLoadPolicyFile:
     """End-to-end YAML loading."""
 
-    def test_loads_valid_file(self, tmp_path: Path) -> None:
+    def test_loads_valid_file(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "sprint.yaml"
         path.write_text(
             "name: sprint\n"
@@ -280,7 +280,7 @@ class TestLoadPolicyFile:
         assert "juju_destroy_controller" in policy.blocked_tools
         assert policy.max_calls_per_request == 200
 
-    def test_empty_file_produces_zero_policy(self, tmp_path: Path) -> None:
+    def test_empty_file_produces_zero_policy(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "empty.yaml"
         path.write_text("")
         policy = load_policy_file(path)
@@ -288,13 +288,13 @@ class TestLoadPolicyFile:
         assert policy.name == "empty"
         assert policy.allowed_tools == frozenset()
 
-    def test_invalid_yaml_raises_policy_parse_error(self, tmp_path: Path) -> None:
+    def test_invalid_yaml_raises_policy_parse_error(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "broken.yaml"
         path.write_text(": : : not valid")
         with pytest.raises(PolicyParseError):
             load_policy_file(path)
 
-    def test_filename_stem_becomes_default_name(self, tmp_path: Path) -> None:
+    def test_filename_stem_becomes_default_name(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "custom.yaml"
         path.write_text("blocked_tools: [x]\n")
         policy = load_policy_file(path)
@@ -304,7 +304,7 @@ class TestLoadPolicyFile:
 class TestDiscoverPolicies:
     """Filesystem scan used by the dispatcher (Phase 80.2)."""
 
-    def test_discovers_user_dir_in_sorted_order(self, tmp_path: Path) -> None:
+    def test_discovers_user_dir_in_sorted_order(self, tmp_path: pathlib.Path) -> None:
         config_dir = tmp_path / "cfg"
         config_dir.mkdir()
         (config_dir / "b.yaml").write_text("name: b\n")
@@ -314,7 +314,7 @@ class TestDiscoverPolicies:
         # Sorted alphabetically so composition order is deterministic.
         assert [p.name for p in policies] == ["a", "b", "c"]
 
-    def test_ignores_non_yaml_files(self, tmp_path: Path) -> None:
+    def test_ignores_non_yaml_files(self, tmp_path: pathlib.Path) -> None:
         config_dir = tmp_path / "cfg"
         config_dir.mkdir()
         (config_dir / "a.yaml").write_text("name: a\n")
@@ -323,11 +323,11 @@ class TestDiscoverPolicies:
         policies = discover_policies(user_config_dir=config_dir)
         assert [p.name for p in policies] == ["a"]
 
-    def test_missing_user_dir_returns_empty(self, tmp_path: Path) -> None:
+    def test_missing_user_dir_returns_empty(self, tmp_path: pathlib.Path) -> None:
         policies = discover_policies(user_config_dir=tmp_path / "does-not-exist")
         assert policies == []
 
-    def test_per_charm_overlay_comes_last(self, tmp_path: Path) -> None:
+    def test_per_charm_overlay_comes_last(self, tmp_path: pathlib.Path) -> None:
         config_dir = tmp_path / "cfg"
         config_dir.mkdir()
         (config_dir / "org-wide.yaml").write_text("name: org-wide\n")
@@ -337,7 +337,7 @@ class TestDiscoverPolicies:
         policies = discover_policies(user_config_dir=config_dir, charm_path=charm_dir)
         assert [p.name for p in policies] == ["org-wide", "per-charm"]
 
-    def test_missing_charm_overlay_is_fine(self, tmp_path: Path) -> None:
+    def test_missing_charm_overlay_is_fine(self, tmp_path: pathlib.Path) -> None:
         config_dir = tmp_path / "cfg"
         config_dir.mkdir()
         (config_dir / "org-wide.yaml").write_text("name: org-wide\n")
@@ -346,7 +346,7 @@ class TestDiscoverPolicies:
         policies = discover_policies(user_config_dir=config_dir, charm_path=charm_dir)
         assert [p.name for p in policies] == ["org-wide"]
 
-    def test_malformed_file_is_skipped_with_warning(self, tmp_path: Path, caplog) -> None:
+    def test_malformed_file_is_skipped_with_warning(self, tmp_path: pathlib.Path, caplog) -> None:
         """One broken file shouldn't lock the operator out of the stack."""
         import logging
 
@@ -435,7 +435,7 @@ class TestApproveDestructiveComposition:
 class TestDestructiveGate:
     """Phase 80.5: the in-code gate inside destructive juju tools."""
 
-    def test_non_destructive_tool_always_approved(self, tmp_path: Path) -> None:
+    def test_non_destructive_tool_always_approved(self, tmp_path: pathlib.Path) -> None:
         """A tool not in ``DESTRUCTIVE_TOOLS`` never hits the gate."""
         approved, reason = destructive_gate(
             "juju_status",
@@ -444,7 +444,7 @@ class TestDestructiveGate:
         assert approved is True
         assert reason == ""
 
-    def test_destructive_tool_denied_by_default(self, tmp_path: Path) -> None:
+    def test_destructive_tool_denied_by_default(self, tmp_path: pathlib.Path) -> None:
         """Without approve_destructive anywhere, the gate refuses."""
         approved, reason = destructive_gate(
             "juju_destroy_model",
@@ -454,7 +454,7 @@ class TestDestructiveGate:
         assert "juju_destroy_model" in reason
         assert "approve_destructive" in reason
 
-    def test_per_charm_opt_in_approves(self, tmp_path: Path) -> None:
+    def test_per_charm_opt_in_approves(self, tmp_path: pathlib.Path) -> None:
         """A per-charm file with approve_destructive lets the call through."""
         (tmp_path / "cantrip.policies.yaml").write_text("name: yolo\napprove_destructive: true\n")
         approved, reason = destructive_gate(
@@ -465,7 +465,7 @@ class TestDestructiveGate:
         assert approved is True
         assert reason == ""
 
-    def test_extra_policy_opt_in_approves(self, tmp_path: Path) -> None:
+    def test_extra_policy_opt_in_approves(self, tmp_path: pathlib.Path) -> None:
         """Tests can inject approval via extra_policies without writing YAML."""
         extra = GovernancePolicy(name="test-yolo", approve_destructive=True)
         approved, _ = destructive_gate(

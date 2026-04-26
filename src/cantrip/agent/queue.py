@@ -1,11 +1,11 @@
 """Work queue for autonomous agent task scheduling."""
 
 import copy
+import dataclasses
 import datetime
 import enum
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
 
 
 class TaskStatus(enum.StrEnum):
@@ -38,7 +38,7 @@ class ModelHint(enum.StrEnum):
     LIGHT = "light"
 
 
-@dataclass
+@dataclasses.dataclass
 class AgentTask:
     """A discrete unit of work for the autonomous agent."""
 
@@ -47,11 +47,11 @@ class AgentTask:
     id: str = ""
     status: TaskStatus = TaskStatus.PENDING
     description: str = ""
-    dependencies: list[str] = field(default_factory=list)
+    dependencies: list[str] = dataclasses.field(default_factory=list)
     result: str | None = None
     blocked_reason: str | None = None
     model_hint: ModelHint | None = None
-    created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
+    created_at: datetime.datetime = dataclasses.field(default_factory=datetime.datetime.now)
     noop_count: int = 0
     # Transient — set while a task owns a git worktree; cleared on release.
     # Not persisted to SQLite because worktrees don't survive sessions; they

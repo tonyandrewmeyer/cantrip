@@ -5,7 +5,7 @@ responses. These exercise the full loop: user message → system prompt
 → tool execution → state mutation → response.
 """
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -19,7 +19,7 @@ class TestScenarios:
     """Full agent-loop scenarios."""
 
     @pytest.mark.asyncio
-    async def test_scaffold_flask_charm(self, tmp_path: Path):
+    async def test_scaffold_flask_charm(self, tmp_path: pathlib.Path):
         """Simulate scaffolding a Flask charm: analyse → write → respond."""
         # Seed the project with a requirements.txt so analyse_framework has
         # something to detect.
@@ -66,7 +66,7 @@ class TestScenarios:
         assert len(agent.state.messages) == 6
 
     @pytest.mark.asyncio
-    async def test_multi_turn_with_state(self, tmp_path: Path):
+    async def test_multi_turn_with_state(self, tmp_path: pathlib.Path):
         """Two user messages; second turn writes a file."""
         provider = FakeProvider(
             [
@@ -101,7 +101,7 @@ class TestScenarios:
         assert (tmp_path / "metadata.yaml").exists()
 
     @pytest.mark.asyncio
-    async def test_tool_failure_recovery(self, tmp_path: Path):
+    async def test_tool_failure_recovery(self, tmp_path: pathlib.Path):
         """A tool returning an error should not raise; the agent recovers."""
         provider = FakeProvider(
             [
@@ -131,7 +131,7 @@ class TestScenarios:
         assert tool_messages[0].tool_results[0].is_error
 
     @pytest.mark.asyncio
-    async def test_state_round_trip_across_sessions(self, tmp_path: Path):
+    async def test_state_round_trip_across_sessions(self, tmp_path: pathlib.Path):
         """State persists across two separate agent sessions."""
         # Session 1: process a message, set state, save.
         provider1 = FakeProvider([Response(content="Got it.")])

@@ -9,7 +9,7 @@ launching any actual mode.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from types import SimpleNamespace
 from unittest import mock
 
@@ -32,10 +32,10 @@ class TestParseArgs:
         assert args.provider == "gemini"
         assert args.no_tui is False
         assert args.web is False
-        assert args.path == Path.cwd()
+        assert args.path == pathlib.Path.cwd()
 
     def test_bare_path_is_treated_as_run(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
         _set_argv(monkeypatch, str(tmp_path))
         args = cantrip_main.parse_args()
@@ -76,7 +76,7 @@ class TestParseArgs:
         assert args.web_port == 9090
 
     def test_improve_flag_takes_a_path(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
         target = tmp_path / "existing-charm"
         target.mkdir()
@@ -89,7 +89,9 @@ class TestParseArgs:
         with pytest.raises(SystemExit):
             cantrip_main.parse_args()
 
-    def test_compare_subcommand(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_compare_subcommand(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
         left = tmp_path / "a"
         right = tmp_path / "b"
         _set_argv(monkeypatch, "compare", str(left), str(right))
@@ -116,7 +118,7 @@ class TestParseArgs:
         assert args.format == "csv"
 
     def test_export_transcript_subcommand(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
         _set_argv(
             monkeypatch,
@@ -166,27 +168,27 @@ class TestInstallUnraisableHook:
 
 
 class TestIsCantripSourceTree:
-    def test_returns_false_without_pyproject(self, tmp_path: Path) -> None:
+    def test_returns_false_without_pyproject(self, tmp_path: pathlib.Path) -> None:
         assert cantrip_main._is_cantrip_source_tree(tmp_path) is False
 
-    def test_returns_true_for_cantrip_pyproject(self, tmp_path: Path) -> None:
+    def test_returns_true_for_cantrip_pyproject(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "juju-cantrip"\n\n[project.scripts]\ncantrip = "cantrip.main:main"\n'
         )
         assert cantrip_main._is_cantrip_source_tree(tmp_path) is True
 
-    def test_returns_false_for_other_pyproject(self, tmp_path: Path) -> None:
+    def test_returns_false_for_other_pyproject(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "some-charm"\n')
         assert cantrip_main._is_cantrip_source_tree(tmp_path) is False
 
-    def test_returns_false_on_unreadable_pyproject(self, tmp_path: Path) -> None:
+    def test_returns_false_on_unreadable_pyproject(self, tmp_path: pathlib.Path) -> None:
         pyproject = tmp_path / "pyproject.toml"
         pyproject.write_text("ignored")
         with mock.patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):
             assert cantrip_main._is_cantrip_source_tree(tmp_path) is False
 
 
-def _run_args(tmp_path: Path, **overrides: object) -> SimpleNamespace:
+def _run_args(tmp_path: pathlib.Path, **overrides: object) -> SimpleNamespace:
     """Build a namespace mirroring the ``run`` sub-parser defaults."""
     base = {
         "command": "run",
@@ -214,7 +216,7 @@ class TestRun:
 
     def test_refuses_cantrip_source_tree(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -229,7 +231,7 @@ class TestRun:
 
     def test_improve_requires_directory(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         missing = tmp_path / "not-a-dir"
@@ -240,7 +242,7 @@ class TestRun:
 
     def test_missing_gemini_api_key(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -252,7 +254,7 @@ class TestRun:
 
     def test_missing_anthropic_api_key(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -264,7 +266,7 @@ class TestRun:
 
     def test_inference_snap_needs_no_key(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -279,7 +281,7 @@ class TestRun:
 
     def test_web_mode_dispatches_to_run_web(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
@@ -293,7 +295,7 @@ class TestRun:
 
     def test_web_mode_refuses_improve(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -312,7 +314,7 @@ class TestRun:
 
     def test_no_tui_dispatches_to_run_cli(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
@@ -326,7 +328,7 @@ class TestRun:
 
     def test_print_with_empty_string_routes_to_print_mode(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--print ""`` must select print mode, not silently fall through.
@@ -349,7 +351,7 @@ class TestRun:
 
     def test_tui_mode_launches_cantrip_app(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
@@ -365,7 +367,7 @@ class TestRun:
 
     def test_improve_overrides_positional_path(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         improve_dir = tmp_path / "existing-charm"
@@ -383,7 +385,7 @@ class TestRun:
 
     def test_tui_dispatch_prints_update_panel(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``_run`` consults ``CantripApp.pending_update_info`` after ``app.run()``."""
@@ -456,7 +458,7 @@ class TestPrintUpdatePanel:
 
 class TestExportTranscript:
     def test_error_when_no_cantrip_file(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         args = SimpleNamespace(path=tmp_path, fmt="html", output=None)
         rc = cantrip_main._export_transcript(args)
@@ -465,7 +467,7 @@ class TestExportTranscript:
         assert "no .cantrip file" in out
 
     def test_unknown_format_errors(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         (tmp_path / ".cantrip").write_text("")
         args = SimpleNamespace(path=tmp_path, fmt="xml", output=None)
@@ -488,7 +490,7 @@ class TestExportTranscript:
     )
     def test_writes_output_in_selected_format(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
         fmt: str,
         expected_suffix: str,
@@ -511,7 +513,7 @@ class TestExportTranscript:
         assert "exported to" in capsys.readouterr().out
 
     def test_explicit_output_path_is_respected(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         (tmp_path / ".cantrip").write_text("")
         target = tmp_path / "custom.md"
@@ -526,7 +528,9 @@ class TestExportTranscript:
             cantrip_main._export_transcript(args)
         assert target.read_text() == "hi"
 
-    def test_paginated_html(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_paginated_html(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         (tmp_path / ".cantrip").write_text("")
         args = SimpleNamespace(
             path=tmp_path,
@@ -558,7 +562,7 @@ class TestExportTranscript:
         assert "2 pages" in capsys.readouterr().out
 
     def test_paginated_html_respects_output_file_stem(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """``--output page.html`` with ``--page-size`` uses page's stem."""
         (tmp_path / ".cantrip").write_text("")
@@ -599,7 +603,7 @@ class TestExportTranscript:
 
 class TestMain:
     def test_dispatches_export_transcript(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
         args = SimpleNamespace(command="export-transcript", path=tmp_path)
         with (
@@ -610,7 +614,7 @@ class TestMain:
         assert rc == 42
         exp.assert_called_once_with(args)
 
-    def test_dispatches_run(self, tmp_path: Path) -> None:
+    def test_dispatches_run(self, tmp_path: pathlib.Path) -> None:
         args = SimpleNamespace(command="run", path=tmp_path)
         with (
             mock.patch.object(cantrip_main, "parse_args", return_value=args),
@@ -620,7 +624,7 @@ class TestMain:
         assert rc == 7
         run_fn.assert_called_once_with(args)
 
-    def test_dispatches_compare(self, tmp_path: Path) -> None:
+    def test_dispatches_compare(self, tmp_path: pathlib.Path) -> None:
         args = SimpleNamespace(command="compare", left=tmp_path / "a", right=tmp_path / "b")
         with (
             mock.patch.object(cantrip_main, "parse_args", return_value=args),
@@ -630,7 +634,7 @@ class TestMain:
         assert rc == 3
         cmp_fn.assert_called_once_with(args)
 
-    def test_dispatches_audit(self, tmp_path: Path) -> None:
+    def test_dispatches_audit(self, tmp_path: pathlib.Path) -> None:
         args = SimpleNamespace(command="audit", audit_command="list")
         with (
             mock.patch.object(cantrip_main, "parse_args", return_value=args),
@@ -644,7 +648,7 @@ class TestMain:
 class TestAuditEntry:
     """``_audit`` reads the JSONL file, filters, and formats."""
 
-    def _write_audit_file(self, path: Path) -> None:
+    def _write_audit_file(self, path: pathlib.Path) -> None:
         from cantrip.agent.audit import AuditAction, AuditWriter, make_entry
 
         writer = AuditWriter(path)
@@ -670,7 +674,7 @@ class TestAuditEntry:
         )
 
     def test_list_returns_error_when_file_missing(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         args = SimpleNamespace(
             audit_command="list",
@@ -684,7 +688,7 @@ class TestAuditEntry:
         assert "not found" in capsys.readouterr().err.lower()
 
     def test_list_emits_jsonl_per_line(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         path = tmp_path / ".cantrip-audit.jsonl"
         self._write_audit_file(path)
@@ -703,7 +707,7 @@ class TestAuditEntry:
         assert {row["tool"] for row in parsed} == {"juju_status", "juju_destroy_model"}
 
     def test_list_filters_by_action(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         path = tmp_path / ".cantrip-audit.jsonl"
         self._write_audit_file(path)
@@ -721,7 +725,7 @@ class TestAuditEntry:
         assert "juju_destroy_model" in lines[0]
 
     def test_list_filters_by_task_id(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         path = tmp_path / ".cantrip-audit.jsonl"
         self._write_audit_file(path)
@@ -738,7 +742,7 @@ class TestAuditEntry:
         assert len(lines) == 1
         assert "t1" in lines[0]
 
-    def test_export_csv(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_export_csv(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         path = tmp_path / ".cantrip-audit.jsonl"
         self._write_audit_file(path)
         args = SimpleNamespace(
@@ -761,7 +765,7 @@ class TestCompareCharmsEntry:
     """The ``_compare_charms`` CLI entry-point validates paths and prints the report."""
 
     def test_missing_left_path_returns_error(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         args = SimpleNamespace(left=tmp_path / "nope", right=tmp_path)
         rc = cantrip_main._compare_charms(args)
@@ -769,7 +773,7 @@ class TestCompareCharmsEntry:
         assert "left charm path is not a directory" in capsys.readouterr().out
 
     def test_missing_right_path_returns_error(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         (tmp_path / "a").mkdir()
         args = SimpleNamespace(left=tmp_path / "a", right=tmp_path / "nope")
@@ -777,7 +781,9 @@ class TestCompareCharmsEntry:
         assert rc == 1
         assert "right charm path is not a directory" in capsys.readouterr().out
 
-    def test_prints_report(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_prints_report(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         a = tmp_path / "a"
         b = tmp_path / "b"
         a.mkdir()

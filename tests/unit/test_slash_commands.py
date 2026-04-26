@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import inspect
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -17,7 +17,7 @@ from cantrip.agent.store import SessionStore
 
 
 @pytest.fixture
-def session_store(tmp_path: Path) -> Iterator[SessionStore]:
+def session_store(tmp_path: pathlib.Path) -> Iterator[SessionStore]:
     s = SessionStore(tmp_path / ".cantrip")
     s.open()
     yield s
@@ -25,7 +25,7 @@ def session_store(tmp_path: Path) -> Iterator[SessionStore]:
 
 
 @pytest.fixture
-def memory_manager(tmp_path: Path, session_store: SessionStore) -> MemoryManager:
+def memory_manager(tmp_path: pathlib.Path, session_store: SessionStore) -> MemoryManager:
     return MemoryManager(
         session_store=session_store,
         global_store=GlobalMemoryStore(tmp_path / "globalmem"),
@@ -35,7 +35,7 @@ def memory_manager(tmp_path: Path, session_store: SessionStore) -> MemoryManager
 def _fake_agent(
     memory_manager: MemoryManager | None = None,
     *,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
     mcp_registry=None,
     marketplace_sources: list | None = None,
     marketplace_loader=None,
@@ -401,7 +401,7 @@ class TestExport:
     """/export writes the live transcript to disk via the shared renderers."""
 
     def test_defaults_to_html_in_charm_dir(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         del session_store  # fixture keeps the .cantrip file open for writes
         agent = _fake_agent(memory_manager, charm_path=tmp_path)
@@ -414,7 +414,7 @@ class TestExport:
         assert "<html" in body.lower()
 
     def test_explicit_format_markdown(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         del session_store
         agent = _fake_agent(memory_manager, charm_path=tmp_path)
@@ -425,7 +425,7 @@ class TestExport:
         assert "markdown" in result.text.lower()
 
     def test_custom_output_path(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         del session_store
         target = tmp_path / "out" / "session.jsonl"
@@ -436,7 +436,7 @@ class TestExport:
         assert str(target) in result.text
 
     def test_extra_arguments_report_usage(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         del session_store
         agent = _fake_agent(memory_manager, charm_path=tmp_path)
@@ -452,7 +452,7 @@ class TestExport:
         assert "no charm path" in result.text.lower()
 
     def test_missing_cantrip_file_reports_error(
-        self, memory_manager: MemoryManager, tmp_path: Path
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path
     ) -> None:
         empty = tmp_path / "empty"
         empty.mkdir()
@@ -466,7 +466,7 @@ class TestShare:
     """Phase 67.4 — ``/share`` uploads the HTML transcript as a secret gist."""
 
     def _agent_with_charm(
-        self, memory_manager: MemoryManager, charm_path: Path
+        self, memory_manager: MemoryManager, charm_path: pathlib.Path
     ) -> SimpleNamespace:
         """Agent shell with a ``.cantrip`` file so /share doesn't short-circuit."""
         (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
@@ -480,7 +480,7 @@ class TestShare:
         assert "no charm path" in result.text
 
     def test_missing_cantrip_db_short_circuits(
-        self, memory_manager: MemoryManager, tmp_path: Path
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path
     ) -> None:
         empty = tmp_path / "empty"
         empty.mkdir()
@@ -491,7 +491,7 @@ class TestShare:
         assert "no `.cantrip`" in result.text
 
     def test_charm_ready_returns_followup(
-        self, memory_manager: MemoryManager, tmp_path: Path
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path
     ) -> None:
         agent = self._agent_with_charm(memory_manager, tmp_path)
         result = dispatch(agent, "/share")
@@ -501,7 +501,7 @@ class TestShare:
         result.followup.close()
 
     @pytest.mark.asyncio
-    async def test_share_happy_path_returns_gist_url(self, tmp_path: Path) -> None:
+    async def test_share_happy_path_returns_gist_url(self, tmp_path: pathlib.Path) -> None:
         from unittest.mock import patch
 
         charm_path = tmp_path / "charm"
@@ -536,7 +536,9 @@ class TestShare:
         assert "https://gist.github.com/user/abc123" in result
 
     @pytest.mark.asyncio
-    async def test_share_falls_back_to_local_path_when_gh_missing(self, tmp_path: Path) -> None:
+    async def test_share_falls_back_to_local_path_when_gh_missing(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         from unittest.mock import patch
 
         charm_path = tmp_path / "charm"
@@ -559,7 +561,9 @@ class TestShare:
         assert "cantrip-session-charm-" in result
 
     @pytest.mark.asyncio
-    async def test_share_surfaces_gh_auth_failure_with_retry_command(self, tmp_path: Path) -> None:
+    async def test_share_surfaces_gh_auth_failure_with_retry_command(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         from unittest.mock import patch
 
         charm_path = tmp_path / "charm"
@@ -609,7 +613,9 @@ class TestCopy:
         assert result.clipboard_text is None
         assert "no charm path" in result.text
 
-    def test_missing_cantrip_db(self, memory_manager: MemoryManager, tmp_path: Path) -> None:
+    def test_missing_cantrip_db(
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
         empty = tmp_path / "empty"
         empty.mkdir()
         agent = _fake_agent(memory_manager, charm_path=empty)
@@ -619,7 +625,7 @@ class TestCopy:
         assert "no `.cantrip`" in result.text
 
     def test_no_messages_yet(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         del session_store
         agent = _fake_agent(memory_manager, charm_path=tmp_path)
@@ -629,7 +635,7 @@ class TestCopy:
         assert "no messages" in result.text
 
     def test_no_assistant_messages_falls_back_to_last_message(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         # When the first turn errors before the agent produces an
         # assistant message, ``/copy`` should still capture something
@@ -645,7 +651,7 @@ class TestCopy:
         assert "user" in result.text
 
     def test_explicit_assistant_with_no_assistant_messages_refuses(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         # ``/copy assistant`` is an explicit role request — keep the
         # refusal so the user knows their selector found nothing
@@ -658,7 +664,7 @@ class TestCopy:
         assert "no assistant messages" in result.text
 
     def test_default_copies_last_assistant_body(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         self._seed_messages(
             session_store,
@@ -679,7 +685,7 @@ class TestCopy:
         assert "chars" in result.text
 
     def test_last_grabs_any_role(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         self._seed_messages(
             session_store,
@@ -695,7 +701,7 @@ class TestCopy:
         assert "user" in result.text
 
     def test_explicit_index(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         self._seed_messages(
             session_store,
@@ -708,7 +714,7 @@ class TestCopy:
         assert "#2" in result.text
 
     def test_index_out_of_range(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         self._seed_messages(session_store, [("user", "only")])
         agent = _fake_agent(memory_manager, charm_path=tmp_path)
@@ -718,7 +724,7 @@ class TestCopy:
         assert "out of range" in result.text
 
     def test_invalid_argument_shows_usage(
-        self, memory_manager: MemoryManager, tmp_path: Path, session_store: SessionStore
+        self, memory_manager: MemoryManager, tmp_path: pathlib.Path, session_store: SessionStore
     ) -> None:
         # Seed at least one message so the dispatch reaches the
         # selector parser instead of bailing on "no messages yet".
@@ -881,7 +887,10 @@ class TestUpdate:
         result.followup.close()  # type: ignore[attr-defined]
 
     def test_no_check_writes_settings(
-        self, memory_manager: MemoryManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        memory_manager: MemoryManager,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import json
 
@@ -898,7 +907,10 @@ class TestUpdate:
         assert written["update_check_disabled"] is True
 
     def test_check_re_enables_settings(
-        self, memory_manager: MemoryManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        memory_manager: MemoryManager,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import json
 

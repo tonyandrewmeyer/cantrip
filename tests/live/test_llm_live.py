@@ -6,7 +6,7 @@ the corresponding API key is absent.
 """
 
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -25,7 +25,7 @@ class TestGeminiLive:
     )
 
     @pytest.mark.asyncio
-    async def test_gemini_analyse_framework_call(self, tmp_path: Path):
+    async def test_gemini_analyse_framework_call(self, tmp_path: pathlib.Path):
         """Send a prompt about a Flask app; verify an analyse_framework tool call."""
         (tmp_path / "requirements.txt").write_text("flask>=3.0\n")
         (tmp_path / "app.py").write_text("from flask import Flask\napp = Flask(__name__)\n")
@@ -43,7 +43,7 @@ class TestGeminiLive:
         )
 
     @pytest.mark.asyncio
-    async def test_gemini_responds_to_greeting(self, tmp_path: Path):
+    async def test_gemini_responds_to_greeting(self, tmp_path: pathlib.Path):
         """Send 'hello'; verify a non-empty text response with no tool calls."""
         provider = create_provider("gemini")
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -62,7 +62,7 @@ class TestClaudeLive:
     )
 
     @pytest.mark.asyncio
-    async def test_claude_analyse_framework_call(self, tmp_path: Path):
+    async def test_claude_analyse_framework_call(self, tmp_path: pathlib.Path):
         """Send a prompt about a Flask app; verify an analyse_framework tool call."""
         (tmp_path / "requirements.txt").write_text("flask>=3.0\n")
         (tmp_path / "app.py").write_text("from flask import Flask\napp = Flask(__name__)\n")
@@ -80,7 +80,7 @@ class TestClaudeLive:
         )
 
     @pytest.mark.asyncio
-    async def test_claude_responds_to_greeting(self, tmp_path: Path):
+    async def test_claude_responds_to_greeting(self, tmp_path: pathlib.Path):
         """Send 'hello'; verify a non-empty text response with no tool calls."""
         provider = create_provider("claude")
         agent = CantripAgent(provider=provider, charm_path=tmp_path)

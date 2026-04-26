@@ -1,7 +1,7 @@
 """Tests for the grep (content search) tool."""
 
+import pathlib
 import subprocess
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -10,13 +10,13 @@ from cantrip.agent.tools.grep import _ABSOLUTE_MAX_RESULTS, _DEFAULT_MAX_RESULTS
 
 
 @pytest.fixture
-def tool(tmp_path: Path) -> GrepTool:
+def tool(tmp_path: pathlib.Path) -> GrepTool:
     """GrepTool with a temp base path."""
     return GrepTool(base_path=tmp_path)
 
 
 @pytest.fixture
-def _populate_tree(tmp_path: Path) -> None:
+def _populate_tree(tmp_path: pathlib.Path) -> None:
     """Create a small file tree for searching."""
     (tmp_path / "hello.py").write_text("def hello():\n    print('hello world')\n")
     (tmp_path / "goodbye.py").write_text("def goodbye():\n    print('goodbye world')\n")
@@ -143,7 +143,7 @@ class TestGrepCommandBuilding:
         cmd = GrepTool._build_rg_command(
             "/usr/bin/rg",
             "pattern",
-            Path("/tmp/test"),
+            pathlib.Path("/tmp/test"),
             glob=None,
             context_lines=0,
             case_sensitive=True,
@@ -157,7 +157,7 @@ class TestGrepCommandBuilding:
         cmd = GrepTool._build_rg_command(
             "/usr/bin/rg",
             "pattern",
-            Path("/tmp/test"),
+            pathlib.Path("/tmp/test"),
             glob=None,
             context_lines=0,
             case_sensitive=False,
@@ -169,7 +169,7 @@ class TestGrepCommandBuilding:
         cmd = GrepTool._build_rg_command(
             "/usr/bin/rg",
             "pattern",
-            Path("/tmp/test"),
+            pathlib.Path("/tmp/test"),
             glob="*.py",
             context_lines=0,
             case_sensitive=True,
@@ -182,7 +182,7 @@ class TestGrepCommandBuilding:
         cmd = GrepTool._build_rg_command(
             "/usr/bin/rg",
             "pattern",
-            Path("/tmp/test"),
+            pathlib.Path("/tmp/test"),
             glob=None,
             context_lines=3,
             case_sensitive=True,
@@ -194,7 +194,7 @@ class TestGrepCommandBuilding:
     def test_grep_command_basic(self):
         cmd = GrepTool._build_grep_command(
             "pattern",
-            Path("/tmp/test"),
+            pathlib.Path("/tmp/test"),
             glob=None,
             context_lines=0,
             case_sensitive=True,
@@ -207,7 +207,7 @@ class TestGrepCommandBuilding:
     def test_grep_command_case_insensitive(self):
         cmd = GrepTool._build_grep_command(
             "pattern",
-            Path("/tmp/test"),
+            pathlib.Path("/tmp/test"),
             glob=None,
             context_lines=0,
             case_sensitive=False,
@@ -218,7 +218,7 @@ class TestGrepCommandBuilding:
     def test_grep_command_with_glob(self):
         cmd = GrepTool._build_grep_command(
             "pattern",
-            Path("/tmp/test"),
+            pathlib.Path("/tmp/test"),
             glob="*.py",
             context_lines=0,
             case_sensitive=True,
@@ -230,7 +230,7 @@ class TestGrepCommandBuilding:
     def test_grep_command_with_context(self):
         cmd = GrepTool._build_grep_command(
             "pattern",
-            Path("/tmp/test"),
+            pathlib.Path("/tmp/test"),
             glob=None,
             context_lines=2,
             case_sensitive=True,
@@ -267,7 +267,7 @@ class TestGrepToolErrorHandling:
         assert "invalid regex" in result.error
 
     @pytest.mark.asyncio
-    async def test_no_base_path(self, tmp_path: Path):
+    async def test_no_base_path(self, tmp_path: pathlib.Path):
         """GrepTool works without a base_path (uses absolute paths)."""
         tool = GrepTool(base_path=None)
         (tmp_path / "test.txt").write_text("findme\n")

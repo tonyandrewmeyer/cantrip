@@ -5,6 +5,107 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 87.4 (Sloth skill subsection) closed.**  The
+  ``observability`` skill gains a "Sloth — SLOs and Burn-Rate
+  Alerts" section between the Alertmanager guidance and the
+  debugging workflow.  Covers the alert-flow diagram (charm →
+  Sloth → Prometheus rules → Alertmanager along the same path
+  Step 2 already wires), a default-SLO table per workload type
+  (12-factor: HTTP availability + p95 latency; infrastructure:
+  hook-success-rate + p95 hook duration; custom: tunable
+  workload-availability), the ``charmcraft.yaml`` relation
+  block, a worked ``slos.yaml`` for a 12-factor charm with two
+  SLOs keyed off the ``juju_application`` topology label, the
+  relation-handler stub using
+  ``from charmlibs.interfaces import sloth`` (PyPI per
+  ``UPSTREAM_AUDIT.md``), and production tips covering
+  objective-picking, the page-vs-ticket burn-rate split, and
+  the retire-the-hand-written-rule pattern when an SLO takes
+  over a previous threshold alert.  Phase 17 acceptance test
+  deferred against a real "production-grade reliability
+  monitoring" session trigger; entry added to
+  ``design/DEFERRED.md`` mirroring 87.1's deferral shape.
+- **Phase 87.1 (Alertmanager guidance) closed.**  The
+  ``observability`` skill gains an alert-rules subsection in
+  Step 2 (publishing rules via
+  ``MetricsEndpointProvider.alert_rules_path`` — the path 99% of
+  charm authors take, with a worked
+  ``src/prometheus_alert_rules/charm_health.yaml`` example
+  showing two rules using the auto-injected ``juju_*`` topology
+  labels), plus a new "Alertmanager — Routing and Receivers"
+  section covering the alert flow (rules → Prometheus →
+  Alertmanager → Karma / Slack / PagerDuty), the
+  ``alertmanager-k8s`` config-file shape, the rare
+  ``alertmanager-dispatch`` consumer side (notification
+  meta-charms), and production routing tips
+  (``juju_application`` grouping, ``severity`` label
+  conventions, inhibit-rule guidance).  Phase 17 acceptance test
+  deferred until a real session asks for production-grade
+  alerting end-to-end.
+- **Phase 88.1 (Canonical Identity Platform research) closed.**
+  Findings in
+  [`design/IDENTITY_PLATFORM.md`](design/IDENTITY_PLATFORM.md):
+  five relation interfaces matter (``oauth`` is the headline;
+  ``oauth-cli`` / ``oidc-info`` / ``hydra-token-introspect`` /
+  ``kratos-external-idp`` are situational); three topologies
+  catalogued (SaaS-public-Hydra, internal-mTLS, bundle-based
+  hybrid); **default topology when a user says "add login"
+  without qualification: bundle-based hybrid** via
+  ``canonical-identity-platform``, mirroring the COS-bundle
+  pattern Cantrip already prescribes for observability.
+  Unblocks Phase 88.2 (skill expansion) by deciding the topology
+  and the relation-interface shortlist.
+- **Phase 87.3 (Profiling and SLO research) closed.**  Verdict in
+  [`design/PROFILING.md`](design/PROFILING.md): **split the
+  work** — Sloth fits as a skill subsection alongside the
+  Alertmanager / Catalogue expansions and lands as new sub-phase
+  **87.4**; Parca / Pyroscope continuous profiling defers to a
+  standalone **Phase 89** opened against four named triggers
+  (charm-perf debug case, SLO breach, user request, or Pyroscope
+  becoming the default COS profiler).  Phase 87 exit criterion
+  updated to call for Sloth coverage at parity with Prometheus /
+  Grafana.  No production code changed.
+- **Phase 83 (Pause-and-Edit Interrupt — Research) closed.**
+  Verdict in [`design/PAUSE_AND_EDIT.md`](design/PAUSE_AND_EDIT.md):
+  **defer the full pause-and-edit interrupt.**  Cancel today
+  already preserves every completed round in ``state.messages``
+  (only the in-flight LLM call's response is lost), no real user
+  complaint surfaced, and the highest-value interrupt flavour
+  (*augment* — "add this clarification") admits a leaner shape
+  (queue-next-instruction) at ~25% of the cost.  No new keybind,
+  no agent-loop pause seam, no provider-client changes — Esc /
+  Ctrl+C / Cancel button stay as hard cancel.  Phase 83b — *Queue-
+  Next Instruction* — opens against three named triggers; Phase
+  83c — full pause-and-edit — opens only after 83b ships *and* a
+  redirect-flavour gap surfaces or a peer ships a clearly better
+  pattern.
+- **Phase 86 (Kubernetes / kubectl Tool or Skill — Research) closed.**
+  Verdict in [`design/K8S_TOOL.md`](design/K8S_TOOL.md): **skill
+  expansion now, defer the typed tool**.  The
+  ``fix-broken-juju-k8s`` skill gains a *Looking underneath Juju*
+  section with the six read-only verbs that answer the symptoms
+  Juju doesn't surface (CrashLoopBackOff reasons, ImagePullBackOff
+  events, ``--previous`` container logs, PVC binding state, pod
+  resource pressure) and a write-policy reminder that
+  ``kubectl delete / apply / exec / patch`` are user-driven only.
+  No new ``Tool`` subclass, no ``run_command`` allowlist change,
+  no ``preflight.py`` kubeconfig probe.  Phase 86b opens against
+  four named triggers when typed-tool autonomy is wanted.
+- **Claude prompt-cache prefix now covers tools and the conversation history, not just the system prompt.**  Previously only the system prompt carried a `cache_control: ephemeral` marker, which meant Anthropic's cached prefix stopped before the tools block — Cantrip's large tool catalogue was sent fresh on every call, eating TPM budget and tripping rate limits.  Two further breakpoints land on (1) the last entry of the converted tools array and (2) the last content block of the trailing message, taking the cached prefix from `system` → `system + tools + history`.  Single-message calls still pay a small cache-write tax on the first turn, but multi-turn agent loops (the dominant cost path) now read the prior turn's prefix at ~10% of base input rate.  No telemetry change — `cache_read_input_tokens` and `cache_creation_input_tokens` already flow through `_extract_usage`.
+- **`charmcraft_init` now passes `--force` when the target directory has unrelated files but no `charmcraft.yaml`.**  Cantrip's own state (the workspace DB, `.source/`, scratch notes) often lives alongside where the agent wants to scaffold a charm, and `charmcraft init` aborts on a non-empty directory.  Previously the agent would work around this by creating a fresh subdirectory; now it can scaffold in place.  A pre-flight check still refuses if `charmcraft.yaml` already exists, so a real charm can never be silently overwritten.
+- **Phase 7 (Polish and Ecosystem) closed; remaining work split into
+  Phases 87 and 88.**  Audit of the four open Phase 7.3 items found
+  five of seven COS components fully wired
+  (Prometheus / Grafana / Loki / Tempo / Traefik) and the in-house
+  ``ChaosTestTool`` covering the chaos-quality exit criterion that
+  Litmus would have served.  Alertmanager + Catalogue-k8s gaps and
+  the unrelated profiling and identity work moved to dedicated
+  follow-on phases so Phase 7 can stop being the catch-all bucket
+  for "ecosystem work we'll get to eventually": **Phase 87**
+  (Observability Stack Follow-On — Alertmanager, Catalogue,
+  Sloth/Parca/Pyroscope decision) and **Phase 88** (Canonical
+  Identity Platform integration — Hydra, Kratos,
+  identity-platform-login-ui).
 - **Tool families bundled behind subcommand discriminators to stay under OpenAI's 128-tool API cap.**  OpenRouter (when routing to OpenAI models) was rejecting Cantrip requests with `Invalid 'tools': array too long. Expected an array with maximum length 128, but got an array with length 130` once skills + virtual-store + a couple of MCP tools pushed the toolset over the limit.  The four largest families now ship as single LLM-facing entries with a `subcommand` field — `juju` (23 actions), `git` (11), `gh` (8, including PR review), `memory` (9).  Each subcommand keeps its full per-action argument schema (visible in the bundled tool's description); permissions, audit, hooks and plan mode all still see the canonical leaf name (`juju_deploy`, `git_commit`, …) because the executor rewrites `juju(subcommand="deploy", …)` into a flat leaf call before any gate runs.  LLM-facing tool count drops from ~123 → ~76; the OpenAI-compatible providers (OpenAI-compatible, Fireworks, OpenRouter) now declare `max_tools=128` as a safety net so future regressions trim to a curated core set instead of letting the API 400 surface.
 
 ### Fixed
@@ -24,6 +125,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   straight through to ``uv venv --python``.  Falls back to
   ``python3`` for unknown series (non-Ubuntu, etc.) so existing
   flows that happened to align by accident keep working.
+- **Gemini provider strips ``additionalProperties`` from tool schemas
+  before dispatch.**  The Google SDK serialises JSON-Schema keys to
+  snake_case on the wire, so Cantrip's subcommand bundles
+  (``git`` / ``gh`` / ``juju`` — which set ``additionalProperties: True``
+  to accept arbitrary leaf-subcommand kwargs as top-level keys) and any
+  MCP-supplied schemas carrying the same key were causing
+  ``generativelanguage.googleapis.com`` to reject the whole request with
+  ``HTTP 400 — Unknown name "additional_properties" at
+  'tools[0].function_declarations[*].parameters'``.
+  ``GeminiProvider._convert_tools`` now scrubs
+  ``additionalProperties`` and ``additionalItems`` recursively before
+  building each ``FunctionDeclaration``.
 - **OpenAI-compatible providers no longer swallow streaming errors as
   ``ResponseNotRead``.**  When an upstream returned a 4xx/5xx during
   ``client.stream(...)``, the shared ``_raise_http_error`` helper

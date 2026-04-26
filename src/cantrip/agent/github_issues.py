@@ -7,12 +7,12 @@ session (or on explicit user request) to avoid hammering the GitHub API.
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import shutil
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass, field
 
 from cantrip.agent.queue import AgentTask, TaskCategory
 
@@ -58,13 +58,13 @@ _MIN_BODY_LENGTH = 50
 TRIAGE_CONFIRM_PREFIX = "triage-issue-"
 
 
-@dataclass
+@dataclasses.dataclass
 class GitHubIssue:
     """A GitHub issue fetched via the ``gh`` CLI."""
 
     number: int
     title: str
-    labels: list[str] = field(default_factory=list)
+    labels: list[str] = dataclasses.field(default_factory=list)
     body: str = ""
     comment_count: int = 0
     url: str = ""
@@ -351,7 +351,7 @@ class IssueTriage:
             )
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001 — triage runs in a background loop; one bad pass must not kill the watcher.
             log.exception("Issue triage failed for %s", self._repo)
         finally:
             self._running = False

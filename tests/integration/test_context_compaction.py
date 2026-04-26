@@ -4,7 +4,7 @@ Exercises the context compaction and virtualisation logic when the
 conversation approaches the context window limit.
 """
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -18,7 +18,7 @@ class TestContextCompaction:
     """Test context compaction and virtualisation via process_message."""
 
     @pytest.mark.asyncio
-    async def test_compaction_triggers_when_threshold_reached(self, tmp_path: Path):
+    async def test_compaction_triggers_when_threshold_reached(self, tmp_path: pathlib.Path):
         """With a tiny context window, messages are compacted after several rounds."""
         provider = FakeProvider(
             responses=[
@@ -51,7 +51,7 @@ class TestContextCompaction:
             assert any("[Conversation Summary]" in m.content for m in agent.state.messages)
 
     @pytest.mark.asyncio
-    async def test_virtual_files_created_for_large_results(self, tmp_path: Path):
+    async def test_virtual_files_created_for_large_results(self, tmp_path: pathlib.Path):
         """A tool result exceeding the virtualisation threshold is virtualised."""
         large_content = "x" * 50_000  # ~12500 tokens at 4 chars/token
 
@@ -90,7 +90,7 @@ class TestContextCompaction:
         assert "virtual file" in tool_result.content.lower()
 
     @pytest.mark.asyncio
-    async def test_compacted_conversation_still_works(self, tmp_path: Path):
+    async def test_compacted_conversation_still_works(self, tmp_path: pathlib.Path):
         """After compaction, the next process_message() still succeeds."""
         provider = FakeProvider(
             responses=[

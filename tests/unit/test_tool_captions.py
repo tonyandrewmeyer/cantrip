@@ -9,9 +9,9 @@ charm-tooling.
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
 import tempfile
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -39,7 +39,7 @@ from cantrip.agent.tools.grep import GrepTool
 @pytest.fixture
 def temp_dir():
     with tempfile.TemporaryDirectory() as td:
-        yield Path(td)
+        yield pathlib.Path(td)
 
 
 # ===========================================================================

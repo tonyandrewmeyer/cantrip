@@ -4,7 +4,7 @@ Exercises the watcher event routing logic: various event categories
 are converted into appropriate task types and added to the work queue.
 """
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -21,7 +21,7 @@ from tests.integration.conftest import wait_for_queue_state
 class TestWatcherEventRouting:
     """Test routing of watcher events into agent tasks."""
 
-    def test_hook_failure_creates_debug_task(self, tmp_path: Path):
+    def test_hook_failure_creates_debug_task(self, tmp_path: pathlib.Path):
         """A hook_failure event creates a DEBUG task."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -42,7 +42,7 @@ class TestWatcherEventRouting:
         assert "[Watcher]" in task.title
         assert "Hook failure" in task.title
 
-    def test_status_change_creates_debug_task(self, tmp_path: Path):
+    def test_status_change_creates_debug_task(self, tmp_path: pathlib.Path):
         """A status_change event creates a DEBUG task."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -62,7 +62,7 @@ class TestWatcherEventRouting:
         assert task.category == TaskCategory.DEBUG
         assert task.status == TaskStatus.PENDING
 
-    def test_log_error_creates_debug_task(self, tmp_path: Path):
+    def test_log_error_creates_debug_task(self, tmp_path: pathlib.Path):
         """A log_error event creates a DEBUG task."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -80,7 +80,7 @@ class TestWatcherEventRouting:
         assert task is not None
         assert task.category == TaskCategory.DEBUG
 
-    def test_new_app_creates_infra_task(self, tmp_path: Path):
+    def test_new_app_creates_infra_task(self, tmp_path: pathlib.Path):
         """A new_app event creates an INFRA task."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -99,7 +99,7 @@ class TestWatcherEventRouting:
         assert task.category == TaskCategory.INFRA
         assert "postgresql" in task.title
 
-    def test_new_relation_creates_infra_task(self, tmp_path: Path):
+    def test_new_relation_creates_infra_task(self, tmp_path: pathlib.Path):
         """A new_relation event creates an INFRA task."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -117,7 +117,7 @@ class TestWatcherEventRouting:
         assert task is not None
         assert task.category == TaskCategory.INFRA
 
-    def test_no_task_without_dev_model(self, tmp_path: Path):
+    def test_no_task_without_dev_model(self, tmp_path: pathlib.Path):
         """Without dev_model, no task is created from a watcher event."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -135,7 +135,7 @@ class TestWatcherEventRouting:
         assert task is None
         assert len(agent.work_queue.all_tasks()) == 0
 
-    def test_unrecognised_category_returns_none(self, tmp_path: Path):
+    def test_unrecognised_category_returns_none(self, tmp_path: pathlib.Path):
         """An unknown event category produces no task."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -154,7 +154,7 @@ class TestWatcherEventRouting:
     @pytest.mark.asyncio
     async def test_watcher_event_task_executed_by_executor(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """A routed DEBUG task is picked up and completed by the executor."""

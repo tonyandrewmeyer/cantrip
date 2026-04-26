@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
+import pathlib
 import shutil
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ _CHARM_YAML_NAMES: frozenset[str] = frozenset(
 _DEFAULT_TIMEOUT_SECONDS: float = 10.0
 
 
-@dataclass
+@dataclasses.dataclass
 class FileDiagnostic:
     """One diagnostic from a per-edit lint pass."""
 
@@ -80,15 +80,15 @@ class FileDiagnostic:
         return f"{prefix}{self.severity}: {code}{self.message}".rstrip()
 
 
-@dataclass
+@dataclasses.dataclass
 class DiagnosticsReport:
     """Aggregate result of a per-edit lint run."""
 
-    diagnostics: list[FileDiagnostic] = field(default_factory=list)
+    diagnostics: list[FileDiagnostic] = dataclasses.field(default_factory=list)
     # Tools that were requested but skipped (missing binary, timeout,
     # parse failure).  Surfaced in the text output so the agent knows
     # the absence of diagnostics is not the same as "all clear".
-    skipped: list[str] = field(default_factory=list)
+    skipped: list[str] = dataclasses.field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not self.diagnostics and not self.skipped
@@ -122,9 +122,9 @@ class DiagnosticsReport:
 
 
 async def run_post_edit_diagnostics(
-    paths: list[Path],
+    paths: list[pathlib.Path],
     *,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
     timeout: float = _DEFAULT_TIMEOUT_SECONDS,
 ) -> DiagnosticsReport:
     """Lint *paths* and return a report.
@@ -169,7 +169,7 @@ async def run_post_edit_diagnostics(
     return report
 
 
-async def _run_ruff(files: list[Path], *, timeout: float) -> DiagnosticsReport:
+async def _run_ruff(files: list[pathlib.Path], *, timeout: float) -> DiagnosticsReport:
     """Run ``ruff check --output-format json`` on *files*."""
     binary = shutil.which("ruff")
     if binary is None:
@@ -202,7 +202,7 @@ async def _run_ruff(files: list[Path], *, timeout: float) -> DiagnosticsReport:
     return DiagnosticsReport(diagnostics=diagnostics)
 
 
-async def _run_ty(files: list[Path], *, timeout: float) -> DiagnosticsReport:
+async def _run_ty(files: list[pathlib.Path], *, timeout: float) -> DiagnosticsReport:
     """Run ``ty check --output-format=concise`` on *files*.
 
     ``ty`` does not emit JSON yet (only ``full`` / ``concise`` /
@@ -279,7 +279,7 @@ def _parse_ty_line(line: str) -> FileDiagnostic | None:
     )
 
 
-async def _run_charmlint(charm_dir: Path, *, timeout: float) -> DiagnosticsReport:
+async def _run_charmlint(charm_dir: pathlib.Path, *, timeout: float) -> DiagnosticsReport:
     """Run charmlint against *charm_dir*.
 
     Prefers the Rust binary when available — same probe as
@@ -312,14 +312,14 @@ def _find_charmlint_binary() -> str | None:
         return rust_bin
     import cantrip
 
-    pkg_dir = Path(cantrip.__file__).resolve().parent
+    pkg_dir = pathlib.Path(cantrip.__file__).resolve().parent
     candidate = pkg_dir.parent.parent / "charmlint-rs" / "target" / "release" / "charmlint"
     if candidate.is_file():
         return str(candidate)
     return None
 
 
-def _charmlint_python(charm_dir: Path) -> DiagnosticsReport:
+def _charmlint_python(charm_dir: pathlib.Path) -> DiagnosticsReport:
     """Run the Python charmlint library and convert its report."""
     try:
         from charmlint import LintConfig, lint
@@ -392,8 +392,8 @@ async def _run_subprocess(cmd: list[str], *, timeout: float) -> tuple[str, str, 
 
 
 def collect_touched_paths(
-    tool_name: str, arguments: dict[str, Any], base_path: Path | None
-) -> list[Path]:
+    tool_name: str, arguments: dict[str, Any], base_path: pathlib.Path | None
+) -> list[pathlib.Path]:
     """Extract resolved file paths from a successful edit-tool call.
 
     Resolves against *base_path* when the argument is relative — the
@@ -418,9 +418,9 @@ def collect_touched_paths(
                     seen.add(file)
                     raw_paths.append(file)
 
-    resolved: list[Path] = []
+    resolved: list[pathlib.Path] = []
     for raw in raw_paths:
-        candidate = Path(raw)
+        candidate = pathlib.Path(raw)
         if not candidate.is_absolute() and base_path is not None:
             candidate = base_path / raw
         try:

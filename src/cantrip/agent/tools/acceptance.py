@@ -10,11 +10,11 @@ Provides five tools for Phase 17 acceptance testing:
 
 import contextlib
 import json
+import pathlib
 import re
 import shlex
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -56,7 +56,7 @@ _INTERFACE_PARTNERS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _load_charm_metadata(charm_dir: Path) -> dict[str, Any] | None:
+def _load_charm_metadata(charm_dir: pathlib.Path) -> dict[str, Any] | None:
     """Load and parse charmcraft.yaml from a charm directory."""
     charmcraft_yaml = charm_dir / "charmcraft.yaml"
     if not charmcraft_yaml.exists():
@@ -267,7 +267,7 @@ class ActionExerciserTool(Tool):
         if not shutil.which("juju"):
             return ToolResult(success=False, output="", error="juju CLI not found on PATH.")
 
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         metadata = _load_charm_metadata(charm_dir)
         actions = metadata.get("actions", {}) if metadata else {}
 
@@ -443,7 +443,7 @@ class RelationSmokeTool(Tool):
             return ToolResult(success=False, output="", error="app parameter is required.")
 
         skip = set(skip_endpoints or [])
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         metadata = _load_charm_metadata(charm_dir)
 
         requires = metadata.get("requires", {}) if metadata else {}
@@ -800,7 +800,7 @@ class WorkloadEndpointTool(Tool):
     @staticmethod
     def _discover_endpoints(path: str, unit_addr: str | None) -> list[dict[str, Any]]:
         """Discover endpoints from charmcraft.yaml containers and config."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         metadata = _load_charm_metadata(charm_dir)
         if not metadata:
             return []
@@ -996,7 +996,7 @@ class ConfigVariationTool(Tool):
             return ToolResult(success=False, output="", error="app parameter is required.")
 
         skip = set(skip_options or [])
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         metadata = _load_charm_metadata(charm_dir)
         config_opts = metadata.get("config", {}).get("options", {}) if metadata else {}
 
@@ -1397,7 +1397,7 @@ class AcceptanceReportTool(Tool):
         if not app:
             return ToolResult(success=False, output="", error="app parameter is required.")
 
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(success=False, output="", error=f"Directory not found: {path}")
 

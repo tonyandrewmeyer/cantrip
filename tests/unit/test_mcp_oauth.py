@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
 import socket
-from pathlib import Path
 
 import aiohttp
 import pytest
@@ -31,7 +31,7 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def _write_yaml(path: Path, content: str) -> Path:
+def _write_yaml(path: pathlib.Path, content: str) -> pathlib.Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
     return path
@@ -41,7 +41,7 @@ def _write_yaml(path: Path, content: str) -> Path:
 
 
 class TestOAuthConfigParsing:
-    def test_minimal(self, tmp_path: Path) -> None:
+    def test_minimal(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             """
@@ -59,7 +59,7 @@ servers:
         assert cfg.oauth.redirect_port == 9876
         assert cfg.oauth.client_metadata_url is None
 
-    def test_full(self, tmp_path: Path) -> None:
+    def test_full(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             """
@@ -81,7 +81,7 @@ servers:
         assert cfg.oauth.redirect_port == 9999
         assert cfg.oauth.client_metadata_url == "https://example.com/metadata.json"
 
-    def test_oauth_must_be_mapping(self, tmp_path: Path) -> None:
+    def test_oauth_must_be_mapping(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             "servers:\n  s:\n    transport: http\n    url: https://x\n    oauth: nope\n",
@@ -89,7 +89,7 @@ servers:
         with pytest.raises(MCPConfigError, match="must be a mapping"):
             _parse_yaml(f)
 
-    def test_client_name_must_be_non_empty(self, tmp_path: Path) -> None:
+    def test_client_name_must_be_non_empty(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             """
@@ -104,7 +104,7 @@ servers:
         with pytest.raises(MCPConfigError, match="non-empty"):
             _parse_yaml(f)
 
-    def test_redirect_port_must_be_int(self, tmp_path: Path) -> None:
+    def test_redirect_port_must_be_int(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             """
@@ -119,7 +119,7 @@ servers:
         with pytest.raises(MCPConfigError, match="must be an integer"):
             _parse_yaml(f)
 
-    def test_redirect_port_out_of_range(self, tmp_path: Path) -> None:
+    def test_redirect_port_out_of_range(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             """
@@ -134,7 +134,7 @@ servers:
         with pytest.raises(MCPConfigError, match="between 1 and 65535"):
             _parse_yaml(f)
 
-    def test_oauth_rejected_for_stdio(self, tmp_path: Path) -> None:
+    def test_oauth_rejected_for_stdio(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             "servers:\n  s:\n    command: x\n    oauth: {}\n",
@@ -143,7 +143,7 @@ servers:
             _parse_yaml(f)
 
     def test_load_configs_round_trip(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CANTRIP_MCP_USER_CONFIG", str(tmp_path / "missing.yaml"))
         repo = tmp_path / "repo"
@@ -347,7 +347,7 @@ class TestBuildClientMetadata:
 
 
 class TestMCPClientOAuthWiring:
-    def test_no_oauth_returns_none(self, tmp_path: Path) -> None:
+    def test_no_oauth_returns_none(self, tmp_path: pathlib.Path) -> None:
         cfg = ServerConfig(
             name="s",
             transport=TransportKind.HTTP,
@@ -358,7 +358,7 @@ class TestMCPClientOAuthWiring:
         assert client._build_oauth_provider() is None  # noqa: SLF001 - test only
 
     def test_oauth_set_builds_provider(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Keep the storage off the user's actual ~/.config dir.
         monkeypatch.setenv("CANTRIP_MCP_TOKEN_DIR", str(tmp_path))
@@ -377,7 +377,7 @@ class TestMCPClientOAuthWiring:
         assert isinstance(provider, httpx.Auth)
 
     @pytest.mark.asyncio
-    async def test_stdio_with_oauth_rejected_at_validate(self, tmp_path: Path) -> None:
+    async def test_stdio_with_oauth_rejected_at_validate(self, tmp_path: pathlib.Path) -> None:
         cfg = ServerConfig(
             name="s",
             transport=TransportKind.STDIO,

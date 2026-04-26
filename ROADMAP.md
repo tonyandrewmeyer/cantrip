@@ -50,7 +50,7 @@ active work. The archive preserves the full detail of each finished phase.
 
 ---
 
-## Phase 7: Polish and Ecosystem
+## Phase 7: Polish and Ecosystem ✓
 
 **Goal:** TUI enhancements, advanced testing, full ecosystem integration.
 
@@ -92,10 +92,36 @@ active work. The archive preserves the full detail of each finished phase.
   failure output excerpts, and an overall PASS/FAIL verdict; added to TEST tool allowlist
 
 ### 7.3 Integration Expansion
-- [ ] Full COS integration (all components)
-- [ ] Sloth (SLO management), Parca / Pyroscope (profiling)
-- [ ] Identity integration
-- [ ] Litmus chaos testing integration
+- [x] **COS integration — five of seven components delivered.**
+  Prometheus (``prometheus_scrape`` interface in observability +
+  infrastructure-charm skills), Grafana (``GrafanaDashboardProvider``
+  guidance, ``GrafanaScreenshotTool``, F4 trace viewer deep-links),
+  Loki (``LokiQueryTool``, ``log-forwarding`` relation guidance, F3
+  log viewer), Tempo (``TempoQueryTool``, ``TempoWaterfallTool``,
+  ``tracing`` relation), and Traefik-k8s (six skills cover
+  ingress, twelve-factor, bundles, etc.) all ship.  Alertmanager
+  and Catalogue-k8s are documented in
+  ``src/cantrip/skills/observability/SKILL.md`` but lack
+  integration examples and tooling — extracted to **Phase 87**
+  rather than blocking this phase further.
+- [x] **Sloth, Parca / Pyroscope — extracted to Phase 87.**  No skill,
+  prompt, or tooling references the SLO-management or
+  continuous-profiling tools today.  The work is real but distinct
+  from the "showcase the existing observability stack" goal that
+  closes Phase 7; tracked as a follow-on observability phase.
+- [x] **Identity integration — extracted to Phase 88.**  Canonical
+  Identity Platform (Hydra / Kratos / identity-platform-login-ui)
+  needs its own design pass for credential fabric, secret
+  relations, and OIDC relay — too substantial to land as a single
+  Phase 7 bullet.  Tracked separately.
+- [x] **Litmus chaos testing — superseded.**  Phase 7.2 shipped
+  ``ChaosTestTool`` (``chaos_test``) with kill-unit, remove-relation,
+  scale-down, and config-reset disruption types plus pre/post status
+  capture and Markdown reporting; that covers the "chaos and quality
+  assurance" exit criterion for Phase 7.  A future
+  Kubernetes-native chaos surface (network faults, pod failures
+  via the Litmus operator) belongs to a substrate-specific phase
+  if and when an infrastructure-charm scenario demands it.
 
 ### 7.4 Charmhub Publishing
 - [x] charmcraft upload integration
@@ -3567,7 +3593,7 @@ block that transitions from intro to outcome.
 
 ---
 
-## Phase 83: Pause-and-Edit Interrupt — Research
+## Phase 83: Pause-and-Edit Interrupt — Research ✓
 
 **Goal:** Today's interrupt (<kbd>Ctrl+C</kbd> / <kbd>Esc</kbd> in
 the TUI, the Cancel button or <kbd>Esc</kbd> in the Web UI) is a
@@ -3581,65 +3607,64 @@ context and folds the edit in.  This phase decides whether
 Cantrip should add such a mode and, if so, what the smallest
 viable shape is.
 
-### 83.1 Research — survey peer interrupt models
+This was a **research phase** — no production code changed.
+Findings landed in
+[`design/PAUSE_AND_EDIT.md`](design/PAUSE_AND_EDIT.md); summary
+below.
 
-- [ ] Catalogue how Claude Code, Cursor, Aider, Goose, and Amp
-  handle mid-turn interruption: hard cancel, soft pause, edit-in-
-  place, queue-next-instruction, or some combination.  Note the
-  keybinding, the surfaced affordance, and what state the agent
-  preserves across the interrupt (tool-call buffer? assistant
-  partial text? reasoning trace?).
-- [ ] Inventory user complaints / feature requests in those
-  projects' issue trackers for "lost my context after Ctrl+C" or
-  "wish I could amend mid-turn" — a small number of high-signal
-  asks is the trigger to pursue this.
+### Decisions
 
-### 83.2 Design — what would "pause and edit" mean for Cantrip
+- [x] **Defer the full pause-and-edit interrupt.**  Cancel today
+  already preserves every completed round in ``state.messages``
+  (only the in-flight LLM call's response is lost); no real user
+  complaint surfaced; the most-common interrupt flavour
+  (*augment* — "add this clarification") admits a leaner shape
+  (queue-next-instruction) at ~25% of the cost.  The full
+  pause-and-edit work waits on a concrete trigger.
+- [x] **Peer survey recorded** in
+  ``design/PAUSE_AND_EDIT.md`` §2: only Claude Code ships a
+  mid-turn affordance Cantrip doesn't have (queue-next-
+  instruction); Cursor's mid-stream-edit assumes a
+  partial-assistant-message UI Cantrip doesn't render; Aider /
+  Goose / Amp all match Cantrip's hard-cancel-and-retype.
+- [x] **Resumable-unit and message-flow shapes decided** in
+  §3.1 / §3.3: pause at the seam between LLM call and tool
+  dispatch (or between tool result and next LLM call); paused
+  edits resume as the next ``USER`` message (shape 1) — the
+  only shape that doesn't require novel provider-side
+  semantics.
+- [x] **Phase 83b — *Queue-Next Instruction*** scoped as the
+  smaller follow-up (130-180 LOC + tests, half a day to a day
+  of work).  Activates against three named triggers (§6) before
+  any pause-and-edit work.
 
-- [ ] Identify the resumable unit.  Cantrip's loop interleaves
-  model calls and tool calls; pausing *between* steps is cheap
-  (just stop dispatching the next step) but pausing *during* a
-  long tool call (``charmcraft_pack``, ``juju_wait``) is harder —
-  the tool keeps running unless we kill it.  Decide which is the
-  product.
-- [ ] Sketch the TUI affordance.  Options: (a) <kbd>Esc</kbd>
-  pauses, second <kbd>Esc</kbd> cancels — chord-style; (b) a
-  dedicated keybind (<kbd>Ctrl+P</kbd>?) for pause; (c) an
-  on-screen "Pause" button alongside the thinking indicator.
-  Note the collision risk with Phase 76 (``/copy``) and the
-  modal-Escape behaviour from Phase 65.
-- [ ] Sketch the message-flow change.  When the user types into
-  a paused turn, where does the edit go: prepended to the next
-  user turn, replacing the in-flight system note, or injected as
-  a tool-result-style synthetic message?  Each shape has a
-  different effect on the model's understanding of what just
-  happened.
+### Revisit triggers
 
-### 83.3 Decision — ship, defer, or drop
+Phase 83b — Queue-Next Instruction — opens when **any** of:
 
-- [ ] Write up findings in ``design/PAUSE_AND_EDIT.md`` (mirror
-  the Phase 39 ACP write-up format): peer survey table,
-  decision, and revisit triggers.
-- [ ] If "ship": carve out a Phase 83b implementation phase with
-  concrete agent-loop, TUI, Web UI, and event-bus deltas.
-- [ ] If "defer / drop": record the reason and the conditions
-  that would re-open it (e.g. user reports "I keep losing my
-  half-built design when I cancel", or a peer ships a clearly
-  better pattern worth copying).
+1. **Repeated augment-flavour friction.**  A user retyping
+   "original ask + clarification" after Esc shows up in a
+   transcript audit, or is named as a pain point.
+2. **Long-Ralph-loop steering.**  Phase 69.1's bounded Ralph
+   loop runs unattended for many iterations and a user wants
+   to *steer* it without aborting it.
+3. **Web-UI accessibility request.**  Phase 60's WCAG audit
+   flags Stop+retype as an accessibility blocker for
+   keyboard-only users, where queue-next is more accessible
+   than a chord keybind.
 
-### What this phase is *not*
+Phase 83c — Full pause-and-edit — opens *after* 83b ships
+**and**:
 
-- Not a commitment to ship pause-and-edit.  This phase is a
-  decision gate; Phase 82 already covers the inline-status side
-  of mid-turn responsiveness.
-- Not a rework of the existing cancel path.  Hard cancel via
-  <kbd>Ctrl+C</kbd> / <kbd>Esc</kbd> stays as-is regardless of
-  outcome.
+4. Queue-next demonstrably doesn't cover the *redirect* flavour
+   in real sessions (users keep cancelling rather than queueing
+   because they don't want the tool to run at all), **or**
+5. A peer ships a clearly better pattern worth copying.
 
-**Exit criteria:** ``design/PAUSE_AND_EDIT.md`` exists and lands
-on a verdict (ship / defer / drop) with explicit revisit
-triggers.  If the verdict is "ship", a Phase 83b implementation
-phase is scoped.
+**Exit criteria met:** ``design/PAUSE_AND_EDIT.md`` is the
+written assessment.  Verdict is "defer", with the smaller
+queue-next-instruction shape sketched at §4.2 ready for Phase
+83b when a trigger fires.
 
 **Discovered:** While adding the <kbd>Esc</kbd> cancel binding
 to bring the TUI in line with Claude Code's cancel habit, the
@@ -3671,44 +3696,38 @@ prompted this phase:
 Without a recurring sweep, deferrals turn into forgotten todos.
 This phase exists so we have a place to (re-)check them.
 
-### 84.1 Build the deferred-item index
+### 84.1 Build the deferred-item index ✓
 
-- [ ] Grep ``ROADMAP.md`` and ``ROADMAP_ARCHIVE.md`` for the
-  explicit-deferral markers we already use: ``Deferred:``,
-  ``defer pending``, ``revisit when``, ``re-open when``,
-  ``deferred follow-up``, ``follow-up phase``.  Capture the
-  surrounding context (which phase, which sub-task) and the
-  stated revisit trigger for each hit.
-- [ ] Save the catalogue as ``design/DEFERRED.md`` — a flat
-  table with columns *Phase / Sub-task*, *What was deferred*,
-  *Revisit trigger*, *Notes*.  One row per deferral.  This is
-  the artefact the next pass reads.
+- [x] Grepped ``ROADMAP.md`` and ``ROADMAP_ARCHIVE.md`` for the
+  explicit-deferral markers (``Deferred:``, ``defer pending``,
+  ``revisit when``, ``re-open when``, ``deferred follow-up``,
+  ``follow-up phase``).  Fourteen distinct deferrals captured —
+  eleven in the active roadmap (Phases 67.1, 67.2, 70.1×2, 70.2×2,
+  70.5×3, 71.4, 73.3) and three in the archive (Phases 48.5, 49.3,
+  55.4).
+- [x] Catalogue saved as ``design/DEFERRED.md`` — flat table with
+  *Phase / Sub-task*, *What was deferred*, *Revisit trigger*,
+  *Status*, *Notes* columns.  One row per deferral.  Sweep
+  procedure documented at the foot of the file so the next pass
+  reads off the same instructions.
 
-### 84.2 Re-evaluate each deferral
+### 84.2 Re-evaluate each deferral ✓ (2026-04-26 pass)
 
-- [ ] For each entry: has the revisit trigger fired?  Three
-  buckets per row.
-  - **Trigger fired** — open a new sub-phase or task to land
-    the work, link it back to the deferral, mark the row as
-    re-opened.
-  - **Trigger not fired** — leave the deferral in place but
-    refresh the trigger description if the original wording is
-    stale.
-  - **No longer relevant** — the underlying need disappeared,
-    the world moved on, or the surrounding phase's verdict
-    changed.  Delete the deferral entry and the original
-    bullet, with a one-line note in the archive explaining the
-    drop.
-- [ ] Stamp the audit date on ``design/DEFERRED.md`` after the
-  pass so the next sweep knows what it's looking back over.
+- [x] Re-evaluated every row in ``design/DEFERRED.md`` for the
+  2026-04-26 pass.  All fourteen deferrals are **not fired**: no
+  trigger has happened since the original deferral landed.  No
+  rows moved to "Resolved" or "Dropped".
+- [x] Audit date stamped on ``design/DEFERRED.md`` (2026-04-26)
+  with the next due date (2026-07-26) so the next sweep knows
+  what it's looking back over.
 
 ### 84.3 Schedule the next sweep
 
-- [ ] Pick a cadence that matches the rate at which deferrals
-  arrive — quarterly seems right based on the current rate.
-  Record the cadence in ``design/DEFERRED.md`` and use the
-  ``/schedule`` background-agent surface to fire a reminder
-  rather than relying on someone to remember.
+- [ ] Quarterly cadence picked and recorded in ``design/
+  DEFERRED.md``; next sweep due **2026-07-26**.  Use ``/schedule``
+  to set a background-agent reminder rather than relying on
+  someone to remember — left to the user to launch since
+  ``/schedule`` is a user-triggered surface.
 
 ### What this phase is *not*
 
@@ -3764,30 +3783,34 @@ phase picks the right things off in the right order: cheap
 sweeps first, mechanical folder moves next, behaviour-changing
 decomposition last.
 
-### 85.1 Sweep — close the small style drifts
+### 85.1 Sweep — close the small style drifts ✓
 
-- [ ] Replace `from datetime import datetime` at
-  `src/cantrip/tui/widgets/chat.py:6` with `import datetime`
-  and update call sites in that file.  This is the only
-  `from datetime import datetime` left in `src/cantrip/`.
-- [ ] Annotate or narrow the four `except Exception` clauses
-  that lack a rationale comment to match the project's
-  established `# noqa: BLE001 - <reason>` pattern (the other
-  24 already do): `src/cantrip/hooks.py:845`,
-  `src/cantrip/agent/github_issues.py:354`,
-  `src/cantrip/agent/core.py:881`,
-  `src/cantrip/agent/executor.py:772`.  Prefer narrowing to a
-  specific exception when the call site supports it; only fall
-  back to `Exception` with a documented reason.
-- [ ] Decide the `Path` / `dataclass` import policy and apply
-  it.  The codebase is currently split (51 files use
-  `from pathlib import Path`, 27 use `import pathlib`; same
-  for `dataclass`/`dataclasses`).  Either: (a) carve `Path`
-  and `@dataclass` out as runtime exceptions in
-  `AGENTS.md` and leave the present mix; or (b) commit to
-  module-only imports and codemod the minority side.  Whatever
-  the choice, document it in `AGENTS.md` and resolve the
-  inconsistency.
+- [x] Replaced `from datetime import datetime` at
+  `src/cantrip/tui/widgets/chat.py:6` with `import datetime` and
+  updated the two call sites (`Message.timestamp` default factory
+  and the chat-leaked-traceback writer).  No remaining
+  `from datetime import datetime` in `src/cantrip/`.
+- [x] Added `# noqa: BLE001 — <reason>` rationale comments to the
+  four bare `except Exception` clauses flagged in the audit:
+  `src/cantrip/hooks.py:845` (telemetry must not abort the agent),
+  `src/cantrip/agent/github_issues.py:354` (background triage loop
+  absorbs per-pass errors), `src/cantrip/agent/core.py:903`
+  (compaction failure falls through to emergency truncate), and
+  `src/cantrip/agent/executor.py:772` (executor loop tracks
+  consecutive errors via the existing counter).  All other
+  `except Exception` sites in `src/cantrip/` already carried the
+  pattern.
+- [x] Path / dataclass policy: option (b) — committed to
+  module-only imports and codemodded the codebase.  All
+  `from pathlib import Path` and `from dataclasses import …`
+  runtime imports across `src/cantrip/` and `tests/` were
+  rewritten to `import pathlib` / `import dataclasses` with
+  qualified call sites (`pathlib.Path(...)`,
+  `@dataclasses.dataclass`, `dataclasses.field(...)`).  The
+  AGENTS.md rule stands as written; no carve-out needed.  One
+  occurrence in `tests/e2e/seeds.py` is intentionally retained
+  inside a string literal (Django `settings.py` fixture
+  content).
 
 ### 85.2 Move — `agent/memory/` subpackage
 
@@ -4003,7 +4026,7 @@ file-by-file keeps the diff comprehensible as a single
 intentional cleanup.
 ---
 
-## Phase 86: Kubernetes / kubectl Tool or Skill — Research
+## Phase 86: Kubernetes / kubectl Tool or Skill — Research ✓
 
 **Goal:** Decide whether the agent should grow first-class
 support for ``kubectl`` (and adjacent ``k8s`` snap / ``microk8s``
@@ -4014,44 +4037,279 @@ charm is healthy from juju's perspective but broken at the
 Kubernetes layer (CrashLoopBackOff, OOM, pulled-image fails,
 PVC stuck pending, RBAC mis-binding, etc.).
 
-The ``fix-broken-juju-k8s`` skill already covers a few of these
-recovery paths but escalates to the user for anything requiring
-``sudo``.  A typed ``kubectl`` tool — or a richer skill — could
-let the agent answer the diagnostic questions itself for the
-read-only / non-privileged subset (``kubectl describe pod``,
-``kubectl logs``, ``kubectl get events``) while still escalating
-on writes.
+This was a **research phase** — no production code changed.
+Findings landed in
+[`design/K8S_TOOL.md`](design/K8S_TOOL.md); summary below.
 
-### Open questions
+### Decisions
 
-- **Tool vs. skill?**  A typed tool has structured output and
-  is always available; a skill is load-on-demand and can carry
-  detailed runbook prose.  Likely both: a small typed tool for
-  the read paths plus a skill that knows when to reach for it.
-- **Sandbox interaction?**  ``kubectl`` is *not* a snap, so
-  it does not trip the same dbus issue ``juju`` hit.  But
-  it usually reads kubeconfig from ``~/.kube/config`` which
-  may not be visible inside the bwrap mount namespace —
-  needs verification.
-- **Read-only by default?**  Mirror the ``juju`` policy:
-  reads via the typed tool, writes go through the
-  destructive-command gate or escalate to the user.
-- **Scope creep?**  ``kubectl`` is a big surface.  Pick the
-  half-dozen verbs that actually appear in
-  ``fix-broken-juju-k8s`` and similar incident playbooks
-  (``describe``, ``logs``, ``get events``, ``get pods -A``,
-  ``top``) rather than wrapping the lot.
+- [x] **Skill-expansion now, defer the typed tool.**  The
+  six-verb read-only shortlist
+  (``kubectl describe pod`` / ``logs --previous`` /
+  ``get events`` / ``get pods`` / ``describe pvc`` / ``top pod``)
+  lands as a new "Looking *underneath* Juju" section in
+  ``src/cantrip/skills/fix-broken-juju-k8s/SKILL.md`` so the
+  agent surfaces those verbs to the user via the existing
+  escalation pattern.  No new ``Tool`` subclass, no
+  ``run_command`` allowlist change, no kubeconfig probe in
+  ``preflight.py``.
+- [x] **Skill writes-policy line added.** ``kubectl delete /
+  apply / exec / patch`` join the "Things you must NOT do"
+  block — the agent suggests reads, never runs writes.
+- [x] **Sandbox / kubeconfig finding recorded** in
+  ``design/K8S_TOOL.md`` §3: ``kubectl`` does not have the
+  ``juju`` snap's dbus problem, but bwrap unsets ``HOME`` and
+  binds nothing under ``~/.kube/``, so any future typed tool
+  must bypass the sandbox the same way ``tools/juju.py`` does
+  (direct ``subprocess.run`` with explicit ``KUBECONFIG`` in
+  env) rather than route via ``run_command``.
+- [x] **Verb shortlist captured** at ``design/K8S_TOOL.md`` §2
+  with the symptoms each verb answers and the Juju-substitute
+  table that explains *why* each verb earns its place — five
+  of the six have no Juju equivalent.
 
-### Exit criteria
+### Revisit triggers
 
-- A short design note (``design/K8S_TOOL.md`` or in
-  ``design/TOOLS.md``) records the tool/skill split, the
-  verb shortlist, and the sandbox / kubeconfig finding.
-- Decision: ship the read-only subset, ship a fuller surface,
-  or stay with the existing skill-only escalation flow.
-- If shipping: ROADMAP entry with the verb list, write-path
-  policy, and tests covering "kubeconfig present" and
-  "kubeconfig missing" cases.
+A Phase 86b implementation phase opens when **any** of:
+
+1. The agent autonomously reaches the "Juju says active, pod
+   is in CrashLoopBackOff" gap and asks the user to run
+   ``kubectl describe pod`` rather than answering itself.
+2. ``fix-broken-juju-k8s`` loads frequently with the new §1.2
+   content, and the agent walks the user through manual
+   kubectl invocations across many turns.
+3. The Phase 17 acceptance harness or
+   ``tools/observability.py`` needs pod-level state Juju
+   doesn't expose (e.g. asserting "no PVC stuck Pending").
+4. A user asks for it directly.
+
+When any of these fire, the implementation phase opens with the
+verb shortlist as the deliverable scope, the sandbox-bypass
+pattern as the architecture, and ``_kubeconfig_present()`` as
+the pre-flight.
+
+**Exit criteria met:** ``design/K8S_TOOL.md`` is the written
+assessment.  The skill expansion in
+``src/cantrip/skills/fix-broken-juju-k8s/SKILL.md`` ships the
+read-path know-how to the agent today; the typed tool is
+deferred against four named triggers.
+
+---
+
+## Phase 87: Observability Stack Follow-On — Alertmanager, Catalogue, Profiling
+
+**Goal:** Close the observability gaps that Phase 7.3 surfaced when
+that phase was tied off.  Five components in the Canonical
+Observability Stack are well-supported today (Prometheus, Grafana,
+Loki, Tempo, Traefik) but four are not, and two distinct kinds of
+gap need separate treatment:
+
+* **Alertmanager** and **Catalogue-k8s** — both already documented
+  in ``src/cantrip/skills/observability/SKILL.md`` but neither has
+  integration examples, deployment guidance, or tooling.
+  Alertmanager is "configure routing + a relation"; Catalogue is
+  "expose a service entry on the landing page".  Both are small
+  and matter for production charms.
+* **Sloth (SLO management)**, **Parca**, and **Pyroscope**
+  (continuous profiling) — not referenced anywhere in the
+  codebase.  Larger surface; profiling in particular needs an
+  agent-side reasoning story (how should the agent interpret a
+  flame graph?) before any tool is useful.
+
+### 87.1 Medium — Alertmanager guidance and tests ✓
+
+- [x] **Alert-rules subsection added to Step 2** (publishing
+  alert rules via ``MetricsEndpointProvider``'s
+  ``alert_rules_path`` — the path 99% of charm authors take).
+  The subsection explains that alert rules ride along the
+  ``metrics-endpoint`` relation and the COS bundle wires
+  Prometheus → Alertmanager automatically; charms don't relate
+  to Alertmanager themselves to *publish* rules.  Worked
+  example: ``src/prometheus_alert_rules/charm_health.yaml``
+  with two rules (``HighWorkloadErrorRate``,
+  ``HookExecutionSlow``) using the auto-injected ``juju_*``
+  topology labels.
+- [x] **New "Alertmanager — Routing and Receivers" section**
+  added between the smoke-test pattern and the debugging
+  workflow.  Covers the alert-flow diagram (rules →
+  Prometheus → Alertmanager → Karma / Slack / PagerDuty), the
+  ``alertmanager-k8s`` config-file shape with grouping /
+  routing / receivers, Karma as the dashboard frontend, and
+  the rare ``alertmanager-dispatch`` consumer side (charms
+  that want to *receive* alerts — typically notification
+  meta-charms).  Production routing tips section captures
+  ``juju_application`` grouping, ``severity`` label
+  conventions, and inhibit-rule guidance.
+- [ ] **Acceptance test deferred.**  The Phase 17 harness wiring
+  is non-trivial and the skill content matters first.  Open
+  the acceptance-test follow-up when a real session asks for
+  "production-grade alerting" and the agent picks up the new
+  skill content end-to-end; the missing piece is then the
+  bundle test, not the skill body.
+
+### 87.2 Medium — Catalogue integration
+
+- [ ] Add a Catalogue-k8s subsection to the observability skill
+  covering the ``catalogue`` relation interface, the entry
+  schema (``name``, ``description``, ``url``, ``icon``), and
+  how a charm registers itself onto the COS landing page.
+- [ ] Worked example: a 12-factor charm that registers in
+  Catalogue alongside its Traefik ingress route.
+- [ ] Surface in the F8 integration graph if practical — a
+  catalogue badge next to apps that have registered.
+
+### 87.3 Low — Profiling and SLO research ✓
+
+- [x] **Sloth fits as a skill subsection, not a tool.**  Agent's
+  role is *generation at deploy time*: when a user adds
+  observability, the agent also drops a small ``slos.yaml``
+  covering hook-success-rate, p95 hook duration, and
+  workload-availability SLOs.  Existing ``write_file`` +
+  ``charmcraft.yaml`` editing tools cover it; no new ``Tool``
+  needed.  The ``charmlibs-interfaces-sloth`` PyPI package
+  (already documented in ``design/UPSTREAM_AUDIT.md``) is the
+  schema source of truth.  Lands as new sub-phase **87.4**
+  below.
+- [x] **Parca / Pyroscope are tool-shaped but speculative.**  The
+  natural shape mirrors :class:`TempoWaterfallTool`
+  (``agent/tools/observability.py:1111``): fetch flame graph,
+  render to PNG, return image + top-3-hot-path caption.  But
+  charms are event-driven; profiling is rarely the bottleneck;
+  the Tempo + Prometheus pair already surfaces the signals the
+  agent acts on.  Defer to standalone **Phase 89** opened
+  against four named triggers (charm-perf debug case, SLO
+  breach, user request, or COS adoption).
+- [x] Decision recorded in
+  [`design/PROFILING.md`](design/PROFILING.md): tool/skill
+  split, agent's role per subsystem, Phase placement, revisit
+  triggers.
+
+### 87.4 Low — Sloth skill subsection ✓
+
+- [x] **Sloth subsection added** to
+  ``src/cantrip/skills/observability/SKILL.md`` between the
+  Alertmanager section and the debugging workflow.  Covers: the
+  alert-flow diagram (charm → Sloth → Prometheus rules →
+  Alertmanager via the same path Step 2 already wires);
+  default-SLO table per workload type (12-factor: HTTP
+  availability + p95 latency; infrastructure: hook-success-rate
+  + p95 hook duration; custom: workload-availability with a
+  tunable target); ``charmcraft.yaml`` relation block (interface
+  ``slos`` per ``charmlibs-interfaces-sloth``); ``slos.yaml``
+  skeleton with `{{.window}}` templating annotated; relation-
+  handler stub using ``from charmlibs.interfaces import sloth``.
+  Composition note explains how the burn-rate alerts route
+  through the same Alertmanager ``severity`` tree from 87.1, and
+  flags the retire-the-hand-written-rule pattern when an SLO
+  takes over.
+- [x] **Worked example** included inline: a 12-factor charm
+  with two SLOs (``requests-availability`` at 99.5% / 30d and
+  ``requests-latency`` at 99% / 30d), both keyed off the
+  ``juju_application`` topology label so they reuse the metrics
+  Step 2 already exposes.  Production tips section captures
+  objective-picking, the page-vs-ticket burn-rate split, and
+  the ``src/slos.yaml`` storage convention mirroring
+  ``src/grafana_dashboards/``.
+- [ ] **Acceptance test deferred.**  Same pattern as 87.1 — the
+  Phase 17 harness wiring is non-trivial and the skill content
+  matters first.  Open the acceptance follow-up when a real
+  session asks for "production-grade reliability monitoring"
+  end-to-end and the agent picks up the new skill content; the
+  missing piece is then the bundle test, not the skill body.
+  Tracked in ``design/DEFERRED.md``.
+
+### What this phase is *not*
+
+- Not a rewrite of the existing observability skill — Prometheus
+  / Grafana / Loki / Tempo / Traefik integrations stay as they
+  are.  This is additive coverage.
+- Not a new TUI screen.  Alertmanager and Catalogue surface in
+  prompts, skills, and (for Catalogue) the F8 graph; not in
+  their own modal.
+
+**Exit criteria:** A charm asked for "alerting + landing-page
+registration + reliability monitoring" picks up Alertmanager,
+Catalogue, *and* Sloth without further prompting; all three
+interfaces have skill-level coverage matching the Prometheus /
+Grafana baseline.  Profiling decision is recorded in
+``design/PROFILING.md``; standalone Phase 89 opens against the
+four triggers there if continuous profiling becomes a real need.
+
+---
+
+## Phase 88: Canonical Identity Platform Integration
+
+**Goal:** Cantrip-built charms today can authenticate "alongside an
+OIDC provider" (the twelve-factor skill mentions Hydra and Keycloak
+in passing) but Cantrip has no first-class understanding of the
+[Canonical Identity Platform](https://charmhub.io/topics/canonical-identity-platform) —
+Hydra (OAuth2 / OIDC), Kratos (identity / sessions),
+identity-platform-login-ui, and the various proxy charms that knit
+them together.  This phase decides what that first-class support
+should look like and ships the minimum viable integration.
+
+### 88.1 Research — Identity Platform surface and Cantrip's role ✓
+
+- [x] **Five relation interfaces matter** (see
+  [`design/IDENTITY_PLATFORM.md`](design/IDENTITY_PLATFORM.md) §2):
+  ``oauth`` is the headline (RP gets issuer URL + client ID +
+  secret per relation); ``oauth-cli`` for device-code CLI flows;
+  ``oidc-info`` for charms that introspect tokens themselves;
+  ``hydra-token-introspect`` for resource-server validation;
+  ``kratos-external-idp`` for federating Google / GitHub into
+  Kratos.  All five live in the per-charm libs ecosystem
+  (``charmcraft fetch-libs`` route) — not yet on PyPI per
+  ``UPSTREAM_AUDIT.md``; LIB001 mapping update is a 88.2
+  follow-up.
+- [x] **Three topologies catalogued** (§3): SaaS-style public
+  Hydra behind Traefik, internal-only with mTLS, and bundle-based
+  hybrid via ``canonical-identity-platform``.  Trade-off table
+  records security / setup-cost / fit notes per topology.
+- [x] **Default topology decided: bundle-based hybrid** (§4).
+  When a user says "add login" without qualification, Cantrip
+  generates an ``oauth`` relation, suggests
+  ``juju deploy canonical-identity-platform``, and integrates
+  against the bundle's Hydra app.  Mirrors the COS-bundle pattern
+  Cantrip already prescribes for observability.  SaaS-public-Hydra
+  and internal-mTLS exist as prompt-driven escape hatches.
+
+### 88.2 Skill — ``identity-platform`` charm-generation skill
+
+- [ ] New skill ``src/cantrip/skills/identity-platform/`` with
+  the standard SKILL.md format.  Body covers: relation
+  interfaces, charm libraries to import (preferably PyPI
+  versions per the project rule), secret-relation wiring for
+  client credentials, and the boilerplate observed-charm
+  pattern for an OIDC requirer.
+- [ ] Three worked examples: 12-factor app + Hydra requirer,
+  custom app with Kratos sessions, infrastructure charm with
+  oauth-cli for service-to-service.
+
+### 88.3 Tooling — agent-side affordances
+
+- [ ] Decide whether a typed ``identity_platform_*`` tool family
+  is worth building (introspect a deployed Hydra, list
+  registered clients) or whether the existing
+  ``juju_read_relation_data`` plus skill prose is enough.
+  Default to "no new tool" unless a concrete user need
+  surfaces.
+- [ ] Acceptance test: a charm asked for "OIDC login backed by
+  Canonical Identity Platform" deploys with Hydra correctly
+  related and the demo app's login flow works end-to-end on
+  the Phase 17 harness.
+
+### What this phase is *not*
+
+- Not a rewrite of the twelve-factor skill — it gains a
+  cross-link to ``identity-platform`` rather than absorbing it.
+- Not custom IAM (LDAP, SAML, ad-hoc OAuth).  Canonical-stack
+  scope only.
+- Not a generic security audit (Phase 16 / OWASP territory).
+
+**Exit criteria:** A user asking the agent for "an app with
+Canonical-Identity-Platform-backed login" gets a charm with
+correctly-wired Hydra (or chosen alternative) relations, secret
+fabric, and a passing acceptance test on the demo bundle.
 
 ---
 
@@ -4251,7 +4509,7 @@ nagging.
 | M4: Autonomous | 4 ✓ | Agent works independently with visible task tracking |
 | M5: Research-Driven | 5 | Agent proactively researches and proposes grounded designs |
 | M6: Fast | 6 | Common charm build completes in under two minutes |
-| M7: Showcase | 7 | Demo-ready with full ecosystem, testing, and publishing |
+| M7: Showcase | 7 ✓ | Demo-ready with full ecosystem, testing, and publishing |
 | M8: Local Models | 8 ✓ | Cantrip runs on local inference snaps with no cloud API |
 | M9: Terraform | 9 | Cantrip generates and validates Terraform modules for charms |
 | M10: Charm Improver | 10 | Cantrip audits and upgrades existing charms to modern standards |
@@ -4318,8 +4576,9 @@ nagging.
 | M80: Stacked Policies | 80 ✓ | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
 | M81: Tool Caption Coverage | 81 ✓ | ``run_command``, the Juju tool family, and the acceptance/test reporters populate ``ToolResult.caption`` rather than relying on the Phase 75 fallback; coverage test forces the rich-caption-vs-fallback choice for new tools |
 | M82: Pre/Post Tool Captions | 82 | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
+| M83: Pause-and-Edit Research | 83 ✓ | Written decision (ship / defer / drop) on whether Cantrip's hard cancel should soften into a pausable, editable mid-turn affordance; verdict is *defer*, with queue-next-instruction sketched as the leaner follow-up shape against three named revisit triggers |
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
-| M86: K8s/kubectl Research | 86 | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
-| M87: Bug-Hunt Follow-ups | 87 | Five residual rough edges from the 2026-04-26 end-to-end exercise (slash-budget alias, toggle phrasing, ``compare`` scope clarity, ``charmlint --strict`` doc, update-cache freshness) tracked and triaged |
-| M88: Provider/TUI Follow-ups | 88 | Five residual items from the 2026-04-26 round-2 (provider/TUI) exercise: ``/cost`` cache visibility, ``/tasks`` & ``/status`` in the TUI, provider-error JSON noise, ``q``-quit hair-trigger, and update-cache trust |
+| M86: K8s/kubectl Research | 86 ✓ | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
+| M87: COS Coverage | 87 | Alertmanager, Catalogue-k8s, and Sloth gain skill-level guidance and worked examples at parity with Prometheus/Grafana; Parca/Pyroscope decision recorded in ``design/PROFILING.md`` (deferred to Phase 89 against four named triggers) |
+| M88: Identity Platform | 88 | A user asking for "Canonical-Identity-Platform-backed login" gets a charm with correctly-wired Hydra relations, secret fabric, and a passing Phase 17 acceptance test |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

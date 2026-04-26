@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -18,7 +18,7 @@ from tests.unit.executor.conftest import _make_tool
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> SessionStore:
+def store(tmp_path: pathlib.Path) -> SessionStore:
     db = tmp_path / ".cantrip"
     s = SessionStore(db)
     s.open()
@@ -26,7 +26,7 @@ def store(tmp_path: Path) -> SessionStore:
     return s
 
 
-def _install_rate_limit(tmp_path: Path, cap: int) -> Path:
+def _install_rate_limit(tmp_path: pathlib.Path, cap: int) -> pathlib.Path:
     """Write a per-charm policy file that sets ``max_calls_per_request``.
 
     Returns the ``charm_path`` to hand to ``AgentState``.  Using a
@@ -42,7 +42,7 @@ def _install_rate_limit(tmp_path: Path, cap: int) -> Path:
 class TestRateLimitCap:
     """Executor reads ``max_calls_per_request`` from the composed stack."""
 
-    def test_no_policy_file_means_no_cap(self, tmp_path: Path) -> None:
+    def test_no_policy_file_means_no_cap(self, tmp_path: pathlib.Path) -> None:
         state = AgentState(charm_path=tmp_path)
         executor = BackgroundExecutor(
             queue=WorkQueue(),
@@ -52,7 +52,7 @@ class TestRateLimitCap:
         )
         assert executor._rate_limit_cap is None
 
-    def test_per_charm_file_sets_cap(self, tmp_path: Path) -> None:
+    def test_per_charm_file_sets_cap(self, tmp_path: pathlib.Path) -> None:
         charm_path = _install_rate_limit(tmp_path, 50)
         state = AgentState(charm_path=charm_path)
         executor = BackgroundExecutor(
@@ -67,7 +67,7 @@ class TestRateLimitCap:
 class TestCounterIncrementsViaCallback:
     """The wrapped ``on_tool_invoked`` bumps the counter for non-MCP calls."""
 
-    def _make(self, tmp_path: Path, cap: int | None = None) -> BackgroundExecutor:
+    def _make(self, tmp_path: pathlib.Path, cap: int | None = None) -> BackgroundExecutor:
         charm_path = _install_rate_limit(tmp_path, cap) if cap is not None else tmp_path
         state = AgentState(charm_path=charm_path)
         return BackgroundExecutor(
@@ -77,7 +77,7 @@ class TestCounterIncrementsViaCallback:
             state=state,
         )
 
-    def test_non_mcp_call_increments(self, tmp_path: Path) -> None:
+    def test_non_mcp_call_increments(self, tmp_path: pathlib.Path) -> None:
         executor = self._make(tmp_path, cap=5)
         assert executor._tool_calls_made == 0
         # ``_on_tool_invoked`` is the wrapped callback the subagent
@@ -85,7 +85,7 @@ class TestCounterIncrementsViaCallback:
         executor._on_tool_invoked("read_file", {}, ToolResult(success=True, output=""), 10)
         assert executor._tool_calls_made == 1
 
-    def test_mcp_call_does_not_increment(self, tmp_path: Path) -> None:
+    def test_mcp_call_does_not_increment(self, tmp_path: pathlib.Path) -> None:
         executor = self._make(tmp_path, cap=5)
         executor._on_tool_invoked(
             "mcp__grafana__query",
@@ -95,7 +95,7 @@ class TestCounterIncrementsViaCallback:
         )
         assert executor._tool_calls_made == 0
 
-    def test_counter_bumped_even_without_cap(self, tmp_path: Path) -> None:
+    def test_counter_bumped_even_without_cap(self, tmp_path: pathlib.Path) -> None:
         """No cap means no gate, but the counter still runs — lets
         future tooling surface "calls made so far" even before a cap
         is introduced."""
@@ -103,7 +103,7 @@ class TestCounterIncrementsViaCallback:
         executor._on_tool_invoked("read_file", {}, ToolResult(success=True, output=""), 10)
         assert executor._tool_calls_made == 1
 
-    def test_inner_callback_still_fires(self, tmp_path: Path) -> None:
+    def test_inner_callback_still_fires(self, tmp_path: pathlib.Path) -> None:
         """The user's original ``on_tool_invoked`` must still be called.
 
         Otherwise the rate-limit wrapper would accidentally swallow
@@ -131,7 +131,7 @@ class TestCounterIncrementsViaCallback:
 class TestRateLimitGate:
     """``_check_rate_limit`` trips when the counter hits the cap."""
 
-    def test_gate_clear_below_cap(self, tmp_path: Path) -> None:
+    def test_gate_clear_below_cap(self, tmp_path: pathlib.Path) -> None:
         charm_path = _install_rate_limit(tmp_path, 5)
         state = AgentState(charm_path=charm_path)
         executor = BackgroundExecutor(
@@ -143,7 +143,7 @@ class TestRateLimitGate:
         executor._tool_calls_made = 4
         assert executor._check_rate_limit() is None
 
-    def test_gate_trips_at_cap(self, tmp_path: Path) -> None:
+    def test_gate_trips_at_cap(self, tmp_path: pathlib.Path) -> None:
         charm_path = _install_rate_limit(tmp_path, 5)
         state = AgentState(charm_path=charm_path)
         executor = BackgroundExecutor(
@@ -156,7 +156,7 @@ class TestRateLimitGate:
         trip = executor._check_rate_limit()
         assert trip == (5, 5)
 
-    def test_gate_never_trips_without_cap(self, tmp_path: Path) -> None:
+    def test_gate_never_trips_without_cap(self, tmp_path: pathlib.Path) -> None:
         state = AgentState(charm_path=tmp_path)
         executor = BackgroundExecutor(
             queue=WorkQueue(),
@@ -172,7 +172,9 @@ class TestRateLimitBlocksSpawn:
     """End-to-end: a tripped rate limit blocks the task and fires the callback."""
 
     @pytest.mark.asyncio
-    async def test_rate_limited_task_blocks(self, store: SessionStore, tmp_path: Path) -> None:
+    async def test_rate_limited_task_blocks(
+        self, store: SessionStore, tmp_path: pathlib.Path
+    ) -> None:
         charm_path = _install_rate_limit(tmp_path, 1)
         queue = WorkQueue()
         task = AgentTask(id="t1", title="Build", category=TaskCategory.BUILD)
@@ -208,7 +210,7 @@ class TestRateLimitBlocksSpawn:
 
     @pytest.mark.asyncio
     async def test_raising_counter_below_cap_runs_task(
-        self, store: SessionStore, tmp_path: Path
+        self, store: SessionStore, tmp_path: pathlib.Path
     ) -> None:
         """Lowering the counter (e.g. after the operator clears state)
         lets a previously blocked task proceed."""

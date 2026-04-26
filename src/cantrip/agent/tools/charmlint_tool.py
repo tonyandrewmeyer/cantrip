@@ -1,9 +1,9 @@
 """Charmlint agent tool — run the standalone charm linter."""
 
 import json
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
@@ -73,7 +73,7 @@ class CharmlintTool(Tool):
         # Check the in-tree build location.
         import cantrip
 
-        pkg_dir = Path(cantrip.__file__).resolve().parent
+        pkg_dir = pathlib.Path(cantrip.__file__).resolve().parent
         candidate = pkg_dir.parent.parent / "charmlint-rs" / "target" / "release" / "charmlint"
         if candidate.is_file():
             return str(candidate)
@@ -87,7 +87,7 @@ class CharmlintTool(Tool):
         severity: str = "",
     ) -> ToolResult:
         """Run charmlint, preferring the Rust binary when available."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,
@@ -103,7 +103,7 @@ class CharmlintTool(Tool):
     def _execute_rust(
         self,
         binary: str,
-        charm_dir: Path,
+        charm_dir: pathlib.Path,
         select: str,
         ignore: str,
         severity: str,
@@ -185,7 +185,7 @@ class CharmlintTool(Tool):
 
     @staticmethod
     def _execute_python(
-        charm_dir: Path,
+        charm_dir: pathlib.Path,
         select: str,
         ignore: str,
         severity: str,

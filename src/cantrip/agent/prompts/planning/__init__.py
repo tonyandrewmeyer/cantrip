@@ -8,10 +8,10 @@ already used for ``system.md.j2``, and keeps ``planner.py`` focused on
 control flow rather than domain knowledge.
 """
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
-_TEMPLATE_DIR = Path(__file__).parent
+_TEMPLATE_DIR = pathlib.Path(__file__).parent
 
 # Jinja2 environment is loaded lazily to avoid import-time I/O; callers
 # of ``planner.py`` may never hit the LLM path at all.

@@ -1,6 +1,6 @@
 """Shared fixtures for charmlint tests."""
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import pytest
@@ -8,7 +8,7 @@ import yaml
 
 
 @pytest.fixture
-def tmp_charm(tmp_path: Path) -> Path:
+def tmp_charm(tmp_path: pathlib.Path) -> pathlib.Path:
     """Create a minimal charm directory and return its path."""
     charm_dir = tmp_path / "test-charm"
     charm_dir.mkdir()
@@ -16,18 +16,18 @@ def tmp_charm(tmp_path: Path) -> Path:
     return charm_dir
 
 
-def write_charmcraft_yaml(charm_dir: Path, data: dict[str, Any]) -> None:
+def write_charmcraft_yaml(charm_dir: pathlib.Path, data: dict[str, Any]) -> None:
     """Write a charmcraft.yaml file to a charm directory."""
     with (charm_dir / "charmcraft.yaml").open("w") as f:
         yaml.dump(data, f)
 
 
-def write_charm_source(charm_dir: Path, content: str, filename: str = "charm.py") -> None:
+def write_charm_source(charm_dir: pathlib.Path, content: str, filename: str = "charm.py") -> None:
     """Write a Python source file to the charm's src/ directory."""
     (charm_dir / "src" / filename).write_text(content)
 
 
-def make_full_charm(charm_dir: Path) -> None:
+def make_full_charm(charm_dir: pathlib.Path) -> None:
     """Populate a charm directory with metadata that passes most checks."""
     write_charmcraft_yaml(
         charm_dir,

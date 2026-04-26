@@ -4,7 +4,7 @@ These tests verify that the skills infrastructure works end-to-end
 when accessed through the agent's tool layer.
 """
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -18,7 +18,7 @@ class TestSkillsInAgentContext:
     """Verify skills are discoverable and loadable through the agent."""
 
     @pytest.mark.asyncio
-    async def test_load_skill_tool_works(self, tmp_path: Path):
+    async def test_load_skill_tool_works(self, tmp_path: pathlib.Path):
         """The load_skill tool returns content for a known skill."""
         provider = FakeProvider(
             [
@@ -47,7 +47,7 @@ class TestSkillsInAgentContext:
         assert not tool_result.is_error
         assert len(tool_result.content) > 0
 
-    def test_system_prompt_includes_skills(self, tmp_path: Path):
+    def test_system_prompt_includes_skills(self, tmp_path: pathlib.Path):
         """The built system prompt should reference available skills."""
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import pathlib
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from cantrip.llm.base import Message
@@ -13,14 +13,14 @@ if TYPE_CHECKING:
     from cantrip.agent.goal_budget import GoalBudget
 
 
-@dataclass
+@dataclasses.dataclass
 class Decision:
     """A decision made during the session."""
 
     type: str
     choice: str
     reason: str | None = None
-    timestamp: datetime.datetime = field(default_factory=datetime.datetime.now)
+    timestamp: datetime.datetime = dataclasses.field(default_factory=datetime.datetime.now)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -32,7 +32,7 @@ class Decision:
         }
 
 
-@dataclass
+@dataclasses.dataclass
 class TestResults:
     """Parsed results from the most recent test run."""
 
@@ -61,7 +61,7 @@ class TestResults:
         return f"{icon} {', '.join(parts)}"
 
 
-@dataclass
+@dataclasses.dataclass
 class AgentState:
     """Current agent state."""
 
@@ -213,8 +213,8 @@ class AgentState:
     architect_consecutive_failures: int = 0
     architect_failure_threshold: int = 2
 
-    messages: list[Message] = field(default_factory=list)
-    decisions: list[Decision] = field(default_factory=list)
+    messages: list[Message] = dataclasses.field(default_factory=list)
+    decisions: list[Decision] = dataclasses.field(default_factory=list)
 
     def add_decision(self, type: str, choice: str, reason: str | None = None) -> None:
         """Record a decision."""

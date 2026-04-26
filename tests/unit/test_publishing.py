@@ -1,8 +1,8 @@
 """Tests for Charmhub publishing tools."""
 
+import pathlib
 import subprocess
 import tempfile
-from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -31,7 +31,7 @@ class TestCharmcraftUploadTool:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_unconfirmed_returns_error(self, tool, temp_dir):
@@ -256,7 +256,7 @@ class TestGenerateReadmeTool:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_no_charmcraft_yaml(self, tool, temp_dir):
@@ -484,7 +484,7 @@ class TestGenerateIconTool:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_generates_icon(self, tool, temp_dir) -> None:
@@ -709,7 +709,7 @@ class TestGenerateDocsTool:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_generates_docs_directory(self, tool, temp_dir) -> None:
@@ -841,7 +841,7 @@ class TestGenerateDiagramTool:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_generates_architecture_md(self, tool, temp_dir) -> None:

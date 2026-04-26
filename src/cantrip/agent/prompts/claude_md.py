@@ -1,10 +1,10 @@
 """Render a CLAUDE.md file for a charm project."""
 
-from pathlib import Path
+import pathlib
 
 import jinja2
 
-_TEMPLATE_DIR = Path(__file__).parent
+_TEMPLATE_DIR = pathlib.Path(__file__).parent
 _ENV = jinja2.Environment(
     loader=jinja2.FileSystemLoader(_TEMPLATE_DIR),
     keep_trailing_newline=True,

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 # strings.  Matches the sanitisation approach in ``system.py``.
 _JINJA_SYNTAX = re.compile(r"[{}%]")
 
-_TEMPLATE_DIR = Path(__file__).parent
+_TEMPLATE_DIR = pathlib.Path(__file__).parent
 
 _JINJA_ENV: Any = None
 _WRITER_TEMPLATE: Any = None

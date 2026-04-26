@@ -4,9 +4,9 @@ Wraps ``rg`` (ripgrep) when available, falling back to ``grep -rn``.
 """
 
 import logging
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 from cantrip.agent.tools.base import ToolResult
@@ -177,7 +177,7 @@ class GrepTool(PathAwareTool):
     def _build_rg_command(
         rg_bin: str,
         pattern: str,
-        path: Path,
+        path: pathlib.Path,
         glob: str | None,
         context_lines: int,
         case_sensitive: bool,
@@ -202,7 +202,7 @@ class GrepTool(PathAwareTool):
     @staticmethod
     def _build_grep_command(
         pattern: str,
-        path: Path,
+        path: pathlib.Path,
         glob: str | None,
         context_lines: int,
         case_sensitive: bool,

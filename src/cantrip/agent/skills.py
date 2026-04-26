@@ -1,17 +1,17 @@
 """Skills discovery and loading following the agentskills.io pattern."""
 
+import dataclasses
 import fnmatch
 import logging
+import pathlib
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
 
 import yaml
 
 log = logging.getLogger(__name__)
 
 # Default location of bundled skill definitions.
-_DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
+_DEFAULT_SKILLS_DIR = pathlib.Path(__file__).resolve().parent.parent / "skills"
 
 # Separator between YAML frontmatter and Markdown body in SKILL.md files.
 _FRONTMATTER_DELIMITER = "---"
@@ -21,13 +21,13 @@ SOURCE_BUNDLED = "bundled"
 SOURCE_EXTERNAL = "external"
 
 
-@dataclass
+@dataclasses.dataclass
 class SkillMetadata:
     """Lightweight metadata for a single skill."""
 
     name: str
     description: str
-    path: Path
+    path: pathlib.Path
     # Tag telling which root directory the skill was discovered in.
     # Bundled skills ship with Cantrip; external skills come from
     # ``~/.claude/skills/`` or ``~/.config/cantrip/skills/``.
@@ -35,7 +35,7 @@ class SkillMetadata:
     # Optional tool allowlist declared in the skill's frontmatter.
     # Preserved for cross-vendor skill round-tripping; the loader
     # does not enforce it.
-    tools: list[str] = field(default_factory=list)
+    tools: list[str] = dataclasses.field(default_factory=list)
     # Optional MCP server dependencies (Phase 50.4).  Names here are
     # checked against the configured ``MCPRegistry`` at load time;
     # ``LoadSkillTool`` prepends a clear warning banner when any
@@ -44,7 +44,7 @@ class SkillMetadata:
     # rather than silently producing nonsense when the server is
     # missing.  Accepts a YAML list or a comma-separated string in
     # frontmatter — the same coercion that applies to ``tools``.
-    mcp_servers: list[str] = field(default_factory=list)
+    mcp_servers: list[str] = dataclasses.field(default_factory=list)
     # Optional glob list for conditional inclusion in the system
     # prompt (Phase 70.3).  When non-empty, the skill only enters the
     # prompt index when at least one current-turn file path matches
@@ -55,10 +55,10 @@ class SkillMetadata:
     # support for any number of path segments); bare patterns like
     # ``metadata.yaml`` or ``*.py`` are matched against the
     # basename.  Same coercion as ``tools`` and ``mcp_servers``.
-    globs: list[str] = field(default_factory=list)
+    globs: list[str] = dataclasses.field(default_factory=list)
 
 
-def _default_external_skill_dirs() -> list[Path]:
+def _default_external_skill_dirs() -> list[pathlib.Path]:
     """Return the user-scoped skill directories searched by default.
 
     Order matters: later directories override earlier ones on name
@@ -76,7 +76,7 @@ def _default_external_skill_dirs() -> list[Path]:
       precedence over both shared locations when a user wants to
       override.
     """
-    home = Path.home()
+    home = pathlib.Path.home()
     return [
         home / ".config" / "agents" / "skills",
         home / ".claude" / "skills",
@@ -84,7 +84,7 @@ def _default_external_skill_dirs() -> list[Path]:
     ]
 
 
-def _default_project_skill_dirs(project_root: Path) -> list[Path]:
+def _default_project_skill_dirs(project_root: pathlib.Path) -> list[pathlib.Path]:
     """Return project-scoped skill directories for a charm repo.
 
     These correspond to the paths ``gh skill install`` writes into
@@ -121,10 +121,10 @@ class SkillsIndex:
 
     def __init__(
         self,
-        skills_dir: Path | None = None,
+        skills_dir: pathlib.Path | None = None,
         *,
-        extra_dirs: Iterable[Path] | None = None,
-        project_root: Path | None = None,
+        extra_dirs: Iterable[pathlib.Path] | None = None,
+        project_root: pathlib.Path | None = None,
     ) -> None:
         """Build an index.
 
@@ -147,7 +147,7 @@ class SkillsIndex:
           any user-scope conflict.
         """
         if skills_dir is None:
-            baseline: list[Path] = [_DEFAULT_SKILLS_DIR]
+            baseline: list[pathlib.Path] = [_DEFAULT_SKILLS_DIR]
             if extra_dirs is None:
                 baseline.extend(_default_external_skill_dirs())
             else:
@@ -161,10 +161,10 @@ class SkillsIndex:
             baseline.extend(_default_project_skill_dirs(project_root))
 
         # Preserve the baseline order for precedence decisions.
-        self._skills_dirs: list[Path] = baseline
+        self._skills_dirs: list[pathlib.Path] = baseline
         # Retained for backwards compatibility with tests that introspect
         # the single-directory constructor.  New code should not rely on it.
-        self._skills_dir: Path = baseline[0]
+        self._skills_dir: pathlib.Path = baseline[0]
         self._skills: dict[str, SkillMetadata] = {}
 
     def discover(self) -> None:
@@ -215,8 +215,8 @@ class SkillsIndex:
     def format_for_prompt(
         self,
         *,
-        current_files: Sequence[Path] | None = None,
-        charm_path: Path | None = None,
+        current_files: Sequence[pathlib.Path] | None = None,
+        charm_path: pathlib.Path | None = None,
     ) -> str:
         """Render an XML block listing all skills for inclusion in a system prompt.
 
@@ -261,8 +261,8 @@ class SkillsIndex:
     def filtering_report(
         self,
         *,
-        current_files: Sequence[Path],
-        charm_path: Path | None = None,
+        current_files: Sequence[pathlib.Path],
+        charm_path: pathlib.Path | None = None,
     ) -> dict[str, list[str]]:
         """Return a structured record of which globbed skills loaded.
 
@@ -299,8 +299,8 @@ class SkillsIndex:
         self,
         skills: list[SkillMetadata],
         *,
-        current_files: Sequence[Path] | None,
-        charm_path: Path | None,
+        current_files: Sequence[pathlib.Path] | None,
+        charm_path: pathlib.Path | None,
     ) -> list[SkillMetadata]:
         """Apply ``globs:`` frontmatter to *skills* and return survivors.
 
@@ -325,7 +325,7 @@ class SkillsIndex:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _discover_one_root(self, root: Path, source: str) -> None:
+    def _discover_one_root(self, root: pathlib.Path, source: str) -> None:
         """Index every skill found directly under *root*."""
         for child in sorted(root.iterdir()):
             skill_file = self._resolve_skill_file(child)
@@ -351,7 +351,7 @@ class SkillsIndex:
             log.debug("Discovered skill: %s (from %s)", metadata.name, source)
 
     @staticmethod
-    def _resolve_skill_file(child: Path) -> Path | None:
+    def _resolve_skill_file(child: pathlib.Path) -> pathlib.Path | None:
         """Return the SKILL.md / single-file path for *child*, or ``None``.
 
         ``<child>/SKILL.md`` wins over a bare ``.md`` file: if both shapes
@@ -368,7 +368,7 @@ class SkillsIndex:
         return None
 
     @staticmethod
-    def _parse_frontmatter(path: Path, source: str = SOURCE_BUNDLED) -> SkillMetadata:
+    def _parse_frontmatter(path: pathlib.Path, source: str = SOURCE_BUNDLED) -> SkillMetadata:
         """Parse YAML frontmatter from a SKILL.md or single-file skill.
 
         Expects the file to start with ``---``, followed by YAML, followed
@@ -463,8 +463,8 @@ _coerce_tools = _coerce_string_list
 
 def _any_glob_matches(
     patterns: Sequence[str],
-    paths: Sequence[Path],
-    charm_path: Path | None,
+    paths: Sequence[pathlib.Path],
+    charm_path: pathlib.Path | None,
 ) -> bool:
     """Return ``True`` when any *path* matches any *pattern*.
 
@@ -494,7 +494,7 @@ def _any_glob_matches(
     return False
 
 
-def _glob_matches(pattern: str, path: Path, charm_path: Path | None) -> bool:
+def _glob_matches(pattern: str, path: pathlib.Path, charm_path: pathlib.Path | None) -> bool:
     """Return ``True`` when *path* matches the single *pattern*.
 
     See :func:`_any_glob_matches` for the matching semantics.
@@ -507,7 +507,7 @@ def _glob_matches(pattern: str, path: Path, charm_path: Path | None) -> bool:
     return fnmatch.fnmatchcase(path.name, pattern)
 
 
-def _path_relative_to(path: Path, charm_path: Path | None) -> str | None:
+def _path_relative_to(path: pathlib.Path, charm_path: pathlib.Path | None) -> str | None:
     """Return *path* as a POSIX string relative to *charm_path*.
 
     Returns ``None`` when ``charm_path`` is missing or *path* sits

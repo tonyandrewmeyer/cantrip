@@ -1,7 +1,7 @@
 """Tests for agent core."""
 
 import os
-from pathlib import Path
+import pathlib
 from unittest.mock import AsyncMock
 
 import pytest
@@ -326,7 +326,7 @@ class TestUsageRecording:
     """Tests for token usage recording."""
 
     @pytest.mark.asyncio
-    async def test_usage_recorded_for_simple_message(self, tmp_path: Path) -> None:
+    async def test_usage_recorded_for_simple_message(self, tmp_path: pathlib.Path) -> None:
         """Usage is recorded once for a simple (no tool call) exchange."""
         provider = FakeProvider(
             [Response(content="hi", usage={"prompt_tokens": 10, "completion_tokens": 5})]
@@ -341,7 +341,7 @@ class TestUsageRecording:
         assert total["completion_tokens"] == 5
 
     @pytest.mark.asyncio
-    async def test_usage_recorded_per_complete_call(self, tmp_path: Path) -> None:
+    async def test_usage_recorded_per_complete_call(self, tmp_path: pathlib.Path) -> None:
         """Each complete() call records its own usage row."""
         tool_call = ToolCall(id="tc", name="juju_status", arguments={})
         provider = FakeProvider(
@@ -368,7 +368,7 @@ class TestUsageRecording:
         assert total["completion_tokens"] == 60
 
     @pytest.mark.asyncio
-    async def test_usage_recorded_in_streaming(self, tmp_path: Path) -> None:
+    async def test_usage_recorded_in_streaming(self, tmp_path: pathlib.Path) -> None:
         """Usage is recorded during streaming message processing."""
         provider = FakeProvider(
             [Response(content="stream", usage={"prompt_tokens": 15, "completion_tokens": 8})]
@@ -536,7 +536,7 @@ class TestCacheMetricsEvent:
 class TestStoreBackedPersistence:
     """Tests for save_state / load_state with the session store."""
 
-    def test_save_and_load_state(self, tmp_path: Path) -> None:
+    def test_save_and_load_state(self, tmp_path: pathlib.Path) -> None:
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
 
@@ -554,7 +554,7 @@ class TestStoreBackedPersistence:
         assert agent2.state.charm_type == "k8s"
         assert len(agent2.state.decisions) == 1
 
-    def test_load_state_returns_false_when_empty(self, tmp_path: Path) -> None:
+    def test_load_state_returns_false_when_empty(self, tmp_path: pathlib.Path) -> None:
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
         assert agent.load_state() is False
@@ -570,7 +570,9 @@ class TestStoreBackedPersistence:
         agent = CantripAgent(provider=provider)
         assert agent.load_state() is False
 
-    def test_load_state_skips_persisted_tasks_already_in_queue(self, tmp_path: Path) -> None:
+    def test_load_state_skips_persisted_tasks_already_in_queue(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         # Background workers (e.g. issue triage) may add tasks with
         # deterministic IDs to the work queue before ``load_state``
         # gets a chance to run.  Loading a persisted task that
@@ -1364,7 +1366,7 @@ class TestHandleImprovementConfirmation:
     """Tests for CantripAgent.handle_improvement_confirmation."""
 
     @pytest.mark.asyncio
-    async def test_generates_fix_tasks_from_audit(self, tmp_path: Path) -> None:
+    async def test_generates_fix_tasks_from_audit(self, tmp_path: pathlib.Path) -> None:
         """Fix tasks are generated from an audit result with gaps."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -1432,7 +1434,7 @@ class TestHandleImprovementConfirmation:
         assert fix_tasks == []
 
     @pytest.mark.asyncio
-    async def test_stores_audit_report_on_state(self, tmp_path: Path) -> None:
+    async def test_stores_audit_report_on_state(self, tmp_path: pathlib.Path) -> None:
         """The audit report is saved to agent state."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)

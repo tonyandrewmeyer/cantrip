@@ -17,6 +17,7 @@ Every production charm should integrate with the **Canonical Observability Stack
 | **Grafana** | Dashboards | `grafana-dashboard` |
 | **Tempo** | Trace storage and querying | `tracing` |
 | **Alertmanager** | Alert routing | `alertmanager-dispatch` |
+| **Sloth** | SLO management — generates burn-rate alerts | `slos` |
 
 ## Step 1: Add ops-tracing
 
@@ -85,6 +86,56 @@ class MyCharm(ops.CharmBase):
             }],
         )
 ```
+
+### Alert rules ride along the metrics-endpoint relation
+
+`MetricsEndpointProvider` looks for alert-rule YAML files under
+`src/prometheus_alert_rules/` (or whatever path you pass as
+`alert_rules_path=`) and forwards them to Prometheus over the same
+relation. The charm doesn't need a separate Alertmanager relation —
+Prometheus evaluates the rules and dispatches firing alerts to
+Alertmanager via the COS bundle's existing wiring.
+
+Drop a small rule file:
+
+```yaml
+# src/prometheus_alert_rules/charm_health.yaml
+groups:
+  - name: charm_health
+    rules:
+      - alert: HighWorkloadErrorRate
+        expr: rate(my_charm_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Workload error rate is high on {{ $labels.juju_unit }}
+          description: |
+            More than 10% of requests are erroring on
+            {{ $labels.juju_application }}/{{ $labels.juju_unit }} over
+            the last 5 minutes.
+      - alert: HookExecutionSlow
+        expr: histogram_quantile(0.95, rate(juju_hook_duration_seconds_bucket[10m])) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: p95 hook duration exceeds 30s on {{ $labels.juju_unit }}
+```
+
+The YAML is the standard Prometheus alert-rule format — anything
+the operator runs locally with `promtool check rules` will work
+unchanged. `juju_application`, `juju_unit`, `juju_model`, and
+`juju_charm` labels are auto-injected by the COS topology
+relabelling, so dashboards and Alertmanager routes can group
+alerts by charm without explicit config.
+
+For a Pebble-forwarded workload metric, swap the `expr` for the
+metric the workload exposes — the labels work the same way.
+
+If `alert_rules_path` is omitted, `src/prometheus_alert_rules/`
+is the default and `MetricsEndpointProvider` discovers anything
+matching `*.yaml` / `*.yml` / `*.rules` underneath.
 
 ## Step 3: Add Log Forwarding
 
@@ -229,6 +280,298 @@ in the `jubilant-tests` skill under "Cross-model — COS Lite Integration":
 This is worth adding once per charm — a single "logs reach Loki" test
 catches the broad class of label / dispatcher / forwarding regressions
 that don't show up in unit tests.
+
+## Alertmanager — Routing and Receivers
+
+Alertmanager is the COS component that takes firing alerts from
+Prometheus and *routes* them to humans (PagerDuty, Slack, email,
+webhooks).  Most charms never relate to Alertmanager directly —
+they publish alert rules via `metrics-endpoint` (Step 2) and the
+COS bundle wires Prometheus to Alertmanager automatically.
+
+### Alert flow at a glance
+
+```
+[my-charm/0]
+   │
+   │ metrics-endpoint (prometheus_scrape)
+   │    + alert rules from src/prometheus_alert_rules/
+   ▼
+[prometheus-k8s]
+   │
+   │ alertmanager (alertmanager_dispatch)
+   ▼
+[alertmanager-k8s]
+   │
+   │ alertmanager-dispatch (alertmanager_dispatch)
+   ▼
+[karma-k8s] / [slack-bot] / [pagerduty-bot] / ...
+```
+
+The charm author's job stops at the alert rules.  Operators
+configure routing on the Alertmanager side via the
+`alertmanager-k8s` charm's config options.
+
+### Configuring routing on `alertmanager-k8s`
+
+The COS bundle ships `alertmanager-k8s` with a default config
+that drops alerts on the floor.  To wire it to a real receiver,
+set `config.yaml` on the Alertmanager charm:
+
+```bash
+juju config alertmanager-k8s -m cos config_file=@alertmanager-config.yaml
+```
+
+```yaml
+# alertmanager-config.yaml
+route:
+  receiver: default
+  group_by: [alertname, juju_application]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: pager
+    - matchers:
+        - severity = warning
+      receiver: slack
+
+receivers:
+  - name: default
+    slack_configs:
+      - api_url: https://hooks.slack.com/services/...
+        channel: '#alerts'
+  - name: pager
+    pagerduty_configs:
+      - service_key: <pagerduty-integration-key>
+  - name: slack
+    slack_configs:
+      - api_url: https://hooks.slack.com/services/...
+        channel: '#alerts-warnings'
+```
+
+The `juju_application` label is auto-injected by the COS topology
+relabelling, so grouping and routing on it works out of the box.
+
+### Karma — the alert-dashboard frontend
+
+Karma (see References) is the standard Alertmanager visualiser
+deployed alongside `alertmanager-k8s`
+in the COS bundle.  Charm authors don't relate to Karma; users
+open Karma's URL (find it via the bundle's Catalogue entry, or
+``juju run alertmanager-k8s/0 show-config`` for the
+proxied-endpoints) to see firing alerts grouped by
+`juju_application` / `severity`.
+
+### When a charm should require `alertmanager-dispatch`
+
+The `alertmanager-dispatch` interface is for charms that want to
+*receive* alerts — typically one of:
+
+- A custom notification charm (in-house Slack bot, ChatOps,
+  webhook handler).
+- A meta-dashboard charm that needs to subscribe to firing
+  alerts (Karma is the example).
+- An incident-management charm that creates tickets from
+  alerts.
+
+These are rare; most charm authors don't need this side of the
+relation.  When you do:
+
+```yaml
+# charmcraft.yaml
+requires:
+  alerting:
+    interface: alertmanager_dispatch
+    limit: 1
+```
+
+```python
+from charms.alertmanager_k8s.v1.alertmanager_dispatch import AlertmanagerConsumer
+
+
+class MyNotifierCharm(ops.CharmBase):
+    def __init__(self, framework: ops.Framework):
+        super().__init__(framework)
+        self._alertmanager = AlertmanagerConsumer(
+            self,
+            relation_name="alerting",
+        )
+        framework.observe(
+            self._alertmanager.on.cluster_changed,
+            self._on_alertmanager_cluster_changed,
+        )
+
+    def _on_alertmanager_cluster_changed(self, _event):
+        urls = self._alertmanager.get_cluster_info()
+        # Configure the notifier workload with the Alertmanager URLs.
+```
+
+The `charms.alertmanager_k8s.*` library is **not on PyPI yet**;
+fetch it via `charmcraft fetch-libs`.
+
+### Production routing tips
+
+- **Group by `juju_application`** so an outage on one charm doesn't
+  flood the receiver with one notification per unit.
+- **`severity` labels in alert rules** become the Alertmanager
+  routing key — keep the levels coarse (`info` / `warning` /
+  `critical`) so routes stay readable.
+- **`for:` durations matter** — flapping alerts that fire and
+  resolve within seconds aren't actionable.  10 minutes is a
+  sensible floor for warnings; criticals can be tighter.
+- **Inhibit rules suppress noise** — when a `service_down` alert
+  fires, the Alertmanager `inhibit_rules` config can mute the
+  cascading "high error rate" alerts that always follow.  Add
+  inhibitions to the alertmanager-k8s config when the alert
+  graph has obvious dependencies.
+
+## Sloth — SLOs and Burn-Rate Alerts
+
+Sloth is a Prometheus-rule generator for Service Level Objectives:
+the charm publishes a small `slos.yaml` (one SLI expression + one
+target per SLO) over a relation, Sloth synthesises the multi-window
+burn-rate alerts and recording rules, and the resulting alerts ride
+the same `metrics-endpoint` → Prometheus → Alertmanager path Step 2
+and the section above already wire.  No new scrape targets, no new
+receivers; just one extra relation and a YAML file.
+
+### Default SLOs by workload type
+
+| Workload kind | Suggested SLOs |
+|---------------|----------------|
+| **12-factor PaaS** (Path A) | HTTP availability (non-5xx ratio) at 99.5% / 30d; p95 request latency under a workload-tuned threshold at 99% / 30d |
+| **Infrastructure charm** (Path C) | Hook success ratio at 99.9% / 30d; p95 hook duration under 30s at 99% / 30d |
+| **Custom app** (Path B) | Workload availability (Pebble check ratio or a workload-defined readiness metric) at 99% / 30d, plus any workload-specific SLO the user asks for |
+
+These are conservative defaults — three nines is the floor for charm
+hooks where misbehaviour is operator-visible; lower nines suit
+user-facing latency that varies with load.  Tune to the user's stated
+reliability budget.
+
+### Adding the relation to `charmcraft.yaml`
+
+```yaml
+# charmcraft.yaml
+requires:
+  slos:
+    interface: slos
+    limit: 1
+```
+
+The interface name comes from `charmlibs-interfaces-sloth`.  The
+Sloth charm itself is fetched from Charmhub (`juju deploy sloth`);
+verify the endpoint name against the deployed Sloth charm's
+`charmcraft.yaml` if `juju integrate` rejects the relation —
+schemas can lag the charm's own naming.
+
+### Worked example — 12-factor charm
+
+One availability SLO covering non-5xx response ratio over 30 days.
+A second latency SLO follows the same shape with
+`http_request_duration_seconds_bucket{le="0.5"}` over
+`http_request_duration_seconds_count`.
+
+```yaml
+# src/slos.yaml
+version: prometheus/v1
+service: my-app
+labels:
+  juju_charm: my-charm
+slos:
+  - name: requests-availability
+    objective: 99.5
+    description: |
+      99.5% of HTTP requests return a non-5xx response over 30d.
+    sli:
+      events:
+        error_query: |
+          sum(rate(http_requests_total{
+            juju_application="my-app", status=~"5.."}[{{.window}}]))
+        total_query: |
+          sum(rate(http_requests_total{
+            juju_application="my-app"}[{{.window}}]))
+    alerting:
+      name: MyAppHighErrorRate
+      page_alert:
+        labels: {severity: critical}
+      ticket_alert:
+        labels: {severity: warning}
+```
+
+The `juju_application` filter is the topology label COS auto-injects
+on every metric forwarded over `metrics-endpoint`, so Sloth's alerts
+share the label space the dashboards and Alertmanager routes already
+use.  `{{.window}}` is Sloth's own templating — leave it verbatim;
+Sloth substitutes the burn-rate windows (5m / 30m / 1h / 6h / 1d / 3d)
+when generating the multi-window rules.  Infrastructure charms swap
+the queries for the `juju_hook_*` metrics auto-exposed by ops-tracing.
+
+### Charm-side relation handler
+
+```toml
+# pyproject.toml
+[project.dependencies]
+charmlibs-interfaces-sloth = ["charmlibs-interfaces-sloth"]
+```
+
+```python
+import pathlib
+import ops
+from charmlibs.interfaces import sloth
+
+
+class MyCharm(ops.CharmBase):
+    def __init__(self, framework: ops.Framework):
+        super().__init__(framework)
+        self._slos_path = self.charm_dir / "src" / "slos.yaml"
+        framework.observe(self.on["slos"].relation_joined, self._publish_slos)
+        framework.observe(self.on["slos"].relation_changed, self._publish_slos)
+
+    def _publish_slos(self, event: ops.RelationEvent) -> None:
+        if not self._slos_path.exists():
+            return
+        spec = sloth.SlosSpec.from_yaml(self._slos_path.read_text())
+        sloth.publish(event.relation, spec, app=self.app)
+```
+
+The `sloth.SlosSpec` / `sloth.publish` names come from the schema
+package; if the published version of `charmlibs-interfaces-sloth`
+exposes different helper names (the package's `__init__` is the
+source of truth), adjust accordingly — the relation-data shape
+itself is stable.
+
+### How SLOs compose with Step 2
+
+- **Shared metrics.**  Sloth's SLIs reference the same Prometheus
+  metrics the charm already exposes via `MetricsEndpointProvider`.
+- **Alert flow stays the same.**  Sloth-generated alerts fire
+  through Prometheus → Alertmanager exactly like hand-written
+  rules under `src/prometheus_alert_rules/`; the `severity` labels
+  route through the same Alertmanager tree from the previous
+  section.
+- **Retire duplicate hand-written rules.**  When an SLO covers a
+  condition (the `HighWorkloadErrorRate` example earlier is one),
+  drop the single-window threshold rule — Sloth's multi-window
+  burn-rate alert fires faster on sharp burns and quieter on
+  shallow ones.  Keep hand-written rules for non-SLO conditions
+  only (capacity, deploy state, license expiry).
+
+### Production tips
+
+- **Pick the objective for the SLI, not the brand.**  Use the
+  lowest target that still catches outages users would complain
+  about; 99.99% on an internal admin tool is a missed alert.
+- **Page vs ticket via burn rate.**  Match Sloth's `page_alert` to
+  `severity: critical` and `ticket_alert` to `severity: warning`
+  so the Alertmanager routes from the previous section dispatch
+  fast-burn pages and slow-burn tickets correctly.
+- **Store `slos.yaml` next to the charm code.**  Mirror
+  `src/grafana_dashboards/` — version-controlled, reviewed, and
+  updated when the SLI metric changes.  `src/slos.yaml` (one file
+  per charm) is the convention.
 
 ## Querying for Debugging
 
@@ -452,3 +795,8 @@ event descriptions. Log *what happened* (e.g. "Secret rotated for relation endpo
 - **Forgetting `--trust`** when deploying COS components that need cluster-wide access.
 - **Not adding the relation endpoints to `charmcraft.yaml`** — the charm will not see the relations if they are not declared in metadata.
 - **Large dashboards in the charm** — keep dashboard JSON reasonable in size. Grafana rejects very large dashboard definitions sent over relation data.
+
+## References
+
+- Karma — https://karma-dashboard.io/ (Alertmanager dashboard frontend)
+- Sloth — https://sloth.dev/ (Prometheus SLO rule generator)

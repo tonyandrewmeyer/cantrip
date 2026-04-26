@@ -9,9 +9,9 @@ that touched the file, and a short content preview.
 import ast
 import datetime
 import functools
+import pathlib
 import re
 import subprocess
-from pathlib import Path
 
 from rich.console import Group, RenderableType
 from rich.syntax import Syntax
@@ -94,7 +94,7 @@ class FileDetailScreen(ModalScreen):
         Binding("r", "refresh", "Refresh"),
     ]
 
-    def __init__(self, path: Path, charm_root: Path | None = None) -> None:
+    def __init__(self, path: pathlib.Path, charm_root: pathlib.Path | None = None) -> None:
         """Initialise with the selected file path."""
         super().__init__()
         self._path = path
@@ -173,7 +173,7 @@ class FileDetailScreen(ModalScreen):
         )
 
     @staticmethod
-    def _git_log_blocking(path: Path) -> str:
+    def _git_log_blocking(path: pathlib.Path) -> str:
         """Run ``git log`` for a single file and return its text output."""
         cmd = [
             "git",
@@ -233,7 +233,7 @@ class FileDetailScreen(ModalScreen):
 # ---------------------------------------------------------------------------
 
 
-def _format_stats(path: Path) -> str:
+def _format_stats(path: pathlib.Path) -> str:
     """Return a single-line size + modification time summary."""
     try:
         stat = path.stat()
@@ -277,7 +277,7 @@ def _format_relative_time(when: datetime.datetime) -> str:
     return f"{years} year{'s' if years != 1 else ''} ago"
 
 
-def _infer_purpose(path: Path) -> str:
+def _infer_purpose(path: pathlib.Path) -> str:
     """Return a best-effort purpose summary for a file.
 
     Python: module docstring.
@@ -414,13 +414,13 @@ def _scalar_field(text: str, key: str) -> str | None:
     return value or None
 
 
-def _fallback_purpose(path: Path) -> str:
+def _fallback_purpose(path: pathlib.Path) -> str:
     """Generic purpose line when no content-specific summary was found."""
     suffix = path.suffix.lower() or "(no extension)"
     return f"[dim]{suffix} file — no structured summary available.[/dim]"
 
 
-def _render_preview(path: Path) -> RenderableType:
+def _render_preview(path: pathlib.Path) -> RenderableType:
     """Return a syntax-highlighted preview of the file.
 
     Returns a :class:`rich.syntax.Syntax` block for text content (with
@@ -462,7 +462,7 @@ def _render_preview(path: Path) -> RenderableType:
     return syntax
 
 
-def _guess_lexer(path: Path, body: str) -> str:
+def _guess_lexer(path: pathlib.Path, body: str) -> str:
     """Return the Pygments lexer alias for *path*.
 
     Rich's ``Syntax.guess_lexer`` looks at both the filename and the
@@ -473,7 +473,7 @@ def _guess_lexer(path: Path, body: str) -> str:
     return Syntax.guess_lexer(str(path), body)
 
 
-def _read_text_safely(path: Path, *, max_bytes: int) -> str | None:
+def _read_text_safely(path: pathlib.Path, *, max_bytes: int) -> str | None:
     """Read up to *max_bytes* of text; return ``None`` if binary content."""
     try:
         raw = path.read_bytes()[:max_bytes]

@@ -1,7 +1,7 @@
 """Tests for transcript export and formatters."""
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -95,7 +95,7 @@ class TestTranscriptData:
 
 class TestLoadTranscript:
     @pytest.fixture()
-    def db_path(self, tmp_path: Path) -> Path:
+    def db_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
         path = tmp_path / ".cantrip"
         store = SessionStore(path)
         store.open()
@@ -540,7 +540,7 @@ class TestFilteredExport:
     """Tests for filtered transcript export (--task, --phase, --since)."""
 
     @pytest.fixture()
-    def db_path(self, tmp_path: Path) -> Path:
+    def db_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
         """Build a .cantrip DB with varied tasks and messages."""
         path = tmp_path / ".cantrip"
         store = SessionStore(path)

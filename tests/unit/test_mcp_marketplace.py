@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import time
-from pathlib import Path
 
 import pytest
 
@@ -29,7 +29,7 @@ from cantrip.mcp.marketplace import (
 )
 
 
-def _write_yaml(path: Path, content: str) -> Path:
+def _write_yaml(path: pathlib.Path, content: str) -> pathlib.Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
     return path
@@ -132,12 +132,14 @@ class TestParseSource:
 
 
 class TestLoadMarketplaceSources:
-    def test_no_files_returns_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_files_returns_empty(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("CANTRIP_MCP_USER_CONFIG", str(tmp_path / "missing.yaml"))
         assert load_marketplace_sources(repo_root=tmp_path / "no-such-dir") == []
 
     def test_no_marketplaces_block_returns_empty(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CANTRIP_MCP_USER_CONFIG", str(tmp_path / "missing.yaml"))
         repo = tmp_path / "repo"
@@ -148,7 +150,7 @@ class TestLoadMarketplaceSources:
         )
         assert load_marketplace_sources(repo_root=repo) == []
 
-    def test_basic_load(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_basic_load(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CANTRIP_MCP_USER_CONFIG", str(tmp_path / "missing.yaml"))
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -166,7 +168,9 @@ servers: {}
         assert sources[0].kind == SourceKind.GITHUB
         assert sources[1].kind == SourceKind.DIRECTORY
 
-    def test_user_and_repo_dedupe(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_user_and_repo_dedupe(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         user = _write_yaml(
             tmp_path / "user.yaml",
             "marketplaces:\n  - github: a/b\n",
@@ -188,7 +192,7 @@ marketplaces:
         assert {s.location for s in sources} == {"a/b", "c/d"}
 
     def test_marketplaces_must_be_list(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CANTRIP_MCP_USER_CONFIG", str(tmp_path / "missing.yaml"))
         repo = tmp_path / "repo"
@@ -206,7 +210,7 @@ marketplaces:
 
 class TestMarketplaceLoader:
     @pytest.mark.asyncio
-    async def test_directory_round_trip(self, tmp_path: Path) -> None:
+    async def test_directory_round_trip(self, tmp_path: pathlib.Path) -> None:
         catalog = tmp_path / "catalog"
         catalog.mkdir()
         (catalog / "marketplace.json").write_text(_sample_marketplace_json())
@@ -224,14 +228,14 @@ class TestMarketplaceLoader:
         assert any(loader.cache_dir.glob("*.json"))
 
     @pytest.mark.asyncio
-    async def test_directory_missing_file_raises(self, tmp_path: Path) -> None:
+    async def test_directory_missing_file_raises(self, tmp_path: pathlib.Path) -> None:
         loader = MarketplaceLoader(cache_dir=tmp_path / "cache")
         src = MarketplaceSource(kind=SourceKind.DIRECTORY, location=str(tmp_path / "no-such"))
         with pytest.raises(OSError, match="no marketplace.json"):
             await loader.load(src)
 
     @pytest.mark.asyncio
-    async def test_load_all_skips_failures(self, tmp_path: Path) -> None:
+    async def test_load_all_skips_failures(self, tmp_path: pathlib.Path) -> None:
         good_dir = tmp_path / "good"
         good_dir.mkdir()
         (good_dir / "marketplace.json").write_text(_sample_marketplace_json())
@@ -247,7 +251,7 @@ class TestMarketplaceLoader:
 
     @pytest.mark.asyncio
     async def test_http_get_wraps_aiohttp_error_as_oserror(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """aiohttp errors are converted to OSError so load_all's catch clause skips them."""
         import aiohttp
@@ -261,7 +265,7 @@ class TestMarketplaceLoader:
             await loader._http_get("http://example.invalid/marketplace.json")
 
     @pytest.mark.asyncio
-    async def test_cache_hit_skips_re_read(self, tmp_path: Path) -> None:
+    async def test_cache_hit_skips_re_read(self, tmp_path: pathlib.Path) -> None:
         catalog = tmp_path / "catalog"
         catalog.mkdir()
         marketplace_path = catalog / "marketplace.json"
@@ -278,7 +282,7 @@ class TestMarketplaceLoader:
         assert fresh.name == "changed"
 
     @pytest.mark.asyncio
-    async def test_cache_expires(self, tmp_path: Path) -> None:
+    async def test_cache_expires(self, tmp_path: pathlib.Path) -> None:
         catalog = tmp_path / "catalog"
         catalog.mkdir()
         marketplace_path = catalog / "marketplace.json"
@@ -295,7 +299,7 @@ class TestMarketplaceLoader:
         assert market.name == "fresh"
 
     @pytest.mark.asyncio
-    async def test_malformed_json_raises(self, tmp_path: Path) -> None:
+    async def test_malformed_json_raises(self, tmp_path: pathlib.Path) -> None:
         catalog = tmp_path / "catalog"
         catalog.mkdir()
         (catalog / "marketplace.json").write_text("{not json")
@@ -305,7 +309,7 @@ class TestMarketplaceLoader:
             await loader.load(src)
 
     @pytest.mark.asyncio
-    async def test_top_level_not_mapping_raises(self, tmp_path: Path) -> None:
+    async def test_top_level_not_mapping_raises(self, tmp_path: pathlib.Path) -> None:
         catalog = tmp_path / "catalog"
         catalog.mkdir()
         (catalog / "marketplace.json").write_text("[1, 2, 3]")
@@ -315,7 +319,7 @@ class TestMarketplaceLoader:
             await loader.load(src)
 
     @pytest.mark.asyncio
-    async def test_args_must_be_string_list(self, tmp_path: Path) -> None:
+    async def test_args_must_be_string_list(self, tmp_path: pathlib.Path) -> None:
         catalog = tmp_path / "catalog"
         catalog.mkdir()
         (catalog / "marketplace.json").write_text(json.dumps({"servers": {"x": {"args": [1, 2]}}}))
@@ -348,13 +352,13 @@ class TestMcpMarketplaceCommand:
 
     @pytest.mark.asyncio
     async def test_no_sources_shows_hint(self) -> None:
-        loader = MarketplaceLoader(cache_dir=Path("/tmp/_unused"))
+        loader = MarketplaceLoader(cache_dir=pathlib.Path("/tmp/_unused"))
         out = await handle_mcp_async(MCPRegistry([]), [], loader, "marketplace")
         assert "No MCP marketplaces" in out
         assert "marketplaces:" in out  # Hint includes a sample.
 
     @pytest.mark.asyncio
-    async def test_listing(self, tmp_path: Path) -> None:
+    async def test_listing(self, tmp_path: pathlib.Path) -> None:
         catalog = tmp_path / "catalog"
         catalog.mkdir()
         (catalog / "marketplace.json").write_text(_sample_marketplace_json())
@@ -374,7 +378,7 @@ class TestMcpMarketplaceCommand:
         assert "http https://grafana.example.com/mcp" in out
 
     @pytest.mark.asyncio
-    async def test_refresh_subcommand(self, tmp_path: Path) -> None:
+    async def test_refresh_subcommand(self, tmp_path: pathlib.Path) -> None:
         catalog = tmp_path / "catalog"
         catalog.mkdir()
         marketplace_path = catalog / "marketplace.json"
@@ -389,14 +393,14 @@ class TestMcpMarketplaceCommand:
         assert "fresh" in out
 
     @pytest.mark.asyncio
-    async def test_unknown_subcommand(self, tmp_path: Path) -> None:
+    async def test_unknown_subcommand(self, tmp_path: pathlib.Path) -> None:
         loader = MarketplaceLoader(cache_dir=tmp_path / "cache")
         out = await handle_mcp_async(MCPRegistry([]), [], loader, "marketplace bogus")
         assert "Error" in out
         assert "unknown marketplace subcommand" in out
 
     @pytest.mark.asyncio
-    async def test_help_subcommand(self, tmp_path: Path) -> None:
+    async def test_help_subcommand(self, tmp_path: pathlib.Path) -> None:
         loader = MarketplaceLoader(cache_dir=tmp_path / "cache")
         out = await handle_mcp_async(MCPRegistry([]), [], loader, "marketplace help")
         assert "MCP commands" in out
@@ -407,7 +411,7 @@ class TestMcpMarketplaceCommand:
         self,
     ) -> None:
         """Calling the async handler with a non-marketplace verb routes to sync."""
-        loader = MarketplaceLoader(cache_dir=Path("/tmp/_unused"))
+        loader = MarketplaceLoader(cache_dir=pathlib.Path("/tmp/_unused"))
         out = await handle_mcp_async(MCPRegistry([]), [], loader, "")
         assert "No MCP servers" in out
 
@@ -417,7 +421,7 @@ class TestMcpMarketplaceCommand:
 
 class TestEndToEnd:
     @pytest.mark.asyncio
-    async def test_full_pipeline_directory_source(self, tmp_path: Path) -> None:
+    async def test_full_pipeline_directory_source(self, tmp_path: pathlib.Path) -> None:
         # Stage a marketplace.
         catalog = tmp_path / "catalog"
         catalog.mkdir()

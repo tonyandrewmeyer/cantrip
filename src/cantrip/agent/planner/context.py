@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import dataclasses
 
 from cantrip.agent.queue import AgentTask
 
 
-@dataclass
+@dataclasses.dataclass
 class PlanningContext:
     """Bundles context for a planning or replanning call."""
 
@@ -18,7 +18,7 @@ class PlanningContext:
     dev_model: str | None = None
     cos_model: str | None = None
     environment_ready: bool = False
-    existing_tasks: list[AgentTask] = field(default_factory=list)
+    existing_tasks: list[AgentTask] = dataclasses.field(default_factory=list)
     new_context: str | None = None
     source_url: str | None = None
     existing_charm_path: str | None = None

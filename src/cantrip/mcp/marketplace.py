@@ -55,8 +55,8 @@ import enum
 import json
 import logging
 import os
+import pathlib
 import time
-from pathlib import Path
 from typing import Any
 
 from cantrip.mcp.exceptions import MCPConfigError
@@ -65,7 +65,7 @@ log = logging.getLogger(__name__)
 
 
 # Default cache directory for marketplace responses.
-_DEFAULT_CACHE_DIR = Path("~/.cache/cantrip/marketplaces")
+_DEFAULT_CACHE_DIR = pathlib.Path("~/.cache/cantrip/marketplaces")
 CACHE_DIR_ENV = "CANTRIP_MCP_MARKETPLACE_CACHE"
 
 # How long a cached marketplace is considered fresh.  Within this window
@@ -147,11 +147,11 @@ class Marketplace:
     fetched_at: float  # Unix timestamp; ``0`` for fresh-this-call.
 
 
-def default_cache_dir() -> Path:
+def default_cache_dir() -> pathlib.Path:
     """Resolve the marketplace response cache directory."""
     override = os.environ.get(CACHE_DIR_ENV)
     if override:
-        return Path(override).expanduser()
+        return pathlib.Path(override).expanduser()
     return _DEFAULT_CACHE_DIR.expanduser()
 
 
@@ -207,14 +207,14 @@ class MarketplaceLoader:
     def __init__(
         self,
         *,
-        cache_dir: Path | None = None,
+        cache_dir: pathlib.Path | None = None,
         cache_ttl_seconds: float = DEFAULT_CACHE_TTL_SECONDS,
     ) -> None:
         self._cache_dir = cache_dir or default_cache_dir()
         self._cache_ttl = cache_ttl_seconds
 
     @property
-    def cache_dir(self) -> Path:
+    def cache_dir(self) -> pathlib.Path:
         """The directory where marketplace responses are cached."""
         return self._cache_dir
 
@@ -257,7 +257,7 @@ class MarketplaceLoader:
 
     # ── Internal helpers ────────────────────────────────────────────
 
-    def _cache_path(self, source: MarketplaceSource) -> Path:
+    def _cache_path(self, source: MarketplaceSource) -> pathlib.Path:
         # Replace path separators so the cache file name is filesystem-safe.
         slug = source.label.replace("/", "_").replace(":", "__")
         return self._cache_dir / f"{slug}.json"
@@ -299,7 +299,7 @@ class MarketplaceLoader:
 
     @staticmethod
     def _read_directory(source: MarketplaceSource) -> str:
-        path = Path(source.location).expanduser() / "marketplace.json"
+        path = pathlib.Path(source.location).expanduser() / "marketplace.json"
         if not path.is_file():
             raise OSError(f"no marketplace.json at {path}")
         return path.read_text()

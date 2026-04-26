@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import datetime
 import json
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -62,7 +62,7 @@ def _http_client(response: httpx.Response | None = None, side_effect: Exception 
 
 
 @pytest.fixture
-def cache_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+def cache_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[pathlib.Path]:
     """Redirect the charm-library cache to a tmpdir."""
     monkeypatch.setenv("CANTRIP_CHARM_LIBRARY_DIR", str(tmp_path / "charm-library"))
     yield tmp_path / "charm-library"
@@ -199,21 +199,23 @@ class TestCharmhubSearchSignals:
 class TestCharmLibraryCache:
     """Freshness/TTL + sidecar round-trip + name-safety."""
 
-    def test_cache_root_honours_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_cache_root_honours_env(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("CANTRIP_CHARM_LIBRARY_DIR", str(tmp_path / "lib"))
         assert charm_library.cache_root() == tmp_path / "lib"
 
-    def test_entry_path_rejects_empty_name(self, cache_root: Path) -> None:
+    def test_entry_path_rejects_empty_name(self, cache_root: pathlib.Path) -> None:
         with pytest.raises(ValueError):
             charm_library.entry_path(charm_library.SOURCE_CHARMHUB, "")
 
-    def test_entry_path_flattens_separators(self, cache_root: Path) -> None:
+    def test_entry_path_flattens_separators(self, cache_root: pathlib.Path) -> None:
         entry = charm_library.entry_path(charm_library.SOURCE_CHARMHUB, "foo/bar")
         # Single segment under cache root — no path traversal allowed.
         assert entry.name == "foo-bar"
         assert entry.parent.name == charm_library.SOURCE_CHARMHUB
 
-    def test_record_and_read_meta_round_trip(self, cache_root: Path) -> None:
+    def test_record_and_read_meta_round_trip(self, cache_root: pathlib.Path) -> None:
         entry = charm_library.entry_path(charm_library.SOURCE_CHARMHUB, "myapp")
         charm_library.record_fetch(
             entry,
@@ -230,7 +232,7 @@ class TestCharmLibraryCache:
         assert meta["revision"] == "42"
         assert "fetched_at" in meta
 
-    def test_is_fresh_within_ttl(self, cache_root: Path) -> None:
+    def test_is_fresh_within_ttl(self, cache_root: pathlib.Path) -> None:
         entry = charm_library.entry_path(charm_library.SOURCE_CHARMHUB, "myapp")
         charm_library.record_fetch(
             entry,
@@ -240,7 +242,7 @@ class TestCharmLibraryCache:
         )
         assert charm_library.is_fresh(entry, ttl_days=7)
 
-    def test_is_fresh_expired(self, cache_root: Path) -> None:
+    def test_is_fresh_expired(self, cache_root: pathlib.Path) -> None:
         entry = charm_library.entry_path(charm_library.SOURCE_CHARMHUB, "myapp")
         old = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=30)
         entry.mkdir(parents=True, exist_ok=True)
@@ -256,11 +258,11 @@ class TestCharmLibraryCache:
         )
         assert not charm_library.is_fresh(entry, ttl_days=7)
 
-    def test_is_fresh_missing_sidecar(self, cache_root: Path) -> None:
+    def test_is_fresh_missing_sidecar(self, cache_root: pathlib.Path) -> None:
         entry = charm_library.entry_path(charm_library.SOURCE_CHARMHUB, "myapp")
         assert not charm_library.is_fresh(entry)
 
-    def test_is_fresh_corrupt_sidecar(self, cache_root: Path) -> None:
+    def test_is_fresh_corrupt_sidecar(self, cache_root: pathlib.Path) -> None:
         entry = charm_library.entry_path(charm_library.SOURCE_CHARMHUB, "myapp")
         entry.mkdir(parents=True, exist_ok=True)
         charm_library.meta_path(entry).write_text("{not json")
@@ -277,7 +279,7 @@ class TestCharmhubFetch:
     """The fetch tool must respect the cache, surface link gaps, and clone."""
 
     @pytest.mark.asyncio
-    async def test_cache_hit_short_circuits(self, cache_root: Path) -> None:
+    async def test_cache_hit_short_circuits(self, cache_root: pathlib.Path) -> None:
         entry = charm_library.entry_path(charm_library.SOURCE_CHARMHUB, "redis")
         charm_library.record_fetch(
             entry,
@@ -295,7 +297,9 @@ class TestCharmhubFetch:
         assert "metadata.yaml" in result.output
 
     @pytest.mark.asyncio
-    async def test_missing_source_link_surfaces_clear_error(self, cache_root: Path) -> None:
+    async def test_missing_source_link_surfaces_clear_error(
+        self, cache_root: pathlib.Path
+    ) -> None:
         body = {
             "result": {"summary": "no links here", "links": {}},
             "default-release": {"revision": {"revision": 7}},
@@ -308,7 +312,7 @@ class TestCharmhubFetch:
         assert result.data["links_missing"] is True
 
     @pytest.mark.asyncio
-    async def test_404_not_found(self, cache_root: Path) -> None:
+    async def test_404_not_found(self, cache_root: pathlib.Path) -> None:
         request = httpx.Request("GET", "https://api.charmhub.io/v2/charms/info/missing")
         response = httpx.Response(status_code=404, request=request)
         exc = httpx.HTTPStatusError("not found", request=request, response=response)
@@ -320,7 +324,7 @@ class TestCharmhubFetch:
         assert result.data["status_code"] == 404
 
     @pytest.mark.asyncio
-    async def test_happy_path_clones_and_records_meta(self, cache_root: Path) -> None:
+    async def test_happy_path_clones_and_records_meta(self, cache_root: pathlib.Path) -> None:
         body = {
             "result": {
                 "summary": "test charm",
@@ -337,7 +341,7 @@ class TestCharmhubFetch:
         # tree on disk so the listing renders, then return exit 0.
         async def _fake_exec(*args, **_kwargs):
             # The clone target is the last positional arg.
-            target = Path(args[-1])
+            target = pathlib.Path(args[-1])
             target.mkdir(parents=True, exist_ok=True)
             (target / "src").mkdir()
             (target / "src" / "charm.py").write_text("# charm\n")
@@ -360,13 +364,13 @@ class TestCharmhubFetch:
         assert "src/" in result.output
         assert "metadata.yaml" in result.output
         # Sidecar got written.
-        meta = charm_library.read_meta(Path(result.data["path"]))
+        meta = charm_library.read_meta(pathlib.Path(result.data["path"]))
         assert meta is not None
         assert meta["upstream_url"] == "https://github.com/example/foo"
         assert meta["revision"] == "99"
 
     @pytest.mark.asyncio
-    async def test_git_missing_clean_error(self, cache_root: Path) -> None:
+    async def test_git_missing_clean_error(self, cache_root: pathlib.Path) -> None:
         body = {
             "result": {
                 "summary": "test charm",
@@ -456,7 +460,7 @@ class TestLaunchpadFetch:
     """Git-only fetch path; Bazaar projects must surface a clear refusal."""
 
     @pytest.mark.asyncio
-    async def test_bazaar_project_refused(self, cache_root: Path) -> None:
+    async def test_bazaar_project_refused(self, cache_root: pathlib.Path) -> None:
         body = {
             "vcs": "Bazaar",
             "web_link": "https://launchpad.net/old-charm",
@@ -469,7 +473,7 @@ class TestLaunchpadFetch:
         assert result.data["vcs"] == "Bazaar"
 
     @pytest.mark.asyncio
-    async def test_no_vcs_clean_error(self, cache_root: Path) -> None:
+    async def test_no_vcs_clean_error(self, cache_root: pathlib.Path) -> None:
         body = {"vcs": None, "web_link": "https://launchpad.net/empty"}
         client = _http_client(_http_response(json_body=body))
         with patch("cantrip.agent.tools.launchpad.httpx.AsyncClient", return_value=client):
@@ -478,7 +482,7 @@ class TestLaunchpadFetch:
         assert "no registered VCS" in result.error
 
     @pytest.mark.asyncio
-    async def test_git_clone_happy_path(self, cache_root: Path) -> None:
+    async def test_git_clone_happy_path(self, cache_root: pathlib.Path) -> None:
         body = {
             "vcs": "Git",
             "web_link": "https://launchpad.net/foo",
@@ -486,7 +490,7 @@ class TestLaunchpadFetch:
         client = _http_client(_http_response(json_body=body))
 
         async def _fake_exec(*args, **_kwargs):
-            target = Path(args[-1])
+            target = pathlib.Path(args[-1])
             target.mkdir(parents=True, exist_ok=True)
             (target / "README.md").write_text("hi\n")
             proc = MagicMock()
@@ -503,7 +507,7 @@ class TestLaunchpadFetch:
         assert result.success, result.error
         assert result.data["upstream_url"] == "https://git.launchpad.net/foo"
         assert "README.md" in result.output
-        meta = charm_library.read_meta(Path(result.data["path"]))
+        meta = charm_library.read_meta(pathlib.Path(result.data["path"]))
         assert meta is not None
         assert meta["source"] == charm_library.SOURCE_LAUNCHPAD
 

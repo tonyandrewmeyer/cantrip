@@ -1,9 +1,9 @@
 """Context window management via virtual files and compaction."""
 
+import dataclasses
 import logging
 import re
 import time
-from dataclasses import dataclass
 
 from cantrip.agent.prompts.compaction import load_compaction_prompt
 from cantrip.llm.base import (
@@ -37,7 +37,7 @@ _CYCLE_FIRE_COUNT = 3
 _INEFFECTIVE_COMPACTION_RATIO = 0.9
 
 
-@dataclass
+@dataclasses.dataclass
 class _CompactionEvent:
     """One compaction or emergency-truncate fire — used for cycle detection."""
 
@@ -47,7 +47,7 @@ class _CompactionEvent:
     kind: str  # "compact" or "emergency"
 
 
-@dataclass
+@dataclasses.dataclass
 class VirtualFile:
     """A virtualised piece of content stored outside the conversation."""
 
@@ -58,7 +58,7 @@ class VirtualFile:
     token_estimate: int
 
 
-@dataclass
+@dataclasses.dataclass
 class SearchMatch:
     """A single regex match inside a virtual file."""
 

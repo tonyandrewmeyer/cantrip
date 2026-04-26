@@ -2,9 +2,9 @@
 
 import json
 import logging
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 from cantrip.agent.planner import PlanningContext, TaskPlanner, is_sprint
@@ -151,7 +151,7 @@ class PlanTasksTool(Tool):
                     log.info("Sprint: auto-detected dev model '%s'", detected)
             # Set charm_path to where charmcraft_init will scaffold.
             if context.charm_name and self._state.charm_path:
-                expected_path = Path(self._state.charm_path) / context.charm_name
+                expected_path = pathlib.Path(self._state.charm_path) / context.charm_name
                 self._state.charm_path = expected_path
                 log.info("Sprint: set charm_path to '%s'", expected_path)
 

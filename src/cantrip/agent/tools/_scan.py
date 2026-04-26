@@ -37,7 +37,7 @@ small in-process charm-directory fixtures.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import dataclasses
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -296,7 +296,7 @@ CHARM_MARKERS: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ScanResult:
     """Structured output of :func:`scan`.
 
@@ -349,7 +349,7 @@ class ScanResult:
 
     # Freeform data the detection passes may attach for debugging /
     # forward compatibility.  Opaque to the planner.
-    extras: dict[str, Any] = field(default_factory=dict)
+    extras: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

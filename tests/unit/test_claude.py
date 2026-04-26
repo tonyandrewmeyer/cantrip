@@ -494,6 +494,119 @@ class TestClaudeProviderToolConversion:
         assert provider._convert_tools(None) is None
         assert provider._convert_tools([]) is None
 
+    def test_convert_tools_marks_last_tool_for_caching(self):
+        """The final tool gets cache_control so the tools block joins the cached prefix."""
+        from cantrip.llm.base import Tool
+
+        provider = self._make_provider()
+        tools = [
+            Tool(name="a", description="A", parameters={"type": "object"}),
+            Tool(name="b", description="B", parameters={"type": "object"}),
+            Tool(name="c", description="C", parameters={"type": "object"}),
+        ]
+
+        result = provider._convert_tools(tools)
+
+        assert result is not None
+        assert "cache_control" not in result[0]
+        assert "cache_control" not in result[1]
+        assert result[-1]["cache_control"] == {"type": "ephemeral"}
+
+    def test_convert_tools_single_tool_marked(self):
+        """A single tool is still marked — the cached prefix covers system + that tool."""
+        from cantrip.llm.base import Tool
+
+        provider = self._make_provider()
+        tools = [Tool(name="solo", description="Solo", parameters={"type": "object"})]
+
+        result = provider._convert_tools(tools)
+
+        assert result is not None
+        assert result[0]["cache_control"] == {"type": "ephemeral"}
+
+
+class TestClaudeProviderMessageHistoryCaching:
+    """Phase: extend the cached prefix across the conversation history."""
+
+    def _make_provider(self):
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            from cantrip.llm.claude import ClaudeProvider
+
+            return ClaudeProvider(api_key="test-key", model="claude-sonnet-4-6")
+
+    def test_empty_messages_no_op(self):
+        """An empty message list does not crash and adds nothing."""
+        provider = self._make_provider()
+        api_messages: list[dict] = []
+
+        provider._mark_last_message_for_caching(api_messages)
+
+        assert api_messages == []
+
+    def test_string_content_upgraded_to_text_block(self):
+        """Plain user-string content is converted to a text block carrying cache_control."""
+        provider = self._make_provider()
+        api_messages = [{"role": "user", "content": "Hello"}]
+
+        provider._mark_last_message_for_caching(api_messages)
+
+        assert api_messages[0]["content"] == [
+            {
+                "type": "text",
+                "text": "Hello",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+
+    def test_only_last_message_marked(self):
+        """Earlier messages are untouched; only the trailing message gets the marker."""
+        provider = self._make_provider()
+        api_messages = [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "second"},
+            {"role": "user", "content": "third"},
+        ]
+
+        provider._mark_last_message_for_caching(api_messages)
+
+        assert api_messages[0]["content"] == "first"
+        assert api_messages[1]["content"] == "second"
+        assert api_messages[2]["content"][0]["cache_control"] == {"type": "ephemeral"}
+
+    def test_block_list_marks_final_block(self):
+        """When content is already a list of blocks, mark the last one in place."""
+        provider = self._make_provider()
+        api_messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "tc_1", "content": "ok"},
+                    {"type": "tool_result", "tool_use_id": "tc_2", "content": "ok"},
+                ],
+            }
+        ]
+
+        provider._mark_last_message_for_caching(api_messages)
+
+        blocks = api_messages[0]["content"]
+        assert "cache_control" not in blocks[0]
+        assert blocks[1]["cache_control"] == {"type": "ephemeral"}
+
+    @pytest.mark.asyncio
+    async def test_build_kwargs_marks_last_message(self):
+        """The wire payload from _build_kwargs carries the cache marker on the trailing message."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.SYSTEM, content="You are helpful."),
+            Message(role=Role.USER, content="hi"),
+        ]
+
+        kwargs = provider._build_kwargs(messages, tools=None, temperature=0.7, max_tokens=None)
+
+        last = kwargs["messages"][-1]
+        assert last["content"][-1]["cache_control"] == {"type": "ephemeral"}
+
 
 class TestClaudeProviderStream:
     """Tests for ClaudeProvider.stream error handling."""

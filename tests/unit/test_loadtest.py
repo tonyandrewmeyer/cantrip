@@ -1,7 +1,7 @@
 """Tests for load test generation tool."""
 
+import pathlib
 import tempfile
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -180,7 +180,7 @@ class TestGenerateLoadTestTool:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_generates_load_test_files(self, tool, temp_dir) -> None:

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import datetime
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -25,7 +25,7 @@ from cantrip.agent.store import SessionStore
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> Iterator[SessionStore]:
+def store(tmp_path: pathlib.Path) -> Iterator[SessionStore]:
     s = SessionStore(tmp_path / ".cantrip")
     s.open()
     yield s
@@ -33,7 +33,7 @@ def store(tmp_path: Path) -> Iterator[SessionStore]:
 
 
 @pytest.fixture
-def global_store(tmp_path: Path) -> GlobalMemoryStore:
+def global_store(tmp_path: pathlib.Path) -> GlobalMemoryStore:
     return GlobalMemoryStore(tmp_path / "globalmem")
 
 
@@ -68,7 +68,7 @@ class TestSchemaV8Migration:
             "access_count",
         } <= cols
 
-    def test_migrates_from_v7(self, tmp_path: Path) -> None:
+    def test_migrates_from_v7(self, tmp_path: pathlib.Path) -> None:
         """A database saved at schema v7 upgrades cleanly and keeps decisions."""
         import sqlite3
 
@@ -511,7 +511,7 @@ class TestSystemPromptInjection:
 class TestCitationHelpers:
     """Low-level helpers for citation validation."""
 
-    def test_sha_for_whole_file(self, tmp_path: Path) -> None:
+    def test_sha_for_whole_file(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "src.py"
         path.write_text("hello\nworld\n")
         import hashlib
@@ -519,7 +519,7 @@ class TestCitationHelpers:
         expected = hashlib.sha256(b"hello\nworld\n").hexdigest()
         assert sha_for_range(path, None, None) == expected
 
-    def test_sha_for_line_range(self, tmp_path: Path) -> None:
+    def test_sha_for_line_range(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "src.py"
         path.write_text("a\nb\nc\nd\n")
         import hashlib
@@ -528,7 +528,7 @@ class TestCitationHelpers:
         expected = hashlib.sha256(b"b\nc\n").hexdigest()
         assert sha_for_range(path, 2, 3) == expected
 
-    def test_sha_clamps_past_eof(self, tmp_path: Path) -> None:
+    def test_sha_clamps_past_eof(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "src.py"
         path.write_text("a\nb\n")
         import hashlib
@@ -536,7 +536,7 @@ class TestCitationHelpers:
         expected = hashlib.sha256(b"a\nb\n").hexdigest()
         assert sha_for_range(path, 1, 999) == expected
 
-    def test_validate_citation_happy_path(self, tmp_path: Path) -> None:
+    def test_validate_citation_happy_path(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "src.py"
         path.write_text("foo\nbar\n")
         sha = sha_for_range(path, 1, 2)
@@ -551,19 +551,19 @@ class TestCitationHelpers:
         assert check.ok
         assert "sha match" in check.reason
 
-    def test_validate_citation_missing_file(self, tmp_path: Path) -> None:
+    def test_validate_citation_missing_file(self, tmp_path: pathlib.Path) -> None:
         check = validate_citation({"path": str(tmp_path / "nope.py"), "sha": "deadbeef"})
         assert not check.ok
         assert "file not found" in check.reason
 
-    def test_validate_citation_sha_mismatch(self, tmp_path: Path) -> None:
+    def test_validate_citation_sha_mismatch(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "src.py"
         path.write_text("one\n")
         check = validate_citation({"path": str(path), "sha": "deadbeef"})
         assert not check.ok
         assert "sha mismatch" in check.reason
 
-    def test_validate_citation_no_sha_existence_only(self, tmp_path: Path) -> None:
+    def test_validate_citation_no_sha_existence_only(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "src.py"
         path.write_text("hi\n")
         check = validate_citation({"path": str(path)})
@@ -575,7 +575,9 @@ class TestCitationHelpers:
         assert not check.ok
         assert "no base" in check.reason
 
-    def test_validate_citation_relative_resolves_against_base(self, tmp_path: Path) -> None:
+    def test_validate_citation_relative_resolves_against_base(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         (tmp_path / "src").mkdir()
         f = tmp_path / "src" / "charm.py"
         f.write_text("x")
@@ -594,12 +596,12 @@ class TestMemoryRevalidate:
     def _write_with_citation(
         self,
         manager: MemoryManager,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         *,
         title: str = "t",
         body: str = "b",
         scope: str = "charm",
-    ) -> Path:
+    ) -> pathlib.Path:
         source = tmp_path / "src.py"
         source.write_text("alpha\nbeta\ngamma\n")
         sha = sha_for_range(source, 1, 3)
@@ -619,7 +621,7 @@ class TestMemoryRevalidate:
         )
         return source
 
-    def test_revalidate_happy_path(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_revalidate_happy_path(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         self._write_with_citation(manager, tmp_path)
         result = manager.revalidate(scope="charm", title="t")
         assert result.ok
@@ -630,7 +632,9 @@ class TestMemoryRevalidate:
         assert entry.status == "active"
         assert entry.last_validated_at == result.validated_at
 
-    def test_revalidate_quarantines_on_drift(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_revalidate_quarantines_on_drift(
+        self, manager: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
         source = self._write_with_citation(manager, tmp_path)
         # Drift the source after the memory was written.
         source.write_text("DIFFERENT CONTENT\n")
@@ -641,7 +645,9 @@ class TestMemoryRevalidate:
         assert entry is not None
         assert entry.status == "quarantined"
 
-    def test_revalidate_recovers_when_fixed(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_revalidate_recovers_when_fixed(
+        self, manager: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
         source = self._write_with_citation(manager, tmp_path)
         original = source.read_text()
         source.write_text("drift")
@@ -671,7 +677,7 @@ class TestMemoryRevalidate:
         assert result.reason == "not found"
 
     def test_revalidate_quarantined_excluded_from_prompt_index(
-        self, manager: MemoryManager, tmp_path: Path
+        self, manager: MemoryManager, tmp_path: pathlib.Path
     ) -> None:
         source = self._write_with_citation(manager, tmp_path, title="drifted")
         source.write_text("moved on")
@@ -682,7 +688,7 @@ class TestMemoryRevalidate:
     def test_revalidate_all_summary(
         self,
         manager: MemoryManager,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
     ) -> None:
         # Three memories: one clean, one drifted, one with no citations.
         (tmp_path / "a.py").write_text("A")
@@ -728,7 +734,7 @@ class TestMemoryRevalidateTool:
         self,
         tools: dict[str, object],
         manager: MemoryManager,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
     ) -> None:
         source = tmp_path / "src.py"
         source.write_text("x\n")
@@ -764,7 +770,7 @@ class TestMemoryRevalidateTool:
         self,
         tools: dict[str, object],
         manager: MemoryManager,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
     ) -> None:
         (tmp_path / "a.py").write_text("A")
         sha_a = sha_for_range(tmp_path / "a.py", None, None)
@@ -839,7 +845,7 @@ class TestMemorySweep:
         assert ("charm", "t") in archive_result.archived
 
     def test_sweep_leaves_quarantined_alone(
-        self, manager: MemoryManager, store: SessionStore, tmp_path: Path
+        self, manager: MemoryManager, store: SessionStore, tmp_path: pathlib.Path
     ) -> None:
         # Write a memory with a broken citation and quarantine it.
         manager.write(

@@ -3,12 +3,12 @@
 import asyncio
 import datetime
 import logging
+import pathlib
 import re
 import sqlite3
 import subprocess
 import time
 from collections.abc import AsyncIterator, Callable
-from pathlib import Path
 from typing import Any
 
 from cantrip.agent import arena, auto_commit, custom_commands, sandbox
@@ -241,7 +241,9 @@ _PATH_TOKEN_RE = re.compile(
 )
 
 
-def _extract_user_mentioned_files(text: str, charm_path: Path | None) -> list[Path]:
+def _extract_user_mentioned_files(
+    text: str, charm_path: pathlib.Path | None
+) -> list[pathlib.Path]:
     """Pick file-path-shaped tokens out of *text*.
 
     Powers Phase 70.3 conditional guidance: a user message naming
@@ -264,8 +266,8 @@ def _extract_user_mentioned_files(text: str, charm_path: Path | None) -> list[Pa
     # ``\`metadata.yaml\``` tokens land cleanly in the matcher.
     cleaned = text.replace("`", " ").replace('"', " ").replace("'", " ")
 
-    seen: set[Path] = set()
-    ordered: list[Path] = []
+    seen: set[pathlib.Path] = set()
+    ordered: list[pathlib.Path] = []
     for match in _PATH_TOKEN_RE.finditer(cleaned):
         raw = match.group("path").strip(".")
         if not raw:
@@ -274,7 +276,7 @@ def _extract_user_mentioned_files(text: str, charm_path: Path | None) -> list[Pa
         basename = raw.rsplit("/", 1)[-1]
         if suffix not in _PATH_LIKE_EXTENSIONS and basename not in _PATH_LIKE_BARENAMES:
             continue
-        candidate = Path(raw)
+        candidate = pathlib.Path(raw)
         if not candidate.is_absolute() and charm_path is not None:
             candidate = charm_path / candidate
         if candidate in seen:
@@ -323,7 +325,7 @@ def _plan_mode_refusal(state: AgentState, tool_name: str) -> ToolResult | None:
     )
 
 
-def detect_github_repo(charm_path: Path | None) -> str | None:
+def detect_github_repo(charm_path: pathlib.Path | None) -> str | None:
     """Detect a GitHub owner/repo from the git remote origin URL.
 
     Parses both HTTPS (``https://github.com/owner/repo``) and SSH
@@ -359,7 +361,7 @@ class CantripAgent:
     def __init__(
         self,
         provider: LLMProvider,
-        charm_path: Path | None = None,
+        charm_path: pathlib.Path | None = None,
         light_provider: LLMProvider | None = None,
         hook_runner: HookRunner | None = None,
     ):
@@ -380,8 +382,8 @@ class CantripAgent:
         """
         self.provider = provider
         self._light_provider = light_provider
-        if charm_path is not None and not isinstance(charm_path, Path):
-            charm_path = Path(charm_path)
+        if charm_path is not None and not isinstance(charm_path, pathlib.Path):
+            charm_path = pathlib.Path(charm_path)
         self.state = AgentState(charm_path=charm_path)
         self.state.github_repo = detect_github_repo(charm_path)
         if self.state.github_repo:
@@ -668,7 +670,7 @@ class CantripAgent:
                 return msg.content
         return ""
 
-    def _collect_recent_file_citations(self, max_messages: int = 20) -> list[Path]:
+    def _collect_recent_file_citations(self, max_messages: int = 20) -> list[pathlib.Path]:
         """Scan the most recent assistant tool calls for file-citation candidates."""
         tool_calls: list[dict[str, Any]] = []
         for msg in self.state.messages[-max_messages:]:
@@ -678,7 +680,7 @@ class CantripAgent:
                 tool_calls.append({"name": tc.name, "arguments": tc.arguments})
         return collect_file_citations(tool_calls, base_path=self.state.charm_path)
 
-    def _current_turn_files(self, *, max_messages: int = 6) -> list[Path]:
+    def _current_turn_files(self, *, max_messages: int = 6) -> list[pathlib.Path]:
         """Collect file paths in the active conversational context.
 
         Used by Phase 70.3 glob-conditional skill loading: the result
@@ -702,8 +704,8 @@ class CantripAgent:
 
         Duplicates are removed while preserving first-seen order.
         """
-        seen: set[Path] = set()
-        ordered: list[Path] = []
+        seen: set[pathlib.Path] = set()
+        ordered: list[pathlib.Path] = []
 
         for path in self._collect_recent_file_citations():
             if path not in seen:
@@ -736,7 +738,7 @@ class CantripAgent:
 
         return ordered
 
-    def _record_skill_filtering(self, current_files: list[Path]) -> None:
+    def _record_skill_filtering(self, current_files: list[pathlib.Path]) -> None:
         """Record which globbed skills loaded vs. were skipped this turn.
 
         Phase 70.3 observability: writes a ``skill_filter`` side event
@@ -773,7 +775,7 @@ class CantripAgent:
         if self.state.charm_path:
             self._init_store(self.state.charm_path)
 
-    def _init_store(self, charm_path: Path) -> None:
+    def _init_store(self, charm_path: pathlib.Path) -> None:
         """Initialise the session store, migrating from JSON if necessary."""
         db_path = charm_path / ".cantrip"
 
@@ -806,7 +808,7 @@ class CantripAgent:
 
         sandbox.set_event_sink(_sandbox_event_sink)
 
-    def _ensure_claude_md(self, charm_path: Path) -> None:
+    def _ensure_claude_md(self, charm_path: pathlib.Path) -> None:
         """Write a CLAUDE.md into the charm directory if one does not exist."""
         target = charm_path / "CLAUDE.md"
         if target.exists():
@@ -900,7 +902,7 @@ class CantripAgent:
                 system_prompt=self._build_system_prompt(),
                 provider=self._get_provider("compaction"),
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — any compaction failure must fall through to emergency truncation; the loop has to keep running.
             log.warning(
                 "Compaction failed, falling back to emergency truncation",
                 exc_info=True,
@@ -3564,7 +3566,7 @@ class CantripAgent:
             result.append(Message(role=role, content=str(content)))
         return result
 
-    def archive_session(self) -> Path | None:
+    def archive_session(self) -> pathlib.Path | None:
         """Rename the current ``.cantrip`` file aside so a fresh session can start.
 
         Closes the session store, moves the file to

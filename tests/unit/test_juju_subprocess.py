@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from unittest import mock
 
 import jubilant
@@ -114,7 +114,7 @@ class TestRunJujuCrashDump:
         juju_subprocess.juju_version.cache_clear()
 
     def test_crash_shaped_exit_writes_dump(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
         monkeypatch.setattr(
@@ -143,7 +143,7 @@ class TestRunJujuCrashDump:
         assert "juju 3.6.0" in body
 
     def test_normal_exit_one_does_not_dump(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
 

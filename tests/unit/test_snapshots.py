@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def charm(tmp_path: Path) -> Path:
+def charm(tmp_path: pathlib.Path) -> pathlib.Path:
     """A bare charm root with one starter file."""
     charm_dir = tmp_path / "charm"
     charm_dir.mkdir()
@@ -38,13 +38,13 @@ def charm(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def state_root(tmp_path: Path) -> Path:
+def state_root(tmp_path: pathlib.Path) -> pathlib.Path:
     """Snapshot repo lives outside the charm tree, per design."""
     return tmp_path / "state"
 
 
 @pytest.fixture
-def manager(charm: Path, state_root: Path) -> SnapshotManager:
+def manager(charm: pathlib.Path, state_root: pathlib.Path) -> SnapshotManager:
     return SnapshotManager(charm, state_root=state_root)
 
 
@@ -82,7 +82,7 @@ class TestSnapshotCapture:
         assert sha is not None
         assert len(sha) == 40  # full git sha
 
-    def test_snapshot_publishes_event(self, charm: Path, state_root: Path) -> None:
+    def test_snapshot_publishes_event(self, charm: pathlib.Path, state_root: pathlib.Path) -> None:
         bus = EventBus()
         seen: list[dict[str, object]] = []
         bus.subscribe(EventType.SNAPSHOT_CREATED, lambda e: seen.append(dict(e.payload)))
@@ -91,7 +91,7 @@ class TestSnapshotCapture:
         assert seen == [{"turn_id": "1", "sha": sha}]
 
     def test_repo_lives_outside_charm(
-        self, manager: SnapshotManager, charm: Path, state_root: Path
+        self, manager: SnapshotManager, charm: pathlib.Path, state_root: pathlib.Path
     ) -> None:
         manager.snapshot_turn("1")
         # The state_root passed to the manager is used as the parent
@@ -105,7 +105,9 @@ class TestSnapshotCapture:
 class TestRestoreRoundTrip:
     """Restore returns the working tree to a prior snapshot."""
 
-    def test_undo_restores_modification(self, manager: SnapshotManager, charm: Path) -> None:
+    def test_undo_restores_modification(
+        self, manager: SnapshotManager, charm: pathlib.Path
+    ) -> None:
         sha_v1 = manager.snapshot_turn("1")
         assert sha_v1 is not None
         (charm / "src.py").write_text("v2\n")
@@ -113,7 +115,7 @@ class TestRestoreRoundTrip:
         manager.restore(sha_v1, direction="undo")
         assert (charm / "src.py").read_text() == "v1\n"
 
-    def test_undo_restores_deletion(self, manager: SnapshotManager, charm: Path) -> None:
+    def test_undo_restores_deletion(self, manager: SnapshotManager, charm: pathlib.Path) -> None:
         (charm / "doomed.py").write_text("alive\n")
         sha = manager.snapshot_turn("1")
         assert sha is not None
@@ -122,7 +124,7 @@ class TestRestoreRoundTrip:
         manager.restore(sha, direction="undo")
         assert (charm / "doomed.py").read_text() == "alive\n"
 
-    def test_undo_removes_creation(self, manager: SnapshotManager, charm: Path) -> None:
+    def test_undo_removes_creation(self, manager: SnapshotManager, charm: pathlib.Path) -> None:
         sha_initial = manager.snapshot_turn("1")
         assert sha_initial is not None
         (charm / "new.py").write_text("hello\n")
@@ -130,7 +132,7 @@ class TestRestoreRoundTrip:
         manager.restore(sha_initial, direction="undo")
         assert not (charm / "new.py").exists()
 
-    def test_restore_publishes_event(self, charm: Path, state_root: Path) -> None:
+    def test_restore_publishes_event(self, charm: pathlib.Path, state_root: pathlib.Path) -> None:
         bus = EventBus()
         seen: list[dict[str, object]] = []
         bus.subscribe(EventType.SNAPSHOT_RESTORED, lambda e: seen.append(dict(e.payload)))
@@ -144,7 +146,7 @@ class TestRestoreRoundTrip:
         assert seen[0]["sha"] == sha
 
     def test_restore_cleans_unsnapshotted_dirt(
-        self, manager: SnapshotManager, charm: Path
+        self, manager: SnapshotManager, charm: pathlib.Path
     ) -> None:
         """A file the agent created mid-turn (not yet committed) is removed.
 
@@ -162,7 +164,9 @@ class TestRestoreRoundTrip:
 class TestExclusions:
     """Cantrip-internal paths and gitignored files are not snapshotted."""
 
-    def test_gitignored_path_not_in_snapshot(self, manager: SnapshotManager, charm: Path) -> None:
+    def test_gitignored_path_not_in_snapshot(
+        self, manager: SnapshotManager, charm: pathlib.Path
+    ) -> None:
         (charm / "ignored.txt").write_text("secret\n")
         sha = manager.snapshot_turn("1")
         assert sha is not None
@@ -176,7 +180,7 @@ class TestExclusions:
         )
         assert "ignored.txt" not in result.stdout
 
-    def test_cantrip_dir_excluded(self, manager: SnapshotManager, charm: Path) -> None:
+    def test_cantrip_dir_excluded(self, manager: SnapshotManager, charm: pathlib.Path) -> None:
         (charm / ".cantrip").mkdir()
         (charm / ".cantrip" / "session.db").write_text("binary-ish\n")
         sha = manager.snapshot_turn("1")
@@ -218,13 +222,13 @@ class TestRedoStack:
 class TestSlashCommandsDisabled:
     """``/undo`` / ``/redo`` short-circuit when snapshots are off."""
 
-    def test_undo_when_disabled(self, charm: Path) -> None:
+    def test_undo_when_disabled(self, charm: pathlib.Path) -> None:
         agent = CantripAgent(provider=FakeProvider(), charm_path=charm)
         agent.state.snapshot_enabled = False
         result = handle_undo(agent)
         assert "disabled" in result.lower()
 
-    def test_redo_when_disabled(self, charm: Path) -> None:
+    def test_redo_when_disabled(self, charm: pathlib.Path) -> None:
         agent = CantripAgent(provider=FakeProvider(), charm_path=charm)
         agent.state.snapshot_enabled = False
         result = handle_redo(agent)
@@ -239,7 +243,7 @@ class TestSlashCommandFlow:
     """
 
     @pytest.fixture
-    def agent(self, charm: Path, tmp_path: Path) -> CantripAgent:
+    def agent(self, charm: pathlib.Path, tmp_path: pathlib.Path) -> CantripAgent:
         os.environ.pop(ENV_SNAPSHOTS, None)
         with patch(
             "cantrip.agent.snapshots._snapshot_root",
@@ -251,7 +255,9 @@ class TestSlashCommandFlow:
             yield agent
 
     @pytest.mark.asyncio
-    async def test_undo_walks_back_one_turn(self, agent: CantripAgent, charm: Path) -> None:
+    async def test_undo_walks_back_one_turn(
+        self, agent: CantripAgent, charm: pathlib.Path
+    ) -> None:
         # Simulate one user turn: the snapshot helper stamps SHA + DB id.
         user_msg = Message(role=Role.USER, content="add v2")
         agent._snapshot_before_user_turn(user_msg)
@@ -274,7 +280,7 @@ class TestSlashCommandFlow:
         assert agent.store.load_messages() == []
 
     @pytest.mark.asyncio
-    async def test_redo_round_trips(self, agent: CantripAgent, charm: Path) -> None:
+    async def test_redo_round_trips(self, agent: CantripAgent, charm: pathlib.Path) -> None:
         user_msg = Message(role=Role.USER, content="bump")
         agent._snapshot_before_user_turn(user_msg)
         agent.state.messages.append(user_msg)
@@ -307,7 +313,9 @@ class TestSlashCommandFlow:
         assert "Nothing to undo" in out
 
     @pytest.mark.asyncio
-    async def test_new_user_turn_clears_redo(self, agent: CantripAgent, charm: Path) -> None:
+    async def test_new_user_turn_clears_redo(
+        self, agent: CantripAgent, charm: pathlib.Path
+    ) -> None:
         # Turn 1
         user1 = Message(role=Role.USER, content="t1")
         agent._snapshot_before_user_turn(user1)

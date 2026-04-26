@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
 import textwrap
-from pathlib import Path
 
 import pytest
 
@@ -30,7 +30,7 @@ from cantrip.agent.permissions import (
 class TestLoadCommandFile:
     """Frontmatter + filename → :class:`CustomCommand`."""
 
-    def test_valid_file(self, tmp_path: Path):
+    def test_valid_file(self, tmp_path: pathlib.Path):
         path = tmp_path / "relation-check.md"
         path.write_text(
             textwrap.dedent(
@@ -51,7 +51,7 @@ class TestLoadCommandFile:
         assert command.model is None
         assert "$1" in command.body
 
-    def test_body_without_frontmatter(self, tmp_path: Path):
+    def test_body_without_frontmatter(self, tmp_path: pathlib.Path):
         path = tmp_path / "say-hi.md"
         path.write_text("Say hi to the user.")
         command = load_command_file(path)
@@ -59,7 +59,7 @@ class TestLoadCommandFile:
         assert command.description.endswith("say-hi.md")  # fallback description
         assert command.body == "Say hi to the user."
 
-    def test_subtask_true_routes_to_agent(self, tmp_path: Path):
+    def test_subtask_true_routes_to_agent(self, tmp_path: pathlib.Path):
         path = tmp_path / "deep-dive.md"
         path.write_text(
             textwrap.dedent(
@@ -77,27 +77,27 @@ class TestLoadCommandFile:
         assert command.subtask is True
         assert command.agent == "research"
 
-    def test_unknown_frontmatter_key_raises(self, tmp_path: Path):
+    def test_unknown_frontmatter_key_raises(self, tmp_path: pathlib.Path):
         path = tmp_path / "bad.md"
         path.write_text("---\nmystery: yes\n---\nx")
         with pytest.raises(CustomCommandError) as exc:
             load_command_file(path)
         assert "unknown frontmatter keys" in str(exc.value)
 
-    def test_invalid_filename_raises(self, tmp_path: Path):
+    def test_invalid_filename_raises(self, tmp_path: pathlib.Path):
         path = tmp_path / "Bad Name.md"
         path.write_text("x")
         with pytest.raises(CustomCommandError) as exc:
             load_command_file(path)
         assert "invalid command name" in str(exc.value)
 
-    def test_missing_closing_delimiter_raises(self, tmp_path: Path):
+    def test_missing_closing_delimiter_raises(self, tmp_path: pathlib.Path):
         path = tmp_path / "broken.md"
         path.write_text("---\ndescription: x\nBody starts here\n")
         with pytest.raises(CustomCommandError):
             load_command_file(path)
 
-    def test_empty_body_raises(self, tmp_path: Path):
+    def test_empty_body_raises(self, tmp_path: pathlib.Path):
         path = tmp_path / "empty.md"
         path.write_text("---\ndescription: nothing\n---\n   \n")
         with pytest.raises(CustomCommandError):
@@ -107,11 +107,11 @@ class TestLoadCommandFile:
 class TestDiscoverCustomCommands:
     """Layer precedence across user and repo directories."""
 
-    def _write(self, dir_path: Path, name: str, body: str) -> None:
+    def _write(self, dir_path: pathlib.Path, name: str, body: str) -> None:
         dir_path.mkdir(parents=True, exist_ok=True)
         (dir_path / name).write_text(body)
 
-    def test_repo_beats_user(self, tmp_path: Path):
+    def test_repo_beats_user(self, tmp_path: pathlib.Path):
         user_dir = tmp_path / "user"
         repo_root = tmp_path / "charm"
         self._write(
@@ -129,7 +129,7 @@ class TestDiscoverCustomCommands:
         assert commands[0].description == "repo version"
         assert commands[0].body == "repo body"
 
-    def test_merges_unique_commands(self, tmp_path: Path):
+    def test_merges_unique_commands(self, tmp_path: pathlib.Path):
         user_dir = tmp_path / "user"
         repo_root = tmp_path / "charm"
         self._write(
@@ -146,7 +146,7 @@ class TestDiscoverCustomCommands:
         verbs = {c.verb for c in commands}
         assert verbs == {"/uonly", "/ronly"}
 
-    def test_missing_dirs_yield_empty(self, tmp_path: Path):
+    def test_missing_dirs_yield_empty(self, tmp_path: pathlib.Path):
         assert (
             discover_custom_commands(
                 charm_path=tmp_path / "nothing",
@@ -155,7 +155,7 @@ class TestDiscoverCustomCommands:
             == []
         )
 
-    def test_malformed_file_is_skipped(self, tmp_path: Path):
+    def test_malformed_file_is_skipped(self, tmp_path: pathlib.Path):
         user_dir = tmp_path / "user"
         self._write(
             user_dir / "commands",
@@ -216,7 +216,7 @@ class TestFileReferences:
     """``@path`` substitution."""
 
     @pytest.mark.asyncio
-    async def test_repo_local_file(self, tmp_path: Path):
+    async def test_repo_local_file(self, tmp_path: pathlib.Path):
         (tmp_path / "notes.md").write_text("hello from file\n")
         out = await expand(
             _make_command("Notes:\n@notes.md"),
@@ -226,7 +226,7 @@ class TestFileReferences:
         assert "hello from file" in out
 
     @pytest.mark.asyncio
-    async def test_absolute_path_rejected(self, tmp_path: Path):
+    async def test_absolute_path_rejected(self, tmp_path: pathlib.Path):
         (tmp_path / "a.md").write_text("x")
         with pytest.raises(CustomCommandError) as exc:
             await expand(
@@ -237,7 +237,7 @@ class TestFileReferences:
         assert "absolute paths" in str(exc.value)
 
     @pytest.mark.asyncio
-    async def test_traversal_rejected(self, tmp_path: Path):
+    async def test_traversal_rejected(self, tmp_path: pathlib.Path):
         charm = tmp_path / "charm"
         charm.mkdir()
         (tmp_path / "outside.md").write_text("secret")
@@ -249,7 +249,7 @@ class TestFileReferences:
             )
 
     @pytest.mark.asyncio
-    async def test_missing_file_raises(self, tmp_path: Path):
+    async def test_missing_file_raises(self, tmp_path: pathlib.Path):
         with pytest.raises(CustomCommandError) as exc:
             await expand(
                 _make_command("@missing.md"),
@@ -263,7 +263,7 @@ class TestShellReferences:
     """``!`cmd` `` substitution routed through the permission gate."""
 
     @pytest.mark.asyncio
-    async def test_allow_runs_the_shell(self, tmp_path: Path):
+    async def test_allow_runs_the_shell(self, tmp_path: pathlib.Path):
         # No ruleset → default allow.
         out = await expand(
             _make_command("Output: !`echo hi`"),
@@ -273,7 +273,7 @@ class TestShellReferences:
         assert "Output: hi" in out
 
     @pytest.mark.asyncio
-    async def test_deny_blocks_with_clear_error(self, tmp_path: Path):
+    async def test_deny_blocks_with_clear_error(self, tmp_path: pathlib.Path):
         ruleset = PermissionRuleset(bash=(PermissionRule("echo *", PermissionOutcome.DENY),))
         with pytest.raises(CustomCommandError) as exc:
             await expand(
@@ -285,7 +285,7 @@ class TestShellReferences:
         assert "refused by permissions policy" in str(exc.value)
 
     @pytest.mark.asyncio
-    async def test_ask_uses_manager_when_approved(self, tmp_path: Path):
+    async def test_ask_uses_manager_when_approved(self, tmp_path: pathlib.Path):
         import asyncio
 
         ruleset = PermissionRuleset(bash=(PermissionRule("echo *", PermissionOutcome.ASK),))
@@ -308,7 +308,7 @@ class TestShellReferences:
         assert "allowed" in out
 
     @pytest.mark.asyncio
-    async def test_ask_without_manager_errors(self, tmp_path: Path):
+    async def test_ask_without_manager_errors(self, tmp_path: pathlib.Path):
         ruleset = PermissionRuleset(bash=(PermissionRule("echo *", PermissionOutcome.ASK),))
         with pytest.raises(CustomCommandError) as exc:
             await expand(
@@ -321,7 +321,7 @@ class TestShellReferences:
         assert "no interactive permission surface" in str(exc.value)
 
     @pytest.mark.asyncio
-    async def test_failed_command_includes_exit_code(self, tmp_path: Path):
+    async def test_failed_command_includes_exit_code(self, tmp_path: pathlib.Path):
         out = await expand(
             _make_command("Result:\n!`sh -c 'echo err >&2; exit 2'`"),
             "",
@@ -370,7 +370,7 @@ class TestRegistry:
 class TestDispatcherIntegration:
     """The slash dispatcher falls through to custom commands."""
 
-    def test_unknown_verb_passes_to_custom(self, tmp_path: Path):
+    def test_unknown_verb_passes_to_custom(self, tmp_path: pathlib.Path):
         from cantrip.agent import slash_commands
         from cantrip.agent.core import CantripAgent
         from tests.conftest import FakeProvider
@@ -394,7 +394,7 @@ class TestDispatcherIntegration:
         if result.followup is not None:
             result.followup.close()
 
-    def test_catalogue_for_includes_custom_commands(self, tmp_path: Path):
+    def test_catalogue_for_includes_custom_commands(self, tmp_path: pathlib.Path):
         from cantrip.agent import slash_commands
         from cantrip.agent.core import CantripAgent
         from tests.conftest import FakeProvider
@@ -412,7 +412,7 @@ class TestDispatcherIntegration:
         # Built-ins still present.
         assert "/help" in verbs
 
-    def test_help_text_lists_custom_commands(self, tmp_path: Path):
+    def test_help_text_lists_custom_commands(self, tmp_path: pathlib.Path):
         from cantrip.agent import slash_commands
         from cantrip.agent.core import CantripAgent
         from tests.conftest import FakeProvider

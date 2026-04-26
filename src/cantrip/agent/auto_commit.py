@@ -34,10 +34,10 @@ agent loop never raises out because of an auto-commit hiccup.
 from __future__ import annotations
 
 import logging
+import pathlib
 import shutil
 import subprocess
 from collections.abc import Iterable
-from pathlib import Path
 
 from cantrip.llm.base import Message, Role
 
@@ -83,7 +83,7 @@ def _have_git() -> bool:
     return shutil.which("git") is not None
 
 
-def _is_git_repo(path: Path) -> bool:
+def _is_git_repo(path: pathlib.Path) -> bool:
     """Return whether *path* sits inside a git working tree.
 
     Uses ``git rev-parse --is-inside-work-tree`` so submodules and
@@ -105,7 +105,7 @@ def _is_git_repo(path: Path) -> bool:
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
-def _has_dirty_tree(path: Path) -> bool:
+def _has_dirty_tree(path: pathlib.Path) -> bool:
     """Return whether *path* has uncommitted modifications or untracked files.
 
     Treats both modified-but-unstaged and staged-but-uncommitted as
@@ -128,7 +128,7 @@ def _has_dirty_tree(path: Path) -> bool:
     return bool(result.stdout.strip())
 
 
-def _commit(path: Path, message: str, *, stage_all: bool = False) -> str | None:
+def _commit(path: pathlib.Path, message: str, *, stage_all: bool = False) -> str | None:
     """Run ``git commit`` and return the new HEAD SHA, or ``None`` on failure.
 
     When *stage_all* is ``True`` we run ``git add -A`` first so untracked
@@ -183,7 +183,7 @@ def _commit(path: Path, message: str, *, stage_all: bool = False) -> str | None:
     return rev.stdout.strip() or None
 
 
-def _add_paths(path: Path, paths: list[str]) -> bool:
+def _add_paths(path: pathlib.Path, paths: list[str]) -> bool:
     """Stage *paths* via ``git add -- <paths>``.
 
     Returns ``True`` on success.  Empty *paths* short-circuits to
@@ -204,7 +204,7 @@ def _add_paths(path: Path, paths: list[str]) -> bool:
     return result.returncode == 0
 
 
-def _staged_diff_empty(path: Path) -> bool:
+def _staged_diff_empty(path: pathlib.Path) -> bool:
     """Return whether ``git diff --cached`` shows no staged changes.
 
     Used to skip the agent commit when ``git add`` resolved to a
@@ -322,7 +322,7 @@ def build_commit_message(
     return "\n".join(body_lines)
 
 
-def pre_turn_commit_dirty(charm_path: Path | None) -> str | None:
+def pre_turn_commit_dirty(charm_path: pathlib.Path | None) -> str | None:
     """Commit any pre-existing dirty work before the agent runs.
 
     Returns the new HEAD SHA on success, ``None`` when nothing was
@@ -346,7 +346,7 @@ def pre_turn_commit_dirty(charm_path: Path | None) -> str | None:
 
 
 def post_turn_commit_agent_edits(
-    charm_path: Path | None,
+    charm_path: pathlib.Path | None,
     turn_messages: Iterable[Message],
     user_message: str,
     *,

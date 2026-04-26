@@ -1,8 +1,8 @@
 """Tests for the SQLite session store."""
 
 import json
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -11,13 +11,13 @@ from cantrip.agent.store import SessionStore
 
 
 @pytest.fixture
-def db_path(tmp_path: Path) -> Path:
+def db_path(tmp_path: pathlib.Path) -> pathlib.Path:
     """Return a temporary database path."""
     return tmp_path / ".cantrip"
 
 
 @pytest.fixture
-def store(db_path: Path) -> Iterator[SessionStore]:
+def store(db_path: pathlib.Path) -> Iterator[SessionStore]:
     """Return an open SessionStore backed by a temporary file."""
     s = SessionStore(db_path)
     s.open()
@@ -28,7 +28,7 @@ def store(db_path: Path) -> Iterator[SessionStore]:
 class TestOpenClose:
     """Tests for opening and closing the store."""
 
-    def test_open_creates_database(self, db_path: Path) -> None:
+    def test_open_creates_database(self, db_path: pathlib.Path) -> None:
         store = SessionStore(db_path)
         store.open()
         assert db_path.exists()
@@ -38,7 +38,7 @@ class TestOpenClose:
         store.close()
         store.close()
 
-    def test_auto_opens_on_first_access(self, db_path: Path) -> None:
+    def test_auto_opens_on_first_access(self, db_path: pathlib.Path) -> None:
         """Store opens the database automatically when accessed without explicit open()."""
         store = SessionStore(db_path)
         assert store.load_session() is None
@@ -72,7 +72,7 @@ class TestSessionCRUD:
     def test_round_trip(self, store: SessionStore) -> None:
         state = AgentState(
             charm_name="my-charm",
-            charm_path=Path("/tmp/my-charm"),
+            charm_path=pathlib.Path("/tmp/my-charm"),
             charm_type="k8s",
             framework="flask",
             dev_model="dev",
@@ -85,7 +85,7 @@ class TestSessionCRUD:
 
         assert loaded is not None
         assert loaded.charm_name == "my-charm"
-        assert loaded.charm_path == Path("/tmp/my-charm")
+        assert loaded.charm_path == pathlib.Path("/tmp/my-charm")
         assert loaded.charm_type == "k8s"
         assert loaded.framework == "flask"
         assert loaded.dev_model == "dev"
@@ -223,7 +223,7 @@ class TestTokenUsage:
 class TestSchemaMigrations:
     """Tests for incremental ``_apply_migrations`` paths (Phase 31.4 etc.)."""
 
-    def test_v9_adds_category_column_to_existing_token_usage(self, tmp_path: Path) -> None:
+    def test_v9_adds_category_column_to_existing_token_usage(self, tmp_path: pathlib.Path) -> None:
         """A pre-v9 database gains the ``category`` column on open.
 
         Legacy rows without the column survive — ``get_total_usage``
@@ -276,7 +276,7 @@ class TestSchemaMigrations:
 class TestMigration:
     """Tests for migrating from session.json to SQLite."""
 
-    def test_migrate_from_json(self, tmp_path: Path) -> None:
+    def test_migrate_from_json(self, tmp_path: pathlib.Path) -> None:
         json_data = {
             "charm_name": "migrated-charm",
             "charm_path": "/tmp/migrated-charm",
@@ -301,7 +301,7 @@ class TestMigration:
             loaded = store.load_session()
             assert loaded is not None
             assert loaded.charm_name == "migrated-charm"
-            assert loaded.charm_path == Path("/tmp/migrated-charm")
+            assert loaded.charm_path == pathlib.Path("/tmp/migrated-charm")
             assert loaded.charm_type == "machine"
             assert loaded.framework is None
             assert loaded.dev_model == "dev-model"
@@ -311,7 +311,7 @@ class TestMigration:
         finally:
             store.close()
 
-    def test_migrate_empty_json(self, tmp_path: Path) -> None:
+    def test_migrate_empty_json(self, tmp_path: pathlib.Path) -> None:
         json_path = tmp_path / "session.json"
         json_path.write_text("{}")
 

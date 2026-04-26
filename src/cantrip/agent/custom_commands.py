@@ -30,11 +30,11 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import pathlib
 import re
 import shlex
 import subprocess
 from collections.abc import Mapping
-from pathlib import Path
 
 import yaml
 
@@ -77,8 +77,8 @@ _SHELL_TIMEOUT_SECONDS: float = 10.0
 
 #: Canonical discovery roots.  Exposed as module constants so the
 #: docs and tests can reference the same strings without duplication.
-USER_CONFIG_COMMANDS_DIR = Path(".config") / "cantrip" / "commands"
-REPO_COMMANDS_DIR = Path(".cantrip") / "commands"
+USER_CONFIG_COMMANDS_DIR = pathlib.Path(".config") / "cantrip" / "commands"
+REPO_COMMANDS_DIR = pathlib.Path(".cantrip") / "commands"
 
 
 class CustomCommandError(ValueError):
@@ -103,7 +103,7 @@ class CustomCommand:
     agent: str = DEFAULT_AGENT
     model: str | None = None
     subtask: bool = False
-    source: Path | None = None
+    source: pathlib.Path | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ class CustomCommand:
 _VALID_VERB_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
-def _verb_from_filename(path: Path) -> str:
+def _verb_from_filename(path: pathlib.Path) -> str:
     """Return ``/<stem>`` after validating the filename is safe.
 
     Filenames turn directly into verbs, so we reject anything that
@@ -132,7 +132,7 @@ def _verb_from_filename(path: Path) -> str:
     return f"/{stem}"
 
 
-def _parse_frontmatter(path: Path) -> tuple[dict[str, object], str]:
+def _parse_frontmatter(path: pathlib.Path) -> tuple[dict[str, object], str]:
     """Split a command file into (frontmatter dict, body string).
 
     A file without frontmatter is accepted and yields an empty dict,
@@ -166,7 +166,7 @@ def _parse_frontmatter(path: Path) -> tuple[dict[str, object], str]:
     return data, body
 
 
-def load_command_file(path: Path) -> CustomCommand:
+def load_command_file(path: pathlib.Path) -> CustomCommand:
     """Load one command file into a :class:`CustomCommand`.
 
     Raises :class:`CustomCommandError` with a path-prefixed message
@@ -221,7 +221,7 @@ def load_command_file(path: Path) -> CustomCommand:
     )
 
 
-def _collect_commands(directory: Path) -> dict[str, CustomCommand]:
+def _collect_commands(directory: pathlib.Path) -> dict[str, CustomCommand]:
     """Walk *directory* for ``*.md`` files and load each one.
 
     Uses a mapping keyed by verb so repo rules can overwrite user
@@ -245,8 +245,8 @@ def _collect_commands(directory: Path) -> dict[str, CustomCommand]:
 
 def discover_custom_commands(
     *,
-    charm_path: Path | None = None,
-    user_config_dir: Path | None = None,
+    charm_path: pathlib.Path | None = None,
+    user_config_dir: pathlib.Path | None = None,
 ) -> list[CustomCommand]:
     """Discover commands from the user and repo directories.
 
@@ -256,7 +256,7 @@ def discover_custom_commands(
     ``~/.config/cantrip/`` — override for tests.
     """
     if user_config_dir is None:
-        user_config_dir = Path.home() / ".config" / "cantrip"
+        user_config_dir = pathlib.Path.home() / ".config" / "cantrip"
     user_dir = user_config_dir / "commands"
     merged: dict[str, CustomCommand] = dict(_collect_commands(user_dir))
     if charm_path is not None:
@@ -297,7 +297,7 @@ def _expand_arguments(template: str, args: str) -> str:
     return _POSITIONAL_RE.sub(replace_positional, result)
 
 
-def _resolve_file_reference(raw_path: str, *, repo_root: Path | None) -> str:
+def _resolve_file_reference(raw_path: str, *, repo_root: pathlib.Path | None) -> str:
     """Return the contents of ``@path`` or raise.
 
     Safety rules: no absolute paths, no ``..`` traversal outside the
@@ -306,10 +306,10 @@ def _resolve_file_reference(raw_path: str, *, repo_root: Path | None) -> str:
     """
     if not raw_path:
         raise CustomCommandError("empty @ reference in command body")
-    candidate = Path(raw_path)
+    candidate = pathlib.Path(raw_path)
     if candidate.is_absolute():
         raise CustomCommandError(f"@{raw_path}: absolute paths are not permitted in commands")
-    base = repo_root if repo_root is not None else Path.cwd()
+    base = repo_root if repo_root is not None else pathlib.Path.cwd()
     try:
         resolved = (base / candidate).resolve(strict=False)
         base_resolved = base.resolve(strict=False)
@@ -327,7 +327,7 @@ def _resolve_file_reference(raw_path: str, *, repo_root: Path | None) -> str:
 async def _resolve_shell_reference(
     command: str,
     *,
-    repo_root: Path | None,
+    repo_root: pathlib.Path | None,
     permissions: PermissionRuleset | None,
     permission_manager: PermissionManager | None,
     agent_name: str,
@@ -376,7 +376,7 @@ async def _resolve_shell_reference(
                     f"!`{command}` refused: user declined the permission prompt."
                 )
 
-    cwd = repo_root if repo_root is not None else Path.cwd()
+    cwd = repo_root if repo_root is not None else pathlib.Path.cwd()
     try:
         completed = subprocess.run(
             ["sh", "-c", command],
@@ -416,7 +416,7 @@ async def expand(
     command: CustomCommand,
     args: str,
     *,
-    repo_root: Path | None = None,
+    repo_root: pathlib.Path | None = None,
     permissions: PermissionRuleset | None = None,
     permission_manager: PermissionManager | None = None,
 ) -> str:

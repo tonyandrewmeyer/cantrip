@@ -1,6 +1,6 @@
 """Tests for the Terraform generation and validation tools."""
 
-from pathlib import Path
+import pathlib
 from unittest import mock
 
 import pytest
@@ -34,7 +34,7 @@ class TestGenerateTerraformTool:
         return GenerateTerraformTool()
 
     @pytest.mark.asyncio
-    async def test_generate_terraform_creates_files(self, tmp_path: Path, tool):
+    async def test_generate_terraform_creates_files(self, tmp_path: pathlib.Path, tool):
         """Verify that all four Terraform files are written."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text(_MINIMAL_CHARMCRAFT)
@@ -54,7 +54,7 @@ class TestGenerateTerraformTool:
         ]
 
     @pytest.mark.asyncio
-    async def test_generate_terraform_missing_charmcraft(self, tmp_path: Path, tool):
+    async def test_generate_terraform_missing_charmcraft(self, tmp_path: pathlib.Path, tool):
         """Missing charmcraft.yaml should return an error."""
         result = await tool.execute(charm_path=str(tmp_path))
 

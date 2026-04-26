@@ -1,7 +1,7 @@
 """File tree widget showing the charm directory."""
 
 import collections.abc
-from pathlib import Path
+import pathlib
 
 from textual.app import ComposeResult
 from textual.widget import Widget
@@ -26,8 +26,8 @@ class _FilteredTree(DirectoryTree):
     """DirectoryTree subclass that hides noisy entries."""
 
     def filter_paths(
-        self, paths: collections.abc.Iterable[Path]
-    ) -> collections.abc.Iterable[Path]:
+        self, paths: collections.abc.Iterable[pathlib.Path]
+    ) -> collections.abc.Iterable[pathlib.Path]:
         """Hide hidden/noise directories from the tree."""
         return [p for p in paths if p.name not in _HIDDEN_NAMES]
 
@@ -56,7 +56,7 @@ class CharmTreeWidget(Widget):
     }
     """
 
-    def __init__(self, charm_path: Path, **kwargs: object) -> None:
+    def __init__(self, charm_path: pathlib.Path, **kwargs: object) -> None:
         """Initialise with the charm directory path."""
         super().__init__(**kwargs)
         self._charm_path = charm_path
@@ -85,4 +85,6 @@ class CharmTreeWidget(Widget):
         event.stop()
         from cantrip.tui.screens.file_detail import FileDetailScreen
 
-        self.app.push_screen(FileDetailScreen(Path(event.path), charm_root=self._charm_path))
+        self.app.push_screen(
+            FileDetailScreen(pathlib.Path(event.path), charm_root=self._charm_path)
+        )

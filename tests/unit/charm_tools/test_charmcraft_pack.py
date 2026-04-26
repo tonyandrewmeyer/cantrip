@@ -1,7 +1,7 @@
 """Tests for CharmcraftPackTool — pre-pack PaaS requirements guard."""
 
+import pathlib
 import tempfile
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -23,7 +23,7 @@ class TestCharmcraftPackPaasRequirementsGuard:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.fixture
     def tool(self):

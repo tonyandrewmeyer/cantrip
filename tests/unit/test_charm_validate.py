@@ -1,7 +1,7 @@
 """Tests for CharmValidateTool."""
 
+import pathlib
 import tempfile
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -27,8 +27,8 @@ class TestCharmValidateTool:
     def temp_dir(self):
         """Create a temporary directory with tests/unit/ present."""
         with tempfile.TemporaryDirectory() as td:
-            (Path(td) / "tests" / "unit").mkdir(parents=True)
-            yield Path(td)
+            (pathlib.Path(td) / "tests" / "unit").mkdir(parents=True)
+            yield pathlib.Path(td)
 
     @pytest.fixture
     def tool(self):

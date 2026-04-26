@@ -15,9 +15,9 @@ replaced with ``[REDACTED]``.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
-from dataclasses import dataclass
-from pathlib import Path
+import pathlib
 from typing import TYPE_CHECKING
 
 import yaml
@@ -30,12 +30,12 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class SkillExportResult:
     """Outcome of a skill export call."""
 
     name: str
-    output_path: Path
+    output_path: pathlib.Path
     redactions: int
 
 
@@ -45,10 +45,10 @@ class SkillExportError(Exception):
 
 def export_skill(
     name: str,
-    output_path: Path,
+    output_path: pathlib.Path,
     *,
     index: SkillsIndex,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
     force: bool = False,
 ) -> SkillExportResult:
     """Write a discovered skill to *output_path* in standard SKILL.md format.
@@ -99,7 +99,7 @@ def export_skill(
     return SkillExportResult(name=metadata.name, output_path=target, redactions=redactions)
 
 
-def _resolve_target(output_path: Path, name: str) -> Path:
+def _resolve_target(output_path: pathlib.Path, name: str) -> pathlib.Path:
     """Pick the final file path for a skill export.
 
     An explicit ``.md`` path is honoured verbatim (single-file layout);

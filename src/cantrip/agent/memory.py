@@ -14,14 +14,14 @@ that the agent tools and the system-prompt builder talk to.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import hashlib
 import logging
 import os
+import pathlib
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import yaml
@@ -54,7 +54,7 @@ VALID_STATUSES = frozenset({"active", "quarantined", "archived"})
 _SAFE_SLUG_RE = re.compile(r"[^a-z0-9._-]+")
 
 
-def _default_global_dir() -> Path:
+def _default_global_dir() -> pathlib.Path:
     """Return the default location for the global memory directory.
 
     Honours ``CANTRIP_MEMORY_DIR`` when set; otherwise falls back to
@@ -62,9 +62,9 @@ def _default_global_dir() -> Path:
     """
     override = os.environ.get("CANTRIP_MEMORY_DIR")
     if override:
-        return Path(override).expanduser()
+        return pathlib.Path(override).expanduser()
     xdg = os.environ.get("XDG_CONFIG_HOME")
-    base = Path(xdg).expanduser() if xdg else Path.home() / ".config"
+    base = pathlib.Path(xdg).expanduser() if xdg else pathlib.Path.home() / ".config"
     return base / "cantrip" / "memory"
 
 
@@ -79,7 +79,7 @@ def slugify_title(title: str) -> str:
     return slug or "memory"
 
 
-@dataclass
+@dataclasses.dataclass
 class MemoryEntry:
     """An in-memory representation of a single memory.
 
@@ -93,8 +93,8 @@ class MemoryEntry:
     scope: str  # "charm" or "global"
     id: int | None = None
     source: str = "manual"
-    tags: list[str] = field(default_factory=list)
-    citations: list[dict[str, Any]] = field(default_factory=list)
+    tags: list[str] = dataclasses.field(default_factory=list)
+    citations: list[dict[str, Any]] = dataclasses.field(default_factory=list)
     status: str = "active"
     created_at: str | None = None
     updated_at: str | None = None
@@ -122,7 +122,7 @@ class MemoryEntry:
         }
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class CitationCheck:
     """Outcome of validating a single citation against the current filesystem."""
 
@@ -142,7 +142,7 @@ DEFAULT_SOFT_EXPIRY_DAYS = 60
 DEFAULT_HARD_EXPIRY_DAYS = 180
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class SweepResult:
     """Summary of a TTL sweep pass.
 
@@ -157,7 +157,7 @@ class SweepResult:
     cutoff: str
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class RevalidationResult:
     """Outcome of revalidating a single memory's citations.
 
@@ -172,12 +172,12 @@ class RevalidationResult:
     scope: str
     ok: bool
     reason: str
-    checks: list[CitationCheck] = field(default_factory=list)
+    checks: list[CitationCheck] = dataclasses.field(default_factory=list)
     new_status: str | None = None
     validated_at: str | None = None
 
 
-def sha_for_range(path: Path, line_start: int | None, line_end: int | None) -> str:
+def sha_for_range(path: pathlib.Path, line_start: int | None, line_end: int | None) -> str:
     """Return the hex SHA-256 of ``path`` (optionally restricted to a line range).
 
     Lines are 1-indexed and inclusive on both ends.  Passing ``None`` for
@@ -195,7 +195,9 @@ def sha_for_range(path: Path, line_start: int | None, line_end: int | None) -> s
     return hashlib.sha256(selected.encode("utf-8")).hexdigest()
 
 
-def validate_citation(citation: dict[str, Any], *, base_path: Path | None = None) -> CitationCheck:
+def validate_citation(
+    citation: dict[str, Any], *, base_path: pathlib.Path | None = None
+) -> CitationCheck:
     """Check a single citation against the current filesystem.
 
     The citation is considered valid when ``path`` resolves to a readable
@@ -208,7 +210,7 @@ def validate_citation(citation: dict[str, Any], *, base_path: Path | None = None
     raw_path = citation.get("path")
     if not isinstance(raw_path, str) or not raw_path.strip():
         return CitationCheck(citation=citation, ok=False, reason="missing path")
-    candidate = Path(raw_path)
+    candidate = pathlib.Path(raw_path)
     if not candidate.is_absolute():
         if base_path is None:
             return CitationCheck(
@@ -318,16 +320,16 @@ class GlobalMemoryStore:
     memories to ``memory_read`` for full context.
     """
 
-    def __init__(self, directory: Path | None = None) -> None:
+    def __init__(self, directory: pathlib.Path | None = None) -> None:
         self._dir = directory or _default_global_dir()
 
     @property
-    def directory(self) -> Path:
+    def directory(self) -> pathlib.Path:
         """Return the on-disk directory backing this store."""
         return self._dir
 
     @property
-    def index_path(self) -> Path:
+    def index_path(self) -> pathlib.Path:
         """Return the path to the always-loaded MEMORY.md index."""
         return self._dir / INDEX_FILENAME
 
@@ -342,7 +344,7 @@ class GlobalMemoryStore:
                 # mounted VM shares) don't support chmod.
                 log.debug("Could not chmod %s; leaving default permissions", self._dir)
 
-    def _path_for(self, title: str) -> Path:
+    def _path_for(self, title: str) -> pathlib.Path:
         return self._dir / f"{slugify_title(title)}.md"
 
     def list_entries(
@@ -525,7 +527,7 @@ class GlobalMemoryStore:
         self.index_path.write_text("".join(lines))
 
     @staticmethod
-    def _read_file(path: Path) -> MemoryEntry:
+    def _read_file(path: pathlib.Path) -> MemoryEntry:
         """Parse a memory Markdown file into a :class:`MemoryEntry`."""
         raw = path.read_text()
         frontmatter, body = _split_frontmatter(raw)
@@ -610,7 +612,7 @@ class MemoryManager:
         session_store: SessionStore | None,
         global_store: GlobalMemoryStore | None = None,
         *,
-        charm_path: Path | None = None,
+        charm_path: pathlib.Path | None = None,
     ) -> None:
         self._session_store = session_store
         self._global_store = global_store or GlobalMemoryStore()
