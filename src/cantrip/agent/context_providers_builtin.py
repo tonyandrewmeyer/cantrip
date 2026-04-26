@@ -39,6 +39,7 @@ from cantrip.agent.context_providers import (
 )
 from cantrip.agent.tools import charmhub as charmhub_tools
 from cantrip.agent.tools import web as web_tools
+from cantrip.llm import roles as llm_roles
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ _PROBLEMS_MAX_CHARS = lint_context.DEFAULT_MAX_CHARS  # 6000 chars
 _URL_MAX_CHARS = chars_for_tokens(3000)
 _CHARM_MAX_CHARS = chars_for_tokens(2000)
 _JUJU_MAX_CHARS = chars_for_tokens(2000)
+_DOCS_MAX_CHARS = chars_for_tokens(3000)
 
 _GIT_TIMEOUT_SECONDS = 10.0
 _JUJU_TIMEOUT_SECONDS = 30.0
@@ -522,11 +524,81 @@ class JujuProvider:
 
 
 # ---------------------------------------------------------------------------
+# @docs <site> <query>
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class DocsProvider:
+    """``@docs <site> <query>`` — search the indexed Canonical docs.
+
+    Phase 72.1.  Wraps :class:`~cantrip.agent.tools.docs_search.DocsSearchTool`
+    so a user can lookup canonical reference passages mid-message
+    without a tool round-trip.  The first whitespace-delimited token
+    of the args is the site name (juju/ops/charmcraft/…), the rest
+    is the free-text query.
+
+    The provider needs an embed-capable role router; build it with
+    ``DocsProvider(role_router=agent.role_router)`` from the agent
+    layer.  Sessions without a configured embed provider surface a
+    clean error inline rather than crashing.
+    """
+
+    info: ProviderInfo = ProviderInfo(
+        name="docs",
+        summary="Search indexed Canonical documentation",
+        arg_style=ArgStyle.REST_OF_LINE,
+        args_hint="<site> <query>",
+    )
+    role_router: llm_roles.RoleRouter | None = None
+    cache_root: pathlib.Path | None = None
+
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+        """Run a docs_search and render the top hits as a block."""
+        raw = f"@docs {args}".rstrip()
+        if not args.strip():
+            return ContextBlock(
+                raw=raw,
+                rendered="[@docs: usage `@docs <site> <query>` — try `@docs ops secrets`]",
+                error="missing args",
+            )
+        first, _, rest = args.strip().partition(" ")
+        site = first.lower()
+        query = rest.strip()
+        if not query:
+            return ContextBlock(
+                raw=raw,
+                rendered=f"[@docs {site}: missing query — `@docs {site} <query>`]",
+                error="missing query",
+            )
+        if self.role_router is None:
+            return ContextBlock(
+                raw=raw,
+                rendered="[@docs: no role router available in this session]",
+                error="no router",
+            )
+        from cantrip.agent.tools.docs_search import DocsSearchTool
+
+        tool = DocsSearchTool(self.role_router, cache_root=self.cache_root)
+        result = await tool.execute(query=query, site=site, top_k=4)
+        if not result.success:
+            return ContextBlock(
+                raw=raw,
+                rendered=f"[@docs {site}: {result.error}]",
+                error=result.error or "search failed",
+            )
+        return truncate(raw=raw, rendered=result.output, max_chars=_DOCS_MAX_CHARS)
+
+
+# ---------------------------------------------------------------------------
 # Default registry
 # ---------------------------------------------------------------------------
 
 
-def build_default_registry() -> ProviderRegistry:
+def build_default_registry(
+    *,
+    role_router: llm_roles.RoleRouter | None = None,
+) -> ProviderRegistry:
     """Return a :class:`ProviderRegistry` with the baseline ``@`` providers.
 
     Includes both light-touch wrappers (``@file``, ``@diff``, ``@tree``,
@@ -534,9 +606,15 @@ def build_default_registry() -> ProviderRegistry:
     ``@juju``).  Network providers are lazy — they only call out when
     the user types the mention, so unit tests that never trigger them
     incur no I/O.
+
+    *role_router*, when supplied, enables the Phase 72.1 ``@docs``
+    provider on top of the indexed-docs store.  Sessions without an
+    embed-capable router skip ``@docs`` registration entirely so a
+    user typing ``@docs ...`` gets the regular "unknown provider"
+    pass-through rather than a runtime error.
     """
     registry = ProviderRegistry()
-    for provider in (
+    providers: list[object] = [
         FileProvider(),
         DiffProvider(),
         TreeProvider(),
@@ -544,7 +622,10 @@ def build_default_registry() -> ProviderRegistry:
         UrlProvider(),
         CharmProvider(),
         JujuProvider(),
-    ):
+    ]
+    if role_router is not None:
+        providers.append(DocsProvider(role_router=role_router))
+    for provider in providers:
         registry.register(_as_protocol(provider))
     return registry
 

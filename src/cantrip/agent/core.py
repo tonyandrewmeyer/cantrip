@@ -489,7 +489,9 @@ class CantripAgent:
         # The TUI and Web input layers read this registry to expand
         # mentions before the message reaches the LLM.
         self.context_providers: context_providers.ProviderRegistry = (
-            context_providers_builtin.build_default_registry()
+            context_providers_builtin.build_default_registry(
+                role_router=self.role_router if self.role_router.has_embed() else None,
+            )
         )
 
         if charm_path:
@@ -1157,6 +1159,7 @@ class CantripAgent:
             memory_manager=self._memory_manager,
             mcp_registry=self._mcp_registry_cache,
             store_getter=lambda: self._store,
+            role_router=self.role_router if self.role_router.has_embed() else None,
         )
 
     def _build_system_prompt(self) -> str:

@@ -25,6 +25,7 @@ def build_tools(
     memory_manager: MemoryManager | None = None,
     mcp_registry: MCPRegistry | None = None,
     store_getter: Callable[[], Any] | None = None,
+    role_router: Any = None,
 ) -> list[Tool]:
     """Build all agent tool instances.
 
@@ -65,6 +66,7 @@ def build_tools(
         CharmhubSearchTool,
     )
     from cantrip.agent.tools.charmlint_tool import CharmlintTool
+    from cantrip.agent.tools.docs_search import DocsSearchTool
     from cantrip.agent.tools.environment import (
         ConciergePrepareTool,
         ConciergeRestoreTool,
@@ -222,6 +224,10 @@ def build_tools(
         # Web
         WebFetchTool(),
         WebSearchTool(),
+        # Phase 72.1: indexed charm-ecosystem docs.  Reads through
+        # the role router so a session without an embed provider
+        # surfaces a clean "no embed" error instead of crashing.
+        *([DocsSearchTool(role_router)] if role_router is not None else []),
         # Charmhub / Launchpad (Phase 70.1 Librarian)
         CharmhubSearchTool(),
         CharmhubInfoTool(),
