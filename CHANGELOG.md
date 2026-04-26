@@ -109,6 +109,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Tool families bundled behind subcommand discriminators to stay under OpenAI's 128-tool API cap.**  OpenRouter (when routing to OpenAI models) was rejecting Cantrip requests with `Invalid 'tools': array too long. Expected an array with maximum length 128, but got an array with length 130` once skills + virtual-store + a couple of MCP tools pushed the toolset over the limit.  The four largest families now ship as single LLM-facing entries with a `subcommand` field — `juju` (23 actions), `git` (11), `gh` (8, including PR review), `memory` (9).  Each subcommand keeps its full per-action argument schema (visible in the bundled tool's description); permissions, audit, hooks and plan mode all still see the canonical leaf name (`juju_deploy`, `git_commit`, …) because the executor rewrites `juju(subcommand="deploy", …)` into a flat leaf call before any gate runs.  LLM-facing tool count drops from ~123 → ~76; the OpenAI-compatible providers (OpenAI-compatible, Fireworks, OpenRouter) now declare `max_tools=128` as a safety net so future regressions trim to a curated core set instead of letting the API 400 surface.
 
 ### Fixed
+- **Audit JSONL now redacts secrets in nested arguments, not just top-level
+  strings.**  ``cantrip.agent.audit.scrub_arguments`` walked only the
+  outer dict — a tool call like
+  ``juju_config(values={"db-password": "supersecret"})`` or
+  ``run_command(cmd=["gh", "auth", "login", "--with-token", "ghp_…"])``
+  would land verbatim in ``.cantrip-audit.jsonl`` because the secret
+  lived inside a nested dict / list and the scrubber's ``isinstance(value,
+  str)`` branch fell through to the pass-through ``else``.  The
+  scrubber now recurses through dicts, lists, and tuples so the
+  Phase 50.2 ``sanitise_body`` redaction reaches every JSON-shaped
+  string in the argument tree.  SQLite remains the canonical record;
+  the JSONL is the grep-friendly export and now matches the
+  redaction promise the docstring already made.
+- **``destructive_command_check`` catches bundled short-flag and
+  ``--force-with-lease=ref`` forms of ``git push --force``.**  The
+  Phase 80.5 argv-shape gate (in ``run_command``) only matched
+  literal ``--force`` / ``-f`` / ``--force-with-lease``, so
+  ``git push -fu origin main`` (force + set-upstream bundle) and
+  ``git push --force-with-lease=feature origin main`` (the form ``git
+  push`` writes when you specify the expected ref) both slipped past
+  the gate and executed without an ``approve_destructive`` consent.
+  The matcher now uses the existing ``_is_short_flag(arg, "f")``
+  predicate (mirroring how ``rm -rf`` already detects ``-fr`` and
+  ``-rf``) and a ``startswith("--force-with-lease")`` prefix check
+  so the ``=expected-ref`` suffix variant trips alongside the bare
+  flag.
 - **Quickpack now pins the build venv to the unit's CPython version
   instead of whatever ``python3`` the host has installed.**  On a
   build host with ``uv python install``-managed Python 3.14 in

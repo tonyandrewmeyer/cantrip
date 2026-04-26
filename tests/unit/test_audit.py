@@ -78,6 +78,35 @@ class TestScrubArguments:
         )
         assert str(tmp_path) not in scrubbed["path"]
 
+    def test_nested_dict_secret_scrubbed(self) -> None:
+        """``juju_config(values={...})`` and similar shapes must redact recursively."""
+        scrubbed = scrub_arguments(
+            {"app_name": "foo", "values": {"db-password": "password=supersecret"}}
+        )
+        assert "supersecret" not in scrubbed["values"]["db-password"]
+        assert "[REDACTED]" in scrubbed["values"]["db-password"]
+
+    def test_list_of_strings_scrubbed(self) -> None:
+        """An argv carrying a token (``run_command(command=[...])``) must redact."""
+        token = "ghp_" + "x" * 40
+        scrubbed = scrub_arguments(
+            {"cmd": ["gh", "auth", "login", "--with-token", token]},
+        )
+        assert token not in " ".join(scrubbed["cmd"])
+        assert any("[REDACTED]" in arg for arg in scrubbed["cmd"])
+
+    def test_recursion_preserves_non_secret_strings(self) -> None:
+        """Recursion must not corrupt benign nested data."""
+        scrubbed = scrub_arguments(
+            {"items": ["a", "b"], "nested": {"k": "v"}, "n": 42, "flag": True},
+        )
+        assert scrubbed == {
+            "items": ["a", "b"],
+            "nested": {"k": "v"},
+            "n": 42,
+            "flag": True,
+        }
+
 
 class TestMakeEntry:
     """``make_entry`` scrubs and stamps in one call."""

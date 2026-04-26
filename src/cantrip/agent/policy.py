@@ -427,7 +427,9 @@ def destructive_command_check(argv: list[str]) -> tuple[bool, str]:
 
     * ``rm`` with both ``-r`` and ``-f`` flags (combined or split —
       ``-rf``, ``-fr``, ``-r -f``, ``-r --force`` all trip).
-    * ``git push`` with ``--force`` or ``-f``.
+    * ``git push`` with ``--force``, ``-f``, ``--force-with-lease``
+      (with or without an ``=expected-ref`` suffix), or any short-flag
+      bundle containing ``f`` (``-fu``, ``-uf``).
     * ``git reset`` with ``--hard``.
 
     A long-form flag that happens to contain the letter (e.g.
@@ -447,7 +449,8 @@ def destructive_command_check(argv: list[str]) -> tuple[bool, str]:
         subcommand = rest[0]
         subargs = rest[1:]
         if subcommand == "push" and any(
-            arg in {"--force", "-f", "--force-with-lease"} for arg in subargs
+            _is_short_flag(arg, "f") or arg == "--force" or arg.startswith("--force-with-lease")
+            for arg in subargs
         ):
             return True, "git push --force"
         if subcommand == "reset" and "--hard" in subargs:

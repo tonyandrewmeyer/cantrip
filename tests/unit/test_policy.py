@@ -533,3 +533,26 @@ class TestDestructiveCommandCheck:
     def test_git_reset_soft_is_not_destructive(self) -> None:
         is_destructive, _ = destructive_command_check(["git", "reset", "--soft", "HEAD~1"])
         assert is_destructive is False
+
+    def test_git_push_force_with_lease_is_destructive(self) -> None:
+        is_destructive, shape = destructive_command_check(
+            ["git", "push", "--force-with-lease", "origin", "main"]
+        )
+        assert is_destructive is True
+        assert shape == "git push --force"
+
+    def test_git_push_force_with_lease_with_ref_is_destructive(self) -> None:
+        """``--force-with-lease=ref`` is the same destructive shape as the bare flag."""
+        is_destructive, _ = destructive_command_check(
+            ["git", "push", "--force-with-lease=feature", "origin", "main"]
+        )
+        assert is_destructive is True
+
+    def test_git_push_short_flag_bundle_is_destructive(self) -> None:
+        """``-fu`` / ``-uf`` (force + set-upstream) trip the same gate as ``-f``."""
+        for argv in (
+            ["git", "push", "-fu", "origin", "main"],
+            ["git", "push", "-uf", "origin", "main"],
+        ):
+            is_destructive, _ = destructive_command_check(argv)
+            assert is_destructive is True, f"{argv!r} should trip the gate"
