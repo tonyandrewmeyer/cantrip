@@ -207,11 +207,18 @@ class ClaudeProvider(LLMProvider):
         return result
 
     def _convert_tools(self, tools: list[Tool] | None) -> list[dict] | None:
-        """Convert tools to Anthropic format."""
+        """Convert tools to Anthropic format.
+
+        The last tool carries a ``cache_control`` marker so the cached
+        prefix extends across the entire tools block, not just the
+        system prompt.  With Cantrip's large tool catalogue this is the
+        single biggest cache hit available — without the marker the
+        tools are sent fresh on every call.
+        """
         if not tools:
             return None
 
-        return [
+        api_tools: list[dict] = [
             {
                 "name": tool.name,
                 "description": tool.description,
@@ -219,6 +226,33 @@ class ClaudeProvider(LLMProvider):
             }
             for tool in tools
         ]
+        api_tools[-1]["cache_control"] = {"type": "ephemeral"}
+        return api_tools
+
+    @staticmethod
+    def _mark_last_message_for_caching(api_messages: list[dict]) -> None:
+        """Attach ``cache_control`` to the final message's last content block.
+
+        Uses a third Anthropic cache breakpoint (system + tools + history)
+        so multi-turn agent loops cache the conversation prefix and only
+        the new turn's tokens are billed at full input rate.  String
+        content is upgraded to a text block so the marker has somewhere
+        to attach.
+        """
+        if not api_messages:
+            return
+        last = api_messages[-1]
+        content = last["content"]
+        if isinstance(content, str):
+            last["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        elif content:
+            content[-1]["cache_control"] = {"type": "ephemeral"}
 
     def _build_kwargs(
         self,
@@ -231,6 +265,7 @@ class ClaudeProvider(LLMProvider):
         """Build the shared kwargs dict for ``messages.create`` / ``messages.stream``."""
         system_prompt = self._get_system_prompt(messages)
         api_messages = self._convert_messages(messages)
+        self._mark_last_message_for_caching(api_messages)
         api_tools = self._convert_tools(tools)
 
         effective_max = max_tokens or 8192
