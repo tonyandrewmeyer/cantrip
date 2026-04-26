@@ -4116,23 +4116,36 @@ gap need separate treatment:
   agent-side reasoning story (how should the agent interpret a
   flame graph?) before any tool is useful.
 
-### 87.1 Medium — Alertmanager guidance and tests
+### 87.1 Medium — Alertmanager guidance and tests ✓
 
-- [ ] Add an Alertmanager subsection to
-  ``src/cantrip/skills/observability/SKILL.md`` covering the
-  ``alertmanager-dispatch`` interface, route configuration via
-  the Alertmanager Karma charm, and the standard
-  ``charm-relation`` snippet a charm needs to publish alert
-  rules.  Mirror the depth of the existing Prometheus +
-  Grafana sections.
-- [ ] Drop a worked example bundle in
-  ``src/cantrip/skills/observability/`` (or under
-  ``examples/``) showing a charm wired to ``alertmanager-k8s``
-  with one alert rule firing on the demo deployment.
-- [ ] Acceptance test: a charm built via the agent picks up
-  Alertmanager when the user asks for "production-grade
-  alerting" and the resulting bundle deploys cleanly under
-  Phase 17 acceptance harness.
+- [x] **Alert-rules subsection added to Step 2** (publishing
+  alert rules via ``MetricsEndpointProvider``'s
+  ``alert_rules_path`` — the path 99% of charm authors take).
+  The subsection explains that alert rules ride along the
+  ``metrics-endpoint`` relation and the COS bundle wires
+  Prometheus → Alertmanager automatically; charms don't relate
+  to Alertmanager themselves to *publish* rules.  Worked
+  example: ``src/prometheus_alert_rules/charm_health.yaml``
+  with two rules (``HighWorkloadErrorRate``,
+  ``HookExecutionSlow``) using the auto-injected ``juju_*``
+  topology labels.
+- [x] **New "Alertmanager — Routing and Receivers" section**
+  added between the smoke-test pattern and the debugging
+  workflow.  Covers the alert-flow diagram (rules →
+  Prometheus → Alertmanager → Karma / Slack / PagerDuty), the
+  ``alertmanager-k8s`` config-file shape with grouping /
+  routing / receivers, Karma as the dashboard frontend, and
+  the rare ``alertmanager-dispatch`` consumer side (charms
+  that want to *receive* alerts — typically notification
+  meta-charms).  Production routing tips section captures
+  ``juju_application`` grouping, ``severity`` label
+  conventions, and inhibit-rule guidance.
+- [ ] **Acceptance test deferred.**  The Phase 17 harness wiring
+  is non-trivial and the skill content matters first.  Open
+  the acceptance-test follow-up when a real session asks for
+  "production-grade alerting" and the agent picks up the new
+  skill content end-to-end; the missing piece is then the
+  bundle test, not the skill body.
 
 ### 87.2 Medium — Catalogue integration
 

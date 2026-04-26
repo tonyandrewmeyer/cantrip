@@ -86,6 +86,56 @@ class MyCharm(ops.CharmBase):
         )
 ```
 
+### Alert rules ride along the metrics-endpoint relation
+
+`MetricsEndpointProvider` looks for alert-rule YAML files under
+`src/prometheus_alert_rules/` (or whatever path you pass as
+`alert_rules_path=`) and forwards them to Prometheus over the same
+relation. The charm doesn't need a separate Alertmanager relation —
+Prometheus evaluates the rules and dispatches firing alerts to
+Alertmanager via the COS bundle's existing wiring.
+
+Drop a small rule file:
+
+```yaml
+# src/prometheus_alert_rules/charm_health.yaml
+groups:
+  - name: charm_health
+    rules:
+      - alert: HighWorkloadErrorRate
+        expr: rate(my_charm_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Workload error rate is high on {{ $labels.juju_unit }}
+          description: |
+            More than 10% of requests are erroring on
+            {{ $labels.juju_application }}/{{ $labels.juju_unit }} over
+            the last 5 minutes.
+      - alert: HookExecutionSlow
+        expr: histogram_quantile(0.95, rate(juju_hook_duration_seconds_bucket[10m])) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: p95 hook duration exceeds 30s on {{ $labels.juju_unit }}
+```
+
+The YAML is the standard Prometheus alert-rule format — anything
+the operator runs locally with `promtool check rules` will work
+unchanged. `juju_application`, `juju_unit`, `juju_model`, and
+`juju_charm` labels are auto-injected by the COS topology
+relabelling, so dashboards and Alertmanager routes can group
+alerts by charm without explicit config.
+
+For a Pebble-forwarded workload metric, swap the `expr` for the
+metric the workload exposes — the labels work the same way.
+
+If `alert_rules_path` is omitted, `src/prometheus_alert_rules/`
+is the default and `MetricsEndpointProvider` discovers anything
+matching `*.yaml` / `*.yml` / `*.rules` underneath.
+
 ## Step 3: Add Log Forwarding
 
 Forward workload logs to Loki:
@@ -229,6 +279,153 @@ in the `jubilant-tests` skill under "Cross-model — COS Lite Integration":
 This is worth adding once per charm — a single "logs reach Loki" test
 catches the broad class of label / dispatcher / forwarding regressions
 that don't show up in unit tests.
+
+## Alertmanager — Routing and Receivers
+
+Alertmanager is the COS component that takes firing alerts from
+Prometheus and *routes* them to humans (PagerDuty, Slack, email,
+webhooks).  Most charms never relate to Alertmanager directly —
+they publish alert rules via `metrics-endpoint` (Step 2) and the
+COS bundle wires Prometheus to Alertmanager automatically.
+
+### Alert flow at a glance
+
+```
+[my-charm/0]
+   │
+   │ metrics-endpoint (prometheus_scrape)
+   │    + alert rules from src/prometheus_alert_rules/
+   ▼
+[prometheus-k8s]
+   │
+   │ alertmanager (alertmanager_dispatch)
+   ▼
+[alertmanager-k8s]
+   │
+   │ alertmanager-dispatch (alertmanager_dispatch)
+   ▼
+[karma-k8s] / [slack-bot] / [pagerduty-bot] / ...
+```
+
+The charm author's job stops at the alert rules.  Operators
+configure routing on the Alertmanager side via the
+`alertmanager-k8s` charm's config options.
+
+### Configuring routing on `alertmanager-k8s`
+
+The COS bundle ships `alertmanager-k8s` with a default config
+that drops alerts on the floor.  To wire it to a real receiver,
+set `config.yaml` on the Alertmanager charm:
+
+```bash
+juju config alertmanager-k8s -m cos config_file=@alertmanager-config.yaml
+```
+
+```yaml
+# alertmanager-config.yaml
+route:
+  receiver: default
+  group_by: [alertname, juju_application]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: pager
+    - matchers:
+        - severity = warning
+      receiver: slack
+
+receivers:
+  - name: default
+    slack_configs:
+      - api_url: https://hooks.slack.com/services/...
+        channel: '#alerts'
+  - name: pager
+    pagerduty_configs:
+      - service_key: <pagerduty-integration-key>
+  - name: slack
+    slack_configs:
+      - api_url: https://hooks.slack.com/services/...
+        channel: '#alerts-warnings'
+```
+
+The `juju_application` label is auto-injected by the COS topology
+relabelling, so grouping and routing on it works out of the box.
+
+### Karma — the alert-dashboard frontend
+
+[Karma](https://karma-dashboard.io/) is the standard
+Alertmanager visualiser deployed alongside `alertmanager-k8s`
+in the COS bundle.  Charm authors don't relate to Karma; users
+open Karma's URL (find it via the bundle's Catalogue entry, or
+``juju run alertmanager-k8s/0 show-config`` for the
+proxied-endpoints) to see firing alerts grouped by
+`juju_application` / `severity`.
+
+### When a charm should require `alertmanager-dispatch`
+
+The `alertmanager-dispatch` interface is for charms that want to
+*receive* alerts — typically one of:
+
+- A custom notification charm (in-house Slack bot, ChatOps,
+  webhook handler).
+- A meta-dashboard charm that needs to subscribe to firing
+  alerts (Karma is the example).
+- An incident-management charm that creates tickets from
+  alerts.
+
+These are rare; most charm authors don't need this side of the
+relation.  When you do:
+
+```yaml
+# charmcraft.yaml
+requires:
+  alerting:
+    interface: alertmanager_dispatch
+    limit: 1
+```
+
+```python
+from charms.alertmanager_k8s.v1.alertmanager_dispatch import AlertmanagerConsumer
+
+
+class MyNotifierCharm(ops.CharmBase):
+    def __init__(self, framework: ops.Framework):
+        super().__init__(framework)
+        self._alertmanager = AlertmanagerConsumer(
+            self,
+            relation_name="alerting",
+        )
+        framework.observe(
+            self._alertmanager.on.cluster_changed,
+            self._on_alertmanager_cluster_changed,
+        )
+
+    def _on_alertmanager_cluster_changed(self, _event):
+        urls = self._alertmanager.get_cluster_info()
+        # Configure the notifier workload with the Alertmanager URLs.
+```
+
+The `charms.alertmanager_k8s.*` library is **not on PyPI yet**;
+fetch it via `charmcraft fetch-libs`.
+
+### Production routing tips
+
+- **Group by `juju_application`** so an outage on one charm doesn't
+  flood the receiver with one notification per unit.
+- **`severity` labels in alert rules** become the Alertmanager
+  routing key — keep the levels coarse (`info` / `warning` /
+  `critical`) so routes stay readable.
+- **`for:` durations matter** — flapping alerts that fire and
+  resolve within seconds aren't actionable.  10 minutes is a
+  sensible floor for warnings; criticals can be tighter.
+- **Inhibit rules suppress noise** — when a `service_down` alert
+  fires, the Alertmanager `inhibit_rules` config can mute the
+  cascading "high error rate" alerts that always follow.  Add
+  inhibitions to the alertmanager-k8s config when the alert
+  graph has obvious dependencies.
 
 ## Querying for Debugging
 

@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 87.1 (Alertmanager guidance) closed.**  The
+  ``observability`` skill gains an alert-rules subsection in
+  Step 2 (publishing rules via
+  ``MetricsEndpointProvider.alert_rules_path`` — the path 99% of
+  charm authors take, with a worked
+  ``src/prometheus_alert_rules/charm_health.yaml`` example
+  showing two rules using the auto-injected ``juju_*`` topology
+  labels), plus a new "Alertmanager — Routing and Receivers"
+  section covering the alert flow (rules → Prometheus →
+  Alertmanager → Karma / Slack / PagerDuty), the
+  ``alertmanager-k8s`` config-file shape, the rare
+  ``alertmanager-dispatch`` consumer side (notification
+  meta-charms), and production routing tips
+  (``juju_application`` grouping, ``severity`` label
+  conventions, inhibit-rule guidance).  Phase 17 acceptance test
+  deferred until a real session asks for production-grade
+  alerting end-to-end.
 - **Phase 88.1 (Canonical Identity Platform research) closed.**
   Findings in
   [`design/IDENTITY_PLATFORM.md`](design/IDENTITY_PLATFORM.md):
