@@ -769,7 +769,7 @@ class BackgroundExecutor:
                 await asyncio.sleep(_POLL_INTERVAL)
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — executor loop must absorb any per-iteration error; the consecutive-error counter handles repeated failures.
                 self._consecutive_errors += 1
                 log.error(
                     "Unexpected error in executor loop (%d/%d): %s",

@@ -842,8 +842,7 @@ class HookRunner:
             if self._listener is not None:
                 try:
                     self._listener(result)
-                except Exception:
-                    # Telemetry failure must never abort the agent.
+                except Exception:  # noqa: BLE001 — telemetry failure must never abort the agent.
                     log.debug("HookRunner listener raised", exc_info=True)
         return results
 

@@ -900,7 +900,7 @@ class CantripAgent:
                 system_prompt=self._build_system_prompt(),
                 provider=self._get_provider("compaction"),
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — any compaction failure must fall through to emergency truncation; the loop has to keep running.
             log.warning(
                 "Compaction failed, falling back to emergency truncation",
                 exc_info=True,
