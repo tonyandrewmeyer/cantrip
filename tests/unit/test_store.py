@@ -45,6 +45,23 @@ class TestOpenClose:
         assert db_path.exists()
         store.close()
 
+    def test_open_creates_query_indexes(self, store: SessionStore) -> None:
+        """Indexes for the routinely-queried columns must exist after open().
+
+        Without ``ix_subagent_messages_task``, ``ix_events_event_type``,
+        and ``ix_events_timestamp``, the WHERE clauses in
+        ``load_subagent_messages``, ``load_events``, and
+        ``get_replay_savings`` degenerate to full-table scans as the
+        session grows.
+        """
+        rows = store._db.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
+        names = {r["name"] for r in rows}
+        assert {
+            "ix_subagent_messages_task",
+            "ix_events_event_type",
+            "ix_events_timestamp",
+        }.issubset(names)
+
 
 class TestSessionCRUD:
     """Tests for saving and loading session state."""
