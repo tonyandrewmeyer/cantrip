@@ -49,7 +49,12 @@ class ListInferenceSnapsTool(Tool):
         running_count = 0
         for snap in sorted(installed):
             endpoint = discover_snap_endpoint(snap)
-            # Quick health check.
+            # Quick health check.  Catches ``ValueError`` alongside
+            # ``httpx.HTTPError`` because a broken snap returning an HTML
+            # error page makes ``resp.json()`` raise ``json.JSONDecodeError``
+            # (a ``ValueError`` subclass), which would otherwise crash the
+            # whole listing tool.  Non-dict payloads (``models = data.get``
+            # on a list) are handled by the ``isinstance`` guard.
             status = "unreachable"
             model_name = "unknown"
             try:
@@ -57,12 +62,15 @@ class ListInferenceSnapsTool(Tool):
                     resp = client.get(f"{endpoint}/models")
                     if resp.status_code == 200:
                         data = resp.json()
-                        models = data.get("data", [])
-                        if models:
-                            model_name = models[0].get("id", "unknown")
+                        if isinstance(data, dict):
+                            models = data.get("data", [])
+                            if isinstance(models, list) and models:
+                                first = models[0]
+                                if isinstance(first, dict):
+                                    model_name = first.get("id", "unknown")
                         status = "running"
                         running_count += 1
-            except httpx.HTTPError:
+            except (httpx.HTTPError, ValueError):
                 pass
 
             lines.append(f"  {snap}: {status} (endpoint: {endpoint}, model: {model_name})")
