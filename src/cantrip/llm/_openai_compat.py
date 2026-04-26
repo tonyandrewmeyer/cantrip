@@ -98,6 +98,19 @@ class OpenAICompatBase(LLMProvider):
         """Short label used in error messages.  Defaults to the provider name."""
         return self.name
 
+    # OpenAI's chat-completions API rejects requests whose ``tools``
+    # array exceeds 128 entries (``Invalid 'tools': array too long``)
+    # and OpenRouter passes that error through verbatim when it routes
+    # via the OpenAI provider.  Cantrip's default toolset is now
+    # bundled to sit comfortably under this cap, but the limit acts
+    # as a safety net: when more than 128 tools end up in the list
+    # (lots of MCP servers, future tool growth, …) the agent falls
+    # back to a curated core set instead of letting the API 400 leak
+    # through.
+    @property
+    def max_tools(self) -> int | None:
+        return 128
+
     # -- Message conversion (to OpenAI chat format) -----------------------
 
     @staticmethod

@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool, tool_to_schema
+from cantrip.agent.tools.subcommand import (
+    SubcommandTool,
+    expand_leaves,
+    resolve_subcommand,
+)
 
 
 def build_tools(
@@ -238,52 +243,84 @@ def build_tools(
         ConciergePrepareTool(),
         ConciergeStatusTool(),
         ConciergeRestoreTool(),
-        # Git operations
-        GitCloneTool(),
-        GitInitTool(),
-        GitStatusTool(),
-        GitDiffTool(),
-        GitLogTool(),
-        GitAddTool(),
-        GitCommitTool(),
-        GitPushTool(),
-        GitBranchTool(),
-        GitCheckoutTool(),
-        GitStashTool(),
-        # GitHub operations
-        GhRepoCreateTool(),
-        GhRepoBootstrapTool(),
-        GhPrCreateTool(),
-        GhPrListTool(),
-        GhPrViewTool(),
-        GhIssueListTool(),
-        PrReviewTool(),
-        PrReviewReplyTool(),
-        # Juju operations
-        JujuStatusTool(),
-        JujuDeployTool(),
-        BundleDeployTool(),
-        JujuRefreshTool(),
-        JujuRelateTool(),
-        JujuTrustTool(),
-        JujuSSHTool(),
-        JujuRunActionTool(),
-        JujuAddModelTool(),
-        JujuDestroyModelTool(),
-        JujuOfferTool(),
-        JujuConsumeTool(),
-        JujuConfigTool(),
-        JujuWaitTool(),
-        CharmSyncTool(),
-        JujuDispatchTool(),
-        JujuListSecretsTool(),
-        JujuShowSecretTool(),
-        JujuReadRelationDataTool(),
-        JujuGetAppConfigTool(),
-        JujuListOffersTool(),
-        JujuRemoveApplicationTool(),
-        JujuShowUnitTool(),
-        JujuCliTool(),
+        # Git operations — bundled behind a single ``git`` tool so the
+        # OpenAI-compatible 128-tool cap is never threatened.  Each
+        # subcommand keeps its full per-action argument schema (visible
+        # in the bundle's description); permissions and audit see the
+        # canonical ``git_*`` leaf names because the executor rewrites
+        # ``git(subcommand="status")`` into ``git_status(...)`` before
+        # any gate runs.
+        SubcommandTool(
+            "git",
+            "Git operations: clone, init, status, diff, log, add, commit, "
+            "push, branch, checkout, stash. Same surface as the underlying "
+            "git CLI, with structured arguments per subcommand.",
+            {
+                "clone": GitCloneTool(),
+                "init": GitInitTool(),
+                "status": GitStatusTool(),
+                "diff": GitDiffTool(),
+                "log": GitLogTool(),
+                "add": GitAddTool(),
+                "commit": GitCommitTool(),
+                "push": GitPushTool(),
+                "branch": GitBranchTool(),
+                "checkout": GitCheckoutTool(),
+                "stash": GitStashTool(),
+            },
+        ),
+        # GitHub operations — bundled behind a single ``gh`` tool.
+        SubcommandTool(
+            "gh",
+            "GitHub operations via the ``gh`` CLI: create/bootstrap repos, "
+            "create/list/view PRs, list issues, fetch and reply to PR review "
+            "comments.",
+            {
+                "repo_create": GhRepoCreateTool(),
+                "repo_bootstrap": GhRepoBootstrapTool(),
+                "pr_create": GhPrCreateTool(),
+                "pr_list": GhPrListTool(),
+                "pr_view": GhPrViewTool(),
+                "issue_list": GhIssueListTool(),
+                "pr_review": PrReviewTool(),
+                "pr_review_reply": PrReviewReplyTool(),
+            },
+        ),
+        # Juju operations — bundled behind a single ``juju`` tool.
+        # Lifecycle, relations, configuration, secrets, offers, model
+        # control — all subcommands of one entry.
+        SubcommandTool(
+            "juju",
+            "Juju operations via Jubilant: status, deploy, refresh, relate, "
+            "trust, ssh, run-action, model lifecycle, offers/consume, config, "
+            "wait, dispatch, secrets, relation/app introspection, raw CLI.",
+            {
+                "status": JujuStatusTool(),
+                "deploy": JujuDeployTool(),
+                "bundle_deploy": BundleDeployTool(),
+                "refresh": JujuRefreshTool(),
+                "relate": JujuRelateTool(),
+                "trust": JujuTrustTool(),
+                "ssh": JujuSSHTool(),
+                "run_action": JujuRunActionTool(),
+                "add_model": JujuAddModelTool(),
+                "destroy_model": JujuDestroyModelTool(),
+                "offer": JujuOfferTool(),
+                "consume": JujuConsumeTool(),
+                "config": JujuConfigTool(),
+                "wait": JujuWaitTool(),
+                "charm_sync": CharmSyncTool(),
+                "dispatch": JujuDispatchTool(),
+                "list_secrets": JujuListSecretsTool(),
+                "show_secret": JujuShowSecretTool(),
+                "read_relation_data": JujuReadRelationDataTool(),
+                "get_app_config": JujuGetAppConfigTool(),
+                "list_offers": JujuListOffersTool(),
+                "remove_application": JujuRemoveApplicationTool(),
+                "show_unit": JujuShowUnitTool(),
+                "cli": JujuCliTool(),
+            },
+        ),
         # Observability
         JujuDebugLogTool(),
         JujuStreamLogsTool(),
@@ -333,7 +370,23 @@ def build_tools(
         tools.append(OracleTool(state=state, store_getter=store_getter))
         tools.append(CharmIconGenerateTool(state=state, store_getter=store_getter))
     if memory_manager is not None:
-        tools.extend(build_memory_tools(memory_manager))
+        # Memory operations — bundled behind a single ``memory`` tool.
+        memory_leaves = build_memory_tools(memory_manager)
+        memory_subcommands: dict[str, Tool] = {}
+        for leaf in memory_leaves:
+            # Leaves are named ``memory_<verb>``; strip the prefix so
+            # the bundle subcommand label is the natural action verb.
+            sub = leaf.name.removeprefix("memory_")
+            memory_subcommands[sub] = leaf
+        tools.append(
+            SubcommandTool(
+                "memory",
+                "Auto-memory store: list, read, search, write, update, "
+                "revalidate, sweep, purge_check, forget. See each subcommand's "
+                "schema for what it returns.",
+                memory_subcommands,
+            )
+        )
     if mcp_registry is not None:
         for info in mcp_registry.aggregated_tools():
             tools.append(MCPTool(info, mcp_registry))
@@ -349,9 +402,12 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "SubcommandTool",
     "Tool",
     "ToolResult",
     "build_tools",
     "execute_tool",
+    "expand_leaves",
+    "resolve_subcommand",
     "tool_to_schema",
 ]

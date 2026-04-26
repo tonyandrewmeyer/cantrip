@@ -50,6 +50,7 @@ from cantrip.agent.policy import (
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool
+from cantrip.agent.tools.subcommand import resolve_subcommand
 from cantrip.hooks import HookEvent, HookRunner, final_arguments, first_veto
 from cantrip.llm import base as llm
 from cantrip.ui import flavour
@@ -1251,6 +1252,18 @@ class Subagent:
                     tool_calls=tc_data,
                 )
                 msg_idx += 1
+
+            # Bundled-tool rewrite: ``juju(subcommand="deploy", ...)``
+            # → ``juju_deploy(...)`` so the policy gate, permission
+            # gate, audit log, hook payloads and dispatch all see the
+            # canonical leaf name they were written against.  Mutation
+            # is in-place because the bundle and the leaf are
+            # semantically equivalent — the transcript still replays
+            # cleanly because ``resolve_subcommand`` is a no-op on a
+            # leaf-name call (the leaf lives in ``tool_map`` thanks to
+            # ``expand_leaves``).
+            for tc in response.tool_calls:
+                tc.name, tc.arguments = resolve_subcommand(self._tool_map, tc.name, tc.arguments)
 
             # Execute tool calls concurrently — they are independent within
             # a single round.  asyncio.gather() preserves order.

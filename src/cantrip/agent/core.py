@@ -73,7 +73,13 @@ from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.snapshots import SnapshotManager
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
-from cantrip.agent.tools import Tool, ToolResult, build_tools
+from cantrip.agent.tools import (
+    Tool,
+    ToolResult,
+    build_tools,
+    expand_leaves,
+    resolve_subcommand,
+)
 from cantrip.agent.tools.planning import (
     detect_cos_juju_model,
     detect_current_juju_model,
@@ -557,7 +563,12 @@ class CantripAgent:
         """Tool instances, built lazily on first access."""
         if self._tools_cache is None:
             self._tools_cache = self._build_tools()
-            self._tool_map_cache = {t.name: t for t in self._tools_cache}
+            # Expand leaves so the dispatch map can find a bundle's
+            # leaf by its canonical name (``juju_deploy``) — that's the
+            # name the executor uses after rewriting a bundled call,
+            # and it matches what permission rules and audit logs are
+            # written against.
+            self._tool_map_cache = {t.name: t for t in expand_leaves(self._tools_cache)}
         return self._tools_cache
 
     @property
@@ -1213,6 +1224,10 @@ class CantripAgent:
         return rendered or None
 
     # Tools that are always included when the provider has a tool limit.
+    # Names match LLM-facing entries — Juju leaves are now bundled
+    # behind the single ``juju`` tool, so the core set references the
+    # bundle name; the leaf still dispatches via the subcommand
+    # rewrite at the executor entry.
     _CORE_TOOL_NAMES: set[str] = {
         "read_file",
         "write_file",
@@ -1221,8 +1236,7 @@ class CantripAgent:
         "charmcraft_init",
         "charmcraft_pack",
         "analyse_framework",
-        "juju_status",
-        "juju_deploy",
+        "juju",
         "run_charm_tests",
         "web_fetch",
         "plan_tasks",
@@ -1231,13 +1245,29 @@ class CantripAgent:
     def _tools_for_llm(self) -> list[llm.Tool]:
         """Convert tools to LLM format.
 
-        When the provider declares a ``max_tools`` limit, only the core
-        tools are sent to avoid exceeding the model's context window.
+        When the provider declares a ``max_tools`` limit and the
+        toolset overshoots it (e.g. lots of MCP servers on top of an
+        OpenAI-compatible provider whose API caps the array at 128),
+        fall back to the curated core set so the request is still
+        accepted.  Logged at WARNING with the count and dropped names
+        so operators can see what disappeared.
         """
         tools = self._tools
         limit = self.provider.max_tools
         if limit is not None and len(tools) > limit:
-            tools = [t for t in tools if t.name in self._CORE_TOOL_NAMES][:limit]
+            kept = [t for t in tools if t.name in self._CORE_TOOL_NAMES][:limit]
+            kept_names = {t.name for t in kept}
+            dropped = sorted(t.name for t in tools if t.name not in kept_names)
+            log.warning(
+                "Tool count %d exceeds provider %r limit %d — "
+                "trimmed to %d core tools; dropped: %s",
+                len(tools),
+                self.provider.name,
+                limit,
+                len(kept),
+                ", ".join(dropped) if dropped else "(none)",
+            )
+            tools = kept
 
         return [
             llm.Tool(
@@ -1773,6 +1803,16 @@ class CantripAgent:
             self.state.messages.append(assistant_msg)
             self._record_message(assistant_msg)
 
+            # Bundled-tool rewrite: ``juju(subcommand="deploy", ...)``
+            # \u2192 ``juju_deploy(...)`` so permissions, audit, hooks and
+            # plan mode all see the canonical leaf name they were
+            # written against.  Mutation is in-place; the transcript
+            # still replays cleanly because ``resolve_subcommand`` is
+            # a no-op on a leaf-name call (the leaf lives in
+            # ``tool_map`` thanks to ``expand_leaves``).
+            for tc in response.tool_calls:
+                tc.name, tc.arguments = resolve_subcommand(self._tool_map, tc.name, tc.arguments)
+
             # Execute each tool and build TOOL result messages.
             tool_results = []
             for tc in response.tool_calls:
@@ -2043,6 +2083,10 @@ class CantripAgent:
             )
             self.state.messages.append(assistant_msg)
             self._record_message(assistant_msg)
+
+            # Bundled-tool rewrite \u2014 same as the non-stream path.
+            for tc in response.tool_calls:
+                tc.name, tc.arguments = resolve_subcommand(self._tool_map, tc.name, tc.arguments)
 
             # Execute each tool and build TOOL result messages.
             tool_results = []

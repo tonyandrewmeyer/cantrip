@@ -144,6 +144,32 @@ class TestConvertTools:
         assert OpenAICompatBase._convert_tools([]) is None
 
 
+class TestMaxToolsCap:
+    """OpenAI-compatible providers must declare the API's 128-tool cap.
+
+    OpenAI rejects requests whose ``tools`` array exceeds 128 entries,
+    and OpenRouter passes that 400 through verbatim when it routes via
+    the OpenAI provider.  ``max_tools`` is the contract the agent uses
+    to decide whether to trim the toolset before the wire — it must be
+    set to 128 on every OpenAI-compatible provider.
+    """
+
+    def test_dummy_provider_inherits_128_cap(self):
+        provider = _DummyProvider()
+        assert provider.max_tools == 128
+
+    def test_inference_snap_keeps_its_tighter_cap(self):
+        # Local inference snaps deliberately tighten the cap further
+        # because their context windows are small; the override should
+        # still win over the base class.
+        from cantrip.llm.inference_snap import InferenceSnapProvider
+
+        # ``__new__`` skips the network probe in __init__ — we only
+        # need the property accessor.
+        provider = InferenceSnapProvider.__new__(InferenceSnapProvider)
+        assert provider.max_tools == 12
+
+
 class TestParseToolCalls:
     """Tool-call response parsing handles the OpenAI wire format."""
 
