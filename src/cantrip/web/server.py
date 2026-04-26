@@ -56,6 +56,34 @@ SESSION_DECIDED_KEY: web.AppKey[dict[str, bool]] = web.AppKey("session_decided",
 # page load — including late reconnects — sees the same answer.
 UPDATE_STATE_KEY: web.AppKey[dict[str, object]] = web.AppKey("update_state", dict)
 
+# Serialises the resume / fresh decision so concurrent POSTs can't both
+# slip past the ``decided`` gate before either flips it (TOCTOU).
+SESSION_DECIDE_LOCK_KEY: web.AppKey[asyncio.Lock] = web.AppKey("session_decide_lock", asyncio.Lock)
+
+
+def _check_origin(request: web.Request) -> bool:
+    """Return True when the request's Origin matches the bound port.
+
+    Browsers attach an ``Origin`` header to cross-origin requests; a
+    matching origin is the canonical defence against a malicious page
+    coercing a logged-in browser into chat injection over our WebSocket
+    or POST endpoints.  Requests without an Origin header (``curl``,
+    scripts, server-to-server) are allowed — the local-only HTTP server
+    has no other auth, so any local process can already reach it; the
+    check protects against browser-mediated cross-origin attacks
+    specifically.
+    """
+    origin = request.headers.get("Origin")
+    if origin is None:
+        return True
+    port = request.app[PORT_KEY]
+    allowed = {
+        f"http://127.0.0.1:{port}",
+        f"http://localhost:{port}",
+        f"http://[::1]:{port}",
+    }
+    return origin in allowed
+
 
 # ---------------------------------------------------------------------------
 # WebSocket broadcast
@@ -69,8 +97,17 @@ async def _safe_ws_send(ws: web.WebSocketResponse, payload: str) -> None:
 
 
 def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
-    """Send a JSON message to all connected WebSocket clients."""
-    payload = json.dumps({"type": event_type, "data": data})
+    """Send a JSON message to all connected WebSocket clients.
+
+    A non-JSON-serialisable payload would otherwise propagate up through
+    the bus forwarder and crash the publisher; log + skip keeps the
+    broadcaster alive while still surfacing the contract violation.
+    """
+    try:
+        payload = json.dumps({"type": event_type, "data": data})
+    except (TypeError, ValueError) as exc:
+        log.warning("Could not serialise %s broadcast: %s", event_type, exc)
+        return
     clients: weakref.WeakSet = app[WS_CLIENTS_KEY]
     stale: list[web.WebSocketResponse] = []
     for ws in clients:
@@ -325,37 +362,42 @@ async def _api_session_decide(request: web.Request) -> web.Response:
     """Accept a Resume / Fresh choice and load or archive accordingly.
 
     Idempotent — once decided, further POSTs return 409 so concurrent
-    clients don't race into a double-archive.
+    clients don't race into a double-archive.  The lock makes the
+    check-and-set atomic across the ``await request.json()`` window;
+    without it, two simultaneous POSTs could both pass the 409 gate.
     """
+    if not _check_origin(request):
+        raise web.HTTPForbidden(text="Origin not allowed")
     app = request.app
     agent: CantripAgent = app[AGENT_KEY]
     flag = app[SESSION_DECIDED_KEY]
-    if flag.get("value"):
-        return web.json_response({"error": "Session decision already made"}, status=409)
+    async with app[SESSION_DECIDE_LOCK_KEY]:
+        if flag.get("value"):
+            return web.json_response({"error": "Session decision already made"}, status=409)
 
-    try:
-        body = await request.json()
-    except (json.JSONDecodeError, ValueError):
-        return web.json_response({"error": "Invalid JSON"}, status=400)
-    choice = str(body.get("choice") or "").strip().lower()
-    if choice not in ("resume", "fresh"):
-        return web.json_response({"error": "choice must be 'resume' or 'fresh'"}, status=400)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"error": "Invalid JSON"}, status=400)
+        choice = str(body.get("choice") or "").strip().lower()
+        if choice not in ("resume", "fresh"):
+            return web.json_response({"error": "choice must be 'resume' or 'fresh'"}, status=400)
 
-    if choice == "resume":
-        loaded = agent.load_state()
-        summary = agent.build_resume_summary() if loaded else None
+        if choice == "resume":
+            loaded = agent.load_state()
+            summary = agent.build_resume_summary() if loaded else None
+            flag["value"] = True
+            if summary:
+                _broadcast_chat(app, "system", summary)
+            return web.json_response({"choice": "resume", "summary": summary})
+
+        # Fresh path.
+        backup = agent.archive_session()
         flag["value"] = True
-        if summary:
-            _broadcast_chat(app, "system", summary)
-        return web.json_response({"choice": "resume", "summary": summary})
-
-    # Fresh path.
-    backup = agent.archive_session()
-    flag["value"] = True
-    if backup is not None:
-        msg = f"Starting fresh — prior session archived to {backup.name}."
-        _broadcast_chat(app, "system", msg)
-    return web.json_response({"choice": "fresh", "backup": str(backup) if backup else None})
+        if backup is not None:
+            msg = f"Starting fresh — prior session archived to {backup.name}."
+            _broadcast_chat(app, "system", msg)
+        return web.json_response({"choice": "fresh", "backup": str(backup) if backup else None})
 
 
 async def _api_session_transcript(request: web.Request) -> web.Response:
@@ -417,11 +459,17 @@ async def _api_juju_status(request: web.Request) -> web.Response:
     if not dev_model:
         return web.json_response({"apps": {}, "relations": []})
 
+    # Imports first — failing here would NameError on the
+    # ``jubilant.CLIError`` reference below if it lived in the same try.
     try:
         import functools
 
         import jubilant
+    except ImportError as exc:
+        log.debug("jubilant not available: %s", exc)
+        return web.json_response({"apps": {}, "relations": []})
 
+    try:
         juju = jubilant.Juju(model=dev_model)
         status = await asyncio.to_thread(functools.partial(juju.status))
     except (jubilant.CLIError, OSError, TimeoutError) as exc:
@@ -507,6 +555,8 @@ async def _ws_logs_stream(request: web.Request) -> web.WebSocketResponse:
     """Stream live log lines via WebSocket using juju debug-log --tail."""
     from cantrip.juju.log_stream import juju_available, stream_lines
 
+    if not _check_origin(request):
+        raise web.HTTPForbidden(text="Origin not allowed")
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
@@ -589,6 +639,8 @@ async def _process_chat_turn(app: web.Application, agent: CantripAgent, content:
 
 async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
     """Handle a WebSocket connection for real-time chat and updates."""
+    if not _check_origin(request):
+        raise web.HTTPForbidden(text="Origin not allowed")
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     request.app[WS_CLIENTS_KEY].add(ws)
@@ -603,6 +655,10 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 try:
                     payload = json.loads(msg.data)
                 except json.JSONDecodeError:
+                    continue
+                # ``json.loads`` accepts any JSON value; reject scalars
+                # and arrays so ``payload.get(...)`` below can't AttributeError.
+                if not isinstance(payload, dict):
                     continue
 
                 if payload.get("type") == "cancel_request":
@@ -645,6 +701,12 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
             ):
                 break
     finally:
+        # Deliberately don't cancel ``turn_tasks`` here.  An LLM round-trip
+        # is already in flight and the result is persisted via
+        # ``agent.save_state`` in ``_process_chat_turn``; a user who
+        # reconnects (new tab or page reload) picks up the answer through
+        # ``/api/messages``.  ``_safe_ws_send`` swallows the broadcast on
+        # this now-closed socket — only the live wire path is lost.
         request.app[WS_CLIENTS_KEY].discard(ws)
         log.info("WebSocket client disconnected (%d remaining)", len(request.app[WS_CLIENTS_KEY]))
 
@@ -688,6 +750,7 @@ def _create_app(agent: CantripAgent, port: int) -> web.Application:
     # Phase 31.3: resume-prompt decision flag.  Shared across clients;
     # the first to decide flips it, subsequent page loads skip the banner.
     app[SESSION_DECIDED_KEY] = {"value": False}
+    app[SESSION_DECIDE_LOCK_KEY] = asyncio.Lock()
 
     # Phase 63.4: self-update verdict.  Filled in by the startup
     # worker; served both as a GET and as a WebSocket event on arrival.
