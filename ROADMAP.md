@@ -3697,44 +3697,38 @@ prompted this phase:
 Without a recurring sweep, deferrals turn into forgotten todos.
 This phase exists so we have a place to (re-)check them.
 
-### 84.1 Build the deferred-item index
+### 84.1 Build the deferred-item index ✓
 
-- [ ] Grep ``ROADMAP.md`` and ``ROADMAP_ARCHIVE.md`` for the
-  explicit-deferral markers we already use: ``Deferred:``,
-  ``defer pending``, ``revisit when``, ``re-open when``,
-  ``deferred follow-up``, ``follow-up phase``.  Capture the
-  surrounding context (which phase, which sub-task) and the
-  stated revisit trigger for each hit.
-- [ ] Save the catalogue as ``design/DEFERRED.md`` — a flat
-  table with columns *Phase / Sub-task*, *What was deferred*,
-  *Revisit trigger*, *Notes*.  One row per deferral.  This is
-  the artefact the next pass reads.
+- [x] Grepped ``ROADMAP.md`` and ``ROADMAP_ARCHIVE.md`` for the
+  explicit-deferral markers (``Deferred:``, ``defer pending``,
+  ``revisit when``, ``re-open when``, ``deferred follow-up``,
+  ``follow-up phase``).  Fourteen distinct deferrals captured —
+  eleven in the active roadmap (Phases 67.1, 67.2, 70.1×2, 70.2×2,
+  70.5×3, 71.4, 73.3) and three in the archive (Phases 48.5, 49.3,
+  55.4).
+- [x] Catalogue saved as ``design/DEFERRED.md`` — flat table with
+  *Phase / Sub-task*, *What was deferred*, *Revisit trigger*,
+  *Status*, *Notes* columns.  One row per deferral.  Sweep
+  procedure documented at the foot of the file so the next pass
+  reads off the same instructions.
 
-### 84.2 Re-evaluate each deferral
+### 84.2 Re-evaluate each deferral ✓ (2026-04-26 pass)
 
-- [ ] For each entry: has the revisit trigger fired?  Three
-  buckets per row.
-  - **Trigger fired** — open a new sub-phase or task to land
-    the work, link it back to the deferral, mark the row as
-    re-opened.
-  - **Trigger not fired** — leave the deferral in place but
-    refresh the trigger description if the original wording is
-    stale.
-  - **No longer relevant** — the underlying need disappeared,
-    the world moved on, or the surrounding phase's verdict
-    changed.  Delete the deferral entry and the original
-    bullet, with a one-line note in the archive explaining the
-    drop.
-- [ ] Stamp the audit date on ``design/DEFERRED.md`` after the
-  pass so the next sweep knows what it's looking back over.
+- [x] Re-evaluated every row in ``design/DEFERRED.md`` for the
+  2026-04-26 pass.  All fourteen deferrals are **not fired**: no
+  trigger has happened since the original deferral landed.  No
+  rows moved to "Resolved" or "Dropped".
+- [x] Audit date stamped on ``design/DEFERRED.md`` (2026-04-26)
+  with the next due date (2026-07-26) so the next sweep knows
+  what it's looking back over.
 
 ### 84.3 Schedule the next sweep
 
-- [ ] Pick a cadence that matches the rate at which deferrals
-  arrive — quarterly seems right based on the current rate.
-  Record the cadence in ``design/DEFERRED.md`` and use the
-  ``/schedule`` background-agent surface to fire a reminder
-  rather than relying on someone to remember.
+- [ ] Quarterly cadence picked and recorded in ``design/
+  DEFERRED.md``; next sweep due **2026-07-26**.  Use ``/schedule``
+  to set a background-agent reminder rather than relying on
+  someone to remember — left to the user to launch since
+  ``/schedule`` is a user-triggered surface.
 
 ### What this phase is *not*
 
