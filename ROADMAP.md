@@ -770,139 +770,283 @@ passes throughout.
 
 ---
 
-## Phase 51: Team Collaboration — Research
+## Phase 51: Team Collaboration — Research ✓
 
-**Goal:** Investigate what Cantrip could do to support a *team* working on a
-charm rather than an individual operator. Every assumption in the codebase
-today is single-user: one laptop, one concierge-prepared local Juju
-environment, one session, one decision log, one memory scope, one set of
-approvals. This phase is exploratory — we do not yet know whether the right
-answer is a thin shared-git-plus-PR workflow (Phase 42 already covers most of
-that), a shared Cantrip server with per-user sessions backing a common state,
-or a real-time collaborative agent with live presence. The purpose of this
-phase is to figure out which of those — if any — fits with Cantrip's design,
-and to produce a written recommendation.
+**Goal:** Investigate what Cantrip could do to support a *team* working on
+a charm rather than an individual operator.  Every assumption in the
+codebase today is single-user: one laptop, one concierge-prepared local
+Juju environment, one session, one decision log, one memory scope, one
+set of approvals.  This phase decides whether the right answer is a
+thin shared-git workflow (Phase 42 already covers most of that), a
+shared Cantrip server with per-user sessions backing common state, or
+a real-time collaborative agent with live presence — and produces a
+written recommendation.
 
-This is a **research phase** — no production code changes expected.
+This was a **research phase** — no production code changed.  Findings
+landed in [`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md);
+summary below.
 
-### 51.1 User research
+### Decisions
 
-- [ ] Identify concrete team archetypes: charm-authoring team of 2–5, a
-  charm-ops team operating across many charms, a charm-improvement team
-  fixing issues in other people's charms (Canonical's own workflow is the
-  closest datapoint)
-- [ ] Map each archetype's friction against Cantrip today: where does the
-  single-user assumption hurt? Candidates to probe: concurrent editing of the
-  same charm, two operators deploying to the same model, review-before-push
-  gates, sharing deploy credentials, passing a half-finished build between
-  shifts, auditing who approved what
-- [ ] Surface actual user requests — check Phase 42.2 issue-triage data and
-  CHANGELOG feedback for team-shaped requests; interview 2–3 teams building
-  charms today if possible
+- [x] **Ship the thin shape's small additions as Phase 51b.**  The
+  highest-leverage gap for the small (2–5) charm-authoring-team
+  archetype is memory divergence between teammates' laptops; the
+  fix is opt-in git-tracked ``.cantrip/shared/memory/`` plus
+  shared decisions log plus a human co-author trailer next to the
+  existing ``Cantrip <noreply@canonical.com>`` line.  ~190 LOC
+  + ~70 LOC tests + a docs page; no schema migration; no auth
+  surface.  Could land alongside v1.0 or as a v1.0.x follow-up.
+- [x] **Defer the medium shape (shared Cantrip server) behind
+  named adoption triggers (Phase 51c).**  No demand signal in
+  the repo today — no commit, CHANGELOG entry, issue, or
+  transcript points at a team gap.  The medium shape is a
+  1500–2500-LOC schema-and-server change with a security
+  boundary, justified only when a real team adopts Cantrip and
+  asks for state the thin shape cannot provide.
+- [x] **Declare the heavy shape (real-time collaborative
+  session) a non-goal.**  No peer ships this for an LLM agent
+  session; Cursor's Canvases come closest but operate on
+  artefacts, not the agent's reasoning loop.  Order-of-magnitude
+  more cost than the medium shape against zero demand.
+- [x] **Two side findings opened as separate phases.**  The
+  research surfaced (a) the charm-improvement skill has no
+  guard against deploying to a production controller — an
+  existing safety hole independent of team work, opened as
+  Phase 10b; and (b) Phase 46 hooks shipped without operator
+  identity in the payload, capping role-based policy that any
+  future team shape could express, opened as Phase 46b.
+- [x] **Code-grounded mapping recorded** in
+  ``design/TEAM_COLLABORATION.md`` §1: every place the
+  single-user assumption lives in code, with file:line
+  citations across schema (no operator field on ``Message``,
+  ``Decision``, ``MemoryEntry``, ``AgentTask``, transcript
+  rows), Web UI (localhost-only bind, single ``CantripAgent``
+  singleton, broadcast event bus), session model (charm-path
+  keyed, no creator), CONFIRM/hooks/attribution surfaces.
+- [x] **Peer survey recorded** in §4: Cantrip sits in the
+  local-plus-git-share bucket with Aider, Goose, and Claude
+  Code; cloud-first agents (Copilot Workspace, Cursor cloud,
+  Windsurf Command Center) require the security and billing
+  boundary Cantrip lacks; Continue's Hub is the closest hybrid
+  shape and the natural reference for a future Phase 51c.
 
-### 51.2 Remote and shared Juju controllers
+### Revisit triggers
 
-- [ ] Document what changes when the target controller is not the local
-  concierge-prepared environment — authentication, credential storage,
-  controller discovery, cross-controller awareness (Phase 22.1 already
-  enumerates controllers, but assumes they are local)
-- [ ] Identify the Jubilant / Juju CLI behaviours that differ for remote
-  controllers: `juju register`, macaroon auth, connection pooling, model
-  isolation, and whether preflight checks make sense when the controller is
-  shared
-- [ ] Assess coordination hazards: two team members deploying the same charm
-  to the same model, concurrent `juju config` writes, overlapping debug-log
-  streams — which of these need Cantrip-side coordination vs Juju's existing
-  semantics?
-- [ ] Consider how charm-improvement mode (Phase 10) would behave against a
-  production controller: what would "safe" mean in that context?
+Phase 51c — *Shared Cantrip Server* — opens when **any** of:
 
-### 51.3 Shared interface
+1. **A real team adopts Cantrip and requests shared state.**  At
+   least one team of 2+ humans uses Cantrip for one or more charms
+   for at least a month and reports (issue, transcript, email)
+   that the thin shape is insufficient — typically: shared
+   dashboard, cross-laptop session handoff, or non-originator
+   approvals.
+2. **A Canonical-internal team commits to using Cantrip for a
+   production charm.**  Brings audit, attribution, and approval
+   requirements that the thin shape does not satisfy.
+3. **A peer product ships a self-hostable per-team server that
+   normalises the medium shape across the AI-coding-tools
+   market.**  The cost calculus shifts when matching the market
+   becomes the default expectation rather than a custom build.
 
-- [ ] Today's Web UI (Phase 15) is a single-user localhost server. Sketch
-  what multi-user would look like: a shared server, per-user connections via
-  the existing event bus (Phase 15.1), presence (who is viewing / editing),
-  simple turn-taking vs true concurrent editing
-- [ ] Identify the minimum viable shared interface: is it a read-only
-  dashboard over a single author's Cantrip session, or does every user drive
-  their own agent against shared state?
-- [ ] Evaluate authentication models: SSO, GitHub OAuth (Phase 42 already
-  uses `gh`), or a lightweight shared-secret pattern — each has different
-  deployment-cost trade-offs
+When 1 or 2 fires, the implementation phase opens with §5.2's
+scope as the deliverable and §1's mapping as the change list.
+GitHub OAuth (uses Phase 42's existing ``gh`` dependency) is
+the preferred auth model.
 
-### 51.4 Shared state, memory, and decisions
+**Exit criteria met:** ``design/TEAM_COLLABORATION.md`` is the
+written assessment.  Verdict is "thin shape ships as 51b, medium
+shape defers behind triggers, heavy shape is a non-goal."  Two
+side-finding phases opened (Phase 10b, Phase 46b) for
+independent safety / hook-payload work surfaced by the research.
 
-- [ ] For each existing state scope, decide whether a team version makes
-  sense: decisions log (currently per-session), memory (Phase 43 — per-charm
-  and global; does per-team fit alongside those?), skills (currently local),
-  transcripts (Phase 14 — currently personal, but teams might want a shared
-  audit log)
-- [ ] Consider attribution: if two users contribute to one session, how are
-  their inputs labelled in transcripts and commits?
-- [ ] Consider memory conflict: if two users teach Cantrip contradictory
-  lessons about the same charm, who wins and how is the conflict surfaced?
+**Discovered:** While mapping single-user assumptions, the
+charm-improvement skill's lack of a production-controller guard
+surfaced as an existing safety hole that hurts solo users today
+and would hurt teams more.  Independent of the team-collaboration
+verdict; opened as Phase 10b.
 
-### 51.5 Role-based workflows and approvals
+---
 
-- [ ] Map existing CONFIRM tasks (deploy, destructive actions, PR creation)
-  to a role model: is the user who requested the action always the approver,
-  or can approvals be delegated?
-- [ ] Assess whether the Phase 46 hooks mechanism is enough to express
-  team-specific approval policy, or whether team support needs a first-class
-  role system
-- [ ] Consider handoff: user A leaves a task mid-way (end of shift, blocked
-  on a question); user B picks it up. What state needs to travel, and does
-  session-resume (Phase 11.3 / 31.3) already cover it when the operator
-  changes?
+## Phase 51b: Team Sync — Shared Memory, Decisions, Attribution
 
-### 51.6 Candidate architectures
+**Goal:** Close the highest-leverage gaps for a small (2–5)
+charm-authoring team without standing up a shared server.  Three
+opt-in additions on top of Phase 42's existing GitHub workflow,
+all file-based and git-tracked, all reversible by removing the
+``.cantrip/shared/`` directory or flipping a setting back off.
+See [`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
+§5.1 for the rationale.
 
-- [ ] **Thin (shared git + PR workflow):** each user runs their own Cantrip
-  locally, coordination happens entirely through GitHub. Phase 42 already
-  delivers most of this — the research question is what small additions
-  (branch etiquette, assignee-based triage, PR-level decision sharing) would
-  close the remaining gaps
-- [ ] **Medium (shared Cantrip server):** one long-running Cantrip process
-  per team with a web-authenticated UI; per-user sessions share the memory,
-  decisions, and transcript layers. This is the Windsurf Agent Command
-  Center / Cursor self-hosted cloud-agents shape
-- [ ] **Heavy (real-time collaborative agent):** multiple users drive the
-  same session simultaneously with presence and live artefacts (Cursor
-  Canvases). Probably too ambitious without clear demand
-- [ ] For each candidate, list: estimated implementation cost, new failure
-  modes introduced, parts of the existing codebase affected, and which
-  user-research archetypes it serves
+### 51b.1 Shared memory directory
 
-### 51.7 Decision and write-up
+- [ ] Optional ``<charm-root>/.cantrip/shared/memory/`` directory
+  in the same Markdown-frontmatter format as global memory
+  (``$XDG_CONFIG_HOME/cantrip/memory/``).  Committed to the repo
+  alongside the charm.
+- [ ] ``MemoryStore.load()`` (``src/cantrip/agent/memory.py``)
+  reads from local SQLite + the shared directory and merges,
+  marking shared entries with ``source="shared"`` so they can be
+  filtered, displayed differently, or excluded by listing tools.
+- [ ] Setting ``team_memory_writes: shared | local | ask``
+  controls where new charm-scope writes land
+  (``src/cantrip/agent/memory_writer.py``).  Default ``local``
+  preserves today's behaviour; teams opt in by flipping to
+  ``shared`` or ``ask``.
+- [ ] Conflict policy: textual git merge.  Document in the
+  how-to that conflicts on the same key get resolved at the file
+  level by whoever pulls last; no in-app conflict UI.
 
-- [ ] Write a findings document summarising: whether team support is a
-  direction Cantrip should pursue at all, which archetype(s) are worth
-  optimising for, which candidate architecture fits Cantrip's
-  single-operator-biased design with the least disruption, and what the
-  explicit non-goals are
-- [ ] If any direction is promising, outline a concrete follow-on phase with
-  scoped sub-items — but be willing to conclude "not now" if the user
-  research or architecture sketch does not support it
-- [ ] Capture the written assessment in `design/` alongside the ACP research
-  output so future planning has a shared reference
+### 51b.2 Shared decisions log
 
-**Exit criteria:** A written assessment of whether Cantrip should support
-teams, which team archetypes are worth targeting, which architectural
-direction best fits Cantrip's design, and whether the next step is a concrete
-implementation phase or a deliberate decision to stay single-user. `make
-check` passes throughout (this phase should not add code beyond a findings
-document).
+- [ ] Optional ``<charm-root>/.cantrip/shared/decisions.jsonl``
+  append-only log mirroring the per-session ``decisions`` table.
+- [ ] ``SessionStore.load_session()`` (``src/cantrip/agent/store.py``)
+  reads decisions from SQLite and appends shared-log entries
+  marked ``source="shared"``.
+- [ ] ``add_decision()`` (``src/cantrip/agent/state.py``)
+  optionally appends to the shared file when sharing is enabled,
+  behind setting ``team_decisions_writes``.
+- [ ] ``Decision.source`` field added (``src/cantrip/agent/state.py``);
+  schema migration is additive (nullable column).
+
+### 51b.3 Human co-author trailer
+
+- [ ] Auto-commit trailer (``src/cantrip/agent/auto_commit.py:48``)
+  keeps the ``Co-Authored-By: Cantrip <noreply@canonical.com>``
+  line as a marker that the agent steered the commit, and
+  *adds* a second ``Co-Authored-By:`` line built from
+  ``git config user.name`` / ``git config user.email``.
+- [ ] When ``git config user.name`` / ``user.email`` is unset
+  (or returns Cantrip's own canonical), skip the second trailer
+  silently — no breakage for existing single-user setups.
+- [ ] Tests cover: both trailers present, only Cantrip trailer
+  when git config absent, no duplication when git config matches
+  Cantrip's canonical.
+
+### 51b.4 Documentation
+
+- [ ] New ``docs/docs/howto-team-sync.html`` covers the three
+  opt-in settings, the shared-directory format, the conflict
+  policy, and the worked example of two operators collaborating
+  via the shared layer.
+- [ ] Updates to ``docs/docs/howto-memory.html`` mention shared
+  scope alongside charm and global.
+- [ ] CHANGELOG entry under Unreleased.
+
+**Exit criteria:** Three settings ship with sensible defaults
+(all ``local`` / off — opt-in only).  ``make check`` passes.
+Existing single-user installations see zero behavioural change.
+Two-operator integration test exercises the shared-memory and
+shared-decisions paths against a temp repo.
 
 **Dependencies:**
 | Item | Depends On | Notes |
 |------|-----------|-------|
-| User research (51.1) | None | Pure research; can start any time |
-| Remote controllers (51.2) | Phase 22 multi-controller | Builds on existing controller awareness |
-| Shared interface (51.3) | Phase 15 Web UI | Extends the existing event bus + server |
-| Shared state (51.4) | Phase 43 memory | Memory scopes are the natural extension point |
-| Role workflows (51.5) | Phase 46 hooks (if adopted) | Hooks may obviate a bespoke role system |
-| Architecture sketches (51.6) | 51.1–51.5 | Needs the research inputs to sketch against |
-| Decision write-up (51.7) | 51.6 | Consolidates into a recommendation |
+| Shared memory (51b.1) | Phase 43 memory scopes | Adds a third scope alongside charm/global |
+| Shared decisions (51b.2) | Phase 14 decisions log | Mirrors the existing per-session log |
+| Co-author trailer (51b.3) | Phase 42 auto-commit | Extends the existing trailer assembly |
+| Docs (51b.4) | All of the above | One how-to + cross-references |
+
+---
+
+## Phase 10b: Charm-Improvement Production-Controller Guard
+
+**Goal:** Stop the charm-improvement skill from deploying test
+charms to a production controller by default.  Today
+``skills/charm-improvement/SKILL.md`` instructs the agent to
+deploy via ``jubilant.Juju()`` against the *current* controller —
+whichever the local ``juju`` CLI defaults to.  If that's a
+production controller (registered earlier with ``juju register``
+for an unrelated purpose, then left as default), the agent will
+deploy without warning.  See
+[`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
+§8.1 for how this surfaced.
+
+This is a safety patch, not a redesign.  Phase 10's existing
+charm-improvement pipeline stands; this only adds a confirm gate
+in front of mutating Juju calls when the target controller looks
+non-local.
+
+### 10b.1 Heuristic default
+
+- [ ] Detect controllers that are not the local
+  concierge-prepared one — cloud type ``localhost``,
+  ``microk8s`` on 127.0.0.1, ``k8s`` on a local socket.
+  Anything else flips a "non-local" flag at controller-resolution
+  time (``src/cantrip/agent/preflight.py``).
+- [ ] Charm-improvement-mode tools that mutate
+  (``juju_deploy``, ``juju_relate``, ``juju_refresh``,
+  ``juju_destroy_model``, etc.) emit a CONFIRM before executing
+  when the current controller is non-local.  CONFIRM message
+  names the controller and its cloud so the operator sees what
+  they're about to touch.
+
+### 10b.2 Explicit production list
+
+- [ ] Settings-schema field ``production_controllers: [str]``
+  lets the operator name controllers that always require
+  explicit confirm regardless of cloud type.  Belt-and-braces
+  with the heuristic for cases where the heuristic
+  under-classifies (e.g., a remote controller on a private
+  network that *looks* local).
+- [ ] When a controller name matches the production list, the
+  CONFIRM message escalates language ("Deploy to **production
+  controller** ``foo``?") so the operator notices.
+
+### 10b.3 Tests
+
+- [ ] Unit tests for the heuristic classifier — local clouds
+  pass through, non-local clouds get flagged.
+- [ ] Integration test scaffolds a fake controller list and
+  verifies the CONFIRM gate fires for non-local entries.
+- [ ] Test covers the explicit-list override.
+
+**Exit criteria:** Charm-improvement runs against a non-local
+controller emit a CONFIRM.  Settings field documented in
+``docs/docs/reference-cli.html``.  CHANGELOG entry.  ``make
+check`` passes.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Heuristic (10b.1) | Phase 22 controller enumeration | Reads the existing controllers list |
+| Explicit list (10b.2) | Phase 46 settings schema | New settings key |
+| Tests (10b.3) | 10b.1, 10b.2 | Both code paths covered |
+
+---
+
+## Phase 46b: Operator Identity in Hook Payloads
+
+**Goal:** Add an optional ``operator`` field to Phase 46 hook
+payloads so role-aware policy is expressible by future hook
+scripts (and so adding the field is not a breaking change to
+existing scripts later).  See
+[`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
+§8.2 for context.
+
+This is a small forward-compatibility patch.  Existing hook
+scripts that don't read ``operator`` keep working unchanged;
+new scripts can branch on it.
+
+- [ ] Extend ``hooks.py`` payload schema (``hooks.py:39-52``):
+  new ``operator: dict | None`` field with sub-fields ``name``
+  / ``email`` populated from ``git config user.name`` /
+  ``user.email`` at hook-fire time.  ``None`` when no git
+  config is set.
+- [ ] Document the new field in ``docs/docs/howto-hooks.html``
+  alongside the existing payload table.
+- [ ] Test covers: field present when git config set, ``None``
+  when unset, scripts that don't reference the field continue
+  to function.
+
+**Exit criteria:** ``operator`` field documented and tested.
+Existing hooks unaffected.  ``make check`` passes.  CHANGELOG
+entry.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Payload extension | Phase 46 hook plumbing | Pure additive change |
 
 ---
 

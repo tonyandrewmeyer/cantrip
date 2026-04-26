@@ -5,6 +5,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 51 (Team Collaboration research) closed.**  Investigated
+  whether Cantrip should grow team features beyond its single-operator
+  shape.  Findings landed in ``design/TEAM_COLLABORATION.md``: every
+  persistence row (``Message`` / ``Decision`` / ``MemoryEntry`` /
+  ``AgentTask`` / transcript) lacks an operator field today; the Web
+  UI binds ``127.0.0.1`` with no auth and serves a single
+  ``CantripAgent`` singleton over a broadcast event bus; the
+  charm-authoring team of 2–5 is the only plausible near-term
+  archetype; demand signal in the repo is zero.  Verdict: ship the
+  *thin* shape's small git-tracked additions as Phase 51b (opt-in
+  ``.cantrip/shared/memory/`` + shared decisions log + human
+  co-author trailer alongside Cantrip's; ~190 LOC, no schema
+  migration, no auth surface), defer the *medium* shape (shared
+  Cantrip server, GitHub-OAuth auth, per-user sessions) behind three
+  named adoption triggers as Phase 51c, declare the *heavy* shape
+  (real-time collaborative session) a non-goal.  Two side-finding
+  phases opened: Phase 10b (charm-improvement skill needs a
+  production-controller guard — existing safety hole, hurts solo
+  users today and teams more later) and Phase 46b (Phase 46 hook
+  payloads need an optional ``operator`` field for forward
+  compatibility with role-aware policy).  Reference document linked
+  from ``CLAUDE.md`` Reference Documents list.
 - **Phase 36 (Claude Code best-practices review) closed.**  Reviewed
   the community-curated repo at
   ``github.com/shanraisshan/claude-code-best-practice``
