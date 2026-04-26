@@ -230,10 +230,12 @@ class SkillsIndex:
         When a skill declares ``globs:`` in its frontmatter (Phase 70.3),
         it only appears in the rendered index if at least one of
         ``current_files`` matches at least one of its globs.  Skills
-        without globs are always included.  ``current_files=None`` (or
-        an empty sequence) disables filtering entirely — every skill is
-        rendered.  This preserves backwards compatibility for callers
-        that don't yet thread file context through.
+        without globs are always included.  ``current_files=None``
+        disables filtering entirely — every skill is rendered.  This
+        preserves backwards compatibility for callers that don't yet
+        thread file context through.  An *empty sequence*, by contrast,
+        is a positive "no files in scope this turn" signal: globbed
+        skills filter out, unconditional skills still load.
         """
         if not self._skills:
             return ""
