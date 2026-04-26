@@ -104,6 +104,41 @@ def parse_args() -> argparse.Namespace:
         help="Use a different provider for light tasks (enables hybrid mode)",
     )
     run_parser.add_argument(
+        "--embed-provider",
+        choices=["voyage", "openai"],
+        help=(
+            "Phase 72.3: provider for the ``embed`` role (used by retrieval "
+            "features such as ``@docs`` and memory recall).  Also settable "
+            "via the ``CANTRIP_EMBED_PROVIDER`` env var."
+        ),
+    )
+    run_parser.add_argument(
+        "--embed-model",
+        help=(
+            "Phase 72.3: embed model identifier (e.g. ``voyage-3``, "
+            "``text-embedding-3-small``).  Defaults vary per provider; "
+            "also settable via ``CANTRIP_EMBED_MODEL``."
+        ),
+    )
+    run_parser.add_argument(
+        "--rerank-provider",
+        choices=["voyage"],
+        help=(
+            "Phase 72.3: provider for the ``rerank`` role.  Voyage is the "
+            "only first-class option today; OpenAI users pair its embeds "
+            "with Voyage rerank.  Also settable via "
+            "``CANTRIP_RERANK_PROVIDER``."
+        ),
+    )
+    run_parser.add_argument(
+        "--rerank-model",
+        help=(
+            "Phase 72.3: rerank model identifier (e.g. ``rerank-2``, "
+            "``rerank-2-lite``).  Also settable via "
+            "``CANTRIP_RERANK_MODEL``."
+        ),
+    )
+    run_parser.add_argument(
         "--no-tui",
         action="store_true",
         help="Run in CLI mode without TUI",
@@ -848,6 +883,10 @@ def _run(args: argparse.Namespace) -> int:
             editor_provider=getattr(args, "editor_provider", None),
             editor_model=getattr(args, "editor_model", None),
             no_auto_commit=bool(getattr(args, "no_auto_commit", False)),
+            embed_provider=getattr(args, "embed_provider", None),
+            embed_model=getattr(args, "embed_model", None),
+            rerank_provider=getattr(args, "rerank_provider", None),
+            rerank_model=getattr(args, "rerank_model", None),
         )
         app.run()
         _print_update_panel(app.pending_update_info)

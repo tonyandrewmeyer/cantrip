@@ -908,10 +908,25 @@ def run_web(args: argparse.Namespace) -> int:
         light_snap_name=light_snap_name,
     )
 
+    # Phase 72.3: build embed/rerank role router from CLI / env.
+    from cantrip.llm.roles import build_role_router
+
+    try:
+        role_router = build_role_router(
+            embed_provider=getattr(args, "embed_provider", None),
+            embed_model=getattr(args, "embed_model", None),
+            rerank_provider=getattr(args, "rerank_provider", None),
+            rerank_model=getattr(args, "rerank_model", None),
+        )
+    except (ValueError, ProviderError) as exc:
+        print(f"Error: {exc}")
+        return 1
+
     agent = CantripAgent(
         provider=provider,
         charm_path=args.path,
         light_provider=light_provider,
+        role_router=role_router,
     )
 
     # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.

@@ -203,3 +203,73 @@ class RoleRouter:
     def has_rerank(self) -> bool:
         """``True`` when a rerank provider is registered."""
         return self._rerank is not None
+
+
+# ---------------------------------------------------------------------------
+# Configuration: env-var + CLI-flag → router builder
+# ---------------------------------------------------------------------------
+
+
+def build_role_router(
+    *,
+    embed_provider: str | None = None,
+    embed_model: str | None = None,
+    rerank_provider: str | None = None,
+    rerank_model: str | None = None,
+) -> RoleRouter:
+    """Build a router from CLI args (with env-var fallbacks).
+
+    Each ``*_provider`` argument maps to the matching
+    ``CANTRIP_*_PROVIDER`` env var when ``None``; same for the model
+    arguments.  Selecting a provider that needs an API key it does
+    not have raises :class:`~cantrip.llm.base.ProviderError` at
+    construction so a misconfigured session fails before the first
+    retrieval call.
+
+    Provider IDs:
+
+    * ``voyage`` — :class:`~cantrip.llm.voyage.VoyageEmbedProvider`
+      and :class:`~cantrip.llm.voyage.VoyageRerankProvider`
+    * ``openai`` — :class:`~cantrip.llm.openai_embeddings.OpenAIEmbedProvider`
+      (no rerank)
+
+    Tests can build an empty router via ``RoleRouter()`` and register
+    stub providers directly without going through this builder.
+    """
+    import os  # local import — keep core module zero-dep at import time
+
+    router = RoleRouter()
+
+    embed_id = embed_provider or os.environ.get("CANTRIP_EMBED_PROVIDER")
+    embed_model_id = embed_model or os.environ.get("CANTRIP_EMBED_MODEL")
+    if embed_id:
+        router.register_embed(_make_embed_provider(embed_id, embed_model_id))
+
+    rerank_id = rerank_provider or os.environ.get("CANTRIP_RERANK_PROVIDER")
+    rerank_model_id = rerank_model or os.environ.get("CANTRIP_RERANK_MODEL")
+    if rerank_id:
+        router.register_rerank(_make_rerank_provider(rerank_id, rerank_model_id))
+
+    return router
+
+
+def _make_embed_provider(provider_id: str, model: str | None) -> EmbedProvider:
+    """Resolve a provider ID to a concrete :class:`EmbedProvider`."""
+    if provider_id == "voyage":
+        from cantrip.llm.voyage import VoyageEmbedProvider
+
+        return VoyageEmbedProvider(model=model) if model else VoyageEmbedProvider()
+    if provider_id == "openai":
+        from cantrip.llm.openai_embeddings import OpenAIEmbedProvider
+
+        return OpenAIEmbedProvider(model=model) if model else OpenAIEmbedProvider()
+    raise ValueError(f"Unknown embed provider {provider_id!r}. Supported: 'voyage', 'openai'.")
+
+
+def _make_rerank_provider(provider_id: str, model: str | None) -> RerankProvider:
+    """Resolve a provider ID to a concrete :class:`RerankProvider`."""
+    if provider_id == "voyage":
+        from cantrip.llm.voyage import VoyageRerankProvider
+
+        return VoyageRerankProvider(model=model) if model else VoyageRerankProvider()
+    raise ValueError(f"Unknown rerank provider {provider_id!r}. Supported: 'voyage'.")

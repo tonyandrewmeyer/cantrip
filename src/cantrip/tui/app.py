@@ -104,6 +104,10 @@ class CantripApp(App):
         editor_provider: str | None = None,
         editor_model: str | None = None,
         no_auto_commit: bool = False,
+        embed_provider: str | None = None,
+        embed_model: str | None = None,
+        rerank_provider: str | None = None,
+        rerank_model: str | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -128,6 +132,10 @@ class CantripApp(App):
         self._editor_provider = editor_provider
         self._editor_model = editor_model
         self._no_auto_commit = no_auto_commit
+        self._embed_provider = embed_provider
+        self._embed_model = embed_model
+        self._rerank_provider = rerank_provider
+        self._rerank_model = rerank_model
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -331,11 +339,22 @@ class CantripApp(App):
             # Resolve light provider for internal tasks (e.g. compaction).
             light_provider = self._resolve_light_provider(llm_provider)
 
+            # Phase 72.3: build embed/rerank role router from CLI / env.
+            from cantrip.llm.roles import build_role_router
+
+            role_router = build_role_router(
+                embed_provider=self._embed_provider,
+                embed_model=self._embed_model,
+                rerank_provider=self._rerank_provider,
+                rerank_model=self._rerank_model,
+            )
+
             self._agent = CantripAgent(
                 provider=llm_provider,
                 charm_path=self.charm_path,
                 light_provider=light_provider,
                 hook_runner=HookRunner.from_disk(repo_root=self.charm_path),
+                role_router=role_router,
             )
 
             # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.

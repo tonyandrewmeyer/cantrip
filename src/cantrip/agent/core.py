@@ -102,7 +102,7 @@ from cantrip.hooks import (
     first_veto,
 )
 from cantrip.llm import base as llm
-from cantrip.llm import create_provider, resolve_light_provider
+from cantrip.llm import create_provider, resolve_light_provider, roles
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
 from cantrip.mcp import (
     MarketplaceLoader,
@@ -371,6 +371,7 @@ class CantripAgent:
         charm_path: pathlib.Path | None = None,
         light_provider: LLMProvider | None = None,
         hook_runner: HookRunner | None = None,
+        role_router: "roles.RoleRouter | None" = None,
     ):
         """Initialise the agent.
 
@@ -386,9 +387,16 @@ class CantripAgent:
         runner with ``HookRunner.from_disk(charm_path)``; tests and
         internal callers can pass a custom runner or let this default
         to an empty runner (a no-op).
+
+        Phase 72.3: *role_router* registers the providers that serve
+        the ``embed`` and ``rerank`` roles for retrieval features.
+        Defaults to an empty router; retrieval-using callers raise
+        :class:`~cantrip.llm.roles.RoleNotConfigured` until a
+        provider is registered.
         """
         self.provider = provider
         self._light_provider = light_provider
+        self.role_router = role_router if role_router is not None else roles.RoleRouter()
         if charm_path is not None and not isinstance(charm_path, pathlib.Path):
             charm_path = pathlib.Path(charm_path)
         self.state = AgentState(charm_path=charm_path)
