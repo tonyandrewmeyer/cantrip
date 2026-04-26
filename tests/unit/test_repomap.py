@@ -188,6 +188,21 @@ class TestPythonParser:
         assert "b: int=0" in sig
         assert "-> int" in sig
 
+    def test_handles_non_utf8_pep263_file(self, tmp_path: Path) -> None:
+        """A latin-1 file with a coding cookie still surfaces its symbols.
+
+        Reading via ``read_text(encoding='utf-8')`` would raise
+        UnicodeDecodeError on the latin-1 byte and the file's symbols
+        would silently disappear from the rank.
+        """
+        path = tmp_path / "iso.py"
+        # PEP 263 coding declaration plus a non-utf-8 byte (0xE9 = é in latin-1)
+        # in a docstring so the byte is innocuous to the parser.
+        body = b'# -*- coding: latin-1 -*-\n"""r\xe9sum\xe9 of foo."""\ndef foo():\n    pass\n'
+        path.write_bytes(body)
+        result = parse_python_file(path, repo_root=tmp_path)
+        assert {s.name for s in result.definitions} == {"foo"}
+
 
 class TestCharmMetadataParser:
     def test_extracts_relations_config_and_actions(self, tmp_path: Path) -> None:
