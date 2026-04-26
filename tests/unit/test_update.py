@@ -1087,3 +1087,28 @@ class TestSetUpdateCheckDisabled:
         assert update.update_check_disabled() is True
         update.set_update_check_disabled(False)
         assert update.update_check_disabled() is False
+
+    def test_atomic_write_preserves_old_file_on_failure(self, tmp_path, monkeypatch):
+        """A write that fails mid-flight must leave the original file intact.
+
+        With a non-atomic ``path.write_text``, an interrupted call would
+        truncate-and-fail, losing any unrelated keys the user had set.
+        The tmp+rename pattern keeps the original until the new file is
+        complete on disk.
+        """
+        path = tmp_path / "settings.json"
+        original = {"other": "preserved", "update_check_disabled": False}
+        path.write_text(json.dumps(original))
+        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+
+        # Force ``Path.replace`` to fail so the rename never lands.
+        def _boom(_self, _target):
+            raise OSError("simulated rename failure")
+
+        monkeypatch.setattr(pathlib.Path, "replace", _boom)
+        import contextlib
+
+        with contextlib.suppress(OSError):
+            update.set_update_check_disabled(True)
+        # Original content survives — atomic semantics held.
+        assert json.loads(path.read_text()) == original
