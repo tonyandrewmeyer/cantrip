@@ -212,6 +212,29 @@ class TestWarmUp:
         assert result.juju_available is True
 
     @pytest.mark.asyncio
+    async def test_callback_failure_does_not_abort_run(self):
+        """A raising callback (e.g. dead Textual widget) must not break preflight."""
+        state = AgentState()
+        call_count = 0
+
+        def _flaky(_event: PreflightEvent) -> None:
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("simulated UI failure")
+
+        runner = PreflightRunner(state, callback=_flaky)
+
+        with (
+            patch("cantrip.agent.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+        ):
+            result = await runner.warm_up()
+
+        assert result.juju_available is True
+        # Multiple events fired — every callback raised but none aborted the run.
+        assert call_count >= 2
+
+    @pytest.mark.asyncio
     async def test_callback_receives_events_in_order(self):
         """Events are emitted in the expected order during a successful warm_up."""
         events: list[PreflightEvent] = []

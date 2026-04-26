@@ -110,7 +110,12 @@ class PreflightRunner:
         self.result = PreflightResult()
 
     def _emit(self, check_name: str, status: CheckStatus, message: str, detail: str = "") -> None:
-        """Emit a preflight event through the callback."""
+        """Emit a preflight event through the callback.
+
+        A callback failure (TUI widget gone, broken pipe in CLI print)
+        must not abort preflight — the underlying environment work
+        matters more than the UI notification.
+        """
         event = PreflightEvent(
             check_name=check_name,
             status=status,
@@ -119,7 +124,10 @@ class PreflightRunner:
         )
         log.info("preflight: %s — %s: %s", check_name, status, message)
         if self._callback:
-            self._callback(event)
+            try:
+                self._callback(event)
+            except Exception:  # noqa: BLE001 - UI surface failure can't break the run.
+                log.debug("preflight callback raised for %s", check_name, exc_info=True)
 
     async def warm_up(self) -> PreflightResult:
         """Phase 1: install snaps and LXD without bootstrapping.
@@ -528,12 +536,12 @@ class PreflightRunner:
         """Set up cross-model offers if COS is on a different controller."""
         if _current_controller_is_k8s():
             return
+        # Reaching this line means ``_ensure_cos`` decided we need a
+        # separate K8s controller, so it has already populated
+        # ``cos_controller`` (or returned early).  No fallback needed.
+        assert self.result.cos_controller is not None
         self._emit("cos", CheckStatus.RUNNING, "Setting up cross-model COS offers")
-        target = (
-            f"{self.result.cos_controller}:{cos_model_name}"
-            if self.result.cos_controller
-            else cos_model_name
-        )
+        target = f"{self.result.cos_controller}:{cos_model_name}"
         offers = await asyncio.to_thread(_setup_cos_cross_model_offers, target)
         if offers:
             self._emit(
@@ -549,6 +557,35 @@ class PreflightRunner:
             )
 
 
+_K8S_CLOUDS = frozenset({"k8s", "microk8s", "kubernetes"})
+
+
+def _run_juju_json(args: list[str], *, timeout: int = 15) -> dict[str, Any] | None:
+    """Run a juju subcommand expecting JSON output; return the parsed dict.
+
+    Returns ``None`` when juju isn't on PATH, the command failed,
+    timed out, or the output isn't parseable.  All discovery callers
+    here treat any of those as "no information available", so a
+    single shared envelope is enough.
+    """
+    juju_bin = shutil.which("juju")
+    if not juju_bin:
+        return None
+    try:
+        result = subprocess.run(
+            [juju_bin, *args, "--format=json"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode != 0:
+            return None
+        parsed = json.loads(result.stdout)
+        return parsed if isinstance(parsed, dict) else None
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+
+
 def _model_is_k8s(model_name: str) -> bool:
     """Check whether an existing model is on a Kubernetes cloud.
 
@@ -557,53 +594,23 @@ def _model_is_k8s(model_name: str) -> bool:
     regardless of how the model was specified, so we inspect the first
     value rather than looking up by key.
     """
-    juju_bin = shutil.which("juju")
-    if not juju_bin:
+    data = _run_juju_json(["show-model", model_name], timeout=10)
+    if not data:
         return False
-    try:
-        result = subprocess.run(
-            [juju_bin, "show-model", model_name, "--format=json"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return False
-        data = json.loads(result.stdout)
-        if not data:
-            return False
-        model_info = next(iter(data.values()), {})
-        return model_info.get("model-type", "") == "caas"
-    except (subprocess.TimeoutExpired, OSError, ValueError):
-        return False
+    model_info = next(iter(data.values()), {})
+    return model_info.get("model-type", "") == "caas"
 
 
 def _current_controller_is_k8s() -> bool:
     """Check whether the current controller is on a Kubernetes cloud."""
-    juju_bin = shutil.which("juju")
-    if not juju_bin:
+    data = _run_juju_json(["show-controller"], timeout=10)
+    if not data:
         return False
-    try:
-        result = subprocess.run(
-            [juju_bin, "show-controller", "--format=json"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return False
-        data = json.loads(result.stdout)
-        for _name, info in data.items():
-            details = info.get("details", {})
-            cloud = details.get("cloud", "")
-            if cloud in ("k8s", "microk8s", "kubernetes"):
-                return True
-        return False
-    except (subprocess.TimeoutExpired, OSError, ValueError):
-        return False
-
-
-_K8S_CLOUDS = frozenset({"k8s", "microk8s", "kubernetes"})
+    for info in data.values():
+        details = info.get("details", {})
+        if details.get("cloud", "") in _K8S_CLOUDS:
+            return True
+    return False
 
 
 def _find_k8s_controller() -> str | None:
@@ -613,27 +620,13 @@ def _find_k8s_controller() -> str | None:
     Used when the active controller is IAAS (LXD) and COS needs to be
     deployed on a separate K8s controller (e.g. ``concierge-k8s``).
     """
-    juju_bin = shutil.which("juju")
-    if not juju_bin:
+    data = _run_juju_json(["controllers"])
+    if not data:
         return None
-    try:
-        result = subprocess.run(
-            [juju_bin, "controllers", "--format=json"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode != 0:
-            return None
-        data = json.loads(result.stdout)
-        controllers = data.get("controllers", {})
-        for name, info in controllers.items():
-            cloud = info.get("cloud", "")
-            if cloud in _K8S_CLOUDS:
-                return name
-        return None
-    except (subprocess.TimeoutExpired, OSError, ValueError):
-        return None
+    for name, info in data.get("controllers", {}).items():
+        if info.get("cloud", "") in _K8S_CLOUDS:
+            return name
+    return None
 
 
 def list_controllers() -> list[dict[str, Any]]:
@@ -642,34 +635,19 @@ def list_controllers() -> list[dict[str, Any]]:
     Returns a list of dicts with ``name``, ``cloud``, ``is_k8s``, and
     ``models`` count.  Used by the preflight multi-controller report.
     """
-    juju_bin = shutil.which("juju")
-    if not juju_bin:
+    data = _run_juju_json(["controllers"])
+    if not data:
         return []
-    try:
-        result = subprocess.run(
-            [juju_bin, "controllers", "--format=json"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode != 0:
-            return []
-        data = json.loads(result.stdout)
-        controllers = data.get("controllers", {})
-        out: list[dict[str, Any]] = []
-        for name, info in sorted(controllers.items()):
-            cloud = info.get("cloud", "")
-            out.append(
-                {
-                    "name": name,
-                    "cloud": cloud,
-                    "is_k8s": cloud in _K8S_CLOUDS,
-                    "models": info.get("model-count", 0),
-                }
-            )
-        return out
-    except (subprocess.TimeoutExpired, OSError, ValueError):
-        return []
+    controllers = data.get("controllers", {})
+    return [
+        {
+            "name": name,
+            "cloud": info.get("cloud", ""),
+            "is_k8s": info.get("cloud", "") in _K8S_CLOUDS,
+            "models": info.get("model-count", 0),
+        }
+        for name, info in sorted(controllers.items())
+    ]
 
 
 def _create_model_on_controller(
