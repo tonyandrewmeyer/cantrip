@@ -1,9 +1,9 @@
 """Chat widget for the TUI."""
 
 import contextlib
+import datetime
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import StrEnum
 
 from rich.console import Group, RenderableType
@@ -56,7 +56,7 @@ class ChatMessage:
 
     role: MessageRole
     content: str
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime.datetime = field(default_factory=datetime.datetime.now)
     progress_items: list[ProgressItem] = field(default_factory=list)
     # When true, ``content`` is rendered as Markdown instead of being
     # shown verbatim with Rich markup.  Used for system messages whose
@@ -831,13 +831,11 @@ class ChatWidget(Widget):
             try:
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 with log_path.open("a", encoding="utf-8") as fh:
-                    from datetime import UTC
-
                     fh.write(
                         "\n"
                         + "=" * 72
                         + "\n"
-                        + datetime.now(UTC).isoformat(timespec="seconds")
+                        + datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
                         + "  chat-leaked traceback\n"
                         + "-" * 72
                         + "\n"

@@ -45,6 +45,7 @@ make coverage  # Unit tests with coverage report
 - Modern types: `str | None` not `Optional[str]`
 - Import modules, not names: `import datetime` not `from datetime import datetime`
   - Exception: imports only for type annotations
+  - Carve-out: `from pathlib import Path` and `from dataclasses import dataclass, field` are accepted because `Path(...)` and `@dataclass` read as primitive vocabulary in this codebase. Both styles coexist; do not codemod existing modules either way.
 - Comments explain *why*, not *how* — comments are rare; docstrings are essential
 - Comments are full sentences ending with punctuation.
 - Never catch bare `Exception` — always be specific

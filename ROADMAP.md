@@ -3790,30 +3790,27 @@ phase picks the right things off in the right order: cheap
 sweeps first, mechanical folder moves next, behaviour-changing
 decomposition last.
 
-### 85.1 Sweep — close the small style drifts
+### 85.1 Sweep — close the small style drifts ✓
 
-- [ ] Replace `from datetime import datetime` at
-  `src/cantrip/tui/widgets/chat.py:6` with `import datetime`
-  and update call sites in that file.  This is the only
-  `from datetime import datetime` left in `src/cantrip/`.
-- [ ] Annotate or narrow the four `except Exception` clauses
-  that lack a rationale comment to match the project's
-  established `# noqa: BLE001 - <reason>` pattern (the other
-  24 already do): `src/cantrip/hooks.py:845`,
-  `src/cantrip/agent/github_issues.py:354`,
-  `src/cantrip/agent/core.py:881`,
-  `src/cantrip/agent/executor.py:772`.  Prefer narrowing to a
-  specific exception when the call site supports it; only fall
-  back to `Exception` with a documented reason.
-- [ ] Decide the `Path` / `dataclass` import policy and apply
-  it.  The codebase is currently split (51 files use
-  `from pathlib import Path`, 27 use `import pathlib`; same
-  for `dataclass`/`dataclasses`).  Either: (a) carve `Path`
-  and `@dataclass` out as runtime exceptions in
-  `AGENTS.md` and leave the present mix; or (b) commit to
-  module-only imports and codemod the minority side.  Whatever
-  the choice, document it in `AGENTS.md` and resolve the
-  inconsistency.
+- [x] Replaced `from datetime import datetime` at
+  `src/cantrip/tui/widgets/chat.py:6` with `import datetime` and
+  updated the two call sites (`Message.timestamp` default factory
+  and the chat-leaked-traceback writer).  No remaining
+  `from datetime import datetime` in `src/cantrip/`.
+- [x] Added `# noqa: BLE001 — <reason>` rationale comments to the
+  four bare `except Exception` clauses flagged in the audit:
+  `src/cantrip/hooks.py:845` (telemetry must not abort the agent),
+  `src/cantrip/agent/github_issues.py:354` (background triage loop
+  absorbs per-pass errors), `src/cantrip/agent/core.py:903`
+  (compaction failure falls through to emergency truncate), and
+  `src/cantrip/agent/executor.py:772` (executor loop tracks
+  consecutive errors via the existing counter).  All other
+  `except Exception` sites in `src/cantrip/` already carried the
+  pattern.
+- [x] Path / dataclass policy: carved out as a documented
+  runtime exception in `AGENTS.md` (option (a)).  `Path(...)` and
+  `@dataclass` read as primitive vocabulary so both styles
+  coexist; existing modules are not codemodded.
 
 ### 85.2 Move — `agent/memory/` subpackage
 

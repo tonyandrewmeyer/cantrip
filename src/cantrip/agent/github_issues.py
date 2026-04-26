@@ -351,7 +351,7 @@ class IssueTriage:
             )
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001 — triage runs in a background loop; one bad pass must not kill the watcher.
             log.exception("Issue triage failed for %s", self._repo)
         finally:
             self._running = False
