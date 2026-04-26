@@ -489,6 +489,47 @@ class TestMarkdownRenderer:
         md = render_markdown(data)
         assert "**unknown**" in md
 
+    def test_render_tool_result_with_triple_backticks(self):
+        """Tool results that themselves contain ``` must not break the surrounding fence.
+
+        LLM-generated content routinely contains markdown code fences;
+        a fixed triple-backtick fence collapses on the embedded run.
+        The renderer expands the fence so the closing fence is unique.
+        """
+        data = TranscriptData(
+            messages=[
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_results": [
+                        {"content": "Here's some code:\n```python\nprint(1)\n```\nDone."}
+                    ],
+                }
+            ]
+        )
+        md = render_markdown(data)
+        # Opening + closing fence must be at least four backticks long
+        # so the embedded ``` doesn't terminate the block.
+        assert "````\n" in md
+        # The embedded triple-backticks survive verbatim inside the wider fence.
+        assert "```python\nprint(1)\n```" in md
+
+    def test_render_tool_call_args_with_backticks(self):
+        """Tool call arguments containing ``` get a wider fence too."""
+        data = TranscriptData(
+            messages=[
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{"name": "edit", "arguments": {"snippet": "fence: ```"}}],
+                }
+            ]
+        )
+        md = render_markdown(data)
+        # The serialised JSON contains escaped backticks; the fence must
+        # be longer than any backtick run in the JSON payload.
+        assert "````json\n" in md
+
 
 # ===================================================================
 # TestFilteredExport
@@ -589,6 +630,27 @@ class TestFilteredExport:
         data = load_transcript(db_path, since="2020-01-01T00:00:00")
         assert len(data.messages) == 2
         assert len(data.events) >= 1
+
+    def test_filter_by_since_keeps_timestampless(self, db_path, monkeypatch):
+        """A message without a timestamp survives --since filtering.
+
+        Pre-migration or corrupt rows can lack a timestamp; silently
+        dropping them under a time filter is worse than over-including
+        a row whose time is unknown.
+        """
+        from cantrip.agent import store as store_mod
+
+        real_load = store_mod.SessionStore.load_active_branch
+
+        def patched(self, head=None):
+            msgs = real_load(self, head)
+            msgs.append({"id": 999, "role": "system", "content": "ghost", "timestamp": None})
+            return msgs
+
+        monkeypatch.setattr(store_mod.SessionStore, "load_active_branch", patched)
+        data = load_transcript(db_path, since="2099-01-01T00:00:00")
+        # Real (past-dated) messages are excluded; the timestampless ghost survives.
+        assert [m.get("content") for m in data.messages] == ["ghost"]
 
     def test_nonexistent_task_id_gives_empty(self, db_path):
         data = load_transcript(db_path, task_id="nonexistent")
