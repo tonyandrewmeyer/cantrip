@@ -3593,7 +3593,7 @@ block that transitions from intro to outcome.
 
 ---
 
-## Phase 83: Pause-and-Edit Interrupt — Research
+## Phase 83: Pause-and-Edit Interrupt — Research ✓
 
 **Goal:** Today's interrupt (<kbd>Ctrl+C</kbd> / <kbd>Esc</kbd> in
 the TUI, the Cancel button or <kbd>Esc</kbd> in the Web UI) is a
@@ -3607,65 +3607,64 @@ context and folds the edit in.  This phase decides whether
 Cantrip should add such a mode and, if so, what the smallest
 viable shape is.
 
-### 83.1 Research — survey peer interrupt models
+This was a **research phase** — no production code changed.
+Findings landed in
+[`design/PAUSE_AND_EDIT.md`](design/PAUSE_AND_EDIT.md); summary
+below.
 
-- [ ] Catalogue how Claude Code, Cursor, Aider, Goose, and Amp
-  handle mid-turn interruption: hard cancel, soft pause, edit-in-
-  place, queue-next-instruction, or some combination.  Note the
-  keybinding, the surfaced affordance, and what state the agent
-  preserves across the interrupt (tool-call buffer? assistant
-  partial text? reasoning trace?).
-- [ ] Inventory user complaints / feature requests in those
-  projects' issue trackers for "lost my context after Ctrl+C" or
-  "wish I could amend mid-turn" — a small number of high-signal
-  asks is the trigger to pursue this.
+### Decisions
 
-### 83.2 Design — what would "pause and edit" mean for Cantrip
+- [x] **Defer the full pause-and-edit interrupt.**  Cancel today
+  already preserves every completed round in ``state.messages``
+  (only the in-flight LLM call's response is lost); no real user
+  complaint surfaced; the most-common interrupt flavour
+  (*augment* — "add this clarification") admits a leaner shape
+  (queue-next-instruction) at ~25% of the cost.  The full
+  pause-and-edit work waits on a concrete trigger.
+- [x] **Peer survey recorded** in
+  ``design/PAUSE_AND_EDIT.md`` §2: only Claude Code ships a
+  mid-turn affordance Cantrip doesn't have (queue-next-
+  instruction); Cursor's mid-stream-edit assumes a
+  partial-assistant-message UI Cantrip doesn't render; Aider /
+  Goose / Amp all match Cantrip's hard-cancel-and-retype.
+- [x] **Resumable-unit and message-flow shapes decided** in
+  §3.1 / §3.3: pause at the seam between LLM call and tool
+  dispatch (or between tool result and next LLM call); paused
+  edits resume as the next ``USER`` message (shape 1) — the
+  only shape that doesn't require novel provider-side
+  semantics.
+- [x] **Phase 83b — *Queue-Next Instruction*** scoped as the
+  smaller follow-up (130-180 LOC + tests, half a day to a day
+  of work).  Activates against three named triggers (§6) before
+  any pause-and-edit work.
 
-- [ ] Identify the resumable unit.  Cantrip's loop interleaves
-  model calls and tool calls; pausing *between* steps is cheap
-  (just stop dispatching the next step) but pausing *during* a
-  long tool call (``charmcraft_pack``, ``juju_wait``) is harder —
-  the tool keeps running unless we kill it.  Decide which is the
-  product.
-- [ ] Sketch the TUI affordance.  Options: (a) <kbd>Esc</kbd>
-  pauses, second <kbd>Esc</kbd> cancels — chord-style; (b) a
-  dedicated keybind (<kbd>Ctrl+P</kbd>?) for pause; (c) an
-  on-screen "Pause" button alongside the thinking indicator.
-  Note the collision risk with Phase 76 (``/copy``) and the
-  modal-Escape behaviour from Phase 65.
-- [ ] Sketch the message-flow change.  When the user types into
-  a paused turn, where does the edit go: prepended to the next
-  user turn, replacing the in-flight system note, or injected as
-  a tool-result-style synthetic message?  Each shape has a
-  different effect on the model's understanding of what just
-  happened.
+### Revisit triggers
 
-### 83.3 Decision — ship, defer, or drop
+Phase 83b — Queue-Next Instruction — opens when **any** of:
 
-- [ ] Write up findings in ``design/PAUSE_AND_EDIT.md`` (mirror
-  the Phase 39 ACP write-up format): peer survey table,
-  decision, and revisit triggers.
-- [ ] If "ship": carve out a Phase 83b implementation phase with
-  concrete agent-loop, TUI, Web UI, and event-bus deltas.
-- [ ] If "defer / drop": record the reason and the conditions
-  that would re-open it (e.g. user reports "I keep losing my
-  half-built design when I cancel", or a peer ships a clearly
-  better pattern worth copying).
+1. **Repeated augment-flavour friction.**  A user retyping
+   "original ask + clarification" after Esc shows up in a
+   transcript audit, or is named as a pain point.
+2. **Long-Ralph-loop steering.**  Phase 69.1's bounded Ralph
+   loop runs unattended for many iterations and a user wants
+   to *steer* it without aborting it.
+3. **Web-UI accessibility request.**  Phase 60's WCAG audit
+   flags Stop+retype as an accessibility blocker for
+   keyboard-only users, where queue-next is more accessible
+   than a chord keybind.
 
-### What this phase is *not*
+Phase 83c — Full pause-and-edit — opens *after* 83b ships
+**and**:
 
-- Not a commitment to ship pause-and-edit.  This phase is a
-  decision gate; Phase 82 already covers the inline-status side
-  of mid-turn responsiveness.
-- Not a rework of the existing cancel path.  Hard cancel via
-  <kbd>Ctrl+C</kbd> / <kbd>Esc</kbd> stays as-is regardless of
-  outcome.
+4. Queue-next demonstrably doesn't cover the *redirect* flavour
+   in real sessions (users keep cancelling rather than queueing
+   because they don't want the tool to run at all), **or**
+5. A peer ships a clearly better pattern worth copying.
 
-**Exit criteria:** ``design/PAUSE_AND_EDIT.md`` exists and lands
-on a verdict (ship / defer / drop) with explicit revisit
-triggers.  If the verdict is "ship", a Phase 83b implementation
-phase is scoped.
+**Exit criteria met:** ``design/PAUSE_AND_EDIT.md`` is the
+written assessment.  Verdict is "defer", with the smaller
+queue-next-instruction shape sketched at §4.2 ready for Phase
+83b when a trigger fires.
 
 **Discovered:** While adding the <kbd>Esc</kbd> cancel binding
 to bring the TUI in line with Claude Code's cancel habit, the
@@ -4322,6 +4321,7 @@ fabric, and a passing acceptance test on the demo bundle.
 | M80: Stacked Policies | 80 ✓ | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
 | M81: Tool Caption Coverage | 81 ✓ | ``run_command``, the Juju tool family, and the acceptance/test reporters populate ``ToolResult.caption`` rather than relying on the Phase 75 fallback; coverage test forces the rich-caption-vs-fallback choice for new tools |
 | M82: Pre/Post Tool Captions | 82 | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
+| M83: Pause-and-Edit Research | 83 ✓ | Written decision (ship / defer / drop) on whether Cantrip's hard cancel should soften into a pausable, editable mid-turn affordance; verdict is *defer*, with queue-next-instruction sketched as the leaner follow-up shape against three named revisit triggers |
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
 | M86: K8s/kubectl Research | 86 ✓ | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
 | M87: COS Coverage | 87 | Alertmanager and Catalogue-k8s gain skill-level guidance and worked examples at parity with Prometheus/Grafana; Sloth/Parca/Pyroscope decision recorded in ``design/PROFILING.md`` |
