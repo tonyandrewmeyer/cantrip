@@ -76,6 +76,67 @@ class TestCharmcraftInitGitignore:
         assert content.count(".source/") == 1
 
     @pytest.mark.asyncio
+    async def test_force_passed_when_target_has_unrelated_files(self, tool, temp_dir):
+        """--force is passed when the target dir has files but no charmcraft.yaml.
+
+        Cantrip's own state (the workspace DB, ``.source/``, scratch notes)
+        often lives alongside where the agent wants to scaffold a charm.
+        ``charmcraft init`` aborts on a non-empty dir unless ``--force`` is
+        given, so we add it whenever there is no existing ``charmcraft.yaml``.
+        """
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        (charm_dir / "cantrip.db").write_text("")  # simulate Cantrip state.
+
+        with mock.patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=mock.Mock(returncode=0, stdout="Initialised.", stderr=""),
+        ) as mock_run:
+            result = await tool.execute(name="test-charm", path=str(charm_dir))
+
+        assert result.success
+        cmd = mock_run.call_args.args[0]
+        assert "--force" in cmd
+
+    @pytest.mark.asyncio
+    async def test_force_not_passed_when_target_is_empty(self, tool, temp_dir):
+        """--force is not added when the target directory is empty.
+
+        Keeps the command minimal in the common case so its behaviour matches
+        ``charmcraft init`` invoked by hand.
+        """
+        with mock.patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=mock.Mock(returncode=0, stdout="Initialised.", stderr=""),
+        ) as mock_run:
+            result = await tool.execute(name="test-charm", path=str(temp_dir))
+
+        assert result.success
+        cmd = mock_run.call_args.args[0]
+        assert "--force" not in cmd
+
+    @pytest.mark.asyncio
+    async def test_refuses_when_charmcraft_yaml_already_exists(self, tool, temp_dir):
+        """Refuses to re-initialise a directory that already contains a charm.
+
+        ``--force`` would otherwise overwrite the user's hand-edited charm
+        files; the existing ``charmcraft.yaml`` is the canonical signal that
+        a real charm lives here.
+        """
+        charm_dir = temp_dir / "test-charm"
+        charm_dir.mkdir(parents=True)
+        (charm_dir / "charmcraft.yaml").write_text("name: test-charm\n")
+
+        with mock.patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+        ) as mock_run:
+            result = await tool.execute(name="test-charm", path=str(charm_dir))
+
+        assert not result.success
+        assert "already exists" in result.error
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_path_already_named_after_charm_is_not_nested(self, tool, temp_dir):
         """When path already ends with name, scaffold in-place — no name/name nesting.
 
@@ -138,15 +199,26 @@ if __name__ == "__main__":
     def tool(self):
         return CharmcraftInitTool()
 
-    def _mock_charmcraft(self):
-        """Return a mock that simulates a successful charmcraft init."""
+    def _mock_charmcraft(self, setup=None):
+        """Mock subprocess.run as a successful charmcraft init.
+
+        ``setup`` is invoked when the tool calls subprocess.run, i.e. *after*
+        the existing-charm guard has been checked — exactly like real
+        ``charmcraft init`` only writes its files when it actually runs.
+        """
+
+        def side_effect(*_args, **_kwargs):
+            if setup is not None:
+                setup()
+            return mock.Mock(returncode=0, stdout="Initialised.", stderr="")
+
         return mock.patch(
             "cantrip.agent.tools.charm.subprocess.run",
-            return_value=mock.Mock(returncode=0, stdout="Initialised.", stderr=""),
+            side_effect=side_effect,
         )
 
     def _scaffold_standard(self, charm_dir: Path) -> None:
-        """Pre-create files that charmcraft init would generate for a standard profile."""
+        """Write files that charmcraft init would generate for a standard profile."""
         charm_dir.mkdir(parents=True, exist_ok=True)
         (charm_dir / "charmcraft.yaml").write_text(self._CHARMCRAFT_YAML)
         (charm_dir / "requirements.txt").write_text("ops >= 2.0\n")
@@ -158,9 +230,8 @@ if __name__ == "__main__":
     async def test_tracing_injected_standard_charm(self, tool, temp_dir):
         """Standard profile gets full ops-tracing injection."""
         charm_dir = temp_dir / "test-charm"
-        self._scaffold_standard(charm_dir)
 
-        with self._mock_charmcraft():
+        with self._mock_charmcraft(setup=lambda: self._scaffold_standard(charm_dir)):
             result = await tool.execute(
                 name="test-charm", path=str(temp_dir), profile="kubernetes"
             )
@@ -186,11 +257,13 @@ if __name__ == "__main__":
     async def test_tracing_charmcraft_yaml_only_for_paas(self, tool, temp_dir):
         """PaaS profile only modifies charmcraft.yaml, not requirements.txt or src/charm.py."""
         charm_dir = temp_dir / "test-charm"
-        charm_dir.mkdir(parents=True)
-        (charm_dir / "charmcraft.yaml").write_text(self._CHARMCRAFT_YAML)
-        (charm_dir / "requirements.txt").write_text("ops >= 2.0\n")
 
-        with self._mock_charmcraft():
+        def setup() -> None:
+            charm_dir.mkdir(parents=True, exist_ok=True)
+            (charm_dir / "charmcraft.yaml").write_text(self._CHARMCRAFT_YAML)
+            (charm_dir / "requirements.txt").write_text("ops >= 2.0\n")
+
+        with self._mock_charmcraft(setup=setup):
             result = await tool.execute(
                 name="test-charm", path=str(temp_dir), profile="flask-framework"
             )
@@ -209,25 +282,25 @@ if __name__ == "__main__":
     async def test_tracing_no_duplicate(self, tool, temp_dir):
         """Files that already contain tracing are not modified again."""
         charm_dir = temp_dir / "test-charm"
-        charm_dir.mkdir(parents=True)
 
-        charmcraft_with_tracing = self._CHARMCRAFT_YAML + (
-            "\nrequires:\n  tracing:\n    interface: tracing\n    limit: 1\n"
-        )
-        (charm_dir / "charmcraft.yaml").write_text(charmcraft_with_tracing)
-        (charm_dir / "requirements.txt").write_text("ops >= 2.0\nops-tracing\n")
+        def setup() -> None:
+            charm_dir.mkdir(parents=True, exist_ok=True)
+            charmcraft_with_tracing = self._CHARMCRAFT_YAML + (
+                "\nrequires:\n  tracing:\n    interface: tracing\n    limit: 1\n"
+            )
+            (charm_dir / "charmcraft.yaml").write_text(charmcraft_with_tracing)
+            (charm_dir / "requirements.txt").write_text("ops >= 2.0\nops-tracing\n")
+            src = charm_dir / "src"
+            src.mkdir(parents=True, exist_ok=True)
+            charm_py_with_tracing = self._CHARM_PY.replace(
+                "import ops\n", "import ops\nimport ops_tracing\n"
+            ).replace(
+                "super().__init__(framework)",
+                "super().__init__(framework)\n        ops_tracing.setup(self)",
+            )
+            (src / "charm.py").write_text(charm_py_with_tracing)
 
-        src = charm_dir / "src"
-        src.mkdir(parents=True, exist_ok=True)
-        charm_py_with_tracing = self._CHARM_PY.replace(
-            "import ops\n", "import ops\nimport ops_tracing\n"
-        ).replace(
-            "super().__init__(framework)",
-            "super().__init__(framework)\n        ops_tracing.setup(self)",
-        )
-        (src / "charm.py").write_text(charm_py_with_tracing)
-
-        with self._mock_charmcraft():
+        with self._mock_charmcraft(setup=setup):
             result = await tool.execute(
                 name="test-charm", path=str(temp_dir), profile="kubernetes"
             )
@@ -299,21 +372,30 @@ platforms:
     def tool(self):
         return CharmcraftInitTool()
 
-    def _mock_charmcraft(self):
+    def _mock_charmcraft(self, setup=None):
+        """Mock subprocess.run; ``setup`` runs as a side_effect of the call."""
+
+        def side_effect(*_args, **_kwargs):
+            if setup is not None:
+                setup()
+            return mock.Mock(returncode=0, stdout="Initialised.", stderr="")
+
         return mock.patch(
             "cantrip.agent.tools.charm.subprocess.run",
-            return_value=mock.Mock(returncode=0, stdout="Initialised.", stderr=""),
+            side_effect=side_effect,
         )
 
     @pytest.mark.asyncio
     async def test_app_requirements_overwrite_is_repaired(self, tool, temp_dir):
         """Simulate the observed bug: requirements.txt has only the app's deps."""
         charm_dir = temp_dir / "test-charm"
-        charm_dir.mkdir(parents=True)
-        (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
-        (charm_dir / "requirements.txt").write_text("flask>=3.0\n")
 
-        with self._mock_charmcraft():
+        def setup() -> None:
+            charm_dir.mkdir(parents=True, exist_ok=True)
+            (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
+            (charm_dir / "requirements.txt").write_text("flask>=3.0\n")
+
+        with self._mock_charmcraft(setup=setup):
             result = await tool.execute(
                 name="test-charm", path=str(temp_dir), profile="flask-framework"
             )
@@ -329,13 +411,15 @@ platforms:
     async def test_already_present_paas_deps_are_not_duplicated(self, tool, temp_dir):
         """A well-formed PaaS requirements.txt is left alone."""
         charm_dir = temp_dir / "test-charm"
-        charm_dir.mkdir(parents=True)
-        (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
-        (charm_dir / "requirements.txt").write_text(
-            "ops ~= 2.17\npaas-charm>=1.0,<2\nflask>=3.0\n"
-        )
 
-        with self._mock_charmcraft():
+        def setup() -> None:
+            charm_dir.mkdir(parents=True, exist_ok=True)
+            (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
+            (charm_dir / "requirements.txt").write_text(
+                "ops ~= 2.17\npaas-charm>=1.0,<2\nflask>=3.0\n"
+            )
+
+        with self._mock_charmcraft(setup=setup):
             result = await tool.execute(
                 name="test-charm", path=str(temp_dir), profile="flask-framework"
             )
@@ -351,11 +435,13 @@ platforms:
     async def test_missing_requirements_file_is_created(self, tool, temp_dir):
         """When the agent deletes requirements.txt entirely the file is rebuilt."""
         charm_dir = temp_dir / "test-charm"
-        charm_dir.mkdir(parents=True)
-        (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
-        # Deliberately no requirements.txt.
 
-        with self._mock_charmcraft():
+        def setup() -> None:
+            charm_dir.mkdir(parents=True, exist_ok=True)
+            (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
+            # Deliberately no requirements.txt.
+
+        with self._mock_charmcraft(setup=setup):
             result = await tool.execute(
                 name="test-charm", path=str(temp_dir), profile="flask-framework"
             )
@@ -371,11 +457,13 @@ platforms:
     async def test_non_paas_charm_untouched(self, tool, temp_dir):
         """A non-PaaS charm's requirements.txt must NOT gain paas-charm."""
         charm_dir = temp_dir / "test-charm"
-        charm_dir.mkdir(parents=True)
-        (charm_dir / "charmcraft.yaml").write_text(self._NON_PAAS_CHARMCRAFT_YAML)
-        (charm_dir / "requirements.txt").write_text("ops >= 2.0\n")
 
-        with self._mock_charmcraft():
+        def setup() -> None:
+            charm_dir.mkdir(parents=True, exist_ok=True)
+            (charm_dir / "charmcraft.yaml").write_text(self._NON_PAAS_CHARMCRAFT_YAML)
+            (charm_dir / "requirements.txt").write_text("ops >= 2.0\n")
+
+        with self._mock_charmcraft(setup=setup):
             result = await tool.execute(
                 name="test-charm", path=str(temp_dir), profile="kubernetes"
             )
@@ -394,11 +482,13 @@ platforms:
         charm's ``import ops`` fails even though the deps look complete.
         """
         charm_dir = temp_dir / "test-charm"
-        charm_dir.mkdir(parents=True)
-        (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
-        (charm_dir / "requirements.txt").write_text("ops-tracing\npaas-charm>=1.0,<2\n")
 
-        with self._mock_charmcraft():
+        def setup() -> None:
+            charm_dir.mkdir(parents=True, exist_ok=True)
+            (charm_dir / "charmcraft.yaml").write_text(self._PAAS_CHARMCRAFT_YAML)
+            (charm_dir / "requirements.txt").write_text("ops-tracing\npaas-charm>=1.0,<2\n")
+
+        with self._mock_charmcraft(setup=setup):
             result = await tool.execute(
                 name="test-charm", path=str(temp_dir), profile="flask-framework"
             )
