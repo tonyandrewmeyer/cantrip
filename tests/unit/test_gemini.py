@@ -641,6 +641,63 @@ class TestGeminiProviderComplete:
         assert result.finish_reason == "content_filter"
 
     @pytest.mark.asyncio
+    async def test_complete_tool_call_with_stop_reason_reports_tool_calls(self):
+        """Gemini reports ``FinishReason.STOP`` even when emitting a
+        function call.  Cantrip's convention puts tool-call responses
+        in the ``"tool_calls"`` bucket so dispatchers can branch on
+        finish_reason alone, so the provider must override ``STOP`` →
+        ``"tool_calls"`` whenever ``tool_calls`` is non-empty.
+        """
+        from google.genai.types import FinishReason
+
+        provider, _ = _make_provider()
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [_make_function_call_part("juju_status", {"model": "dev"})]
+        mock_candidate.finish_reason = FinishReason.STOP
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 20
+        mock_response.usage_metadata.candidates_token_count = 10
+        mock_response.usage_metadata.thoughts_token_count = 0
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="Show status")]
+        result = await provider.complete(messages)
+
+        assert len(result.tool_calls) == 1
+        assert result.finish_reason == "tool_calls"
+
+    @pytest.mark.asyncio
+    async def test_complete_tool_call_with_max_tokens_propagates_length(self):
+        """If the tool call was *truncated* (``MAX_TOKENS``) the
+        ``"length"`` reason wins over ``"tool_calls"``: the dispatcher
+        needs to know the tool call may be incomplete.
+        """
+        from google.genai.types import FinishReason
+
+        provider, _ = _make_provider()
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [_make_function_call_part("juju_status", {"model": "dev"})]
+        mock_candidate.finish_reason = FinishReason.MAX_TOKENS
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 20
+        mock_response.usage_metadata.candidates_token_count = 10
+        mock_response.usage_metadata.thoughts_token_count = 0
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="Show status")]
+        result = await provider.complete(messages)
+
+        assert result.finish_reason == "length"
+
+    @pytest.mark.asyncio
     async def test_complete_function_call_none_args(self):
         """Test that a function call with args=None does not crash."""
         provider, _ = _make_provider()

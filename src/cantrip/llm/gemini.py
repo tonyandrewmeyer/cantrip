@@ -502,7 +502,16 @@ class GeminiProvider(LLMProvider):
         if response.candidates:
             candidate_finish = _map_finish_reason(response.candidates[0].finish_reason)
         if tool_calls:
-            finish_reason = candidate_finish or "tool_calls"
+            # Gemini reports ``FinishReason.STOP`` even on tool-call
+            # responses (the model "stopped" emitting tokens after the
+            # function call).  Cantrip's convention puts that in the
+            # ``"tool_calls"`` bucket so the dispatcher can branch on
+            # finish_reason without also peeking at tool_calls.  Real
+            # truncation / safety still propagates through.
+            if candidate_finish in (None, "stop"):
+                finish_reason = "tool_calls"
+            else:
+                finish_reason = candidate_finish
         else:
             finish_reason = candidate_finish or "stop"
         return Response(
