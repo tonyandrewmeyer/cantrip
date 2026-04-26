@@ -294,6 +294,94 @@ class TestGeminiProviderToolConversion:
         assert provider._convert_tools(None) is None
         assert provider._convert_tools([]) is None
 
+    def test_sanitize_schema_strips_additional_properties(self):
+        """``additionalProperties`` / ``additionalItems`` are removed at every depth.
+
+        Gemini rejects these keys in function-declaration schemas (the SDK
+        serialises them to snake_case, and the API responds with
+        ``Unknown name "additional_properties"``).  Subcommand bundles
+        (``git``/``gh``/``juju``) and MCP-supplied schemas commonly carry
+        them, so the sanitiser must scrub them out of nested objects and
+        list-valued schemas (``oneOf``/``anyOf``) too.
+        """
+        from cantrip.llm.gemini import GeminiProvider
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "subcommand": {"type": "string", "enum": ["a", "b"]},
+                "nested": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"x": {"type": "string"}},
+                },
+                "items": {
+                    "type": "array",
+                    "additionalItems": True,
+                    "items": {"type": "string"},
+                },
+                "variants": {
+                    "oneOf": [
+                        {"type": "object", "additionalProperties": True},
+                        {"type": "string"},
+                    ],
+                },
+            },
+            "required": ["subcommand"],
+            "additionalProperties": True,
+        }
+
+        result = GeminiProvider._sanitize_schema_for_gemini(schema)
+
+        def _walk(obj: object) -> None:
+            if isinstance(obj, dict):
+                assert "additionalProperties" not in obj
+                assert "additionalItems" not in obj
+                for v in obj.values():
+                    _walk(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _walk(item)
+
+        _walk(result)
+        # Non-stripped keys survive intact.
+        assert result["properties"]["subcommand"]["enum"] == ["a", "b"]
+        assert result["required"] == ["subcommand"]
+        assert result["properties"]["variants"]["oneOf"][1] == {"type": "string"}
+
+    def test_convert_tools_strips_additional_properties_for_subcommand_bundle(self):
+        """Subcommand bundles must reach Gemini without ``additionalProperties``.
+
+        Regression: ``git``/``gh``/``juju`` bundles set
+        ``additionalProperties: True`` because they accept arbitrary
+        leaf-subcommand kwargs as top-level keys.  Without the sanitiser,
+        Gemini rejects the whole request with HTTP 400.
+        """
+        provider, _ = _make_provider()
+        tools = [
+            LLMTool(
+                name="git",
+                description="Git bundle",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "subcommand": {"type": "string", "enum": ["commit", "status"]},
+                    },
+                    "required": ["subcommand"],
+                    "additionalProperties": True,
+                },
+            ),
+        ]
+
+        result = provider._convert_tools(tools)
+        assert result is not None
+        # The FunctionDeclaration's parameters must not carry the key — read
+        # back via the SDK's model dump so we see what would go on the wire.
+        decl = result[0].function_declarations[0]
+        dumped = decl.parameters.model_dump(exclude_none=True)
+        assert "additional_properties" not in dumped
+        assert "additionalProperties" not in dumped
+
 
 class TestGeminiProviderSystemPrompt:
     """Tests for GeminiProvider._get_system_prompt."""

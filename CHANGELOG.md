@@ -89,6 +89,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Tool families bundled behind subcommand discriminators to stay under OpenAI's 128-tool API cap.**  OpenRouter (when routing to OpenAI models) was rejecting Cantrip requests with `Invalid 'tools': array too long. Expected an array with maximum length 128, but got an array with length 130` once skills + virtual-store + a couple of MCP tools pushed the toolset over the limit.  The four largest families now ship as single LLM-facing entries with a `subcommand` field — `juju` (23 actions), `git` (11), `gh` (8, including PR review), `memory` (9).  Each subcommand keeps its full per-action argument schema (visible in the bundled tool's description); permissions, audit, hooks and plan mode all still see the canonical leaf name (`juju_deploy`, `git_commit`, …) because the executor rewrites `juju(subcommand="deploy", …)` into a flat leaf call before any gate runs.  LLM-facing tool count drops from ~123 → ~76; the OpenAI-compatible providers (OpenAI-compatible, Fireworks, OpenRouter) now declare `max_tools=128` as a safety net so future regressions trim to a curated core set instead of letting the API 400 surface.
 
 ### Fixed
+- **Gemini provider strips ``additionalProperties`` from tool schemas
+  before dispatch.**  The Google SDK serialises JSON-Schema keys to
+  snake_case on the wire, so Cantrip's subcommand bundles
+  (``git`` / ``gh`` / ``juju`` — which set ``additionalProperties: True``
+  to accept arbitrary leaf-subcommand kwargs as top-level keys) and any
+  MCP-supplied schemas carrying the same key were causing
+  ``generativelanguage.googleapis.com`` to reject the whole request with
+  ``HTTP 400 — Unknown name "additional_properties" at
+  'tools[0].function_declarations[*].parameters'``.
+  ``GeminiProvider._convert_tools`` now scrubs
+  ``additionalProperties`` and ``additionalItems`` recursively before
+  building each ``FunctionDeclaration``.
 - **OpenAI-compatible providers no longer swallow streaming errors as
   ``ResponseNotRead``.**  When an upstream returned a 4xx/5xx during
   ``client.stream(...)``, the shared ``_raise_http_error`` helper
