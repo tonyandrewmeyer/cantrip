@@ -31,6 +31,8 @@ cantrip skill export NAME PATH [--charm-path DIR] [--force]
 cantrip checkpoints list [--db PATH] [--task-id ID]
 cantrip checkpoints show [--db PATH] TASK_ID STEP_NAME ORDINAL
 cantrip checkpoints delete [--db PATH] --task-id ID [--yes]
+cantrip permissions test TOOL [OPTIONS]
+cantrip permissions list [--charm-path DIR] [--user-config DIR] [--no-builtin]
 cantrip --version
 cantrip --help
 ```
@@ -510,6 +512,111 @@ cantrip checkpoints delete --task-id ID [--db PATH] [--yes]
   <dt><code>--yes</code></dt>
   <dd>Skip the interactive <code>y/N</code> confirmation prompt. Intended for scripted use.</dd>
 </dl>
+
+{#permissions}
+## cantrip permissions
+
+Inspect the per-call permission gate without standing up the full
+agent. Discovers the same three layers that the runtime uses —
+built-in safe defaults, user-wide
+`~/.config/cantrip/permissions.yaml`, and the per-charm
+`<charm>/.cantrip/permissions.yaml` — composes them in the same
+order, and exposes the resulting decision through two
+subcommands.
+
+{#permissions-test}
+### cantrip permissions test
+
+Evaluates one hypothetical tool call against the discovered
+ruleset and prints the verdict, the matched rule, and the source
+file (or `builtin:<section>`). Useful while authoring
+`permissions.yaml` to confirm a local override actually loosens
+the built-in safe default — and to catch the mirror case where a
+typo in your glob silently lets a destructive command through.
+Exits 0 on a successful evaluation regardless of the verdict; 2
+on argument errors.
+
+```
+cantrip permissions test TOOL [--command CMD] [--path PATH]
+                              [--agent NAME]
+                              [--charm-path DIR] [--user-config DIR]
+                              [--no-builtin] [--show-rules]
+```
+
+<dl>
+  <dt><code>TOOL</code> <span class="arg-req">required</span></dt>
+  <dd>
+    Tool name to test (e.g. <code>run_command</code>,
+    <code>read_file</code>, <code>juju_status</code>). The
+    <code>tools</code> section matches against this.
+  </dd>
+  <dt><code>--command CMD</code></dt>
+  <dd>
+    Bash command string for the <code>bash</code> section. Only
+    contributes when <code>TOOL</code> is in
+    <code>bash_tools</code> (default <code>{run_command}</code>);
+    otherwise the bash section is skipped.
+  </dd>
+  <dt><code>--path PATH</code></dt>
+  <dd>
+    Path argument for the <code>paths</code> section. Mirrors
+    the <code>path</code>, <code>file_path</code>, or
+    <code>filename</code> argument the tool would receive at
+    runtime.
+  </dd>
+  <dt><code>--agent NAME</code></dt>
+  <dd>
+    Activate a per-agent overlay defined under
+    <code>agents:</code>. Matches
+    <code>SubagentContext.task.category.value</code>
+    (e.g. <code>RESEARCH</code>, <code>BUILD</code>); overlays
+    only tighten — across sections the most restrictive verdict
+    wins.
+  </dd>
+  <dt><code>--charm-path DIR</code></dt>
+  <dd>
+    Repo root for <code>.cantrip/permissions.yaml</code>
+    discovery. Defaults to the current working directory.
+  </dd>
+  <dt><code>--user-config DIR</code></dt>
+  <dd>
+    User config directory for <code>permissions.yaml</code>.
+    Defaults to <code>~/.config/cantrip</code>.
+  </dd>
+  <dt><code>--no-builtin</code></dt>
+  <dd>
+    Skip the built-in safe defaults
+    (<code>rm -rf *</code> ⇒ deny, <code>sudo *</code> ⇒ ask,
+    <code>.env</code> reads ⇒ deny, etc.). Only file-loaded
+    rules are evaluated. Useful when probing a config in
+    isolation.
+  </dd>
+  <dt><code>--show-rules</code></dt>
+  <dd>
+    Append the full loaded ruleset listing after the verdict —
+    same output as <code>cantrip permissions list</code>.
+  </dd>
+</dl>
+
+{#permissions-list}
+### cantrip permissions list
+
+Prints every loaded permission rule grouped by section
+(<code>tools</code>, <code>bash</code>, <code>paths</code>) and
+per-agent overlay, with each rule's source file or
+<code>builtin:&lt;section&gt;</code>. Helpful as a sanity check
+that your YAML actually parsed and composed in the order you
+expect.
+
+```
+cantrip permissions list [--charm-path DIR] [--user-config DIR]
+                         [--no-builtin]
+```
+
+Flags match `permissions test`. With `--no-builtin` and no
+user/repo file present the listing prints
+"`No permission rules loaded.`" so an empty config is visible at
+a glance instead of looking the same as a missing one.
 
 {#slash-commands}
 ## Slash commands
