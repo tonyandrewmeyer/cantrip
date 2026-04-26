@@ -554,6 +554,93 @@ class TestGeminiProviderComplete:
         assert result.usage == {"prompt_tokens": 0, "completion_tokens": 0}
 
     @pytest.mark.asyncio
+    async def test_complete_max_tokens_finish_reason_propagates(self):
+        """A truncated response (``MAX_TOKENS``) must surface as ``"length"``.
+
+        Gemini 2.5+ thinking models commonly burn the budget on
+        internal reasoning before producing visible content; the agent
+        must not mistake that for a complete response.  Live API
+        observation: ``max_tokens=10`` against ``gemini-2.5-flash``
+        with the prompt "Say 'pong'" returns empty content with
+        ``FinishReason.MAX_TOKENS`` and 7 thinking tokens.
+        """
+        from google.genai.types import FinishReason
+
+        provider, _ = _make_provider()
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = MagicMock()
+        mock_candidate.content.parts = None
+        mock_candidate.finish_reason = FinishReason.MAX_TOKENS
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 9
+        mock_response.usage_metadata.candidates_token_count = 0
+        mock_response.usage_metadata.thoughts_token_count = 7
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="Say 'pong'")]
+        result = await provider.complete(messages)
+
+        assert result.content == ""
+        assert result.finish_reason == "length"
+        # Thinking tokens are billed identically to visible-output tokens
+        # and must be counted toward completion_tokens.
+        assert result.usage == {"prompt_tokens": 9, "completion_tokens": 7}
+
+    @pytest.mark.asyncio
+    async def test_complete_thinking_tokens_added_to_completion_count(self):
+        """Visible output + thinking output sum into ``completion_tokens``."""
+        provider, _ = _make_provider()
+
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [_make_text_part("pong")]
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 9
+        mock_response.usage_metadata.candidates_token_count = 1  # "pong"
+        mock_response.usage_metadata.thoughts_token_count = 16  # internal reasoning
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="Say 'pong'")]
+        result = await provider.complete(messages)
+
+        assert result.content == "pong"
+        assert result.finish_reason == "stop"
+        assert result.usage == {"prompt_tokens": 9, "completion_tokens": 17}
+
+    @pytest.mark.asyncio
+    async def test_complete_safety_block_finish_reason_propagates(self):
+        """A ``SAFETY`` block surfaces as ``"content_filter"`` so the
+        agent can distinguish refusal from a clean completion.
+        """
+        from google.genai.types import FinishReason
+
+        provider, _ = _make_provider()
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = MagicMock()
+        mock_candidate.content.parts = None
+        mock_candidate.finish_reason = FinishReason.SAFETY
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+        mock_response.usage_metadata.prompt_token_count = 12
+        mock_response.usage_metadata.candidates_token_count = 0
+        mock_response.usage_metadata.thoughts_token_count = 0
+
+        provider._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role=Role.USER, content="...")]
+        result = await provider.complete(messages)
+
+        assert result.finish_reason == "content_filter"
+
+    @pytest.mark.asyncio
     async def test_complete_function_call_none_args(self):
         """Test that a function call with args=None does not crash."""
         provider, _ = _make_provider()

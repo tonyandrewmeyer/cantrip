@@ -41,6 +41,64 @@ _GEMINI_3_TEMPERATURE = 1.0
 # per-image to keep the limit comprehensible and fail fast.
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
+# Map Gemini's ``FinishReason`` enum onto cantrip's string convention
+# (modelled on OpenAI's ``finish_reason`` values).  The previous code
+# hardcoded ``"stop"`` for every non-tool-call response, which silently
+# masked truncation, safety blocks, and recitation refusals — the agent
+# would treat a clipped response as complete.
+_FINISH_REASON_MAP: dict[str, str] = {
+    "STOP": "stop",
+    "MAX_TOKENS": "length",
+    "SAFETY": "content_filter",
+    "RECITATION": "content_filter",
+    "PROHIBITED_CONTENT": "content_filter",
+    "SPII": "content_filter",
+    "BLOCKLIST": "content_filter",
+    "MALFORMED_FUNCTION_CALL": "tool_calls",
+    "IMAGE_SAFETY": "content_filter",
+    "UNEXPECTED_TOOL_CALL": "tool_calls",
+}
+
+
+def _map_finish_reason(reason: Any) -> str | None:
+    """Translate a Gemini ``FinishReason`` enum into cantrip's convention.
+
+    Returns ``None`` when the response carries no usable signal so the
+    caller can fall back to its tool-call default.  Tolerates the
+    SDK returning either an enum (``FinishReason.MAX_TOKENS``) or the
+    bare string the REST API serialises.
+    """
+    if reason is None:
+        return None
+    name = getattr(reason, "name", None) or str(reason).rsplit(".", 1)[-1]
+    return _FINISH_REASON_MAP.get(name)
+
+
+def _completion_tokens(usage_meta: Any) -> int:
+    """Return the *total* output token count for billing.
+
+    Gemini 2.5+ "thinking" models charge for ``thoughts_token_count``
+    at the same rate as ``candidates_token_count``, but expose them
+    in two separate fields.  The previous code only summed the
+    visible-output count, so a response that burned its budget on
+    thinking before producing visible content reported zero
+    completion tokens — both wrong for cost tracking and confusing
+    when the response was empty but the bill wasn't.
+
+    Defensively reads only ``int``-typed values: the SDK returns
+    ``int | None`` in practice, but a flaky mock or future schema
+    change yielding a non-numeric value should degrade to ``0`` for
+    that axis rather than crashing the whole completion.
+    """
+    if usage_meta is None:
+        return 0
+
+    def _as_int(name: str) -> int:
+        value = getattr(usage_meta, name, None)
+        return value if isinstance(value, int) else 0
+
+    return _as_int("candidates_token_count") + _as_int("thoughts_token_count")
+
 
 class GeminiProvider(LLMProvider):
     """Google Gemini implementation."""
@@ -435,15 +493,25 @@ class GeminiProvider(LLMProvider):
             metadata["_gemini_fc_signatures"] = fc_signatures
 
         usage_meta = response.usage_metadata
+        # Read the candidate's actual ``finish_reason`` rather than
+        # always reporting ``"stop"`` — a ``MAX_TOKENS`` truncation,
+        # a ``SAFETY`` block, or a ``RECITATION`` refusal need to be
+        # visible to the agent.  Falls back to ``"tool_calls"`` /
+        # ``"stop"`` only when the SDK didn't surface a reason.
+        candidate_finish: str | None = None
+        if response.candidates:
+            candidate_finish = _map_finish_reason(response.candidates[0].finish_reason)
+        if tool_calls:
+            finish_reason = candidate_finish or "tool_calls"
+        else:
+            finish_reason = candidate_finish or "stop"
         return Response(
             content=content,
             tool_calls=tool_calls,
-            finish_reason="tool_calls" if tool_calls else "stop",
+            finish_reason=finish_reason,
             usage={
                 "prompt_tokens": (usage_meta.prompt_token_count or 0) if usage_meta else 0,
-                "completion_tokens": (
-                    (usage_meta.candidates_token_count or 0) if usage_meta else 0
-                ),
+                "completion_tokens": _completion_tokens(usage_meta),
             },
             metadata=metadata,
         )
@@ -495,7 +563,7 @@ class GeminiProvider(LLMProvider):
                 if chunk_usage is not None:
                     usage = {
                         "prompt_tokens": chunk_usage.prompt_token_count or 0,
-                        "completion_tokens": chunk_usage.candidates_token_count or 0,
+                        "completion_tokens": _completion_tokens(chunk_usage),
                     }
                 if not chunk.candidates or not chunk.candidates[0].content:
                     continue
