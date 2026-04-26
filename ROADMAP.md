@@ -4147,6 +4147,99 @@ showing the notice, so a yanked tag stops nagging.
 
 ---
 
+## Phase 88: Provider + TUI Bug-Hunt Follow-ups (2026-04-26)
+
+**Goal:** the round-2 exercise targeted the API-key paths and the
+TUI surface.  Two crashers landed as direct fixes (TUI markup
+escape, print-mode transient-error catch); the items below are the
+residual rough edges that didn't justify a direct fix.
+
+### 88.1 ``/cost`` cache write cost is invisible in the breakdown
+
+A single architect-mode turn against Claude can produce a per-model
+breakdown of `$0.0008` and an "Estimated total: $0.17" — the gap is
+the cache-write cost on the architect's first call.  The total is
+real (cache writes are expensive), but the breakdown rows don't
+show it, so the numbers look broken.  Either:
+
+- Add a "Cache" row in the per-model table showing
+  ``cache_creation_input_tokens`` and the dollar charge for each
+  model, so the rows sum to the total.
+- Or surface a single "Cache write: 28,431 tokens — $0.169" line
+  alongside the existing "Cache hit: 0%" indicator.
+
+### 88.2 ``/tasks`` and ``/status`` aren't handled in the TUI
+
+Both commands are advertised in ``/help`` (the CLI built-in help)
+and listed as "common commands" in the README.  In the CLI they
+print Rich tables; in the TUI they fall through to the LLM, which
+either asks "did you mean...?" or invokes the ``manage_tasks``
+tool.  The TUI already has F-key bindings for the same data
+(F2 status panel; tasks panel always visible on the right), so
+the cleanest fix is one of:
+
+- Wire ``/tasks`` and ``/status`` to print a system-message snapshot
+  via the existing helpers.
+- Or short-circuit them with a "Use F2 / look right" hint and add
+  them to ``catalogue_for`` so autocomplete advertises them.
+
+### 88.3 Provider error messages embed raw upstream JSON
+
+Hitting an invalid model on Claude / Gemini / Fireworks / OpenRouter
+each reports a useful first sentence followed by the full raw
+JSON response — IDs, request IDs, nested fields.  Examples:
+
+```
+Provider error: Claude API error: Error code: 404 - {'type': 'error',
+'error': {'type': 'not_found_error', 'message': 'model: bogus-xxx'},
+'request_id': 'req_011...'}
+```
+
+Strip to the human-readable ``error.message`` field per provider
+in the ``ProviderError`` constructor / formatter so the message
+that lands in the chat is one short line, with the raw payload
+captured in the diagnostics log.
+
+### 88.4 ``q`` shortcut quits the TUI without confirmation
+
+``Binding("q", "quit", "Quit")`` lets a single-keystroke ``q`` exit
+the app when the chat input doesn't have focus.  Most modal terminal
+apps confirm before exit (or move the binding to ``Ctrl+Q``);
+``q`` alone is a hair-trigger when a user is navigating the
+status panel or the integration graph and reflexively types it.
+Either gate behind a confirmation modal or rebind to ``Ctrl+Q``.
+
+### 88.5 Update-cache trust horizon
+
+(Tracking only; same shape as Phase 87.5 but worth restating with
+fresh evidence.)  The 24-hour cache TTL caused a stale "newer
+release available: 0.3.0" notice to keep firing across sessions
+even after PyPI's actual ``latest`` reverted to 0.0.1.  The cache
+key should incorporate the installed version so an upgrade
+invalidates it; or check the ``releases`` map for the cached
+``latest`` before showing the notice so a yanked version stops
+nagging.
+
+### Exit criteria
+
+- 88.1 — ``/cost`` per-model rows + cache row sum to the printed
+  estimated total within rounding error.
+- 88.2 — ``/tasks`` and ``/status`` either render or redirect with
+  a "use F-key X" hint in the TUI; autocomplete includes them.
+- 88.3 — Provider errors render a single-line human message; raw
+  JSON lands in ``cantrip diagnostics`` only.
+- 88.4 — A bare ``q`` no longer terminates the TUI without
+  confirmation, or the binding moves to ``Ctrl+Q``.
+- 88.5 — Cache trust survives a Cantrip upgrade; yanked-version
+  notices stop firing.
+
+### What this phase is *not*
+
+- A redesign of the cost panel or the slash-command surface — just
+  tightening five concrete observations from the round-2 exercise.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4228,4 +4321,5 @@ showing the notice, so a yanked tag stops nagging.
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
 | M86: K8s/kubectl Research | 86 | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
 | M87: Bug-Hunt Follow-ups | 87 | Five residual rough edges from the 2026-04-26 end-to-end exercise (slash-budget alias, toggle phrasing, ``compare`` scope clarity, ``charmlint --strict`` doc, update-cache freshness) tracked and triaged |
+| M88: Provider/TUI Follow-ups | 88 | Five residual items from the 2026-04-26 round-2 (provider/TUI) exercise: ``/cost`` cache visibility, ``/tasks`` & ``/status`` in the TUI, provider-error JSON noise, ``q``-quit hair-trigger, and update-cache trust |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |

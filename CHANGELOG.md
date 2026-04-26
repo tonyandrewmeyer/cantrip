@@ -25,6 +25,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the role in the confirmation; the explicit ``/copy assistant``
   selector still surfaces ``no assistant messages`` when nothing
   matches.
+- **TUI no longer crashes when a chat message contains square-bracket
+  text that looks like a Textual closing tag.**  ``/help`` documents
+  ``/model [provider[/model]]``, and the literal ``[/model]``
+  substring inside the response would be parsed as an unbalanced
+  closing tag — the next layout pass crashed the entire app with
+  ``MarkupError: closing tag '[/model]' does not match any open
+  tag``.  ``MessageWidget._render_body`` now escapes the message
+  body and progress-item text before splicing them into the markup
+  string for the underlying ``Static``.
+- **Print mode catches transient provider errors that escape the
+  retry loop.**  ``ProviderRateLimitError`` and
+  ``ProviderOverloadedError`` are deliberately not subclasses of
+  ``ProviderError`` (so the retry loop can dispatch on them
+  separately), but that meant once the retry budget was exhausted,
+  the transient error bubbled all the way out as an unhandled
+  traceback in print-mode CI runs.  Print mode now catches them
+  explicitly and reports ``Provider unavailable after retries``
+  with exit code 1.
 - **Print mode now dispatches slash commands instead of sending them
   to the LLM.**  ``cantrip run --print "/help"`` previously routed
   the literal string to the model, which would respond with whatever

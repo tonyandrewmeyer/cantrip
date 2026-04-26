@@ -59,6 +59,35 @@ class TestReasoningRender:
         assert r"\[b]" in rendered
         assert r"\[/b]" in rendered
 
+    def test_content_escapes_textual_closing_tags(self):
+        """Plain message content with bracket tokens must not crash.
+
+        ``/help`` documents ``/model [provider[/model]]`` — the literal
+        ``[/model]`` substring inside a system message used to be
+        interpreted by Textual's markup parser as an unbalanced
+        closing tag and crashed the entire TUI on the next layout
+        pass.  The plain (non-Markdown) render path must escape the
+        body before concatenating into a markup string.
+        """
+        widget = MessageWidget(
+            ChatMessage(
+                role=MessageRole.SYSTEM,
+                content="Usage: `/model [provider[/model]]`",
+            )
+        )
+        rendered = widget._render_body()
+        # ``rich_escape`` escapes the closing-tag form because that's
+        # what crashes the parser; opening brackets are left alone.
+        # The literal ``[/model]`` substring must show up escaped.
+        assert r"\[/model]" in rendered
+
+        # Crashed-only-when-rendered: feed the result through Textual's
+        # markup parser to prove the tag is no longer treated as a
+        # closing tag.  Before the fix this raised MarkupError.
+        from textual.content import Content
+
+        Content.from_markup(rendered)
+
 
 class TestSetReasoning:
     """``ChatWidget.set_reasoning`` attaches reasoning to an existing widget."""

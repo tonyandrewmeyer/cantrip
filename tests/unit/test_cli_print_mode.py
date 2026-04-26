@@ -492,6 +492,43 @@ class TestRunAsync:
         assert "rate limited" in capsys.readouterr().err
 
     @pytest.mark.asyncio
+    async def test_transient_provider_error_after_retries_returns_one(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Exhausted rate-limit / overload errors must not leak as tracebacks.
+
+        ``ProviderRateLimitError`` and ``ProviderOverloadedError`` are
+        deliberately *not* subclasses of ``ProviderError`` (so the
+        retry loop can dispatch on them separately) — but that meant
+        the print-mode catch only handled non-transient failures.
+        Once the retry loop exhausted its budget, the transient
+        error bubbled all the way out as an unhandled traceback.
+        """
+        from cantrip.llm.base import ProviderRateLimitError
+
+        agent = _make_agent(tmp_path)
+
+        async def _fake_process(_message: str) -> str:
+            raise ProviderRateLimitError("daily quota exhausted")
+
+        agent.process_message = _fake_process  # type: ignore[method-assign]
+        agent.start_executor = lambda: None  # type: ignore[method-assign]
+
+        async def _noop_stop():
+            return None
+
+        agent.stop_executor = _noop_stop  # type: ignore[method-assign]
+
+        rc = await print_mode._run_async(agent, "go", json_output=False)
+
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "Provider unavailable after retries" in err
+        assert "daily quota exhausted" in err
+
+    @pytest.mark.asyncio
     async def test_json_mode_emits_user_and_assistant_chat_messages(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
