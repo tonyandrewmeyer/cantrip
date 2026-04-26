@@ -696,10 +696,16 @@ class TestCaptionCoverage:
     def test_every_registered_tool_classified(self) -> None:
         import inspect
 
-        from cantrip.agent.tools import build_tools
+        from cantrip.agent.tools import SubcommandTool, build_tools, expand_leaves
 
         unclassified: list[str] = []
-        for tool in build_tools():
+        # ``expand_leaves`` walks every SubcommandTool's leaves so the
+        # caption check covers the actual underlying implementations.
+        # The bundle wrapper itself doesn't produce captions — each
+        # leaf does — so skip it.
+        for tool in expand_leaves(build_tools()):
+            if isinstance(tool, SubcommandTool):
+                continue
             try:
                 source = inspect.getsource(type(tool))
             except (OSError, TypeError):

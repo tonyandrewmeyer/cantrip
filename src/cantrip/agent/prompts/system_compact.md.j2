@@ -24,6 +24,9 @@ For new charms, use `plan_tasks` to decompose the work. Present the plan and ask
 - Fallback: charmcraft_pack (when quick_pack fails — non-uv plugin, override-build, missing uv.lock)
 - Run charm_validate before declaring done
 
+## Tool Bundles
+`juju`, `git`, `gh`, `memory` are bundled tools — call as `juju(subcommand="deploy", ...)`, `git(subcommand="commit", ...)`, etc. Skills that mention `juju_deploy` / `git_commit` / `gh_pr_create` mean the equivalent bundled call.
+
 ## Code Style
 - UK English, type hints, Google-style docstrings
 {% if charm_name or charm_path or dev_model or environment_ready is not none %}
