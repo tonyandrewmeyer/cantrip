@@ -239,6 +239,50 @@ sudo snap remove --purge microk8s
 
 Then rebuild via concierge as in step 4.
 
+## Looking *underneath* Juju — pod-layer diagnostics
+
+The substrate above is *broken*; this section is for the inverse case
+where the substrate is healthy but a charm's workload is misbehaving
+in a way Juju's view doesn't explain.  Symptoms: unit shows `error`
+or `lost` but the *reason* lives on the pod, the namespace events,
+or the PVC.
+
+**Reach for these only when**:
+
+- Juju says the unit is `error` / `lost` and `juju debug-log`
+  doesn't surface a hook traceback that explains why.
+- A workload container is restarting in a loop and `juju ssh` lands
+  in a *fresh* container (the previous one's logs are gone).
+- A unit is stuck in `waiting` / `blocked` with a "waiting for
+  storage" or "agent initialising" message that doesn't clear.
+
+**Skip them when** Juju is showing a clean hook traceback (use
+`iterate-fix`), or when the substrate itself is wedged (use the
+sweep above).
+
+The Juju model name is the Kubernetes namespace by convention — so
+`juju status -m dev` and `kubectl get pods -n dev` see the same
+deployment.
+
+| Question | Command | What it tells you |
+|---|---|---|
+| Why is this pod restarting / pending / failing? | `kubectl describe pod -n <model> <pod>` | Container statuses, `lastState.terminated.reason` (OOMKilled / Error / ImagePullBackOff), recent events |
+| What just happened in the namespace? | `kubectl get events -n <model> --sort-by=.metadata.creationTimestamp` | Time-ordered cluster signals — image pulls, scheduling failures, eviction notices |
+| Pod-level status across the model | `kubectl get pods -n <model>` | Which pods are `Running` / `Pending` / `CrashLoopBackOff`; restart counts |
+| What did the *crashed* container print before it died? | `kubectl logs -n <model> <pod> -c <container> --previous` | The previous container's stdout/stderr — gone from `juju ssh`, present in kubectl |
+| Is storage stuck? | `kubectl describe pvc -n <model>` | PVC status, storage-class events, capacity / binding state |
+| Resource pressure? | `kubectl top pod -n <model>` | Live CPU / memory per pod (requires metrics-server; on the canonical k8s snap it's an addon) |
+
+These are **read paths only**.  None of them mutate the cluster.  The
+agent surfaces them to the user via the Escalation script shape below
+— hand the user a copy-paste block and resume work once they paste
+back the output.
+
+If the user has approved a destructive policy and `kubectl` lands as
+a typed agent tool in a future phase (see `design/K8S_TOOL.md`), the
+agent can run these itself; today the verbs above are
+user-driven only.
+
 ## Things you must NOT do
 
 - **Never install Docker** (`apt install docker.io`, `snap install
@@ -257,6 +301,13 @@ Then rebuild via concierge as in step 4.
   it to HTTPS).
 - **Don't hand-edit `/etc/kubernetes/...` config** to recover a
   broken cluster.  On a dev box, rebuild beats surgery every time.
+- **Don't run `kubectl delete`, `kubectl apply`, `kubectl exec`, or
+  `kubectl patch`** as part of debugging a charm.  The pod-layer
+  read paths above (`describe`, `logs --previous`, `get events`,
+  `get pods`, `describe pvc`, `top`) are safe to suggest; writes
+  duplicate Juju's contract and risk lying to the controller about
+  what the cluster looks like.  Escalate write-shaped recoveries
+  to the user the same way `sudo` steps escalate.
 
 ## Escalation script
 

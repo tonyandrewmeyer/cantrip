@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 86 (Kubernetes / kubectl Tool or Skill — Research) closed.**
+  Verdict in [`design/K8S_TOOL.md`](design/K8S_TOOL.md): **skill
+  expansion now, defer the typed tool**.  The
+  ``fix-broken-juju-k8s`` skill gains a *Looking underneath Juju*
+  section with the six read-only verbs that answer the symptoms
+  Juju doesn't surface (CrashLoopBackOff reasons, ImagePullBackOff
+  events, ``--previous`` container logs, PVC binding state, pod
+  resource pressure) and a write-policy reminder that
+  ``kubectl delete / apply / exec / patch`` are user-driven only.
+  No new ``Tool`` subclass, no ``run_command`` allowlist change,
+  no ``preflight.py`` kubeconfig probe.  Phase 86b opens against
+  four named triggers when typed-tool autonomy is wanted.
 - **Claude prompt-cache prefix now covers tools and the conversation history, not just the system prompt.**  Previously only the system prompt carried a `cache_control: ephemeral` marker, which meant Anthropic's cached prefix stopped before the tools block — Cantrip's large tool catalogue was sent fresh on every call, eating TPM budget and tripping rate limits.  Two further breakpoints land on (1) the last entry of the converted tools array and (2) the last content block of the trailing message, taking the cached prefix from `system` → `system + tools + history`.  Single-message calls still pay a small cache-write tax on the first turn, but multi-turn agent loops (the dominant cost path) now read the prior turn's prefix at ~10% of base input rate.  No telemetry change — `cache_read_input_tokens` and `cache_creation_input_tokens` already flow through `_extract_usage`.
 - **`charmcraft_init` now passes `--force` when the target directory has unrelated files but no `charmcraft.yaml`.**  Cantrip's own state (the workspace DB, `.source/`, scratch notes) often lives alongside where the agent wants to scaffold a charm, and `charmcraft init` aborts on a non-empty directory.  Previously the agent would work around this by creating a fresh subdirectory; now it can scaffold in place.  A pre-flight check still refuses if `charmcraft.yaml` already exists, so a real charm can never be silently overwritten.
 - **Phase 7 (Polish and Ecosystem) closed; remaining work split into
