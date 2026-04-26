@@ -42,6 +42,7 @@ remembering.
 | 48.5 (Multimodal) | `workload_screenshot` headless-browser tool | (a) A concrete case shows the agent needs to *see* a workload UI to debug it, **or** (b) Playwright lands as a transitive dep elsewhere | Not fired | Phase 17.3 `workload_endpoint_test` already exercises HTTP endpoints functionally without screenshots |
 | 49.3 (Sandbox) | Seccomp-bpf allowlists for tools with constrained syscall needs | A tool presents a concrete syscall-level attack surface, **or** a `libseccomp` binding becomes a transitive dep | Not fired | `bwrap` namespace layer already covers the exit-clause requirements; seccomp-without-libseccomp is error-prone |
 | 55.4 (Governance) | Intent classification — regex threat scoring against prompt content | A real case emerges where a prompt-content regex would have caught something the tool-surface gate missed | Not fired | In the charm-building context the signal comes from the tool surface (`juju destroy-*`, `rm -rf`), not the prompt content |
+| Claude prompt caching | 1-hour cache TTL via the `extended-cache-ttl-2025-04-11` beta header (`cache_control: {"type": "ephemeral", "ttl": "1h"}`) | Long-running paths (sprint deploy, autonomous overnight runs) report cache misses on multi-minute pauses (e.g. `charmcraft pack`, `juju wait`) — visible as `cache_read_input_tokens` collapsing partway through a run | Not fired | Default 5 min TTL covers interactive use; 1 h costs 2× on write but ~10% of base on read so it pays back fast for runs that pause mid-loop |
 
 ## Resolved deferrals
 
