@@ -358,7 +358,10 @@ class CharmcraftInitTool(Tool):
         return (
             "Initialise a new charm using charmcraft init. "
             "This creates the basic charm structure with src/charm.py, "
-            "charmcraft.yaml, and test scaffolding."
+            "charmcraft.yaml, and test scaffolding. "
+            "Safe to call in a directory that already contains unrelated files "
+            "(e.g. Cantrip's own state) — --force is added automatically. "
+            "Refuses to overwrite a directory that already contains charmcraft.yaml."
         )
 
     @property
@@ -413,12 +416,34 @@ class CharmcraftInitTool(Tool):
                 target_path = target_path / name
             target_path.mkdir(parents=True, exist_ok=True)
 
+            # Refuse to overwrite an existing charm — charmcraft.yaml is the
+            # canonical marker.  Without this guard ``--force`` would clobber
+            # the user's hand-edited charm files.
+            if (target_path / "charmcraft.yaml").exists():
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=(
+                        f"charmcraft.yaml already exists at {target_path}; "
+                        "refusing to re-initialise an existing charm"
+                    ),
+                )
+
+            # ``charmcraft init`` aborts when the target directory contains
+            # unrelated files (Cantrip's own DB, .source/, scratch notes,
+            # etc.).  Since we have just verified there is no charmcraft.yaml,
+            # passing ``--force`` is safe and avoids forcing the agent into a
+            # nested subdirectory.
+            cmd = ["charmcraft", "init", f"--profile={profile}", f"--name={name}"]
+            if any(target_path.iterdir()):
+                cmd.append("--force")
+
             env = os.environ.copy()
             if profile in _CHARMCRAFT_EXPERIMENTAL_PROFILES:
                 env["CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS"] = "true"
 
             result = subprocess.run(
-                ["charmcraft", "init", f"--profile={profile}", f"--name={name}"],
+                cmd,
                 cwd=target_path,
                 capture_output=True,
                 text=True,
