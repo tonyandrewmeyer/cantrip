@@ -409,3 +409,77 @@ class TestExpansionResultShape:
         changed = ExpansionResult(raw="x", expanded="<x>", blocks=())
         assert unchanged.changed is False
         assert changed.changed is True
+
+    def test_summary_short_blocks(self) -> None:
+        result = ExpansionResult(
+            raw="@diff",
+            expanded="<diff>",
+            blocks=(ContextBlock(raw="@diff", rendered="x" * 200),),
+        )
+        assert "@diff (200 chars)" in result.summary()
+
+    def test_summary_kilochar_blocks(self) -> None:
+        result = ExpansionResult(
+            raw="@diff",
+            expanded="<diff>",
+            blocks=(ContextBlock(raw="@diff", rendered="x" * 4500),),
+        )
+        # Anything ≥1000 chars renders as ``Nk chars`` for compactness.
+        assert "k chars" in result.summary()
+
+    def test_summary_marks_errors(self) -> None:
+        result = ExpansionResult(
+            raw="@boom",
+            expanded="[@boom: error: bang]",
+            blocks=(ContextBlock(raw="@boom", rendered="[@boom: error: bang]", error="bang"),),
+        )
+        assert "@boom [error]" in result.summary()
+
+
+class TestMentionAutocompleteFilter:
+    """Helpers that drive the TUI's mention suggestion popup."""
+
+    def test_trailing_prefix_at_end_of_input(self) -> None:
+        from cantrip.tui.widgets.chat import _trailing_mention_prefix
+
+        assert _trailing_mention_prefix("look at @fi", 11) == "@fi"
+
+    def test_trailing_prefix_after_space(self) -> None:
+        from cantrip.tui.widgets.chat import _trailing_mention_prefix
+
+        # Cursor mid-input: prefix is the last @-segment up to cursor.
+        assert _trailing_mention_prefix("hello @diff and bye", 11) == "@diff"
+
+    def test_no_prefix_when_at_after_letter(self) -> None:
+        from cantrip.tui.widgets.chat import _trailing_mention_prefix
+
+        # Email-style: the @ is preceded by a letter, so it's not a mention.
+        assert _trailing_mention_prefix("user@host", 9) is None
+
+    def test_no_prefix_after_whitespace_breaks_segment(self) -> None:
+        from cantrip.tui.widgets.chat import _trailing_mention_prefix
+
+        # Once whitespace appears between @ and cursor the mention is
+        # already complete — no popup.
+        assert _trailing_mention_prefix("@diff and more", 14) is None
+
+    def test_double_at_skipped(self) -> None:
+        from cantrip.tui.widgets.chat import _trailing_mention_prefix
+
+        # ``@@`` reserved for thread refs — no completion.
+        assert _trailing_mention_prefix("see @@thread", 12) is None
+
+    def test_filter_returns_matches_and_prefix(self) -> None:
+        from cantrip.tui.widgets.chat import _filter_mentions
+
+        catalogue = (
+            ProviderInfo(name="diff", summary="", arg_style=ArgStyle.NONE),
+            ProviderInfo(name="docs", summary="", arg_style=ArgStyle.REST_OF_LINE),
+            ProviderInfo(name="file", summary="", arg_style=ArgStyle.TOKEN),
+        )
+        matches, prefix = _filter_mentions(catalogue, "look @d", 7)
+        assert prefix == "@d"
+        names = [m.name for m in matches]
+        assert "diff" in names
+        assert "docs" in names
+        assert "file" not in names

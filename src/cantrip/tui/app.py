@@ -202,6 +202,9 @@ class CantripApp(App):
                     self._build_command_catalogue(),
                     id="slash-suggestions",
                 ),
+                chat_widget.MentionSuggestions(
+                    id="mention-suggestions",
+                ),
                 chat_widget.ChatInput(placeholder="Type your message...", id="chat-input"),
                 id="left-panel",
             ),
@@ -235,6 +238,9 @@ class CantripApp(App):
         chat_input.bind_suggestions(
             self.query_one("#slash-suggestions", chat_widget.SlashCommandSuggestions)
         )
+        chat_input.bind_mentions(
+            self.query_one("#mention-suggestions", chat_widget.MentionSuggestions)
+        )
         # The right panel is visible by default (charm file tree is useful
         # from the start).  Task checklist and Juju status appear as needed.
         self._init_agent()
@@ -248,6 +254,11 @@ class CantripApp(App):
         if self._agent is not None:
             self._agent.event_bus.bind_loop(asyncio.get_running_loop())
             notifications.install(self._agent.event_bus)
+            # Phase 72.2: seed the ``@``-mention popup catalogue from
+            # the agent's registry so Tab-complete sees both baseline
+            # and any third-party providers registered at startup.
+            mentions = self.query_one("#mention-suggestions", chat_widget.MentionSuggestions)
+            mentions.update_catalogue(self._agent.context_providers.catalogue())
         # Issue triage adds tasks to the work queue for any actionable
         # GitHub issue.  It must run *after* ``_resume_session`` has
         # finished loading the persisted queue — otherwise the
@@ -1469,7 +1480,7 @@ class CantripApp(App):
     # -- Chat -----------------------------------------------------------------
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Drive the slash-suggestion popup from chat input changes."""
+        """Drive the slash and ``@``-mention suggestion popups from chat input changes."""
         from textual.css.query import NoMatches
 
         if event.input.id != "chat-input":
@@ -1479,6 +1490,11 @@ class CantripApp(App):
         except NoMatches:
             return
         suggestions.update_from_value(event.value)
+        try:
+            mentions = self.query_one("#mention-suggestions", chat_widget.MentionSuggestions)
+        except NoMatches:
+            return
+        mentions.update_from_input(event.value, event.input.cursor_position)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle chat input submission."""

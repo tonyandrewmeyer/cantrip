@@ -17,6 +17,7 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Input, LoadingIndicator, Static
 
+from cantrip.agent.context_providers import ProviderInfo
 from cantrip.agent.slash_commands import CommandInfo
 
 # Duration below which a tool-block widget does not display the
@@ -327,6 +328,52 @@ def _filter_catalogue(catalogue: Sequence[CommandInfo], value: str) -> list[Comm
     return [cmd for cmd in catalogue if cmd.verb.lower().startswith(prefix)]
 
 
+def _trailing_mention_prefix(value: str, cursor_pos: int) -> str | None:
+    """Return the ``@<partial>`` segment being typed at *cursor_pos*.
+
+    Used to drive the :class:`MentionSuggestions` popup mid-message:
+    "look at @fi" with the cursor at the end yields ``"@fi"`` so the
+    popup can offer ``@file``.
+
+    Returns ``None`` when there is no trailing mention — including
+    the cases where ``@`` is preceded by a non-space character (an
+    email address), the segment contains whitespace (already
+    completed), or ``@@`` (Phase 67.1 thread-ref reservation).
+    """
+    if cursor_pos <= 0 or cursor_pos > len(value):
+        return None
+    seg = value[:cursor_pos]
+    at = seg.rfind("@")
+    if at == -1:
+        return None
+    if at > 0 and not seg[at - 1].isspace():
+        return None
+    rest = seg[at + 1 :]
+    if any(ch.isspace() for ch in rest):
+        return None
+    if "@" in rest:
+        # ``@@`` is reserved.
+        return None
+    return seg[at:]
+
+
+def _filter_mentions(
+    catalogue: Sequence[ProviderInfo], value: str, cursor_pos: int
+) -> tuple[list[ProviderInfo], str]:
+    """Return ``(matches, prefix)`` for the trailing-mention popup.
+
+    *prefix* is ``"@<partial>"`` so the input layer can replace exactly
+    that span when a completion is accepted.  ``matches`` is empty
+    when there is no trailing mention to complete.
+    """
+    prefix = _trailing_mention_prefix(value, cursor_pos)
+    if prefix is None:
+        return [], ""
+    needle = prefix[1:].lower()  # drop the leading '@'
+    matches = [info for info in catalogue if info.name.lower().startswith(needle)]
+    return matches, prefix
+
+
 class SlashCommandSuggestions(Widget):
     """Inline suggestion popup for slash commands.
 
@@ -473,29 +520,178 @@ class SlashCommandSuggestions(Widget):
                 row.update(f"{verb:<12} [dim]{summary}[/dim]")
 
 
+class MentionSuggestions(Widget):
+    """Inline suggestion popup for ``@``-mention context providers.
+
+    Mirrors :class:`SlashCommandSuggestions` but for the ``@`` prefix.
+    Triggers when the input has a trailing ``@<partial>`` segment at
+    the cursor — e.g. typing "look at @fi" pops the ``@file`` match
+    so Tab can complete it without breaking the rest of the message.
+
+    The widget tracks the typed prefix (``self._prefix``) so the
+    input layer can replace exactly that span on acceptance instead
+    of overwriting the whole input.
+    """
+
+    DEFAULT_CSS = """
+    MentionSuggestions {
+        display: none;
+        height: auto;
+        max-height: 8;
+        background: $panel;
+        border-top: solid $primary;
+        border-bottom: solid $primary;
+        padding: 0;
+    }
+
+    MentionSuggestions.-visible {
+        display: block;
+    }
+
+    MentionSuggestions .suggestion-row {
+        height: 1;
+        padding: 0 1;
+    }
+
+    MentionSuggestions .suggestion-row.-active {
+        background: $accent;
+        color: $text;
+    }
+
+    MentionSuggestions .suggestion-row.-spare {
+        display: none;
+    }
+    """
+
+    def __init__(
+        self,
+        catalogue: Sequence[ProviderInfo] = (),
+        *,
+        id: str | None = None,
+    ) -> None:
+        """Initialise with the given catalogue (may be empty until agent boot)."""
+        super().__init__(id=id)
+        self._catalogue: list[ProviderInfo] = list(catalogue)
+        self._matches: list[ProviderInfo] = []
+        self._active_index: int = 0
+        self._prefix: str = ""
+
+    def compose(self) -> ComposeResult:
+        """Mount one row per catalogue entry, sized for the maximum the agent might supply."""
+        # Pre-allocate generously: the catalogue grows dynamically when
+        # third-party providers register, so size the pool above the
+        # baseline count to avoid re-mounting children later.
+        slots = max(len(self._catalogue), 12)
+        for _ in range(slots):
+            yield Static("", classes="suggestion-row -spare")
+
+    def update_catalogue(self, catalogue: Sequence[ProviderInfo]) -> None:
+        """Replace the catalogue (called once after agent boot, or on hook reload)."""
+        self._catalogue = list(catalogue)
+
+    def update_from_input(self, value: str, cursor_pos: int) -> None:
+        """Refilter against *value* / *cursor_pos*; hide on zero matches."""
+        matches, prefix = _filter_mentions(self._catalogue, value, cursor_pos)
+        self._matches = matches
+        self._prefix = prefix
+        if not matches:
+            self._active_index = 0
+            self.remove_class("-visible")
+            self._render_rows()
+            return
+        if self._active_index >= len(matches):
+            self._active_index = 0
+        self.add_class("-visible")
+        self._render_rows()
+
+    @property
+    def is_visible(self) -> bool:
+        """Whether the popup is currently showing."""
+        return self.has_class("-visible")
+
+    @property
+    def matches(self) -> tuple[ProviderInfo, ...]:
+        """Current match list (read-only copy)."""
+        return tuple(self._matches)
+
+    @property
+    def prefix(self) -> str:
+        """The typed ``@<partial>`` segment the popup is completing."""
+        return self._prefix
+
+    def active(self) -> ProviderInfo | None:
+        """Return the currently highlighted suggestion, or ``None``."""
+        if not self.is_visible or not self._matches:
+            return None
+        return self._matches[self._active_index]
+
+    def move(self, delta: int) -> None:
+        """Move the active row by *delta*, wrapping at both ends."""
+        if not self.is_visible or not self._matches:
+            return
+        self._active_index = (self._active_index + delta) % len(self._matches)
+        self._render_rows()
+
+    def hide(self) -> None:
+        """Force the popup closed (e.g. on Escape)."""
+        self._matches = []
+        self._active_index = 0
+        self._prefix = ""
+        self.remove_class("-visible")
+        self._render_rows()
+
+    def _render_rows(self) -> None:
+        """Push the current match list into the row pool."""
+        try:
+            rows = list(self.query(".suggestion-row"))
+        except NoMatches:
+            return
+        for idx, row in enumerate(rows):
+            if idx >= len(self._matches):
+                row.set_class(True, "-spare")
+                row.set_class(False, "-active")
+                if isinstance(row, Static):
+                    row.update("")
+                continue
+            row.set_class(False, "-spare")
+            row.set_class(idx == self._active_index, "-active")
+            info = self._matches[idx]
+            if isinstance(row, Static):
+                display = rich_escape(info.display)
+                summary = rich_escape(info.summary)
+                row.update(f"{display:<24} [dim]{summary}[/dim]")
+
+
 class ChatInput(Input):
-    """Chat input with slash-command autocomplete.
+    """Chat input with slash-command and ``@``-mention autocomplete.
 
     Previously ``/`` on an empty input opened search, but that shortcut
     swallowed the leading character of slash commands (``/help``,
     ``/memory``, ``/feelings``, …) and made them unreachable from the TUI.
     Search is now bound only to Ctrl+F; ``/`` is a normal character.
 
-    When a :class:`SlashCommandSuggestions` sibling is attached via
-    :meth:`bind_suggestions`, the input routes Up/Down to the popup,
-    Tab to accept the active/unique suggestion, and Escape to dismiss
-    — falling through to default handling (focus move, etc.) when the
-    popup has nothing relevant to say.
+    Two suggestion popups can be bound: a :class:`SlashCommandSuggestions`
+    for ``/`` verbs (active when the input is a single ``/<word>`` token)
+    and a :class:`MentionSuggestions` for ``@`` context providers
+    (active when the cursor sits at a trailing ``@<partial>`` segment).
+    Up/Down/Tab/Escape route to whichever popup is currently visible —
+    they are mutually exclusive in practice because the trigger
+    conditions don't overlap.
     """
 
     def __init__(self, *args, **kwargs) -> None:
-        """Initialise with no bound suggestions widget."""
+        """Initialise with no bound suggestions widgets."""
         super().__init__(*args, **kwargs)
         self._suggestions: SlashCommandSuggestions | None = None
+        self._mentions: MentionSuggestions | None = None
 
     def bind_suggestions(self, widget: SlashCommandSuggestions) -> None:
-        """Attach a suggestions popup that this input will drive."""
+        """Attach the slash-command popup."""
         self._suggestions = widget
+
+    def bind_mentions(self, widget: MentionSuggestions) -> None:
+        """Attach the ``@``-mention popup."""
+        self._mentions = widget
 
     def _accept_suggestion(self, cmd: CommandInfo) -> None:
         """Replace the input value with *cmd*'s verb plus a space."""
@@ -504,32 +700,67 @@ class ChatInput(Input):
         if self._suggestions is not None:
             self._suggestions.hide()
 
-    def on_key(self, event: events.Key) -> None:
-        """Route arrow/Tab/Escape to the suggestions popup when relevant."""
-        suggestions = self._suggestions
-        if suggestions is None:
-            return
+    def _accept_mention(self, info: ProviderInfo) -> None:
+        """Replace the trailing ``@<partial>`` with ``@<name> ``.
 
+        Surrounding text is preserved so the user can complete a
+        mention mid-message without losing the prose they already typed.
+        """
+        if self._mentions is None:
+            return
+        prefix = self._mentions.prefix
+        if not prefix:
+            self._mentions.hide()
+            return
+        cursor = self.cursor_position
+        head = self.value[: cursor - len(prefix)]
+        tail = self.value[cursor:]
+        replacement = f"@{info.name} "
+        self.value = head + replacement + tail
+        self.cursor_position = len(head) + len(replacement)
+        self._mentions.hide()
+
+    def _active_panel(
+        self,
+    ) -> SlashCommandSuggestions | MentionSuggestions | None:
+        """Return the currently visible suggestion panel, if any."""
+        if self._suggestions is not None and self._suggestions.is_visible:
+            return self._suggestions
+        if self._mentions is not None and self._mentions.is_visible:
+            return self._mentions
+        return None
+
+    def on_key(self, event: events.Key) -> None:
+        """Route arrow/Tab/Escape to the visible suggestion popup."""
+        panel = self._active_panel()
         key = event.key
 
-        if key == "escape" and suggestions.is_visible:
-            suggestions.hide()
+        if key == "escape" and panel is not None:
+            panel.hide()
             event.stop()
             event.prevent_default()
             return
 
-        if key in {"up", "down"} and suggestions.is_visible:
-            suggestions.move(-1 if key == "up" else 1)
+        if key in {"up", "down"} and panel is not None:
+            panel.move(-1 if key == "up" else 1)
             event.stop()
             event.prevent_default()
             return
 
         if key == "tab":
-            active = suggestions.active() or suggestions.sole_match(self.value)
-            if active is not None:
-                self._accept_suggestion(active)
-                event.stop()
-                event.prevent_default()
+            if isinstance(panel, MentionSuggestions):
+                info = panel.active()
+                if info is not None:
+                    self._accept_mention(info)
+                    event.stop()
+                    event.prevent_default()
+                    return
+            if self._suggestions is not None:
+                cmd = self._suggestions.active() or self._suggestions.sole_match(self.value)
+                if cmd is not None:
+                    self._accept_suggestion(cmd)
+                    event.stop()
+                    event.prevent_default()
 
 
 class SearchBar(Widget):
