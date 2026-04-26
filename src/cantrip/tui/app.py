@@ -687,10 +687,18 @@ class CantripApp(App):
         Subscribers run on the UI thread because the bus is bound to the
         app's loop in :meth:`on_mount`, so widget access is safe.
         """
+        from textual.css.query import NoMatches
+
         if not self._agent:
             return
 
-        checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
+        # Late updates can arrive after the screen has been torn down
+        # (e.g. shutdown after a 503 cancels in-flight subagents); the
+        # checklist widget no longer exists, so swallow the lookup.
+        try:
+            checklist = self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget)
+        except NoMatches:
+            return
         checklist.notify_changed(self._agent.work_queue.all_tasks())
         self._refresh_subagent_status_bar()
 
@@ -1433,9 +1441,14 @@ class CantripApp(App):
         research/build activity is visible without having to expand the
         task pane.  Cleared when no subagent is running.
         """
+        from textual.css.query import NoMatches
+
         if not self._agent:
             return
-        status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
+        try:
+            status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
+        except NoMatches:
+            return
         for task in self._agent.work_queue.all_tasks():
             if task.status == TaskStatus.ACTIVE and task.subagent_phase:
                 status_bar.subagent_label = f"⟳ {task.title} · {task.subagent_phase}"
