@@ -4,6 +4,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Phase 72.2 (``@``-mention context providers).**  Typing
+  ``@<name> [args]`` in the chat input now expands inline before the
+  message reaches the LLM.  Seven baseline providers ship: ``@file
+  <path>``, ``@diff``, ``@tree [path]``, ``@problems`` (closes the
+  last 72.4 bullet), ``@url <url>``, ``@charm <name>``, and ``@juju
+  <subcmd>`` (verbs hard-allowlisted to read-only — ``status``,
+  ``show-unit``, ``config``, ``list-secrets``, ``show-relation``,
+  ``show-application``, ``show-model``, ``list-models``).
+  Mid-message Tab autocomplete via the new ``MentionSuggestions``
+  TUI widget; multi-line blocks get a ``[@name]…[/@name]`` fence
+  wrapper so the transcript records intent alongside content.
+  Third-party providers register via
+  ``ProviderRegistry.register`` from Phase 45 MCP servers or
+  Phase 46 hooks.  Protocol and conventions in
+  ``design/CONTEXT_PROVIDERS.md``.
+
 ### Changed
 - **Phase 51 (Team Collaboration research) closed.**  Investigated
   whether Cantrip should grow team features beyond its single-operator

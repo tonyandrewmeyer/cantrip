@@ -2868,46 +2868,55 @@ deferred**:
   tree, embed with stub provider, query and assert
   top-k ordering.
 
-### 72.2 High — ``@``-mention context-provider registry
+### 72.2 High — ``@``-mention context-provider registry ✅
 
-- [ ] Central registry in
-  ``src/cantrip/agent/context_providers.py`` with a
-  ``ContextProvider`` protocol: ``name``, ``description``,
-  ``expand(args: str) -> list[ContextBlock]``.  Tab-complete
-  integrates with Phase 61 autocomplete.
-- [ ] Baseline providers:
-  - ``@file <path>`` — inline file contents (existing
-    ``fs_read`` under new surface)
-  - ``@diff`` — ``git diff`` since last commit
-  - ``@tree [path]`` — directory tree (respects
-    ``.gitignore``)
-  - ``@terminal`` — last N lines of the Phase 69.3 shell-
-    mode output buffer
-  - ``@url <url>`` — ``webfetch`` result, markdownified
-  - ``@problems`` — see 72.4
-  - ``@docs <site> <query>`` — see 72.1
-  - ``@charm <name>`` — fetch charm metadata + source index
-    via Phase 70.1 Librarian
-  - ``@juju <show-unit <app/0> | status | config <app>>`` —
-    inline juju read-only output
-- [ ] Expansion happens in the TUI/Web input layer before
-  the message reaches the agent, so the agent sees a fully-
-  expanded prompt (one fewer tool call needed) and the
-  transcript records both the typed form and the expanded
-  form.
-- [ ] Bounded: each provider has a token budget
-  (``settings.context_providers.<name>.max_tokens``,
-  reasonable defaults per provider).  Over-budget content
-  is truncated with a summary line ("file truncated; use
-  ``@file <path> --full`` to override").
-- [ ] Third-party providers registered via Phase 46 hooks
-  or MCP (Phase 45) — don't lock this to built-ins.
-  Document the protocol in
-  ``design/CONTEXT_PROVIDERS.md`` (new).
-- [ ] ``tests/unit/test_context_providers.py`` — parsing
-  ``@foo bar baz`` correctly, expansion + token-budget
-  enforcement, unknown-provider graceful handling, transcript
-  records both forms.
+- [x] Central registry in
+  :mod:`cantrip.agent.context_providers` with a
+  :class:`ContextProvider` protocol (``info: ProviderInfo``,
+  async ``expand(args, ctx) -> ContextBlock``).
+  :class:`MentionSuggestions` widget integrates with the
+  Phase 61 autocomplete pattern; Tab completes a trailing
+  ``@<partial>`` segment mid-message without disturbing the
+  surrounding prose.
+- [x] Baseline providers shipped in
+  :mod:`cantrip.agent.context_providers_builtin`:
+  - ``@file <path>`` — inline file contents, traversal-safe
+  - ``@diff`` — ``git diff HEAD``
+  - ``@tree [path]`` — ``git ls-files`` listing (respects
+    ``.gitignore``); falls back to plain walk
+  - ``@url <url>`` — ``WebFetchTool`` wrapper (private-IP
+    block + llms.txt probing inherited)
+  - ``@problems`` — reuses Phase 72.4
+    :class:`~cantrip.agent.lint_context.DiagnosticsCache`
+  - ``@charm <name>`` — Charmhub metadata via
+    ``CharmhubInfoTool``
+  - ``@juju <subcmd>`` — read-only ``juju`` subprocess with a
+    hard verb allowlist (``status``, ``show-unit``, ``config``,
+    ``list-secrets``, ``show-relation``, ``show-application``,
+    ``show-model``, ``list-models``)
+  - **Deferred:** ``@terminal`` (waits on Phase 69.3 shell-mode
+    output buffer); ``@docs <site> <query>`` (Phase 72.1).
+- [x] Expansion happens in the TUI ``on_input_submitted`` and
+  Web WebSocket handlers via :func:`expand_mentions` *after*
+  slash-command dispatch, so the LLM sees a substituted prompt
+  and the user sees an ``Expanded mentions: …`` system note.
+  Multi-line blocks get a ``[@name]…[/@name]`` fence wrapper so
+  the typed form stays visible alongside the substituted
+  content in the transcript.
+- [x] Bounded per-provider char budgets via :func:`truncate`
+  with a ``[truncated N chars]`` footer.  Defaults baked in
+  ``context_providers_builtin``; settings-file override is a
+  future polish.
+- [x] Third-party providers register via
+  :meth:`ProviderRegistry.register` from Phase 46 hooks or
+  Phase 45 MCP server bootstraps — same surface the baseline
+  uses.  Protocol documented in
+  ``design/CONTEXT_PROVIDERS.md``.
+- [x] ``tests/unit/test_context_providers.py`` — 43 cases
+  covering the parser (email, ``@@``, fenced/inline code, multi-
+  mention), provider error path, autocomplete prefix detection,
+  per-provider validation surfaces (file traversal, juju verb
+  allowlist, missing args).
 
 ### 72.3 Medium — Model roles: embed and rerank
 
@@ -2937,7 +2946,8 @@ deferred**:
 
 ### 72.4 Medium — Diagnostics-as-pre-turn-context (``@problems``)
 
-- [~] ``@problems`` context provider (registered in 72.2)
+- [x] ``@problems`` context provider (registered in 72.2 via
+  :class:`cantrip.agent.context_providers_builtin.ProblemsProvider`)
   runs, on expansion:
   - ``ruff check --output-format=json .`` (or just the
     charm's ``src/`` and ``tests/`` to keep it cheap)
@@ -2946,10 +2956,10 @@ deferred**:
   and emits a compact block grouping issues by severity and
   file, capped at 1500 tokens (longer reports get
   summarised with a "N more issues suppressed; run
-  ``cantrip lint`` for the full list").  **Aggregator,
-  truncation, and "N more suppressed" footer landed in
-  ``cantrip.agent.lint_context``; the ``@problems`` mention
-  surface waits on the Phase 72.2 ``@``-provider registry.**
+  ``cantrip lint`` for the full list").  Reuses the shared
+  :class:`~cantrip.agent.lint_context.DiagnosticsCache` so a
+  ``/diagnostics`` immediately followed by ``@problems`` does
+  not pay for the linters twice.
 - [x] Caching: run results cached for 30 seconds in
   :class:`cantrip.agent.lint_context.DiagnosticsCache`
   (TTL=30 s, keyed on resolved charm path, ``--refresh`` /

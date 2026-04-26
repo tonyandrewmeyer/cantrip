@@ -50,6 +50,7 @@
       <li><a href="#skill">cantrip skill</a></li>
       <li><a href="#checkpoints">cantrip checkpoints</a></li>
       <li><a href="#slash-commands">Slash commands</a></li>
+      <li><a href="#mentions">@-mention context providers</a></li>
       <li><a href="#auto-commit">Auto-commit per turn</a></li>
       <li><a href="#architect-mode">Architect / editor mode</a></li>
       <li><a href="#env-vars">Environment variables</a></li>
@@ -949,6 +950,66 @@ already knowing what's broken.  Tools that aren't installed are
 listed as <code>[skipped]</code> notes rather than silently
 masking issues &mdash; a missing <code>ty</code> doesn't look the same
 as &quot;all clear.&quot;</p>
+<h2 id="mentions">@-mention context providers</h2>
+<p>Phase 72.2.  Type <code>@&lt;name&gt; [args]</code> in the chat
+input and the mention is replaced with structured context
+<em>before</em> the message reaches the LLM &mdash; one fewer
+tool round-trip than asking the agent to read the same content,
+and the substituted block is recorded in the transcript with a
+<code>[@name]&hellip;[/@name]</code> fence so intent stays visible
+alongside content.  Slash commands run first, so a literal
+<code>@x</code> inside a slash argument is not substituted.</p>
+<p>Tab-complete in the TUI: typing <code>look at @fi</code> with the
+cursor at the end pops a suggestion list; <code>Tab</code>
+completes to <code>look at @file </code> without disturbing the
+surrounding prose.  Up/Down move the highlight, Escape dismisses.</p>
+<dl>
+  <dt><code>@file &lt;path&gt;</code></dt>
+  <dd>
+    Inline the contents of a repo-relative file.  Absolute paths
+    and <code>..</code> traversal are rejected.
+  </dd>
+  <dt><code>@diff</code></dt>
+  <dd>Output of <code>git diff HEAD</code> in the active charm.</dd>
+  <dt><code>@tree [path]</code></dt>
+  <dd>
+    Repo-tracked file listing via <code>git ls-files</code>
+    (<code>.gitignore</code> respected).  Falls back to a plain
+    walk when the directory is not a git checkout.
+  </dd>
+  <dt><code>@problems</code></dt>
+  <dd>
+    Current <code>ruff</code> / <code>ty</code> /
+    <code>charmlint</code> diagnostics.  Shares a 30-second cache
+    with <code>/diagnostics</code> so a quick check followed by a
+    mention does not re-run the linters.
+  </dd>
+  <dt><code>@url &lt;url&gt;</code></dt>
+  <dd>
+    Fetch the URL via the same web-fetch path the agent uses
+    (private-IP block, <code>llms.txt</code> probing,
+    HTML-to-text extraction).
+  </dd>
+  <dt><code>@charm &lt;name&gt;</code></dt>
+  <dd>Charmhub metadata (relations, config, revision) for the named charm.</dd>
+  <dt><code>@juju &lt;subcmd&gt;</code></dt>
+  <dd>
+    Run a read-only <code>juju</code> subcommand.  The first token is
+    hard-allowlisted: <code>status</code>, <code>show-unit</code>,
+    <code>show-application</code>, <code>show-model</code>,
+    <code>config</code>, <code>list-secrets</code>,
+    <code>show-relation</code>, <code>list-models</code>.
+    Anything else is rejected so a typo cannot reach a destructive verb.
+  </dd>
+</dl>
+<p>Each provider has a per-call character cap; over-budget output
+is truncated with a <code>[truncated N chars]</code> footer rather
+than silently elided.  Multi-line blocks get a
+<code>[@name]&hellip;[/@name]</code> fence so the typed mention
+stays visible in the transcript.</p>
+<p>Third-party providers register via Phase 45 MCP servers or
+Phase 46 hooks &mdash; the protocol and conventions are in
+<code>design/CONTEXT_PROVIDERS.md</code>.</p>
 <h2 id="env-vars">Environment variables</h2>
 <table>
 <thead>
