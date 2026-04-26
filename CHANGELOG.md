@@ -5,6 +5,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 87.4 (Sloth skill subsection) closed.**  The
+  ``observability`` skill gains a "Sloth — SLOs and Burn-Rate
+  Alerts" section between the Alertmanager guidance and the
+  debugging workflow.  Covers the alert-flow diagram (charm →
+  Sloth → Prometheus rules → Alertmanager along the same path
+  Step 2 already wires), a default-SLO table per workload type
+  (12-factor: HTTP availability + p95 latency; infrastructure:
+  hook-success-rate + p95 hook duration; custom: tunable
+  workload-availability), the ``charmcraft.yaml`` relation
+  block, a worked ``slos.yaml`` for a 12-factor charm with two
+  SLOs keyed off the ``juju_application`` topology label, the
+  relation-handler stub using
+  ``from charmlibs.interfaces import sloth`` (PyPI per
+  ``UPSTREAM_AUDIT.md``), and production tips covering
+  objective-picking, the page-vs-ticket burn-rate split, and
+  the retire-the-hand-written-rule pattern when an SLO takes
+  over a previous threshold alert.  Phase 17 acceptance test
+  deferred against a real "production-grade reliability
+  monitoring" session trigger; entry added to
+  ``design/DEFERRED.md`` mirroring 87.1's deferral shape.
 - **Phase 87.1 (Alertmanager guidance) closed.**  The
   ``observability`` skill gains an alert-rules subsection in
   Step 2 (publishing rules via
