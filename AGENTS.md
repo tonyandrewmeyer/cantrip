@@ -87,6 +87,7 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 - `design/K8S_TOOL.md` — Phase 86 findings: should the agent grow first-class `kubectl` diagnostics? Verdict (skill expansion now, typed tool deferred), verb shortlist, sandbox/kubeconfig finding, revisit triggers
 - `design/PAUSE_AND_EDIT.md` — Phase 83 findings: should Cantrip soften its hard-cancel into a pausable, editable mid-turn affordance? Verdict (defer; queue-next-instruction is the smaller follow-up shape if a trigger fires), peer-interrupt survey, message-flow shapes, three revisit triggers for Phase 83b
 - `design/PROFILING.md` — Phase 87.3 findings: Sloth fits as a skill subsection (lands as new sub-phase 87.4), Parca/Pyroscope tooling defers to standalone Phase 89 against four named triggers; mirrors `TempoWaterfallTool` if it ships
+- `design/IDENTITY_PLATFORM.md` — Phase 88.1 findings: Canonical Identity Platform surface, five relation interfaces (`oauth`, `oauth-cli`, `oidc-info`, `hydra-token-introspect`, `kratos-external-idp`), three deployment topologies, and default pick (bundle-based hybrid via `canonical-identity-platform`); unblocks Phase 88.2 skill work
 - `ROADMAP.md` — Implementation phases (active/open work only)
 - `ROADMAP_ARCHIVE.md` — Completed phases, full detail, historical record
 - `CHANGELOG.md` — Notable changes (keep updated)
