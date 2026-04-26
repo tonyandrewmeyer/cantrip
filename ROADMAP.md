@@ -4220,20 +4220,30 @@ identity-platform-login-ui, and the various proxy charms that knit
 them together.  This phase decides what that first-class support
 should look like and ships the minimum viable integration.
 
-### 88.1 Research — Identity Platform surface and Cantrip's role
+### 88.1 Research — Identity Platform surface and Cantrip's role ✓
 
-- [ ] Survey the Canonical Identity Platform charms on Charmhub
-  and the relation interfaces they expose: ``oauth``,
-  ``oauth-cli``, ``oidc-info``, ``kratos-external-idp``,
-  ``hydra-token-introspect``, etc.  Document each interface's
-  shape (provider/requirer roles, fields) so the agent can
-  generate correct ``charm-relation`` blocks.
-- [ ] Identify the standard deployment topologies: SaaS-style
-  with a public Hydra, internal-only with mTLS, hybrid via
-  identity-platform-login-ui.  Charm authors choose between
-  these; the agent needs to know the trade-offs.
-- [ ] Decide which topology Cantrip should default to when a
-  user says "add login" without further qualification.
+- [x] **Five relation interfaces matter** (see
+  [`design/IDENTITY_PLATFORM.md`](design/IDENTITY_PLATFORM.md) §2):
+  ``oauth`` is the headline (RP gets issuer URL + client ID +
+  secret per relation); ``oauth-cli`` for device-code CLI flows;
+  ``oidc-info`` for charms that introspect tokens themselves;
+  ``hydra-token-introspect`` for resource-server validation;
+  ``kratos-external-idp`` for federating Google / GitHub into
+  Kratos.  All five live in the per-charm libs ecosystem
+  (``charmcraft fetch-libs`` route) — not yet on PyPI per
+  ``UPSTREAM_AUDIT.md``; LIB001 mapping update is a 88.2
+  follow-up.
+- [x] **Three topologies catalogued** (§3): SaaS-style public
+  Hydra behind Traefik, internal-only with mTLS, and bundle-based
+  hybrid via ``canonical-identity-platform``.  Trade-off table
+  records security / setup-cost / fit notes per topology.
+- [x] **Default topology decided: bundle-based hybrid** (§4).
+  When a user says "add login" without qualification, Cantrip
+  generates an ``oauth`` relation, suggests
+  ``juju deploy canonical-identity-platform``, and integrates
+  against the bundle's Hydra app.  Mirrors the COS-bundle pattern
+  Cantrip already prescribes for observability.  SaaS-public-Hydra
+  and internal-mTLS exist as prompt-driven escape hatches.
 
 ### 88.2 Skill — ``identity-platform`` charm-generation skill
 

@@ -5,6 +5,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 88.1 (Canonical Identity Platform research) closed.**
+  Findings in
+  [`design/IDENTITY_PLATFORM.md`](design/IDENTITY_PLATFORM.md):
+  five relation interfaces matter (``oauth`` is the headline;
+  ``oauth-cli`` / ``oidc-info`` / ``hydra-token-introspect`` /
+  ``kratos-external-idp`` are situational); three topologies
+  catalogued (SaaS-public-Hydra, internal-mTLS, bundle-based
+  hybrid); **default topology when a user says "add login"
+  without qualification: bundle-based hybrid** via
+  ``canonical-identity-platform``, mirroring the COS-bundle
+  pattern Cantrip already prescribes for observability.
+  Unblocks Phase 88.2 (skill expansion) by deciding the topology
+  and the relation-interface shortlist.
 - **Phase 87.3 (Profiling and SLO research) closed.**  Verdict in
   [`design/PROFILING.md`](design/PROFILING.md): **split the
   work** — Sloth fits as a skill subsection alongside the
