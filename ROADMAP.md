@@ -4027,7 +4027,7 @@ file-by-file keeps the diff comprehensible as a single
 intentional cleanup.
 ---
 
-## Phase 86: Kubernetes / kubectl Tool or Skill — Research
+## Phase 86: Kubernetes / kubectl Tool or Skill — Research ✓
 
 **Goal:** Decide whether the agent should grow first-class
 support for ``kubectl`` (and adjacent ``k8s`` snap / ``microk8s``
@@ -4038,44 +4038,62 @@ charm is healthy from juju's perspective but broken at the
 Kubernetes layer (CrashLoopBackOff, OOM, pulled-image fails,
 PVC stuck pending, RBAC mis-binding, etc.).
 
-The ``fix-broken-juju-k8s`` skill already covers a few of these
-recovery paths but escalates to the user for anything requiring
-``sudo``.  A typed ``kubectl`` tool — or a richer skill — could
-let the agent answer the diagnostic questions itself for the
-read-only / non-privileged subset (``kubectl describe pod``,
-``kubectl logs``, ``kubectl get events``) while still escalating
-on writes.
+This was a **research phase** — no production code changed.
+Findings landed in
+[`design/K8S_TOOL.md`](design/K8S_TOOL.md); summary below.
 
-### Open questions
+### Decisions
 
-- **Tool vs. skill?**  A typed tool has structured output and
-  is always available; a skill is load-on-demand and can carry
-  detailed runbook prose.  Likely both: a small typed tool for
-  the read paths plus a skill that knows when to reach for it.
-- **Sandbox interaction?**  ``kubectl`` is *not* a snap, so
-  it does not trip the same dbus issue ``juju`` hit.  But
-  it usually reads kubeconfig from ``~/.kube/config`` which
-  may not be visible inside the bwrap mount namespace —
-  needs verification.
-- **Read-only by default?**  Mirror the ``juju`` policy:
-  reads via the typed tool, writes go through the
-  destructive-command gate or escalate to the user.
-- **Scope creep?**  ``kubectl`` is a big surface.  Pick the
-  half-dozen verbs that actually appear in
-  ``fix-broken-juju-k8s`` and similar incident playbooks
-  (``describe``, ``logs``, ``get events``, ``get pods -A``,
-  ``top``) rather than wrapping the lot.
+- [x] **Skill-expansion now, defer the typed tool.**  The
+  six-verb read-only shortlist
+  (``kubectl describe pod`` / ``logs --previous`` /
+  ``get events`` / ``get pods`` / ``describe pvc`` / ``top pod``)
+  lands as a new "Looking *underneath* Juju" section in
+  ``src/cantrip/skills/fix-broken-juju-k8s/SKILL.md`` so the
+  agent surfaces those verbs to the user via the existing
+  escalation pattern.  No new ``Tool`` subclass, no
+  ``run_command`` allowlist change, no kubeconfig probe in
+  ``preflight.py``.
+- [x] **Skill writes-policy line added.** ``kubectl delete /
+  apply / exec / patch`` join the "Things you must NOT do"
+  block — the agent suggests reads, never runs writes.
+- [x] **Sandbox / kubeconfig finding recorded** in
+  ``design/K8S_TOOL.md`` §3: ``kubectl`` does not have the
+  ``juju`` snap's dbus problem, but bwrap unsets ``HOME`` and
+  binds nothing under ``~/.kube/``, so any future typed tool
+  must bypass the sandbox the same way ``tools/juju.py`` does
+  (direct ``subprocess.run`` with explicit ``KUBECONFIG`` in
+  env) rather than route via ``run_command``.
+- [x] **Verb shortlist captured** at ``design/K8S_TOOL.md`` §2
+  with the symptoms each verb answers and the Juju-substitute
+  table that explains *why* each verb earns its place — five
+  of the six have no Juju equivalent.
 
-### Exit criteria
+### Revisit triggers
 
-- A short design note (``design/K8S_TOOL.md`` or in
-  ``design/TOOLS.md``) records the tool/skill split, the
-  verb shortlist, and the sandbox / kubeconfig finding.
-- Decision: ship the read-only subset, ship a fuller surface,
-  or stay with the existing skill-only escalation flow.
-- If shipping: ROADMAP entry with the verb list, write-path
-  policy, and tests covering "kubeconfig present" and
-  "kubeconfig missing" cases.
+A Phase 86b implementation phase opens when **any** of:
+
+1. The agent autonomously reaches the "Juju says active, pod
+   is in CrashLoopBackOff" gap and asks the user to run
+   ``kubectl describe pod`` rather than answering itself.
+2. ``fix-broken-juju-k8s`` loads frequently with the new §1.2
+   content, and the agent walks the user through manual
+   kubectl invocations across many turns.
+3. The Phase 17 acceptance harness or
+   ``tools/observability.py`` needs pod-level state Juju
+   doesn't expose (e.g. asserting "no PVC stuck Pending").
+4. A user asks for it directly.
+
+When any of these fire, the implementation phase opens with the
+verb shortlist as the deliverable scope, the sandbox-bypass
+pattern as the architecture, and ``_kubeconfig_present()`` as
+the pre-flight.
+
+**Exit criteria met:** ``design/K8S_TOOL.md`` is the written
+assessment.  The skill expansion in
+``src/cantrip/skills/fix-broken-juju-k8s/SKILL.md`` ships the
+read-path know-how to the agent today; the typed tool is
+deferred against four named triggers.
 
 ---
 
@@ -4305,7 +4323,7 @@ fabric, and a passing acceptance test on the demo bundle.
 | M81: Tool Caption Coverage | 81 ✓ | ``run_command``, the Juju tool family, and the acceptance/test reporters populate ``ToolResult.caption`` rather than relying on the Phase 75 fallback; coverage test forces the rich-caption-vs-fallback choice for new tools |
 | M82: Pre/Post Tool Captions | 82 | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
-| M86: K8s/kubectl Research | 86 | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
+| M86: K8s/kubectl Research | 86 ✓ | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
 | M87: COS Coverage | 87 | Alertmanager and Catalogue-k8s gain skill-level guidance and worked examples at parity with Prometheus/Grafana; Sloth/Parca/Pyroscope decision recorded in ``design/PROFILING.md`` |
 | M88: Identity Platform | 88 | A user asking for "Canonical-Identity-Platform-backed login" gets a charm with correctly-wired Hydra relations, secret fabric, and a passing Phase 17 acceptance test |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
