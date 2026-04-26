@@ -4147,16 +4147,30 @@ gap need separate treatment:
   skill content end-to-end; the missing piece is then the
   bundle test, not the skill body.
 
-### 87.2 Medium — Catalogue integration
+### 87.2 Medium — Catalogue integration ✓
 
-- [ ] Add a Catalogue-k8s subsection to the observability skill
-  covering the ``catalogue`` relation interface, the entry
-  schema (``name``, ``description``, ``url``, ``icon``), and
-  how a charm registers itself onto the COS landing page.
-- [ ] Worked example: a 12-factor charm that registers in
-  Catalogue alongside its Traefik ingress route.
-- [ ] Surface in the F8 integration graph if practical — a
-  catalogue badge next to apps that have registered.
+- [x] **Catalogue-k8s subsection added** to
+  ``src/cantrip/skills/observability/SKILL.md`` between Sloth and
+  the debugging workflow.  Covers what Catalogue is (the COS
+  landing page), the four-field entry schema (``name``,
+  ``description``, ``url``, ``icon``), the ``charmcraft.yaml``
+  ``provides: catalogue`` block, and the ``CatalogueConsumer`` /
+  ``CatalogueItem`` wiring.  Also added to the Key Components
+  table at the top.
+- [x] **Worked example included inline:** a charm that pulls its
+  ``url`` from ``self._ingress.url`` (Traefik-fronted external
+  URL from the ``ingress`` relation), so the Catalogue entry
+  stays in sync when Traefik re-issues the route.  Re-publish
+  guidance via ``_catalogue.update_item(...)`` from the ingress
+  relation-changed handler is in the section.
+  ``charms.catalogue_k8s.*`` flagged as not on PyPI (fetch-libs
+  required).
+- [x] **F8 integration graph badge.**  ``_has_catalogue_relation``
+  added to ``tui/screens/graph.py``; apps with a relation on the
+  ``catalogue`` interface get a ``[cat]`` suffix on their panel
+  title, composing with the ``★`` highlight marker.  Two unit
+  tests in ``tests/unit/test_graph.py`` cover the badge and its
+  combination with the current-app highlight.
 
 ### 87.3 Low — Profiling and SLO research ✓
 

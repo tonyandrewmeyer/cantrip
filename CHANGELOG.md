@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 87.2 (Catalogue integration) closed.**  The
+  ``observability`` skill gains a "Catalogue — Landing-Page
+  Registration" section between the Sloth subsection and the
+  debugging workflow.  Covers the four-field entry schema
+  (``name`` / ``description`` / ``url`` / ``icon``), the
+  ``charmcraft.yaml`` ``provides: catalogue`` block, the
+  ``CatalogueConsumer`` / ``CatalogueItem`` wiring, and a worked
+  example that pulls ``url`` from ``self._ingress.url`` so the
+  entry stays in sync when Traefik re-issues the route.
+  ``charms.catalogue_k8s.*`` flagged as not on PyPI yet
+  (fetch-libs required).  The F8 integration graph also gains a
+  ``[cat]`` panel-title badge for apps that have registered with
+  Catalogue, composing with the existing ``★`` current-app
+  marker.  Sloth subsection trimmed in the same edit to free
+  budget under the skill scanner's body-length cap.
 - **Phase 87.4 (Sloth skill subsection) closed.**  The
   ``observability`` skill gains a "Sloth — SLOs and Burn-Rate
   Alerts" section between the Alertmanager guidance and the

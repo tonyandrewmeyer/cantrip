@@ -206,6 +206,51 @@ class TestBuildGraph:
         rendered = buf.getvalue()
         assert "2 units" in rendered
 
+    def test_catalogue_badge_present_on_registered_app(self) -> None:
+        """Apps relating on the ``catalogue`` interface get a ``[cat]`` title badge."""
+        status = _make_status(
+            {
+                "my-app": _app_data(
+                    relations={
+                        "catalogue": [
+                            {
+                                "related-application": "catalogue-k8s",
+                                "interface": "catalogue",
+                                "scope": "global",
+                            }
+                        ],
+                    }
+                ),
+                "catalogue-k8s": _app_data(),
+            }
+        )
+        parts = build_graph(status)
+        panels = {str(p.title): p for p in parts if isinstance(p, Panel)}
+        assert "[cat]" in next(t for t in panels if t.startswith("my-app"))
+        assert "[cat]" not in next(t for t in panels if t.startswith("catalogue-k8s"))
+
+    def test_catalogue_badge_combines_with_highlight(self) -> None:
+        """A starred current app with catalogue still shows both markers."""
+        status = _make_status(
+            {
+                "my-app": _app_data(
+                    relations={
+                        "catalogue": [
+                            {
+                                "related-application": "catalogue-k8s",
+                                "interface": "catalogue",
+                                "scope": "global",
+                            }
+                        ],
+                    }
+                ),
+            }
+        )
+        parts = build_graph(status, current_app="my-app")
+        panels = [p for p in parts if isinstance(p, Panel)]
+        assert "★" in str(panels[0].title)
+        assert "[cat]" in str(panels[0].title)
+
     def test_status_indicators(self) -> None:
         """Different statuses produce correct indicator characters."""
         for status_name, expected_char in [
