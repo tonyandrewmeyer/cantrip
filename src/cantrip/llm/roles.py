@@ -273,3 +273,43 @@ def _make_rerank_provider(provider_id: str, model: str | None) -> RerankProvider
 
         return VoyageRerankProvider(model=model) if model else VoyageRerankProvider()
     raise ValueError(f"Unknown rerank provider {provider_id!r}. Supported: 'voyage'.")
+
+
+# ---------------------------------------------------------------------------
+# Cost-tracking helpers
+# ---------------------------------------------------------------------------
+
+
+def record_role_usage(
+    store: object,
+    *,
+    provider_id: str,
+    model: str,
+    input_tokens: int,
+    role: str,
+    category: str | None = None,
+) -> int | None:
+    """Persist embed/rerank usage to the session store.
+
+    *store* is a :class:`cantrip.agent.store.SessionStore` instance,
+    typed loosely here to avoid an import cycle (this module loads
+    early, the store loads late).  ``input_tokens`` maps to the
+    store's ``prompt_tokens`` column; embed/rerank have no
+    completion side, so ``completion_tokens`` is always zero.
+
+    Returns the inserted row id, or ``None`` when *store* has no
+    ``record_usage`` method (legacy callers that haven't wired the
+    store through — fail-soft so retrieval still works without
+    cost-tracking infrastructure).
+    """
+    record = getattr(store, "record_usage", None)
+    if record is None:
+        return None
+    return record(
+        provider=provider_id,
+        model=model,
+        prompt_tokens=int(input_tokens),
+        completion_tokens=0,
+        category=category,
+        role=role,
+    )

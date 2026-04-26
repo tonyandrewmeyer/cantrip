@@ -73,6 +73,19 @@ _PRICES: dict[str, Price] = {
     # "unknown model → $0" branch distinguishable from "known free".
     "inference-snap": Price(prompt=0.0, completion=0.0),
     "gemma3": Price(prompt=0.0, completion=0.0),
+    # Phase 72.3: embedding and rerank models.  All are input-only —
+    # there is no completion side — so ``completion`` stays at zero
+    # and the input rate goes in ``prompt``.  Voyage publishes
+    # context-tier breakdowns; the numbers below are the standard
+    # single-tier rate as of early 2026.
+    "voyage-3-lite": Price(prompt=0.02, completion=0.0),
+    "voyage-3-large": Price(prompt=0.18, completion=0.0),
+    "voyage-3": Price(prompt=0.06, completion=0.0),
+    "voyage-code-3": Price(prompt=0.18, completion=0.0),
+    "rerank-2-lite": Price(prompt=0.02, completion=0.0),
+    "rerank-2": Price(prompt=0.05, completion=0.0),
+    "text-embedding-3-small": Price(prompt=0.02, completion=0.0),
+    "text-embedding-3-large": Price(prompt=0.13, completion=0.0),
 }
 
 # Sentinel price returned for unknown models.  Public so tests can

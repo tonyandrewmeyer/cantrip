@@ -20,6 +20,8 @@ from cantrip.llm.roles import (
     RerankResult,
     RoleNotConfigured,
     RoleRouter,
+    build_role_router,
+    record_role_usage,
 )
 from cantrip.llm.voyage import (
     VoyageEmbedProvider,
@@ -330,3 +332,94 @@ class TestOpenAIEmbedProvider:
         # Endpoint resolves with the override even without an explicit
         # base_url argument — keeps self-hosted vLLM swappable.
         assert provider._endpoint == "http://localhost:8000/v1/embeddings"
+
+
+# ---------------------------------------------------------------------------
+# Builder + recording helpers
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRoleRouter:
+    """``build_role_router`` reads CLI args + env vars."""
+
+    def test_no_config_yields_empty_router(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CANTRIP_EMBED_PROVIDER", raising=False)
+        monkeypatch.delenv("CANTRIP_RERANK_PROVIDER", raising=False)
+        router = build_role_router()
+        assert router.has_embed() is False
+        assert router.has_rerank() is False
+
+    def test_env_var_drives_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CANTRIP_EMBED_PROVIDER", "voyage")
+        monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
+        router = build_role_router()
+        # Voyage providers store the model in ``model_name``.
+        assert router.has_embed() is True
+        assert router.get_embed().model_name == "voyage-3"
+
+    def test_cli_arg_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CANTRIP_EMBED_PROVIDER", "voyage")
+        monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+        router = build_role_router(embed_provider="openai", embed_model="text-embedding-3-large")
+        assert router.get_embed().model_name == "text-embedding-3-large"
+
+    def test_unknown_provider_id_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CANTRIP_EMBED_PROVIDER", raising=False)
+        with pytest.raises(ValueError, match="Unknown embed provider"):
+            build_role_router(embed_provider="bogus")
+
+
+class TestRecordRoleUsage:
+    """``record_role_usage`` writes embed/rerank rows to the store."""
+
+    def test_records_to_store(self) -> None:
+        captured: list[dict[str, object]] = []
+
+        class _StoreSpy:
+            def record_usage(
+                self,
+                *,
+                provider: str,
+                model: str,
+                prompt_tokens: int,
+                completion_tokens: int,
+                category: str | None,
+                role: str | None,
+            ) -> int:
+                captured.append(
+                    {
+                        "provider": provider,
+                        "model": model,
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "category": category,
+                        "role": role,
+                    }
+                )
+                return len(captured)
+
+        rowid = record_role_usage(
+            _StoreSpy(),
+            provider_id="voyage",
+            model="voyage-3",
+            input_tokens=42,
+            role="embed",
+        )
+        assert rowid == 1
+        assert captured[0]["provider"] == "voyage"
+        assert captured[0]["model"] == "voyage-3"
+        assert captured[0]["prompt_tokens"] == 42
+        assert captured[0]["completion_tokens"] == 0
+        assert captured[0]["role"] == "embed"
+
+    def test_returns_none_when_store_lacks_method(self) -> None:
+        # Legacy callers without a real store should not crash.
+        result = record_role_usage(
+            object(),
+            provider_id="voyage",
+            model="voyage-3",
+            input_tokens=10,
+            role="embed",
+        )
+        assert result is None
