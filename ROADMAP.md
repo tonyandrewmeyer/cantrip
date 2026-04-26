@@ -144,7 +144,7 @@ builds, tests, and publishes charms with full observability and quality assuranc
 
 ---
 
-## Phase 36: Review Claude Code Best Practices for Cantrip
+## Phase 36: Review Claude Code Best Practices for Cantrip ✓
 
 **Goal:** Review the community-curated best practices at
 `github.com/shanraisshan/claude-code-best-practice` and evaluate whether any
@@ -152,21 +152,69 @@ techniques would improve (a) how we build Cantrip itself (CLAUDE.md, workflow,
 prompt structure, tool design) or (b) how the Cantrip agent operates (system
 prompts, subagent guidance, tool patterns, conversation loop design).
 
-- [ ] Clone and review the repository contents — extract every concrete
-  recommendation (prompt engineering, CLAUDE.md structure, tool use patterns,
-  context management, task decomposition, etc.)
-- [ ] Evaluate each recommendation against Cantrip's current CLAUDE.md and
-  development workflow — adopt anything that would improve Claude Code's
-  effectiveness when working on this codebase
-- [ ] Evaluate each recommendation against Cantrip's own agent architecture —
-  system prompts (`src/cantrip/agent/prompts/`), subagent guidance
-  (`src/cantrip/agent/prompts/subagent/`), tool design (`src/cantrip/agent/tools/`),
-  and conversation loop (`src/cantrip/agent/core.py`) — adopt patterns that
-  would make Cantrip a more effective autonomous agent
-- [ ] Document findings: what was adopted, what was rejected (and why)
+This was a **research phase** with one small applied change.
+Findings landed in
+[`design/CLAUDE_CODE_BEST_PRACTICES.md`](design/CLAUDE_CODE_BEST_PRACTICES.md);
+summary below.
 
-**Exit criteria:** Review complete. Any adopted changes are implemented and
-passing `make check`.
+### Decisions
+
+- [x] **Source repo cloned and triaged.**  ~8.7 kloc across
+  `best-practice/` (8 reference docs), `reports/` (10 analyses),
+  `tips/` (9 video-tip summaries), `videos/` (6 talk
+  summaries), and `implementation/` (5 examples).  Recommendations
+  extracted into a punch list of ~120 items keyed by topic
+  (CLAUDE.md size, hooks, slash commands, skills, subagents,
+  MCP, settings, harness behaviour, agent design principles).
+- [x] **Angle A (using Claude Code on Cantrip): one adoption.**
+  Expanded the team-shared `.claude/settings.json` allow-list
+  to cover the documented developer loop —
+  `make check` / `unit` / `format` / `lint` / `coverage` /
+  `all`, and `uv run pytest` / `ruff check` / `ruff format` /
+  `ty` / `python -c` / `uv sync --dev`.  These commands run
+  hundreds of times per session and were uniformly tripping
+  permission prompts with no safety win.  No project
+  `.claude/commands/`, `.claude/agents/`, `.claude/skills/`, or
+  `.claude/hooks/` added — those would duplicate Cantrip's own
+  agent / skill / subagent catalogues.
+- [x] **Angle B (Cantrip's own agent design): no production
+  code change.**  Most "Angle B" principles
+  (subagents-as-context-isolation, research → synthesis →
+  confirm → build, "don't use prompts for control flow",
+  "build for the model six months from now", skill descriptions
+  written for the model, cross-session memory) are already
+  implemented.  Two genuinely-new Anthropic API capabilities —
+  Programmatic Tool Calling and the tool-search-tool
+  `defer_loading` pattern — recorded as watch-this items in
+  `design/DEFERRED.md` with revisit triggers.
+- [x] **Three deferred-item entries** added to
+  `design/DEFERRED.md`: PTC for the Anthropic provider, the
+  tool-search-tool `defer_loading` pattern, and a re-run
+  trigger for the source-repo review itself.
+
+### Revisit triggers
+
+The source-repo review re-runs when **any** of:
+
+1. Anthropic publishes Programmatic-Tool-Calling
+   pricing / latency benchmarks against agentic-tool-use
+   workloads (not pure eval suites).
+2. Cantrip's typed tool catalogue passes ~60 entries
+   (we are at ~35 today).
+3. Claude Code ships a feature Cantrip's harness genuinely
+   cannot replicate (e.g. cross-session multi-agent
+   collaboration with a shared write surface — Agent Teams
+   maturing out of experimental).
+4. A Cantrip user reports concrete latency frustration that
+   maps onto a recommendation rejected in this phase
+   (`design/CLAUDE_CODE_BEST_PRACTICES.md` §3.3 / §4.3 are
+   the rejection lists to reread first).
+
+**Exit criteria met:** `design/CLAUDE_CODE_BEST_PRACTICES.md`
+is the written review.  `.claude/settings.json` carries the
+adopted allow-list expansion.  `design/DEFERRED.md` records
+the three watch-this items so Phase 84's deferred-item sweep
+re-evaluates them at the next audit cadence (2026-07-26).
 
 ---
 

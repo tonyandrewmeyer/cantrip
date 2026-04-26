@@ -5,6 +5,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 36 (Claude Code best-practices review) closed.**  Reviewed
+  the community-curated repo at
+  ``github.com/shanraisshan/claude-code-best-practice``
+  (~8.7 kloc across ``best-practice/`` / ``reports/`` / ``tips/``
+  / ``videos/`` / ``implementation/``) against Cantrip's CLAUDE.md,
+  ``.claude/settings.json``, system prompt, subagent catalogue, and
+  tool design.  Findings landed in
+  ``design/CLAUDE_CODE_BEST_PRACTICES.md``: most load-bearing items
+  (CLAUDE.md under 200 lines, ``uv``-only workflow, two-tier
+  settings, subagents-as-context-isolation, research → synthesis
+  → confirm → build planner, "don't use prompts for control
+  flow", "build for the model six months from now") are already
+  in place.  One concrete adoption: expanded the team-shared
+  ``.claude/settings.json`` allow-list to cover the documented
+  developer loop (``make check`` / ``unit`` / ``format`` / ``lint``
+  / ``coverage`` / ``all`` and ``uv run pytest`` / ``ruff check``
+  / ``ruff format`` / ``ty`` / ``python -c`` / ``uv sync --dev``)
+  so routine in-loop commands no longer trip permission prompts.
+  Three watch-this items added to ``design/DEFERRED.md``:
+  Anthropic Programmatic Tool Calling for the Anthropic provider,
+  the tool-search-tool ``defer_loading`` pattern for Cantrip's
+  tool catalogue, and a re-run trigger for the source-repo review
+  itself.  No new phase opened.
 - **Phase 87.2 (Catalogue integration) closed.**  The
   ``observability`` skill gains a "Catalogue — Landing-Page
   Registration" section between the Sloth subsection and the
