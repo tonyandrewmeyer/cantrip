@@ -15,8 +15,10 @@ import shutil
 
 log = logging.getLogger(__name__)
 
-# Maximum time to wait for the subprocess to start (seconds).
-_STARTUP_TIMEOUT = 10
+# Bounded wait for a terminated subprocess to actually exit before we
+# escalate to SIGKILL — keeps :func:`stream_lines` from hanging
+# indefinitely on a wedged ``juju debug-log`` process.
+_TERMINATE_GRACE_SECONDS = 5.0
 
 
 def juju_available() -> bool:
@@ -50,10 +52,14 @@ async def tail_logs(
     if unit:
         cmd.extend(["--include", unit])
 
+    # ``stderr`` is captured to ``DEVNULL`` rather than ``PIPE``: nothing
+    # in this module reads it, and a noisy juju binary (controller
+    # warnings, deprecation notices) can fill the pipe buffer and
+    # deadlock the subprocess waiting for someone to drain it.
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
     )
     return proc
 
@@ -94,4 +100,11 @@ async def stream_lines(
     finally:
         with contextlib.suppress(ProcessLookupError):
             proc.terminate()
-        await proc.wait()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=_TERMINATE_GRACE_SECONDS)
+        except TimeoutError:
+            # SIGTERM didn't take — escalate so we don't leak the
+            # subprocess (and don't wedge whatever started us).
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()

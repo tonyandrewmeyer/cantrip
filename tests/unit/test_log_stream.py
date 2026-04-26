@@ -21,9 +21,10 @@ def _make_proc(stdout: mock.AsyncMock) -> mock.AsyncMock:
     """Build a fake ``asyncio.subprocess.Process``."""
     proc = mock.AsyncMock()
     proc.stdout = stdout
-    # ``terminate`` is sync on a real Process; don't let AsyncMock turn it
-    # into a coroutine that leaks.
+    # ``terminate`` and ``kill`` are sync on a real Process; don't let
+    # AsyncMock turn them into coroutines that leak un-awaited warnings.
     proc.terminate = mock.MagicMock()
+    proc.kill = mock.MagicMock()
     return proc
 
 
@@ -71,6 +72,24 @@ class TestTailLogs:
         args = create.call_args[0]
         assert "--include" in args
         assert args[args.index("--include") + 1] == "my-app/0"
+
+    @pytest.mark.asyncio
+    async def test_stderr_is_devnull_not_pipe(self) -> None:
+        """stderr is captured to DEVNULL so a noisy juju binary can't
+        deadlock the subprocess by filling the pipe buffer with no
+        reader on our side.
+        """
+        import asyncio as _asyncio
+
+        proc = _make_proc(_make_stdout([]))
+
+        with mock.patch(
+            "cantrip.juju.log_stream.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as create:
+            await log_stream.tail_logs("dev")
+
+        assert create.call_args.kwargs["stderr"] is _asyncio.subprocess.DEVNULL
 
 
 class TestStreamLines:
@@ -149,6 +168,40 @@ class TestStreamLines:
         assert collected == ["one"]
         proc.terminate.assert_called_once()
         proc.wait.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_kills_process_when_terminate_grace_expires(self) -> None:
+        """If proc.wait() doesn't return after terminate() within the
+        grace window, escalate to SIGKILL so a wedged subprocess can't
+        hang the caller indefinitely.
+        """
+        stdout = _make_stdout([b"line\n"])
+        proc = _make_proc(stdout)
+
+        # First wait_for is the readline call (let it succeed); second
+        # is the post-terminate proc.wait() — that one times out.
+        readline_call = {"n": 0}
+
+        async def _wait_for(coro, *_args, **_kwargs):
+            readline_call["n"] += 1
+            if readline_call["n"] == 1:
+                return await coro
+            coro.close()
+            raise TimeoutError
+
+        with (
+            mock.patch("cantrip.juju.log_stream.juju_available", return_value=True),
+            mock.patch("cantrip.juju.log_stream.tail_logs", return_value=proc),
+            mock.patch(
+                "cantrip.juju.log_stream.asyncio.wait_for",
+                side_effect=_wait_for,
+            ),
+        ):
+            collected = [line async for line in log_stream.stream_lines("dev", max_lines=1)]
+
+        assert collected == ["line"]
+        proc.terminate.assert_called_once()
+        proc.kill.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_decodes_invalid_utf8_with_replacement(self) -> None:
