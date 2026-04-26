@@ -5,6 +5,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 83 (Pause-and-Edit Interrupt — Research) closed.**
+  Verdict in [`design/PAUSE_AND_EDIT.md`](design/PAUSE_AND_EDIT.md):
+  **defer the full pause-and-edit interrupt.**  Cancel today
+  already preserves every completed round in ``state.messages``
+  (only the in-flight LLM call's response is lost), no real user
+  complaint surfaced, and the highest-value interrupt flavour
+  (*augment* — "add this clarification") admits a leaner shape
+  (queue-next-instruction) at ~25% of the cost.  No new keybind,
+  no agent-loop pause seam, no provider-client changes — Esc /
+  Ctrl+C / Cancel button stay as hard cancel.  Phase 83b — *Queue-
+  Next Instruction* — opens against three named triggers; Phase
+  83c — full pause-and-edit — opens only after 83b ships *and* a
+  redirect-flavour gap surfaces or a peer ships a clearly better
+  pattern.
 - **Phase 86 (Kubernetes / kubectl Tool or Skill — Research) closed.**
   Verdict in [`design/K8S_TOOL.md`](design/K8S_TOOL.md): **skill
   expansion now, defer the typed tool**.  The

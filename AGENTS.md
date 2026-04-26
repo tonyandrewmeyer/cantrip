@@ -85,6 +85,7 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 - `design/ACP_RESEARCH.md` — Phase 39 findings: Agent Client Protocol concepts, Cantrip integration shapes evaluated, verdict and revisit triggers
 - `design/DEFERRED.md` — Phase 84 deferred-item sweep log: every "Deferred:" entry across the roadmap with revisit triggers, audit cadence, and next sweep date
 - `design/K8S_TOOL.md` — Phase 86 findings: should the agent grow first-class `kubectl` diagnostics? Verdict (skill expansion now, typed tool deferred), verb shortlist, sandbox/kubeconfig finding, revisit triggers
+- `design/PAUSE_AND_EDIT.md` — Phase 83 findings: should Cantrip soften its hard-cancel into a pausable, editable mid-turn affordance? Verdict (defer; queue-next-instruction is the smaller follow-up shape if a trigger fires), peer-interrupt survey, message-flow shapes, three revisit triggers for Phase 83b
 - `ROADMAP.md` — Implementation phases (active/open work only)
 - `ROADMAP_ARCHIVE.md` — Completed phases, full detail, historical record
 - `CHANGELOG.md` — Notable changes (keep updated)
