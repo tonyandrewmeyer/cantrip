@@ -838,13 +838,22 @@ class EventWatcher:
         # Query for errors in the dev model, slightly larger than the poll interval
         # to avoid gaps.
         query = f'{{juju_model="{self._dev_model}"}} |~ "(?i)(error|traceback|hook failed)"'
-        # Time window: 20s (slightly larger than the 15s interval).
+        # Time window: ~20s (slightly larger than the 15s interval).  Loki's
+        # ``query_range`` expects nanosecond Unix epochs, RFC3339, or a bare
+        # Prometheus-style duration like ``20s``.  ``now`` / ``now-20s`` are
+        # Grafana shortcuts that 400 here, which used to surface as a quiet
+        # "Malformed JSON from Loki" debug log on every poll while events
+        # silently dried up.
+        import datetime as _datetime  # local import: this poll path is rarely hot
+
         window_seconds = int(self._config.loki_interval) + 5
+        end_dt = _datetime.datetime.now(_datetime.UTC)
+        start_dt = end_dt - _datetime.timedelta(seconds=window_seconds)
         params = {
             "query": query,
             "limit": "20",
-            "start": f"now-{window_seconds}s",
-            "end": "now",
+            "start": str(int(start_dt.timestamp() * 1_000_000_000)),
+            "end": str(int(end_dt.timestamp() * 1_000_000_000)),
         }
         loki_base = self._config.loki_url.rstrip("/")
         url = f"{loki_base}/loki/api/v1/query_range?{urllib.parse.urlencode(params)}"
