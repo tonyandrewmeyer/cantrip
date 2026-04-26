@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase 87.3 (Profiling and SLO research) closed.**  Verdict in
+  [`design/PROFILING.md`](design/PROFILING.md): **split the
+  work** — Sloth fits as a skill subsection alongside the
+  Alertmanager / Catalogue expansions and lands as new sub-phase
+  **87.4**; Parca / Pyroscope continuous profiling defers to a
+  standalone **Phase 89** opened against four named triggers
+  (charm-perf debug case, SLO breach, user request, or Pyroscope
+  becoming the default COS profiler).  Phase 87 exit criterion
+  updated to call for Sloth coverage at parity with Prometheus /
+  Grafana.  No production code changed.
 - **Phase 83 (Pause-and-Edit Interrupt — Research) closed.**
   Verdict in [`design/PAUSE_AND_EDIT.md`](design/PAUSE_AND_EDIT.md):
   **defer the full pause-and-edit interrupt.**  Cancel today
