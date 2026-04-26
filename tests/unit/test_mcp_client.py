@@ -174,3 +174,20 @@ class TestReconnect:
         )
         with pytest.raises((MCPConnectionError, FileNotFoundError, OSError)):
             await asyncio.wait_for(c.start(), timeout=5.0)
+
+    @pytest.mark.asyncio
+    async def test_reconnect_caps_attempts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A permanently-dead server surfaces a clean error after the cap, not a hang."""
+        monkeypatch.setattr("cantrip.mcp.client._MAX_RECONNECT_ATTEMPTS", 3)
+        monkeypatch.setattr("cantrip.mcp.client._INITIAL_RECONNECT_BACKOFF", 0.0)
+        monkeypatch.setattr("cantrip.mcp.client._MAX_RECONNECT_BACKOFF", 0.0)
+        c = MCPClient(
+            ServerConfig(
+                name="dead",
+                transport=TransportKind.STDIO,
+                command="/no/such/binary",
+                timeout_seconds=2.0,
+            )
+        )
+        with pytest.raises(MCPConnectionError, match="after 3 attempts"):
+            await asyncio.wait_for(c._reconnect(), timeout=10.0)
