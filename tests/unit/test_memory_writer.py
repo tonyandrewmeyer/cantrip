@@ -137,6 +137,26 @@ class TestCollectFileCitations:
         paths = collect_file_citations(calls)
         assert len(paths) == 1
 
+    def test_multi_edit_extracts_per_edit_file(self, tmp_path: pathlib.Path) -> None:
+        """Cantrip's ``multi_edit`` carries targets in ``edits[].file``, not a top-level path."""
+        (tmp_path / "a.py").write_text("a")
+        (tmp_path / "b.py").write_text("b")
+        calls = [
+            {
+                "name": "multi_edit",
+                "arguments": {
+                    "edits": [
+                        {"file": str(tmp_path / "a.py"), "old": "x", "new": "y"},
+                        {"file": str(tmp_path / "b.py"), "old": "x", "new": "y"},
+                        {"file": str(tmp_path / "a.py"), "old": "y", "new": "z"},
+                    ]
+                },
+            }
+        ]
+        paths = collect_file_citations(calls)
+        # Both unique files captured; the third edit dedups against the first.
+        assert sorted(p.name for p in paths) == ["a.py", "b.py"]
+
 
 # ── AutoWriter ──────────────────────────────────────────────────────────
 
@@ -195,6 +215,36 @@ class TestAutoWriterPropose:
         assert decision.proposal.scope == "global"
         assert decision.proposal.tags == ["uv", "charmcraft"]
         assert decision.persisted is False  # propose() never writes.
+
+    @pytest.mark.asyncio
+    async def test_tags_emitted_as_string_are_split_on_commas(
+        self, manager: MemoryManager
+    ) -> None:
+        """The model occasionally emits tags as a comma-separated string instead of a list."""
+        provider = FakeProvider(
+            responses=[
+                _writer_response(
+                    {
+                        "decision": "write",
+                        "reasoning": "noted",
+                        "memory": {
+                            "title": "t",
+                            "kind": "lesson",
+                            "scope": "user",
+                            "body": "b",
+                            "tags": "kubernetes, cos , ingress",
+                        },
+                    }
+                )
+            ]
+        )
+        writer = AutoWriter(provider=provider, manager=manager)
+        decision = await writer.propose(
+            WriteMemoryContext(trigger=TriggerKind.USER_CORRECTION, summary="x")
+        )
+        assert decision.proposal is not None
+        # Split on commas with whitespace stripped, NOT iterated character-by-character.
+        assert decision.proposal.tags == ["kubernetes", "cos", "ingress"]
 
     @pytest.mark.asyncio
     async def test_malformed_json_becomes_skip(self, manager: MemoryManager) -> None:
