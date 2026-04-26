@@ -111,14 +111,17 @@ class TestJujuignoreProperties:
     def test_defaults_still_bite(self, patterns: list[str], default: str) -> None:
         """User patterns don't disable the built-in default ignores.
 
-        A user pattern that explicitly negates the default (e.g.
-        ``!.git``) would break this; the strategy filter below drops
-        any such pattern so the invariant is tested against orthogonal
-        user input only.
+        Any negation pattern (``!something``) can disable a default —
+        ``!.git`` is the obvious case, but ``!*`` and ``!**`` are
+        equally lethal.  Hypothesis found ``patterns=['!*']`` against
+        ``default='.git'`` as a counterexample; rather than enumerate
+        every wildcard shape that could re-include the default, drop
+        every negation outright so this property tests the orthogonal
+        case (non-negating user input shouldn't budge the defaults)
+        while ``test_negation_un_ignores`` covers negation semantics
+        directly.
         """
-        safe = [
-            p for p in patterns if not (p.startswith("!") and p.strip("!").strip("/") == default)
-        ]
+        safe = [p for p in patterns if not p.startswith("!")]
         ignore = JujuIgnore(safe)
         # Most defaults are directories (.git, .tox, …); the handful that
         # aren't (.jujuignore) still ignore when is_dir=False.
