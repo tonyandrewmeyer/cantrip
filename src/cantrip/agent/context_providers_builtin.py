@@ -37,6 +37,8 @@ from cantrip.agent.context_providers import (
     chars_for_tokens,
     truncate,
 )
+from cantrip.agent.tools import charmhub as charmhub_tools
+from cantrip.agent.tools import web as web_tools
 
 log = logging.getLogger(__name__)
 
@@ -48,9 +50,31 @@ _FILE_MAX_CHARS = chars_for_tokens(4000)  # ~16k chars
 _DIFF_MAX_CHARS = chars_for_tokens(4000)
 _TREE_MAX_CHARS = chars_for_tokens(2000)  # ~8k chars
 _PROBLEMS_MAX_CHARS = lint_context.DEFAULT_MAX_CHARS  # 6000 chars
+_URL_MAX_CHARS = chars_for_tokens(3000)
+_CHARM_MAX_CHARS = chars_for_tokens(2000)
+_JUJU_MAX_CHARS = chars_for_tokens(2000)
 
 _GIT_TIMEOUT_SECONDS = 10.0
+_JUJU_TIMEOUT_SECONDS = 30.0
 _TREE_MAX_FILES = 600
+
+# ``@juju`` accepts only read-only subcommands.  Sticking to a hard
+# allowlist keeps a stray mention from running ``juju destroy-model``
+# or anything else that mutates state.  Mirrors the read-only
+# verbs Cantrip already exposes as typed tools (status, show-unit,
+# config) plus a couple of obvious diagnostic verbs.
+_JUJU_READONLY_VERBS: frozenset[str] = frozenset(
+    {
+        "status",
+        "show-unit",
+        "show-application",
+        "show-model",
+        "config",
+        "list-secrets",
+        "show-relation",
+        "list-models",
+    }
+)
 
 
 def _resolve_within(
@@ -358,14 +382,158 @@ class ProblemsProvider:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# @url <url>
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class UrlProvider:
+    """``@url <url>`` — fetch *url* via :class:`web_tools.WebFetchTool`.
+
+    Reuses the shared web-fetch implementation so the private-IP
+    block, llms.txt probing, and HTML-to-text extraction stay in
+    one place.  Failures surface as inline error blocks; a
+    rate-limited fetch does not abort the rest of the message.
+    """
+
+    info: ProviderInfo = ProviderInfo(
+        name="url",
+        summary="Fetch a URL (markdownified)",
+        arg_style=ArgStyle.TOKEN,
+        args_hint="<url>",
+    )
+
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+        """Fetch *args* and return its text body."""
+        raw = f"@url {args}".rstrip()
+        if not args:
+            return ContextBlock(raw=raw, rendered="[@url: missing URL]", error="missing url")
+        tool = web_tools.WebFetchTool()
+        result = await tool.execute(url=args)
+        if not result.success:
+            return ContextBlock(
+                raw=raw,
+                rendered=f"[@url {args}: {result.error}]",
+                error=result.error or "fetch failed",
+            )
+        return truncate(raw=raw, rendered=result.output, max_chars=_URL_MAX_CHARS)
+
+
+# ---------------------------------------------------------------------------
+# @charm <name>
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class CharmProvider:
+    """``@charm <name>`` — Charmhub metadata for *name*.
+
+    Wraps :class:`charmhub_tools.CharmhubInfoTool` so the user can
+    pull a charm's relations, config, and revision info inline.
+    Source-tree fetching is intentionally out of scope here — that's
+    a heavier operation belonging on the typed-tool surface.
+    """
+
+    info: ProviderInfo = ProviderInfo(
+        name="charm",
+        summary="Charmhub metadata for a charm",
+        arg_style=ArgStyle.TOKEN,
+        args_hint="<name>",
+    )
+
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+        """Fetch metadata for the charm called *args*."""
+        raw = f"@charm {args}".rstrip()
+        if not args:
+            return ContextBlock(
+                raw=raw, rendered="[@charm: missing charm name]", error="missing name"
+            )
+        tool = charmhub_tools.CharmhubInfoTool()
+        result = await tool.execute(name=args)
+        if not result.success:
+            return ContextBlock(
+                raw=raw,
+                rendered=f"[@charm {args}: {result.error}]",
+                error=result.error or "lookup failed",
+            )
+        return truncate(raw=raw, rendered=result.output, max_chars=_CHARM_MAX_CHARS)
+
+
+# ---------------------------------------------------------------------------
+# @juju <subcmd>
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class JujuProvider:
+    """``@juju <subcmd>`` — output of a read-only ``juju`` command.
+
+    The first token of *args* must be in :data:`_JUJU_READONLY_VERBS`.
+    Anything else is rejected so a typo cannot accidentally invoke
+    a destructive verb (``juju destroy-model`` & friends).
+    """
+
+    info: ProviderInfo = ProviderInfo(
+        name="juju",
+        summary="Read-only juju output (status, show-unit, config, …)",
+        arg_style=ArgStyle.REST_OF_LINE,
+        args_hint="<subcmd>",
+    )
+
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+        """Run ``juju <args>`` if the verb is in the read-only allowlist."""
+        raw = f"@juju {args}".rstrip()
+        if not args:
+            return ContextBlock(
+                raw=raw, rendered="[@juju: missing subcommand]", error="missing subcommand"
+            )
+        verb, *rest = args.split()
+        if verb not in _JUJU_READONLY_VERBS:
+            allowed = ", ".join(sorted(_JUJU_READONLY_VERBS))
+            return ContextBlock(
+                raw=raw,
+                rendered=f"[@juju {verb}: not a read-only verb. Allowed: {allowed}]",
+                error="not read-only",
+            )
+        if shutil.which("juju") is None:
+            return ContextBlock(raw=raw, rendered="[@juju: juju not installed]", error="no juju")
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ["juju", verb, *rest],
+                capture_output=True,
+                text=True,
+                timeout=_JUJU_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return ContextBlock(raw=raw, rendered="[@juju: timed out]", error="timeout")
+        except OSError as exc:
+            return ContextBlock(raw=raw, rendered=f"[@juju: {exc}]", error=str(exc))
+        if result.returncode != 0:
+            stderr = result.stderr.strip() or "command failed"
+            return ContextBlock(
+                raw=raw,
+                rendered=f"[@juju {verb}: {stderr}]",
+                error="juju error",
+            )
+        return truncate(raw=raw, rendered=result.stdout, max_chars=_JUJU_MAX_CHARS)
+
+
+# ---------------------------------------------------------------------------
+# Default registry
+# ---------------------------------------------------------------------------
+
+
 def build_default_registry() -> ProviderRegistry:
     """Return a :class:`ProviderRegistry` with the baseline ``@`` providers.
 
-    Heavier providers (``@url``, ``@charm``, ``@juju``) are added by
-    surfaces that pull in their dependencies — see
-    :mod:`cantrip.agent.context_providers_external`.  This split keeps
-    unit tests that exercise the parser free of network and Charmhub
-    imports.
+    Includes both light-touch wrappers (``@file``, ``@diff``, ``@tree``,
+    ``@problems``) and the network-touching set (``@url``, ``@charm``,
+    ``@juju``).  Network providers are lazy — they only call out when
+    the user types the mention, so unit tests that never trigger them
+    incur no I/O.
     """
     registry = ProviderRegistry()
     for provider in (
@@ -373,6 +541,9 @@ def build_default_registry() -> ProviderRegistry:
         DiffProvider(),
         TreeProvider(),
         ProblemsProvider(),
+        UrlProvider(),
+        CharmProvider(),
+        JujuProvider(),
     ):
         registry.register(_as_protocol(provider))
     return registry

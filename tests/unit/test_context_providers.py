@@ -399,6 +399,54 @@ class TestTreeProvider:
         assert "tests/y.py" not in result.expanded
 
 
+class TestJujuProvider:
+    """``@juju`` — verb allowlist and missing-juju path.
+
+    Network-touching providers (``@url``, ``@charm``) are exercised
+    only via their failure paths so the unit suite makes no real
+    HTTP calls.
+    """
+
+    @pytest.mark.asyncio
+    async def test_rejects_destructive_verb(self) -> None:
+        registry = context_providers_builtin.build_default_registry()
+        result = await expand_mentions("@juju destroy-model foo", registry, ExpansionContext())
+        assert "not a read-only verb" in result.expanded
+        assert result.blocks[0].ok is False
+
+    @pytest.mark.asyncio
+    async def test_missing_subcommand(self) -> None:
+        registry = context_providers_builtin.build_default_registry()
+        result = await expand_mentions("look @juju", registry, ExpansionContext())
+        assert "missing subcommand" in result.expanded
+
+
+class TestUrlProvider:
+    """``@url`` — early validation paths."""
+
+    @pytest.mark.asyncio
+    async def test_missing_url(self) -> None:
+        registry = context_providers_builtin.build_default_registry()
+        result = await expand_mentions("look @url", registry, ExpansionContext())
+        assert "missing URL" in result.expanded
+
+    @pytest.mark.asyncio
+    async def test_invalid_scheme(self) -> None:
+        registry = context_providers_builtin.build_default_registry()
+        result = await expand_mentions("@url file:///etc/passwd", registry, ExpansionContext())
+        assert result.blocks[0].ok is False
+
+
+class TestCharmProvider:
+    """``@charm`` — argument-validation path."""
+
+    @pytest.mark.asyncio
+    async def test_missing_name(self) -> None:
+        registry = context_providers_builtin.build_default_registry()
+        result = await expand_mentions("ping @charm", registry, ExpansionContext())
+        assert "missing charm name" in result.expanded
+
+
 class TestExpansionResultShape:
     """Wire-format assertions used by the input-layer integration."""
 
