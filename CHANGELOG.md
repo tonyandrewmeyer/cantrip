@@ -5,6 +5,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 72.1 (indexed charm-ecosystem documentation).**  A new
+  ``cantrip.docs_index`` subsystem crawls the canonical Canonical
+  documentation surfaces (Juju, ops, charmcraft, rockcraft, jubilant,
+  Charmhub guidelines) via their sitemap.xml feeds, chunks page text
+  (~500 tokens, 50 overlap, paragraph-aware), embeds via the Phase
+  72.3 :class:`EmbedProvider`, and stores vectors in per-site SQLite
+  caches under ``~/.cache/cantrip/docs-index/``.  No
+  ``sqlite-vec`` / ``faiss`` dependency: cosine similarity runs in
+  pure Python over packed float32 BLOBs, sub-second on
+  charm-ecosystem corpus sizes.  New CLI surface: ``cantrip docs
+  index --site <name>`` (or ``--all``), ``cantrip docs list``, and
+  ``cantrip docs search <site> <query>``.  Retrieval is exposed as
+  the agent-invokable ``docs_search`` tool *and* the Phase 72.2
+  ``@docs <site> <query>`` mention.  Both return ``{site, url,
+  title, excerpt, score}`` so every cited passage is traceable to a
+  canonical URL — never paraphrase.  System prompt updated to nudge
+  the agent to consult ``docs_search`` before answering "how do I …"
+  questions about charm authoring.  Sentence-transformers offline
+  fallback and ``cantrip docs refresh`` (incremental crawl) deferred
+  to 72.1b.  Protocol and pipeline conventions in
+  ``design/DOCS_INDEX.md``; user how-to in
+  ``docs/docs/howto-docs-index.html``.
 - **Phase 72.3 (provider roles for retrieval).**  Two narrower ABCs
   next to :class:`LLMProvider` — :class:`EmbedProvider` (``texts ->
   EmbeddingResult``) and :class:`RerankProvider` (``query, docs ->

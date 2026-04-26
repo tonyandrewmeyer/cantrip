@@ -49,6 +49,7 @@
       <li><a href="#hooks">cantrip hooks</a></li>
       <li><a href="#skill">cantrip skill</a></li>
       <li><a href="#checkpoints">cantrip checkpoints</a></li>
+      <li><a href="#docs">cantrip docs</a></li>
       <li><a href="#slash-commands">Slash commands</a></li>
       <li><a href="#mentions">@-mention context providers</a></li>
       <li><a href="#auto-commit">Auto-commit per turn</a></li>
@@ -557,6 +558,43 @@ expect.</p>
 user/repo file present the listing prints
 &quot;<code>No permission rules loaded.</code>&quot; so an empty config is visible at
 a glance instead of looking the same as a missing one.</p>
+<h2 id="docs">cantrip docs</h2>
+<p>Phase 72.1.  Index Canonical's documentation surfaces (Juju, ops,
+charmcraft, rockcraft, jubilant, Charmhub) so the agent's
+<code>docs_search</code> tool and the <code>@docs &lt;site&gt;
+&lt;query&gt;</code> mention can return cited passages instead of
+paraphrasing from memory.  Requires an embed provider configured
+via the <a href="howto-provider.html#retrieval-roles">Phase 72.3
+role router</a>.</p>
+<dl>
+  <dt><code>cantrip docs index --site &lt;name&gt;</code></dt>
+  <dd>
+    Crawl the named site, chunk + embed every page, and upsert
+    into the per-site SQLite cache under
+    <code>~/.cache/cantrip/docs-index/&lt;name&gt;/index.db</code>.
+    Re-running replaces rows with a stable
+    <code>(url, ordinal)</code> hash &mdash; no need to clear the
+    cache by hand.  Pass <code>--all</code> to index every
+    registered site.  Per-page errors (404s, timeouts) are
+    absorbed; the rest of the crawl proceeds.
+  </dd>
+  <dt><code>cantrip docs list</code></dt>
+  <dd>
+    Print every registered site with its index status and chunk
+    count.  Pass <code>--root &lt;path&gt;</code> to read from a
+    non-default cache directory.
+  </dd>
+  <dt><code>cantrip docs search &lt;site&gt; &lt;query&gt;</code></dt>
+  <dd>
+    Embed <code>&lt;query&gt;</code> through the configured embed
+    provider, cosine-search the per-site store, print the top
+    <code>--top-k</code> hits (default 5) with score, URL, and
+    excerpt.  Composes with shell pipelines.
+  </dd>
+</dl>
+<p>The <a href="howto-docs-index.html">how-to guide</a> walks
+through one-time setup and the in-chat surfaces.</p>
+
 <h2 id="slash-commands">Slash commands</h2>
 <p>Type these directly into the chat (TUI or Web) to drive features
 that don&rsquo;t go through the LLM. Output renders as a system

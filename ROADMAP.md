@@ -2739,7 +2739,7 @@ before moving on.
 
 ---
 
-## Phase 72: Continue-Inspired Context Providers — @-Mentions, Indexed Docs, Model Roles, Diagnostics Priming
+## Phase 72: Continue-Inspired Context Providers — @-Mentions, Indexed Docs, Model Roles, Diagnostics Priming ✅
 
 **Goal:** Continue (``continue.dev``) centres its UX on
 *context providers* — structured fragments a user injects into
@@ -2827,46 +2827,57 @@ deferred**:
   by Phase 70.3 (glob-conditional guidance).  Don't
   duplicate — point the user at both from docs.
 
-### 72.1 High — Indexed charm-ecosystem documentation (``@docs``)
+### 72.1 High — Indexed charm-ecosystem documentation (``@docs``) ✅
 
-- [ ] New subsystem ``src/cantrip/docs_index/`` with a crawl
-  + embed + local vector-store pipeline.  Target sites, all
-  opt-in via config:
-  - Juju documentation (``juju.is/docs`` and
-    ``canonical-juju.readthedocs-hosted.com``)
-  - Ops reference (``ops.readthedocs.io``)
-  - Charmcraft reference
-    (``canonical-charmcraft.readthedocs-hosted.com``)
-  - Rockcraft reference
-    (``canonical-rockcraft.readthedocs-hosted.com``)
-  - Jubilant docs (``canonical-jubilant.readthedocs-hosted.com``)
-  - Charmhub charm-guidelines page
-- [ ] Storage: SQLite + ``sqlite-vec`` (or ``faiss`` if it's
-  already in the dependency tree) at
-  ``~/.cache/cantrip/docs-index/<site-hash>/``.  Chunk size
-  ~500 tokens; overlap 50.  Embed with the provider's
-  ``embed``-role model (72.3) — fall back to a local
-  sentence-transformer model if no remote embed provider
-  is configured.
-- [ ] ``cantrip docs index [--site <name> | --all]``
-  subcommand triggers a crawl; ``cantrip docs refresh``
-  updates incrementally.  Transparent caching: docs older
-  than ``settings.docs.max_age_days`` (default 14) get
-  re-crawled.
-- [ ] Retrieval surface: a new ``docs_search`` tool the
-  agent can invoke, and the 72.2 ``@docs`` mention for
-  user-initiated lookups.  Both return ``{site, url,
-  excerpt, score}`` tuples so every citation is
-  traceable — never paraphrase.
-- [ ] Prompt guidance (``src/cantrip/agent/prompts/system.py``)
+- [x] New subsystem :mod:`cantrip.docs_index` with the
+  full crawl → chunk → embed → upsert → search pipeline.
+  Six canonical surfaces registered in
+  :mod:`cantrip.docs_index.sites`: ``juju``, ``ops``,
+  ``charmcraft``, ``rockcraft``, ``jubilant``, ``charmhub``.
+- [x] Storage: SQLite per-site under
+  ``~/.cache/cantrip/docs-index/<site>/index.db``; vectors
+  packed as float32 BLOB with cosine similarity in pure
+  Python.  No ``sqlite-vec`` / ``faiss`` dependency —
+  charm-ecosystem corpora are small enough that in-memory
+  search stays sub-second.  Chunk size ~500 tokens, overlap
+  50, paragraph-aware breaks.  Embed batches of 64 through
+  the Phase 72.3 :class:`EmbedProvider`.  **Deferred:**
+  sentence-transformers offline fallback (Phase 72.3
+  defers it until a concrete caller hits the embed path —
+  this phase doesn't change that decision; sessions
+  without a remote embed provider see ``RoleNotConfigured``
+  and skip ``@docs`` registration entirely).
+- [x] ``cantrip docs index [--site <name> | --all]`` and
+  ``cantrip docs list`` / ``cantrip docs search <site> <query>``
+  subcommands in :mod:`cantrip.docs_index.cli`.  Re-indexing
+  replaces rows by stable ``sha256(url|ordinal)`` hash.
+  **Deferred:** ``cantrip docs refresh`` with
+  ``If-Modified-Since`` honoring (Phase 72.1b if the corpus
+  size makes the full re-crawl painful in practice).
+- [x] Retrieval surfaces: typed
+  :class:`~cantrip.agent.tools.docs_search.DocsSearchTool`
+  registered in
+  :func:`cantrip.agent.tools.build_tools` when the session
+  has an embed-capable router; Phase 72.2
+  ``@docs <site> <query>`` mention via
+  :class:`~cantrip.agent.context_providers_builtin.DocsProvider`.
+  Both return ``{site, url, title, excerpt, score}`` so
+  every cited passage is traceable to a canonical URL.
+- [x] System prompt guidance: a new "Indexed Documentation"
+  section in ``src/cantrip/agent/prompts/system.md.j2``
   teaches the agent to consult ``docs_search`` before
-  answering "how do I …" questions about the charm
-  ecosystem.
-- [ ] Document in ``docs/docs/howto-docs-index.html``
-  (new page).
-- [ ] ``tests/unit/test_docs_index.py`` — crawl a fixture
-  tree, embed with stub provider, query and assert
-  top-k ordering.
+  answering "how do I …" questions and to cite URLs
+  verbatim rather than paraphrase.
+- [x] Documented in ``docs/docs/howto-docs-index.html``
+  (new page) and ``docs/docs/reference-cli.html`` (env vars
+  + ``cantrip docs`` subcommand).
+- [x] ``tests/unit/test_docs_index_store.py`` (16 cases),
+  ``tests/unit/test_docs_index_pipeline.py`` (13 cases),
+  ``tests/unit/test_docs_index_cli.py`` (9 cases),
+  ``tests/unit/test_docs_search_tool.py`` (15 cases) —
+  parser, store, end-to-end indexing with httpx mocked,
+  CLI surface, agent tool, and the ``@docs`` provider
+  including end-to-end through ``expand_mentions``.
 
 ### 72.2 High — ``@``-mention context-provider registry ✅
 
@@ -2964,7 +2975,7 @@ deferred**:
   ``tests/unit/test_store.py`` adds the role-column
   migration + grouping coverage.
 
-### 72.4 Medium — Diagnostics-as-pre-turn-context (``@problems``)
+### 72.4 Medium — Diagnostics-as-pre-turn-context (``@problems``) ✅
 
 - [x] ``@problems`` context provider (registered in 72.2 via
   :class:`cantrip.agent.context_providers_builtin.ProblemsProvider`)
