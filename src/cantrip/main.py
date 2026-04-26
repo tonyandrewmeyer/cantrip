@@ -521,6 +521,55 @@ def parse_args() -> argparse.Namespace:
         help="Skip the interactive confirmation prompt",
     )
 
+    # ── docs (Phase 72.1) ─────────────────────────────────────────────
+    docs_parser = subparsers.add_parser(
+        "docs",
+        help=(
+            "Index Canonical documentation sites for retrieval via "
+            "@docs and the docs_search tool (Phase 72.1)"
+        ),
+    )
+    docs_sub = docs_parser.add_subparsers(dest="docs_command", required=True)
+    docs_index_p = docs_sub.add_parser("index", help="Crawl and index a doc site")
+    docs_index_p.add_argument(
+        "--site",
+        help="Site name (juju, ops, charmcraft, rockcraft, jubilant, charmhub)",
+    )
+    docs_index_p.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_sites",
+        help="Index every registered site (mutually exclusive with --site)",
+    )
+    docs_index_p.add_argument(
+        "--embed-provider",
+        choices=["voyage", "openai"],
+        help="Override embed provider for this index run (defaults to env vars)",
+    )
+    docs_index_p.add_argument(
+        "--embed-model",
+        help="Override embed model for this index run (defaults to env vars)",
+    )
+    docs_list_p = docs_sub.add_parser("list", help="List indexed and available sites")
+    docs_list_p.add_argument(
+        "--root",
+        type=pathlib.Path,
+        default=None,
+        help="Override the cache root (default: ~/.cache/cantrip/docs-index/)",
+    )
+    docs_search_p = docs_sub.add_parser(
+        "search", help="Run a similarity search against an indexed site"
+    )
+    docs_search_p.add_argument("site", help="Site to search (e.g. ops, juju)")
+    docs_search_p.add_argument("query", help="Free-text query string")
+    docs_search_p.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        dest="top_k",
+        help="Number of hits to return (default: 5)",
+    )
+
     # ── audit (Phase 80.4) ────────────────────────────────────────────
     audit_parser = subparsers.add_parser(
         "audit",
@@ -1381,6 +1430,10 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    if args.command == "docs":
+        from cantrip.docs_index import cli as docs_cli
+
+        return docs_cli.dispatch(args)
     return _run(args)
 
 
