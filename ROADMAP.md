@@ -2918,31 +2918,51 @@ deferred**:
   per-provider validation surfaces (file traversal, juju verb
   allowlist, missing args).
 
-### 72.3 Medium — Model roles: embed and rerank
+### 72.3 Medium — Model roles: embed and rerank ✅
 
-- [ ] Extend the provider-config schema (``cantrip.yaml``)
-  to let a provider declare ``roles: [chat, edit, apply,
-  embed, rerank, summarize]``.  Default for an unnamed
-  provider is ``[chat, edit]`` — today's behaviour, no
-  migration required.
-- [ ] Provider-layer hook: ``provider.embed(texts: list[str])
-  -> list[list[float]]`` and ``provider.rerank(query: str,
-  docs: list[str]) -> list[int]``.  Not every provider has
-  to implement these; the layer raises a clean "no embed
-  provider configured" error with a pointer to the docs.
-- [ ] Concrete implementations: Anthropic/Voyage for
-  ``embed``; Anthropic/Voyage for ``rerank``; OpenAI for
-  both; a local ``sentence-transformers`` fallback shipped
-  as an optional dependency for offline use.
-- [ ] Retrieval-using callers (72.1 ``@docs``, future
-  Phase 43 memory retrieval) depend on this — land it
-  first in this phase so those features have infrastructure.
-- [ ] Cost accounting: embed and rerank calls enter the
-  same ``/cost`` breakdown as chat/edit, under distinct
-  role labels so it's clear where the spend is.
-- [ ] ``tests/unit/test_provider_roles.py`` — role routing,
-  fallback behaviour, cost tracking per role, missing-role
-  error path.
+- [x] Provider-role abstraction.  Two narrower ABCs in
+  :mod:`cantrip.llm.roles` —
+  :class:`EmbedProvider` (``texts -> EmbeddingResult``) and
+  :class:`RerankProvider` (``query, docs -> RerankResult``) —
+  keep the chat-shaped :class:`~cantrip.llm.base.LLMProvider`
+  free of no-op embed/rerank stubs.  A
+  :class:`RoleRouter` resolves per-role providers; retrieval
+  callers query the router instead of instantiating
+  providers directly.  `RoleNotConfigured` names the env var
+  / CLI flag that would configure a missing role, replacing
+  the old ``cantrip.yaml`` aspiration with the env-var +
+  CLI surface Cantrip already uses everywhere.
+- [x] Concrete implementations.
+  :class:`~cantrip.llm.voyage.VoyageEmbedProvider` and
+  :class:`~cantrip.llm.voyage.VoyageRerankProvider` (default
+  models ``voyage-3`` and ``rerank-2``);
+  :class:`~cantrip.llm.openai_embeddings.OpenAIEmbedProvider`
+  with ``OPENAI_EMBED_BASE_URL`` override for self-hosted
+  vLLM.  **Deferred:** sentence-transformers offline
+  fallback — no concrete caller exercises the embed path
+  yet, ship as optional dependency when 72.1 ``@docs``
+  needs it.
+- [x] Retrieval-using callers query
+  :attr:`CantripAgent.role_router`; the agent's constructor
+  accepts a router built by
+  :func:`build_role_router` (env vars + CLI flags).  Each
+  entry point (CLI / TUI / Web / print mode) passes its
+  own router so misconfiguration surfaces at boot through
+  the same error path as a missing chat-provider key.
+- [x] Cost accounting.  ``token_usage`` schema v13 added
+  a ``role`` column; legacy rows roll into ``chat``.
+  ``/cost`` picks up a ``By role`` section when any non-chat
+  row exists.  Pricing entries shipped for voyage-3 /
+  -lite / -large / -code-3, rerank-2 / -lite, and
+  text-embedding-3-small / -large (input-only:
+  ``completion=0.0``).
+- [x] ``tests/unit/test_provider_roles.py`` — 28 cases
+  covering the ABCs, the router missing-role error,
+  Voyage/OpenAI wire formats with httpx mocked, the
+  env-var/CLI builder precedence, and the
+  ``record_role_usage`` recording helper.
+  ``tests/unit/test_store.py`` adds the role-column
+  migration + grouping coverage.
 
 ### 72.4 Medium — Diagnostics-as-pre-turn-context (``@problems``)
 

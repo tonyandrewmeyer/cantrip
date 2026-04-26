@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 72.3 (provider roles for retrieval).**  Two narrower ABCs
+  next to :class:`LLMProvider` — :class:`EmbedProvider` (``texts ->
+  EmbeddingResult``) and :class:`RerankProvider` (``query, docs ->
+  RerankResult``) — let providers wire the embedding/rerank endpoints
+  retrieval features need without distorting the chat surface.  A
+  :class:`RoleRouter` resolves per-role providers; missing roles raise
+  ``RoleNotConfigured`` with a pointer at the env var / CLI flag.
+  Concrete: ``voyage`` (embed + rerank, default ``voyage-3`` and
+  ``rerank-2``) and ``openai`` (embed, with
+  ``OPENAI_EMBED_BASE_URL`` for self-hosted vLLM).  New CLI flags
+  ``--embed-provider`` / ``--embed-model`` / ``--rerank-provider`` /
+  ``--rerank-model`` and matching ``CANTRIP_*`` env vars; sessions are
+  built once per agent via ``build_role_router``.  Pricing entries
+  added for the eight new models.  ``token_usage`` schema v13 grew a
+  ``role`` column; ``/cost`` picks up a ``By role`` section when any
+  non-chat row exists.  Sentence-transformers offline fallback
+  deferred until a concrete caller hits the embed path.  Protocol and
+  conventions in ``design/PROVIDER_ROLES.md``.
 - **Phase 72.2 (``@``-mention context providers).**  Typing
   ``@<name> [args]`` in the chat input now expands inline before the
   message reaches the LLM.  Seven baseline providers ship: ``@file

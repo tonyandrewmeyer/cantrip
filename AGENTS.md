@@ -80,6 +80,7 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 - `design/TOOLS.md` — Tool abstraction, registration pattern, how to add/remove a tool
 - `design/SKILLS.md` — Skill discovery, frontmatter schema, load-on-demand flow
 - `design/CONTEXT_PROVIDERS.md` — Phase 72.2: `@`-mention context-provider registry, parser rules, baseline provider catalogue, how to add a new provider
+- `design/PROVIDER_ROLES.md` — Phase 72.3: embed/rerank provider roles, RoleRouter, env-var/CLI configuration, cost-tracking integration, recipe for adding a provider
 - `design/PROMPTS.md` — Prompt layering, Jinja2 conventions, template-injection guard
 - `design/WEB_UI_ACCESSIBILITY_AUDIT.md` — WCAG 2.1 AA audit of the Web UI with findings and evidence (see ROADMAP Phase 60)
 - `design/UPSTREAM_AUDIT.md` — Bookkeeping for the upstream-ecosystem sweep (cutoff commits per repo, re-run procedure; pairs with ROADMAP Phase 37)

@@ -1046,6 +1046,41 @@ Phase 46 hooks &mdash; the protocol and conventions are in
 <td>Bearer token for the configured endpoint; set to any non-empty string when auth is not required.</td>
 </tr>
 <tr>
+<td><code>VOYAGE_API_KEY</code></td>
+<td><code>--embed-provider voyage</code> / <code>--rerank-provider voyage</code></td>
+<td>Voyage AI key.  Required when Voyage serves the <code>embed</code> or <code>rerank</code> role (Phase 72.3).</td>
+</tr>
+<tr>
+<td><code>OPENAI_API_KEY</code></td>
+<td><code>--embed-provider openai</code></td>
+<td>OpenAI key for the embed role (Phase 72.3).  The chat-side <code>--provider openai-compatible</code> path uses <code>OPENAI_COMPATIBLE_API_KEY</code> instead.</td>
+</tr>
+<tr>
+<td><code>OPENAI_EMBED_BASE_URL</code></td>
+<td>optional</td>
+<td>Override the OpenAI embed endpoint (Phase 72.3).  Set to a self-hosted vLLM or any OpenAI-wire-compatible host that serves <code>/v1/embeddings</code>.</td>
+</tr>
+<tr>
+<td><code>CANTRIP_EMBED_PROVIDER</code></td>
+<td>optional</td>
+<td>Phase 72.3: provider for the <code>embed</code> role.  Accepts <code>voyage</code> or <code>openai</code>; <code>--embed-provider</code> overrides.</td>
+</tr>
+<tr>
+<td><code>CANTRIP_EMBED_MODEL</code></td>
+<td>optional</td>
+<td>Phase 72.3: embed model identifier.  Defaults: <code>voyage-3</code> (Voyage), <code>text-embedding-3-small</code> (OpenAI).</td>
+</tr>
+<tr>
+<td><code>CANTRIP_RERANK_PROVIDER</code></td>
+<td>optional</td>
+<td>Phase 72.3: provider for the <code>rerank</code> role.  Currently <code>voyage</code> only.</td>
+</tr>
+<tr>
+<td><code>CANTRIP_RERANK_MODEL</code></td>
+<td>optional</td>
+<td>Phase 72.3: rerank model identifier.  Default <code>rerank-2</code>.</td>
+</tr>
+<tr>
 <td><code>CANTRIP_MEMORY_DIR</code></td>
 <td>optional</td>
 <td>Override the global memory directory. Defaults to <code>$XDG_CONFIG_HOME/cantrip/memory</code> (falls back to <code>~/.config/cantrip/memory</code>).</td>
