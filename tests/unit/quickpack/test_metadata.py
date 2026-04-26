@@ -60,6 +60,35 @@ class TestMetadata:
         }
         assert metadata.resolve_entrypoint(project) == "src/app.py"
 
+    def test_resolve_target_python_24_04(self) -> None:
+        """24.04 base maps to system Python 3.12."""
+        assert metadata.resolve_target_python({"base": "ubuntu@24.04"}) == "3.12"
+
+    def test_resolve_target_python_22_04(self) -> None:
+        """22.04 base maps to system Python 3.10 — common scaffolded charm default."""
+        assert metadata.resolve_target_python({"base": "ubuntu@22.04"}) == "3.10"
+
+    def test_resolve_target_python_prefers_build_base(self) -> None:
+        """``build-base`` overrides ``base`` when both are set.
+
+        charmcraft uses build-base to pick the build environment, so
+        the venv's Python must match build-base, not the runtime base.
+        """
+        project = {"base": "ubuntu@22.04", "build-base": "ubuntu@24.04"}
+        assert metadata.resolve_target_python(project) == "3.12"
+
+    def test_resolve_target_python_unknown_series_returns_none(self) -> None:
+        """An unrecognised series falls back so the caller picks host Python."""
+        assert metadata.resolve_target_python({"base": "ubuntu@99.04"}) is None
+
+    def test_resolve_target_python_non_ubuntu_returns_none(self) -> None:
+        """Non-Ubuntu bases (centos, etc.) fall back to host Python.
+
+        We don't ship a mapping for them; refusing here would break
+        any downstream that has its own Python on PATH.
+        """
+        assert metadata.resolve_target_python({"base": "centos@9"}) is None
+
     def test_generate_metadata_basic(self) -> None:
         project = {
             "name": "test-charm",

@@ -45,6 +45,64 @@ class TestParts:
 
         assert not (prime_dir / "src").exists()
 
+    def test_uv_part_pins_python_to_target(self, tmp_path: pathlib.Path) -> None:
+        """``process_uv_part`` passes ``target_python`` straight to ``uv venv``.
+
+        Before the fix, every quickpack used whatever ``python3`` was on the
+        host's ``$PATH`` — fine for CI hosts whose system Python matched
+        the unit base, but a host that had ``uv python install``'d a newer
+        interpreter built a venv at e.g. ``venv/lib/python3.14/`` while
+        the unit's Python 3.12 looked for ``venv/lib/python3.12/`` and
+        crashed the install hook with ``ModuleNotFoundError: No module
+        named 'ops'``.
+        """
+        charm_dir = tmp_path / "charm"
+        charm_dir.mkdir()
+        prime_dir = tmp_path / "prime"
+        prime_dir.mkdir()
+
+        captured: list[list[str]] = []
+
+        def _capture(cmd, **_kwargs):  # noqa: ANN001
+            captured.append(list(cmd))
+            return mock.MagicMock(returncode=0, stdout="", stderr="")
+
+        with mock.patch("quickpack.parts.subprocess.run", side_effect=_capture):
+            parts.process_uv_part(
+                charm_dir,
+                prime_dir,
+                {"source": "."},
+                target_python="3.12",
+            )
+
+        venv_invocation = next(c for c in captured if c[:2] == ["uv", "venv"])
+        # ``--python`` is positional just before the venv path.  Look for
+        # it by name rather than relying on argv ordering.
+        idx = venv_invocation.index("--python")
+        assert venv_invocation[idx + 1] == "3.12"
+
+    def test_uv_part_falls_back_to_python3_when_target_unknown(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """``target_python=None`` keeps the historical ``python3`` literal."""
+        charm_dir = tmp_path / "charm"
+        charm_dir.mkdir()
+        prime_dir = tmp_path / "prime"
+        prime_dir.mkdir()
+
+        captured: list[list[str]] = []
+
+        def _capture(cmd, **_kwargs):  # noqa: ANN001
+            captured.append(list(cmd))
+            return mock.MagicMock(returncode=0, stdout="", stderr="")
+
+        with mock.patch("quickpack.parts.subprocess.run", side_effect=_capture):
+            parts.process_uv_part(charm_dir, prime_dir, {"source": "."})
+
+        venv_invocation = next(c for c in captured if c[:2] == ["uv", "venv"])
+        idx = venv_invocation.index("--python")
+        assert venv_invocation[idx + 1] == "python3"
+
     def test_uv_subprocess_failure_raises_runtime_error_with_stderr(
         self, tmp_path: pathlib.Path
     ) -> None:

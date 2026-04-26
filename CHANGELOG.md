@@ -8,6 +8,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Tool families bundled behind subcommand discriminators to stay under OpenAI's 128-tool API cap.**  OpenRouter (when routing to OpenAI models) was rejecting Cantrip requests with `Invalid 'tools': array too long. Expected an array with maximum length 128, but got an array with length 130` once skills + virtual-store + a couple of MCP tools pushed the toolset over the limit.  The four largest families now ship as single LLM-facing entries with a `subcommand` field — `juju` (23 actions), `git` (11), `gh` (8, including PR review), `memory` (9).  Each subcommand keeps its full per-action argument schema (visible in the bundled tool's description); permissions, audit, hooks and plan mode all still see the canonical leaf name (`juju_deploy`, `git_commit`, …) because the executor rewrites `juju(subcommand="deploy", …)` into a flat leaf call before any gate runs.  LLM-facing tool count drops from ~123 → ~76; the OpenAI-compatible providers (OpenAI-compatible, Fireworks, OpenRouter) now declare `max_tools=128` as a safety net so future regressions trim to a curated core set instead of letting the API 400 surface.
 
 ### Fixed
+- **Quickpack now pins the build venv to the unit's CPython version
+  instead of whatever ``python3`` the host has installed.**  On a
+  build host with ``uv python install``-managed Python 3.14 in
+  ``$PATH`` (and an Ubuntu-22.04-based charm targeting Python 3.10 in
+  the unit), every quickpacked charm's install hook crashed with
+  ``ModuleNotFoundError: No module named 'ops'`` — the dispatch
+  script symlinked the unit's ``python3`` (3.10/3.12) into the
+  venv, but ``site-packages`` only existed under
+  ``venv/lib/python3.14/`` because that's the version ``uv venv``
+  picked.  ``quickpack.metadata.resolve_target_python`` now maps
+  ``base:`` / ``build-base:`` to the matching system CPython
+  (``ubuntu@22.04 → 3.10``, ``ubuntu@24.04 → 3.12``,
+  ``ubuntu@26.04 → 3.14``) and ``process_uv_part`` plumbs that
+  straight through to ``uv venv --python``.  Falls back to
+  ``python3`` for unknown series (non-Ubuntu, etc.) so existing
+  flows that happened to align by accident keep working.
 - **OpenAI-compatible providers no longer swallow streaming errors as
   ``ResponseNotRead``.**  When an upstream returned a 4xx/5xx during
   ``client.stream(...)``, the shared ``_raise_http_error`` helper
