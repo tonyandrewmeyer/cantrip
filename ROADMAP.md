@@ -50,7 +50,7 @@ active work. The archive preserves the full detail of each finished phase.
 
 ---
 
-## Phase 7: Polish and Ecosystem
+## Phase 7: Polish and Ecosystem ✓
 
 **Goal:** TUI enhancements, advanced testing, full ecosystem integration.
 
@@ -92,10 +92,36 @@ active work. The archive preserves the full detail of each finished phase.
   failure output excerpts, and an overall PASS/FAIL verdict; added to TEST tool allowlist
 
 ### 7.3 Integration Expansion
-- [ ] Full COS integration (all components)
-- [ ] Sloth (SLO management), Parca / Pyroscope (profiling)
-- [ ] Identity integration
-- [ ] Litmus chaos testing integration
+- [x] **COS integration — five of seven components delivered.**
+  Prometheus (``prometheus_scrape`` interface in observability +
+  infrastructure-charm skills), Grafana (``GrafanaDashboardProvider``
+  guidance, ``GrafanaScreenshotTool``, F4 trace viewer deep-links),
+  Loki (``LokiQueryTool``, ``log-forwarding`` relation guidance, F3
+  log viewer), Tempo (``TempoQueryTool``, ``TempoWaterfallTool``,
+  ``tracing`` relation), and Traefik-k8s (six skills cover
+  ingress, twelve-factor, bundles, etc.) all ship.  Alertmanager
+  and Catalogue-k8s are documented in
+  ``src/cantrip/skills/observability/SKILL.md`` but lack
+  integration examples and tooling — extracted to **Phase 87**
+  rather than blocking this phase further.
+- [x] **Sloth, Parca / Pyroscope — extracted to Phase 87.**  No skill,
+  prompt, or tooling references the SLO-management or
+  continuous-profiling tools today.  The work is real but distinct
+  from the "showcase the existing observability stack" goal that
+  closes Phase 7; tracked as a follow-on observability phase.
+- [x] **Identity integration — extracted to Phase 88.**  Canonical
+  Identity Platform (Hydra / Kratos / identity-platform-login-ui)
+  needs its own design pass for credential fabric, secret
+  relations, and OIDC relay — too substantial to land as a single
+  Phase 7 bullet.  Tracked separately.
+- [x] **Litmus chaos testing — superseded.**  Phase 7.2 shipped
+  ``ChaosTestTool`` (``chaos_test``) with kill-unit, remove-relation,
+  scale-down, and config-reset disruption types plus pre/post status
+  capture and Markdown reporting; that covers the "chaos and quality
+  assurance" exit criterion for Phase 7.  A future
+  Kubernetes-native chaos surface (network faults, pod failures
+  via the Litmus operator) belongs to a substrate-specific phase
+  if and when an infrastructure-charm scenario demands it.
 
 ### 7.4 Charmhub Publishing
 - [x] charmcraft upload integration
@@ -4055,6 +4081,153 @@ on writes.
 
 ---
 
+## Phase 87: Observability Stack Follow-On — Alertmanager, Catalogue, Profiling
+
+**Goal:** Close the observability gaps that Phase 7.3 surfaced when
+that phase was tied off.  Five components in the Canonical
+Observability Stack are well-supported today (Prometheus, Grafana,
+Loki, Tempo, Traefik) but four are not, and two distinct kinds of
+gap need separate treatment:
+
+* **Alertmanager** and **Catalogue-k8s** — both already documented
+  in ``src/cantrip/skills/observability/SKILL.md`` but neither has
+  integration examples, deployment guidance, or tooling.
+  Alertmanager is "configure routing + a relation"; Catalogue is
+  "expose a service entry on the landing page".  Both are small
+  and matter for production charms.
+* **Sloth (SLO management)**, **Parca**, and **Pyroscope**
+  (continuous profiling) — not referenced anywhere in the
+  codebase.  Larger surface; profiling in particular needs an
+  agent-side reasoning story (how should the agent interpret a
+  flame graph?) before any tool is useful.
+
+### 87.1 Medium — Alertmanager guidance and tests
+
+- [ ] Add an Alertmanager subsection to
+  ``src/cantrip/skills/observability/SKILL.md`` covering the
+  ``alertmanager-dispatch`` interface, route configuration via
+  the Alertmanager Karma charm, and the standard
+  ``charm-relation`` snippet a charm needs to publish alert
+  rules.  Mirror the depth of the existing Prometheus +
+  Grafana sections.
+- [ ] Drop a worked example bundle in
+  ``src/cantrip/skills/observability/`` (or under
+  ``examples/``) showing a charm wired to ``alertmanager-k8s``
+  with one alert rule firing on the demo deployment.
+- [ ] Acceptance test: a charm built via the agent picks up
+  Alertmanager when the user asks for "production-grade
+  alerting" and the resulting bundle deploys cleanly under
+  Phase 17 acceptance harness.
+
+### 87.2 Medium — Catalogue integration
+
+- [ ] Add a Catalogue-k8s subsection to the observability skill
+  covering the ``catalogue`` relation interface, the entry
+  schema (``name``, ``description``, ``url``, ``icon``), and
+  how a charm registers itself onto the COS landing page.
+- [ ] Worked example: a 12-factor charm that registers in
+  Catalogue alongside its Traefik ingress route.
+- [ ] Surface in the F8 integration graph if practical — a
+  catalogue badge next to apps that have registered.
+
+### 87.3 Low — Profiling and SLO research
+
+- [ ] Investigate Sloth (``sloth.dev``) for SLO management:
+  what's the agent's role?  Is it "generate SLO YAML at
+  deploy time" or "audit existing SLOs"?  Charm Sloth charms
+  exist on Charmhub — what's the integration surface?
+- [ ] Investigate Parca and Pyroscope: how does an agent reason
+  about a flame graph?  Compare with the F4 trace viewer's
+  current LLM-summary path — could a similar tool surface
+  hot-path findings to the agent without dumping raw profiles
+  into the context window?
+- [ ] Decision document in ``design/PROFILING.md`` (new): scope,
+  tool/skill split, and whether profiling is a Phase 87
+  follow-up or a standalone ``Phase 89+`` of its own.
+
+### What this phase is *not*
+
+- Not a rewrite of the existing observability skill — Prometheus
+  / Grafana / Loki / Tempo / Traefik integrations stay as they
+  are.  This is additive coverage.
+- Not a new TUI screen.  Alertmanager and Catalogue surface in
+  prompts, skills, and (for Catalogue) the F8 graph; not in
+  their own modal.
+
+**Exit criteria:** A charm asked for "alerting + landing-page
+registration" picks up Alertmanager and Catalogue without further
+prompting; both interfaces have skill-level coverage matching the
+Prometheus / Grafana baseline.  Profiling decision is recorded
+even if the answer is "defer".
+
+---
+
+## Phase 88: Canonical Identity Platform Integration
+
+**Goal:** Cantrip-built charms today can authenticate "alongside an
+OIDC provider" (the twelve-factor skill mentions Hydra and Keycloak
+in passing) but Cantrip has no first-class understanding of the
+[Canonical Identity Platform](https://charmhub.io/topics/canonical-identity-platform) —
+Hydra (OAuth2 / OIDC), Kratos (identity / sessions),
+identity-platform-login-ui, and the various proxy charms that knit
+them together.  This phase decides what that first-class support
+should look like and ships the minimum viable integration.
+
+### 88.1 Research — Identity Platform surface and Cantrip's role
+
+- [ ] Survey the Canonical Identity Platform charms on Charmhub
+  and the relation interfaces they expose: ``oauth``,
+  ``oauth-cli``, ``oidc-info``, ``kratos-external-idp``,
+  ``hydra-token-introspect``, etc.  Document each interface's
+  shape (provider/requirer roles, fields) so the agent can
+  generate correct ``charm-relation`` blocks.
+- [ ] Identify the standard deployment topologies: SaaS-style
+  with a public Hydra, internal-only with mTLS, hybrid via
+  identity-platform-login-ui.  Charm authors choose between
+  these; the agent needs to know the trade-offs.
+- [ ] Decide which topology Cantrip should default to when a
+  user says "add login" without further qualification.
+
+### 88.2 Skill — ``identity-platform`` charm-generation skill
+
+- [ ] New skill ``src/cantrip/skills/identity-platform/`` with
+  the standard SKILL.md format.  Body covers: relation
+  interfaces, charm libraries to import (preferably PyPI
+  versions per the project rule), secret-relation wiring for
+  client credentials, and the boilerplate observed-charm
+  pattern for an OIDC requirer.
+- [ ] Three worked examples: 12-factor app + Hydra requirer,
+  custom app with Kratos sessions, infrastructure charm with
+  oauth-cli for service-to-service.
+
+### 88.3 Tooling — agent-side affordances
+
+- [ ] Decide whether a typed ``identity_platform_*`` tool family
+  is worth building (introspect a deployed Hydra, list
+  registered clients) or whether the existing
+  ``juju_read_relation_data`` plus skill prose is enough.
+  Default to "no new tool" unless a concrete user need
+  surfaces.
+- [ ] Acceptance test: a charm asked for "OIDC login backed by
+  Canonical Identity Platform" deploys with Hydra correctly
+  related and the demo app's login flow works end-to-end on
+  the Phase 17 harness.
+
+### What this phase is *not*
+
+- Not a rewrite of the twelve-factor skill — it gains a
+  cross-link to ``identity-platform`` rather than absorbing it.
+- Not custom IAM (LDAP, SAML, ad-hoc OAuth).  Canonical-stack
+  scope only.
+- Not a generic security audit (Phase 16 / OWASP territory).
+
+**Exit criteria:** A user asking the agent for "an app with
+Canonical-Identity-Platform-backed login" gets a charm with
+correctly-wired Hydra (or chosen alternative) relations, secret
+fabric, and a passing acceptance test on the demo bundle.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4066,7 +4239,7 @@ on writes.
 | M4: Autonomous | 4 ✓ | Agent works independently with visible task tracking |
 | M5: Research-Driven | 5 | Agent proactively researches and proposes grounded designs |
 | M6: Fast | 6 | Common charm build completes in under two minutes |
-| M7: Showcase | 7 | Demo-ready with full ecosystem, testing, and publishing |
+| M7: Showcase | 7 ✓ | Demo-ready with full ecosystem, testing, and publishing |
 | M8: Local Models | 8 ✓ | Cantrip runs on local inference snaps with no cloud API |
 | M9: Terraform | 9 | Cantrip generates and validates Terraform modules for charms |
 | M10: Charm Improver | 10 | Cantrip audits and upgrades existing charms to modern standards |
@@ -4135,4 +4308,6 @@ on writes.
 | M82: Pre/Post Tool Captions | 82 | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
 | M86: K8s/kubectl Research | 86 | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
+| M87: COS Coverage | 87 | Alertmanager and Catalogue-k8s gain skill-level guidance and worked examples at parity with Prometheus/Grafana; Sloth/Parca/Pyroscope decision recorded in ``design/PROFILING.md`` |
+| M88: Identity Platform | 88 | A user asking for "Canonical-Identity-Platform-backed login" gets a charm with correctly-wired Hydra relations, secret fabric, and a passing Phase 17 acceptance test |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
