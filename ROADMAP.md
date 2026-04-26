@@ -1572,7 +1572,7 @@ event bus.
 
 ---
 
-## Phase 70: Amp-Inspired Depth — Librarian, Oracle, Scoped Guidance, Prompt Checks
+## Phase 70: Amp-Inspired Depth — Librarian, Oracle, Scoped Guidance, Prompt Checks ✓
 
 **Goal:** Amp (``ampcode.com``, Sourcegraph's frontier coding
 agent) leans hard into three ideas that the charm-authoring
@@ -2115,11 +2115,18 @@ evidence, alongside charmlint output.
 
 Phase 68.2 gains one follow-up from this review:
 
-- [ ] Add ``cantrip permissions test`` (Amp parity) — evaluates
-  every rule in the permission config against a set of
-  hypothetical tool calls and prints the matching rule and
-  outcome.  One-hour addition to 68.2; listed here so the
-  idea doesn't get lost.
+- [x] Add ``cantrip permissions test`` (Amp parity) — ships as
+  ``cantrip permissions test TOOL [--command CMD] [--path PATH]
+  [--agent NAME]`` plus a sibling ``cantrip permissions list``.
+  Evaluates the discovered ruleset (built-in safe defaults + user
+  ``~/.config/cantrip/permissions.yaml`` + repo
+  ``.cantrip/permissions.yaml``) and prints the verdict, the matched
+  rule, and the source file (or ``builtin:<section>``).  Honours
+  ``--charm-path`` / ``--user-config`` / ``--no-builtin`` so a
+  config can be probed in isolation; ``test --show-rules`` appends
+  the full listing after the verdict.  Tests in
+  ``tests/unit/test_permissions.py::TestPermissionsCLI``;
+  documentation in ``docs/docs/reference-cli.html``.
 
 ---
 

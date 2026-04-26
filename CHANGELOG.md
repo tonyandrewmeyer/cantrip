@@ -24,6 +24,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   matches.
 
 ### Added
+- **``cantrip permissions test`` CLI — Amp parity, closes Phase 70.**
+  New ``cantrip permissions test TOOL [--command CMD] [--path PATH]
+  [--agent NAME]`` subcommand evaluates one hypothetical tool call
+  against the discovered ruleset (built-in defaults + user
+  ``~/.config/cantrip/permissions.yaml`` + repo
+  ``.cantrip/permissions.yaml``) and prints the verdict, the matched
+  rule, and the source file — useful while authoring a config to
+  confirm a local override fires as expected.  Sibling ``cantrip
+  permissions list`` dumps every loaded rule grouped by section.
+  Both honour ``--charm-path`` / ``--user-config`` / ``--no-builtin``
+  for probing a config in isolation; ``test --show-rules`` appends
+  the full listing after the verdict.  Documented in
+  ``docs/docs/reference-cli.html``.
 - **Phase 70.5 Painter — LLM-driven charm icon generation.**  New
   ``charm_icon_generate`` tool routes a Charmhub-style structured
   prompt through an image-generation provider (default Imagen via

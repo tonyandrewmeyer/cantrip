@@ -554,3 +554,245 @@ class TestSubagentGate:
 def test_default_bash_tools_is_nonempty():
     """A sanity check — empty bash_tools would silently skip bash matching."""
     assert "run_command" in DEFAULT_BASH_TOOLS
+
+
+# ---------------------------------------------------------------------------
+# `cantrip permissions test` and `cantrip permissions list` CLI subcommands
+# (Phase 70 follow-up — Amp parity)
+# ---------------------------------------------------------------------------
+
+
+class TestPermissionsCLI:
+    """``cantrip permissions {test,list}`` evaluates and dumps the ruleset."""
+
+    def _args(self, **overrides: object):
+        import argparse
+
+        defaults = {
+            "tool": None,
+            "bash_command": None,
+            "path_arg": None,
+            "agent_name": None,
+            "charm_path": None,
+            "user_config_dir": None,
+            "no_builtin": False,
+            "show_rules": False,
+        }
+        defaults.update(overrides)
+        return argparse.Namespace(**defaults)
+
+    def test_test_builtin_bash_deny(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """Built-in ``rm -rf *`` rule still fires through the CLI."""
+        from cantrip.main import _permissions_test
+
+        args = self._args(
+            tool="run_command",
+            bash_command="rm -rf /tmp/x",
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_test(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Outcome: DENY" in out
+        assert "rm -rf *" in out
+        assert "builtin:bash" in out
+
+    def test_test_path_match(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """Path argument matches the ``paths`` section."""
+        from cantrip.main import _permissions_test
+
+        args = self._args(
+            tool="read_file",
+            path_arg=".env",
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_test(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Outcome: DENY" in out
+        assert "Path:    .env" in out
+        assert "builtin:paths" in out
+
+    def test_test_no_match_default_allow(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """A tool with no matching rule falls through to default allow."""
+        from cantrip.main import _permissions_test
+
+        args = self._args(
+            tool="juju_status",
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_test(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Outcome: ALLOW" in out
+        assert "no rule matched" in out
+
+    def test_test_repo_yaml_rule_attribution(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """A repo-level rule wins last and shows up by file path."""
+        from cantrip.main import _permissions_test
+
+        repo_yaml = tmp_path / ".cantrip" / "permissions.yaml"
+        repo_yaml.parent.mkdir()
+        repo_yaml.write_text(
+            textwrap.dedent(
+                """
+                tools:
+                  juju_destroy_model: ask
+                """
+            ).strip()
+        )
+        args = self._args(
+            tool="juju_destroy_model",
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_test(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Outcome: ASK" in out
+        assert str(repo_yaml) in out
+
+    def test_test_agent_overlay_tightens(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """``--agent`` activates the per-agent overlay; cross-section deny wins."""
+        from cantrip.main import _permissions_test
+
+        repo_yaml = tmp_path / ".cantrip" / "permissions.yaml"
+        repo_yaml.parent.mkdir()
+        repo_yaml.write_text(
+            textwrap.dedent(
+                """
+                tools:
+                  charmhub_search: allow
+                agents:
+                  RESEARCH:
+                    tools:
+                      charmhub_search: deny
+                """
+            ).strip()
+        )
+        # Without the overlay, only the global allow rule applies.
+        bare = self._args(
+            tool="charmhub_search",
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_test(bare)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Outcome: ALLOW" in out
+
+        # With ``--agent RESEARCH`` the overlay deny wins under most-restrictive.
+        with_overlay = self._args(
+            tool="charmhub_search",
+            agent_name="RESEARCH",
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_test(with_overlay)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Outcome: DENY" in out
+        assert "Agent:   RESEARCH" in out
+        assert "agents:RESEARCH" in out
+
+    def test_test_show_rules_flag(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """``--show-rules`` appends the loaded ruleset listing."""
+        from cantrip.main import _permissions_test
+
+        args = self._args(
+            tool="juju_status",
+            show_rules=True,
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_test(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Outcome: ALLOW" in out
+        assert "Loaded ruleset:" in out
+        assert "[bash]" in out  # built-in bash rules are always present
+
+    def test_test_no_builtin_skips_safe_defaults(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """``--no-builtin`` lets ``rm -rf`` fall through when no user rule covers it."""
+        from cantrip.main import _permissions_test
+
+        args = self._args(
+            tool="run_command",
+            bash_command="rm -rf /tmp/x",
+            no_builtin=True,
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_test(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Outcome: ALLOW" in out
+        assert "no rule matched" in out
+
+    def test_list_with_no_files_shows_builtin(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """``permissions list`` with no user/repo files prints the built-in rules."""
+        from cantrip.main import _permissions_list
+
+        args = self._args(
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_list(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Loaded ruleset: builtin" in out
+        assert "rm -rf *" in out
+        assert "builtin:paths" in out
+
+    def test_list_no_builtin_with_no_files_says_empty(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """With ``--no-builtin`` and no files, the listing is empty."""
+        from cantrip.main import _permissions_list
+
+        args = self._args(
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+            no_builtin=True,
+        )
+        rc = _permissions_list(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "No permission rules loaded." in out
+
+    def test_list_includes_per_agent_overlay(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """A repo file with ``agents:`` shows up under an ``[agents:NAME]`` group."""
+        from cantrip.main import _permissions_list
+
+        repo_yaml = tmp_path / ".cantrip" / "permissions.yaml"
+        repo_yaml.parent.mkdir()
+        repo_yaml.write_text(
+            textwrap.dedent(
+                """
+                agents:
+                  RESEARCH:
+                    tools:
+                      web_fetch: allow
+                """
+            ).strip()
+        )
+        args = self._args(
+            charm_path=tmp_path,
+            user_config_dir=tmp_path / "no-such-dir",
+        )
+        rc = _permissions_list(args)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "[agents:RESEARCH]" in out
+        assert "web_fetch" in out
