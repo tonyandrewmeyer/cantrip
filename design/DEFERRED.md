@@ -44,6 +44,7 @@ remembering.
 | 55.4 (Governance) | Intent classification — regex threat scoring against prompt content | A real case emerges where a prompt-content regex would have caught something the tool-surface gate missed | Not fired | In the charm-building context the signal comes from the tool surface (`juju destroy-*`, `rm -rf`), not the prompt content |
 | Claude prompt caching | 1-hour cache TTL via the `extended-cache-ttl-2025-04-11` beta header (`cache_control: {"type": "ephemeral", "ttl": "1h"}`) | Long-running paths (sprint deploy, autonomous overnight runs) report cache misses on multi-minute pauses (e.g. `charmcraft pack`, `juju wait`) — visible as `cache_read_input_tokens` collapsing partway through a run | Not fired | Default 5 min TTL covers interactive use; 1 h costs 2× on write but ~10% of base on read so it pays back fast for runs that pause mid-loop |
 | 87.1 (Alertmanager) | Phase 17 acceptance test for "production-grade alerting" charm | A real session asks for production-grade alerting and the agent picks up the new skill content end-to-end | Not fired | Skill body covers the alert-rule + routing path; test wiring follows when an end-to-end case appears |
+| 87.4 (Sloth) | Phase 17 acceptance test for "production-grade reliability monitoring" charm | A real session asks for SLO-managed reliability and the agent drops a working `slos.yaml` end-to-end | Not fired | Skill body covers the SLI / objective / burn-rate alert path; harness wiring follows when an end-to-end case appears, mirroring 87.1's deferral shape |
 
 ## Resolved deferrals
 

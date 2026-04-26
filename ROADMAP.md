@@ -4184,24 +4184,39 @@ gap need separate treatment:
   split, agent's role per subsystem, Phase placement, revisit
   triggers.
 
-### 87.4 Low — Sloth skill subsection
+### 87.4 Low — Sloth skill subsection ✓
 
-- [ ] Add a Sloth subsection to
-  ``src/cantrip/skills/observability/SKILL.md`` covering: the
-  Sloth relation interface (via ``charmlibs-interfaces-sloth``),
-  default SLOs per workload type (12-factor: HTTP availability +
-  p95 latency; infrastructure: hook-success-rate + p95 hook
-  duration; custom: tunable workload-availability SLOs), the
-  ``slos.yaml`` skeleton with placeholders, and the relation-
-  handler stub.  Mirror the depth of the existing Prometheus +
-  Grafana sections.
-- [ ] Worked example: a 12-factor charm with a small ``slos.yaml``
-  the agent can drop alongside the existing observability
-  wiring.  Placed alongside the 87.1 / 87.2 worked examples.
-- [ ] Acceptance test: a charm asked for "production-grade
-  reliability monitoring" picks up Sloth, the resulting
-  ``slos.yaml`` validates, and the bundle deploys cleanly under
-  the Phase 17 acceptance harness.
+- [x] **Sloth subsection added** to
+  ``src/cantrip/skills/observability/SKILL.md`` between the
+  Alertmanager section and the debugging workflow.  Covers: the
+  alert-flow diagram (charm → Sloth → Prometheus rules →
+  Alertmanager via the same path Step 2 already wires);
+  default-SLO table per workload type (12-factor: HTTP
+  availability + p95 latency; infrastructure: hook-success-rate
+  + p95 hook duration; custom: workload-availability with a
+  tunable target); ``charmcraft.yaml`` relation block (interface
+  ``slos`` per ``charmlibs-interfaces-sloth``); ``slos.yaml``
+  skeleton with `{{.window}}` templating annotated; relation-
+  handler stub using ``from charmlibs.interfaces import sloth``.
+  Composition note explains how the burn-rate alerts route
+  through the same Alertmanager ``severity`` tree from 87.1, and
+  flags the retire-the-hand-written-rule pattern when an SLO
+  takes over.
+- [x] **Worked example** included inline: a 12-factor charm
+  with two SLOs (``requests-availability`` at 99.5% / 30d and
+  ``requests-latency`` at 99% / 30d), both keyed off the
+  ``juju_application`` topology label so they reuse the metrics
+  Step 2 already exposes.  Production tips section captures
+  objective-picking, the page-vs-ticket burn-rate split, and
+  the ``src/slos.yaml`` storage convention mirroring
+  ``src/grafana_dashboards/``.
+- [ ] **Acceptance test deferred.**  Same pattern as 87.1 — the
+  Phase 17 harness wiring is non-trivial and the skill content
+  matters first.  Open the acceptance follow-up when a real
+  session asks for "production-grade reliability monitoring"
+  end-to-end and the agent picks up the new skill content; the
+  missing piece is then the bundle test, not the skill body.
+  Tracked in ``design/DEFERRED.md``.
 
 ### What this phase is *not*
 

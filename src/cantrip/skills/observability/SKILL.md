@@ -17,6 +17,7 @@ Every production charm should integrate with the **Canonical Observability Stack
 | **Grafana** | Dashboards | `grafana-dashboard` |
 | **Tempo** | Trace storage and querying | `tracing` |
 | **Alertmanager** | Alert routing | `alertmanager-dispatch` |
+| **Sloth** | SLO management — generates burn-rate alerts | `slos` |
 
 ## Step 1: Add ops-tracing
 
@@ -356,8 +357,8 @@ relabelling, so grouping and routing on it works out of the box.
 
 ### Karma — the alert-dashboard frontend
 
-[Karma](https://karma-dashboard.io/) is the standard
-Alertmanager visualiser deployed alongside `alertmanager-k8s`
+Karma (see References) is the standard Alertmanager visualiser
+deployed alongside `alertmanager-k8s`
 in the COS bundle.  Charm authors don't relate to Karma; users
 open Karma's URL (find it via the bundle's Catalogue entry, or
 ``juju run alertmanager-k8s/0 show-config`` for the
@@ -426,6 +427,151 @@ fetch it via `charmcraft fetch-libs`.
   cascading "high error rate" alerts that always follow.  Add
   inhibitions to the alertmanager-k8s config when the alert
   graph has obvious dependencies.
+
+## Sloth — SLOs and Burn-Rate Alerts
+
+Sloth is a Prometheus-rule generator for Service Level Objectives:
+the charm publishes a small `slos.yaml` (one SLI expression + one
+target per SLO) over a relation, Sloth synthesises the multi-window
+burn-rate alerts and recording rules, and the resulting alerts ride
+the same `metrics-endpoint` → Prometheus → Alertmanager path Step 2
+and the section above already wire.  No new scrape targets, no new
+receivers; just one extra relation and a YAML file.
+
+### Default SLOs by workload type
+
+| Workload kind | Suggested SLOs |
+|---------------|----------------|
+| **12-factor PaaS** (Path A) | HTTP availability (non-5xx ratio) at 99.5% / 30d; p95 request latency under a workload-tuned threshold at 99% / 30d |
+| **Infrastructure charm** (Path C) | Hook success ratio at 99.9% / 30d; p95 hook duration under 30s at 99% / 30d |
+| **Custom app** (Path B) | Workload availability (Pebble check ratio or a workload-defined readiness metric) at 99% / 30d, plus any workload-specific SLO the user asks for |
+
+These are conservative defaults — three nines is the floor for charm
+hooks where misbehaviour is operator-visible; lower nines suit
+user-facing latency that varies with load.  Tune to the user's stated
+reliability budget.
+
+### Adding the relation to `charmcraft.yaml`
+
+```yaml
+# charmcraft.yaml
+requires:
+  slos:
+    interface: slos
+    limit: 1
+```
+
+The interface name comes from `charmlibs-interfaces-sloth`.  The
+Sloth charm itself is fetched from Charmhub (`juju deploy sloth`);
+verify the endpoint name against the deployed Sloth charm's
+`charmcraft.yaml` if `juju integrate` rejects the relation —
+schemas can lag the charm's own naming.
+
+### Worked example — 12-factor charm
+
+One availability SLO covering non-5xx response ratio over 30 days.
+A second latency SLO follows the same shape with
+`http_request_duration_seconds_bucket{le="0.5"}` over
+`http_request_duration_seconds_count`.
+
+```yaml
+# src/slos.yaml
+version: prometheus/v1
+service: my-app
+labels:
+  juju_charm: my-charm
+slos:
+  - name: requests-availability
+    objective: 99.5
+    description: |
+      99.5% of HTTP requests return a non-5xx response over 30d.
+    sli:
+      events:
+        error_query: |
+          sum(rate(http_requests_total{
+            juju_application="my-app", status=~"5.."}[{{.window}}]))
+        total_query: |
+          sum(rate(http_requests_total{
+            juju_application="my-app"}[{{.window}}]))
+    alerting:
+      name: MyAppHighErrorRate
+      page_alert:
+        labels: {severity: critical}
+      ticket_alert:
+        labels: {severity: warning}
+```
+
+The `juju_application` filter is the topology label COS auto-injects
+on every metric forwarded over `metrics-endpoint`, so Sloth's alerts
+share the label space the dashboards and Alertmanager routes already
+use.  `{{.window}}` is Sloth's own templating — leave it verbatim;
+Sloth substitutes the burn-rate windows (5m / 30m / 1h / 6h / 1d / 3d)
+when generating the multi-window rules.  Infrastructure charms swap
+the queries for the `juju_hook_*` metrics auto-exposed by ops-tracing.
+
+### Charm-side relation handler
+
+```toml
+# pyproject.toml
+[project.dependencies]
+charmlibs-interfaces-sloth = ["charmlibs-interfaces-sloth"]
+```
+
+```python
+import pathlib
+import ops
+from charmlibs.interfaces import sloth
+
+
+class MyCharm(ops.CharmBase):
+    def __init__(self, framework: ops.Framework):
+        super().__init__(framework)
+        self._slos_path = self.charm_dir / "src" / "slos.yaml"
+        framework.observe(self.on["slos"].relation_joined, self._publish_slos)
+        framework.observe(self.on["slos"].relation_changed, self._publish_slos)
+
+    def _publish_slos(self, event: ops.RelationEvent) -> None:
+        if not self._slos_path.exists():
+            return
+        spec = sloth.SlosSpec.from_yaml(self._slos_path.read_text())
+        sloth.publish(event.relation, spec, app=self.app)
+```
+
+The `sloth.SlosSpec` / `sloth.publish` names come from the schema
+package; if the published version of `charmlibs-interfaces-sloth`
+exposes different helper names (the package's `__init__` is the
+source of truth), adjust accordingly — the relation-data shape
+itself is stable.
+
+### How SLOs compose with Step 2
+
+- **Shared metrics.**  Sloth's SLIs reference the same Prometheus
+  metrics the charm already exposes via `MetricsEndpointProvider`.
+- **Alert flow stays the same.**  Sloth-generated alerts fire
+  through Prometheus → Alertmanager exactly like hand-written
+  rules under `src/prometheus_alert_rules/`; the `severity` labels
+  route through the same Alertmanager tree from the previous
+  section.
+- **Retire duplicate hand-written rules.**  When an SLO covers a
+  condition (the `HighWorkloadErrorRate` example earlier is one),
+  drop the single-window threshold rule — Sloth's multi-window
+  burn-rate alert fires faster on sharp burns and quieter on
+  shallow ones.  Keep hand-written rules for non-SLO conditions
+  only (capacity, deploy state, license expiry).
+
+### Production tips
+
+- **Pick the objective for the SLI, not the brand.**  Use the
+  lowest target that still catches outages users would complain
+  about; 99.99% on an internal admin tool is a missed alert.
+- **Page vs ticket via burn rate.**  Match Sloth's `page_alert` to
+  `severity: critical` and `ticket_alert` to `severity: warning`
+  so the Alertmanager routes from the previous section dispatch
+  fast-burn pages and slow-burn tickets correctly.
+- **Store `slos.yaml` next to the charm code.**  Mirror
+  `src/grafana_dashboards/` — version-controlled, reviewed, and
+  updated when the SLI metric changes.  `src/slos.yaml` (one file
+  per charm) is the convention.
 
 ## Querying for Debugging
 
@@ -649,3 +795,8 @@ event descriptions. Log *what happened* (e.g. "Secret rotated for relation endpo
 - **Forgetting `--trust`** when deploying COS components that need cluster-wide access.
 - **Not adding the relation endpoints to `charmcraft.yaml`** — the charm will not see the relations if they are not declared in metadata.
 - **Large dashboards in the charm** — keep dashboard JSON reasonable in size. Grafana rejects very large dashboard definitions sent over relation data.
+
+## References
+
+- Karma — https://karma-dashboard.io/ (Alertmanager dashboard frontend)
+- Sloth — https://sloth.dev/ (Prometheus SLO rule generator)
