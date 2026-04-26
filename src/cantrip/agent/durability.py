@@ -107,7 +107,11 @@ def compute_input_hash(*parts: object) -> str:
     a NUL separator before hashing — so callers can pass mixed
     primitives, lists, and dicts without worrying about dict-key
     ordering.  Objects that aren't JSON-native fall back to
-    ``repr()``; the digest stays deterministic per Python version.
+    ``repr()``; the digest is stable only when the type's own
+    ``__repr__`` is stable (Python's default object repr embeds the
+    instance's memory address, so callers passing such instances will
+    see a fresh hash on every call).  In practice the subagent only
+    feeds strings and JSON-native dicts here, so determinism holds.
     """
     parts_bytes = b"\x00".join(_canonicalise(part) for part in parts)
     return hashlib.sha256(parts_bytes).hexdigest()
