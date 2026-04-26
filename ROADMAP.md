@@ -144,7 +144,7 @@ builds, tests, and publishes charms with full observability and quality assuranc
 
 ---
 
-## Phase 36: Review Claude Code Best Practices for Cantrip
+## Phase 36: Review Claude Code Best Practices for Cantrip ✓
 
 **Goal:** Review the community-curated best practices at
 `github.com/shanraisshan/claude-code-best-practice` and evaluate whether any
@@ -152,21 +152,69 @@ techniques would improve (a) how we build Cantrip itself (CLAUDE.md, workflow,
 prompt structure, tool design) or (b) how the Cantrip agent operates (system
 prompts, subagent guidance, tool patterns, conversation loop design).
 
-- [ ] Clone and review the repository contents — extract every concrete
-  recommendation (prompt engineering, CLAUDE.md structure, tool use patterns,
-  context management, task decomposition, etc.)
-- [ ] Evaluate each recommendation against Cantrip's current CLAUDE.md and
-  development workflow — adopt anything that would improve Claude Code's
-  effectiveness when working on this codebase
-- [ ] Evaluate each recommendation against Cantrip's own agent architecture —
-  system prompts (`src/cantrip/agent/prompts/`), subagent guidance
-  (`src/cantrip/agent/prompts/subagent/`), tool design (`src/cantrip/agent/tools/`),
-  and conversation loop (`src/cantrip/agent/core.py`) — adopt patterns that
-  would make Cantrip a more effective autonomous agent
-- [ ] Document findings: what was adopted, what was rejected (and why)
+This was a **research phase** with one small applied change.
+Findings landed in
+[`design/CLAUDE_CODE_BEST_PRACTICES.md`](design/CLAUDE_CODE_BEST_PRACTICES.md);
+summary below.
 
-**Exit criteria:** Review complete. Any adopted changes are implemented and
-passing `make check`.
+### Decisions
+
+- [x] **Source repo cloned and triaged.**  ~8.7 kloc across
+  `best-practice/` (8 reference docs), `reports/` (10 analyses),
+  `tips/` (9 video-tip summaries), `videos/` (6 talk
+  summaries), and `implementation/` (5 examples).  Recommendations
+  extracted into a punch list of ~120 items keyed by topic
+  (CLAUDE.md size, hooks, slash commands, skills, subagents,
+  MCP, settings, harness behaviour, agent design principles).
+- [x] **Angle A (using Claude Code on Cantrip): one adoption.**
+  Expanded the team-shared `.claude/settings.json` allow-list
+  to cover the documented developer loop —
+  `make check` / `unit` / `format` / `lint` / `coverage` /
+  `all`, and `uv run pytest` / `ruff check` / `ruff format` /
+  `ty` / `python -c` / `uv sync --dev`.  These commands run
+  hundreds of times per session and were uniformly tripping
+  permission prompts with no safety win.  No project
+  `.claude/commands/`, `.claude/agents/`, `.claude/skills/`, or
+  `.claude/hooks/` added — those would duplicate Cantrip's own
+  agent / skill / subagent catalogues.
+- [x] **Angle B (Cantrip's own agent design): no production
+  code change.**  Most "Angle B" principles
+  (subagents-as-context-isolation, research → synthesis →
+  confirm → build, "don't use prompts for control flow",
+  "build for the model six months from now", skill descriptions
+  written for the model, cross-session memory) are already
+  implemented.  Two genuinely-new Anthropic API capabilities —
+  Programmatic Tool Calling and the tool-search-tool
+  `defer_loading` pattern — recorded as watch-this items in
+  `design/DEFERRED.md` with revisit triggers.
+- [x] **Three deferred-item entries** added to
+  `design/DEFERRED.md`: PTC for the Anthropic provider, the
+  tool-search-tool `defer_loading` pattern, and a re-run
+  trigger for the source-repo review itself.
+
+### Revisit triggers
+
+The source-repo review re-runs when **any** of:
+
+1. Anthropic publishes Programmatic-Tool-Calling
+   pricing / latency benchmarks against agentic-tool-use
+   workloads (not pure eval suites).
+2. Cantrip's typed tool catalogue passes ~60 entries
+   (we are at ~35 today).
+3. Claude Code ships a feature Cantrip's harness genuinely
+   cannot replicate (e.g. cross-session multi-agent
+   collaboration with a shared write surface — Agent Teams
+   maturing out of experimental).
+4. A Cantrip user reports concrete latency frustration that
+   maps onto a recommendation rejected in this phase
+   (`design/CLAUDE_CODE_BEST_PRACTICES.md` §3.3 / §4.3 are
+   the rejection lists to reread first).
+
+**Exit criteria met:** `design/CLAUDE_CODE_BEST_PRACTICES.md`
+is the written review.  `.claude/settings.json` carries the
+adopted allow-list expansion.  `design/DEFERRED.md` records
+the three watch-this items so Phase 84's deferred-item sweep
+re-evaluates them at the next audit cadence (2026-07-26).
 
 ---
 
@@ -722,139 +770,283 @@ passes throughout.
 
 ---
 
-## Phase 51: Team Collaboration — Research
+## Phase 51: Team Collaboration — Research ✓
 
-**Goal:** Investigate what Cantrip could do to support a *team* working on a
-charm rather than an individual operator. Every assumption in the codebase
-today is single-user: one laptop, one concierge-prepared local Juju
-environment, one session, one decision log, one memory scope, one set of
-approvals. This phase is exploratory — we do not yet know whether the right
-answer is a thin shared-git-plus-PR workflow (Phase 42 already covers most of
-that), a shared Cantrip server with per-user sessions backing a common state,
-or a real-time collaborative agent with live presence. The purpose of this
-phase is to figure out which of those — if any — fits with Cantrip's design,
-and to produce a written recommendation.
+**Goal:** Investigate what Cantrip could do to support a *team* working on
+a charm rather than an individual operator.  Every assumption in the
+codebase today is single-user: one laptop, one concierge-prepared local
+Juju environment, one session, one decision log, one memory scope, one
+set of approvals.  This phase decides whether the right answer is a
+thin shared-git workflow (Phase 42 already covers most of that), a
+shared Cantrip server with per-user sessions backing common state, or
+a real-time collaborative agent with live presence — and produces a
+written recommendation.
 
-This is a **research phase** — no production code changes expected.
+This was a **research phase** — no production code changed.  Findings
+landed in [`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md);
+summary below.
 
-### 51.1 User research
+### Decisions
 
-- [ ] Identify concrete team archetypes: charm-authoring team of 2–5, a
-  charm-ops team operating across many charms, a charm-improvement team
-  fixing issues in other people's charms (Canonical's own workflow is the
-  closest datapoint)
-- [ ] Map each archetype's friction against Cantrip today: where does the
-  single-user assumption hurt? Candidates to probe: concurrent editing of the
-  same charm, two operators deploying to the same model, review-before-push
-  gates, sharing deploy credentials, passing a half-finished build between
-  shifts, auditing who approved what
-- [ ] Surface actual user requests — check Phase 42.2 issue-triage data and
-  CHANGELOG feedback for team-shaped requests; interview 2–3 teams building
-  charms today if possible
+- [x] **Ship the thin shape's small additions as Phase 51b.**  The
+  highest-leverage gap for the small (2–5) charm-authoring-team
+  archetype is memory divergence between teammates' laptops; the
+  fix is opt-in git-tracked ``.cantrip/shared/memory/`` plus
+  shared decisions log plus a human co-author trailer next to the
+  existing ``Cantrip <noreply@canonical.com>`` line.  ~190 LOC
+  + ~70 LOC tests + a docs page; no schema migration; no auth
+  surface.  Could land alongside v1.0 or as a v1.0.x follow-up.
+- [x] **Defer the medium shape (shared Cantrip server) behind
+  named adoption triggers (Phase 51c).**  No demand signal in
+  the repo today — no commit, CHANGELOG entry, issue, or
+  transcript points at a team gap.  The medium shape is a
+  1500–2500-LOC schema-and-server change with a security
+  boundary, justified only when a real team adopts Cantrip and
+  asks for state the thin shape cannot provide.
+- [x] **Declare the heavy shape (real-time collaborative
+  session) a non-goal.**  No peer ships this for an LLM agent
+  session; Cursor's Canvases come closest but operate on
+  artefacts, not the agent's reasoning loop.  Order-of-magnitude
+  more cost than the medium shape against zero demand.
+- [x] **Two side findings opened as separate phases.**  The
+  research surfaced (a) the charm-improvement skill has no
+  guard against deploying to a production controller — an
+  existing safety hole independent of team work, opened as
+  Phase 10b; and (b) Phase 46 hooks shipped without operator
+  identity in the payload, capping role-based policy that any
+  future team shape could express, opened as Phase 46b.
+- [x] **Code-grounded mapping recorded** in
+  ``design/TEAM_COLLABORATION.md`` §1: every place the
+  single-user assumption lives in code, with file:line
+  citations across schema (no operator field on ``Message``,
+  ``Decision``, ``MemoryEntry``, ``AgentTask``, transcript
+  rows), Web UI (localhost-only bind, single ``CantripAgent``
+  singleton, broadcast event bus), session model (charm-path
+  keyed, no creator), CONFIRM/hooks/attribution surfaces.
+- [x] **Peer survey recorded** in §4: Cantrip sits in the
+  local-plus-git-share bucket with Aider, Goose, and Claude
+  Code; cloud-first agents (Copilot Workspace, Cursor cloud,
+  Windsurf Command Center) require the security and billing
+  boundary Cantrip lacks; Continue's Hub is the closest hybrid
+  shape and the natural reference for a future Phase 51c.
 
-### 51.2 Remote and shared Juju controllers
+### Revisit triggers
 
-- [ ] Document what changes when the target controller is not the local
-  concierge-prepared environment — authentication, credential storage,
-  controller discovery, cross-controller awareness (Phase 22.1 already
-  enumerates controllers, but assumes they are local)
-- [ ] Identify the Jubilant / Juju CLI behaviours that differ for remote
-  controllers: `juju register`, macaroon auth, connection pooling, model
-  isolation, and whether preflight checks make sense when the controller is
-  shared
-- [ ] Assess coordination hazards: two team members deploying the same charm
-  to the same model, concurrent `juju config` writes, overlapping debug-log
-  streams — which of these need Cantrip-side coordination vs Juju's existing
-  semantics?
-- [ ] Consider how charm-improvement mode (Phase 10) would behave against a
-  production controller: what would "safe" mean in that context?
+Phase 51c — *Shared Cantrip Server* — opens when **any** of:
 
-### 51.3 Shared interface
+1. **A real team adopts Cantrip and requests shared state.**  At
+   least one team of 2+ humans uses Cantrip for one or more charms
+   for at least a month and reports (issue, transcript, email)
+   that the thin shape is insufficient — typically: shared
+   dashboard, cross-laptop session handoff, or non-originator
+   approvals.
+2. **A Canonical-internal team commits to using Cantrip for a
+   production charm.**  Brings audit, attribution, and approval
+   requirements that the thin shape does not satisfy.
+3. **A peer product ships a self-hostable per-team server that
+   normalises the medium shape across the AI-coding-tools
+   market.**  The cost calculus shifts when matching the market
+   becomes the default expectation rather than a custom build.
 
-- [ ] Today's Web UI (Phase 15) is a single-user localhost server. Sketch
-  what multi-user would look like: a shared server, per-user connections via
-  the existing event bus (Phase 15.1), presence (who is viewing / editing),
-  simple turn-taking vs true concurrent editing
-- [ ] Identify the minimum viable shared interface: is it a read-only
-  dashboard over a single author's Cantrip session, or does every user drive
-  their own agent against shared state?
-- [ ] Evaluate authentication models: SSO, GitHub OAuth (Phase 42 already
-  uses `gh`), or a lightweight shared-secret pattern — each has different
-  deployment-cost trade-offs
+When 1 or 2 fires, the implementation phase opens with §5.2's
+scope as the deliverable and §1's mapping as the change list.
+GitHub OAuth (uses Phase 42's existing ``gh`` dependency) is
+the preferred auth model.
 
-### 51.4 Shared state, memory, and decisions
+**Exit criteria met:** ``design/TEAM_COLLABORATION.md`` is the
+written assessment.  Verdict is "thin shape ships as 51b, medium
+shape defers behind triggers, heavy shape is a non-goal."  Two
+side-finding phases opened (Phase 10b, Phase 46b) for
+independent safety / hook-payload work surfaced by the research.
 
-- [ ] For each existing state scope, decide whether a team version makes
-  sense: decisions log (currently per-session), memory (Phase 43 — per-charm
-  and global; does per-team fit alongside those?), skills (currently local),
-  transcripts (Phase 14 — currently personal, but teams might want a shared
-  audit log)
-- [ ] Consider attribution: if two users contribute to one session, how are
-  their inputs labelled in transcripts and commits?
-- [ ] Consider memory conflict: if two users teach Cantrip contradictory
-  lessons about the same charm, who wins and how is the conflict surfaced?
+**Discovered:** While mapping single-user assumptions, the
+charm-improvement skill's lack of a production-controller guard
+surfaced as an existing safety hole that hurts solo users today
+and would hurt teams more.  Independent of the team-collaboration
+verdict; opened as Phase 10b.
 
-### 51.5 Role-based workflows and approvals
+---
 
-- [ ] Map existing CONFIRM tasks (deploy, destructive actions, PR creation)
-  to a role model: is the user who requested the action always the approver,
-  or can approvals be delegated?
-- [ ] Assess whether the Phase 46 hooks mechanism is enough to express
-  team-specific approval policy, or whether team support needs a first-class
-  role system
-- [ ] Consider handoff: user A leaves a task mid-way (end of shift, blocked
-  on a question); user B picks it up. What state needs to travel, and does
-  session-resume (Phase 11.3 / 31.3) already cover it when the operator
-  changes?
+## Phase 51b: Team Sync — Shared Memory, Decisions, Attribution
 
-### 51.6 Candidate architectures
+**Goal:** Close the highest-leverage gaps for a small (2–5)
+charm-authoring team without standing up a shared server.  Three
+opt-in additions on top of Phase 42's existing GitHub workflow,
+all file-based and git-tracked, all reversible by removing the
+``.cantrip/shared/`` directory or flipping a setting back off.
+See [`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
+§5.1 for the rationale.
 
-- [ ] **Thin (shared git + PR workflow):** each user runs their own Cantrip
-  locally, coordination happens entirely through GitHub. Phase 42 already
-  delivers most of this — the research question is what small additions
-  (branch etiquette, assignee-based triage, PR-level decision sharing) would
-  close the remaining gaps
-- [ ] **Medium (shared Cantrip server):** one long-running Cantrip process
-  per team with a web-authenticated UI; per-user sessions share the memory,
-  decisions, and transcript layers. This is the Windsurf Agent Command
-  Center / Cursor self-hosted cloud-agents shape
-- [ ] **Heavy (real-time collaborative agent):** multiple users drive the
-  same session simultaneously with presence and live artefacts (Cursor
-  Canvases). Probably too ambitious without clear demand
-- [ ] For each candidate, list: estimated implementation cost, new failure
-  modes introduced, parts of the existing codebase affected, and which
-  user-research archetypes it serves
+### 51b.1 Shared memory directory
 
-### 51.7 Decision and write-up
+- [ ] Optional ``<charm-root>/.cantrip/shared/memory/`` directory
+  in the same Markdown-frontmatter format as global memory
+  (``$XDG_CONFIG_HOME/cantrip/memory/``).  Committed to the repo
+  alongside the charm.
+- [ ] ``MemoryStore.load()`` (``src/cantrip/agent/memory.py``)
+  reads from local SQLite + the shared directory and merges,
+  marking shared entries with ``source="shared"`` so they can be
+  filtered, displayed differently, or excluded by listing tools.
+- [ ] Setting ``team_memory_writes: shared | local | ask``
+  controls where new charm-scope writes land
+  (``src/cantrip/agent/memory_writer.py``).  Default ``local``
+  preserves today's behaviour; teams opt in by flipping to
+  ``shared`` or ``ask``.
+- [ ] Conflict policy: textual git merge.  Document in the
+  how-to that conflicts on the same key get resolved at the file
+  level by whoever pulls last; no in-app conflict UI.
 
-- [ ] Write a findings document summarising: whether team support is a
-  direction Cantrip should pursue at all, which archetype(s) are worth
-  optimising for, which candidate architecture fits Cantrip's
-  single-operator-biased design with the least disruption, and what the
-  explicit non-goals are
-- [ ] If any direction is promising, outline a concrete follow-on phase with
-  scoped sub-items — but be willing to conclude "not now" if the user
-  research or architecture sketch does not support it
-- [ ] Capture the written assessment in `design/` alongside the ACP research
-  output so future planning has a shared reference
+### 51b.2 Shared decisions log
 
-**Exit criteria:** A written assessment of whether Cantrip should support
-teams, which team archetypes are worth targeting, which architectural
-direction best fits Cantrip's design, and whether the next step is a concrete
-implementation phase or a deliberate decision to stay single-user. `make
-check` passes throughout (this phase should not add code beyond a findings
-document).
+- [ ] Optional ``<charm-root>/.cantrip/shared/decisions.jsonl``
+  append-only log mirroring the per-session ``decisions`` table.
+- [ ] ``SessionStore.load_session()`` (``src/cantrip/agent/store.py``)
+  reads decisions from SQLite and appends shared-log entries
+  marked ``source="shared"``.
+- [ ] ``add_decision()`` (``src/cantrip/agent/state.py``)
+  optionally appends to the shared file when sharing is enabled,
+  behind setting ``team_decisions_writes``.
+- [ ] ``Decision.source`` field added (``src/cantrip/agent/state.py``);
+  schema migration is additive (nullable column).
+
+### 51b.3 Human co-author trailer
+
+- [ ] Auto-commit trailer (``src/cantrip/agent/auto_commit.py:48``)
+  keeps the ``Co-Authored-By: Cantrip <noreply@canonical.com>``
+  line as a marker that the agent steered the commit, and
+  *adds* a second ``Co-Authored-By:`` line built from
+  ``git config user.name`` / ``git config user.email``.
+- [ ] When ``git config user.name`` / ``user.email`` is unset
+  (or returns Cantrip's own canonical), skip the second trailer
+  silently — no breakage for existing single-user setups.
+- [ ] Tests cover: both trailers present, only Cantrip trailer
+  when git config absent, no duplication when git config matches
+  Cantrip's canonical.
+
+### 51b.4 Documentation
+
+- [ ] New ``docs/docs/howto-team-sync.html`` covers the three
+  opt-in settings, the shared-directory format, the conflict
+  policy, and the worked example of two operators collaborating
+  via the shared layer.
+- [ ] Updates to ``docs/docs/howto-memory.html`` mention shared
+  scope alongside charm and global.
+- [ ] CHANGELOG entry under Unreleased.
+
+**Exit criteria:** Three settings ship with sensible defaults
+(all ``local`` / off — opt-in only).  ``make check`` passes.
+Existing single-user installations see zero behavioural change.
+Two-operator integration test exercises the shared-memory and
+shared-decisions paths against a temp repo.
 
 **Dependencies:**
 | Item | Depends On | Notes |
 |------|-----------|-------|
-| User research (51.1) | None | Pure research; can start any time |
-| Remote controllers (51.2) | Phase 22 multi-controller | Builds on existing controller awareness |
-| Shared interface (51.3) | Phase 15 Web UI | Extends the existing event bus + server |
-| Shared state (51.4) | Phase 43 memory | Memory scopes are the natural extension point |
-| Role workflows (51.5) | Phase 46 hooks (if adopted) | Hooks may obviate a bespoke role system |
-| Architecture sketches (51.6) | 51.1–51.5 | Needs the research inputs to sketch against |
-| Decision write-up (51.7) | 51.6 | Consolidates into a recommendation |
+| Shared memory (51b.1) | Phase 43 memory scopes | Adds a third scope alongside charm/global |
+| Shared decisions (51b.2) | Phase 14 decisions log | Mirrors the existing per-session log |
+| Co-author trailer (51b.3) | Phase 42 auto-commit | Extends the existing trailer assembly |
+| Docs (51b.4) | All of the above | One how-to + cross-references |
+
+---
+
+## Phase 10b: Charm-Improvement Production-Controller Guard
+
+**Goal:** Stop the charm-improvement skill from deploying test
+charms to a production controller by default.  Today
+``skills/charm-improvement/SKILL.md`` instructs the agent to
+deploy via ``jubilant.Juju()`` against the *current* controller —
+whichever the local ``juju`` CLI defaults to.  If that's a
+production controller (registered earlier with ``juju register``
+for an unrelated purpose, then left as default), the agent will
+deploy without warning.  See
+[`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
+§8.1 for how this surfaced.
+
+This is a safety patch, not a redesign.  Phase 10's existing
+charm-improvement pipeline stands; this only adds a confirm gate
+in front of mutating Juju calls when the target controller looks
+non-local.
+
+### 10b.1 Heuristic default
+
+- [ ] Detect controllers that are not the local
+  concierge-prepared one — cloud type ``localhost``,
+  ``microk8s`` on 127.0.0.1, ``k8s`` on a local socket.
+  Anything else flips a "non-local" flag at controller-resolution
+  time (``src/cantrip/agent/preflight.py``).
+- [ ] Charm-improvement-mode tools that mutate
+  (``juju_deploy``, ``juju_relate``, ``juju_refresh``,
+  ``juju_destroy_model``, etc.) emit a CONFIRM before executing
+  when the current controller is non-local.  CONFIRM message
+  names the controller and its cloud so the operator sees what
+  they're about to touch.
+
+### 10b.2 Explicit production list
+
+- [ ] Settings-schema field ``production_controllers: [str]``
+  lets the operator name controllers that always require
+  explicit confirm regardless of cloud type.  Belt-and-braces
+  with the heuristic for cases where the heuristic
+  under-classifies (e.g., a remote controller on a private
+  network that *looks* local).
+- [ ] When a controller name matches the production list, the
+  CONFIRM message escalates language ("Deploy to **production
+  controller** ``foo``?") so the operator notices.
+
+### 10b.3 Tests
+
+- [ ] Unit tests for the heuristic classifier — local clouds
+  pass through, non-local clouds get flagged.
+- [ ] Integration test scaffolds a fake controller list and
+  verifies the CONFIRM gate fires for non-local entries.
+- [ ] Test covers the explicit-list override.
+
+**Exit criteria:** Charm-improvement runs against a non-local
+controller emit a CONFIRM.  Settings field documented in
+``docs/docs/reference-cli.html``.  CHANGELOG entry.  ``make
+check`` passes.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Heuristic (10b.1) | Phase 22 controller enumeration | Reads the existing controllers list |
+| Explicit list (10b.2) | Phase 46 settings schema | New settings key |
+| Tests (10b.3) | 10b.1, 10b.2 | Both code paths covered |
+
+---
+
+## Phase 46b: Operator Identity in Hook Payloads
+
+**Goal:** Add an optional ``operator`` field to Phase 46 hook
+payloads so role-aware policy is expressible by future hook
+scripts (and so adding the field is not a breaking change to
+existing scripts later).  See
+[`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
+§8.2 for context.
+
+This is a small forward-compatibility patch.  Existing hook
+scripts that don't read ``operator`` keep working unchanged;
+new scripts can branch on it.
+
+- [ ] Extend ``hooks.py`` payload schema (``hooks.py:39-52``):
+  new ``operator: dict | None`` field with sub-fields ``name``
+  / ``email`` populated from ``git config user.name`` /
+  ``user.email`` at hook-fire time.  ``None`` when no git
+  config is set.
+- [ ] Document the new field in ``docs/docs/howto-hooks.html``
+  alongside the existing payload table.
+- [ ] Test covers: field present when git config set, ``None``
+  when unset, scripts that don't reference the field continue
+  to function.
+
+**Exit criteria:** ``operator`` field documented and tested.
+Existing hooks unaffected.  ``make check`` passes.  CHANGELOG
+entry.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Payload extension | Phase 46 hook plumbing | Pure additive change |
 
 ---
 
@@ -2547,7 +2739,7 @@ before moving on.
 
 ---
 
-## Phase 72: Continue-Inspired Context Providers — @-Mentions, Indexed Docs, Model Roles, Diagnostics Priming
+## Phase 72: Continue-Inspired Context Providers — @-Mentions, Indexed Docs, Model Roles, Diagnostics Priming ✅
 
 **Goal:** Continue (``continue.dev``) centres its UX on
 *context providers* — structured fragments a user injects into
@@ -2635,117 +2827,158 @@ deferred**:
   by Phase 70.3 (glob-conditional guidance).  Don't
   duplicate — point the user at both from docs.
 
-### 72.1 High — Indexed charm-ecosystem documentation (``@docs``)
+### 72.1 High — Indexed charm-ecosystem documentation (``@docs``) ✅
 
-- [ ] New subsystem ``src/cantrip/docs_index/`` with a crawl
-  + embed + local vector-store pipeline.  Target sites, all
-  opt-in via config:
-  - Juju documentation (``juju.is/docs`` and
-    ``canonical-juju.readthedocs-hosted.com``)
-  - Ops reference (``ops.readthedocs.io``)
-  - Charmcraft reference
-    (``canonical-charmcraft.readthedocs-hosted.com``)
-  - Rockcraft reference
-    (``canonical-rockcraft.readthedocs-hosted.com``)
-  - Jubilant docs (``canonical-jubilant.readthedocs-hosted.com``)
-  - Charmhub charm-guidelines page
-- [ ] Storage: SQLite + ``sqlite-vec`` (or ``faiss`` if it's
-  already in the dependency tree) at
-  ``~/.cache/cantrip/docs-index/<site-hash>/``.  Chunk size
-  ~500 tokens; overlap 50.  Embed with the provider's
-  ``embed``-role model (72.3) — fall back to a local
-  sentence-transformer model if no remote embed provider
-  is configured.
-- [ ] ``cantrip docs index [--site <name> | --all]``
-  subcommand triggers a crawl; ``cantrip docs refresh``
-  updates incrementally.  Transparent caching: docs older
-  than ``settings.docs.max_age_days`` (default 14) get
-  re-crawled.
-- [ ] Retrieval surface: a new ``docs_search`` tool the
-  agent can invoke, and the 72.2 ``@docs`` mention for
-  user-initiated lookups.  Both return ``{site, url,
-  excerpt, score}`` tuples so every citation is
-  traceable — never paraphrase.
-- [ ] Prompt guidance (``src/cantrip/agent/prompts/system.py``)
+- [x] New subsystem :mod:`cantrip.docs_index` with the
+  full crawl → chunk → embed → upsert → search pipeline.
+  Six canonical surfaces registered in
+  :mod:`cantrip.docs_index.sites`: ``juju``, ``ops``,
+  ``charmcraft``, ``rockcraft``, ``jubilant``, ``charmhub``.
+- [x] Storage: SQLite per-site under
+  ``~/.cache/cantrip/docs-index/<site>/index.db``; vectors
+  packed as float32 BLOB with cosine similarity in pure
+  Python.  No ``sqlite-vec`` / ``faiss`` dependency —
+  charm-ecosystem corpora are small enough that in-memory
+  search stays sub-second.  Chunk size ~500 tokens, overlap
+  50, paragraph-aware breaks.  Embed batches of 64 through
+  the Phase 72.3 :class:`EmbedProvider`.  **Deferred:**
+  sentence-transformers offline fallback (Phase 72.3
+  defers it until a concrete caller hits the embed path —
+  this phase doesn't change that decision; sessions
+  without a remote embed provider see ``RoleNotConfigured``
+  and skip ``@docs`` registration entirely).
+- [x] ``cantrip docs index [--site <name> | --all]`` and
+  ``cantrip docs list`` / ``cantrip docs search <site> <query>``
+  subcommands in :mod:`cantrip.docs_index.cli`.  Re-indexing
+  replaces rows by stable ``sha256(url|ordinal)`` hash.
+  **Deferred:** ``cantrip docs refresh`` with
+  ``If-Modified-Since`` honoring (Phase 72.1b if the corpus
+  size makes the full re-crawl painful in practice).
+- [x] Retrieval surfaces: typed
+  :class:`~cantrip.agent.tools.docs_search.DocsSearchTool`
+  registered in
+  :func:`cantrip.agent.tools.build_tools` when the session
+  has an embed-capable router; Phase 72.2
+  ``@docs <site> <query>`` mention via
+  :class:`~cantrip.agent.context_providers_builtin.DocsProvider`.
+  Both return ``{site, url, title, excerpt, score}`` so
+  every cited passage is traceable to a canonical URL.
+- [x] System prompt guidance: a new "Indexed Documentation"
+  section in ``src/cantrip/agent/prompts/system.md.j2``
   teaches the agent to consult ``docs_search`` before
-  answering "how do I …" questions about the charm
-  ecosystem.
-- [ ] Document in ``docs/docs/howto-docs-index.html``
-  (new page).
-- [ ] ``tests/unit/test_docs_index.py`` — crawl a fixture
-  tree, embed with stub provider, query and assert
-  top-k ordering.
+  answering "how do I …" questions and to cite URLs
+  verbatim rather than paraphrase.
+- [x] Documented in ``docs/docs/howto-docs-index.html``
+  (new page) and ``docs/docs/reference-cli.html`` (env vars
+  + ``cantrip docs`` subcommand).
+- [x] ``tests/unit/test_docs_index_store.py`` (16 cases),
+  ``tests/unit/test_docs_index_pipeline.py`` (13 cases),
+  ``tests/unit/test_docs_index_cli.py`` (9 cases),
+  ``tests/unit/test_docs_search_tool.py`` (15 cases) —
+  parser, store, end-to-end indexing with httpx mocked,
+  CLI surface, agent tool, and the ``@docs`` provider
+  including end-to-end through ``expand_mentions``.
 
-### 72.2 High — ``@``-mention context-provider registry
+### 72.2 High — ``@``-mention context-provider registry ✅
 
-- [ ] Central registry in
-  ``src/cantrip/agent/context_providers.py`` with a
-  ``ContextProvider`` protocol: ``name``, ``description``,
-  ``expand(args: str) -> list[ContextBlock]``.  Tab-complete
-  integrates with Phase 61 autocomplete.
-- [ ] Baseline providers:
-  - ``@file <path>`` — inline file contents (existing
-    ``fs_read`` under new surface)
-  - ``@diff`` — ``git diff`` since last commit
-  - ``@tree [path]`` — directory tree (respects
-    ``.gitignore``)
-  - ``@terminal`` — last N lines of the Phase 69.3 shell-
-    mode output buffer
-  - ``@url <url>`` — ``webfetch`` result, markdownified
-  - ``@problems`` — see 72.4
-  - ``@docs <site> <query>`` — see 72.1
-  - ``@charm <name>`` — fetch charm metadata + source index
-    via Phase 70.1 Librarian
-  - ``@juju <show-unit <app/0> | status | config <app>>`` —
-    inline juju read-only output
-- [ ] Expansion happens in the TUI/Web input layer before
-  the message reaches the agent, so the agent sees a fully-
-  expanded prompt (one fewer tool call needed) and the
-  transcript records both the typed form and the expanded
-  form.
-- [ ] Bounded: each provider has a token budget
-  (``settings.context_providers.<name>.max_tokens``,
-  reasonable defaults per provider).  Over-budget content
-  is truncated with a summary line ("file truncated; use
-  ``@file <path> --full`` to override").
-- [ ] Third-party providers registered via Phase 46 hooks
-  or MCP (Phase 45) — don't lock this to built-ins.
-  Document the protocol in
-  ``design/CONTEXT_PROVIDERS.md`` (new).
-- [ ] ``tests/unit/test_context_providers.py`` — parsing
-  ``@foo bar baz`` correctly, expansion + token-budget
-  enforcement, unknown-provider graceful handling, transcript
-  records both forms.
+- [x] Central registry in
+  :mod:`cantrip.agent.context_providers` with a
+  :class:`ContextProvider` protocol (``info: ProviderInfo``,
+  async ``expand(args, ctx) -> ContextBlock``).
+  :class:`MentionSuggestions` widget integrates with the
+  Phase 61 autocomplete pattern; Tab completes a trailing
+  ``@<partial>`` segment mid-message without disturbing the
+  surrounding prose.
+- [x] Baseline providers shipped in
+  :mod:`cantrip.agent.context_providers_builtin`:
+  - ``@file <path>`` — inline file contents, traversal-safe
+  - ``@diff`` — ``git diff HEAD``
+  - ``@tree [path]`` — ``git ls-files`` listing (respects
+    ``.gitignore``); falls back to plain walk
+  - ``@url <url>`` — ``WebFetchTool`` wrapper (private-IP
+    block + llms.txt probing inherited)
+  - ``@problems`` — reuses Phase 72.4
+    :class:`~cantrip.agent.lint_context.DiagnosticsCache`
+  - ``@charm <name>`` — Charmhub metadata via
+    ``CharmhubInfoTool``
+  - ``@juju <subcmd>`` — read-only ``juju`` subprocess with a
+    hard verb allowlist (``status``, ``show-unit``, ``config``,
+    ``list-secrets``, ``show-relation``, ``show-application``,
+    ``show-model``, ``list-models``)
+  - **Deferred:** ``@terminal`` (waits on Phase 69.3 shell-mode
+    output buffer); ``@docs <site> <query>`` (Phase 72.1).
+- [x] Expansion happens in the TUI ``on_input_submitted`` and
+  Web WebSocket handlers via :func:`expand_mentions` *after*
+  slash-command dispatch, so the LLM sees a substituted prompt
+  and the user sees an ``Expanded mentions: …`` system note.
+  Multi-line blocks get a ``[@name]…[/@name]`` fence wrapper so
+  the typed form stays visible alongside the substituted
+  content in the transcript.
+- [x] Bounded per-provider char budgets via :func:`truncate`
+  with a ``[truncated N chars]`` footer.  Defaults baked in
+  ``context_providers_builtin``; settings-file override is a
+  future polish.
+- [x] Third-party providers register via
+  :meth:`ProviderRegistry.register` from Phase 46 hooks or
+  Phase 45 MCP server bootstraps — same surface the baseline
+  uses.  Protocol documented in
+  ``design/CONTEXT_PROVIDERS.md``.
+- [x] ``tests/unit/test_context_providers.py`` — 43 cases
+  covering the parser (email, ``@@``, fenced/inline code, multi-
+  mention), provider error path, autocomplete prefix detection,
+  per-provider validation surfaces (file traversal, juju verb
+  allowlist, missing args).
 
-### 72.3 Medium — Model roles: embed and rerank
+### 72.3 Medium — Model roles: embed and rerank ✅
 
-- [ ] Extend the provider-config schema (``cantrip.yaml``)
-  to let a provider declare ``roles: [chat, edit, apply,
-  embed, rerank, summarize]``.  Default for an unnamed
-  provider is ``[chat, edit]`` — today's behaviour, no
-  migration required.
-- [ ] Provider-layer hook: ``provider.embed(texts: list[str])
-  -> list[list[float]]`` and ``provider.rerank(query: str,
-  docs: list[str]) -> list[int]``.  Not every provider has
-  to implement these; the layer raises a clean "no embed
-  provider configured" error with a pointer to the docs.
-- [ ] Concrete implementations: Anthropic/Voyage for
-  ``embed``; Anthropic/Voyage for ``rerank``; OpenAI for
-  both; a local ``sentence-transformers`` fallback shipped
-  as an optional dependency for offline use.
-- [ ] Retrieval-using callers (72.1 ``@docs``, future
-  Phase 43 memory retrieval) depend on this — land it
-  first in this phase so those features have infrastructure.
-- [ ] Cost accounting: embed and rerank calls enter the
-  same ``/cost`` breakdown as chat/edit, under distinct
-  role labels so it's clear where the spend is.
-- [ ] ``tests/unit/test_provider_roles.py`` — role routing,
-  fallback behaviour, cost tracking per role, missing-role
-  error path.
+- [x] Provider-role abstraction.  Two narrower ABCs in
+  :mod:`cantrip.llm.roles` —
+  :class:`EmbedProvider` (``texts -> EmbeddingResult``) and
+  :class:`RerankProvider` (``query, docs -> RerankResult``) —
+  keep the chat-shaped :class:`~cantrip.llm.base.LLMProvider`
+  free of no-op embed/rerank stubs.  A
+  :class:`RoleRouter` resolves per-role providers; retrieval
+  callers query the router instead of instantiating
+  providers directly.  `RoleNotConfigured` names the env var
+  / CLI flag that would configure a missing role, replacing
+  the old ``cantrip.yaml`` aspiration with the env-var +
+  CLI surface Cantrip already uses everywhere.
+- [x] Concrete implementations.
+  :class:`~cantrip.llm.voyage.VoyageEmbedProvider` and
+  :class:`~cantrip.llm.voyage.VoyageRerankProvider` (default
+  models ``voyage-3`` and ``rerank-2``);
+  :class:`~cantrip.llm.openai_embeddings.OpenAIEmbedProvider`
+  with ``OPENAI_EMBED_BASE_URL`` override for self-hosted
+  vLLM.  **Deferred:** sentence-transformers offline
+  fallback — no concrete caller exercises the embed path
+  yet, ship as optional dependency when 72.1 ``@docs``
+  needs it.
+- [x] Retrieval-using callers query
+  :attr:`CantripAgent.role_router`; the agent's constructor
+  accepts a router built by
+  :func:`build_role_router` (env vars + CLI flags).  Each
+  entry point (CLI / TUI / Web / print mode) passes its
+  own router so misconfiguration surfaces at boot through
+  the same error path as a missing chat-provider key.
+- [x] Cost accounting.  ``token_usage`` schema v13 added
+  a ``role`` column; legacy rows roll into ``chat``.
+  ``/cost`` picks up a ``By role`` section when any non-chat
+  row exists.  Pricing entries shipped for voyage-3 /
+  -lite / -large / -code-3, rerank-2 / -lite, and
+  text-embedding-3-small / -large (input-only:
+  ``completion=0.0``).
+- [x] ``tests/unit/test_provider_roles.py`` — 28 cases
+  covering the ABCs, the router missing-role error,
+  Voyage/OpenAI wire formats with httpx mocked, the
+  env-var/CLI builder precedence, and the
+  ``record_role_usage`` recording helper.
+  ``tests/unit/test_store.py`` adds the role-column
+  migration + grouping coverage.
 
-### 72.4 Medium — Diagnostics-as-pre-turn-context (``@problems``)
+### 72.4 Medium — Diagnostics-as-pre-turn-context (``@problems``) ✅
 
-- [~] ``@problems`` context provider (registered in 72.2)
+- [x] ``@problems`` context provider (registered in 72.2 via
+  :class:`cantrip.agent.context_providers_builtin.ProblemsProvider`)
   runs, on expansion:
   - ``ruff check --output-format=json .`` (or just the
     charm's ``src/`` and ``tests/`` to keep it cheap)
@@ -2754,10 +2987,10 @@ deferred**:
   and emits a compact block grouping issues by severity and
   file, capped at 1500 tokens (longer reports get
   summarised with a "N more issues suppressed; run
-  ``cantrip lint`` for the full list").  **Aggregator,
-  truncation, and "N more suppressed" footer landed in
-  ``cantrip.agent.lint_context``; the ``@problems`` mention
-  surface waits on the Phase 72.2 ``@``-provider registry.**
+  ``cantrip lint`` for the full list").  Reuses the shared
+  :class:`~cantrip.agent.lint_context.DiagnosticsCache` so a
+  ``/diagnostics`` immediately followed by ``@problems`` does
+  not pay for the linters twice.
 - [x] Caching: run results cached for 30 seconds in
   :class:`cantrip.agent.lint_context.DiagnosticsCache`
   (TTL=30 s, keyed on resolved charm path, ``--refresh`` /
@@ -4147,16 +4380,30 @@ gap need separate treatment:
   skill content end-to-end; the missing piece is then the
   bundle test, not the skill body.
 
-### 87.2 Medium — Catalogue integration
+### 87.2 Medium — Catalogue integration ✓
 
-- [ ] Add a Catalogue-k8s subsection to the observability skill
-  covering the ``catalogue`` relation interface, the entry
-  schema (``name``, ``description``, ``url``, ``icon``), and
-  how a charm registers itself onto the COS landing page.
-- [ ] Worked example: a 12-factor charm that registers in
-  Catalogue alongside its Traefik ingress route.
-- [ ] Surface in the F8 integration graph if practical — a
-  catalogue badge next to apps that have registered.
+- [x] **Catalogue-k8s subsection added** to
+  ``src/cantrip/skills/observability/SKILL.md`` between Sloth and
+  the debugging workflow.  Covers what Catalogue is (the COS
+  landing page), the four-field entry schema (``name``,
+  ``description``, ``url``, ``icon``), the ``charmcraft.yaml``
+  ``provides: catalogue`` block, and the ``CatalogueConsumer`` /
+  ``CatalogueItem`` wiring.  Also added to the Key Components
+  table at the top.
+- [x] **Worked example included inline:** a charm that pulls its
+  ``url`` from ``self._ingress.url`` (Traefik-fronted external
+  URL from the ``ingress`` relation), so the Catalogue entry
+  stays in sync when Traefik re-issues the route.  Re-publish
+  guidance via ``_catalogue.update_item(...)`` from the ingress
+  relation-changed handler is in the section.
+  ``charms.catalogue_k8s.*`` flagged as not on PyPI (fetch-libs
+  required).
+- [x] **F8 integration graph badge.**  ``_has_catalogue_relation``
+  added to ``tui/screens/graph.py``; apps with a relation on the
+  ``catalogue`` interface get a ``[cat]`` suffix on their panel
+  title, composing with the ``★`` highlight marker.  Two unit
+  tests in ``tests/unit/test_graph.py`` cover the badge and its
+  combination with the current-app highlight.
 
 ### 87.3 Low — Profiling and SLO research ✓
 
@@ -4310,191 +4557,6 @@ should look like and ships the minimum viable integration.
 Canonical-Identity-Platform-backed login" gets a charm with
 correctly-wired Hydra (or chosen alternative) relations, secret
 fabric, and a passing acceptance test on the demo bundle.
-
----
-
-## Phase 87: Bug-Hunt Follow-ups (2026-04-26)
-
-**Goal:** clean up the smaller polish items surfaced by an end-to-end
-exercise of the CLI surface (slash commands, ancillary subcommands,
-charmlint, quickpack, web UI, providers).  The headline bugs from
-that pass landed as straight fixes in the same session — five of
-them, covering print-mode slash dispatch, ``--print --json`` chat
-events, ``--print ""`` falling through to the REPL, ``charmlint`` on
-malformed YAML, and ``quickpack`` swallowing ``CalledProcessError``.
-The items below are the residual rough edges that didn't justify a
-direct fix in that pass and have not yet been triaged.
-
-### 87.1 ``/budget`` synonym for ``--max-tokens``
-
-The CLI flag is ``--max-tokens N`` (which splits evenly across
-prompt and completion).  ``/budget`` only accepts
-``--max-prompt-tokens`` and ``--max-completion-tokens`` — passing
-``/budget --max-tokens N`` produces the help text instead of doing
-the obvious thing.  Either accept the same alias mid-session or
-mention the per-direction caps in ``--max-tokens``'s ``--help``.
-
-### 87.2 Toggle-confirmation phrasing parity
-
-``/yolo`` and ``/architect`` use different phrasings for the
-"already in this state" path:
-
-- ``/yolo on`` (when on) → ``Already in yolo mode on.``
-- ``/architect on`` (when on) → ``Architect mode is already on.  Bare \`/architect\` toggles.``
-
-Pick one phrasing (probably the architect one, which actually tells
-the user how to flip the flag) and apply it to ``/yolo``,
-``/auto-commit``, ``/plan``/``/build`` if the same shape exists
-there too.
-
-### 87.3 ``compare`` should clarify that source code isn't compared
-
-``cantrip compare`` reports "identical" when two charms have wildly
-different ``src/charm.py`` contents because it only diffs structure,
-config, relations, actions, containers, and tests.  The argparse
-help line ("Diff two charm implementations (structure, config,
-relations, tests)") implies this, but the CLI output's structure
-section says ``(identical — same file/directory set)`` without
-clarifying that file *contents* aren't being read.  Either add a
-``--with-source`` mode or amend the structure-section caption to say
-"file/directory layout (not contents)".
-
-### 87.4 ``charmlint --strict`` exit-code documentation
-
-``--strict`` is documented as "Exit with code 2 if warnings are
-found", but the actual logic is errors → 1, strict + warnings → 2.
-When *both* errors and warnings are present, ``--strict`` returns 1
-(not 2).  Document this precedence in the ``--help`` text so CI
-authors know how to wire ``--strict`` into a multi-tier failure
-threshold.
-
-### 87.5 Update-check cache freshness
-
-The 24-hour TTL on ``~/.cache/cantrip/update.json`` means stale
-cache entries can outlive the underlying PyPI state (e.g. a yanked
-release or a downgrade re-tag).  ``/update`` already bypasses the
-cache, but the *startup* notice still trusts the file for a full day
-after it's written.  Two small improvements: (a) when
-``check_for_update`` writes a cache, also store the
-``current`` version it was checked against so a later ``cantrip``
-upgrade invalidates the cache automatically; (b) consider verifying
-the cached ``latest`` exists in PyPI's ``releases`` map before
-showing the notice, so a yanked tag stops nagging.
-
-### Exit criteria
-
-- 87.1 — ``/budget --max-tokens N`` either works or the help text
-  explains why it doesn't.
-- 87.2 — The five toggle handlers share a single
-  ``_already_in_state`` formatter or a table of canonical strings.
-- 87.3 — ``compare``'s output makes the "structure-only" scope
-  explicit; user can see that ``src/`` content is not diffed
-  without reading the source.
-- 87.4 — ``--help`` text and ``--strict`` doc agree on exit-code
-  semantics across the error/warning matrix.
-- 87.5 — The update cache survives a Cantrip upgrade without
-  re-nagging, and a yanked latest version is filtered out before
-  the startup notice fires.
-
-### What this phase is *not*
-
-- A general "fix every CLI rough edge" sweep — these are five
-  concrete observations from one exercise, not a backlog of every
-  inconsistency in the surface.  New rough edges go in their own
-  phases.
-
----
-
-## Phase 88: Provider + TUI Bug-Hunt Follow-ups (2026-04-26)
-
-**Goal:** the round-2 exercise targeted the API-key paths and the
-TUI surface.  Two crashers landed as direct fixes (TUI markup
-escape, print-mode transient-error catch); the items below are the
-residual rough edges that didn't justify a direct fix.
-
-### 88.1 ``/cost`` cache write cost is invisible in the breakdown
-
-A single architect-mode turn against Claude can produce a per-model
-breakdown of `$0.0008` and an "Estimated total: $0.17" — the gap is
-the cache-write cost on the architect's first call.  The total is
-real (cache writes are expensive), but the breakdown rows don't
-show it, so the numbers look broken.  Either:
-
-- Add a "Cache" row in the per-model table showing
-  ``cache_creation_input_tokens`` and the dollar charge for each
-  model, so the rows sum to the total.
-- Or surface a single "Cache write: 28,431 tokens — $0.169" line
-  alongside the existing "Cache hit: 0%" indicator.
-
-### 88.2 ``/tasks`` and ``/status`` aren't handled in the TUI
-
-Both commands are advertised in ``/help`` (the CLI built-in help)
-and listed as "common commands" in the README.  In the CLI they
-print Rich tables; in the TUI they fall through to the LLM, which
-either asks "did you mean...?" or invokes the ``manage_tasks``
-tool.  The TUI already has F-key bindings for the same data
-(F2 status panel; tasks panel always visible on the right), so
-the cleanest fix is one of:
-
-- Wire ``/tasks`` and ``/status`` to print a system-message snapshot
-  via the existing helpers.
-- Or short-circuit them with a "Use F2 / look right" hint and add
-  them to ``catalogue_for`` so autocomplete advertises them.
-
-### 88.3 Provider error messages embed raw upstream JSON
-
-Hitting an invalid model on Claude / Gemini / Fireworks / OpenRouter
-each reports a useful first sentence followed by the full raw
-JSON response — IDs, request IDs, nested fields.  Examples:
-
-```
-Provider error: Claude API error: Error code: 404 - {'type': 'error',
-'error': {'type': 'not_found_error', 'message': 'model: bogus-xxx'},
-'request_id': 'req_011...'}
-```
-
-Strip to the human-readable ``error.message`` field per provider
-in the ``ProviderError`` constructor / formatter so the message
-that lands in the chat is one short line, with the raw payload
-captured in the diagnostics log.
-
-### 88.4 ``q`` shortcut quits the TUI without confirmation
-
-``Binding("q", "quit", "Quit")`` lets a single-keystroke ``q`` exit
-the app when the chat input doesn't have focus.  Most modal terminal
-apps confirm before exit (or move the binding to ``Ctrl+Q``);
-``q`` alone is a hair-trigger when a user is navigating the
-status panel or the integration graph and reflexively types it.
-Either gate behind a confirmation modal or rebind to ``Ctrl+Q``.
-
-### 88.5 Update-cache trust horizon
-
-(Tracking only; same shape as Phase 87.5 but worth restating with
-fresh evidence.)  The 24-hour cache TTL caused a stale "newer
-release available: 0.3.0" notice to keep firing across sessions
-even after PyPI's actual ``latest`` reverted to 0.0.1.  The cache
-key should incorporate the installed version so an upgrade
-invalidates it; or check the ``releases`` map for the cached
-``latest`` before showing the notice so a yanked version stops
-nagging.
-
-### Exit criteria
-
-- 88.1 — ``/cost`` per-model rows + cache row sum to the printed
-  estimated total within rounding error.
-- 88.2 — ``/tasks`` and ``/status`` either render or redirect with
-  a "use F-key X" hint in the TUI; autocomplete includes them.
-- 88.3 — Provider errors render a single-line human message; raw
-  JSON lands in ``cantrip diagnostics`` only.
-- 88.4 — A bare ``q`` no longer terminates the TUI without
-  confirmation, or the binding moves to ``Ctrl+Q``.
-- 88.5 — Cache trust survives a Cantrip upgrade; yanked-version
-  notices stop firing.
-
-### What this phase is *not*
-
-- A redesign of the cost panel or the slash-command surface — just
-  tightening five concrete observations from the round-2 exercise.
 
 ---
 

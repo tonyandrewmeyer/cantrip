@@ -18,6 +18,7 @@ Every production charm should integrate with the **Canonical Observability Stack
 | **Tempo** | Trace storage and querying | `tracing` |
 | **Alertmanager** | Alert routing | `alertmanager-dispatch` |
 | **Sloth** | SLO management — generates burn-rate alerts | `slos` |
+| **Catalogue** | Landing-page registration | `catalogue` |
 
 ## Step 1: Add ops-tracing
 
@@ -430,48 +431,32 @@ fetch it via `charmcraft fetch-libs`.
 
 ## Sloth — SLOs and Burn-Rate Alerts
 
-Sloth is a Prometheus-rule generator for Service Level Objectives:
-the charm publishes a small `slos.yaml` (one SLI expression + one
-target per SLO) over a relation, Sloth synthesises the multi-window
-burn-rate alerts and recording rules, and the resulting alerts ride
-the same `metrics-endpoint` → Prometheus → Alertmanager path Step 2
-and the section above already wire.  No new scrape targets, no new
-receivers; just one extra relation and a YAML file.
+Sloth turns a small per-charm `slos.yaml` into multi-window burn-rate
+Prometheus rules; the resulting alerts ride the same
+`metrics-endpoint` → Prometheus → Alertmanager path Step 2 and the
+section above already wire.  No new scrape targets and no new
+receivers — one extra relation plus a YAML file.
 
-### Default SLOs by workload type
+Default SLOs by workload type (tune to the user's reliability budget):
 
 | Workload kind | Suggested SLOs |
 |---------------|----------------|
-| **12-factor PaaS** (Path A) | HTTP availability (non-5xx ratio) at 99.5% / 30d; p95 request latency under a workload-tuned threshold at 99% / 30d |
+| **12-factor PaaS** (Path A) | HTTP availability (non-5xx ratio) at 99.5% / 30d; p95 request latency at 99% / 30d |
 | **Infrastructure charm** (Path C) | Hook success ratio at 99.9% / 30d; p95 hook duration under 30s at 99% / 30d |
-| **Custom app** (Path B) | Workload availability (Pebble check ratio or a workload-defined readiness metric) at 99% / 30d, plus any workload-specific SLO the user asks for |
-
-These are conservative defaults — three nines is the floor for charm
-hooks where misbehaviour is operator-visible; lower nines suit
-user-facing latency that varies with load.  Tune to the user's stated
-reliability budget.
-
-### Adding the relation to `charmcraft.yaml`
+| **Custom app** (Path B) | Workload availability (Pebble check ratio) at 99% / 30d, plus any workload-specific SLO the user asks for |
 
 ```yaml
-# charmcraft.yaml
+# charmcraft.yaml — interface from charmlibs-interfaces-sloth
 requires:
   slos:
     interface: slos
     limit: 1
 ```
 
-The interface name comes from `charmlibs-interfaces-sloth`.  The
-Sloth charm itself is fetched from Charmhub (`juju deploy sloth`);
-verify the endpoint name against the deployed Sloth charm's
-`charmcraft.yaml` if `juju integrate` rejects the relation —
-schemas can lag the charm's own naming.
-
 ### Worked example — 12-factor charm
 
-One availability SLO covering non-5xx response ratio over 30 days.
-A second latency SLO follows the same shape with
-`http_request_duration_seconds_bucket{le="0.5"}` over
+One availability SLO over a 30-day window; a latency SLO follows the
+same shape using `http_request_duration_seconds_bucket{le="0.5"}` over
 `http_request_duration_seconds_count`.
 
 ```yaml
@@ -483,8 +468,7 @@ labels:
 slos:
   - name: requests-availability
     objective: 99.5
-    description: |
-      99.5% of HTTP requests return a non-5xx response over 30d.
+    description: 99.5% of HTTP requests return a non-5xx response over 30d.
     sli:
       events:
         error_query: |
@@ -502,23 +486,16 @@ slos:
 ```
 
 The `juju_application` filter is the topology label COS auto-injects
-on every metric forwarded over `metrics-endpoint`, so Sloth's alerts
-share the label space the dashboards and Alertmanager routes already
-use.  `{{.window}}` is Sloth's own templating — leave it verbatim;
-Sloth substitutes the burn-rate windows (5m / 30m / 1h / 6h / 1d / 3d)
-when generating the multi-window rules.  Infrastructure charms swap
-the queries for the `juju_hook_*` metrics auto-exposed by ops-tracing.
+on every forwarded metric, so Sloth's alerts share the label space the
+dashboards and Alertmanager routes already use.  `{{.window}}` is
+Sloth's own templating — leave it verbatim; Sloth substitutes the
+burn-rate windows (5m / 30m / 1h / 6h / 1d / 3d) when generating the
+multi-window rules.  Infrastructure charms swap the queries for the
+`juju_hook_*` metrics auto-exposed by ops-tracing.
 
 ### Charm-side relation handler
 
-```toml
-# pyproject.toml
-[project.dependencies]
-charmlibs-interfaces-sloth = ["charmlibs-interfaces-sloth"]
-```
-
 ```python
-import pathlib
 import ops
 from charmlibs.interfaces import sloth
 
@@ -537,41 +514,63 @@ class MyCharm(ops.CharmBase):
         sloth.publish(event.relation, spec, app=self.app)
 ```
 
-The `sloth.SlosSpec` / `sloth.publish` names come from the schema
-package; if the published version of `charmlibs-interfaces-sloth`
-exposes different helper names (the package's `__init__` is the
-source of truth), adjust accordingly — the relation-data shape
-itself is stable.
+### Notes
 
-### How SLOs compose with Step 2
-
-- **Shared metrics.**  Sloth's SLIs reference the same Prometheus
-  metrics the charm already exposes via `MetricsEndpointProvider`.
-- **Alert flow stays the same.**  Sloth-generated alerts fire
-  through Prometheus → Alertmanager exactly like hand-written
-  rules under `src/prometheus_alert_rules/`; the `severity` labels
-  route through the same Alertmanager tree from the previous
-  section.
-- **Retire duplicate hand-written rules.**  When an SLO covers a
-  condition (the `HighWorkloadErrorRate` example earlier is one),
-  drop the single-window threshold rule — Sloth's multi-window
-  burn-rate alert fires faster on sharp burns and quieter on
-  shallow ones.  Keep hand-written rules for non-SLO conditions
-  only (capacity, deploy state, license expiry).
-
-### Production tips
-
-- **Pick the objective for the SLI, not the brand.**  Use the
-  lowest target that still catches outages users would complain
-  about; 99.99% on an internal admin tool is a missed alert.
-- **Page vs ticket via burn rate.**  Match Sloth's `page_alert` to
-  `severity: critical` and `ticket_alert` to `severity: warning`
-  so the Alertmanager routes from the previous section dispatch
+- **Pick the objective for the SLI, not the brand.**  99.99% on an
+  internal admin tool is a missed alert; use the lowest target that
+  still catches outages users would complain about.
+- **Page vs ticket via burn rate.**  Match `page_alert` to
+  `severity: critical` and `ticket_alert` to `severity: warning` so
+  the Alertmanager routes from the previous section dispatch
   fast-burn pages and slow-burn tickets correctly.
+- **Retire duplicate hand-written rules.**  When an SLO covers a
+  condition (`HighWorkloadErrorRate` from the earlier example is
+  one), drop the single-window threshold; the burn-rate alert fires
+  faster on sharp burns and quieter on shallow ones.  Keep
+  hand-written rules for non-SLO conditions only.
 - **Store `slos.yaml` next to the charm code.**  Mirror
-  `src/grafana_dashboards/` — version-controlled, reviewed, and
-  updated when the SLI metric changes.  `src/slos.yaml` (one file
-  per charm) is the convention.
+  `src/grafana_dashboards/`; `src/slos.yaml` per charm is the
+  convention.
+
+## Catalogue — Landing-Page Registration
+
+`catalogue-k8s` builds the COS landing page.  When a charm exposes
+a UI (workload dashboard, admin endpoint, the Grafana panel for the
+workload), relating to Catalogue puts that URL on a discoverable
+list.  The interface carries four fields: `name`, `description`,
+`url`, and `icon` (the icon name; `catalogue-k8s` serves the asset).
+
+```yaml
+# charmcraft.yaml
+provides:
+  catalogue:
+    interface: catalogue
+```
+
+```python
+from charms.catalogue_k8s.v1.catalogue import CatalogueConsumer, CatalogueItem
+
+
+class MyCharm(ops.CharmBase):
+    def __init__(self, framework: ops.Framework):
+        super().__init__(framework)
+        self._catalogue = CatalogueConsumer(
+            charm=self,
+            item=CatalogueItem(
+                name="My App",
+                description="The thing we run.",
+                url=self._ingress.url or "",
+                icon="my-app",
+            ),
+        )
+```
+
+`url` is typically the Traefik-fronted external URL from the
+`ingress` relation, so the entry stays in sync when Traefik
+re-issues the route.  Call `_catalogue.update_item(...)` from the
+ingress `relation-changed` handler when the URL changes.
+`charms.catalogue_k8s.*` is not on PyPI yet — fetch with
+`charmcraft fetch-libs`.
 
 ## Querying for Debugging
 

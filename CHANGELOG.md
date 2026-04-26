@@ -4,7 +4,124 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Phase 72.1 (indexed charm-ecosystem documentation).**  A new
+  ``cantrip.docs_index`` subsystem crawls the canonical Canonical
+  documentation surfaces (Juju, ops, charmcraft, rockcraft, jubilant,
+  Charmhub guidelines) via their sitemap.xml feeds, chunks page text
+  (~500 tokens, 50 overlap, paragraph-aware), embeds via the Phase
+  72.3 :class:`EmbedProvider`, and stores vectors in per-site SQLite
+  caches under ``~/.cache/cantrip/docs-index/``.  No
+  ``sqlite-vec`` / ``faiss`` dependency: cosine similarity runs in
+  pure Python over packed float32 BLOBs, sub-second on
+  charm-ecosystem corpus sizes.  New CLI surface: ``cantrip docs
+  index --site <name>`` (or ``--all``), ``cantrip docs list``, and
+  ``cantrip docs search <site> <query>``.  Retrieval is exposed as
+  the agent-invokable ``docs_search`` tool *and* the Phase 72.2
+  ``@docs <site> <query>`` mention.  Both return ``{site, url,
+  title, excerpt, score}`` so every cited passage is traceable to a
+  canonical URL — never paraphrase.  System prompt updated to nudge
+  the agent to consult ``docs_search`` before answering "how do I …"
+  questions about charm authoring.  Sentence-transformers offline
+  fallback and ``cantrip docs refresh`` (incremental crawl) deferred
+  to 72.1b.  Protocol and pipeline conventions in
+  ``design/DOCS_INDEX.md``; user how-to in
+  ``docs/docs/howto-docs-index.html``.
+- **Phase 72.3 (provider roles for retrieval).**  Two narrower ABCs
+  next to :class:`LLMProvider` — :class:`EmbedProvider` (``texts ->
+  EmbeddingResult``) and :class:`RerankProvider` (``query, docs ->
+  RerankResult``) — let providers wire the embedding/rerank endpoints
+  retrieval features need without distorting the chat surface.  A
+  :class:`RoleRouter` resolves per-role providers; missing roles raise
+  ``RoleNotConfigured`` with a pointer at the env var / CLI flag.
+  Concrete: ``voyage`` (embed + rerank, default ``voyage-3`` and
+  ``rerank-2``) and ``openai`` (embed, with
+  ``OPENAI_EMBED_BASE_URL`` for self-hosted vLLM).  New CLI flags
+  ``--embed-provider`` / ``--embed-model`` / ``--rerank-provider`` /
+  ``--rerank-model`` and matching ``CANTRIP_*`` env vars; sessions are
+  built once per agent via ``build_role_router``.  Pricing entries
+  added for the eight new models.  ``token_usage`` schema v13 grew a
+  ``role`` column; ``/cost`` picks up a ``By role`` section when any
+  non-chat row exists.  Sentence-transformers offline fallback
+  deferred until a concrete caller hits the embed path.  Protocol and
+  conventions in ``design/PROVIDER_ROLES.md``.
+- **Phase 72.2 (``@``-mention context providers).**  Typing
+  ``@<name> [args]`` in the chat input now expands inline before the
+  message reaches the LLM.  Seven baseline providers ship: ``@file
+  <path>``, ``@diff``, ``@tree [path]``, ``@problems`` (closes the
+  last 72.4 bullet), ``@url <url>``, ``@charm <name>``, and ``@juju
+  <subcmd>`` (verbs hard-allowlisted to read-only — ``status``,
+  ``show-unit``, ``config``, ``list-secrets``, ``show-relation``,
+  ``show-application``, ``show-model``, ``list-models``).
+  Mid-message Tab autocomplete via the new ``MentionSuggestions``
+  TUI widget; multi-line blocks get a ``[@name]…[/@name]`` fence
+  wrapper so the transcript records intent alongside content.
+  Third-party providers register via
+  ``ProviderRegistry.register`` from Phase 45 MCP servers or
+  Phase 46 hooks.  Protocol and conventions in
+  ``design/CONTEXT_PROVIDERS.md``.
+
 ### Changed
+- **Phase 51 (Team Collaboration research) closed.**  Investigated
+  whether Cantrip should grow team features beyond its single-operator
+  shape.  Findings landed in ``design/TEAM_COLLABORATION.md``: every
+  persistence row (``Message`` / ``Decision`` / ``MemoryEntry`` /
+  ``AgentTask`` / transcript) lacks an operator field today; the Web
+  UI binds ``127.0.0.1`` with no auth and serves a single
+  ``CantripAgent`` singleton over a broadcast event bus; the
+  charm-authoring team of 2–5 is the only plausible near-term
+  archetype; demand signal in the repo is zero.  Verdict: ship the
+  *thin* shape's small git-tracked additions as Phase 51b (opt-in
+  ``.cantrip/shared/memory/`` + shared decisions log + human
+  co-author trailer alongside Cantrip's; ~190 LOC, no schema
+  migration, no auth surface), defer the *medium* shape (shared
+  Cantrip server, GitHub-OAuth auth, per-user sessions) behind three
+  named adoption triggers as Phase 51c, declare the *heavy* shape
+  (real-time collaborative session) a non-goal.  Two side-finding
+  phases opened: Phase 10b (charm-improvement skill needs a
+  production-controller guard — existing safety hole, hurts solo
+  users today and teams more later) and Phase 46b (Phase 46 hook
+  payloads need an optional ``operator`` field for forward
+  compatibility with role-aware policy).  Reference document linked
+  from ``CLAUDE.md`` Reference Documents list.
+- **Phase 36 (Claude Code best-practices review) closed.**  Reviewed
+  the community-curated repo at
+  ``github.com/shanraisshan/claude-code-best-practice``
+  (~8.7 kloc across ``best-practice/`` / ``reports/`` / ``tips/``
+  / ``videos/`` / ``implementation/``) against Cantrip's CLAUDE.md,
+  ``.claude/settings.json``, system prompt, subagent catalogue, and
+  tool design.  Findings landed in
+  ``design/CLAUDE_CODE_BEST_PRACTICES.md``: most load-bearing items
+  (CLAUDE.md under 200 lines, ``uv``-only workflow, two-tier
+  settings, subagents-as-context-isolation, research → synthesis
+  → confirm → build planner, "don't use prompts for control
+  flow", "build for the model six months from now") are already
+  in place.  One concrete adoption: expanded the team-shared
+  ``.claude/settings.json`` allow-list to cover the documented
+  developer loop (``make check`` / ``unit`` / ``format`` / ``lint``
+  / ``coverage`` / ``all`` and ``uv run pytest`` / ``ruff check``
+  / ``ruff format`` / ``ty`` / ``python -c`` / ``uv sync --dev``)
+  so routine in-loop commands no longer trip permission prompts.
+  Three watch-this items added to ``design/DEFERRED.md``:
+  Anthropic Programmatic Tool Calling for the Anthropic provider,
+  the tool-search-tool ``defer_loading`` pattern for Cantrip's
+  tool catalogue, and a re-run trigger for the source-repo review
+  itself.  No new phase opened.
+- **Phase 87.2 (Catalogue integration) closed.**  The
+  ``observability`` skill gains a "Catalogue — Landing-Page
+  Registration" section between the Sloth subsection and the
+  debugging workflow.  Covers the four-field entry schema
+  (``name`` / ``description`` / ``url`` / ``icon``), the
+  ``charmcraft.yaml`` ``provides: catalogue`` block, the
+  ``CatalogueConsumer`` / ``CatalogueItem`` wiring, and a worked
+  example that pulls ``url`` from ``self._ingress.url`` so the
+  entry stays in sync when Traefik re-issues the route.
+  ``charms.catalogue_k8s.*`` flagged as not on PyPI yet
+  (fetch-libs required).  The F8 integration graph also gains a
+  ``[cat]`` panel-title badge for apps that have registered with
+  Catalogue, composing with the existing ``★`` current-app
+  marker.  Sloth subsection trimmed in the same edit to free
+  budget under the skill scanner's body-length cap.
 - **Phase 87.4 (Sloth skill subsection) closed.**  The
   ``observability`` skill gains a "Sloth — SLOs and Burn-Rate
   Alerts" section between the Alertmanager guidance and the
@@ -109,48 +226,6 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **Tool families bundled behind subcommand discriminators to stay under OpenAI's 128-tool API cap.**  OpenRouter (when routing to OpenAI models) was rejecting Cantrip requests with `Invalid 'tools': array too long. Expected an array with maximum length 128, but got an array with length 130` once skills + virtual-store + a couple of MCP tools pushed the toolset over the limit.  The four largest families now ship as single LLM-facing entries with a `subcommand` field — `juju` (23 actions), `git` (11), `gh` (8, including PR review), `memory` (9).  Each subcommand keeps its full per-action argument schema (visible in the bundled tool's description); permissions, audit, hooks and plan mode all still see the canonical leaf name (`juju_deploy`, `git_commit`, …) because the executor rewrites `juju(subcommand="deploy", …)` into a flat leaf call before any gate runs.  LLM-facing tool count drops from ~123 → ~76; the OpenAI-compatible providers (OpenAI-compatible, Fireworks, OpenRouter) now declare `max_tools=128` as a safety net so future regressions trim to a curated core set instead of letting the API 400 surface.
 
 ### Fixed
-- **Audit JSONL now redacts secrets in nested arguments, not just top-level
-  strings.**  ``cantrip.agent.audit.scrub_arguments`` walked only the
-  outer dict — a tool call like
-  ``juju_config(values={"db-password": "supersecret"})`` or
-  ``run_command(cmd=["gh", "auth", "login", "--with-token", "ghp_…"])``
-  would land verbatim in ``.cantrip-audit.jsonl`` because the secret
-  lived inside a nested dict / list and the scrubber's ``isinstance(value,
-  str)`` branch fell through to the pass-through ``else``.  The
-  scrubber now recurses through dicts, lists, and tuples so the
-  Phase 50.2 ``sanitise_body`` redaction reaches every JSON-shaped
-  string in the argument tree.  SQLite remains the canonical record;
-  the JSONL is the grep-friendly export and now matches the
-  redaction promise the docstring already made.
-- **``destructive_command_check`` catches bundled short-flag and
-  ``--force-with-lease=ref`` forms of ``git push --force``.**  The
-  Phase 80.5 argv-shape gate (in ``run_command``) only matched
-  literal ``--force`` / ``-f`` / ``--force-with-lease``, so
-  ``git push -fu origin main`` (force + set-upstream bundle) and
-  ``git push --force-with-lease=feature origin main`` (the form ``git
-  push`` writes when you specify the expected ref) both slipped past
-  the gate and executed without an ``approve_destructive`` consent.
-  The matcher now uses the existing ``_is_short_flag(arg, "f")``
-  predicate (mirroring how ``rm -rf`` already detects ``-fr`` and
-  ``-rf``) and a ``startswith("--force-with-lease")`` prefix check
-  so the ``=expected-ref`` suffix variant trips alongside the bare
-  flag.
-- **Quickpack now pins the build venv to the unit's CPython version
-  instead of whatever ``python3`` the host has installed.**  On a
-  build host with ``uv python install``-managed Python 3.14 in
-  ``$PATH`` (and an Ubuntu-22.04-based charm targeting Python 3.10 in
-  the unit), every quickpacked charm's install hook crashed with
-  ``ModuleNotFoundError: No module named 'ops'`` — the dispatch
-  script symlinked the unit's ``python3`` (3.10/3.12) into the
-  venv, but ``site-packages`` only existed under
-  ``venv/lib/python3.14/`` because that's the version ``uv venv``
-  picked.  ``quickpack.metadata.resolve_target_python`` now maps
-  ``base:`` / ``build-base:`` to the matching system CPython
-  (``ubuntu@22.04 → 3.10``, ``ubuntu@24.04 → 3.12``,
-  ``ubuntu@26.04 → 3.14``) and ``process_uv_part`` plumbs that
-  straight through to ``uv venv --python``.  Falls back to
-  ``python3`` for unknown series (non-Ubuntu, etc.) so existing
-  flows that happened to align by accident keep working.
 - **Gemini provider strips ``additionalProperties`` from tool schemas
   before dispatch.**  The Google SDK serialises JSON-Schema keys to
   snake_case on the wire, so Cantrip's subcommand bundles
@@ -180,53 +255,6 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the role in the confirmation; the explicit ``/copy assistant``
   selector still surfaces ``no assistant messages`` when nothing
   matches.
-- **TUI no longer crashes when a chat message contains square-bracket
-  text that looks like a Textual closing tag.**  ``/help`` documents
-  ``/model [provider[/model]]``, and the literal ``[/model]``
-  substring inside the response would be parsed as an unbalanced
-  closing tag — the next layout pass crashed the entire app with
-  ``MarkupError: closing tag '[/model]' does not match any open
-  tag``.  ``MessageWidget._render_body`` now escapes the message
-  body and progress-item text before splicing them into the markup
-  string for the underlying ``Static``.
-- **Print mode catches transient provider errors that escape the
-  retry loop.**  ``ProviderRateLimitError`` and
-  ``ProviderOverloadedError`` are deliberately not subclasses of
-  ``ProviderError`` (so the retry loop can dispatch on them
-  separately), but that meant once the retry budget was exhausted,
-  the transient error bubbled all the way out as an unhandled
-  traceback in print-mode CI runs.  Print mode now catches them
-  explicitly and reports ``Provider unavailable after retries``
-  with exit code 1.
-- **Print mode now dispatches slash commands instead of sending them
-  to the LLM.**  ``cantrip run --print "/help"`` previously routed
-  the literal string to the model, which would respond with whatever
-  it imagined ``/help`` should say.  The dispatcher now short-
-  circuits before ``process_message``, matching CLI/TUI/Web parity.
-- **``--print --json`` emits the user prompt and assistant reply as
-  ``chat_message`` events.**  NDJSON consumers previously saw only
-  metadata events (cache, status bar, tools) and had to derive the
-  conversation contents from elsewhere.  Both messages are now in
-  the event stream alongside the rest.
-- **``cantrip run --print ""`` now exits with the documented empty-
-  goal error instead of dropping into the interactive REPL.**  The
-  truthy check on ``args.print_goal`` treated the empty string as
-  "no print flag", silently switching modes mid-invocation; the
-  dispatch now uses ``is not None`` so print mode runs and surfaces
-  exit code 2.
-- **``charmlint`` reports a YAML parse error when ``charmcraft.yaml``
-  is malformed.**  Previously it claimed "No charmcraft.yaml or
-  metadata.yaml found" because ``_load_yaml`` swallowed
-  ``yaml.YAMLError`` and returned ``{}``, masking syntax errors as
-  missing files.  The parse failure now surfaces as a ``FATAL``
-  diagnostic with the original parser hint.
-- **``quickpack`` surfaces ``uv`` failures as friendly errors.**  A
-  failing ``uv venv`` / ``uv sync`` raised
-  ``subprocess.CalledProcessError`` which the CLI's exception
-  handler did not catch — users saw a Python traceback instead of
-  uv's stderr.  ``parts._run_uv`` wraps both calls and raises
-  ``RuntimeError`` carrying the underlying uv message so the
-  existing CLI handler renders it cleanly.
 
 ### Added
 - **``cantrip permissions test`` CLI — Amp parity, closes Phase 70.**

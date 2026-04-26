@@ -198,6 +198,22 @@ class TestTokenUsage:
         assert len(past) == 1
         assert past[0]["category"] == "build"
 
+    def test_role_column_groups_legacy_under_chat(self, store: SessionStore) -> None:
+        """Phase 72.3: ``get_usage_by_role`` rolls NULL legacy rows into ``"chat"``."""
+        store.record_usage("claude", "claude-opus", 100, 50)  # legacy NULL role
+        store.record_usage("claude", "claude-opus", 200, 100, role="chat")
+        store.record_usage("voyage", "voyage-3", 30, 0, role="embed")
+        store.record_usage("voyage", "rerank-2", 20, 0, role="rerank")
+
+        by_role = store.get_usage_by_role()
+        bucket = {r["role"]: r for r in by_role}
+        # NULL + explicit "chat" both fall into the chat bucket.
+        assert bucket["chat"]["prompt_tokens"] == 300
+        assert bucket["chat"]["request_count"] == 2
+        assert bucket["embed"]["prompt_tokens"] == 30
+        assert bucket["embed"]["completion_tokens"] == 0
+        assert bucket["rerank"]["prompt_tokens"] == 20
+
     def test_usage_by_model_since(self, store: SessionStore) -> None:
         """get_usage_by_model_since filters rows by timestamp.
 

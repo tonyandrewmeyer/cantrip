@@ -25,6 +25,12 @@ Several tool families are exposed as a single bundled tool with a `subcommand` d
 
 Call them as `juju(subcommand="deploy", charm="redis-k8s", channel="edge")`. The argument schema for each subcommand is in the bundled tool's description — pass the leaf's args as top-level keys alongside `subcommand`. Skill files written before bundling sometimes spell the leaf out (`juju_deploy(...)`, `git_commit(...)`); read those as the equivalent bundled call.
 
+## Indexed Documentation (`docs_search`)
+
+When the user asks "how do I …" about Juju, ops, charmcraft, rockcraft, jubilant, or Charmhub authoring conventions, **call `docs_search` before answering from memory**. The tool returns canonical reference passages with their URLs; cite the URLs verbatim and never paraphrase the docs into specifics that the index didn't return — hallucinated config keys and made-up hook names are the failure mode this tool exists to prevent.
+
+`docs_search(query="...")` searches every indexed site; pass `site="ops"` (or `juju` / `charmcraft` / `rockcraft` / `jubilant` / `charmhub`) to scope. Results carry `{site, url, title, excerpt, score}`. If the tool reports "no docs index", the user has not yet run `cantrip docs index --site <name>`; suggest that command rather than guessing the answer.
+
 ## Task Planning
 
 When the user describes a **new charm to build** or requests a **major scope change**, use the `plan_tasks` tool to decompose the intent into concrete, ordered tasks. This creates a structured plan with dependencies that the autonomous work loop can execute.

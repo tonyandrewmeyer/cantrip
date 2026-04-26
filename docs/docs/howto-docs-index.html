@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Index the charm docs · Cantrip</title>
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="doc-body">
+<a href="#main" class="skip-link">Skip to content</a>
+<header class="doc-header">
+  <div class="doc-header-inner">
+    <a class="doc-logo" href="index.html">Cantrip</a>
+    <nav>
+      <a href="index.html">Docs</a>
+    </nav>
+  </div>
+</header>
+
+<div class="doc-shell">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-docs-index.html" class="current">Index the charm docs</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+      <li><a href="howto-provider.html#retrieval-roles">Configure embed and rerank</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to<span class="sep">/</span>Index the charm docs
+    </div>
+    <h1>Index the charm docs</h1>
+    <p>
+      Phase 72.1 ships a local index of the canonical Canonical
+      documentation surfaces (Juju, ops, charmcraft, rockcraft,
+      jubilant, Charmhub).  Once indexed, the agent reaches for
+      <code>docs_search</code> before answering "how do I &hellip;"
+      questions, and you can pull cited passages mid-message via
+      <code>@docs &lt;site&gt; &lt;query&gt;</code>.  Both surfaces
+      return canonical URLs &mdash; never paraphrased text &mdash;
+      so the agent can no longer fall back to plausible-sounding
+      hallucinations.
+    </p>
+
+    <h2 id="setup">One-time setup</h2>
+    <p>
+      The index needs an embed provider.  Voyage is the
+      Anthropic-ecosystem recommendation; OpenAI's
+      <code>text-embedding-3-small</code> works too.  Configure
+      either in your shell:
+    </p>
+<pre><code><span class="prompt">$</span> export CANTRIP_EMBED_PROVIDER=voyage
+<span class="prompt">$</span> export VOYAGE_API_KEY=&lt;your-key&gt;</code></pre>
+    <p>
+      See <a href="howto-provider.html#retrieval-roles">Configure
+      embed and rerank</a> for the OpenAI variant and the
+      <code>OPENAI_EMBED_BASE_URL</code> override for self-hosted
+      vLLM.
+    </p>
+
+    <h2 id="index">Index a site</h2>
+<pre><code><span class="prompt">$</span> cantrip docs index --site ops
+Indexing ops (https://ops.readthedocs.io/) &hellip;
+  pages: 184  chunks: 612  embed-batches: 10  errors: 0</code></pre>
+    <p>
+      Re-running the same command crawls fresh and replaces stored
+      rows by stable <code>(url, ordinal)</code> hash &mdash; you do
+      not need to clear the cache by hand.  Crawl errors (timeouts,
+      404s) are absorbed; the rest of the pages still index.
+    </p>
+    <p>
+      <code>--all</code> indexes every registered site:
+    </p>
+<pre><code><span class="prompt">$</span> cantrip docs index --all</code></pre>
+
+    <h2 id="list">See what's indexed</h2>
+<pre><code><span class="prompt">$</span> cantrip docs list
+Cache root: /home/&lt;you&gt;/.cache/cantrip/docs-index
+
+Site         Indexed  Chunks   Description
+------------ -------- -------- ----------------------------------------
+juju         no       -        Juju documentation (operator framework + CLI)
+ops          yes      612      ops library reference (charm authoring API)
+charmcraft   no       -        charmcraft reference (charm packaging tooling)
+rockcraft    no       -        rockcraft reference (OCI image packaging)
+jubilant     no       -        Jubilant (integration-testing helpers)
+charmhub     no       -        Charmhub charm-author guidelines</code></pre>
+
+    <h2 id="search">Search from a shell</h2>
+<pre><code><span class="prompt">$</span> cantrip docs search ops "how do secrets work"
+[0.842] https://ops.readthedocs.io/en/latest/howto/manage-secrets.html
+        Manage charm secrets
+        Charm secrets are content-addressed values that &hellip;
+
+[0.781] https://ops.readthedocs.io/en/latest/reference/secrets.html
+        Secret reference
+        A secret is created with a label and content via the &hellip;</code></pre>
+    <p>Pipe the output into <code>fzf</code> or your editor for quick navigation.</p>
+
+    <h2 id="agent">Use it in chat</h2>
+    <p>
+      Inside the TUI / Web chat, the agent calls
+      <code>docs_search</code> automatically when answering
+      ecosystem questions, and you can inject specific passages
+      with the <code>@docs</code> mention:
+    </p>
+<pre><code>How do I model a database relation? @docs ops relation</code></pre>
+    <p>
+      The mention expands inline before the message reaches the
+      LLM, attaching the top hits as a context block with their
+      URLs.  See
+      <a href="reference-cli.html#mentions">@-mention context
+      providers</a> for the full mention catalogue.
+    </p>
+
+    <h2 id="costs">Costs</h2>
+    <p>
+      Every batch of chunks goes through the embed provider, so
+      costs are roughly the per-million-token rate of your
+      embed model multiplied by the corpus size.  At
+      <code>voyage-3</code>'s $0.06/1M rate, indexing the ops
+      reference (~600 chunks &times; 500 tokens) is well under a
+      cent.  The <code>/cost</code> slash command shows a separate
+      <strong>By role</strong> section once embed traffic exists,
+      so retrieval spend is easy to spot.
+    </p>
+
+    <h2 id="caveats">Caveats</h2>
+    <ul>
+      <li>
+        The crawler is sitemap-driven only; sites that don't expose
+        <code>sitemap.xml</code> are not currently supported.
+      </li>
+      <li>
+        V1 re-crawls everything on each <code>cantrip docs
+        index</code>.  Incremental refresh with
+        <code>If-Modified-Since</code> is a planned 72.1b
+        follow-up.
+      </li>
+      <li>
+        Indexing fails fast when the embed provider isn't
+        configured &mdash; the error message names the env var to
+        set.  Sessions without retrieval gracefully skip
+        <code>@docs</code> registration so an unconfigured user
+        sees the same experience they had before this feature
+        landed.
+      </li>
+    </ul>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <div>&copy; 2026 Cantrip contributors</div>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

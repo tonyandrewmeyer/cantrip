@@ -13,7 +13,7 @@ from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
 from cantrip import __version__, diagnostics, notifications, update
-from cantrip.agent import emotions, slash_commands
+from cantrip.agent import context_providers, emotions, slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
@@ -104,6 +104,10 @@ class CantripApp(App):
         editor_provider: str | None = None,
         editor_model: str | None = None,
         no_auto_commit: bool = False,
+        embed_provider: str | None = None,
+        embed_model: str | None = None,
+        rerank_provider: str | None = None,
+        rerank_model: str | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -128,6 +132,10 @@ class CantripApp(App):
         self._editor_provider = editor_provider
         self._editor_model = editor_model
         self._no_auto_commit = no_auto_commit
+        self._embed_provider = embed_provider
+        self._embed_model = embed_model
+        self._rerank_provider = rerank_provider
+        self._rerank_model = rerank_model
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -202,6 +210,9 @@ class CantripApp(App):
                     self._build_command_catalogue(),
                     id="slash-suggestions",
                 ),
+                chat_widget.MentionSuggestions(
+                    id="mention-suggestions",
+                ),
                 chat_widget.ChatInput(placeholder="Type your message...", id="chat-input"),
                 id="left-panel",
             ),
@@ -235,6 +246,9 @@ class CantripApp(App):
         chat_input.bind_suggestions(
             self.query_one("#slash-suggestions", chat_widget.SlashCommandSuggestions)
         )
+        chat_input.bind_mentions(
+            self.query_one("#mention-suggestions", chat_widget.MentionSuggestions)
+        )
         # The right panel is visible by default (charm file tree is useful
         # from the start).  Task checklist and Juju status appear as needed.
         self._init_agent()
@@ -248,6 +262,11 @@ class CantripApp(App):
         if self._agent is not None:
             self._agent.event_bus.bind_loop(asyncio.get_running_loop())
             notifications.install(self._agent.event_bus)
+            # Phase 72.2: seed the ``@``-mention popup catalogue from
+            # the agent's registry so Tab-complete sees both baseline
+            # and any third-party providers registered at startup.
+            mentions = self.query_one("#mention-suggestions", chat_widget.MentionSuggestions)
+            mentions.update_catalogue(self._agent.context_providers.catalogue())
         # Issue triage adds tasks to the work queue for any actionable
         # GitHub issue.  It must run *after* ``_resume_session`` has
         # finished loading the persisted queue — otherwise the
@@ -320,11 +339,22 @@ class CantripApp(App):
             # Resolve light provider for internal tasks (e.g. compaction).
             light_provider = self._resolve_light_provider(llm_provider)
 
+            # Phase 72.3: build embed/rerank role router from CLI / env.
+            from cantrip.llm.roles import build_role_router
+
+            role_router = build_role_router(
+                embed_provider=self._embed_provider,
+                embed_model=self._embed_model,
+                rerank_provider=self._rerank_provider,
+                rerank_model=self._rerank_model,
+            )
+
             self._agent = CantripAgent(
                 provider=llm_provider,
                 charm_path=self.charm_path,
                 light_provider=light_provider,
                 hook_runner=HookRunner.from_disk(repo_root=self.charm_path),
+                role_router=role_router,
             )
 
             # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.
@@ -1469,7 +1499,7 @@ class CantripApp(App):
     # -- Chat -----------------------------------------------------------------
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Drive the slash-suggestion popup from chat input changes."""
+        """Drive the slash and ``@``-mention suggestion popups from chat input changes."""
         from textual.css.query import NoMatches
 
         if event.input.id != "chat-input":
@@ -1479,6 +1509,11 @@ class CantripApp(App):
         except NoMatches:
             return
         suggestions.update_from_value(event.value)
+        try:
+            mentions = self.query_one("#mention-suggestions", chat_widget.MentionSuggestions)
+        except NoMatches:
+            return
+        mentions.update_from_input(event.value, event.input.cursor_position)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle chat input submission."""
@@ -1547,6 +1582,14 @@ class CantripApp(App):
         if self._handle_shared_slash_commands(message, chat):
             return
 
+        # Phase 72.2: expand ``@`` mentions before the message reaches
+        # the LLM.  Slash commands run first so ``/foo @bar`` doesn't
+        # accidentally substitute provider output into a slash arg.
+        expansion = await self._expand_mentions(message)
+        agent_message = expansion.expanded
+        if expansion.changed:
+            chat.add_system_message(f"_Expanded mentions: {expansion.summary()}_")
+
         # Disable input and show thinking indicator while processing.
         input_widget = self.query_one("#chat-input", Input)
         input_widget.disabled = True
@@ -1567,10 +1610,29 @@ class CantripApp(App):
         # renders a chat message instead of the app exiting with a traceback.
         self._streaming_widget = None
         self.run_worker(
-            self._process_agent_message(message),
+            self._process_agent_message(agent_message),
             name="agent_response",
             exclusive=True,
             exit_on_error=False,
+        )
+
+    async def _expand_mentions(self, message: str) -> context_providers.ExpansionResult:
+        """Expand any ``@<name>`` mentions in *message* via the agent's registry.
+
+        Phase 72.2: returns the original text unchanged when no agent
+        is attached or no mentions are present, so callers can keep
+        the same code path regardless of whether expansion fired.
+        """
+        if self._agent is None:
+            return context_providers.ExpansionResult(raw=message, expanded=message, blocks=())
+        ctx = context_providers.ExpansionContext(
+            charm_path=self._agent.state.charm_path,
+            repo_root=self._agent.state.charm_path,
+        )
+        return await context_providers.expand_mentions(
+            message,
+            self._agent.context_providers,
+            ctx,
         )
 
     async def _process_agent_message(self, message: str) -> None:

@@ -38,9 +38,21 @@
       "Bash(python3 --version:*)",
       "Bash(uv pip list:*)",
       "Bash(uv tree:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff check:*)",
+      "Bash(uv run ruff format:*)",
+      "Bash(uv run ty:*)",
+      "Bash(uv run python -c:*)",
+      "Bash(uv sync --dev:*)",
 
       "Bash(make --version:*)",
       "Bash(make -n:*)",
+      "Bash(make check:*)",
+      "Bash(make unit:*)",
+      "Bash(make format:*)",
+      "Bash(make lint:*)",
+      "Bash(make coverage:*)",
+      "Bash(make all:*)",
 
       "WebFetch(domain:docs.github.com)",
       "WebFetch(domain:cli.github.com)"

@@ -445,11 +445,23 @@ def run_print(args: argparse.Namespace) -> int:
 
     charm_path: pathlib.Path = pathlib.Path(args.path)
 
+    # Phase 72.3: build embed/rerank role router (env vars only — print
+    # mode does not expose embed/rerank flags today).
+    from cantrip.llm.roles import build_role_router
+
+    role_router = build_role_router(
+        embed_provider=getattr(args, "embed_provider", None),
+        embed_model=getattr(args, "embed_model", None),
+        rerank_provider=getattr(args, "rerank_provider", None),
+        rerank_model=getattr(args, "rerank_model", None),
+    )
+
     agent = CantripAgent(
         provider=provider,
         charm_path=charm_path,
         light_provider=light_provider,
         hook_runner=HookRunner.from_disk(repo_root=charm_path),
+        role_router=role_router,
     )
 
     # Per-goal budget (Phase 55.3) and snapshot opt-out (Phase 68.1)

@@ -905,6 +905,22 @@ def format_cost(agent: CantripAgent) -> str:
             cost_str = pricing.format_cost(cat_cost) if cat_cost > 0 else "free"
             lines.append(f"- {cat}: {tokens:,} tokens, {reqs} requests, {cost_str}")
 
+    # Phase 72.3: per-role rollup (chat / embed / rerank) — separates
+    # retrieval spend from chat so the user sees where the bill goes.
+    # NULL legacy rows fall under ``chat``; rolling them in keeps the
+    # historical total honest.
+    by_role = getattr(store, "get_usage_by_role", lambda: [])()
+    if by_role and any(row.get("role", "chat") != "chat" for row in by_role):
+        lines.append("")
+        lines.append("**By role**")
+        for row in by_role:
+            role = str(row.get("role", "chat"))
+            prompt_t = int(row.get("prompt_tokens", 0) or 0)
+            completion_t = int(row.get("completion_tokens", 0) or 0)
+            reqs = int(row.get("request_count", 0) or 0)
+            tokens = prompt_t + completion_t
+            lines.append(f"- {role}: {tokens:,} tokens, {reqs} requests")
+
     if total_cost > 0:
         lines.append("")
         lines.append(f"_Estimated total: {pricing.format_cost(total_cost)}_")

@@ -14,6 +14,7 @@ from cantrip.agent.queue import TaskStatus
 from cantrip.hooks import HookRunner
 from cantrip.llm import create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
+from cantrip.llm.roles import build_role_router
 from cantrip.ui import events as ui_events
 
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -180,11 +181,26 @@ def run_cli(args: argparse.Namespace) -> int:
 
     improve_path = getattr(args, "improve", None)
 
+    # Phase 72.3: build a role router for embed/rerank from CLI flags
+    # (with env-var fallbacks).  Misconfigured providers raise here so
+    # the CLI surfaces the error before the agent boots.
+    try:
+        role_router = build_role_router(
+            embed_provider=getattr(args, "embed_provider", None),
+            embed_model=getattr(args, "embed_model", None),
+            rerank_provider=getattr(args, "rerank_provider", None),
+            rerank_model=getattr(args, "rerank_model", None),
+        )
+    except (ValueError, ProviderError) as exc:
+        print(f"Error: {exc}")
+        return 1
+
     agent = CantripAgent(
         provider=provider,
         charm_path=args.path,
         light_provider=light_provider,
         hook_runner=HookRunner.from_disk(repo_root=args.path),
+        role_router=role_router,
     )
 
     # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.

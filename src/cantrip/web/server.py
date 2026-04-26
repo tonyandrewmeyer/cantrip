@@ -13,7 +13,7 @@ import aiohttp.web as web
 import jinja2
 
 from cantrip import update
-from cantrip.agent import slash_commands
+from cantrip.agent import context_providers, slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, PreflightEvent
 from cantrip.llm import create_provider, resolve_light_provider
@@ -590,6 +590,23 @@ async def _ws_logs_stream(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
+async def _expand_mentions(
+    agent: CantripAgent,
+    content: str,
+) -> context_providers.ExpansionResult:
+    """Phase 72.2: expand ``@<name>`` mentions for *content* via *agent*'s registry.
+
+    Mirrors the TUI helper: returns an unchanged result if the agent
+    has no registry (legacy / test-only path) or the message contains
+    no mentions.
+    """
+    ctx = context_providers.ExpansionContext(
+        charm_path=agent.state.charm_path,
+        repo_root=agent.state.charm_path,
+    )
+    return await context_providers.expand_mentions(content, agent.context_providers, ctx)
+
+
 async def _process_chat_turn(app: web.Application, agent: CantripAgent, content: str) -> None:
     """Run one chat turn end-to-end, broadcasting progress and results.
 
@@ -687,11 +704,25 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     if _handle_shared_slash_command(request.app, agent, content):
                         continue
 
+                    # Phase 72.2: expand ``@`` mentions before the LLM
+                    # round.  Slash commands ran first, so a slash arg
+                    # carrying a literal ``@x`` is not substituted.
+                    expansion = await _expand_mentions(agent, content)
+                    final_content = expansion.expanded
+                    if expansion.changed:
+                        _broadcast_chat(
+                            request.app,
+                            "system",
+                            f"_Expanded mentions: {expansion.summary()}_",
+                        )
+
                     # Dispatch the turn as a background task so the read
                     # loop stays free to handle ``cancel_request``.  The
                     # chat lock inside ``_process_chat_turn`` still
                     # serialises concurrent turns from multiple clients.
-                    task = asyncio.create_task(_process_chat_turn(request.app, agent, content))
+                    task = asyncio.create_task(
+                        _process_chat_turn(request.app, agent, final_content)
+                    )
                     turn_tasks.add(task)
                     task.add_done_callback(turn_tasks.discard)
 
@@ -940,10 +971,25 @@ def run_web(args: argparse.Namespace) -> int:
         light_snap_name=light_snap_name,
     )
 
+    # Phase 72.3: build embed/rerank role router from CLI / env.
+    from cantrip.llm.roles import build_role_router
+
+    try:
+        role_router = build_role_router(
+            embed_provider=getattr(args, "embed_provider", None),
+            embed_model=getattr(args, "embed_model", None),
+            rerank_provider=getattr(args, "rerank_provider", None),
+            rerank_model=getattr(args, "rerank_model", None),
+        )
+    except (ValueError, ProviderError) as exc:
+        print(f"Error: {exc}")
+        return 1
+
     agent = CantripAgent(
         provider=provider,
         charm_path=args.path,
         light_provider=light_provider,
+        role_router=role_router,
     )
 
     # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.

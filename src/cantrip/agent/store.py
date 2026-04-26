@@ -14,7 +14,7 @@ from cantrip.agent.state import AgentState, Decision
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -76,6 +76,12 @@ CREATE TABLE IF NOT EXISTS token_usage (
     -- here so /cost can break cost down by research / build / deploy /
     -- test / debug.
     category TEXT,
+    -- Phase 72.3: which provider role consumed these tokens.  ``chat``
+    -- (or NULL for legacy rows) is the conversational path; ``embed``
+    -- and ``rerank`` are the retrieval-side roles introduced by the
+    -- role router.  Lets /cost separate retrieval spend from chat
+    -- spend without losing the per-model breakdown.
+    role TEXT,
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -450,6 +456,14 @@ class SessionStore:
                     "UPDATE session SET active_head_message_id = ? WHERE id = 1",
                     (head_id,),
                 )
+
+        if current < 13:
+            # v13: per-role cost breakdown (Phase 72.3).  Existing rows
+            # get NULL so historical totals stay correct — aggregations
+            # treat NULL as the legacy ``chat`` role.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(token_usage)").fetchall()}
+            if "role" not in cols:
+                self._conn.execute("ALTER TABLE token_usage ADD COLUMN role TEXT")
 
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
@@ -1028,6 +1042,7 @@ class SessionStore:
         prompt_tokens: int,
         completion_tokens: int,
         category: str | None = None,
+        role: str | None = None,
     ) -> int:
         """Record token usage for a single LLM request. Returns the row ID.
 
@@ -1035,17 +1050,51 @@ class SessionStore:
         active when the request fired (subagent turns), or ``None`` for
         main-conversation-loop turns that aren't tied to a task.  Used
         by ``/cost`` to break cost down by category.
+
+        Phase 72.3: *role* labels which provider role consumed the
+        tokens — ``"chat"``, ``"embed"``, ``"rerank"``.  ``None`` is
+        treated as ``"chat"`` by aggregation queries so legacy rows
+        and current chat traffic share the same bucket.
         """
         cursor = self._db.execute(
             """\
-            INSERT INTO token_usage (provider, model, prompt_tokens, completion_tokens, category)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO token_usage
+                (provider, model, prompt_tokens, completion_tokens, category, role)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (provider, model, prompt_tokens, completion_tokens, category),
+            (provider, model, prompt_tokens, completion_tokens, category, role),
         )
         self._db.commit()
         assert cursor.lastrowid is not None
         return cursor.lastrowid
+
+    def get_usage_by_role(self) -> list[dict[str, object]]:
+        """Return token usage grouped by provider role.
+
+        Phase 72.3: surfaces the embed / rerank spend separately from
+        chat so ``/cost`` can show how much of the bill is going to
+        retrieval.  NULL legacy rows fall under ``"chat"``.
+        """
+        rows = self._db.execute(
+            """\
+            SELECT COALESCE(role, 'chat') AS role,
+                   SUM(prompt_tokens)      AS prompt_tokens,
+                   SUM(completion_tokens)   AS completion_tokens,
+                   COUNT(*)                 AS request_count
+            FROM token_usage
+            GROUP BY COALESCE(role, 'chat')
+            ORDER BY role
+            """
+        ).fetchall()
+        return [
+            {
+                "role": row["role"],
+                "prompt_tokens": row["prompt_tokens"] or 0,
+                "completion_tokens": row["completion_tokens"] or 0,
+                "request_count": row["request_count"],
+            }
+            for row in rows
+        ]
 
     def get_total_usage(self) -> dict[str, int]:
         """Return aggregate token counts across all requests."""

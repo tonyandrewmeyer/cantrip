@@ -251,6 +251,40 @@ string.</p>
     generic provider requires you to supply everything by hand.
   </p>
 </div>
+<h2 id="retrieval-roles">Configure embed and rerank (Phase 72.3)</h2>
+<p>Retrieval features &mdash; the planned <code>@docs</code> index and
+memory recall &mdash; need an <em>embedding</em> provider, and rerank
+quality benefits from a dedicated rerank provider.  Cantrip routes
+these via a separate <code>RoleRouter</code> so you pick them
+independently of the chat provider.</p>
+<p>The Anthropic-ecosystem recommendation is Voyage:</p>
+<pre><code><span class="prompt">$</span> export VOYAGE_API_KEY=...
+<span class="prompt">$</span> cantrip --provider claude \
+    --embed-provider voyage --embed-model voyage-3 \
+    --rerank-provider voyage --rerank-model rerank-2</code></pre>
+<p>OpenAI users can pair their embed endpoint with Voyage rerank
+(OpenAI does not ship a rerank API):</p>
+<pre><code><span class="prompt">$</span> export OPENAI_API_KEY=... VOYAGE_API_KEY=...
+<span class="prompt">$</span> cantrip --provider claude \
+    --embed-provider openai --embed-model text-embedding-3-large \
+    --rerank-provider voyage</code></pre>
+<p>Equivalent environment variables for stable shells:
+<code>CANTRIP_EMBED_PROVIDER</code>,
+<code>CANTRIP_EMBED_MODEL</code>,
+<code>CANTRIP_RERANK_PROVIDER</code>,
+<code>CANTRIP_RERANK_MODEL</code>.  The CLI flag wins when both are
+present.  A self-hosted vLLM that speaks the OpenAI embed wire format
+can be reached via <code>OPENAI_EMBED_BASE_URL</code>.</p>
+<p>Costs surface in <code>/cost</code> under a separate <strong>By
+role</strong> section once an embed or rerank call has fired, so
+retrieval spend is visible without merging into chat.  Pricing
+entries cover voyage-3, voyage-3-lite, voyage-3-large, voyage-code-3,
+rerank-2, rerank-2-lite, text-embedding-3-small, and
+text-embedding-3-large; unknown models render as <code>free</code>.</p>
+<p>An offline sentence-transformers fallback is on the roadmap but not
+yet shipped &mdash; sessions without a configured embed provider raise
+<code>RoleNotConfigured</code> from the first retrieval call rather
+than silently degrading.</p>
 <h2 id="hybrid">Hybrid setups</h2>
 <p>You can combine providers &mdash; use a powerful cloud model for code
 generation and a local model for internal tasks like research

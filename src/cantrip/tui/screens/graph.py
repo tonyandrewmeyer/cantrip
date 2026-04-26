@@ -54,6 +54,19 @@ def _status_indicator(status: str) -> Text:
     return Text.assemble((f"{char} {status}", style))
 
 
+def _has_catalogue_relation(app: statustypes.AppStatus) -> bool:
+    """True iff the app has registered itself with COS Catalogue.
+
+    Used to surface a badge on the integration graph so users can
+    spot at a glance which apps appear on the COS landing page.
+    """
+    for related_list in app.relations.values():
+        for rel in related_list:
+            if rel.interface == "catalogue":
+                return True
+    return False
+
+
 def _app_panel(name: str, app: statustypes.AppStatus, highlight: bool = False) -> Panel:
     """Build a Rich Panel for a single application."""
     status = app.app_status.current
@@ -78,6 +91,8 @@ def _app_panel(name: str, app: statustypes.AppStatus, highlight: bool = False) -
 
     border = _BORDER_COLOUR.get(status, "white")
     title = f"★ {name}" if highlight else name
+    if _has_catalogue_relation(app):
+        title = f"{title} [cat]"
 
     return Panel(
         Group(*lines),

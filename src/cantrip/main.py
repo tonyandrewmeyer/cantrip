@@ -104,6 +104,41 @@ def parse_args() -> argparse.Namespace:
         help="Use a different provider for light tasks (enables hybrid mode)",
     )
     run_parser.add_argument(
+        "--embed-provider",
+        choices=["voyage", "openai"],
+        help=(
+            "Phase 72.3: provider for the ``embed`` role (used by retrieval "
+            "features such as ``@docs`` and memory recall).  Also settable "
+            "via the ``CANTRIP_EMBED_PROVIDER`` env var."
+        ),
+    )
+    run_parser.add_argument(
+        "--embed-model",
+        help=(
+            "Phase 72.3: embed model identifier (e.g. ``voyage-3``, "
+            "``text-embedding-3-small``).  Defaults vary per provider; "
+            "also settable via ``CANTRIP_EMBED_MODEL``."
+        ),
+    )
+    run_parser.add_argument(
+        "--rerank-provider",
+        choices=["voyage"],
+        help=(
+            "Phase 72.3: provider for the ``rerank`` role.  Voyage is the "
+            "only first-class option today; OpenAI users pair its embeds "
+            "with Voyage rerank.  Also settable via "
+            "``CANTRIP_RERANK_PROVIDER``."
+        ),
+    )
+    run_parser.add_argument(
+        "--rerank-model",
+        help=(
+            "Phase 72.3: rerank model identifier (e.g. ``rerank-2``, "
+            "``rerank-2-lite``).  Also settable via "
+            "``CANTRIP_RERANK_MODEL``."
+        ),
+    )
+    run_parser.add_argument(
         "--no-tui",
         action="store_true",
         help="Run in CLI mode without TUI",
@@ -486,6 +521,55 @@ def parse_args() -> argparse.Namespace:
         help="Skip the interactive confirmation prompt",
     )
 
+    # ── docs (Phase 72.1) ─────────────────────────────────────────────
+    docs_parser = subparsers.add_parser(
+        "docs",
+        help=(
+            "Index Canonical documentation sites for retrieval via "
+            "@docs and the docs_search tool (Phase 72.1)"
+        ),
+    )
+    docs_sub = docs_parser.add_subparsers(dest="docs_command", required=True)
+    docs_index_p = docs_sub.add_parser("index", help="Crawl and index a doc site")
+    docs_index_p.add_argument(
+        "--site",
+        help="Site name (juju, ops, charmcraft, rockcraft, jubilant, charmhub)",
+    )
+    docs_index_p.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_sites",
+        help="Index every registered site (mutually exclusive with --site)",
+    )
+    docs_index_p.add_argument(
+        "--embed-provider",
+        choices=["voyage", "openai"],
+        help="Override embed provider for this index run (defaults to env vars)",
+    )
+    docs_index_p.add_argument(
+        "--embed-model",
+        help="Override embed model for this index run (defaults to env vars)",
+    )
+    docs_list_p = docs_sub.add_parser("list", help="List indexed and available sites")
+    docs_list_p.add_argument(
+        "--root",
+        type=pathlib.Path,
+        default=None,
+        help="Override the cache root (default: ~/.cache/cantrip/docs-index/)",
+    )
+    docs_search_p = docs_sub.add_parser(
+        "search", help="Run a similarity search against an indexed site"
+    )
+    docs_search_p.add_argument("site", help="Site to search (e.g. ops, juju)")
+    docs_search_p.add_argument("query", help="Free-text query string")
+    docs_search_p.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        dest="top_k",
+        help="Number of hits to return (default: 5)",
+    )
+
     # ── audit (Phase 80.4) ────────────────────────────────────────────
     audit_parser = subparsers.add_parser(
         "audit",
@@ -851,6 +935,10 @@ def _run(args: argparse.Namespace) -> int:
             editor_provider=getattr(args, "editor_provider", None),
             editor_model=getattr(args, "editor_model", None),
             no_auto_commit=bool(getattr(args, "no_auto_commit", False)),
+            embed_provider=getattr(args, "embed_provider", None),
+            embed_model=getattr(args, "embed_model", None),
+            rerank_provider=getattr(args, "rerank_provider", None),
+            rerank_model=getattr(args, "rerank_model", None),
         )
         app.run()
         _print_update_panel(app.pending_update_info)
@@ -1345,6 +1433,10 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    if args.command == "docs":
+        from cantrip.docs_index import cli as docs_cli
+
+        return docs_cli.dispatch(args)
     return _run(args)
 
 
