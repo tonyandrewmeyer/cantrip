@@ -4145,20 +4145,50 @@ gap need separate treatment:
 - [ ] Surface in the F8 integration graph if practical — a
   catalogue badge next to apps that have registered.
 
-### 87.3 Low — Profiling and SLO research
+### 87.3 Low — Profiling and SLO research ✓
 
-- [ ] Investigate Sloth (``sloth.dev``) for SLO management:
-  what's the agent's role?  Is it "generate SLO YAML at
-  deploy time" or "audit existing SLOs"?  Charm Sloth charms
-  exist on Charmhub — what's the integration surface?
-- [ ] Investigate Parca and Pyroscope: how does an agent reason
-  about a flame graph?  Compare with the F4 trace viewer's
-  current LLM-summary path — could a similar tool surface
-  hot-path findings to the agent without dumping raw profiles
-  into the context window?
-- [ ] Decision document in ``design/PROFILING.md`` (new): scope,
-  tool/skill split, and whether profiling is a Phase 87
-  follow-up or a standalone ``Phase 89+`` of its own.
+- [x] **Sloth fits as a skill subsection, not a tool.**  Agent's
+  role is *generation at deploy time*: when a user adds
+  observability, the agent also drops a small ``slos.yaml``
+  covering hook-success-rate, p95 hook duration, and
+  workload-availability SLOs.  Existing ``write_file`` +
+  ``charmcraft.yaml`` editing tools cover it; no new ``Tool``
+  needed.  The ``charmlibs-interfaces-sloth`` PyPI package
+  (already documented in ``design/UPSTREAM_AUDIT.md``) is the
+  schema source of truth.  Lands as new sub-phase **87.4**
+  below.
+- [x] **Parca / Pyroscope are tool-shaped but speculative.**  The
+  natural shape mirrors :class:`TempoWaterfallTool`
+  (``agent/tools/observability.py:1111``): fetch flame graph,
+  render to PNG, return image + top-3-hot-path caption.  But
+  charms are event-driven; profiling is rarely the bottleneck;
+  the Tempo + Prometheus pair already surfaces the signals the
+  agent acts on.  Defer to standalone **Phase 89** opened
+  against four named triggers (charm-perf debug case, SLO
+  breach, user request, or COS adoption).
+- [x] Decision recorded in
+  [`design/PROFILING.md`](design/PROFILING.md): tool/skill
+  split, agent's role per subsystem, Phase placement, revisit
+  triggers.
+
+### 87.4 Low — Sloth skill subsection
+
+- [ ] Add a Sloth subsection to
+  ``src/cantrip/skills/observability/SKILL.md`` covering: the
+  Sloth relation interface (via ``charmlibs-interfaces-sloth``),
+  default SLOs per workload type (12-factor: HTTP availability +
+  p95 latency; infrastructure: hook-success-rate + p95 hook
+  duration; custom: tunable workload-availability SLOs), the
+  ``slos.yaml`` skeleton with placeholders, and the relation-
+  handler stub.  Mirror the depth of the existing Prometheus +
+  Grafana sections.
+- [ ] Worked example: a 12-factor charm with a small ``slos.yaml``
+  the agent can drop alongside the existing observability
+  wiring.  Placed alongside the 87.1 / 87.2 worked examples.
+- [ ] Acceptance test: a charm asked for "production-grade
+  reliability monitoring" picks up Sloth, the resulting
+  ``slos.yaml`` validates, and the bundle deploys cleanly under
+  the Phase 17 acceptance harness.
 
 ### What this phase is *not*
 
@@ -4170,10 +4200,12 @@ gap need separate treatment:
   their own modal.
 
 **Exit criteria:** A charm asked for "alerting + landing-page
-registration" picks up Alertmanager and Catalogue without further
-prompting; both interfaces have skill-level coverage matching the
-Prometheus / Grafana baseline.  Profiling decision is recorded
-even if the answer is "defer".
+registration + reliability monitoring" picks up Alertmanager,
+Catalogue, *and* Sloth without further prompting; all three
+interfaces have skill-level coverage matching the Prometheus /
+Grafana baseline.  Profiling decision is recorded in
+``design/PROFILING.md``; standalone Phase 89 opens against the
+four triggers there if continuous profiling becomes a real need.
 
 ---
 
@@ -4324,6 +4356,6 @@ fabric, and a passing acceptance test on the demo bundle.
 | M83: Pause-and-Edit Research | 83 ✓ | Written decision (ship / defer / drop) on whether Cantrip's hard cancel should soften into a pausable, editable mid-turn affordance; verdict is *defer*, with queue-next-instruction sketched as the leaner follow-up shape against three named revisit triggers |
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
 | M86: K8s/kubectl Research | 86 ✓ | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
-| M87: COS Coverage | 87 | Alertmanager and Catalogue-k8s gain skill-level guidance and worked examples at parity with Prometheus/Grafana; Sloth/Parca/Pyroscope decision recorded in ``design/PROFILING.md`` |
+| M87: COS Coverage | 87 | Alertmanager, Catalogue-k8s, and Sloth gain skill-level guidance and worked examples at parity with Prometheus/Grafana; Parca/Pyroscope decision recorded in ``design/PROFILING.md`` (deferred to Phase 89 against four named triggers) |
 | M88: Identity Platform | 88 | A user asking for "Canonical-Identity-Platform-backed login" gets a charm with correctly-wired Hydra relations, secret fabric, and a passing Phase 17 acceptance test |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
