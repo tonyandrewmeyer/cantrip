@@ -374,20 +374,58 @@ def _matches_globs(path: pathlib.Path, globs: Sequence[str], charm_root: pathlib
 def _recursive_glob_match(rel_path: str, pattern: str) -> bool:
     """Match a ``**``-bearing glob against *rel_path*.
 
-    ``a/**/b`` matches ``a/b``, ``a/x/b``, ``a/x/y/b``.  Implemented as
-    a translation to a regex so we don't depend on ``pathlib.PurePath.
-    full_match`` (Python 3.13+); the codebase targets 3.12.
+    Implements the conventional ``**`` semantics shared by zsh, git, and
+    Python's own ``pathlib.PurePath.full_match`` (3.13+):
+
+    * ``a/**/b`` matches ``a/b``, ``a/x/b``, ``a/x/y/b`` — zero or more
+      intermediate segments.
+    * ``**/foo`` matches ``foo``, ``a/foo``, ``a/b/foo``.
+    * ``foo/**`` matches ``foo``, ``foo/x``, ``foo/x/y``.
+    * Bare ``*`` matches any run of characters except ``/``; ``?``
+      matches a single non-``/`` character.
+
+    Implemented as a hand-rolled regex translation so the codebase
+    keeps targeting 3.12.  Walking the pattern char-by-char (rather
+    than ``split("**")`` and re-joining) lets us notice the
+    surrounding ``/`` context and emit ``(?:/.*)?/`` for ``/**/``,
+    which is what gives us the zero-segment case.
     """
     import re
 
-    parts = pattern.split("**")
-    regex_parts = []
-    for i, part in enumerate(parts):
-        regex_parts.append(re.escape(part).replace(r"\*", "[^/]*").replace(r"\?", "[^/]"))
-        if i < len(parts) - 1:
-            regex_parts.append(".*")
-    regex = "^" + "".join(regex_parts) + "$"
-    return re.match(regex, rel_path) is not None
+    out: list[str] = ["^"]
+    i = 0
+    n = len(pattern)
+    while i < n:
+        if pattern[i : i + 3] == "/**" and (i + 3 == n or pattern[i + 3] == "/"):
+            if i + 3 < n and pattern[i + 3] == "/":
+                # ``/**/`` — zero or more path segments plus the
+                # trailing slash before the next literal segment.
+                out.append("(?:/.*)?/")
+                i += 4
+            else:
+                # ``/**`` at end — optional trailing sub-path.
+                out.append("(?:/.*)?")
+                i += 3
+        elif pattern[i : i + 3] == "**/" and i == 0:
+            # Leading ``**/`` — optional leading sub-path.
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern[i : i + 2] == "**":
+            # Bare or non-segment-aligned ``**`` — same as ``*`` with
+            # the cross-segment exemption.
+            out.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    out.append("$")
+    return re.match("".join(out), rel_path) is not None
 
 
 def _scope_files(
