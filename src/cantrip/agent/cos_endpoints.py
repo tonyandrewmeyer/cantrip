@@ -35,6 +35,13 @@ _GRAFANA_PREFIXES = ("grafana",)
 _TEMPO_PREFIXES = ("tempo",)
 _LOKI_PREFIXES = ("loki",)
 
+# ``grafana-agent`` / ``grafana-agent-k8s`` is a telemetry forwarder, not the
+# Grafana UI — it ships no public URL and would shadow the real ``grafana-k8s``
+# match on any model that runs both, blanking the F4 endpoint screen.  The
+# tempo / loki families don't have an analogous sibling, so this exclusion
+# is grafana-specific.
+_GRAFANA_EXCLUDE_SUBSTRINGS = ("agent",)
+
 
 @dataclasses.dataclass(frozen=True)
 class CosEndpoints:
@@ -103,6 +110,8 @@ def _extract_grafana(
     """
     for name, app in status.apps.items():
         if not _name_matches(name, _GRAFANA_PREFIXES):
+            continue
+        if any(token in name for token in _GRAFANA_EXCLUDE_SUBSTRINGS):
             continue
         message = app.app_status.message or ""
         match = _URL_RE.search(message)

@@ -179,6 +179,33 @@ class TestDeriveEndpoints:
         )
         assert endpoints.grafana_url == "http://g.example:3000"
 
+    def test_grafana_agent_does_not_shadow_real_grafana(self):
+        """``grafana-agent-k8s`` is a sidecar telemetry forwarder, not the
+        Grafana UI — when both apps are present, ``_extract_grafana`` must
+        skip the agent so the real app's URL is what ends up in
+        ``grafana_url`` regardless of dict insertion order.
+        """
+        # Agent listed *first* in the dict — without the exclusion this
+        # is the one ``_extract_grafana`` returned, blanking grafana_url.
+        endpoints = cos_endpoints.derive_endpoints(
+            _status(
+                {
+                    "grafana-agent-k8s": _app(message=""),
+                    "grafana-k8s": _app(message="Serving at http://grafana.example"),
+                }
+            )
+        )
+        assert endpoints.has_grafana is True
+        assert endpoints.grafana_url == "http://grafana.example"
+
+    def test_grafana_agent_alone_is_not_grafana(self):
+        """A model with only ``grafana-agent`` deployed does not satisfy
+        ``has_grafana`` — the agent forwards telemetry, it doesn't serve a UI.
+        """
+        endpoints = cos_endpoints.derive_endpoints(_status({"grafana-agent": _app(message="")}))
+        assert endpoints.has_grafana is False
+        assert endpoints.grafana_url is None
+
 
 @pytest.mark.parametrize(
     ("base", "expected_prefix"),
