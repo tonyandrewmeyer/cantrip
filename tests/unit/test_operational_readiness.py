@@ -1,7 +1,7 @@
 """Tests for the operational readiness assessment tool."""
 
+import pathlib
 import textwrap
-from pathlib import Path
 
 import pytest
 import yaml
@@ -27,7 +27,7 @@ from cantrip.agent.tools.operational_readiness import (
 
 
 @pytest.fixture()
-def tmp_charm(tmp_path: Path) -> Path:
+def tmp_charm(tmp_path: pathlib.Path) -> pathlib.Path:
     """Create a minimal charm directory."""
     (tmp_path / "charmcraft.yaml").write_text(
         yaml.dump(
@@ -66,7 +66,7 @@ def tool() -> OperationalReadinessTool:
 class TestCheckStatusReporting:
     """Tests for _check_status_reporting."""
 
-    def test_detects_missing_config_status(self, tmp_path: Path) -> None:
+    def test_detects_missing_config_status(self, tmp_path: pathlib.Path) -> None:
         src = tmp_path / "src"
         src.mkdir()
         (src / "charm.py").write_text('self.unit.status = BlockedStatus("missing config")')
@@ -75,14 +75,14 @@ class TestCheckStatusReporting:
         config_checks = [r for r in results if "missing required config" in r[2].lower()]
         assert any(passed for _, passed, _ in config_checks)
 
-    def test_no_status_calls(self, tmp_path: Path) -> None:
+    def test_no_status_calls(self, tmp_path: pathlib.Path) -> None:
         src = tmp_path / "src"
         src.mkdir()
         (src / "charm.py").write_text("print('hello')")
         results = _check_status_reporting([src / "charm.py"])
         assert all(not passed for _, passed, _ in results)
 
-    def test_upgrade_status(self, tmp_path: Path) -> None:
+    def test_upgrade_status(self, tmp_path: pathlib.Path) -> None:
         src = tmp_path / "src"
         src.mkdir()
         (src / "charm.py").write_text(
@@ -188,12 +188,12 @@ class TestCheckConfigQuality:
 class TestCheckDocumentation:
     """Tests for _check_documentation."""
 
-    def test_readme_mentions_install(self, tmp_path: Path) -> None:
+    def test_readme_mentions_install(self, tmp_path: pathlib.Path) -> None:
         results = _check_documentation(tmp_path, "## Installation\n\nRun juju deploy")
         install_check = [r for r in results if "installation" in r[0]]
         assert install_check[0][1] is True
 
-    def test_docs_directory(self, tmp_path: Path) -> None:
+    def test_docs_directory(self, tmp_path: pathlib.Path) -> None:
         docs = tmp_path / "docs"
         docs.mkdir()
         (docs / "how-to" / "upgrade.md").parent.mkdir(parents=True)
@@ -202,7 +202,7 @@ class TestCheckDocumentation:
         upgrade_check = [r for r in results if "upgrade" in r[0]]
         assert upgrade_check[0][1] is True
 
-    def test_no_docs(self, tmp_path: Path) -> None:
+    def test_no_docs(self, tmp_path: pathlib.Path) -> None:
         results = _check_documentation(tmp_path, "")
         assert all(not passed for _, passed, _ in results)
 
@@ -221,7 +221,7 @@ class TestCheckReliability:
         backup_check = [r for r in results if "backup" in r[0].lower()]
         assert any(passed for _, passed, _ in backup_check)
 
-    def test_graceful_shutdown(self, tmp_path: Path) -> None:
+    def test_graceful_shutdown(self, tmp_path: pathlib.Path) -> None:
         src = tmp_path / "src"
         src.mkdir()
         (src / "charm.py").write_text("self.on.stop.observe(self._on_stop)")
@@ -286,7 +286,7 @@ class TestCheckSecurity:
         secret_check = [r for r in results if "secrets" in r[0]]
         assert secret_check[0][1] is True
 
-    def test_secrets_management_fails_with_password_config(self, tmp_path: Path) -> None:
+    def test_secrets_management_fails_with_password_config(self, tmp_path: pathlib.Path) -> None:
         src = tmp_path / "src"
         src.mkdir()
         (src / "charm.py").write_text("print('hello')")
@@ -355,7 +355,9 @@ class TestOperationalReadinessTool:
     """Integration tests for the full tool."""
 
     @pytest.mark.asyncio()
-    async def test_minimal_charm(self, tmp_charm: Path, tool: OperationalReadinessTool) -> None:
+    async def test_minimal_charm(
+        self, tmp_charm: pathlib.Path, tool: OperationalReadinessTool
+    ) -> None:
         result = await tool.execute(path=str(tmp_charm))
         assert result.success is True
         assert "Operational Readiness" in result.output
@@ -371,14 +373,16 @@ class TestOperationalReadinessTool:
         assert result.error is not None
 
     @pytest.mark.asyncio()
-    async def test_no_metadata(self, tmp_path: Path, tool: OperationalReadinessTool) -> None:
+    async def test_no_metadata(
+        self, tmp_path: pathlib.Path, tool: OperationalReadinessTool
+    ) -> None:
         result = await tool.execute(path=str(tmp_path))
         assert result.success is False
         assert "charmcraft.yaml" in (result.error or "")
 
     @pytest.mark.asyncio()
     async def test_well_equipped_charm(
-        self, tmp_path: Path, tool: OperationalReadinessTool
+        self, tmp_path: pathlib.Path, tool: OperationalReadinessTool
     ) -> None:
         """A charm with many operational features should score higher."""
         (tmp_path / "charmcraft.yaml").write_text(
@@ -442,7 +446,7 @@ class TestOperationalReadinessTool:
 
     @pytest.mark.asyncio()
     async def test_writes_report_file(
-        self, tmp_charm: Path, tool: OperationalReadinessTool
+        self, tmp_charm: pathlib.Path, tool: OperationalReadinessTool
     ) -> None:
         await tool.execute(path=str(tmp_charm))
         report_path = tmp_charm / "OPERATIONAL_READINESS.md"
@@ -452,7 +456,7 @@ class TestOperationalReadinessTool:
 
     @pytest.mark.asyncio()
     async def test_data_has_checks_list(
-        self, tmp_charm: Path, tool: OperationalReadinessTool
+        self, tmp_charm: pathlib.Path, tool: OperationalReadinessTool
     ) -> None:
         result = await tool.execute(path=str(tmp_charm))
         assert isinstance(result.data["checks"], list)

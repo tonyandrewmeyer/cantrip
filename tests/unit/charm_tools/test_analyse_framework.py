@@ -1,7 +1,7 @@
 """Tests for AnalyseFrameworkTool."""
 
+import pathlib
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -17,7 +17,7 @@ class TestAnalyseFrameworkTool:
     def temp_dir(self):
         """Create a temporary directory."""
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.fixture
     def tool(self):

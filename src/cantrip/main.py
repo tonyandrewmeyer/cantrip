@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cantrip import __version__
@@ -150,7 +150,7 @@ def parse_args() -> argparse.Namespace:
     )
     run_parser.add_argument(
         "--improve",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         metavar="CHARM_PATH",
         help="Improve an existing charm at the given path (audit, fix, redeploy)",
@@ -296,8 +296,8 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument(
         "path",
         nargs="?",
-        type=Path,
-        default=Path.cwd(),
+        type=pathlib.Path,
+        default=pathlib.Path.cwd(),
         help="Path to charm project (default: current directory)",
     )
 
@@ -308,12 +308,12 @@ def parse_args() -> argparse.Namespace:
     )
     compare_parser.add_argument(
         "left",
-        type=Path,
+        type=pathlib.Path,
         help="First charm directory",
     )
     compare_parser.add_argument(
         "right",
-        type=Path,
+        type=pathlib.Path,
         help="Second charm directory",
     )
 
@@ -324,7 +324,7 @@ def parse_args() -> argparse.Namespace:
     )
     export_parser.add_argument(
         "path",
-        type=Path,
+        type=pathlib.Path,
         help="Charm directory containing a .cantrip file",
     )
     export_parser.add_argument(
@@ -336,7 +336,7 @@ def parse_args() -> argparse.Namespace:
     )
     export_parser.add_argument(
         "--output",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         help="Output file path (default: transcript.<ext> in charm directory)",
     )
@@ -396,7 +396,7 @@ def parse_args() -> argparse.Namespace:
     )
     hooks_test.add_argument(
         "--path",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         dest="charm_path",
         help="Repo root for cantrip.hooks.yaml discovery (default: CWD)",
@@ -418,7 +418,7 @@ def parse_args() -> argparse.Namespace:
     )
     skill_export.add_argument(
         "path",
-        type=Path,
+        type=pathlib.Path,
         help=(
             "Output path. A '.md' path is written verbatim; any other path is "
             "treated as a directory and the file is written as <path>/<name>/SKILL.md."
@@ -426,7 +426,7 @@ def parse_args() -> argparse.Namespace:
     )
     skill_export.add_argument(
         "--charm-path",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         dest="charm_path",
         help=(
@@ -450,8 +450,8 @@ def parse_args() -> argparse.Namespace:
     )
     checkpoints_parser.add_argument(
         "--db",
-        type=Path,
-        default=Path(".cantrip"),
+        type=pathlib.Path,
+        default=pathlib.Path(".cantrip"),
         help="Path to the .cantrip session file (default: ./.cantrip)",
     )
     checkpoints_sub = checkpoints_parser.add_subparsers(dest="checkpoints_command", required=True)
@@ -493,7 +493,7 @@ def parse_args() -> argparse.Namespace:
     )
     audit_parser.add_argument(
         "--path",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         dest="audit_path",
         help=(
@@ -563,14 +563,14 @@ def parse_args() -> argparse.Namespace:
     )
     perms_test.add_argument(
         "--charm-path",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         dest="charm_path",
         help="Repo root for .cantrip/permissions.yaml discovery (default: CWD)",
     )
     perms_test.add_argument(
         "--user-config",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         dest="user_config_dir",
         help="User config directory for permissions.yaml (default: ~/.config/cantrip)",
@@ -591,14 +591,14 @@ def parse_args() -> argparse.Namespace:
     )
     perms_list.add_argument(
         "--charm-path",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         dest="charm_path",
         help="Repo root for .cantrip/permissions.yaml discovery (default: CWD)",
     )
     perms_list.add_argument(
         "--user-config",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         dest="user_config_dir",
         help="User config directory for permissions.yaml (default: ~/.config/cantrip)",
@@ -636,7 +636,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def _is_cantrip_source_tree(path: Path) -> bool:
+def _is_cantrip_source_tree(path: pathlib.Path) -> bool:
     """Check whether path is the cantrip source tree itself."""
     pyproject = path / "pyproject.toml"
     if not pyproject.exists():
@@ -707,7 +707,7 @@ def _export_transcript(args: argparse.Namespace) -> int:
         return 1
 
     output = args.output or (charm_path / f"transcript{suffix}")
-    Path(output).write_text(content)
+    pathlib.Path(output).write_text(content)
     print(f"Transcript exported to {output}")
     return 0
 
@@ -731,7 +731,7 @@ def _compare_charms(args: argparse.Namespace) -> int:
 def _run(args: argparse.Namespace) -> int:
     """Run the main cantrip agent."""
     # --improve overrides the positional path argument.
-    improve_path: Path | None = getattr(args, "improve", None)
+    improve_path: pathlib.Path | None = getattr(args, "improve", None)
     if improve_path is not None:
         improve_path = improve_path.resolve()
         if not improve_path.is_dir():
@@ -945,7 +945,7 @@ def _hooks_test(args: argparse.Namespace) -> int:
             return 2
         payload.update(parsed)
 
-    repo_root = args.charm_path or Path.cwd()
+    repo_root = args.charm_path or pathlib.Path.cwd()
     runner = HookRunner.from_disk(repo_root=repo_root)
 
     if runner.hook_count == 0:
@@ -1020,7 +1020,7 @@ def _checkpoints(args: argparse.Namespace) -> int:
     from cantrip.agent import durability as durability_mod
     from cantrip.agent import store as store_mod
 
-    db_path: Path = args.db
+    db_path: pathlib.Path = args.db
     if not db_path.exists():
         print(f"Error: {db_path} does not exist.", file=sys.stderr)
         return 2
@@ -1151,7 +1151,7 @@ def _audit(args: argparse.Namespace) -> int:
 
     from cantrip.agent.audit import AUDIT_FILENAME, filter_entries, read_entries
 
-    path: Path = args.audit_path or Path.cwd() / AUDIT_FILENAME
+    path: pathlib.Path = args.audit_path or pathlib.Path.cwd() / AUDIT_FILENAME
     if not path.is_file():
         print(f"Audit file not found: {path}", file=sys.stderr)
         return 1
@@ -1261,7 +1261,7 @@ def _load_permissions_for_cli(args: argparse.Namespace) -> object:
     """
     from cantrip.agent import permissions as perms
 
-    charm_path: Path | None = args.charm_path or Path.cwd()
+    charm_path: pathlib.Path | None = args.charm_path or pathlib.Path.cwd()
     return perms.discover_permissions(
         charm_path=charm_path,
         user_config_dir=args.user_config_dir,

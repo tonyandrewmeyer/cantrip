@@ -1,8 +1,8 @@
 """Web search tool using DuckDuckGo for open-ended research."""
 
+import dataclasses
 import html.parser
 import re
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -16,7 +16,7 @@ _DDG_LITE_URL = "https://lite.duckduckgo.com/lite/"
 _MAX_RESULTS_CAP = 10
 
 
-@dataclass
+@dataclasses.dataclass
 class _SearchResult:
     """A single search result extracted from DuckDuckGo lite HTML."""
 

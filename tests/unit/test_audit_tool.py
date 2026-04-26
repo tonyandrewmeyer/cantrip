@@ -6,8 +6,8 @@ charmlint.  This file retains integration tests for CharmAuditTool and
 tests for the modern-patterns check (which remains in audit.py).
 """
 
+import pathlib
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -20,7 +20,7 @@ from cantrip.agent.tools.audit import (
 @pytest.fixture
 def temp_dir():
     with tempfile.TemporaryDirectory() as td:
-        yield Path(td)
+        yield pathlib.Path(td)
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def tool():
     return CharmAuditTool()
 
 
-def _write_charmcraft_yaml(charm_dir: Path, extra: str = "") -> None:
+def _write_charmcraft_yaml(charm_dir: pathlib.Path, extra: str = "") -> None:
     """Write a minimal charmcraft.yaml."""
     (charm_dir / "charmcraft.yaml").write_text(f"name: test-charm\ntype: charm\n{extra}")
 

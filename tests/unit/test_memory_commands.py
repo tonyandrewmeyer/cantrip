@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -18,7 +18,7 @@ from cantrip.agent.store import SessionStore
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> Iterator[SessionStore]:
+def store(tmp_path: pathlib.Path) -> Iterator[SessionStore]:
     s = SessionStore(tmp_path / ".cantrip")
     s.open()
     yield s
@@ -26,7 +26,7 @@ def store(tmp_path: Path) -> Iterator[SessionStore]:
 
 
 @pytest.fixture
-def global_store(tmp_path: Path) -> GlobalMemoryStore:
+def global_store(tmp_path: pathlib.Path) -> GlobalMemoryStore:
     return GlobalMemoryStore(tmp_path / "globalmem")
 
 
@@ -187,7 +187,7 @@ class TestHandleForget:
 
 
 class TestExportImportSlashCommands:
-    def test_export_dispatch(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_export_dispatch(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         manager.write(scope="charm", title="t", kind="fact", body="b")
         out = handle_memory(
             manager,
@@ -196,7 +196,7 @@ class TestExportImportSlashCommands:
         assert "Exported 1 memories" in out
         assert (tmp_path / "out" / "my-bundle" / "SKILL.md").is_file()
 
-    def test_export_md_dispatch(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_export_md_dispatch(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         manager.write(scope="charm", title="t", kind="fact", body="b")
         out = handle_memory(manager, f"export-md {tmp_path / 'dump'}")
         assert "Exported 1 memories" in out
@@ -208,7 +208,7 @@ class TestExportImportSlashCommands:
         assert "Error" in out
         assert "expected" in out
 
-    def test_export_unknown_scope(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_export_unknown_scope(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         out = handle_memory(manager, f"export b {tmp_path / 'out'} elsewhere")
         assert "Error" in out
         assert "unknown scope" in out
@@ -216,7 +216,7 @@ class TestExportImportSlashCommands:
     def test_import_round_trip(
         self,
         manager: MemoryManager,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
     ) -> None:
         manager.write(scope="charm", title="t", kind="fact", body="b")
         handle_memory(manager, f"export b {tmp_path / 'out'}")
@@ -226,7 +226,7 @@ class TestExportImportSlashCommands:
         # And it landed in global, not charm (charm already had it).
         assert manager.read(title="t", scope="global") is not None
 
-    def test_import_missing_source(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_import_missing_source(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         out = handle_memory(manager, f"import {tmp_path / 'nope.md'}")
         assert "Error" in out
         assert "import failed" in out

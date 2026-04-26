@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -18,7 +18,7 @@ from tests.unit.executor.conftest import _make_tool
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> SessionStore:
+def store(tmp_path: pathlib.Path) -> SessionStore:
     db = tmp_path / ".cantrip"
     s = SessionStore(db)
     s.open()

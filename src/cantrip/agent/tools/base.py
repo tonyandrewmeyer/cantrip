@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import pathlib
 import subprocess
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cantrip.llm.base import Image
@@ -28,7 +28,7 @@ _EDIT_TOOL_NAMES: frozenset[str] = frozenset(
 )
 
 
-@dataclass
+@dataclasses.dataclass
 class ToolResult:
     """Result of a tool execution.
 
@@ -51,9 +51,9 @@ class ToolResult:
 
     success: bool
     output: str
-    data: dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = dataclasses.field(default_factory=dict)
     error: str | None = None
-    images: list[Image] = field(default_factory=list)
+    images: list[Image] = dataclasses.field(default_factory=list)
     caption: str | None = None
 
 
@@ -171,7 +171,7 @@ async def execute_tool(
     arguments: dict[str, Any],
     *,
     auto_lint: bool = False,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
 ) -> ToolResult:
     """Look up and execute a tool by name with error handling.
 
@@ -226,8 +226,8 @@ async def _apply_post_edit_diagnostics(
     tool_name: str,
     arguments: dict[str, Any],
     result: ToolResult,
-    base_path: Path | None,
-    charm_path: Path | None,
+    base_path: pathlib.Path | None,
+    charm_path: pathlib.Path | None,
 ) -> None:
     """Run post-edit linters and fold their report into *result*.
 

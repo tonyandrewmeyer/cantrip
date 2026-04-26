@@ -8,8 +8,8 @@ deterministic and testable.
 
 from __future__ import annotations
 
+import dataclasses
 import enum
-from dataclasses import dataclass
 
 
 class RouteAction(enum.StrEnum):
@@ -21,7 +21,7 @@ class RouteAction(enum.StrEnum):
     IDLE = "idle"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class RoutingDecision:
     """The result of a routing decision.
 
@@ -43,7 +43,7 @@ class TaskSnapshot(enum.StrEnum):
     BLOCKED = "blocked"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class TaskInfo:
     """Lightweight snapshot of a single task for routing decisions."""
 
@@ -54,7 +54,7 @@ class TaskInfo:
     noop_count: int = 0
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class WorkQueueState:
     """Frozen snapshot of everything that influences the next-task decision.
 

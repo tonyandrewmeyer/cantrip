@@ -1,7 +1,7 @@
 """Tests for the fuzz testing tool."""
 
+import pathlib
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -15,7 +15,7 @@ from cantrip.agent.tools.fuzz import (
 @pytest.fixture
 def temp_dir():
     with tempfile.TemporaryDirectory() as td:
-        yield Path(td)
+        yield pathlib.Path(td)
 
 
 @pytest.fixture

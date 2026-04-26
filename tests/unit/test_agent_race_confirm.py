@@ -5,7 +5,7 @@ Targets ROADMAP 47.4 pre-race CONFIRM task resolution.  Uses
 ``tmp_path`` charm directory.
 """
 
-from pathlib import Path
+import pathlib
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
@@ -13,7 +13,7 @@ from cantrip.agent.race import RACE_CONFIRM_PREFIX
 from tests.conftest import FakeProvider
 
 
-def _agent(tmp_path: Path) -> CantripAgent:
+def _agent(tmp_path: pathlib.Path) -> CantripAgent:
     return CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
 
 
@@ -40,7 +40,7 @@ def _queue_parent_and_confirm(
 
 
 class TestHandleRaceConfirmation:
-    def test_approved_flips_decision_and_unblocks_parent(self, tmp_path: Path) -> None:
+    def test_approved_flips_decision_and_unblocks_parent(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         parent, confirm = _queue_parent_and_confirm(agent, "p1")
 
@@ -51,7 +51,7 @@ class TestHandleRaceConfirmation:
         assert agent.work_queue.get_task(confirm.id).status == TaskStatus.DONE
         assert "multiple models" in msg
 
-    def test_declined_flips_decision_and_unblocks_parent(self, tmp_path: Path) -> None:
+    def test_declined_flips_decision_and_unblocks_parent(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         parent, confirm = _queue_parent_and_confirm(agent, "p2", title="Build again")
 
@@ -62,7 +62,7 @@ class TestHandleRaceConfirmation:
         assert agent.work_queue.get_task(confirm.id).status == TaskStatus.DONE
         assert "single model" in msg
 
-    def test_missing_parent_returns_graceful_message(self, tmp_path: Path) -> None:
+    def test_missing_parent_returns_graceful_message(self, tmp_path: pathlib.Path) -> None:
         # Simulate a CONFIRM task that outlives its parent — the handler
         # should still resolve the CONFIRM rather than raising.
         agent = _agent(tmp_path)

@@ -5,8 +5,8 @@ Phase-17 acceptance artefacts (``demo/`` tree + ``ACCEPTANCE.md``).
 from __future__ import annotations
 
 import json
+import pathlib
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -78,7 +78,7 @@ class TestLoadAcceptanceArtefacts:
     @pytest.fixture
     def temp_charm(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     def test_empty_charm_returns_empty(self, temp_charm) -> None:
         artefacts = load_acceptance_artefacts(temp_charm)
@@ -273,7 +273,7 @@ class TestGenerateDocsToolWithArtefacts:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_no_artefacts_keeps_stub_with_marker(self, tool, temp_dir) -> None:

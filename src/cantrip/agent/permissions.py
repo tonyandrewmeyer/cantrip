@@ -39,10 +39,10 @@ import dataclasses
 import enum
 import fnmatch
 import logging
+import pathlib
 import shlex
 import uuid
 from collections.abc import Callable, Iterator, Mapping
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -434,7 +434,7 @@ def ruleset_from_dict(
     )
 
 
-def load_permissions_file(path: Path) -> PermissionRuleset:
+def load_permissions_file(path: pathlib.Path) -> PermissionRuleset:
     """Load one ``permissions.yaml`` file.
 
     Raises :class:`PermissionParseError` on parse failure; callers may
@@ -615,13 +615,13 @@ def plan_mode_message(tool_name: str) -> str:
 #: constants so docs and tests can reference the same paths without
 #: duplicating the strings.
 USER_CONFIG_FILENAME = "permissions.yaml"
-REPO_CONFIG_RELATIVE = Path(".cantrip") / "permissions.yaml"
+REPO_CONFIG_RELATIVE = pathlib.Path(".cantrip") / "permissions.yaml"
 
 
 def discover_permissions(
     *,
-    charm_path: Path | None = None,
-    user_config_dir: Path | None = None,
+    charm_path: pathlib.Path | None = None,
+    user_config_dir: pathlib.Path | None = None,
     include_builtin: bool = True,
 ) -> PermissionRuleset:
     """Load and compose the active permission stack.
@@ -642,7 +642,7 @@ def discover_permissions(
         layers.append(BUILTIN_PERMISSIONS)
 
     if user_config_dir is None:
-        user_config_dir = Path.home() / ".config" / "cantrip"
+        user_config_dir = pathlib.Path.home() / ".config" / "cantrip"
     user_file = user_config_dir / USER_CONFIG_FILENAME
     if user_file.is_file():
         try:

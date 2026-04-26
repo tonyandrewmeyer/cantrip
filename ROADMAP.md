@@ -3801,10 +3801,17 @@ decomposition last.
   consecutive errors via the existing counter).  All other
   `except Exception` sites in `src/cantrip/` already carried the
   pattern.
-- [x] Path / dataclass policy: carved out as a documented
-  runtime exception in `AGENTS.md` (option (a)).  `Path(...)` and
-  `@dataclass` read as primitive vocabulary so both styles
-  coexist; existing modules are not codemodded.
+- [x] Path / dataclass policy: option (b) — committed to
+  module-only imports and codemodded the codebase.  All
+  `from pathlib import Path` and `from dataclasses import …`
+  runtime imports across `src/cantrip/` and `tests/` were
+  rewritten to `import pathlib` / `import dataclasses` with
+  qualified call sites (`pathlib.Path(...)`,
+  `@dataclasses.dataclass`, `dataclasses.field(...)`).  The
+  AGENTS.md rule stands as written; no carve-out needed.  One
+  occurrence in `tests/e2e/seeds.py` is intentionally retained
+  inside a string literal (Django `settings.py` fixture
+  content).
 
 ### 85.2 Move — `agent/memory/` subpackage
 

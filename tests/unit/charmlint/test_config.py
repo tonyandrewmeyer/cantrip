@@ -1,6 +1,6 @@
 """Tests for charmlint.config."""
 
-from pathlib import Path
+import pathlib
 
 import yaml
 
@@ -36,11 +36,11 @@ class TestLintConfig:
 class TestLoadConfig:
     """Tests for loading .charmlint.yaml from disk."""
 
-    def test_no_config_file(self, tmp_path: Path):
+    def test_no_config_file(self, tmp_path: pathlib.Path):
         config = load_config(tmp_path)
         assert config.severity_overrides == {}
 
-    def test_config_file_loaded(self, tmp_path: Path):
+    def test_config_file_loaded(self, tmp_path: pathlib.Path):
         config_data = {
             "rules": {"COS005": "error"},
             "ignore": ["STR002"],
@@ -52,7 +52,7 @@ class TestLoadConfig:
         assert config.severity_overrides["COS005"] == "error"
         assert "STR002" in config.ignore
 
-    def test_explicit_config_path(self, tmp_path: Path):
+    def test_explicit_config_path(self, tmp_path: pathlib.Path):
         config_file = tmp_path / "custom.yaml"
         with config_file.open("w") as f:
             yaml.dump({"select": ["COS"]}, f)

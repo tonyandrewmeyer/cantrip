@@ -1,9 +1,9 @@
 """Upgrade testing tool — verifies charm upgrades between revisions."""
 
 import json
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 from cantrip.agent.tools import juju_subprocess
@@ -121,7 +121,7 @@ class UpgradeTestTool(Tool):
                 error="app parameter is required.",
             )
 
-        charm_file = Path(charm_path)
+        charm_file = pathlib.Path(charm_path)
         if not charm_file.exists():
             return ToolResult(
                 success=False,

@@ -8,7 +8,7 @@ via ``approve_destructive: true``.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from unittest import mock
 
 import pytest
@@ -24,7 +24,7 @@ from cantrip.agent.tools.run_command import DEFAULT_ALLOWLIST, RunCommandTool
 def _isolate_policies(tmp_path, monkeypatch):
     """Point ``Path.home()`` at an empty tmp_path so policy discovery
     doesn't pick up anything from the real $HOME during tests."""
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
     yield tmp_path
 
 
@@ -38,7 +38,7 @@ class TestJujuDestroyModelGate:
 
     @pytest.mark.asyncio
     async def test_gate_allows_with_per_user_opt_in(
-        self, _isolate_policies, tmp_path: Path
+        self, _isolate_policies, tmp_path: pathlib.Path
     ) -> None:
         """A user-config policy with approve_destructive=True unblocks the call."""
         policies_dir = tmp_path / ".config" / "cantrip" / "policies"
@@ -73,7 +73,9 @@ class TestJujuRemoveApplicationGate:
         assert "juju_remove_application" in result.error
 
     @pytest.mark.asyncio
-    async def test_gate_allows_with_opt_in(self, _isolate_policies, tmp_path: Path) -> None:
+    async def test_gate_allows_with_opt_in(
+        self, _isolate_policies, tmp_path: pathlib.Path
+    ) -> None:
         policies_dir = tmp_path / ".config" / "cantrip" / "policies"
         policies_dir.mkdir(parents=True)
         (policies_dir / "yolo.yaml").write_text("name: yolo\napprove_destructive: true\n")
@@ -92,7 +94,7 @@ class TestRunCommandDestructiveShape:
     """Arg-pattern gate inside ``RunCommandTool.execute``."""
 
     @pytest.fixture
-    def _rm_allowed_tool(self, tmp_path: Path) -> RunCommandTool:
+    def _rm_allowed_tool(self, tmp_path: pathlib.Path) -> RunCommandTool:
         """A RunCommandTool whose allowlist includes ``rm`` and ``git``
         — lets the destructive-shape gate be the thing that refuses
         rather than the base-command allow-list."""
@@ -101,7 +103,7 @@ class TestRunCommandDestructiveShape:
 
     @pytest.mark.asyncio
     async def test_rm_rf_blocked_without_approval(
-        self, _rm_allowed_tool, _isolate_policies, tmp_path: Path
+        self, _rm_allowed_tool, _isolate_policies, tmp_path: pathlib.Path
     ) -> None:
         target = tmp_path / "target"
         target.mkdir()
@@ -117,7 +119,7 @@ class TestRunCommandDestructiveShape:
 
     @pytest.mark.asyncio
     async def test_rm_without_rf_passes_the_shape_gate(
-        self, _rm_allowed_tool, _isolate_policies, tmp_path: Path
+        self, _rm_allowed_tool, _isolate_policies, tmp_path: pathlib.Path
     ) -> None:
         """Plain ``rm <file>`` (no -r or -f) is not a destructive shape.
 
@@ -137,7 +139,7 @@ class TestRunCommandDestructiveShape:
 
     @pytest.mark.asyncio
     async def test_git_push_force_blocked_without_approval(
-        self, _rm_allowed_tool, _isolate_policies, tmp_path: Path
+        self, _rm_allowed_tool, _isolate_policies, tmp_path: pathlib.Path
     ) -> None:
         result = await _rm_allowed_tool.execute(
             command="git push --force origin main",
@@ -149,7 +151,7 @@ class TestRunCommandDestructiveShape:
 
     @pytest.mark.asyncio
     async def test_git_reset_hard_blocked_without_approval(
-        self, _rm_allowed_tool, _isolate_policies, tmp_path: Path
+        self, _rm_allowed_tool, _isolate_policies, tmp_path: pathlib.Path
     ) -> None:
         result = await _rm_allowed_tool.execute(
             command="git reset --hard HEAD~1",
@@ -160,7 +162,7 @@ class TestRunCommandDestructiveShape:
 
     @pytest.mark.asyncio
     async def test_rm_rf_allowed_with_opt_in(
-        self, _rm_allowed_tool, _isolate_policies, tmp_path: Path
+        self, _rm_allowed_tool, _isolate_policies, tmp_path: pathlib.Path
     ) -> None:
         """With approve_destructive=true, the shape gate passes and the
         subprocess fires.  The target directory actually gets deleted.

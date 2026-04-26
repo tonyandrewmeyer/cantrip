@@ -1,6 +1,6 @@
 """Tests for charmlint.models."""
 
-from pathlib import Path
+import pathlib
 
 from charmlint.models import Diagnostic, LintReport, Severity
 
@@ -35,7 +35,7 @@ class TestDiagnostic:
             message="StoredState",
             path="/home/user/charm/src/charm.py",
         )
-        result = d.format_text(charm_dir=Path("/home/user/charm"))
+        result = d.format_text(charm_dir=pathlib.Path("/home/user/charm"))
         assert result == "src/charm.py: DEP001 StoredState"
 
     def test_to_dict(self):
@@ -64,7 +64,7 @@ class TestLintReport:
     """Tests for the LintReport dataclass."""
 
     def test_empty_report(self):
-        report = LintReport(charm_dir=Path("/tmp/charm"))
+        report = LintReport(charm_dir=pathlib.Path("/tmp/charm"))
         assert report.error_count == 0
         assert report.warning_count == 0
         assert report.info_count == 0
@@ -72,7 +72,7 @@ class TestLintReport:
 
     def test_counts(self):
         report = LintReport(
-            charm_dir=Path("/tmp/charm"),
+            charm_dir=pathlib.Path("/tmp/charm"),
             diagnostics=[
                 Diagnostic("E1", Severity.ERROR, "err1"),
                 Diagnostic("E2", Severity.ERROR, "err2"),
@@ -88,7 +88,7 @@ class TestLintReport:
 
     def test_to_dict(self):
         report = LintReport(
-            charm_dir=Path("/tmp/charm"),
+            charm_dir=pathlib.Path("/tmp/charm"),
             diagnostics=[Diagnostic("E1", Severity.ERROR, "err")],
         )
         result = report.to_dict()

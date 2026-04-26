@@ -6,7 +6,7 @@ pickup.
 """
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -59,7 +59,7 @@ class TestDay2Confirmation:
     """Test the day-2 operations confirmation flow."""
 
     @pytest.mark.asyncio
-    async def test_day2_confirmation_creates_impl_tasks(self, tmp_path: Path):
+    async def test_day2_confirmation_creates_impl_tasks(self, tmp_path: pathlib.Path):
         """Day-2 synthesis DONE + confirm BLOCKED -> implementation tasks added."""
         provider = FakeProvider(
             responses=[Response(content=DAY2_IMPL_PLAN_JSON)],
@@ -99,7 +99,7 @@ class TestDay2Confirmation:
         assert "Add high-availability support" in titles
 
     @pytest.mark.asyncio
-    async def test_day2_confirmation_missing_synthesis(self, tmp_path: Path):
+    async def test_day2_confirmation_missing_synthesis(self, tmp_path: pathlib.Path):
         """Confirm task with no synthesis result returns empty list."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -124,7 +124,7 @@ class TestDay2Confirmation:
         assert impl_tasks == []
 
     @pytest.mark.asyncio
-    async def test_day2_confirmation_missing_task_id(self, tmp_path: Path):
+    async def test_day2_confirmation_missing_task_id(self, tmp_path: pathlib.Path):
         """Nonexistent confirm task ID returns empty list."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -133,7 +133,7 @@ class TestDay2Confirmation:
         assert impl_tasks == []
 
     @pytest.mark.asyncio
-    async def test_day2_confirmation_with_overrides(self, tmp_path: Path):
+    async def test_day2_confirmation_with_overrides(self, tmp_path: pathlib.Path):
         """Overrides string is passed through to the planner."""
         received_messages: list[str] = []
 
@@ -178,7 +178,7 @@ class TestDay2Confirmation:
         assert any("Skip HA" in msg for msg in received_messages)
 
     @pytest.mark.asyncio
-    async def test_day2_then_executor(self, tmp_path: Path, fast_executor):  # noqa: ARG002
+    async def test_day2_then_executor(self, tmp_path: pathlib.Path, fast_executor):  # noqa: ARG002
         """Day-2 impl tasks are picked up and completed by the executor."""
         provider = MultiRoleProvider(
             planner_responses=[Response(content=DAY2_IMPL_PLAN_JSON)],
@@ -233,7 +233,7 @@ class TestImprovementConfirmation:
     """Test the improvement (audit-based) confirmation flow."""
 
     @pytest.mark.asyncio
-    async def test_improvement_creates_fix_tasks(self, tmp_path: Path):
+    async def test_improvement_creates_fix_tasks(self, tmp_path: pathlib.Path):
         """Audit report with gaps triggers fix task generation."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -271,7 +271,7 @@ class TestImprovementConfirmation:
         assert any(i.startswith("fill-tests-") for i in ids)
 
     @pytest.mark.asyncio
-    async def test_improvement_stores_audit_report(self, tmp_path: Path):
+    async def test_improvement_stores_audit_report(self, tmp_path: pathlib.Path):
         """After confirmation, the audit report is stored on agent state."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -298,7 +298,7 @@ class TestImprovementConfirmation:
         assert agent.state.audit_report == audit_text
 
     @pytest.mark.asyncio
-    async def test_improvement_missing_audit(self, tmp_path: Path):
+    async def test_improvement_missing_audit(self, tmp_path: pathlib.Path):
         """No audit result returns empty list."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -323,7 +323,7 @@ class TestImprovementConfirmation:
         assert fix_tasks == []
 
     @pytest.mark.asyncio
-    async def test_clean_audit_produces_no_fixes(self, tmp_path: Path):
+    async def test_clean_audit_produces_no_fixes(self, tmp_path: pathlib.Path):
         """A clean audit report (no gaps) produces no fix tasks."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -354,7 +354,7 @@ class TestBuildResumeSummary:
     """Test the session resume summary generation."""
 
     @pytest.mark.asyncio
-    async def test_empty_state_returns_none(self, tmp_path: Path):
+    async def test_empty_state_returns_none(self, tmp_path: pathlib.Path):
         """An empty state produces no summary."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -363,7 +363,7 @@ class TestBuildResumeSummary:
         assert summary is None
 
     @pytest.mark.asyncio
-    async def test_summary_includes_charm_name(self, tmp_path: Path):
+    async def test_summary_includes_charm_name(self, tmp_path: pathlib.Path):
         """Summary mentions the charm name."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -377,7 +377,7 @@ class TestBuildResumeSummary:
         assert "kubernetes" in summary
 
     @pytest.mark.asyncio
-    async def test_summary_includes_decisions(self, tmp_path: Path):
+    async def test_summary_includes_decisions(self, tmp_path: pathlib.Path):
         """Summary lists recorded decisions."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -392,7 +392,7 @@ class TestBuildResumeSummary:
         assert "charm_path" in summary
 
     @pytest.mark.asyncio
-    async def test_summary_includes_task_progress(self, tmp_path: Path):
+    async def test_summary_includes_task_progress(self, tmp_path: pathlib.Path):
         """Summary reports task completion counts."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -422,7 +422,7 @@ class TestBuildResumeSummary:
         assert "Research workload" in summary
 
     @pytest.mark.asyncio
-    async def test_summary_includes_framework(self, tmp_path: Path):
+    async def test_summary_includes_framework(self, tmp_path: pathlib.Path):
         """Summary mentions the framework when set."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -434,7 +434,7 @@ class TestBuildResumeSummary:
         assert "Flask" in summary
 
     @pytest.mark.asyncio
-    async def test_summary_includes_models(self, tmp_path: Path):
+    async def test_summary_includes_models(self, tmp_path: pathlib.Path):
         """Summary mentions dev and cos models."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -448,7 +448,7 @@ class TestBuildResumeSummary:
         assert "cos-model" in summary
 
     @pytest.mark.asyncio
-    async def test_summary_injected_into_messages(self, tmp_path: Path):
+    async def test_summary_injected_into_messages(self, tmp_path: pathlib.Path):
         """build_resume_summary appends the summary as a SYSTEM message.
 
         Phase 31.11 switched from USER to SYSTEM to avoid breaking the

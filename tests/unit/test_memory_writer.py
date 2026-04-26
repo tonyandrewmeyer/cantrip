@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -22,7 +22,7 @@ from tests.conftest import FakeProvider
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> Iterator[SessionStore]:
+def store(tmp_path: pathlib.Path) -> Iterator[SessionStore]:
     s = SessionStore(tmp_path / ".cantrip")
     s.open()
     yield s
@@ -30,12 +30,14 @@ def store(tmp_path: Path) -> Iterator[SessionStore]:
 
 
 @pytest.fixture
-def global_store(tmp_path: Path) -> GlobalMemoryStore:
+def global_store(tmp_path: pathlib.Path) -> GlobalMemoryStore:
     return GlobalMemoryStore(tmp_path / "globalmem")
 
 
 @pytest.fixture
-def manager(store: SessionStore, global_store: GlobalMemoryStore, tmp_path: Path) -> MemoryManager:
+def manager(
+    store: SessionStore, global_store: GlobalMemoryStore, tmp_path: pathlib.Path
+) -> MemoryManager:
     return MemoryManager(session_store=store, global_store=global_store, charm_path=tmp_path)
 
 
@@ -76,7 +78,7 @@ class TestParseWriterResponse:
 class TestCollectFileCitations:
     """Scanning tool-call logs for file-path citations."""
 
-    def test_extracts_file_paths(self, tmp_path: Path) -> None:
+    def test_extracts_file_paths(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "a.py").write_text("a")
         (tmp_path / "b.py").write_text("b")
         calls = [
@@ -88,7 +90,7 @@ class TestCollectFileCitations:
         assert any(p.name == "a.py" for p in paths)
         assert any(p.name == "b.py" for p in paths)
 
-    def test_deduplicates(self, tmp_path: Path) -> None:
+    def test_deduplicates(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "a.py").write_text("a")
         calls = [
             {"name": "read_file", "arguments": {"path": str(tmp_path / "a.py")}},
@@ -97,7 +99,7 @@ class TestCollectFileCitations:
         paths = collect_file_citations(calls)
         assert len(paths) == 1
 
-    def test_ignores_non_file_tools(self, tmp_path: Path) -> None:
+    def test_ignores_non_file_tools(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "a.py").write_text("a")
         calls = [
             {"name": "juju_status", "arguments": {}},
@@ -106,7 +108,7 @@ class TestCollectFileCitations:
         paths = collect_file_citations(calls)
         assert len(paths) == 1
 
-    def test_drops_missing_files(self, tmp_path: Path) -> None:
+    def test_drops_missing_files(self, tmp_path: pathlib.Path) -> None:
         calls = [
             {
                 "name": "read_file",
@@ -115,7 +117,7 @@ class TestCollectFileCitations:
         ]
         assert collect_file_citations(calls) == []
 
-    def test_relative_paths_need_base(self, tmp_path: Path) -> None:
+    def test_relative_paths_need_base(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "src").mkdir()
         f = tmp_path / "src" / "charm.py"
         f.write_text("x")
@@ -124,7 +126,7 @@ class TestCollectFileCitations:
         paths = collect_file_citations(calls, base_path=tmp_path)
         assert [p.resolve() for p in paths] == [f.resolve()]
 
-    def test_multi_edit_and_file_path_arg(self, tmp_path: Path) -> None:
+    def test_multi_edit_and_file_path_arg(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "a.py").write_text("a")
         calls = [
             {
@@ -230,7 +232,9 @@ class TestAutoWriterWrite:
     """The full propose-then-persist path."""
 
     @pytest.mark.asyncio
-    async def test_persists_with_citations(self, manager: MemoryManager, tmp_path: Path) -> None:
+    async def test_persists_with_citations(
+        self, manager: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
         source = tmp_path / "src.py"
         source.write_text("charm code here\n")
         provider = FakeProvider(
@@ -286,7 +290,7 @@ class TestAutoWriterWrite:
 
     @pytest.mark.asyncio
     async def test_write_with_missing_file_still_persists_without_citation(
-        self, manager: MemoryManager, tmp_path: Path
+        self, manager: MemoryManager, tmp_path: pathlib.Path
     ) -> None:
         """Unreadable citation paths are dropped rather than blocking the write."""
         provider = FakeProvider(
@@ -464,7 +468,9 @@ class TestCorrectionTriggerIntegration:
     """End-to-end test that a user correction fires the auto-writer."""
 
     @pytest.mark.asyncio
-    async def test_correction_message_fires_writer_and_emits_event(self, tmp_path: Path) -> None:
+    async def test_correction_message_fires_writer_and_emits_event(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """A correction message in process_message persists a memory and emits MEMORY_WRITTEN."""
         from cantrip.agent.core import CantripAgent
         from cantrip.ui.events import EventType
@@ -511,7 +517,7 @@ class TestCorrectionTriggerIntegration:
         assert entry.source == "auto"
 
     @pytest.mark.asyncio
-    async def test_non_correction_does_not_fire_writer(self, tmp_path: Path) -> None:
+    async def test_non_correction_does_not_fire_writer(self, tmp_path: pathlib.Path) -> None:
         from cantrip.agent.core import CantripAgent
 
         provider = FakeProvider(responses=[Response(content="working on it")])

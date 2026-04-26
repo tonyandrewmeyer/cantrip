@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool, tool_to_schema
@@ -16,7 +16,7 @@ from cantrip.agent.tools.subcommand import (
 
 def build_tools(
     *,
-    base_path: Path | None = None,
+    base_path: pathlib.Path | None = None,
     skills_index: SkillsIndex | None = None,
     virtual_store: VirtualFileStore | None = None,
     provider: Any = None,

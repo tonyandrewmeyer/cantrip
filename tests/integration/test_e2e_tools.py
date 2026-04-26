@@ -5,10 +5,10 @@ They do NOT require an LLM API key.
 """
 
 import json
+import pathlib
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -78,7 +78,7 @@ pytestmark = pytest.mark.skipif(
 def tool_map() -> dict:
     """Build the full tool set with a temporary charm path."""
     with tempfile.TemporaryDirectory() as tmp:
-        tools = build_tools(base_path=Path(tmp))
+        tools = build_tools(base_path=pathlib.Path(tmp))
         yield {t.name: t for t in tools}
 
 
@@ -201,7 +201,7 @@ class TestSnapConfinement:
         with tempfile.NamedTemporaryFile(
             suffix=".charm", prefix="test-e2e-", dir="/tmp", delete=False
         ) as f:
-            dummy_charm = Path(f.name)
+            dummy_charm = pathlib.Path(f.name)
             f.write(b"not-a-real-charm")
 
         try:
@@ -220,7 +220,7 @@ class TestSnapConfinement:
         finally:
             dummy_charm.unlink(missing_ok=True)
             # Clean up any temp copy.
-            snap_copy = Path.home() / "snap" / "juju" / "common" / dummy_charm.name
+            snap_copy = pathlib.Path.home() / "snap" / "juju" / "common" / dummy_charm.name
             snap_copy.unlink(missing_ok=True)
 
 
@@ -233,7 +233,7 @@ class TestStatePersistence:
         from cantrip.agent.store import SessionStore
 
         with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / ".cantrip"
+            db_path = pathlib.Path(tmp) / ".cantrip"
 
             state = AgentState()
             state.charm_name = "test-e2e-charm"
@@ -258,7 +258,7 @@ class TestStatePersistence:
         from cantrip.agent.store import SessionStore
 
         with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / ".cantrip"
+            db_path = pathlib.Path(tmp) / ".cantrip"
             store = SessionStore(db_path)
 
             queue = WorkQueue()

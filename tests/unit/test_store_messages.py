@@ -1,6 +1,6 @@
 """Tests for transcript recording in SessionStore."""
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -9,7 +9,7 @@ from cantrip.agent.store import SessionStore, _truncate
 
 class TestMessageRecording:
     @pytest.fixture()
-    def store(self, tmp_path: Path):
+    def store(self, tmp_path: pathlib.Path):
         s = SessionStore(tmp_path / ".cantrip")
         s.open()
         yield s
@@ -52,7 +52,7 @@ class TestMessageRecording:
 
 class TestSubagentMessageRecording:
     @pytest.fixture()
-    def store(self, tmp_path: Path):
+    def store(self, tmp_path: pathlib.Path):
         s = SessionStore(tmp_path / ".cantrip")
         s.open()
         yield s
@@ -76,7 +76,7 @@ class TestSubagentMessageRecording:
 
 class TestEventRecording:
     @pytest.fixture()
-    def store(self, tmp_path: Path):
+    def store(self, tmp_path: pathlib.Path):
         s = SessionStore(tmp_path / ".cantrip")
         s.open()
         yield s
@@ -120,7 +120,7 @@ class TestTruncation:
 
 class TestRecordUsageReturnsId:
     @pytest.fixture()
-    def store(self, tmp_path: Path):
+    def store(self, tmp_path: pathlib.Path):
         s = SessionStore(tmp_path / ".cantrip")
         s.open()
         yield s
@@ -133,7 +133,7 @@ class TestRecordUsageReturnsId:
 
 
 class TestSchemaMigrationV4:
-    def test_v3_db_migrates_to_v4(self, tmp_path: Path):
+    def test_v3_db_migrates_to_v4(self, tmp_path: pathlib.Path):
         """A v3 database gains the new tables on open."""
         db_path = tmp_path / ".cantrip"
         # Create a v3 database.

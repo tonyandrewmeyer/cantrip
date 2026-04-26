@@ -1,8 +1,8 @@
 """Charm audit tool — delegates to charmlint for deterministic checks."""
 
 import contextlib
+import pathlib
 import re
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -56,7 +56,7 @@ _MODERN_PATTERNS: list[tuple[str, str, str]] = [
 ]
 
 
-def _check_modern_patterns(charm_dir: Path) -> dict[str, bool]:
+def _check_modern_patterns(charm_dir: pathlib.Path) -> dict[str, bool]:
     """Check whether the charm uses modern Ops framework patterns."""
     results: dict[str, bool] = {name: False for _, name, _ in _MODERN_PATTERNS}
 
@@ -76,7 +76,7 @@ def _check_modern_patterns(charm_dir: Path) -> dict[str, bool]:
 
 
 def _charmlint_to_audit_report(
-    charm_dir: Path,
+    charm_dir: pathlib.Path,
     charm_name: str,
 ) -> tuple[str, dict[str, list[str]], dict[str, Any]]:
     """Run charmlint and convert results to the legacy audit report format.
@@ -233,7 +233,7 @@ class CharmAuditTool(Tool):
 
     async def execute(self, path: str = ".") -> ToolResult:
         """Run deterministic audit checks on a charm directory."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,

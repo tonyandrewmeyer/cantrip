@@ -1,7 +1,7 @@
 """Tests for the upgrade testing tool."""
 
+import pathlib
 import subprocess
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -62,7 +62,7 @@ class TestUpgradeTestToolGuards:
         assert "app parameter" in result.error
 
     @pytest.mark.asyncio
-    async def test_missing_charm_file(self, tool: UpgradeTestTool, tmp_path: Path) -> None:
+    async def test_missing_charm_file(self, tool: UpgradeTestTool, tmp_path: pathlib.Path) -> None:
         missing = tmp_path / "does-not-exist.charm"
         with mock.patch("cantrip.agent.tools.upgrade.shutil.which", return_value="/usr/bin/juju"):
             result = await tool.execute(app="my-app", charm_path=str(missing))
@@ -70,7 +70,9 @@ class TestUpgradeTestToolGuards:
         assert "charm file not found" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_application_not_deployed(self, tool: UpgradeTestTool, tmp_path: Path) -> None:
+    async def test_application_not_deployed(
+        self, tool: UpgradeTestTool, tmp_path: pathlib.Path
+    ) -> None:
         """Pre-upgrade status is empty → early failure with clear error."""
         charm = tmp_path / "my-app.charm"
         charm.write_bytes(b"stub")
@@ -94,13 +96,13 @@ class TestUpgradeTestToolExecute:
         return UpgradeTestTool()
 
     @pytest.fixture
-    def charm(self, tmp_path: Path) -> Path:
+    def charm(self, tmp_path: pathlib.Path) -> pathlib.Path:
         path = tmp_path / "my-app.charm"
         path.write_bytes(b"stub")
         return path
 
     @pytest.mark.asyncio
-    async def test_happy_path(self, tool: UpgradeTestTool, charm: Path) -> None:
+    async def test_happy_path(self, tool: UpgradeTestTool, charm: pathlib.Path) -> None:
         """Full upgrade with recovery and no hook failures → PASS."""
         status = {
             "applications": {
@@ -143,7 +145,9 @@ class TestUpgradeTestToolExecute:
         assert result.data["hook_failures"] == 0
 
     @pytest.mark.asyncio
-    async def test_resources_passed_to_refresh(self, tool: UpgradeTestTool, charm: Path) -> None:
+    async def test_resources_passed_to_refresh(
+        self, tool: UpgradeTestTool, charm: pathlib.Path
+    ) -> None:
         """``--resource`` flags are forwarded for every provided mapping."""
         import json
 
@@ -190,7 +194,7 @@ class TestUpgradeTestToolExecute:
         assert "oci-image=registry/img:tag" in refresh
 
     @pytest.mark.asyncio
-    async def test_refresh_timeout(self, tool: UpgradeTestTool, charm: Path) -> None:
+    async def test_refresh_timeout(self, tool: UpgradeTestTool, charm: pathlib.Path) -> None:
         import json
 
         status = {
@@ -222,7 +226,7 @@ class TestUpgradeTestToolExecute:
         assert "timed out" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_refresh_non_zero_exit(self, tool: UpgradeTestTool, charm: Path) -> None:
+    async def test_refresh_non_zero_exit(self, tool: UpgradeTestTool, charm: pathlib.Path) -> None:
         import json
 
         status = {
@@ -254,7 +258,7 @@ class TestUpgradeTestToolExecute:
         assert "bad charm" in result.error
 
     @pytest.mark.asyncio
-    async def test_regression_detected(self, tool: UpgradeTestTool, charm: Path) -> None:
+    async def test_regression_detected(self, tool: UpgradeTestTool, charm: pathlib.Path) -> None:
         """Pre active, post blocked → regression, FAIL verdict."""
         import json
 
@@ -304,7 +308,7 @@ class TestUpgradeTestToolExecute:
         assert "REGRESSION" in result.output
 
     @pytest.mark.asyncio
-    async def test_recovery_failure(self, tool: UpgradeTestTool, charm: Path) -> None:
+    async def test_recovery_failure(self, tool: UpgradeTestTool, charm: pathlib.Path) -> None:
         """Refresh succeeds but wait-for-app times out — FAIL."""
         import json
 

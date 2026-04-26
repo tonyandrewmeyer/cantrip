@@ -1,8 +1,8 @@
 """Base LLM provider interface."""
 
+import dataclasses
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -16,7 +16,7 @@ class Role(StrEnum):
     TOOL = "tool"
 
 
-@dataclass
+@dataclasses.dataclass
 class ToolCall:
     """A tool call from the assistant."""
 
@@ -25,7 +25,7 @@ class ToolCall:
     arguments: dict[str, Any]
 
 
-@dataclass
+@dataclasses.dataclass
 class ToolResult:
     """Result of a tool call.
 
@@ -41,10 +41,10 @@ class ToolResult:
     tool_call_id: str
     content: str
     is_error: bool = False
-    images: list["Image"] = field(default_factory=list)
+    images: list["Image"] = dataclasses.field(default_factory=list)
 
 
-@dataclass
+@dataclasses.dataclass
 class Image:
     """An image attachment for a multimodal message.
 
@@ -60,7 +60,7 @@ class Image:
     mime: str
 
 
-@dataclass
+@dataclasses.dataclass
 class Message:
     """A conversation message.
 
@@ -73,35 +73,35 @@ class Message:
 
     role: Role
     content: str
-    tool_calls: list[ToolCall] = field(default_factory=list)
-    tool_results: list[ToolResult] = field(default_factory=list)
-    images: list[Image] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    tool_calls: list[ToolCall] = dataclasses.field(default_factory=list)
+    tool_results: list[ToolResult] = dataclasses.field(default_factory=list)
+    images: list[Image] = dataclasses.field(default_factory=list)
+    metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
-@dataclass
+@dataclasses.dataclass
 class Response:
     """Response from the LLM."""
 
     content: str
-    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_calls: list[ToolCall] = dataclasses.field(default_factory=list)
     finish_reason: str = "stop"
-    usage: dict[str, int] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    usage: dict[str, int] = dataclasses.field(default_factory=dict)
+    metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
-@dataclass
+@dataclasses.dataclass
 class Chunk:
     """A streaming chunk."""
 
     content: str = ""
-    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_calls: list[ToolCall] = dataclasses.field(default_factory=list)
     is_final: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
-    usage: dict[str, int] = field(default_factory=dict)
+    metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
+    usage: dict[str, int] = dataclasses.field(default_factory=dict)
 
 
-@dataclass
+@dataclasses.dataclass
 class Tool:
     """Tool definition for the LLM."""
 

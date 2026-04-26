@@ -1,10 +1,10 @@
 """Charm scaffolding and management tools."""
 
 import os
+import pathlib
 import re
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -40,7 +40,7 @@ _PAAS_OPS_LINE = "ops ~= 2.17"
 _PAAS_CHARM_LINE = "paas-charm>=1.0,<2"
 
 
-def _charm_uses_paas_extension(charm_path: Path) -> bool:
+def _charm_uses_paas_extension(charm_path: pathlib.Path) -> bool:
     """Return ``True`` when *charm_path*'s charmcraft.yaml uses a PaaS extension.
 
     Inspects ``extensions:`` in ``charmcraft.yaml``.  A missing file or a
@@ -63,7 +63,7 @@ def _charm_uses_paas_extension(charm_path: Path) -> bool:
     )
 
 
-def _ensure_paas_requirements(charm_path: Path) -> list[str]:
+def _ensure_paas_requirements(charm_path: pathlib.Path) -> list[str]:
     """Guarantee ``ops`` and ``paas-charm`` are in the charm's requirements.txt.
 
     The agent sometimes overwrites the charm's scaffolded
@@ -111,7 +111,7 @@ def _ensure_paas_requirements(charm_path: Path) -> list[str]:
     return actions
 
 
-def _inject_ops_tracing(target_path: Path, profile: str) -> list[str]:
+def _inject_ops_tracing(target_path: pathlib.Path, profile: str) -> list[str]:
     """Inject ops-tracing into a freshly scaffolded charm.
 
     For standard profiles (``kubernetes``, ``machine``) the full stack is injected:
@@ -241,7 +241,7 @@ repos:
 """
 
 
-def _inject_pre_commit(target_path: Path) -> list[str]:
+def _inject_pre_commit(target_path: pathlib.Path) -> list[str]:
     """Set up pre-commit hooks that delegate to tox environments.
 
     Writes a ``.pre-commit-config.yaml`` that runs the ``format``, ``lint``,
@@ -286,7 +286,7 @@ def _inject_pre_commit(target_path: Path) -> list[str]:
 _COVERAGE_THRESHOLD = 80
 
 
-def _inject_coverage_threshold(target_path: Path) -> list[str]:
+def _inject_coverage_threshold(target_path: pathlib.Path) -> list[str]:
     """Add a ``fail_under`` threshold to the charm's coverage configuration.
 
     Reads the generated ``pyproject.toml``, locates (or creates) the
@@ -408,7 +408,7 @@ class CharmcraftInitTool(Tool):
     ) -> ToolResult:
         """Run charmcraft init."""
         try:
-            target_path = Path(path)
+            target_path = pathlib.Path(path)
             # Avoid creating a redundant ``name/name`` directory when the agent
             # passes a path that already names the charm (common in sprint mode,
             # where ``state.charm_path`` is pre-set to ``workspace/charm_name``).
@@ -568,7 +568,7 @@ class CharmcraftPackTool(Tool):
     async def execute(self, path: str = ".", destructive_mode: bool = False) -> ToolResult:
         """Run charmcraft pack."""
         try:
-            charm_path = Path(path).resolve()
+            charm_path = pathlib.Path(path).resolve()
 
             # Re-assert PaaS charm dependencies before packing.  The
             # agent has been observed overwriting the charm's
@@ -697,7 +697,7 @@ class CharmValidateTool(Tool):
 
     async def execute(self, path: str = ".", skip_tests: bool = False) -> ToolResult:
         """Run unit tests and charmcraft pack, returning a checklist report."""
-        charm_path = Path(path).resolve()
+        charm_path = pathlib.Path(path).resolve()
         if not charm_path.is_dir():
             return ToolResult(
                 success=False,
@@ -749,7 +749,7 @@ class CharmValidateTool(Tool):
         if pack_result.success:
             pack_status = "passed"
             pack_charm_file = pack_result.data.get("charm_file")
-            charm_label = Path(pack_charm_file).name if pack_charm_file else "unknown"
+            charm_label = pathlib.Path(pack_charm_file).name if pack_charm_file else "unknown"
             pack_detail = f"PASSED ({charm_label})"
         else:
             pack_detail = f"FAILED ({pack_result.error or 'unknown error'})"
@@ -825,7 +825,7 @@ class QuickPackTool(Tool):
         # Check the in-tree build location.
         import cantrip
 
-        pkg_dir = Path(cantrip.__file__).resolve().parent
+        pkg_dir = pathlib.Path(cantrip.__file__).resolve().parent
         candidate = pkg_dir.parent.parent / "quickpack-rs" / "target" / "release" / "quickpack"
         if candidate.is_file():
             return str(candidate)
@@ -840,7 +840,7 @@ class QuickPackTool(Tool):
 
     def _execute_rust(self, binary: str, path: str, output_dir: str | None) -> ToolResult:
         """Pack using the compiled Rust binary."""
-        charm_path = Path(path).resolve()
+        charm_path = pathlib.Path(path).resolve()
         cmd = [binary, str(charm_path), "--quiet"]
         if output_dir is not None:
             cmd.extend(["--output-dir", output_dir])
@@ -863,7 +863,7 @@ class QuickPackTool(Tool):
             return ToolResult(success=False, output="", error=error)
 
         # Locate the produced .charm file.
-        out = Path(output_dir) if output_dir else charm_path
+        out = pathlib.Path(output_dir) if output_dir else charm_path
         charm_files = sorted(out.glob("*.charm"))
         charm_file = charm_files[-1] if charm_files else None
 
@@ -889,7 +889,7 @@ class QuickPackTool(Tool):
         try:
             from quickpack import pack as _pack
 
-            charm_path = Path(path).resolve()
+            charm_path = pathlib.Path(path).resolve()
             kwargs: dict[str, Any] = {}
             if output_dir is not None:
                 kwargs["output_dir"] = output_dir
@@ -951,7 +951,7 @@ class CharmcraftFetchLibsTool(Tool):
     async def execute(self, path: str = ".") -> ToolResult:
         """Run charmcraft fetch-libs."""
         try:
-            charm_path = Path(path).resolve()
+            charm_path = pathlib.Path(path).resolve()
 
             result = subprocess.run(
                 ["charmcraft", "fetch-libs"],
@@ -1045,7 +1045,7 @@ class AnalyseFrameworkTool(Tool):
     async def execute(self, path: str) -> ToolResult:
         """Analyse the codebase."""
         try:
-            app_path = Path(path).resolve()
+            app_path = pathlib.Path(path).resolve()
             if not app_path.exists():
                 return ToolResult(
                     success=False,
@@ -1273,7 +1273,7 @@ class GenerateTerraformTool(Tool):
 
     async def execute(self, charm_path: str) -> ToolResult:
         """Generate Terraform module files from a charm's charmcraft.yaml."""
-        charm_dir = Path(charm_path).resolve()
+        charm_dir = pathlib.Path(charm_path).resolve()
         charmcraft_yaml = charm_dir / "charmcraft.yaml"
 
         if not charmcraft_yaml.exists():
@@ -1347,7 +1347,7 @@ class ValidateTerraformTool(Tool):
                 data={"skipped": True},
             )
 
-        tf_dir = Path(terraform_path).resolve()
+        tf_dir = pathlib.Path(terraform_path).resolve()
         if not tf_dir.is_dir():
             return ToolResult(
                 success=False,

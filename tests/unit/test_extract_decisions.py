@@ -5,9 +5,9 @@ transcript and rendering them as a build log in
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -28,10 +28,10 @@ from cantrip.agent.tools.publishing import (
 @pytest.fixture
 def temp_charm():
     with tempfile.TemporaryDirectory() as td:
-        yield Path(td)
+        yield pathlib.Path(td)
 
 
-def _write_decisions(db_path: Path, decisions: list[dict[str, str]]) -> None:
+def _write_decisions(db_path: pathlib.Path, decisions: list[dict[str, str]]) -> None:
     """Write a minimal Cantrip-shaped SQLite store with the supplied decisions."""
     conn = sqlite3.connect(db_path)
     try:

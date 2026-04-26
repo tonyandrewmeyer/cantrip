@@ -1,8 +1,8 @@
 """Test report aggregation tool — collects results into a structured summary."""
 
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -14,7 +14,7 @@ from cantrip.agent.tools.testing import _parse_pytest_summary
 _SUBPROCESS_TIMEOUT = 120
 
 
-def _run_tests(charm_dir: Path, test_type: str) -> dict[str, Any]:
+def _run_tests(charm_dir: pathlib.Path, test_type: str) -> dict[str, Any]:
     """Run a test suite and return structured results.
 
     Returns a dict with keys: success, summary, output (truncated).
@@ -162,7 +162,7 @@ class TestReportTool(Tool):
 
     async def execute(self, path: str = ".") -> ToolResult:
         """Run tests and produce an aggregated report."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,

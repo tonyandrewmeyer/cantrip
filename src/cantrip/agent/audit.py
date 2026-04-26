@@ -28,9 +28,9 @@ import datetime
 import enum
 import json
 import logging
+import pathlib
 import threading
 from collections.abc import Iterable, Iterator
-from pathlib import Path
 from typing import Any
 
 from cantrip.agent.memory_export import sanitise_body
@@ -109,7 +109,7 @@ class AuditEntry:
 def scrub_arguments(
     arguments: dict[str, Any],
     *,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
 ) -> dict[str, Any]:
     """Scrub string values in *arguments* through the Phase 50.2 sanitiser.
 
@@ -144,12 +144,12 @@ class AuditWriter:
     not instead of it).
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: pathlib.Path) -> None:
         self._path = path
         self._lock = threading.Lock()
 
     @property
-    def path(self) -> Path:
+    def path(self) -> pathlib.Path:
         """File the writer appends to."""
         return self._path
 
@@ -169,7 +169,7 @@ def make_entry(
     reason: str,
     arguments: dict[str, Any] | None = None,
     task_id: str | None = None,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
     now: datetime.datetime | None = None,
 ) -> AuditEntry:
     """Build an ``AuditEntry`` with arguments scrubbed and timestamp stamped.
@@ -191,7 +191,7 @@ def make_entry(
     )
 
 
-def read_entries(path: Path) -> Iterator[AuditEntry]:
+def read_entries(path: pathlib.Path) -> Iterator[AuditEntry]:
     """Yield :class:`AuditEntry` rows from a JSONL file.
 
     Malformed lines log a warning and are skipped rather than

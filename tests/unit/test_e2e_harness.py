@@ -9,7 +9,7 @@ without needing an API key or juju.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -21,7 +21,7 @@ from tests.e2e import harness, seeds
 
 
 class TestSeedWorkspace:
-    def test_writes_all_files_with_nested_dirs(self, tmp_path: Path) -> None:
+    def test_writes_all_files_with_nested_dirs(self, tmp_path: pathlib.Path) -> None:
         workspace = tmp_path / "work"
         harness.seed_workspace(workspace, seeds.DJANGO)
 
@@ -29,7 +29,7 @@ class TestSeedWorkspace:
         assert (workspace / "djangodemo" / "settings.py").is_file()
         assert (workspace / "djangodemo" / "__init__.py").is_file()
 
-    def test_idempotent_when_workspace_exists(self, tmp_path: Path) -> None:
+    def test_idempotent_when_workspace_exists(self, tmp_path: pathlib.Path) -> None:
         workspace = tmp_path / "work"
         workspace.mkdir()
         (workspace / "preexisting.txt").write_text("keep me")

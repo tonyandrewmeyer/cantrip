@@ -1,7 +1,7 @@
 """Tests for Juju introspection tools (relation data, app config, offers)."""
 
 import json
-from pathlib import Path
+import pathlib
 from unittest import mock
 
 import pytest
@@ -286,7 +286,7 @@ class TestJujuListOffersTool:
 class TestValidateConfigAgainstCharm:
     """Tests for _validate_config_against_charm."""
 
-    def test_undeclared_key_detected(self, tmp_path: Path) -> None:
+    def test_undeclared_key_detected(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "charmcraft.yaml").write_text(
             yaml.dump({"config": {"options": {"port": {"type": "int"}}}})
         )
@@ -295,7 +295,7 @@ class TestValidateConfigAgainstCharm:
         assert len(undeclared) == 1
         assert "deprecated" in undeclared[0]["issue"].lower()
 
-    def test_missing_declared_key_detected(self, tmp_path: Path) -> None:
+    def test_missing_declared_key_detected(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "charmcraft.yaml").write_text(
             yaml.dump(
                 {
@@ -313,19 +313,19 @@ class TestValidateConfigAgainstCharm:
         assert len(missing) == 1
         assert "not present" in missing[0]["issue"].lower()
 
-    def test_no_issues_when_matching(self, tmp_path: Path) -> None:
+    def test_no_issues_when_matching(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "charmcraft.yaml").write_text(
             yaml.dump({"config": {"options": {"port": {"type": "int"}}}})
         )
         issues = _validate_config_against_charm({"port"}, str(tmp_path))
         assert issues == []
 
-    def test_no_charm_config_returns_empty(self, tmp_path: Path) -> None:
+    def test_no_charm_config_returns_empty(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "charmcraft.yaml").write_text(yaml.dump({"name": "test"}))
         issues = _validate_config_against_charm({"port"}, str(tmp_path))
         assert issues == []
 
-    def test_config_yaml_fallback(self, tmp_path: Path) -> None:
+    def test_config_yaml_fallback(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "config.yaml").write_text(yaml.dump({"options": {"port": {"type": "int"}}}))
         issues = _validate_config_against_charm({"port", "extra"}, str(tmp_path))
         assert any(i["key"] == "extra" for i in issues)
@@ -349,7 +349,7 @@ class TestGetAppConfigWithValidation:
 
     @pytest.mark.asyncio()
     async def test_validation_issues_in_output(
-        self, tool: JujuGetAppConfigTool, tmp_path: Path
+        self, tool: JujuGetAppConfigTool, tmp_path: pathlib.Path
     ) -> None:
         (tmp_path / "charmcraft.yaml").write_text(
             yaml.dump({"config": {"options": {"port": {"type": "int"}}}})

@@ -4,11 +4,11 @@ import asyncio
 import functools
 import json
 import os
+import pathlib
 import re
 import shlex
 import shutil
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import jubilant
@@ -256,25 +256,25 @@ class JujuDeployTool(Tool):
                 error="Juju CLI not found. Is Juju installed?",
             )
 
-        temp_copy: Path | None = None
+        temp_copy: pathlib.Path | None = None
         try:
             juju = jubilant.Juju(model=model)
 
             # Resolve local .charm paths to absolute so juju doesn't
             # misinterpret them as Charmhub names.
-            charm_path = Path(charm)
+            charm_path = pathlib.Path(charm)
             if charm_path.suffix == ".charm" and charm_path.exists():
                 charm = str(charm_path.resolve())
-            elif not charm_path.is_absolute() and (Path.cwd() / charm_path).exists():
-                charm = str((Path.cwd() / charm_path).resolve())
+            elif not charm_path.is_absolute() and (pathlib.Path.cwd() / charm_path).exists():
+                charm = str((pathlib.Path.cwd() / charm_path).resolve())
 
             # The Juju snap uses strict confinement and cannot read files
             # outside the user's home directory.  If the charm file lives
             # in a non-accessible location (e.g. /tmp), copy it to a
             # snap-accessible path before deploying.
-            charm_file = Path(charm)
+            charm_file = pathlib.Path(charm)
             if charm_file.suffix == ".charm" and charm_file.exists():
-                home = Path.home()
+                home = pathlib.Path.home()
                 if not str(charm_file).startswith(str(home)):
                     snap_dir = home / "snap" / "juju" / "common"
                     snap_dir.mkdir(parents=True, exist_ok=True)
@@ -304,7 +304,7 @@ class JujuDeployTool(Tool):
                 timeout=300,
             )
 
-            display_name = app_name or Path(charm).stem
+            display_name = app_name or pathlib.Path(charm).stem
             caption = f"Deployed {display_name}"
             if model:
                 caption += f" to {model}"
@@ -406,9 +406,9 @@ class BundleDeployTool(Tool):
 
         # Resolve the bundle path first so we can fail early with a
         # clear error rather than passing a missing path to Juju.
-        bundle_path = Path(path)
+        bundle_path = pathlib.Path(path)
         if not bundle_path.is_absolute():
-            bundle_path = (Path.cwd() / bundle_path).resolve()
+            bundle_path = (pathlib.Path.cwd() / bundle_path).resolve()
         if not bundle_path.is_file():
             return ToolResult(
                 success=False,
@@ -416,11 +416,11 @@ class BundleDeployTool(Tool):
                 error=f"Bundle file not found: {bundle_path}",
             )
 
-        overlay_paths: list[Path] = []
+        overlay_paths: list[pathlib.Path] = []
         for overlay in overlays or []:
-            overlay_path = Path(overlay)
+            overlay_path = pathlib.Path(overlay)
             if not overlay_path.is_absolute():
-                overlay_path = (Path.cwd() / overlay_path).resolve()
+                overlay_path = (pathlib.Path.cwd() / overlay_path).resolve()
             if not overlay_path.is_file():
                 return ToolResult(
                     success=False,
@@ -623,15 +623,15 @@ class JujuRefreshTool(Tool):
                 error="Juju CLI not found. Is Juju installed?",
             )
 
-        temp_copy: Path | None = None
+        temp_copy: pathlib.Path | None = None
         try:
             juju = jubilant.Juju(model=model)
             refresh_args: dict[str, Any] = {"app": app_name}
             if path:
                 # Copy to snap-accessible path if needed (same as deploy).
-                charm_file = Path(path)
+                charm_file = pathlib.Path(path)
                 if charm_file.suffix == ".charm" and charm_file.exists():
-                    home = Path.home()
+                    home = pathlib.Path.home()
                     if not str(charm_file.resolve()).startswith(str(home)):
                         snap_dir = home / "snap" / "juju" / "common"
                         snap_dir.mkdir(parents=True, exist_ok=True)
@@ -1444,7 +1444,7 @@ class CharmSyncTool(Tool):
                 error="Juju CLI not found. Is Juju installed?",
             )
 
-        local_root = Path(charm_dir) if charm_dir else Path.cwd()
+        local_root = pathlib.Path(charm_dir) if charm_dir else pathlib.Path.cwd()
         dirs_to_sync = directories or ["src", "lib"]
         remote_root = _agent_charm_dir(unit)
 
@@ -1453,7 +1453,7 @@ class CharmSyncTool(Tool):
             k8s = await _is_k8s_model(juju)
 
             # Collect all .py files from the requested directories.
-            files: list[tuple[Path, str]] = []
+            files: list[tuple[pathlib.Path, str]] = []
             for dir_name in dirs_to_sync:
                 local_dir = local_root / dir_name
                 if not local_dir.is_dir():
@@ -1462,7 +1462,7 @@ class CharmSyncTool(Tool):
                     for fname in filenames:
                         if not fname.endswith(".py"):
                             continue
-                        local_path = Path(root) / fname
+                        local_path = pathlib.Path(root) / fname
                         relative = local_path.relative_to(local_root)
                         remote_path = f"{remote_root}/{relative}"
                         files.append((local_path, remote_path))
@@ -1476,7 +1476,7 @@ class CharmSyncTool(Tool):
 
             # Push each file to the unit.
             for local_path, remote_path in files:
-                remote_parent = str(Path(remote_path).parent)
+                remote_parent = str(pathlib.Path(remote_path).parent)
                 safe_parent = shlex.quote(remote_parent)
                 safe_path = shlex.quote(remote_path)
 
@@ -2005,7 +2005,7 @@ def _validate_config_against_charm(
     import yaml
 
     issues: list[dict[str, str]] = []
-    charm_dir = Path(charm_path)
+    charm_dir = pathlib.Path(charm_path)
 
     # Load declared config options from charmcraft.yaml or config.yaml.
     declared_keys: set[str] = set()

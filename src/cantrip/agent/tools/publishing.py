@@ -4,11 +4,11 @@ import dataclasses
 import datetime
 import hashlib
 import json
+import pathlib
 import re
 import shutil
 import sqlite3
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -67,7 +67,7 @@ class CharmcraftUploadTool(Tool):
                 ),
             )
 
-        charm_path = Path(charm_file)
+        charm_path = pathlib.Path(charm_file)
         if not charm_path.exists():
             return ToolResult(
                 success=False,
@@ -270,7 +270,7 @@ class GenerateReadmeTool(Tool):
 
     async def execute(self, path: str = ".") -> ToolResult:
         """Generate a README.md from charm metadata."""
-        charm_path = Path(path).resolve()
+        charm_path = pathlib.Path(path).resolve()
         charmcraft_yaml = charm_path / "charmcraft.yaml"
 
         if not charmcraft_yaml.exists():
@@ -542,7 +542,7 @@ class GenerateIconTool(Tool):
 
     async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate icon.svg in the charm directory."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,
@@ -673,7 +673,7 @@ class GenerateDiagramTool(Tool):
 
     async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate architecture.md with a Mermaid diagram."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,
@@ -705,7 +705,7 @@ class GenerateDiagramTool(Tool):
 # ---------------------------------------------------------------------------
 
 
-def _read_charm_metadata(charm_dir: Path) -> dict[str, Any]:
+def _read_charm_metadata(charm_dir: pathlib.Path) -> dict[str, Any]:
     """Read and return charmcraft.yaml metadata, or empty dict on failure."""
     charmcraft_yaml = charm_dir / "charmcraft.yaml"
     if not charmcraft_yaml.exists():
@@ -901,7 +901,7 @@ class AcceptanceArtefacts:
         return bool(self.juju_status) or bool(self.action_outputs) or self.has_acceptance_md
 
 
-def load_acceptance_artefacts(charm_dir: Path) -> AcceptanceArtefacts:
+def load_acceptance_artefacts(charm_dir: pathlib.Path) -> AcceptanceArtefacts:
     """Read demo/ + ACCEPTANCE.md artefacts from *charm_dir*.
 
     Returns an empty :class:`AcceptanceArtefacts` when nothing is present
@@ -1640,7 +1640,7 @@ class GenerateDocsTool(Tool):
 
     async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate the docs scaffold in the charm directory."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,
@@ -1737,7 +1737,7 @@ class GenerateDocsTool(Tool):
 _DECISIONS_MARKER = "<!-- cantrip-decisions-start -->"
 
 
-def _read_decisions(db_path: Path) -> list[dict[str, Any]]:
+def _read_decisions(db_path: pathlib.Path) -> list[dict[str, Any]]:
     """Read recorded design decisions from a Cantrip session SQLite file.
 
     Returns a chronologically-ordered list of ``{type, choice, reason,
@@ -1786,7 +1786,7 @@ def _scaffold_architecture_intro(charm_name: str, metadata: dict[str, Any]) -> s
     )
 
 
-def _resolve_architecture_intro(charm_dir: Path) -> str:
+def _resolve_architecture_intro(charm_dir: pathlib.Path) -> str:
     """Decide which intro content to put above the auto-generated decisions.
 
     Order of preference:
@@ -1906,7 +1906,7 @@ class ExtractDesignDecisionsTool(Tool):
         }
 
     async def execute(self, path: str = ".", db_path: str | None = None) -> ToolResult:
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,
@@ -1914,7 +1914,7 @@ class ExtractDesignDecisionsTool(Tool):
                 error=f"Directory not found: {path}",
             )
 
-        store_path = Path(db_path).resolve() if db_path else charm_dir / ".cantrip"
+        store_path = pathlib.Path(db_path).resolve() if db_path else charm_dir / ".cantrip"
         decisions = _read_decisions(store_path)
         intro = _resolve_architecture_intro(charm_dir)
         content = _compose_architecture_page(intro, decisions)
@@ -2109,7 +2109,7 @@ class TroubleshootingEntry:
     citation: str  # Human-readable transcript pointer (e.g. ``message #42``).
 
 
-def _read_transcript_pairs(db_path: Path) -> list[TroubleshootingEntry]:
+def _read_transcript_pairs(db_path: pathlib.Path) -> list[TroubleshootingEntry]:
     """Mine error→fix pairs from the messages + subagent_messages tables.
 
     Walks each table chronologically.  For every assistant message whose
@@ -2300,7 +2300,7 @@ def format_troubleshooting_page(entries: list[TroubleshootingEntry]) -> str:
     return "\n".join(lines)
 
 
-def _resolve_troubleshooting_intro(charm_dir: Path) -> str:
+def _resolve_troubleshooting_intro(charm_dir: pathlib.Path) -> str:
     """Decide what intro content sits above the auto-generated section.
 
     Mirrors the architecture-page pattern: if a marker is present in an
@@ -2326,7 +2326,7 @@ def _compose_troubleshooting_page(intro: str, body: str) -> str:
     return intro + "\n\n" + _TROUBLESHOOTING_MARKER + "\n\n" + body
 
 
-def _ensure_troubleshooting_in_toctree(charm_dir: Path) -> bool:
+def _ensure_troubleshooting_in_toctree(charm_dir: pathlib.Path) -> bool:
     """Add ``troubleshooting`` to ``docs/how-to/index.md`` if it isn't already.
 
     Returns True when the index file was modified.  No-op when the
@@ -2391,7 +2391,7 @@ class ExtractTroubleshootingTool(Tool):
         }
 
     async def execute(self, path: str = ".", db_path: str | None = None) -> ToolResult:
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,
@@ -2399,7 +2399,7 @@ class ExtractTroubleshootingTool(Tool):
                 error=f"Directory not found: {path}",
             )
 
-        store_path = Path(db_path).resolve() if db_path else charm_dir / ".cantrip"
+        store_path = pathlib.Path(db_path).resolve() if db_path else charm_dir / ".cantrip"
         entries = _read_transcript_pairs(store_path)
         intro = _resolve_troubleshooting_intro(charm_dir)
         body = format_troubleshooting_page(entries)

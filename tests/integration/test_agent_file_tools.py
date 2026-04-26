@@ -5,7 +5,7 @@ These tests exercise CantripAgent with its actual file-operation tools
 sequence of Responses containing ToolCalls for real tools.
 """
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -19,7 +19,7 @@ class TestAgentWithFileTools:
     """Exercise real file tools through the agent loop."""
 
     @pytest.mark.asyncio
-    async def test_write_then_read(self, tmp_path: Path):
+    async def test_write_then_read(self, tmp_path: pathlib.Path):
         """Write a file via tool call, then read it back."""
         provider = FakeProvider(
             [
@@ -57,7 +57,7 @@ class TestAgentWithFileTools:
         assert (tmp_path / "hello.txt").read_text() == "hello world"
 
     @pytest.mark.asyncio
-    async def test_list_directory_after_write(self, tmp_path: Path):
+    async def test_list_directory_after_write(self, tmp_path: pathlib.Path):
         """Write a file then list the directory; filename should appear."""
         provider = FakeProvider(
             [
@@ -94,7 +94,7 @@ class TestAgentWithFileTools:
         assert "app.py" in list_result.content
 
     @pytest.mark.asyncio
-    async def test_edit_file_round_trip(self, tmp_path: Path):
+    async def test_edit_file_round_trip(self, tmp_path: pathlib.Path):
         """Write a file, edit it, then read to verify the edit."""
         provider = FakeProvider(
             [
@@ -145,7 +145,7 @@ class TestAgentWithFileTools:
         assert (tmp_path / "config.yaml").read_text() == "name: new-name"
 
     @pytest.mark.asyncio
-    async def test_path_traversal_prevented(self, tmp_path: Path):
+    async def test_path_traversal_prevented(self, tmp_path: pathlib.Path):
         """Reading a file with ../ should produce an error in the tool result."""
         provider = FakeProvider(
             [
@@ -171,7 +171,7 @@ class TestAgentWithFileTools:
         assert tool_result.is_error
 
     @pytest.mark.asyncio
-    async def test_write_creates_subdirectories(self, tmp_path: Path):
+    async def test_write_creates_subdirectories(self, tmp_path: pathlib.Path):
         """Writing to a nested path should create intermediate directories."""
         provider = FakeProvider(
             [

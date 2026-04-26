@@ -1,8 +1,8 @@
 """Tests for the charmlint agent-tool wrapper."""
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -30,14 +30,14 @@ class TestCharmlintToolMetadata:
 
 
 class TestFindRustBinary:
-    def test_prefers_path_binary(self, tmp_path: Path) -> None:
+    def test_prefers_path_binary(self, tmp_path: pathlib.Path) -> None:
         with mock.patch(
             "cantrip.agent.tools.charmlint_tool.shutil.which",
             return_value="/usr/bin/charmlint-rs",
         ):
             assert CharmlintTool._find_rust_binary() == "/usr/bin/charmlint-rs"
 
-    def test_falls_back_to_in_tree_build(self, tmp_path: Path) -> None:
+    def test_falls_back_to_in_tree_build(self, tmp_path: pathlib.Path) -> None:
         """In-tree target/release/charmlint is used when PATH has nothing."""
         # Build a fake package structure with the expected layout.
         pkg_dir = tmp_path / "site-packages" / "cantrip"
@@ -57,7 +57,7 @@ class TestFindRustBinary:
         ):
             assert CharmlintTool._find_rust_binary() == str(rust_bin)
 
-    def test_returns_none_when_nothing_found(self, tmp_path: Path) -> None:
+    def test_returns_none_when_nothing_found(self, tmp_path: pathlib.Path) -> None:
         pkg_dir = tmp_path / "pkg" / "cantrip"
         pkg_dir.mkdir(parents=True)
         (pkg_dir / "__init__.py").write_text("")
@@ -75,13 +75,15 @@ class TestCharmlintToolExecute:
         return CharmlintTool()
 
     @pytest.mark.asyncio
-    async def test_path_not_found(self, tool: CharmlintTool, tmp_path: Path) -> None:
+    async def test_path_not_found(self, tool: CharmlintTool, tmp_path: pathlib.Path) -> None:
         result = await tool.execute(path=str(tmp_path / "missing"))
         assert not result.success
         assert "path not found" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_rust_backend_clean_report(self, tool: CharmlintTool, tmp_path: Path) -> None:
+    async def test_rust_backend_clean_report(
+        self, tool: CharmlintTool, tmp_path: pathlib.Path
+    ) -> None:
         """Rust binary returns zero-diagnostic JSON → 'No issues found'."""
         payload = {"diagnostics": [], "total": 0, "errors": 0, "warnings": 0, "info": 0}
         with (
@@ -101,7 +103,7 @@ class TestCharmlintToolExecute:
 
     @pytest.mark.asyncio
     async def test_rust_backend_reports_diagnostics(
-        self, tool: CharmlintTool, tmp_path: Path
+        self, tool: CharmlintTool, tmp_path: pathlib.Path
     ) -> None:
         """Diagnostic summary includes counts for each severity."""
         payload = {
@@ -142,7 +144,7 @@ class TestCharmlintToolExecute:
 
     @pytest.mark.asyncio
     async def test_rust_backend_forwards_filters(
-        self, tool: CharmlintTool, tmp_path: Path
+        self, tool: CharmlintTool, tmp_path: pathlib.Path
     ) -> None:
         """CLI flags are forwarded to the Rust binary."""
         payload = {"diagnostics": [], "total": 0, "errors": 0, "warnings": 0, "info": 0}
@@ -170,7 +172,7 @@ class TestCharmlintToolExecute:
 
     @pytest.mark.asyncio
     async def test_rust_backend_timeout_returns_error(
-        self, tool: CharmlintTool, tmp_path: Path
+        self, tool: CharmlintTool, tmp_path: pathlib.Path
     ) -> None:
         with (
             mock.patch.object(
@@ -188,7 +190,7 @@ class TestCharmlintToolExecute:
 
     @pytest.mark.asyncio
     async def test_rust_backend_file_not_found_falls_back(
-        self, tool: CharmlintTool, tmp_path: Path
+        self, tool: CharmlintTool, tmp_path: pathlib.Path
     ) -> None:
         """If the Rust binary disappears mid-run, fall back to Python."""
         fake_report = SimpleNamespace(
@@ -214,7 +216,7 @@ class TestCharmlintToolExecute:
 
     @pytest.mark.asyncio
     async def test_rust_backend_bad_json_falls_back(
-        self, tool: CharmlintTool, tmp_path: Path
+        self, tool: CharmlintTool, tmp_path: pathlib.Path
     ) -> None:
         fake_report = SimpleNamespace(
             diagnostics=[],
@@ -238,7 +240,9 @@ class TestCharmlintToolExecute:
         assert result.data["backend"] == "python"
 
     @pytest.mark.asyncio
-    async def test_python_backend_passes_config(self, tool: CharmlintTool, tmp_path: Path) -> None:
+    async def test_python_backend_passes_config(
+        self, tool: CharmlintTool, tmp_path: pathlib.Path
+    ) -> None:
         """Python backend renders each diagnostic plus summary line."""
         diag = SimpleNamespace(format_text=lambda _root: "charmcraft.yaml:1:1 COS001 missing")
         fake_report = SimpleNamespace(
@@ -249,7 +253,7 @@ class TestCharmlintToolExecute:
 
         captured: dict[str, object] = {}
 
-        def _fake_lint(root: Path, config: object) -> SimpleNamespace:
+        def _fake_lint(root: pathlib.Path, config: object) -> SimpleNamespace:
             captured["root"] = root
             captured["select"] = list(config.select)
             captured["ignore"] = list(config.ignore)
@@ -273,7 +277,9 @@ class TestCharmlintToolExecute:
         assert result.data["backend"] == "python"
 
     @pytest.mark.asyncio
-    async def test_python_backend_clean_report(self, tool: CharmlintTool, tmp_path: Path) -> None:
+    async def test_python_backend_clean_report(
+        self, tool: CharmlintTool, tmp_path: pathlib.Path
+    ) -> None:
         """Empty diagnostics → no blank separator inserted."""
         fake_report = SimpleNamespace(
             diagnostics=[],

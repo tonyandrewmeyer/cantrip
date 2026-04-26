@@ -17,6 +17,7 @@ no-op so users on non-Linux hosts see no errors.
 
 from __future__ import annotations
 
+import dataclasses
 import enum
 import logging
 import os
@@ -24,7 +25,6 @@ import shutil
 import subprocess
 import sys
 import typing
-from dataclasses import dataclass, field
 
 from cantrip.ui import events as ui_events
 
@@ -60,7 +60,7 @@ def parse_mode(value: str | None) -> NotifyMode:
         return NotifyMode.OFF
 
 
-@dataclass
+@dataclasses.dataclass
 class TaskNotifier:
     """Fire notifications when tasks reach a terminal state.
 
@@ -69,10 +69,10 @@ class TaskNotifier:
     """
 
     mode: NotifyMode = NotifyMode.OFF
-    stderr: typing.TextIO = field(default_factory=lambda: sys.stderr)
+    stderr: typing.TextIO = dataclasses.field(default_factory=lambda: sys.stderr)
     which: typing.Callable[[str], str | None] = shutil.which
     runner: typing.Callable[..., subprocess.CompletedProcess] = subprocess.run
-    _seen: set[str] = field(default_factory=set)
+    _seen: set[str] = dataclasses.field(default_factory=set)
     _desktop_available: bool | None = None
 
     def handle(self, event: ui_events.Event) -> None:

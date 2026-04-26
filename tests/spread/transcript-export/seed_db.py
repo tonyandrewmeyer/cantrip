@@ -6,11 +6,11 @@ Creates the directory if needed and populates it with a realistic
 session database suitable for testing transcript export.
 """
 
+import pathlib
 import sys
-from pathlib import Path
 
 # Ensure the project root is on sys.path so cantrip can be imported.
-_project_root = Path(__file__).resolve().parents[3]
+_project_root = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_project_root / "src"))
 
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus  # noqa: E402
@@ -18,7 +18,7 @@ from cantrip.agent.state import AgentState  # noqa: E402
 from cantrip.agent.store import SessionStore  # noqa: E402
 
 
-def seed(charm_dir: Path) -> None:
+def seed(charm_dir: pathlib.Path) -> None:
     """Populate a .cantrip database with test data."""
     charm_dir.mkdir(parents=True, exist_ok=True)
     db_path = charm_dir / ".cantrip"
@@ -112,4 +112,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <charm_directory>")
         sys.exit(1)
-    seed(Path(sys.argv[1]))
+    seed(pathlib.Path(sys.argv[1]))

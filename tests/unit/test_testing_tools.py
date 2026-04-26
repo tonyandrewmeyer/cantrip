@@ -1,7 +1,7 @@
 """Tests for the charm test runner and test template generation tools."""
 
+import pathlib
 import tempfile
-from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -413,7 +413,7 @@ class TestGenerateTestsTool:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_generates_test_files(self, tool, temp_dir) -> None:
@@ -472,7 +472,7 @@ class TestBuildPytestTarget:
     @pytest.fixture
     def test_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            d = Path(td) / "tests" / "integration"
+            d = pathlib.Path(td) / "tests" / "integration"
             d.mkdir(parents=True)
             (d / "test_deploy.py").write_text("def test_deploy(): pass\n")
             (d / "test_relations.py").write_text("def test_db(): pass\n")

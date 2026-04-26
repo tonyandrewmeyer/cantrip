@@ -1,6 +1,6 @@
 """Tests for skills discovery, loading, and the LoadSkillTool."""
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -9,7 +9,7 @@ from cantrip.agent.tools.skills import LoadSkillTool
 
 
 @pytest.fixture()
-def skills_dir(tmp_path: Path) -> Path:
+def skills_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     """Create a temporary skills directory with two valid skills."""
     alpha = tmp_path / "alpha"
     alpha.mkdir()
@@ -28,23 +28,23 @@ def skills_dir(tmp_path: Path) -> Path:
 class TestSkillsIndex:
     """Tests for SkillsIndex."""
 
-    def test_discover_finds_skills(self, skills_dir: Path) -> None:
+    def test_discover_finds_skills(self, skills_dir: pathlib.Path) -> None:
         index = SkillsIndex(skills_dir)
         index.discover()
         names = [s.name for s in index.list_skills()]
         assert names == ["alpha", "beta"]
 
-    def test_discover_nonexistent_dir(self, tmp_path: Path) -> None:
+    def test_discover_nonexistent_dir(self, tmp_path: pathlib.Path) -> None:
         index = SkillsIndex(tmp_path / "nope")
         index.discover()
         assert index.list_skills() == []
 
-    def test_discover_empty_dir(self, tmp_path: Path) -> None:
+    def test_discover_empty_dir(self, tmp_path: pathlib.Path) -> None:
         index = SkillsIndex(tmp_path)
         index.discover()
         assert index.list_skills() == []
 
-    def test_discover_skips_malformed_frontmatter(self, tmp_path: Path) -> None:
+    def test_discover_skips_malformed_frontmatter(self, tmp_path: pathlib.Path) -> None:
         bad = tmp_path / "bad"
         bad.mkdir()
         (bad / "SKILL.md").write_text("no frontmatter here\n")
@@ -57,7 +57,7 @@ class TestSkillsIndex:
         index.discover()
         assert [s.name for s in index.list_skills()] == ["good"]
 
-    def test_discover_skips_missing_fields(self, tmp_path: Path) -> None:
+    def test_discover_skips_missing_fields(self, tmp_path: pathlib.Path) -> None:
         """A SKILL.md with frontmatter but no name/description is skipped."""
         skill = tmp_path / "incomplete"
         skill.mkdir()
@@ -67,7 +67,7 @@ class TestSkillsIndex:
         index.discover()
         assert index.list_skills() == []
 
-    def test_discover_skips_non_directory(self, tmp_path: Path) -> None:
+    def test_discover_skips_non_directory(self, tmp_path: pathlib.Path) -> None:
         """Files at the top level of the skills dir are ignored."""
         (tmp_path / "README.md").write_text("not a skill")
 
@@ -75,7 +75,7 @@ class TestSkillsIndex:
         index.discover()
         assert index.list_skills() == []
 
-    def test_discover_skips_dir_without_skill_md(self, tmp_path: Path) -> None:
+    def test_discover_skips_dir_without_skill_md(self, tmp_path: pathlib.Path) -> None:
         """Directories without a SKILL.md are ignored."""
         (tmp_path / "empty-dir").mkdir()
 
@@ -83,7 +83,7 @@ class TestSkillsIndex:
         index.discover()
         assert index.list_skills() == []
 
-    def test_list_skills_returns_metadata(self, skills_dir: Path) -> None:
+    def test_list_skills_returns_metadata(self, skills_dir: pathlib.Path) -> None:
         index = SkillsIndex(skills_dir)
         index.discover()
         skills = index.list_skills()
@@ -92,13 +92,13 @@ class TestSkillsIndex:
         assert skills[0].name == "alpha"
         assert skills[0].description == "The alpha skill"
 
-    def test_list_skills_sorted_by_name(self, skills_dir: Path) -> None:
+    def test_list_skills_sorted_by_name(self, skills_dir: pathlib.Path) -> None:
         index = SkillsIndex(skills_dir)
         index.discover()
         names = [s.name for s in index.list_skills()]
         assert names == sorted(names)
 
-    def test_load_skill_returns_body(self, skills_dir: Path) -> None:
+    def test_load_skill_returns_body(self, skills_dir: pathlib.Path) -> None:
         index = SkillsIndex(skills_dir)
         index.discover()
         body = index.load_skill("alpha")
@@ -106,13 +106,13 @@ class TestSkillsIndex:
         # Frontmatter should not be in the body.
         assert "---" not in body
 
-    def test_load_skill_unknown_raises(self, skills_dir: Path) -> None:
+    def test_load_skill_unknown_raises(self, skills_dir: pathlib.Path) -> None:
         index = SkillsIndex(skills_dir)
         index.discover()
         with pytest.raises(KeyError):
             index.load_skill("nonexistent")
 
-    def test_format_for_prompt_xml(self, skills_dir: Path) -> None:
+    def test_format_for_prompt_xml(self, skills_dir: pathlib.Path) -> None:
         index = SkillsIndex(skills_dir)
         index.discover()
         xml = index.format_for_prompt()
@@ -122,12 +122,12 @@ class TestSkillsIndex:
         assert "<description>The alpha skill</description>" in xml
         assert "<name>beta</name>" in xml
 
-    def test_format_for_prompt_empty(self, tmp_path: Path) -> None:
+    def test_format_for_prompt_empty(self, tmp_path: pathlib.Path) -> None:
         index = SkillsIndex(tmp_path)
         index.discover()
         assert index.format_for_prompt() == ""
 
-    def test_discover_clears_previous(self, skills_dir: Path) -> None:
+    def test_discover_clears_previous(self, skills_dir: pathlib.Path) -> None:
         """Calling discover() again replaces the old index."""
         index = SkillsIndex(skills_dir)
         index.discover()
@@ -368,7 +368,7 @@ class TestSkillsIndexWithBundledSkills:
 class TestSkillsIndexExternalDirs:
     """Tests for Phase 50.1: standard-format skill dirs alongside bundled."""
 
-    def test_missing_external_dir_is_silent(self, tmp_path: Path) -> None:
+    def test_missing_external_dir_is_silent(self, tmp_path: pathlib.Path) -> None:
         """Non-existent external dirs must not emit a warning — they're optional."""
         bundled = tmp_path / "bundled"
         bundled.mkdir()
@@ -380,7 +380,7 @@ class TestSkillsIndexExternalDirs:
         # Only the bundled skill is indexed; no error.
         assert [s.name for s in index.list_skills()] == ["b"]
 
-    def test_external_dir_skill_appears_alongside_bundled(self, tmp_path: Path) -> None:
+    def test_external_dir_skill_appears_alongside_bundled(self, tmp_path: pathlib.Path) -> None:
         """Skills in an external dir surface together with bundled ones."""
         bundled = tmp_path / "bundled"
         bundled.mkdir()
@@ -402,7 +402,7 @@ class TestSkillsIndexExternalDirs:
         assert names == ["a", "x"]
 
     def test_external_dir_skill_overrides_bundled_on_name_conflict(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Later dirs win so user customisation trumps the bundled default."""
         bundled = tmp_path / "bundled"
@@ -428,7 +428,7 @@ class TestSkillsIndexExternalDirs:
         assert index.load_skill("shared") == "User body"
         assert any("overrides" in record.message for record in caplog.records)
 
-    def test_external_single_file_skill_is_discovered(self, tmp_path: Path) -> None:
+    def test_external_single_file_skill_is_discovered(self, tmp_path: pathlib.Path) -> None:
         """A bare ``<name>.md`` at the top of the external dir is a valid skill."""
         bundled = tmp_path / "bundled"
         bundled.mkdir()
@@ -445,7 +445,7 @@ class TestSkillsIndexExternalDirs:
         assert metadata.source == "external"
         assert "Body text." in index.load_skill("notes")
 
-    def test_frontmatter_tools_parsed_as_list(self, tmp_path: Path) -> None:
+    def test_frontmatter_tools_parsed_as_list(self, tmp_path: pathlib.Path) -> None:
         """A ``tools`` list in frontmatter is preserved on the metadata."""
         bundled = tmp_path / "bundled"
         bundled.mkdir()
@@ -460,7 +460,7 @@ class TestSkillsIndexExternalDirs:
         [metadata] = index.list_skills()
         assert metadata.tools == ["git_clone", "gh_pr_create"]
 
-    def test_frontmatter_tools_parsed_as_comma_string(self, tmp_path: Path) -> None:
+    def test_frontmatter_tools_parsed_as_comma_string(self, tmp_path: pathlib.Path) -> None:
         """Claude Code's comma-string ``tools`` shape is accepted too."""
         bundled = tmp_path / "bundled"
         bundled.mkdir()
@@ -475,7 +475,7 @@ class TestSkillsIndexExternalDirs:
         [metadata] = index.list_skills()
         assert metadata.tools == ["juju_status", "juju_deploy"]
 
-    def test_malformed_tools_falls_back_to_empty_list(self, tmp_path: Path) -> None:
+    def test_malformed_tools_falls_back_to_empty_list(self, tmp_path: pathlib.Path) -> None:
         """A non-list, non-string ``tools`` entry doesn't crash discovery."""
         bundled = tmp_path / "bundled"
         bundled.mkdir()
@@ -490,7 +490,7 @@ class TestSkillsIndexExternalDirs:
         [metadata] = index.list_skills()
         assert metadata.tools == []
 
-    def test_source_tag_identifies_provenance(self, tmp_path: Path) -> None:
+    def test_source_tag_identifies_provenance(self, tmp_path: pathlib.Path) -> None:
         """``source`` distinguishes bundled vs external skills at load time."""
         bundled = tmp_path / "bundled"
         bundled.mkdir()
@@ -536,7 +536,7 @@ class TestSkillsIndexExternalDirs:
             "so Cantrip's wins name conflicts on later-wins semantics."
         )
 
-    def test_project_root_adds_gh_skill_project_scope_dirs(self, tmp_path: Path) -> None:
+    def test_project_root_adds_gh_skill_project_scope_dirs(self, tmp_path: pathlib.Path) -> None:
         """``project_root=`` unlocks the project-scope ``gh skill install`` paths."""
         from cantrip.agent.skills import _default_project_skill_dirs
 
@@ -568,7 +568,7 @@ class TestSkillsIndexExternalDirs:
         claude_idx = next(i for i, p in enumerate(paths) if ".claude/skills" in p)
         assert agents_idx < claude_idx
 
-    def test_project_scope_skill_overrides_user_scope(self, tmp_path: Path) -> None:
+    def test_project_scope_skill_overrides_user_scope(self, tmp_path: pathlib.Path) -> None:
         """A repo-local ``gh skill install`` copy wins over the same-named user-scope one."""
         bundled = tmp_path / "bundled"
         bundled.mkdir()
@@ -592,7 +592,7 @@ class TestSkillsIndexExternalDirs:
         assert metadata.description == "project-scope version"
         assert "Project body" in index.load_skill("shared")
 
-    def test_project_root_none_skips_project_discovery(self, tmp_path: Path) -> None:
+    def test_project_root_none_skips_project_discovery(self, tmp_path: pathlib.Path) -> None:
         """Without ``project_root=`` the project paths are not scanned at all."""
         bundled = tmp_path / "bundled"
         bundled.mkdir()
@@ -607,7 +607,9 @@ class TestSkillsIndexExternalDirs:
         index.discover()
         assert [s.name for s in index.list_skills()] == []
 
-    def test_explicit_dir_does_not_pick_up_host_external_dirs(self, tmp_path: Path) -> None:
+    def test_explicit_dir_does_not_pick_up_host_external_dirs(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """Passing an explicit ``skills_dir`` isolates from the host environment.
 
         Test authors rely on this isolation — a fixture that hands a
@@ -627,7 +629,7 @@ class TestLoadSkillTool:
     """Tests for the LoadSkillTool."""
 
     @pytest.mark.asyncio()
-    async def test_load_existing_skill(self, skills_dir: Path) -> None:
+    async def test_load_existing_skill(self, skills_dir: pathlib.Path) -> None:
         index = SkillsIndex(skills_dir)
         index.discover()
         tool = LoadSkillTool(index)
@@ -636,7 +638,7 @@ class TestLoadSkillTool:
         assert "Alpha body content." in result.output
 
     @pytest.mark.asyncio()
-    async def test_load_unknown_skill(self, skills_dir: Path) -> None:
+    async def test_load_unknown_skill(self, skills_dir: pathlib.Path) -> None:
         index = SkillsIndex(skills_dir)
         index.discover()
         tool = LoadSkillTool(index)
@@ -646,7 +648,7 @@ class TestLoadSkillTool:
         assert "alpha" in (result.error or "")
         assert "beta" in (result.error or "")
 
-    def test_tool_metadata(self, skills_dir: Path) -> None:
+    def test_tool_metadata(self, skills_dir: pathlib.Path) -> None:
         index = SkillsIndex(skills_dir)
         tool = LoadSkillTool(index)
         assert tool.name == "load_skill"
@@ -665,7 +667,9 @@ class TestMCPAwareSkills:
     """
 
     @staticmethod
-    def _build_index(tmp_path: Path, frontmatter: str, body: str = "Body\n") -> SkillsIndex:
+    def _build_index(
+        tmp_path: pathlib.Path, frontmatter: str, body: str = "Body\n"
+    ) -> SkillsIndex:
         bundled = tmp_path / "bundled"
         bundled.mkdir()
         (bundled / "deployer").mkdir()
@@ -674,7 +678,7 @@ class TestMCPAwareSkills:
         index.discover()
         return index
 
-    def test_mcp_servers_parsed_as_yaml_list(self, tmp_path: Path) -> None:
+    def test_mcp_servers_parsed_as_yaml_list(self, tmp_path: pathlib.Path) -> None:
         index = self._build_index(
             tmp_path,
             "name: deployer\n"
@@ -684,7 +688,7 @@ class TestMCPAwareSkills:
         [metadata] = index.list_skills()
         assert metadata.mcp_servers == ["filesystem", "github"]
 
-    def test_mcp_servers_parsed_as_comma_string(self, tmp_path: Path) -> None:
+    def test_mcp_servers_parsed_as_comma_string(self, tmp_path: pathlib.Path) -> None:
         """Same comma-string shape the ``tools`` field accepts."""
         index = self._build_index(
             tmp_path,
@@ -693,12 +697,12 @@ class TestMCPAwareSkills:
         [metadata] = index.list_skills()
         assert metadata.mcp_servers == ["filesystem", "github"]
 
-    def test_mcp_servers_missing_defaults_to_empty(self, tmp_path: Path) -> None:
+    def test_mcp_servers_missing_defaults_to_empty(self, tmp_path: pathlib.Path) -> None:
         index = self._build_index(tmp_path, "name: deployer\ndescription: d")
         [metadata] = index.list_skills()
         assert metadata.mcp_servers == []
 
-    def test_mcp_servers_malformed_falls_back_to_empty(self, tmp_path: Path) -> None:
+    def test_mcp_servers_malformed_falls_back_to_empty(self, tmp_path: pathlib.Path) -> None:
         """A non-list, non-string entry doesn't crash discovery."""
         index = self._build_index(
             tmp_path,
@@ -707,7 +711,7 @@ class TestMCPAwareSkills:
         [metadata] = index.list_skills()
         assert metadata.mcp_servers == []
 
-    def test_format_for_prompt_includes_required_mcp_servers(self, tmp_path: Path) -> None:
+    def test_format_for_prompt_includes_required_mcp_servers(self, tmp_path: pathlib.Path) -> None:
         """Declared servers surface in the prompt-level skill index."""
         index = self._build_index(
             tmp_path,
@@ -716,14 +720,16 @@ class TestMCPAwareSkills:
         xml = index.format_for_prompt()
         assert "<required_mcp_servers>filesystem</required_mcp_servers>" in xml
 
-    def test_format_for_prompt_omits_required_mcp_servers_when_none(self, tmp_path: Path) -> None:
+    def test_format_for_prompt_omits_required_mcp_servers_when_none(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """Skills without MCP deps don't add noise to the prompt."""
         index = self._build_index(tmp_path, "name: deployer\ndescription: d")
         xml = index.format_for_prompt()
         assert "<required_mcp_servers>" not in xml
 
     @pytest.mark.asyncio()
-    async def test_load_skill_warns_when_server_missing(self, tmp_path: Path) -> None:
+    async def test_load_skill_warns_when_server_missing(self, tmp_path: pathlib.Path) -> None:
         """A skill declaring an unconfigured server loads with a warning banner."""
         from cantrip.mcp.registry import MCPRegistry
 
@@ -742,7 +748,9 @@ class TestMCPAwareSkills:
         assert "Step 1: do something." in result.output
 
     @pytest.mark.asyncio()
-    async def test_load_skill_no_warning_when_servers_configured(self, tmp_path: Path) -> None:
+    async def test_load_skill_no_warning_when_servers_configured(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """Every declared server configured → no banner."""
         from cantrip.mcp.registry import MCPRegistry
         from cantrip.mcp.types import ServerConfig
@@ -760,7 +768,9 @@ class TestMCPAwareSkills:
         assert "# Clean body." in result.output
 
     @pytest.mark.asyncio()
-    async def test_load_skill_banner_lists_only_missing_servers(self, tmp_path: Path) -> None:
+    async def test_load_skill_banner_lists_only_missing_servers(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """Banner names the unconfigured subset only."""
         from cantrip.mcp.registry import MCPRegistry
         from cantrip.mcp.types import ServerConfig
@@ -781,7 +791,9 @@ class TestMCPAwareSkills:
         assert "github" in banner
 
     @pytest.mark.asyncio()
-    async def test_load_skill_without_registry_treats_all_as_missing(self, tmp_path: Path) -> None:
+    async def test_load_skill_without_registry_treats_all_as_missing(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """No registry wired in at all → every declared server is flagged."""
         index = self._build_index(
             tmp_path,
@@ -794,7 +806,7 @@ class TestMCPAwareSkills:
         assert "NOT configured" in result.output
 
     @pytest.mark.asyncio()
-    async def test_load_skill_without_deps_never_adds_banner(self, tmp_path: Path) -> None:
+    async def test_load_skill_without_deps_never_adds_banner(self, tmp_path: pathlib.Path) -> None:
         """A skill with no ``mcp_servers:`` is unaffected by the registry check."""
         from cantrip.mcp.registry import MCPRegistry
 
@@ -808,7 +820,7 @@ class TestMCPAwareSkills:
         assert result.success
         assert result.output.strip() == "# Pristine body."
 
-    def test_export_round_trips_mcp_servers(self, tmp_path: Path) -> None:
+    def test_export_round_trips_mcp_servers(self, tmp_path: pathlib.Path) -> None:
         """``cantrip skill export`` emits ``mcp_servers`` when present."""
         from cantrip.agent.skill_export import export_skill
 
@@ -831,7 +843,7 @@ class TestMCPAwareSkills:
         assert metadata.tools == ["juju_status"]
         assert metadata.mcp_servers == ["filesystem", "github"]
 
-    def test_export_omits_mcp_servers_when_empty(self, tmp_path: Path) -> None:
+    def test_export_omits_mcp_servers_when_empty(self, tmp_path: pathlib.Path) -> None:
         """A skill without ``mcp_servers`` exports clean frontmatter."""
         from cantrip.agent.skill_export import export_skill
 
@@ -844,7 +856,7 @@ class TestMCPAwareSkills:
 class TestExportSkill:
     """Phase 50.2: export a discovered skill as a standard SKILL.md file."""
 
-    def test_export_to_directory_writes_under_name_subdir(self, tmp_path: Path) -> None:
+    def test_export_to_directory_writes_under_name_subdir(self, tmp_path: pathlib.Path) -> None:
         """A directory target expands to ``<dir>/<name>/SKILL.md``."""
         from cantrip.agent.skill_export import export_skill
 
@@ -868,7 +880,7 @@ class TestExportSkill:
         assert "description: The alpha skill" in written
         assert "Body content." in written
 
-    def test_export_to_explicit_md_path_is_verbatim(self, tmp_path: Path) -> None:
+    def test_export_to_explicit_md_path_is_verbatim(self, tmp_path: pathlib.Path) -> None:
         """An explicit ``.md`` path is written exactly where the caller asked."""
         from cantrip.agent.skill_export import export_skill
 
@@ -887,7 +899,7 @@ class TestExportSkill:
         assert result.output_path == target
         assert target.is_file()
 
-    def test_refuses_to_overwrite_without_force(self, tmp_path: Path) -> None:
+    def test_refuses_to_overwrite_without_force(self, tmp_path: pathlib.Path) -> None:
         """Refuses to clobber an existing target; pointing at --force flag in the message."""
         from cantrip.agent.skill_export import SkillExportError, export_skill
 
@@ -909,7 +921,7 @@ class TestExportSkill:
         # File left untouched.
         assert target.read_text() == "pre-existing\n"
 
-    def test_force_overwrites_existing_target(self, tmp_path: Path) -> None:
+    def test_force_overwrites_existing_target(self, tmp_path: pathlib.Path) -> None:
         from cantrip.agent.skill_export import export_skill
 
         source = tmp_path / "source"
@@ -928,7 +940,7 @@ class TestExportSkill:
         assert "pre-existing" not in target.read_text()
         assert "Body." in target.read_text()
 
-    def test_unknown_skill_raises_with_known_names(self, tmp_path: Path) -> None:
+    def test_unknown_skill_raises_with_known_names(self, tmp_path: pathlib.Path) -> None:
         from cantrip.agent.skill_export import SkillExportError, export_skill
 
         source = tmp_path / "source"
@@ -946,7 +958,7 @@ class TestExportSkill:
         assert "nonexistent" in message
         assert "alpha" in message
 
-    def test_charm_path_scrubbed_to_placeholder(self, tmp_path: Path) -> None:
+    def test_charm_path_scrubbed_to_placeholder(self, tmp_path: pathlib.Path) -> None:
         """The current charm path becomes ``<CHARM_PATH>`` in the exported body."""
         from cantrip.agent.memory_export import CHARM_PATH_PLACEHOLDER
         from cantrip.agent.skill_export import export_skill
@@ -971,7 +983,7 @@ class TestExportSkill:
         assert CHARM_PATH_PLACEHOLDER in written
         assert result.redactions == 0  # Path replacement is not a "secret redaction".
 
-    def test_secrets_redacted_and_counted(self, tmp_path: Path) -> None:
+    def test_secrets_redacted_and_counted(self, tmp_path: pathlib.Path) -> None:
         from cantrip.agent.skill_export import export_skill
 
         source = tmp_path / "source"
@@ -992,7 +1004,7 @@ class TestExportSkill:
         assert "[REDACTED]" in written
         assert result.redactions >= 1
 
-    def test_tools_preserved_on_export(self, tmp_path: Path) -> None:
+    def test_tools_preserved_on_export(self, tmp_path: pathlib.Path) -> None:
         """Frontmatter ``tools`` round-trips verbatim on export."""
         from cantrip.agent.skill_export import export_skill
 
@@ -1019,7 +1031,7 @@ class TestExportSkill:
         [metadata] = reload_index.list_skills()
         assert metadata.tools == ["juju_status", "juju_deploy"]
 
-    def test_tools_omitted_when_source_has_none(self, tmp_path: Path) -> None:
+    def test_tools_omitted_when_source_has_none(self, tmp_path: pathlib.Path) -> None:
         """A skill without ``tools`` exports clean frontmatter (no empty list)."""
         from cantrip.agent.skill_export import export_skill
 
@@ -1037,7 +1049,9 @@ class TestExportSkill:
 
         assert "tools:" not in target.read_text()
 
-    def test_round_trip_preserves_name_description_body_tools(self, tmp_path: Path) -> None:
+    def test_round_trip_preserves_name_description_body_tools(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """Export → clear → re-import via a fresh SkillsIndex preserves all fields."""
         from cantrip.agent.skill_export import export_skill
 
@@ -1086,7 +1100,7 @@ class TestSkillExportCLI:
     """Phase 50.2: the ``cantrip skill export`` CLI subcommand dispatcher."""
 
     @staticmethod
-    def _isolated_index_factory(source: Path) -> type:
+    def _isolated_index_factory(source: pathlib.Path) -> type:
         """Return a ``SkillsIndex`` subclass that always reads from *source*.
 
         ``_skill_export`` constructs the index with no arguments so it picks
@@ -1103,7 +1117,7 @@ class TestSkillExportCLI:
 
     def test_happy_path(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -1133,7 +1147,7 @@ class TestSkillExportCLI:
 
     def test_unknown_skill_exits_nonzero(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:

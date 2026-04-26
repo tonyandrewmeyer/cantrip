@@ -1,6 +1,6 @@
 """Tests for acceptance testing tools."""
 
-from pathlib import Path
+import pathlib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -58,7 +58,7 @@ class TestActionExerciserTool:
         assert "juju CLI not found" in (result.error or "")
 
     @pytest.mark.asyncio
-    async def test_no_actions(self, tmp_path: Path) -> None:
+    async def test_no_actions(self, tmp_path: pathlib.Path) -> None:
         """Charm with no actions produces a clean report."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text("name: test-charm\n")
@@ -70,7 +70,7 @@ class TestActionExerciserTool:
         assert result.data["actions_tested"] == 0
 
     @pytest.mark.asyncio
-    async def test_destructive_actions_skipped(self, tmp_path: Path) -> None:
+    async def test_destructive_actions_skipped(self, tmp_path: pathlib.Path) -> None:
         """Destructive actions are skipped by default."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text(
@@ -98,7 +98,7 @@ class TestActionExerciserTool:
         assert result.data["actions_tested"] == 1
 
     @pytest.mark.asyncio
-    async def test_skip_destructive_false(self, tmp_path: Path) -> None:
+    async def test_skip_destructive_false(self, tmp_path: pathlib.Path) -> None:
         """When skip_destructive=False, all actions run."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text(
@@ -259,7 +259,7 @@ class TestRelationSmokeTool:
         assert not result.success
 
     @pytest.mark.asyncio
-    async def test_no_relations(self, tmp_path: Path) -> None:
+    async def test_no_relations(self, tmp_path: pathlib.Path) -> None:
         """Charm with no relations produces a clean report."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text("name: test-charm\n")
@@ -271,7 +271,7 @@ class TestRelationSmokeTool:
         assert result.data["endpoints_tested"] == 0
 
     @pytest.mark.asyncio
-    async def test_peer_relations_skipped(self, tmp_path: Path) -> None:
+    async def test_peer_relations_skipped(self, tmp_path: pathlib.Path) -> None:
         """Peer relations should be skipped (tested via scaling instead)."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text("name: test-charm\npeers:\n  cluster:\n    interface: cluster\n")
@@ -337,7 +337,7 @@ class TestWorkloadEndpointTool:
         assert not result.success
 
     @pytest.mark.asyncio
-    async def test_no_endpoints(self, tmp_path: Path) -> None:
+    async def test_no_endpoints(self, tmp_path: pathlib.Path) -> None:
         """Charm with no container ports produces a clean report."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text("name: test-charm\n")
@@ -358,7 +358,7 @@ class TestWorkloadEndpointTool:
         assert result.success
         assert result.data["endpoints_tested"] == 0
 
-    def test_discover_endpoints_from_metadata(self, tmp_path: Path) -> None:
+    def test_discover_endpoints_from_metadata(self, tmp_path: pathlib.Path) -> None:
         """Container ports in charmcraft.yaml are discovered."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text(
@@ -397,7 +397,7 @@ class TestConfigVariationTool:
         assert not result.success
 
     @pytest.mark.asyncio
-    async def test_no_config(self, tmp_path: Path) -> None:
+    async def test_no_config(self, tmp_path: pathlib.Path) -> None:
         """Charm with no config produces a clean report."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text("name: test-charm\n")
@@ -409,7 +409,7 @@ class TestConfigVariationTool:
         assert result.data["options_tested"] == 0
 
     @pytest.mark.asyncio
-    async def test_path_options_skipped(self, tmp_path: Path) -> None:
+    async def test_path_options_skipped(self, tmp_path: pathlib.Path) -> None:
         """Config options with 'path' in the name should be skipped."""
         charmcraft = tmp_path / "charmcraft.yaml"
         charmcraft.write_text(
@@ -478,7 +478,7 @@ class TestAcceptanceReportTool:
         assert not result.success
 
     @pytest.mark.asyncio
-    async def test_no_sections(self, tmp_path: Path) -> None:
+    async def test_no_sections(self, tmp_path: pathlib.Path) -> None:
         """No sections provided should fail."""
         tool = AcceptanceReportTool()
         result = await tool.execute(app="myapp", path=str(tmp_path))
@@ -486,7 +486,7 @@ class TestAcceptanceReportTool:
         assert "No acceptance test results" in (result.error or "")
 
     @pytest.mark.asyncio
-    async def test_writes_acceptance_md(self, tmp_path: Path) -> None:
+    async def test_writes_acceptance_md(self, tmp_path: pathlib.Path) -> None:
         """Report tool writes ACCEPTANCE.md to the charm directory."""
         tool = AcceptanceReportTool()
         result = await tool.execute(

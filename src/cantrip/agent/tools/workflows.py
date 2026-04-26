@@ -7,7 +7,7 @@ workflow-level permissions broadened per-job, ``persist-credentials: false`` on
 every checkout, a zizmor audit step, and Dependabot with cooldowns.
 """
 
-from pathlib import Path
+import pathlib
 
 # Pinned action SHAs — kept in sync with Cantrip's own workflows.  Dependabot
 # in the generated charm keeps these fresh after scaffolding.
@@ -311,7 +311,7 @@ unless the workload genuinely requires them.
 """
 
 
-def inject_github_workflows(target_path: Path, charm_name: str) -> list[str]:
+def inject_github_workflows(target_path: pathlib.Path, charm_name: str) -> list[str]:
     """Scaffold ``.github/workflows/``, Dependabot, and ``SECURITY.md``.
 
     Existing files are left untouched so a caller who re-runs
@@ -324,7 +324,7 @@ def inject_github_workflows(target_path: Path, charm_name: str) -> list[str]:
     workflows_dir = target_path / ".github" / "workflows"
     workflows_dir.mkdir(parents=True, exist_ok=True)
 
-    files: list[tuple[Path, str, str]] = [
+    files: list[tuple[pathlib.Path, str, str]] = [
         (workflows_dir / "ci.yaml", _CI_WORKFLOW, "CI workflow"),
         (workflows_dir / "security.yaml", _SECURITY_WORKFLOW, "security workflow"),
         (workflows_dir / "release.yaml", _RELEASE_WORKFLOW, "release workflow"),

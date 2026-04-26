@@ -19,6 +19,7 @@ deliberately limited to commands that reduce to a string response.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime
 import logging
 import pathlib
@@ -26,7 +27,6 @@ import shlex
 import shutil
 import tempfile
 from collections.abc import Awaitable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cantrip import diagnostics
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from cantrip.agent.core import CantripAgent
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class CommandInfo:
     """A slash-command verb plus a short summary for UI autocomplete.
 
@@ -131,7 +131,7 @@ def catalogue_for(
     return COMMAND_CATALOGUE + extras
 
 
-@dataclass
+@dataclasses.dataclass
 class SlashResult:
     """Outcome of a dispatched slash command.
 
@@ -1096,7 +1096,7 @@ def handle_branch(agent: CantripAgent, args: str) -> str:
     )
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class TreeNode:
     """A turn rendered for the ``/tree`` view.
 

@@ -15,12 +15,12 @@ citations can drive revalidation later (Phase 43.2a).
 
 from __future__ import annotations
 
+import dataclasses
 import enum
 import json
 import logging
+import pathlib
 import re
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.memory import sha_for_range
@@ -60,7 +60,7 @@ class TriggerKind(enum.StrEnum):
     TASK_COMPLETE = "task_complete"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class WriteMemoryContext:
     """Inputs the conversation loop passes to the writer.
 
@@ -79,13 +79,13 @@ class WriteMemoryContext:
     trigger: TriggerKind
     summary: str
     detail: str = ""
-    cited_paths: list[Path] = field(default_factory=list)
+    cited_paths: list[pathlib.Path] = dataclasses.field(default_factory=list)
     charm_name: str | None = None
-    charm_path: Path | None = None
+    charm_path: pathlib.Path | None = None
     framework: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class WriteMemoryProposal:
     """Structured memory the LLM proposes to persist."""
 
@@ -93,10 +93,10 @@ class WriteMemoryProposal:
     kind: str
     scope: str
     body: str
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = dataclasses.field(default_factory=list)
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class AutoWriteDecision:
     """Outcome of a single auto-writer pass.
 
@@ -115,8 +115,8 @@ class AutoWriteDecision:
 
 
 def collect_file_citations(
-    tool_calls: list[dict[str, Any]], *, base_path: Path | None = None
-) -> list[Path]:
+    tool_calls: list[dict[str, Any]], *, base_path: pathlib.Path | None = None
+) -> list[pathlib.Path]:
     """Extract candidate citation paths from a tool-call log.
 
     Scans for calls to the file-editing tools (``read_file``,
@@ -125,8 +125,8 @@ def collect_file_citations(
     ``base_path`` when the tool argument is relative.  Unresolvable
     or non-existent paths are dropped; the writer only cites real files.
     """
-    seen: set[Path] = set()
-    ordered: list[Path] = []
+    seen: set[pathlib.Path] = set()
+    ordered: list[pathlib.Path] = []
     for call in tool_calls:
         name = call.get("name")
         if name not in _FILE_TOOL_NAMES:
@@ -135,7 +135,7 @@ def collect_file_citations(
         raw = args.get("path") or args.get("file_path")
         if not isinstance(raw, str) or not raw.strip():
             continue
-        candidate = Path(raw)
+        candidate = pathlib.Path(raw)
         if not candidate.is_absolute():
             if base_path is None:
                 continue
@@ -286,7 +286,7 @@ def _decision_from_response(content: str) -> AutoWriteDecision:
     )
 
 
-def _build_citations(paths: list[Path]) -> list[dict[str, Any]]:
+def _build_citations(paths: list[pathlib.Path]) -> list[dict[str, Any]]:
     """Turn a list of resolved file paths into citation dicts with SHAs.
 
     Unreadable files are logged and skipped — a missing SHA is worse

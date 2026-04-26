@@ -19,8 +19,8 @@ Scenarios covered:
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -31,7 +31,7 @@ from tests.conftest import FakeProvider
 
 
 @pytest.fixture
-def tmp_git_repo(tmp_path: Path) -> Path:
+def tmp_git_repo(tmp_path: pathlib.Path) -> pathlib.Path:
     """Create a minimal git repo with one initial commit.
 
     Sets ``user.email`` / ``user.name`` so commits don't fail in
@@ -71,7 +71,7 @@ def tmp_git_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _head_message(repo: Path) -> str:
+def _head_message(repo: pathlib.Path) -> str:
     """Return HEAD's full commit message for assertion."""
     result = subprocess.run(
         ["git", "log", "-1", "--format=%B"],
@@ -83,7 +83,7 @@ def _head_message(repo: Path) -> str:
     return result.stdout
 
 
-def _head_count(repo: Path) -> int:
+def _head_count(repo: pathlib.Path) -> int:
     """Return the total commit count on HEAD."""
     result = subprocess.run(
         ["git", "rev-list", "--count", "HEAD"],
@@ -101,23 +101,23 @@ def _head_count(repo: Path) -> int:
 
 
 class TestPrimitives:
-    def test_is_git_repo_for_real_repo(self, tmp_git_repo: Path):
+    def test_is_git_repo_for_real_repo(self, tmp_git_repo: pathlib.Path):
         assert auto_commit._is_git_repo(tmp_git_repo) is True
 
-    def test_is_git_repo_for_non_repo(self, tmp_path: Path):
+    def test_is_git_repo_for_non_repo(self, tmp_path: pathlib.Path):
         assert auto_commit._is_git_repo(tmp_path) is False
 
-    def test_is_git_repo_for_missing_path(self, tmp_path: Path):
+    def test_is_git_repo_for_missing_path(self, tmp_path: pathlib.Path):
         assert auto_commit._is_git_repo(tmp_path / "nope") is False
 
-    def test_has_dirty_tree_clean(self, tmp_git_repo: Path):
+    def test_has_dirty_tree_clean(self, tmp_git_repo: pathlib.Path):
         assert auto_commit._has_dirty_tree(tmp_git_repo) is False
 
-    def test_has_dirty_tree_modified(self, tmp_git_repo: Path):
+    def test_has_dirty_tree_modified(self, tmp_git_repo: pathlib.Path):
         (tmp_git_repo / "README.md").write_text("# Modified\n")
         assert auto_commit._has_dirty_tree(tmp_git_repo) is True
 
-    def test_has_dirty_tree_untracked(self, tmp_git_repo: Path):
+    def test_has_dirty_tree_untracked(self, tmp_git_repo: pathlib.Path):
         (tmp_git_repo / "new.py").write_text("print('hi')\n")
         assert auto_commit._has_dirty_tree(tmp_git_repo) is True
 
@@ -254,25 +254,25 @@ class TestBuildCommitMessage:
 
 
 class TestPreTurnCommitDirty:
-    def test_no_op_when_clean(self, tmp_git_repo: Path):
+    def test_no_op_when_clean(self, tmp_git_repo: pathlib.Path):
         sha = auto_commit.pre_turn_commit_dirty(tmp_git_repo)
         assert sha is None
         assert _head_count(tmp_git_repo) == 1
 
-    def test_commits_modified_file(self, tmp_git_repo: Path):
+    def test_commits_modified_file(self, tmp_git_repo: pathlib.Path):
         (tmp_git_repo / "README.md").write_text("# Modified\n")
         sha = auto_commit.pre_turn_commit_dirty(tmp_git_repo)
         assert sha is not None
         assert _head_count(tmp_git_repo) == 2
         assert "chore(pre-cantrip)" in _head_message(tmp_git_repo)
 
-    def test_commits_untracked_file(self, tmp_git_repo: Path):
+    def test_commits_untracked_file(self, tmp_git_repo: pathlib.Path):
         (tmp_git_repo / "new.py").write_text("x = 1\n")
         sha = auto_commit.pre_turn_commit_dirty(tmp_git_repo)
         assert sha is not None
         assert "chore(pre-cantrip)" in _head_message(tmp_git_repo)
 
-    def test_no_op_for_non_repo(self, tmp_path: Path):
+    def test_no_op_for_non_repo(self, tmp_path: pathlib.Path):
         sha = auto_commit.pre_turn_commit_dirty(tmp_path)
         assert sha is None
 
@@ -281,7 +281,7 @@ class TestPreTurnCommitDirty:
 
 
 class TestPostTurnCommit:
-    def test_commits_agent_edits(self, tmp_git_repo: Path):
+    def test_commits_agent_edits(self, tmp_git_repo: pathlib.Path):
         # Simulate the agent writing a file.
         (tmp_git_repo / "src").mkdir()
         (tmp_git_repo / "src" / "charm.py").write_text("# new\n")
@@ -307,7 +307,7 @@ class TestPostTurnCommit:
         assert "Co-Authored-By: Cantrip" in body
         assert "src/charm.py" in body
 
-    def test_uses_provided_summary(self, tmp_git_repo: Path):
+    def test_uses_provided_summary(self, tmp_git_repo: pathlib.Path):
         (tmp_git_repo / "x.py").write_text("x = 1\n")
         msgs = [
             Message(
@@ -323,13 +323,13 @@ class TestPostTurnCommit:
         first_line = _head_message(tmp_git_repo).splitlines()[0]
         assert first_line == "feat(x): add module"
 
-    def test_no_op_when_no_files_touched(self, tmp_git_repo: Path):
+    def test_no_op_when_no_files_touched(self, tmp_git_repo: pathlib.Path):
         msgs = [Message(role=Role.USER, content="hi")]
         sha = auto_commit.post_turn_commit_agent_edits(tmp_git_repo, msgs, "hi")
         assert sha is None
         assert _head_count(tmp_git_repo) == 1
 
-    def test_no_op_for_non_repo(self, tmp_path: Path):
+    def test_no_op_for_non_repo(self, tmp_path: pathlib.Path):
         msgs = [
             Message(
                 role=Role.ASSISTANT,
@@ -340,7 +340,7 @@ class TestPostTurnCommit:
         sha = auto_commit.post_turn_commit_agent_edits(tmp_path, msgs, "x")
         assert sha is None
 
-    def test_no_op_when_path_does_not_exist(self, tmp_git_repo: Path):
+    def test_no_op_when_path_does_not_exist(self, tmp_git_repo: pathlib.Path):
         # Tool reported a path but the file isn't in the working tree.
         msgs = [
             Message(
@@ -424,7 +424,7 @@ class TestNoAutoCommitFlag:
 
 class TestAgentLoopAutoCommits:
     @pytest.mark.asyncio
-    async def test_post_turn_commit_runs_when_files_touched(self, tmp_git_repo: Path):
+    async def test_post_turn_commit_runs_when_files_touched(self, tmp_git_repo: pathlib.Path):
         # The fake provider returns one tool call (write_file).  We
         # don't actually execute the tool — instead we manually
         # populate ``state.messages`` with the assistant message
@@ -448,7 +448,7 @@ class TestAgentLoopAutoCommits:
         assert agent.state.last_cantrip_commit_sha is not None
 
     @pytest.mark.asyncio
-    async def test_opt_out_skips_commit(self, tmp_git_repo: Path):
+    async def test_opt_out_skips_commit(self, tmp_git_repo: pathlib.Path):
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_git_repo)
         agent.state.git_auto_commit = False
 
@@ -468,7 +468,7 @@ class TestAgentLoopAutoCommits:
         assert agent.state.last_cantrip_commit_sha is None
 
     @pytest.mark.asyncio
-    async def test_summariser_used_when_light_provider_present(self, tmp_git_repo: Path):
+    async def test_summariser_used_when_light_provider_present(self, tmp_git_repo: pathlib.Path):
         light = FakeProvider(responses=[Response(content="feat(x): add module")])
         agent = CantripAgent(
             provider=FakeProvider(),
@@ -491,7 +491,7 @@ class TestAgentLoopAutoCommits:
         first_line = _head_message(tmp_git_repo).splitlines()[0]
         assert first_line == "feat(x): add module"
 
-    def test_pre_turn_dirty_commit_runs(self, tmp_git_repo: Path):
+    def test_pre_turn_dirty_commit_runs(self, tmp_git_repo: pathlib.Path):
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_git_repo)
         # Dirty the tree.
         (tmp_git_repo / "README.md").write_text("# Modified\n")
@@ -502,7 +502,7 @@ class TestAgentLoopAutoCommits:
         assert _head_count(tmp_git_repo) == 2
         assert "chore(pre-cantrip)" in _head_message(tmp_git_repo)
 
-    def test_pre_turn_dirty_no_op_when_disabled(self, tmp_git_repo: Path):
+    def test_pre_turn_dirty_no_op_when_disabled(self, tmp_git_repo: pathlib.Path):
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_git_repo)
         agent.state.git_auto_commit = False
         (tmp_git_repo / "README.md").write_text("# Modified\n")

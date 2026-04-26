@@ -4,8 +4,8 @@ charm-root files getting bridged into the Diátaxis tree by ``generate_docs``.
 
 from __future__ import annotations
 
+import pathlib
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -226,7 +226,7 @@ class TestGenerateDocsToolBridges:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_no_root_files_keeps_stub_behaviour(self, tool, temp_dir) -> None:
@@ -334,7 +334,7 @@ class TestGenerateReadmeBridgedLinks:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.mark.asyncio
     async def test_falls_back_to_legacy_root_files(self, tool, temp_dir) -> None:

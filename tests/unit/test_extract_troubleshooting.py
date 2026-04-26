@@ -5,9 +5,9 @@ session transcript and rendering them as ``docs/how-to/troubleshooting.md``.
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -33,7 +33,7 @@ from cantrip.agent.tools.publishing import (
 @pytest.fixture
 def temp_charm():
     with tempfile.TemporaryDirectory() as td:
-        yield Path(td)
+        yield pathlib.Path(td)
 
 
 def _wrap_tool_result(content: str, name: str = "run_command") -> str:

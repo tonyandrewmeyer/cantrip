@@ -5,7 +5,7 @@ triggering a DEPLOY follow-up, then verification, and on failure
 a DEBUG task.
 """
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -28,7 +28,7 @@ class TestAutoDeployChain:
     @pytest.mark.asyncio
     async def test_build_triggers_deploy_followup(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """A completed BUILD task auto-creates a DEPLOY follow-up."""
@@ -71,7 +71,7 @@ class TestAutoDeployChain:
     @pytest.mark.asyncio
     async def test_failed_verify_triggers_debug(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """A failed verification task auto-creates a DEBUG follow-up.
@@ -120,7 +120,7 @@ class TestAutoDeployChain:
     @pytest.mark.asyncio
     async def test_full_chain_build_deploy_verify_success(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """When all stages succeed, no DEBUG task is created."""
@@ -186,7 +186,7 @@ class TestAutoDeployChain:
     @pytest.mark.asyncio
     async def test_chain_persisted_to_store(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """The full chain is persisted to the SessionStore at each step."""

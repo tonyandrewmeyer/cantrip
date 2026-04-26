@@ -6,7 +6,7 @@ shell out to ``gh`` and ``git`` so none of these tests touch the
 network or the real working tree.
 """
 
-from pathlib import Path
+import pathlib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,7 +17,7 @@ from cantrip.agent.queue import AgentTask, TaskCategory
 from tests.conftest import FakeProvider
 
 
-def _agent(tmp_path: Path | None = None) -> CantripAgent:
+def _agent(tmp_path: pathlib.Path | None = None) -> CantripAgent:
     """Build an agent with a FakeProvider; ``charm_path`` optional."""
     return CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
 
@@ -34,7 +34,7 @@ class TestCheckUpstream:
         agent = _agent()
         assert agent.check_upstream() is None
 
-    def test_returns_none_when_not_diverged(self, tmp_path: Path) -> None:
+    def test_returns_none_when_not_diverged(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
             "cantrip.agent.core.check_upstream_diverged",
@@ -42,7 +42,7 @@ class TestCheckUpstream:
         ):
             assert agent.check_upstream() is None
 
-    def test_returns_warning_when_behind(self, tmp_path: Path) -> None:
+    def test_returns_warning_when_behind(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
             "cantrip.agent.core.check_upstream_diverged",
@@ -56,12 +56,12 @@ class TestCheckUpstream:
 class TestCheckPrFeedback:
     """``check_pr_feedback`` forwards to gh_pr_view."""
 
-    def test_returns_none_without_repo(self, tmp_path: Path) -> None:
+    def test_returns_none_without_repo(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = None
         assert agent.check_pr_feedback(7) is None
 
-    def test_forwards_to_gh_pr_view(self, tmp_path: Path) -> None:
+    def test_forwards_to_gh_pr_view(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         fake = PrFeedback(
@@ -117,19 +117,19 @@ class TestSuggestRepoName:
 class TestShouldOfferBootstrap:
     """Bootstrap is gated on no-remote + gh available."""
 
-    def test_false_when_repo_already_configured(self, tmp_path: Path) -> None:
+    def test_false_when_repo_already_configured(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         assert agent.should_offer_bootstrap() is False
 
-    def test_passes_charm_path_to_can_bootstrap(self, tmp_path: Path) -> None:
+    def test_passes_charm_path_to_can_bootstrap(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = None
         with patch("cantrip.agent.core.can_bootstrap", return_value=True) as cb:
             assert agent.should_offer_bootstrap() is True
         cb.assert_called_once_with(str(tmp_path))
 
-    def test_false_when_bootstrap_task_already_in_queue(self, tmp_path: Path) -> None:
+    def test_false_when_bootstrap_task_already_in_queue(self, tmp_path: pathlib.Path) -> None:
         # The queue is restored from disk across sessions, so a previously
         # offered bootstrap task (any status) must suppress re-offer —
         # otherwise ``add_task`` would raise on the duplicate ID.
@@ -155,13 +155,13 @@ class TestShouldOfferBootstrap:
 class TestCommentOnIssue:
     """``comment_on_issue`` formats a resolved-by comment and reports status."""
 
-    def test_no_repo_returns_message(self, tmp_path: Path) -> None:
+    def test_no_repo_returns_message(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = None
         result = agent.comment_on_issue(7, "https://github.com/o/r/pull/8")
         assert "No GitHub repository" in result
 
-    def test_success_posts_and_records_event(self, tmp_path: Path) -> None:
+    def test_success_posts_and_records_event(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         with patch(
@@ -172,7 +172,7 @@ class TestCommentOnIssue:
         gh.assert_called_once()
         assert "Commented on issue #7." in result
 
-    def test_failure_returns_error_message(self, tmp_path: Path) -> None:
+    def test_failure_returns_error_message(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         with patch(
@@ -192,12 +192,12 @@ class TestCommentOnIssue:
 class TestHandlePushConfirmation:
     """All four arms of ``handle_push_confirmation``."""
 
-    def test_skipped_branch_returns_manual_message(self, tmp_path: Path) -> None:
+    def test_skipped_branch_returns_manual_message(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         result = agent.handle_push_confirmation("push-branch-feat", approved=False)
         assert "left local" in result
 
-    def test_approved_push_success(self, tmp_path: Path) -> None:
+    def test_approved_push_success(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
             "cantrip.agent.core.push_branch",
@@ -207,7 +207,7 @@ class TestHandlePushConfirmation:
         assert "Pushed **feat**" in result
         assert "Reply **pr**" in result
 
-    def test_approved_push_failure(self, tmp_path: Path) -> None:
+    def test_approved_push_failure(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
             "cantrip.agent.core.push_branch",
@@ -226,7 +226,7 @@ class TestHandlePushConfirmation:
 class TestHandlePrCreation:
     """``handle_pr_creation`` formats title + body and forwards to gh."""
 
-    def test_success_draft_is_labelled(self, tmp_path: Path) -> None:
+    def test_success_draft_is_labelled(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
 
@@ -244,7 +244,9 @@ class TestHandlePrCreation:
         # Title reflects issue number extraction.
         assert "Fix #7" in cpr.call_args.args[1]
 
-    def test_success_without_issue_number_falls_back_to_branch_title(self, tmp_path: Path) -> None:
+    def test_success_without_issue_number_falls_back_to_branch_title(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         agent = _agent(tmp_path)
         with (
             patch(
@@ -256,7 +258,7 @@ class TestHandlePrCreation:
             agent.handle_pr_creation("cantrip/improve-README", draft=False)
         assert cpr.call_args.args[1] == "Improve readme"
 
-    def test_failure_returns_error(self, tmp_path: Path) -> None:
+    def test_failure_returns_error(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with (
             patch(
@@ -311,7 +313,7 @@ class TestBuildRepoBootstrapConfirmTask:
 class TestHandleRepoBootstrap:
     """``handle_repo_bootstrap`` shells out to gh and updates state on success."""
 
-    def test_success_private(self, tmp_path: Path) -> None:
+    def test_success_private(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with (
             patch(
@@ -324,7 +326,7 @@ class TestHandleRepoBootstrap:
         assert "private" in result
         assert agent.state.github_repo == "u/n"
 
-    def test_success_public(self, tmp_path: Path) -> None:
+    def test_success_public(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with (
             patch(
@@ -336,7 +338,7 @@ class TestHandleRepoBootstrap:
             result = agent.handle_repo_bootstrap("n", private=False, description="", org="u")
         assert "public" in result
 
-    def test_failure_returns_error(self, tmp_path: Path) -> None:
+    def test_failure_returns_error(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
             "cantrip.agent.core.bootstrap_github_repo",
@@ -355,7 +357,7 @@ class TestHandleRepoBootstrap:
 class TestCreatePrFixTasks:
     """``create_pr_fix_tasks`` produces a fix task + push-confirm task."""
 
-    def test_generates_fix_task_and_push_confirm(self, tmp_path: Path) -> None:
+    def test_generates_fix_task_and_push_confirm(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         feedback = PrFeedback(
             pr_number=12,
@@ -379,7 +381,7 @@ class TestCreatePrFixTasks:
         assert tasks[1].category == TaskCategory.CONFIRM
         assert tasks[1].id.startswith("push-branch-")
 
-    def test_empty_comment_bodies_are_skipped(self, tmp_path: Path) -> None:
+    def test_empty_comment_bodies_are_skipped(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         feedback = PrFeedback(
             pr_number=13,
@@ -401,7 +403,7 @@ class TestCreatePrFixTasks:
 class TestCreateFeatureBranch:
     """``_create_feature_branch`` short-circuits when prerequisites are missing."""
 
-    def test_returns_none_without_github_repo(self, tmp_path: Path) -> None:
+    def test_returns_none_without_github_repo(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = None
         assert agent._create_feature_branch("feat") is None
@@ -412,7 +414,7 @@ class TestCreateFeatureBranch:
         agent.state.charm_path = None
         assert agent._create_feature_branch("feat") is None
 
-    def test_creates_branch_when_both_present(self, tmp_path: Path) -> None:
+    def test_creates_branch_when_both_present(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         with patch(
@@ -431,11 +433,11 @@ class TestCreateFeatureBranch:
 class TestHandleTriageConfirmation:
     """``handle_triage_confirmation`` turns an approved issue into work tasks."""
 
-    def test_missing_confirm_task_returns_empty(self, tmp_path: Path) -> None:
+    def test_missing_confirm_task_returns_empty(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         assert agent.handle_triage_confirmation("triage-issue-99") == []
 
-    def test_malformed_id_returns_empty(self, tmp_path: Path) -> None:
+    def test_malformed_id_returns_empty(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         task = AgentTask(
             id="triage-issue-abc",
@@ -446,7 +448,9 @@ class TestHandleTriageConfirmation:
         agent.work_queue.add_task(task)
         assert agent.handle_triage_confirmation("triage-issue-abc") == []
 
-    def test_happy_path_appends_push_confirm_when_branch_created(self, tmp_path: Path) -> None:
+    def test_happy_path_appends_push_confirm_when_branch_created(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         task = AgentTask(
@@ -479,7 +483,7 @@ class TestHandleTriageConfirmation:
         assert tasks[-1].category == TaskCategory.CONFIRM
         assert "push-branch-cantrip/issue-7-broken-login" in tasks[-1].id
 
-    def test_happy_path_without_branch_has_no_push_confirm(self, tmp_path: Path) -> None:
+    def test_happy_path_without_branch_has_no_push_confirm(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = None
         task = AgentTask(
@@ -512,12 +516,12 @@ class TestHandleTriageConfirmation:
 class TestIssueTriageWorker:
     """``start_issue_triage`` / ``stop_issue_triage`` / ``retriage_issues``."""
 
-    def test_start_without_repo_returns_false(self, tmp_path: Path) -> None:
+    def test_start_without_repo_returns_false(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = None
         assert agent.start_issue_triage() is False
 
-    def test_start_second_time_returns_false(self, tmp_path: Path) -> None:
+    def test_start_second_time_returns_false(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         fake_triage = MagicMock()
@@ -525,7 +529,7 @@ class TestIssueTriageWorker:
         agent._issue_triage = fake_triage
         assert agent.start_issue_triage() is False
 
-    def test_start_happy_path(self, tmp_path: Path) -> None:
+    def test_start_happy_path(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         fake = MagicMock()
@@ -536,7 +540,7 @@ class TestIssueTriageWorker:
         assert agent._issue_triage is fake
 
     @pytest.mark.asyncio
-    async def test_stop_clears_worker(self, tmp_path: Path) -> None:
+    async def test_stop_clears_worker(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         fake = MagicMock()
 
@@ -549,12 +553,12 @@ class TestIssueTriageWorker:
         assert agent._issue_triage is None
 
     @pytest.mark.asyncio
-    async def test_stop_when_not_running_is_noop(self, tmp_path: Path) -> None:
+    async def test_stop_when_not_running_is_noop(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent._issue_triage = None
         await agent.stop_issue_triage()  # must not raise
 
-    def test_issue_triage_running_reflects_state(self, tmp_path: Path) -> None:
+    def test_issue_triage_running_reflects_state(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         assert agent.issue_triage_running is False
         fake = MagicMock()
@@ -562,12 +566,12 @@ class TestIssueTriageWorker:
         agent._issue_triage = fake
         assert agent.issue_triage_running is True
 
-    def test_retriage_without_repo_returns_false(self, tmp_path: Path) -> None:
+    def test_retriage_without_repo_returns_false(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = None
         assert agent.retriage_issues() is False
 
-    def test_retriage_while_running_returns_false(self, tmp_path: Path) -> None:
+    def test_retriage_while_running_returns_false(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         existing = MagicMock()
@@ -575,7 +579,7 @@ class TestIssueTriageWorker:
         agent._issue_triage = existing
         assert agent.retriage_issues() is False
 
-    def test_retriage_preserves_examined_set(self, tmp_path: Path) -> None:
+    def test_retriage_preserves_examined_set(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         prev = MagicMock()

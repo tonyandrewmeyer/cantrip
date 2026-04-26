@@ -6,9 +6,9 @@ tests drive the modal's mount-populate-render cycle with
 """
 
 import datetime
+import pathlib
 import subprocess
 from io import StringIO
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -105,10 +105,10 @@ class TestFormatRelativeTime:
 
 
 class TestFormatStats:
-    def test_missing_file_noted(self, tmp_path: Path) -> None:
+    def test_missing_file_noted(self, tmp_path: pathlib.Path) -> None:
         assert "not readable" in _format_stats(tmp_path / "missing")
 
-    def test_existing_file_includes_size_and_time(self, tmp_path: Path) -> None:
+    def test_existing_file_includes_size_and_time(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "hello.txt"
         f.write_text("hi")
         line = _format_stats(f)
@@ -193,77 +193,77 @@ class TestTomlDescription:
 
 
 class TestInferPurpose:
-    def test_python_docstring(self, tmp_path: Path) -> None:
+    def test_python_docstring(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "mod.py"
         f.write_text('"""Module purpose line."""\n')
         assert _infer_purpose(f) == "Module purpose line."
 
-    def test_python_without_docstring_falls_back(self, tmp_path: Path) -> None:
+    def test_python_without_docstring_falls_back(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "nodoc.py"
         f.write_text("x = 1\n")
         assert "py file" in _infer_purpose(f)
 
-    def test_markdown_heading(self, tmp_path: Path) -> None:
+    def test_markdown_heading(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "readme.md"
         f.write_text("# My Charm\n\nSome words.\n")
         result = _infer_purpose(f)
         assert "**My Charm**" in result
 
-    def test_charmcraft_yaml_summary(self, tmp_path: Path) -> None:
+    def test_charmcraft_yaml_summary(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "charmcraft.yaml"
         f.write_text("name: my-charm\nsummary: One line summary.\n")
         assert "One line summary." in _infer_purpose(f)
 
-    def test_non_metadata_yaml_falls_back(self, tmp_path: Path) -> None:
+    def test_non_metadata_yaml_falls_back(self, tmp_path: pathlib.Path) -> None:
         # Non-charm YAMLs don't try to extract summary/description.
         f = tmp_path / "random.yaml"
         f.write_text("summary: ignored\n")
         assert "no structured summary" in _infer_purpose(f)
 
-    def test_pyproject_toml(self, tmp_path: Path) -> None:
+    def test_pyproject_toml(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "pyproject.toml"
         f.write_text('[project]\nname = "x"\ndescription = "A TOML project"\n')
         assert "A TOML project" in _infer_purpose(f)
 
-    def test_unknown_extension_fallback(self, tmp_path: Path) -> None:
+    def test_unknown_extension_fallback(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "file.bin"
         f.write_text("content")
         assert "bin file" in _fallback_purpose(f)
 
-    def test_unreadable_file(self, tmp_path: Path) -> None:
+    def test_unreadable_file(self, tmp_path: pathlib.Path) -> None:
         assert "Could not read" in _infer_purpose(tmp_path / "missing.py")
 
 
 class TestReadTextSafely:
-    def test_reads_utf8(self, tmp_path: Path) -> None:
+    def test_reads_utf8(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "a.txt"
         f.write_text("hello")
         assert _read_text_safely(f, max_bytes=1024) == "hello"
 
-    def test_rejects_binary(self, tmp_path: Path) -> None:
+    def test_rejects_binary(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "bin"
         f.write_bytes(b"\x00\x01\x02")
         assert _read_text_safely(f, max_bytes=1024) is None
 
-    def test_truncates_to_max_bytes(self, tmp_path: Path) -> None:
+    def test_truncates_to_max_bytes(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "big.txt"
         f.write_text("x" * 2048)
         result = _read_text_safely(f, max_bytes=16)
         assert result is not None
         assert len(result) == 16
 
-    def test_latin1_fallback(self, tmp_path: Path) -> None:
+    def test_latin1_fallback(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "latin.txt"
         # Byte 0xff is invalid UTF-8 but valid Latin-1 (ÿ).
         f.write_bytes(b"hello \xff")
         assert _read_text_safely(f, max_bytes=1024) == "hello ÿ"
 
-    def test_missing_file_returns_none(self, tmp_path: Path) -> None:
+    def test_missing_file_returns_none(self, tmp_path: pathlib.Path) -> None:
         assert _read_text_safely(tmp_path / "missing", max_bytes=1024) is None
 
 
 class TestRenderPreview:
-    def test_short_file_returns_syntax_with_content(self, tmp_path: Path) -> None:
+    def test_short_file_returns_syntax_with_content(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "a.txt"
         f.write_text("line1\nline2\nline3\n")
         out = _render_preview(f)
@@ -275,7 +275,7 @@ class TestRenderPreview:
         assert "line1" in rendered
         assert "1 " in rendered and "3 " in rendered
 
-    def test_long_file_is_truncated_with_notice(self, tmp_path: Path) -> None:
+    def test_long_file_is_truncated_with_notice(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "big.txt"
         f.write_text("\n".join(f"line{i}" for i in range(500)))
         out = _render_preview(f)
@@ -287,14 +287,14 @@ class TestRenderPreview:
         assert "line119" in rendered
         assert "line120" not in rendered
 
-    def test_binary_file_shows_notice(self, tmp_path: Path) -> None:
+    def test_binary_file_shows_notice(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "blob.png"
         f.write_bytes(b"\x89PNG\r\n\x1a\n\x00binary")
         out = _render_preview(f)
         assert isinstance(out, Text)
         assert "Binary" in str(out)
 
-    def test_empty_file_shows_notice(self, tmp_path: Path) -> None:
+    def test_empty_file_shows_notice(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "empty.py"
         f.write_text("")
         out = _render_preview(f)
@@ -305,43 +305,43 @@ class TestRenderPreview:
 class TestGuessLexer:
     """Smoke-test that common file types get the expected Pygments lexer."""
 
-    def test_python(self, tmp_path: Path) -> None:
+    def test_python(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "x.py"
         f.write_text("def f():\n    return 1\n")
         assert _guess_lexer(f, f.read_text()) == "python"
 
-    def test_yaml(self, tmp_path: Path) -> None:
+    def test_yaml(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "charmcraft.yaml"
         f.write_text("name: x\nsummary: y\n")
         assert _guess_lexer(f, f.read_text()) == "yaml"
 
-    def test_shell_by_extension(self, tmp_path: Path) -> None:
+    def test_shell_by_extension(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "script.sh"
         f.write_text("echo hi\n")
         lexer = _guess_lexer(f, f.read_text())
         assert lexer in {"bash", "sh", "shell"}
 
-    def test_markdown(self, tmp_path: Path) -> None:
+    def test_markdown(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "readme.md"
         f.write_text("# hi\n")
         assert _guess_lexer(f, f.read_text()) in {"md", "markdown"}
 
-    def test_toml(self, tmp_path: Path) -> None:
+    def test_toml(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "pyproject.toml"
         f.write_text('[project]\nname = "x"\n')
         assert _guess_lexer(f, f.read_text()) == "toml"
 
-    def test_json(self, tmp_path: Path) -> None:
+    def test_json(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "data.json"
         f.write_text('{"a": 1}\n')
         assert _guess_lexer(f, f.read_text()) == "json"
 
-    def test_rust(self, tmp_path: Path) -> None:
+    def test_rust(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "lib.rs"
         f.write_text("fn main() {}\n")
         assert _guess_lexer(f, f.read_text()) in {"rust", "rs"}
 
-    def test_unknown_falls_back(self, tmp_path: Path) -> None:
+    def test_unknown_falls_back(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "weirdfile.xyznope"
         f.write_text("some text\n")
         # Pygments returns the default text lexer when it can't match.
@@ -372,30 +372,30 @@ class TestFormatGitLog:
 
 
 class TestFileDetailScreenInit:
-    def test_display_path_relative_when_under_root(self, tmp_path: Path) -> None:
+    def test_display_path_relative_when_under_root(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "sub" / "file.py"
         f.parent.mkdir()
         f.write_text("x")
         screen = FileDetailScreen(f, charm_root=tmp_path)
         assert screen._display_path == "sub/file.py"
 
-    def test_display_path_absolute_when_outside_root(self, tmp_path: Path) -> None:
-        screen = FileDetailScreen(tmp_path / "file.py", charm_root=Path("/other"))
+    def test_display_path_absolute_when_outside_root(self, tmp_path: pathlib.Path) -> None:
+        screen = FileDetailScreen(tmp_path / "file.py", charm_root=pathlib.Path("/other"))
         assert screen._display_path == str(tmp_path / "file.py")
 
-    def test_display_path_without_charm_root(self, tmp_path: Path) -> None:
+    def test_display_path_without_charm_root(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "x.py"
         screen = FileDetailScreen(f)
         assert screen._display_path == str(f)
 
 
 class TestGitLogBlocking:
-    def test_file_not_found_returns_marker(self, tmp_path: Path) -> None:
+    def test_file_not_found_returns_marker(self, tmp_path: pathlib.Path) -> None:
         with patch("subprocess.run", side_effect=FileNotFoundError):
             result = FileDetailScreen._git_log_blocking(tmp_path / "x.py")
         assert result == "__error__:git not installed"
 
-    def test_timeout_returns_marker(self, tmp_path: Path) -> None:
+    def test_timeout_returns_marker(self, tmp_path: pathlib.Path) -> None:
         with patch(
             "subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd=["git"], timeout=10),
@@ -403,14 +403,14 @@ class TestGitLogBlocking:
             result = FileDetailScreen._git_log_blocking(tmp_path / "x.py")
         assert result == "__error__:git log timed out"
 
-    def test_nonzero_returns_stderr_marker(self, tmp_path: Path) -> None:
+    def test_nonzero_returns_stderr_marker(self, tmp_path: pathlib.Path) -> None:
         mock_result = MagicMock(returncode=128, stderr="not a git repository", stdout="")
         with patch("subprocess.run", return_value=mock_result):
             result = FileDetailScreen._git_log_blocking(tmp_path / "x.py")
         assert "not a git repository" in result
         assert result.startswith("__error__:")
 
-    def test_success_returns_stdout(self, tmp_path: Path) -> None:
+    def test_success_returns_stdout(self, tmp_path: pathlib.Path) -> None:
         mock_result = MagicMock(returncode=0, stdout="abc|2d|alice|fix", stderr="")
         with patch("subprocess.run", return_value=mock_result):
             result = FileDetailScreen._git_log_blocking(tmp_path / "x.py")
@@ -425,7 +425,7 @@ def _rendered(screen: FileDetailScreen) -> str:
 
 class TestFileDetailScreenPilot:
     @pytest.mark.asyncio
-    async def test_container_fills_most_of_the_screen(self, tmp_path: Path) -> None:
+    async def test_container_fills_most_of_the_screen(self, tmp_path: pathlib.Path) -> None:
         """Regression: the modal's output area must have a usable size.
 
         The first version of this screen wrapped the container in
@@ -451,7 +451,7 @@ class TestFileDetailScreenPilot:
                 )
 
     @pytest.mark.asyncio
-    async def test_python_file_renders_docstring_and_preview(self, tmp_path: Path) -> None:
+    async def test_python_file_renders_docstring_and_preview(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "hello.py"
         f.write_text('"""Greets the world."""\n\ndef hi():\n    return "hi"\n')
         mock_result = MagicMock(returncode=0, stdout="", stderr="")
@@ -467,7 +467,7 @@ class TestFileDetailScreenPilot:
                 assert "Content preview" in text
 
     @pytest.mark.asyncio
-    async def test_git_log_error_is_rendered_as_dim_note(self, tmp_path: Path) -> None:
+    async def test_git_log_error_is_rendered_as_dim_note(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "x.txt"
         f.write_text("content")
         mock_result = MagicMock(returncode=128, stderr="fatal: not a git repository", stdout="")
@@ -480,7 +480,7 @@ class TestFileDetailScreenPilot:
                 assert "Not tracked by git" in log
 
     @pytest.mark.asyncio
-    async def test_git_log_empty_output_is_no_commits_notice(self, tmp_path: Path) -> None:
+    async def test_git_log_empty_output_is_no_commits_notice(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "x.txt"
         f.write_text("content")
         mock_result = MagicMock(returncode=0, stdout="", stderr="")
@@ -493,7 +493,7 @@ class TestFileDetailScreenPilot:
                 assert "No commits" in log
 
     @pytest.mark.asyncio
-    async def test_git_log_renders_entries_on_success(self, tmp_path: Path) -> None:
+    async def test_git_log_renders_entries_on_success(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "x.py"
         f.write_text('"""x"""\n')
         stdout = "abc123|2 days ago|Alice|Fix bug\ndef456|1 week ago|Bob|First"
@@ -508,7 +508,7 @@ class TestFileDetailScreenPilot:
                 assert "Alice" in log
 
     @pytest.mark.asyncio
-    async def test_refresh_reruns_git_log(self, tmp_path: Path) -> None:
+    async def test_refresh_reruns_git_log(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "x.py"
         f.write_text('"""x"""\n')
         mock_result = MagicMock(returncode=0, stdout="", stderr="")

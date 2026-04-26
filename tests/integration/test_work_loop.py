@@ -6,7 +6,7 @@ recorded on the work queue (and optionally persisted).
 """
 
 import asyncio
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -216,7 +216,7 @@ class TestPlanAndExecute:
     @pytest.mark.asyncio
     async def test_task_results_persisted_to_store(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """Completed tasks are persisted via SessionStore."""

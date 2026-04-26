@@ -1,8 +1,8 @@
 """Tests for rockcraft and OCI registry tools."""
 
+import pathlib
 import subprocess
 import tempfile
-from pathlib import Path
 from unittest import mock
 
 import httpx
@@ -201,7 +201,7 @@ class TestRockcraftPackTool:
     async def test_pack_success_with_rock_file(self, tool):
         """Packs and discovers the resulting .rock file."""
         with tempfile.TemporaryDirectory() as td:
-            rock_file = Path(td) / "my-app_0.1_amd64.rock"
+            rock_file = pathlib.Path(td) / "my-app_0.1_amd64.rock"
             rock_file.touch()
 
             mock_result = mock.MagicMock()

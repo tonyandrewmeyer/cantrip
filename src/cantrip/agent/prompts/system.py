@@ -1,13 +1,13 @@
 """System prompt for the Cantrip agent."""
 
+import pathlib
 import re
-from pathlib import Path
 from typing import Any
 
 # Characters that could trigger Jinja2 template logic.
 _JINJA_SYNTAX = re.compile(r"[{}%]")
 
-_TEMPLATE_DIR = Path(__file__).parent
+_TEMPLATE_DIR = pathlib.Path(__file__).parent
 
 # Jinja2 environment and templates are loaded lazily to avoid import-time I/O.
 _JINJA_ENV: Any = None

@@ -20,7 +20,7 @@ of skill guidance:
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -42,12 +42,12 @@ from tests.conftest import FakeProvider
 class TestGlobFrontmatter:
     """``globs:`` field is parsed alongside ``tools`` and ``mcp_servers``."""
 
-    def _write_skill(self, root: Path, name: str, frontmatter: str) -> None:
+    def _write_skill(self, root: pathlib.Path, name: str, frontmatter: str) -> None:
         skill_dir = root / name
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(frontmatter + "\n# Body\n")
 
-    def test_globs_yaml_list(self, tmp_path: Path) -> None:
+    def test_globs_yaml_list(self, tmp_path: pathlib.Path) -> None:
         self._write_skill(
             tmp_path,
             "metadata",
@@ -63,7 +63,7 @@ class TestGlobFrontmatter:
         assert meta is not None
         assert meta.globs == ["metadata.yaml", "charmcraft.yaml"]
 
-    def test_globs_comma_separated_string(self, tmp_path: Path) -> None:
+    def test_globs_comma_separated_string(self, tmp_path: pathlib.Path) -> None:
         self._write_skill(
             tmp_path,
             "tests",
@@ -79,7 +79,7 @@ class TestGlobFrontmatter:
         assert meta is not None
         assert meta.globs == ["tests/integration/**", "tests/test_*.py"]
 
-    def test_globs_absent_defaults_to_empty(self, tmp_path: Path) -> None:
+    def test_globs_absent_defaults_to_empty(self, tmp_path: pathlib.Path) -> None:
         self._write_skill(
             tmp_path,
             "broad",
@@ -91,7 +91,7 @@ class TestGlobFrontmatter:
         assert meta is not None
         assert meta.globs == []
 
-    def test_globs_invalid_value_silently_ignored(self, tmp_path: Path) -> None:
+    def test_globs_invalid_value_silently_ignored(self, tmp_path: pathlib.Path) -> None:
         # A bare integer is not a list of strings — coercion drops it,
         # matching how malformed ``tools`` entries are handled.  Skill
         # discovery should still succeed.
@@ -116,23 +116,23 @@ class TestGlobMatcher:
     """``_glob_matches`` and ``_segments_match`` mechanics."""
 
     @pytest.fixture()
-    def charm_root(self, tmp_path: Path) -> Path:
+    def charm_root(self, tmp_path: pathlib.Path) -> pathlib.Path:
         return tmp_path / "my-charm"
 
-    def test_bare_basename_pattern(self, charm_root: Path) -> None:
+    def test_bare_basename_pattern(self, charm_root: pathlib.Path) -> None:
         assert _glob_matches(
             "metadata.yaml",
             charm_root / "metadata.yaml",
             charm_root,
         )
         # No charm root: the same bare-pattern still matches by basename.
-        assert _glob_matches("metadata.yaml", Path("/tmp/x/metadata.yaml"), None)
+        assert _glob_matches("metadata.yaml", pathlib.Path("/tmp/x/metadata.yaml"), None)
 
-    def test_bare_extension_wildcard(self, charm_root: Path) -> None:
+    def test_bare_extension_wildcard(self, charm_root: pathlib.Path) -> None:
         assert _glob_matches("*.py", charm_root / "src" / "charm.py", charm_root)
         assert not _glob_matches("*.py", charm_root / "metadata.yaml", charm_root)
 
-    def test_double_star_matches_zero_or_more_segments(self, charm_root: Path) -> None:
+    def test_double_star_matches_zero_or_more_segments(self, charm_root: pathlib.Path) -> None:
         assert _glob_matches(
             "tests/integration/**",
             charm_root / "tests" / "integration" / "test_x.py",
@@ -141,7 +141,7 @@ class TestGlobMatcher:
         # ``**`` matches zero segments too — the directory itself.
         assert _segments_match(["tests", "integration", "**"], ["tests", "integration"])
 
-    def test_double_star_in_middle(self, charm_root: Path) -> None:
+    def test_double_star_in_middle(self, charm_root: pathlib.Path) -> None:
         assert _glob_matches(
             "src/**/charm.py",
             charm_root / "src" / "charm.py",
@@ -158,7 +158,9 @@ class TestGlobMatcher:
             charm_root,
         )
 
-    def test_path_outside_charm_root_does_not_falsely_match(self, charm_root: Path) -> None:
+    def test_path_outside_charm_root_does_not_falsely_match(
+        self, charm_root: pathlib.Path
+    ) -> None:
         # Path-shaped globs are anchored: a file outside ``charm_root``
         # must be matched against its full filesystem-rooted POSIX form,
         # so a glob like ``tests/integration/**`` does *not* secretly
@@ -167,7 +169,7 @@ class TestGlobMatcher:
         # outside the charm dir (a sibling clone, a system file).
         assert not _glob_matches(
             "tests/integration/**",
-            Path("/var/elsewhere/tests/integration/test.py"),
+            pathlib.Path("/var/elsewhere/tests/integration/test.py"),
             charm_root,
         )
 
@@ -178,18 +180,18 @@ class TestGlobMatcher:
         # absolute path that doesn't start with ``tests/``.
         assert not _glob_matches(
             "tests/integration/**",
-            Path("/var/foo/tests/integration/test.py"),
+            pathlib.Path("/var/foo/tests/integration/test.py"),
             None,
         )
 
-    def test_any_glob_matches_short_circuits(self, charm_root: Path) -> None:
+    def test_any_glob_matches_short_circuits(self, charm_root: pathlib.Path) -> None:
         files = [charm_root / "src" / "charm.py", charm_root / "metadata.yaml"]
         # Match wins on second pattern, second file.
         assert _any_glob_matches(["actions.yaml", "metadata.yaml"], files, charm_root)
         # No pattern matches any file.
         assert not _any_glob_matches(["actions.yaml"], files, charm_root)
 
-    def test_no_paths_no_match(self, charm_root: Path) -> None:
+    def test_no_paths_no_match(self, charm_root: pathlib.Path) -> None:
         assert not _any_glob_matches(["metadata.yaml"], [], charm_root)
 
 
@@ -201,7 +203,7 @@ class TestGlobMatcher:
 class TestFormatForPromptFiltering:
     """Skill index respects ``globs:`` when ``current_files`` is supplied."""
 
-    def _build_index(self, tmp_path: Path) -> SkillsIndex:
+    def _build_index(self, tmp_path: pathlib.Path) -> SkillsIndex:
         # Three skills: one unconditional, one for tests, one for metadata.
         for name, fm in [
             (
@@ -226,7 +228,7 @@ class TestFormatForPromptFiltering:
         index.discover()
         return index
 
-    def test_no_current_files_renders_everything(self, tmp_path: Path) -> None:
+    def test_no_current_files_renders_everything(self, tmp_path: pathlib.Path) -> None:
         index = self._build_index(tmp_path)
         # Backwards-compat path: callers that don't thread file context
         # through still get the historical "all skills always" behaviour.
@@ -235,7 +237,7 @@ class TestFormatForPromptFiltering:
         assert "<name>tests</name>" in rendered
         assert "<name>metadata</name>" in rendered
 
-    def test_filter_includes_unconditional_and_matching(self, tmp_path: Path) -> None:
+    def test_filter_includes_unconditional_and_matching(self, tmp_path: pathlib.Path) -> None:
         charm_root = tmp_path / "charm"
         index = self._build_index(tmp_path)
         rendered = index.format_for_prompt(
@@ -246,7 +248,7 @@ class TestFormatForPromptFiltering:
         assert "<name>metadata</name>" in rendered
         assert "<name>tests</name>" not in rendered
 
-    def test_filter_excludes_non_matching(self, tmp_path: Path) -> None:
+    def test_filter_excludes_non_matching(self, tmp_path: pathlib.Path) -> None:
         charm_root = tmp_path / "charm"
         index = self._build_index(tmp_path)
         rendered = index.format_for_prompt(
@@ -257,7 +259,7 @@ class TestFormatForPromptFiltering:
         assert "<name>metadata</name>" not in rendered
         assert "<name>tests</name>" not in rendered
 
-    def test_filter_multiple_globs_one_matches(self, tmp_path: Path) -> None:
+    def test_filter_multiple_globs_one_matches(self, tmp_path: pathlib.Path) -> None:
         charm_root = tmp_path / "charm"
         index = self._build_index(tmp_path)
         # ``charmcraft.yaml`` is the *second* of the metadata globs —
@@ -268,7 +270,7 @@ class TestFormatForPromptFiltering:
         )
         assert "<name>metadata</name>" in rendered
 
-    def test_empty_current_files_filters_globbed_skills_out(self, tmp_path: Path) -> None:
+    def test_empty_current_files_filters_globbed_skills_out(self, tmp_path: pathlib.Path) -> None:
         # An *empty* sequence is meaningfully different from ``None``:
         # the agent has no files in scope this turn, so globbed skills
         # don't load.  Unconditional skills still do.
@@ -291,7 +293,7 @@ class TestFormatForPromptFiltering:
 class TestFilteringReport:
     """``filtering_report`` returns the loaded/skipped split for audit."""
 
-    def _build_index(self, tmp_path: Path) -> SkillsIndex:
+    def _build_index(self, tmp_path: pathlib.Path) -> SkillsIndex:
         for name, fm in [
             ("a", "---\nname: a\ndescription: A\nglobs: [metadata.yaml]\n---\n"),
             ("b", "---\nname: b\ndescription: B\nglobs: [tests/**]\n---\n"),
@@ -304,7 +306,7 @@ class TestFilteringReport:
         index.discover()
         return index
 
-    def test_report_lists_loaded_and_skipped(self, tmp_path: Path) -> None:
+    def test_report_lists_loaded_and_skipped(self, tmp_path: pathlib.Path) -> None:
         charm_root = tmp_path / "charm"
         index = self._build_index(tmp_path)
         report = index.filtering_report(
@@ -317,7 +319,7 @@ class TestFilteringReport:
         assert "c" not in report["loaded"] and "c" not in report["skipped"]
         assert report["files"] == [str(charm_root / "metadata.yaml")]
 
-    def test_report_no_match_skips_everything(self, tmp_path: Path) -> None:
+    def test_report_no_match_skips_everything(self, tmp_path: pathlib.Path) -> None:
         charm_root = tmp_path / "charm"
         index = self._build_index(tmp_path)
         report = index.filtering_report(
@@ -337,19 +339,19 @@ class TestExtractUserMentionedFiles:
     """``_extract_user_mentioned_files`` finds path-shaped tokens."""
 
     def test_picks_up_bare_charm_filenames(self) -> None:
-        charm = Path("/charms/foo")
+        charm = pathlib.Path("/charms/foo")
         out = _extract_user_mentioned_files(
             "Please update metadata.yaml and add an interface", charm
         )
         assert charm / "metadata.yaml" in out
 
     def test_picks_up_relative_paths(self) -> None:
-        charm = Path("/charms/foo")
+        charm = pathlib.Path("/charms/foo")
         out = _extract_user_mentioned_files("Edit src/charm.py to handle config-changed", charm)
         assert charm / "src/charm.py" in out
 
     def test_strips_backticks_and_quotes(self) -> None:
-        charm = Path("/charms/foo")
+        charm = pathlib.Path("/charms/foo")
         out = _extract_user_mentioned_files(
             "Look at `tests/integration/test_deploy.py` please", charm
         )
@@ -359,22 +361,22 @@ class TestExtractUserMentionedFiles:
         # ``1.2.3`` is the classic false-positive.  Filter to known
         # extensions so version numbers and host:port tokens don't
         # pull skills in.
-        charm = Path("/charms/foo")
+        charm = pathlib.Path("/charms/foo")
         out = _extract_user_mentioned_files("We're on Juju 3.4.5 and ops 2.17.1 today", charm)
         assert out == []
 
     def test_ignores_arbitrary_words_with_dot(self) -> None:
-        charm = Path("/charms/foo")
+        charm = pathlib.Path("/charms/foo")
         out = _extract_user_mentioned_files("It works. Also, e.g. some text.", charm)
         assert out == []
 
     def test_dedupes_repeated_mentions(self) -> None:
-        charm = Path("/charms/foo")
+        charm = pathlib.Path("/charms/foo")
         out = _extract_user_mentioned_files("metadata.yaml metadata.yaml metadata.yaml", charm)
         assert out == [charm / "metadata.yaml"]
 
     def test_empty_text(self) -> None:
-        assert _extract_user_mentioned_files("", Path("/charm")) == []
+        assert _extract_user_mentioned_files("", pathlib.Path("/charm")) == []
 
 
 # --------------------------------------------------------------------
@@ -385,7 +387,7 @@ class TestExtractUserMentionedFiles:
 class TestAgentEmitsSkillFilterEvent:
     """``CantripAgent._build_system_prompt`` records a ``skill_filter`` event."""
 
-    def test_event_recorded_on_first_filter(self, tmp_path: Path) -> None:
+    def test_event_recorded_on_first_filter(self, tmp_path: pathlib.Path) -> None:
         # Build an agent and replace its skills index with one that
         # has globbed skills.  ``process_message`` is heavy; we drive
         # ``_build_system_prompt`` directly because that's where the
@@ -432,7 +434,7 @@ class TestAgentEmitsSkillFilterEvent:
         assert detail["loaded"] == ["metadata-skill"]
         assert detail["skipped"] == ["tests-skill"]
 
-    def test_event_dedupes_unchanged_filters(self, tmp_path: Path) -> None:
+    def test_event_dedupes_unchanged_filters(self, tmp_path: pathlib.Path) -> None:
         provider = FakeProvider([Response(content="ok")])
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
 
@@ -460,7 +462,7 @@ class TestAgentEmitsSkillFilterEvent:
         # filter decisions are deduped on the in-memory signature.
         assert len(events) == 1
 
-    def test_event_re_emits_when_filter_changes(self, tmp_path: Path) -> None:
+    def test_event_re_emits_when_filter_changes(self, tmp_path: pathlib.Path) -> None:
         provider = FakeProvider([Response(content="ok")])
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
 
@@ -503,7 +505,7 @@ class TestAgentEmitsSkillFilterEvent:
         assert sorted(second["detail"]["loaded"]) == ["metadata-skill", "tests-skill"]
         assert second["detail"]["skipped"] == []
 
-    def test_no_event_when_no_skills_have_globs(self, tmp_path: Path) -> None:
+    def test_no_event_when_no_skills_have_globs(self, tmp_path: pathlib.Path) -> None:
         provider = FakeProvider([Response(content="ok")])
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
 

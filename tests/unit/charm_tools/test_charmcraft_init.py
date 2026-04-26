@@ -1,7 +1,7 @@
 """Tests for CharmcraftInitTool — gitignore, ops-tracing, paas, pre-commit."""
 
+import pathlib
 import tempfile
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -20,7 +20,7 @@ class TestCharmcraftInitGitignore:
     def temp_dir(self):
         """Create a temporary directory."""
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.fixture
     def tool(self):
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     def temp_dir(self):
         """Create a temporary directory."""
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.fixture
     def tool(self):
@@ -217,7 +217,7 @@ if __name__ == "__main__":
             side_effect=side_effect,
         )
 
-    def _scaffold_standard(self, charm_dir: Path) -> None:
+    def _scaffold_standard(self, charm_dir: pathlib.Path) -> None:
         """Write files that charmcraft init would generate for a standard profile."""
         charm_dir.mkdir(parents=True, exist_ok=True)
         (charm_dir / "charmcraft.yaml").write_text(self._CHARMCRAFT_YAML)
@@ -366,7 +366,7 @@ platforms:
     @pytest.fixture
     def temp_dir(self):
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     @pytest.fixture
     def tool(self):
@@ -514,7 +514,7 @@ class TestCharmcraftInitPreCommit:
     def temp_dir(self):
         """Create a temporary directory."""
         with tempfile.TemporaryDirectory() as td:
-            yield Path(td)
+            yield pathlib.Path(td)
 
     def test_pre_commit_config_written(self, temp_dir):
         """Writes .pre-commit-config.yaml with format, lint, and unit hooks."""

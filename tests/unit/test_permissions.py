@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
 import textwrap
-from pathlib import Path
 
 import pytest
 
@@ -168,7 +168,7 @@ class TestEvaluate:
 class TestYAMLLoader:
     """Parse ``permissions.yaml`` files into rulesets."""
 
-    def test_simple_round_trip(self, tmp_path: Path):
+    def test_simple_round_trip(self, tmp_path: pathlib.Path):
         path = tmp_path / "permissions.yaml"
         path.write_text(
             textwrap.dedent(
@@ -189,7 +189,7 @@ class TestYAMLLoader:
             is PermissionOutcome.DENY
         )
 
-    def test_per_agent_block(self, tmp_path: Path):
+    def test_per_agent_block(self, tmp_path: pathlib.Path):
         path = tmp_path / "permissions.yaml"
         path.write_text(
             textwrap.dedent(
@@ -209,19 +209,19 @@ class TestYAMLLoader:
         )
         assert evaluate(ruleset, "fs_write", agent_name="build").outcome is PermissionOutcome.ALLOW
 
-    def test_unknown_top_level_key_raises(self, tmp_path: Path):
+    def test_unknown_top_level_key_raises(self, tmp_path: pathlib.Path):
         path = tmp_path / "permissions.yaml"
         path.write_text("unexpected_key:\n  foo: bar\n")
         with pytest.raises(PermissionParseError):
             load_permissions_file(path)
 
-    def test_unknown_outcome_raises(self, tmp_path: Path):
+    def test_unknown_outcome_raises(self, tmp_path: pathlib.Path):
         path = tmp_path / "permissions.yaml"
         path.write_text('tools:\n  "fs_read": "maybe"\n')
         with pytest.raises(PermissionParseError):
             load_permissions_file(path)
 
-    def test_empty_file_yields_empty_ruleset(self, tmp_path: Path):
+    def test_empty_file_yields_empty_ruleset(self, tmp_path: pathlib.Path):
         path = tmp_path / "permissions.yaml"
         path.write_text("")
         ruleset = load_permissions_file(path)
@@ -320,7 +320,7 @@ class TestDiscovery:
             is PermissionOutcome.DENY
         )
 
-    def test_repo_wins_over_user(self, tmp_path: Path):
+    def test_repo_wins_over_user(self, tmp_path: pathlib.Path):
         user_dir = tmp_path / "user"
         user_dir.mkdir()
         user_file = user_dir / "permissions.yaml"
@@ -339,7 +339,7 @@ class TestDiscovery:
         )
         assert evaluate(ruleset, "fs_read").outcome is PermissionOutcome.ALLOW
 
-    def test_missing_files_yield_empty(self, tmp_path: Path):
+    def test_missing_files_yield_empty(self, tmp_path: pathlib.Path):
         ruleset = discover_permissions(
             charm_path=tmp_path,
             user_config_dir=tmp_path / "does-not-exist",
@@ -348,7 +348,7 @@ class TestDiscovery:
         assert ruleset.tools == ()
         assert ruleset.bash == ()
 
-    def test_malformed_user_file_is_skipped(self, tmp_path: Path):
+    def test_malformed_user_file_is_skipped(self, tmp_path: pathlib.Path):
         user_dir = tmp_path
         (user_dir / "permissions.yaml").write_text('tools:\n  "fs": "wibble"\n')
         # No raise — malformed file is logged + skipped.
@@ -581,7 +581,9 @@ class TestPermissionsCLI:
         defaults.update(overrides)
         return argparse.Namespace(**defaults)
 
-    def test_test_builtin_bash_deny(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    def test_test_builtin_bash_deny(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ):
         """Built-in ``rm -rf *`` rule still fires through the CLI."""
         from cantrip.main import _permissions_test
 
@@ -598,7 +600,7 @@ class TestPermissionsCLI:
         assert "rm -rf *" in out
         assert "builtin:bash" in out
 
-    def test_test_path_match(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    def test_test_path_match(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
         """Path argument matches the ``paths`` section."""
         from cantrip.main import _permissions_test
 
@@ -615,7 +617,9 @@ class TestPermissionsCLI:
         assert "Path:    .env" in out
         assert "builtin:paths" in out
 
-    def test_test_no_match_default_allow(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    def test_test_no_match_default_allow(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ):
         """A tool with no matching rule falls through to default allow."""
         from cantrip.main import _permissions_test
 
@@ -631,7 +635,7 @@ class TestPermissionsCLI:
         assert "no rule matched" in out
 
     def test_test_repo_yaml_rule_attribution(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ):
         """A repo-level rule wins last and shows up by file path."""
         from cantrip.main import _permissions_test
@@ -657,7 +661,9 @@ class TestPermissionsCLI:
         assert "Outcome: ASK" in out
         assert str(repo_yaml) in out
 
-    def test_test_agent_overlay_tightens(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    def test_test_agent_overlay_tightens(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ):
         """``--agent`` activates the per-agent overlay; cross-section deny wins."""
         from cantrip.main import _permissions_test
 
@@ -700,7 +706,9 @@ class TestPermissionsCLI:
         assert "Agent:   RESEARCH" in out
         assert "agents:RESEARCH" in out
 
-    def test_test_show_rules_flag(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    def test_test_show_rules_flag(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ):
         """``--show-rules`` appends the loaded ruleset listing."""
         from cantrip.main import _permissions_test
 
@@ -718,7 +726,7 @@ class TestPermissionsCLI:
         assert "[bash]" in out  # built-in bash rules are always present
 
     def test_test_no_builtin_skips_safe_defaults(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ):
         """``--no-builtin`` lets ``rm -rf`` fall through when no user rule covers it."""
         from cantrip.main import _permissions_test
@@ -737,7 +745,7 @@ class TestPermissionsCLI:
         assert "no rule matched" in out
 
     def test_list_with_no_files_shows_builtin(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ):
         """``permissions list`` with no user/repo files prints the built-in rules."""
         from cantrip.main import _permissions_list
@@ -754,7 +762,7 @@ class TestPermissionsCLI:
         assert "builtin:paths" in out
 
     def test_list_no_builtin_with_no_files_says_empty(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ):
         """With ``--no-builtin`` and no files, the listing is empty."""
         from cantrip.main import _permissions_list
@@ -770,7 +778,7 @@ class TestPermissionsCLI:
         assert "No permission rules loaded." in out
 
     def test_list_includes_per_agent_overlay(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ):
         """A repo file with ``agents:`` shows up under an ``[agents:NAME]`` group."""
         from cantrip.main import _permissions_list

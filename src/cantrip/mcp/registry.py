@@ -14,9 +14,9 @@ agent's tool list with ``mcp__<server>__<tool>`` qualified names.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import enum
 import logging
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from cantrip.mcp.client import MCPClient
@@ -40,7 +40,7 @@ class ServerStatus(enum.StrEnum):
     STOPPED = "stopped"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ServerSnapshot:
     """A point-in-time view of one server, for the ``/mcp`` command."""
 
@@ -48,7 +48,7 @@ class ServerSnapshot:
     status: ServerStatus
     transport: str
     tool_count: int
-    tools: list[MCPToolInfo] = field(default_factory=list)
+    tools: list[MCPToolInfo] = dataclasses.field(default_factory=list)
     error: str | None = None
 
 

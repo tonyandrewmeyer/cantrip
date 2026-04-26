@@ -1,7 +1,7 @@
 """Tests for charmcraft-compatible rules (CC001–CC004)."""
 
+import pathlib
 import stat
-from pathlib import Path
 
 from charmlint.linter import lint
 from tests.unit.charmlint.conftest import write_charm_source, write_charmcraft_yaml
@@ -10,12 +10,12 @@ from tests.unit.charmlint.conftest import write_charm_source, write_charmcraft_y
 class TestDeprecatedSeries:
     """Tests for CC001 — deprecated 'series' attribute."""
 
-    def test_series_present(self, tmp_charm: Path):
+    def test_series_present(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test", "series": ["focal"]})
         report = lint(tmp_charm)
         assert "CC001" in {d.rule_id for d in report.diagnostics}
 
-    def test_no_series(self, tmp_charm: Path):
+    def test_no_series(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         report = lint(tmp_charm)
         assert "CC001" not in {d.rule_id for d in report.diagnostics}
@@ -24,7 +24,7 @@ class TestDeprecatedSeries:
 class TestNamingConventions:
     """Tests for CC002 — hyphens vs underscores."""
 
-    def test_underscore_config(self, tmp_charm: Path):
+    def test_underscore_config(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {
@@ -37,7 +37,7 @@ class TestNamingConventions:
         assert len(cc002) >= 1
         assert "my_option" in cc002[0].message
 
-    def test_hyphenated_config_ok(self, tmp_charm: Path):
+    def test_hyphenated_config_ok(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {
@@ -49,7 +49,7 @@ class TestNamingConventions:
         cc002 = [d for d in report.diagnostics if d.rule_id == "CC002"]
         assert not cc002
 
-    def test_underscore_action(self, tmp_charm: Path):
+    def test_underscore_action(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {"name": "test", "actions": {"my_action": {"description": "Test"}}},
@@ -58,7 +58,7 @@ class TestNamingConventions:
         cc002 = [d for d in report.diagnostics if d.rule_id == "CC002"]
         assert any("my_action" in d.message for d in cc002)
 
-    def test_underscore_action_param(self, tmp_charm: Path):
+    def test_underscore_action_param(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {
@@ -83,19 +83,19 @@ class TestNamingConventions:
 class TestEntrypoint:
     """Tests for CC003 — entrypoint existence and executable bit."""
 
-    def test_no_dispatch_file(self, tmp_charm: Path):
+    def test_no_dispatch_file(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         report = lint(tmp_charm)
         # No dispatch → not applicable, no diagnostic.
         assert "CC003" not in {d.rule_id for d in report.diagnostics}
 
-    def test_missing_entrypoint(self, tmp_charm: Path):
+    def test_missing_entrypoint(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         (tmp_charm / "dispatch").write_text("#!/bin/bash\nexec ./src/charm.py\n")
         report = lint(tmp_charm)
         assert "CC003" in {d.rule_id for d in report.diagnostics}
 
-    def test_entrypoint_not_executable(self, tmp_charm: Path):
+    def test_entrypoint_not_executable(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         (tmp_charm / "dispatch").write_text("#!/bin/bash\nexec ./src/charm.py\n")
         charm_py = tmp_charm / "src" / "charm.py"
@@ -107,7 +107,7 @@ class TestEntrypoint:
         assert len(cc003) == 1
         assert "not executable" in cc003[0].message
 
-    def test_valid_entrypoint(self, tmp_charm: Path):
+    def test_valid_entrypoint(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         (tmp_charm / "dispatch").write_text("#!/bin/bash\nexec ./src/charm.py\n")
         charm_py = tmp_charm / "src" / "charm.py"
@@ -120,20 +120,20 @@ class TestEntrypoint:
 class TestOpsMainCall:
     """Tests for CC004 — ops.main() call detection."""
 
-    def test_no_ops_import(self, tmp_charm: Path):
+    def test_no_ops_import(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         write_charm_source(tmp_charm, "print('hello')\n")
         report = lint(tmp_charm)
         # Not an ops charm → not applicable.
         assert "CC004" not in {d.rule_id for d in report.diagnostics}
 
-    def test_ops_without_main(self, tmp_charm: Path):
+    def test_ops_without_main(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         write_charm_source(tmp_charm, "import ops\n\nclass MyCharm(ops.CharmBase): pass\n")
         report = lint(tmp_charm)
         assert "CC004" in {d.rule_id for d in report.diagnostics}
 
-    def test_ops_with_main(self, tmp_charm: Path):
+    def test_ops_with_main(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         write_charm_source(
             tmp_charm,
@@ -142,7 +142,7 @@ class TestOpsMainCall:
         report = lint(tmp_charm)
         assert "CC004" not in {d.rule_id for d in report.diagnostics}
 
-    def test_main_with_class_arg(self, tmp_charm: Path):
+    def test_main_with_class_arg(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         write_charm_source(
             tmp_charm,

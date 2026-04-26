@@ -1,6 +1,6 @@
 """Tests for CC005/CC006 — unknown field detection in charmcraft.yaml."""
 
-from pathlib import Path
+import pathlib
 
 from charmlint.linter import lint
 from tests.unit.charmlint.conftest import write_charmcraft_yaml
@@ -9,7 +9,7 @@ from tests.unit.charmlint.conftest import write_charmcraft_yaml
 class TestUnknownTopLevelFields:
     """Tests for CC005 — unrecognised top-level keys."""
 
-    def test_known_fields_clean(self, tmp_charm: Path):
+    def test_known_fields_clean(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {
@@ -38,21 +38,21 @@ class TestUnknownTopLevelFields:
         report = lint(tmp_charm)
         assert "CC005" not in {d.rule_id for d in report.diagnostics}
 
-    def test_typo_detected(self, tmp_charm: Path):
+    def test_typo_detected(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test", "sumary": "oops"})
         report = lint(tmp_charm)
         cc005 = [d for d in report.diagnostics if d.rule_id == "CC005"]
         assert len(cc005) == 1
         assert "sumary" in cc005[0].message
 
-    def test_typo_fix_hint(self, tmp_charm: Path):
+    def test_typo_fix_hint(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test", "sumary": "oops"})
         report = lint(tmp_charm)
         cc005 = [d for d in report.diagnostics if d.rule_id == "CC005"]
         assert cc005[0].fix_hint is not None
         assert "summary" in cc005[0].fix_hint
 
-    def test_multiple_unknown(self, tmp_charm: Path):
+    def test_multiple_unknown(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {
@@ -68,14 +68,14 @@ class TestUnknownTopLevelFields:
         assert "sumary" in messages
         assert "descrption" in messages
 
-    def test_completely_unknown_no_hint(self, tmp_charm: Path):
+    def test_completely_unknown_no_hint(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test", "zzz-nonsense": "value"})
         report = lint(tmp_charm)
         cc005 = [d for d in report.diagnostics if d.rule_id == "CC005"]
         assert len(cc005) == 1
         assert cc005[0].fix_hint is None
 
-    def test_legacy_fields_accepted(self, tmp_charm: Path):
+    def test_legacy_fields_accepted(self, tmp_charm: pathlib.Path):
         """Legacy fields like 'series' and 'min-juju-version' should not trigger CC005."""
         write_charmcraft_yaml(
             tmp_charm,
@@ -93,7 +93,7 @@ class TestUnknownTopLevelFields:
 class TestUnknownResourceFields:
     """Tests for CC006 — unrecognised keys in resource definitions."""
 
-    def test_valid_resource_fields(self, tmp_charm: Path):
+    def test_valid_resource_fields(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {
@@ -115,7 +115,7 @@ class TestUnknownResourceFields:
         report = lint(tmp_charm)
         assert "CC006" not in {d.rule_id for d in report.diagnostics}
 
-    def test_typo_in_resource(self, tmp_charm: Path):
+    def test_typo_in_resource(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {
@@ -134,7 +134,7 @@ class TestUnknownResourceFields:
         assert "descrption" in cc006[0].message
         assert "app-image" in cc006[0].message
 
-    def test_resource_fix_hint(self, tmp_charm: Path):
+    def test_resource_fix_hint(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {
@@ -149,12 +149,12 @@ class TestUnknownResourceFields:
         assert cc006[0].fix_hint is not None
         assert "description" in cc006[0].fix_hint
 
-    def test_no_resources_section(self, tmp_charm: Path):
+    def test_no_resources_section(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         report = lint(tmp_charm)
         assert "CC006" not in {d.rule_id for d in report.diagnostics}
 
-    def test_non_dict_resource_ignored(self, tmp_charm: Path):
+    def test_non_dict_resource_ignored(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(
             tmp_charm,
             {

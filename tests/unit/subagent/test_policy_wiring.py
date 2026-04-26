@@ -9,7 +9,7 @@ silently weaken the stack.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -67,7 +67,7 @@ class TestBuildPolicyEnforcer:
         assert enforcer.check_tool("mcp__grafana__query") == PolicyAction.ALLOW
         assert enforcer.check_tool("mcp__any__thing") == PolicyAction.ALLOW
 
-    def test_per_charm_file_tightens_the_stack(self, tmp_path: Path) -> None:
+    def test_per_charm_file_tightens_the_stack(self, tmp_path: pathlib.Path) -> None:
         """A per-charm policy file can add a block on top of the defaults."""
         (tmp_path / "cantrip.policies.yaml").write_text(
             "name: production\nblocked_tools:\n  - web_fetch\n"
@@ -77,7 +77,7 @@ class TestBuildPolicyEnforcer:
         # block overrides that to DENY.
         assert enforcer.check_tool("web_fetch") == PolicyAction.DENY
 
-    def test_per_charm_file_cannot_loosen_org_wide_review(self, tmp_path: Path) -> None:
+    def test_per_charm_file_cannot_loosen_org_wide_review(self, tmp_path: pathlib.Path) -> None:
         """A per-charm policy can't dilute the org-wide approval list.
 
         Composition is most-restrictive-wins, so if ORG_WIDE reviews a
@@ -192,7 +192,9 @@ class TestAuditIntegration:
     """Phase 80.4: subagent writes one JSONL audit line per decision."""
 
     @pytest.mark.asyncio
-    async def test_allowed_and_denied_calls_both_land_in_audit_file(self, tmp_path: Path) -> None:
+    async def test_allowed_and_denied_calls_both_land_in_audit_file(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """A two-turn run with one allowed tool and one policy-denied tool
         produces two audit lines with the right actions and policy name.
         """
@@ -243,7 +245,7 @@ class TestAuditIntegration:
         assert "blocked" in entry.reason.lower() or "policy" in entry.reason.lower()
 
     @pytest.mark.asyncio
-    async def test_audit_file_not_written_without_charm_path(self, tmp_path: Path) -> None:
+    async def test_audit_file_not_written_without_charm_path(self, tmp_path: pathlib.Path) -> None:
         """A subagent without a charm_path writes no audit file.
 
         The JSONL is keyed off the charm directory; there's nowhere

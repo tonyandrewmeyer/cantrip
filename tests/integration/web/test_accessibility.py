@@ -16,13 +16,13 @@ so it's safe to collect in CI without mandating either dependency.
 from __future__ import annotations
 
 import asyncio
+import pathlib
 import shutil
 import socket
 import subprocess
 import threading
 import weakref
 from collections.abc import Iterator
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import aiohttp.web as web
@@ -188,12 +188,12 @@ def _build_app(agent: MagicMock) -> web.Application:
 
 
 @pytest.fixture(scope="module")
-def _rodney_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def _rodney_home(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     return tmp_path_factory.mktemp("rodney-home")
 
 
 @pytest.fixture(scope="module")
-def rodney_env(_rodney_home: Path) -> dict[str, str]:
+def rodney_env(_rodney_home: pathlib.Path) -> dict[str, str]:
     """Environment dict that isolates the rodney session from the user's."""
     import os
 

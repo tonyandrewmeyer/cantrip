@@ -1,8 +1,8 @@
 """Task checklist widget for the TUI."""
 
+import dataclasses
 import datetime
 import threading
-from dataclasses import dataclass, field
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -55,12 +55,12 @@ _CHECK_STATUS_DISPLAY: dict[CheckStatus, tuple[str, str]] = {
 }
 
 
-@dataclass
+@dataclasses.dataclass
 class _PreflightGroup:
     """A group of preflight environment checks."""
 
     title: str
-    items: list[tuple[str, CheckStatus]] = field(default_factory=list)
+    items: list[tuple[str, CheckStatus]] = dataclasses.field(default_factory=list)
 
 
 def _status_display(status: TaskStatus) -> tuple[str, str]:

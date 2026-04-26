@@ -3,9 +3,9 @@
 import asyncio
 import json
 import os
+import pathlib
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -78,7 +78,7 @@ class RockcraftInitTool(Tool):
             )
 
         try:
-            target_path = Path(path).resolve()
+            target_path = pathlib.Path(path).resolve()
             target_path.mkdir(parents=True, exist_ok=True)
 
             env = os.environ.copy()
@@ -151,7 +151,7 @@ class RockcraftPackTool(Tool):
             )
 
         try:
-            rock_path = Path(path).resolve()
+            rock_path = pathlib.Path(path).resolve()
 
             # Always set the experimental flag — harmless when not needed.
             env = os.environ.copy()
@@ -258,7 +258,7 @@ class SkopeoRegistryPushTool(Tool):
                 error="skopeo not found. Is it installed?",
             )
 
-        rock_path = Path(rock_file)
+        rock_path = pathlib.Path(rock_file)
         if not rock_path.exists():
             return ToolResult(
                 success=False,
