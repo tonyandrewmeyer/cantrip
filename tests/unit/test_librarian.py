@@ -387,6 +387,54 @@ class TestCharmhubFetch:
         assert not result.success
         assert "git is not installed" in result.error
 
+    @pytest.mark.asyncio
+    async def test_git_clone_timeout_kills_subprocess(self, cache_root: pathlib.Path) -> None:
+        """A wedged ``git clone`` must not park the agent indefinitely.
+
+        Drives the timeout path by stubbing ``communicate`` with a
+        coroutine that never returns and pinning the configured
+        timeout to a sliver so the real ``asyncio.wait_for`` fires
+        within milliseconds.  The fix should kill the subprocess and
+        surface a clear "timed out" error.
+        """
+        import asyncio as _asyncio
+
+        body = {
+            "result": {
+                "summary": "test charm",
+                "links": {"source": ["https://github.com/example/foo"]},
+            },
+            "default-release": {"revision": {"revision": 1}},
+        }
+        client = _http_client(_http_response(json_body=body))
+
+        kill_calls: list[bool] = []
+
+        async def _hang(*_args, **_kwargs):
+            await _asyncio.Event().wait()  # never set; cancels via wait_for
+            return b"", b""
+
+        async def _fake_exec(*_args, **_kwargs):
+            proc = MagicMock()
+            proc.returncode = -9
+            proc.communicate = _hang
+            proc.kill = MagicMock(side_effect=lambda: kill_calls.append(True))
+            proc.wait = AsyncMock(return_value=-9)
+            return proc
+
+        with (
+            patch("cantrip.agent.tools.charmhub.httpx.AsyncClient", return_value=client),
+            patch("cantrip.agent.tools.charmhub.shutil.which", return_value="/usr/bin/git"),
+            patch("cantrip.agent.tools.charmhub.asyncio.create_subprocess_exec", _fake_exec),
+            patch("cantrip.agent.tools.charmhub._GIT_CLONE_TIMEOUT_SECONDS", 0.05),
+        ):
+            result = await CharmhubFetchTool().execute(name="foo", force=True)
+
+        assert not result.success
+        assert "timed out" in result.error
+        assert result.data["timeout"] is True
+        assert kill_calls == [True], "subprocess must be killed on timeout"
+
 
 # ---------------------------------------------------------------------------
 # launchpad_search

@@ -54,6 +54,11 @@ _GIT_HOST_TEMPLATE = "https://git.launchpad.net/{name}"
 # whole pages (75 per page) and we don't want to flood the LLM context.
 MAX_SEARCH_RESULTS = 15
 
+# Cap ``git clone`` from Launchpad — a wedged ``git.launchpad.net``
+# host would otherwise park the agent indefinitely.  Matches the
+# Charmhub fetch tool's bound.
+_GIT_CLONE_TIMEOUT_SECONDS = 120.0
+
 
 def _parse_iso(value: str | None) -> datetime.datetime | None:
     """Parse a Launchpad ISO-8601 timestamp; tolerate missing TZ.
@@ -374,7 +379,27 @@ class LaunchpadFetchTool(Tool):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr_bytes = await proc.communicate()
+        try:
+            _, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=_GIT_CLONE_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"git clone for Launchpad project '{name}' timed out "
+                    f"after {_GIT_CLONE_TIMEOUT_SECONDS:.0f}s ({upstream_url})"
+                ),
+                data={
+                    "name": name,
+                    "upstream_url": upstream_url,
+                    "timeout": True,
+                },
+            )
         if proc.returncode != 0:
             stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
             return ToolResult(
