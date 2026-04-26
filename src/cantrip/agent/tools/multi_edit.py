@@ -119,7 +119,10 @@ class MultiEditTool(PathAwareTool):
             results.append(f"Edit {i + 1}: replaced in {file_path}")
 
         # Count distinct files touched for a richer caption than just edit count.
-        touched = sorted({edit.get("file_path", "") for edit in edits if edit.get("file_path")})
+        # The schema names the per-edit field ``file`` (line 37 above); reading
+        # ``file_path`` here always returned the empty string, so every caption
+        # collapsed to "across 0 files" regardless of how many files were edited.
+        touched = sorted({edit.get("file", "") for edit in edits if edit.get("file")})
         if len(touched) == 1:
             caption = f"{applied} edit{'s' if applied != 1 else ''} in {touched[0]}"
         else:

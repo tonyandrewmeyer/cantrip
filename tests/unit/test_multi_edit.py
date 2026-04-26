@@ -56,6 +56,20 @@ class TestMultiEditExecution:
         assert result.data["applied"] == 2
         assert "def greet():" in (tmp_path / "a.py").read_text()
         assert "def earth():" in (tmp_path / "b.py").read_text()
+        # Caption must reflect the actual file count.  The schema names
+        # the per-edit field ``file``; previously the caption read
+        # ``edit.get("file_path")`` and silently collapsed to "across 0
+        # files" no matter how many files were edited.
+        assert result.caption == "2 edits across 2 files"
+
+    @pytest.mark.anyio
+    async def test_caption_single_file_uses_filename(self, tool):
+        """Single-file caption names the file, not just a count."""
+        result = await tool.execute(
+            edits=[{"file": "a.py", "old": "def hello():", "new": "def greet():"}],
+        )
+        assert result.success
+        assert result.caption == "1 edit in a.py"
 
     @pytest.mark.anyio
     async def test_multiple_edits_same_file(self, tool, tmp_path):
