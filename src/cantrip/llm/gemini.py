@@ -244,6 +244,28 @@ class GeminiProvider(LLMProvider):
             )
         return genai_types.Content(role="user", parts=parts)
 
+    @staticmethod
+    def _sanitize_schema_for_gemini(schema: Any) -> Any:
+        """Strip JSON-Schema keys Gemini's function-declaration subset rejects.
+
+        Gemini rejects ``additionalProperties`` (and ``additionalItems``) inside
+        ``function_declarations[*].parameters`` — the Google SDK serialises
+        those keys to snake_case on the wire, which surfaces as
+        ``Unknown name "additional_properties"``.  Cantrip's subcommand
+        bundles (``git``/``gh``/``juju``) set ``additionalProperties: True``
+        deliberately, and MCP-supplied schemas may carry the same key, so we
+        strip it recursively before handing the schema to the SDK.
+        """
+        if isinstance(schema, dict):
+            return {
+                k: GeminiProvider._sanitize_schema_for_gemini(v)
+                for k, v in schema.items()
+                if k not in ("additionalProperties", "additionalItems")
+            }
+        if isinstance(schema, list):
+            return [GeminiProvider._sanitize_schema_for_gemini(item) for item in schema]
+        return schema
+
     def _convert_tools(self, tools: list[Tool] | None) -> list[genai_types.Tool] | None:
         """Convert tools to Gemini format."""
         if not tools:
@@ -255,7 +277,7 @@ class GeminiProvider(LLMProvider):
                 genai_types.FunctionDeclaration(
                     name=tool.name,
                     description=tool.description,
-                    parameters=tool.parameters,
+                    parameters=self._sanitize_schema_for_gemini(tool.parameters),
                 )
             )
         return [genai_types.Tool(function_declarations=declarations)]
