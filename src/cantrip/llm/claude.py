@@ -36,9 +36,16 @@ _CONTEXT_WINDOWS: dict[str, int] = {
 _DEFAULT_CONTEXT_WINDOW = 200_000
 
 # Minimum cached-prefix size for Anthropic prompt caching to activate.
-# Sonnet and Haiku: 1024 tokens.  Opus: 2048 tokens.  Below these, the
-# `cache_control` hint is silently ignored by the API.
+# Sonnet: 1024 tokens.  Opus and Haiku: 2048 tokens.  Below these, the
+# ``cache_control`` hint is silently ignored by the API — the call goes
+# through and ``cache_creation_input_tokens`` stays at 0, with no error
+# returned.  A live bisect against ``claude-haiku-4-5-20251001`` showed
+# Haiku does not start caching until well above 2048 tokens (~4100 in
+# observation), so the warning floor matches Anthropic's documented
+# minimum and reality is more conservative — operators see the warning
+# whenever their Haiku-routed prompt is genuinely too short.
 _CACHE_MIN_TOKENS_OPUS = 2048
+_CACHE_MIN_TOKENS_HAIKU = 2048
 _CACHE_MIN_TOKENS_DEFAULT = 1024
 
 # Anthropic's documented per-image cap is 5 MB of raw bytes; larger
@@ -85,6 +92,8 @@ class ClaudeProvider(LLMProvider):
         """Minimum system-prompt tokens required for Anthropic caching to activate."""
         if "opus" in self.model_name:
             return _CACHE_MIN_TOKENS_OPUS
+        if "haiku" in self.model_name:
+            return _CACHE_MIN_TOKENS_HAIKU
         return _CACHE_MIN_TOKENS_DEFAULT
 
     def _check_cache_eligibility(self, system_prompt: str) -> None:
