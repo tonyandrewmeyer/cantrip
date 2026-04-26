@@ -13,7 +13,7 @@ from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
 from cantrip import __version__, diagnostics, notifications, update
-from cantrip.agent import emotions, slash_commands
+from cantrip.agent import context_providers, emotions, slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
@@ -1547,6 +1547,14 @@ class CantripApp(App):
         if self._handle_shared_slash_commands(message, chat):
             return
 
+        # Phase 72.2: expand ``@`` mentions before the message reaches
+        # the LLM.  Slash commands run first so ``/foo @bar`` doesn't
+        # accidentally substitute provider output into a slash arg.
+        expansion = await self._expand_mentions(message)
+        agent_message = expansion.expanded
+        if expansion.changed:
+            chat.add_system_message(f"_Expanded mentions: {expansion.summary()}_")
+
         # Disable input and show thinking indicator while processing.
         input_widget = self.query_one("#chat-input", Input)
         input_widget.disabled = True
@@ -1567,10 +1575,29 @@ class CantripApp(App):
         # renders a chat message instead of the app exiting with a traceback.
         self._streaming_widget = None
         self.run_worker(
-            self._process_agent_message(message),
+            self._process_agent_message(agent_message),
             name="agent_response",
             exclusive=True,
             exit_on_error=False,
+        )
+
+    async def _expand_mentions(self, message: str) -> context_providers.ExpansionResult:
+        """Expand any ``@<name>`` mentions in *message* via the agent's registry.
+
+        Phase 72.2: returns the original text unchanged when no agent
+        is attached or no mentions are present, so callers can keep
+        the same code path regardless of whether expansion fired.
+        """
+        if self._agent is None:
+            return context_providers.ExpansionResult(raw=message, expanded=message, blocks=())
+        ctx = context_providers.ExpansionContext(
+            charm_path=self._agent.state.charm_path,
+            repo_root=self._agent.state.charm_path,
+        )
+        return await context_providers.expand_mentions(
+            message,
+            self._agent.context_providers,
+            ctx,
         )
 
     async def _process_agent_message(self, message: str) -> None:

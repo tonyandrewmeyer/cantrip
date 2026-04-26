@@ -11,7 +11,14 @@ import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from cantrip.agent import arena, auto_commit, custom_commands, sandbox
+from cantrip.agent import (
+    arena,
+    auto_commit,
+    context_providers,
+    context_providers_builtin,
+    custom_commands,
+    sandbox,
+)
 from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.context import ContextManager, VirtualFileStore
@@ -466,6 +473,15 @@ class CantripAgent:
             custom_commands.CustomCommandRegistry(
                 commands=tuple(custom_commands.discover_custom_commands(charm_path=charm_path))
             )
+        )
+
+        # Phase 72.2: ``@``-mention context providers.  Built once at
+        # startup with the baseline set; third-party MCP/hook
+        # registrations append via ``self.context_providers.register``.
+        # The TUI and Web input layers read this registry to expand
+        # mentions before the message reaches the LLM.
+        self.context_providers: context_providers.ProviderRegistry = (
+            context_providers_builtin.build_default_registry()
         )
 
         if charm_path:

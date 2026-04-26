@@ -364,6 +364,27 @@ class ExpansionResult:
         """
         return self.raw != self.expanded
 
+    def summary(self) -> str:
+        """One-line description of expansion outcomes for the UI.
+
+        Renders as ``@file foo.py (1.2k), @diff (340) [@boom: error]``.
+        Intentionally compact — surfaces append it as a system note
+        below the user's message, not as a chat bubble of its own.
+        """
+        if not self.blocks:
+            return ""
+        bits: list[str] = []
+        for block in self.blocks:
+            size = len(block.rendered)
+            if block.error:
+                bits.append(f"{block.raw} [error]")
+                continue
+            if size >= 1000:
+                bits.append(f"{block.raw} ({size / 1000:.1f}k chars)")
+            else:
+                bits.append(f"{block.raw} ({size} chars)")
+        return ", ".join(bits)
+
 
 def _format_multiline(raw: str, rendered: str) -> str:
     """Wrap a multi-line block with a fence anchored to the typed form.
