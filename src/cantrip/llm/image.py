@@ -16,9 +16,9 @@ Stability, locally-hosted Stable Diffusion) plug in by subclassing
 from __future__ import annotations
 
 import abc
+import dataclasses
 import logging
 import os
-from dataclasses import dataclass, field
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ DEFAULT_IMAGE_PROVIDER = "gemini"
 DEFAULT_IMAGE_MODEL = "imagen-3.0-generate-002"
 
 
-@dataclass
+@dataclasses.dataclass
 class ImageResult:
     """A single generated image plus accounting metadata.
 
@@ -50,7 +50,7 @@ class ImageResult:
     mime: str
     model: str
     cost_usd: float = 0.0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 class ImageProvider(abc.ABC):

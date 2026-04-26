@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import pathlib
 import shutil
 import stat
-from pathlib import Path
 
 import pytest
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -41,7 +41,7 @@ def _sample_client_info() -> OAuthClientInformationFull:
 
 
 class TestDefaultTokenDir:
-    def test_env_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_override(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(TOKEN_DIR_ENV, str(tmp_path / "custom"))
         assert default_token_dir() == tmp_path / "custom"
 
@@ -76,13 +76,13 @@ class TestFileTokenStorage:
         monkeypatch.delenv(GPG_OPT_IN_ENV, raising=False)
 
     @pytest.mark.asyncio
-    async def test_no_file_returns_none(self, tmp_path: Path) -> None:
+    async def test_no_file_returns_none(self, tmp_path: pathlib.Path) -> None:
         store = FileTokenStorage("test-server", base_dir=tmp_path)
         assert await store.get_tokens() is None
         assert await store.get_client_info() is None
 
     @pytest.mark.asyncio
-    async def test_token_round_trip(self, tmp_path: Path) -> None:
+    async def test_token_round_trip(self, tmp_path: pathlib.Path) -> None:
         store = FileTokenStorage("test-server", base_dir=tmp_path)
         original = _sample_tokens()
         await store.set_tokens(original)
@@ -93,7 +93,7 @@ class TestFileTokenStorage:
         assert loaded.expires_in == 3600
 
     @pytest.mark.asyncio
-    async def test_client_info_round_trip(self, tmp_path: Path) -> None:
+    async def test_client_info_round_trip(self, tmp_path: pathlib.Path) -> None:
         store = FileTokenStorage("test-server", base_dir=tmp_path)
         await store.set_client_info(_sample_client_info())
         loaded = await store.get_client_info()
@@ -102,7 +102,7 @@ class TestFileTokenStorage:
         assert loaded.client_secret == "client-secret-here"
 
     @pytest.mark.asyncio
-    async def test_per_server_isolation(self, tmp_path: Path) -> None:
+    async def test_per_server_isolation(self, tmp_path: pathlib.Path) -> None:
         a = FileTokenStorage("server-a", base_dir=tmp_path)
         b = FileTokenStorage("server-b", base_dir=tmp_path)
         await a.set_tokens(OAuthToken(access_token="a-token", token_type="Bearer"))
@@ -113,7 +113,7 @@ class TestFileTokenStorage:
         assert b_loaded is not None and b_loaded.access_token == "b-token"
 
     @pytest.mark.asyncio
-    async def test_perms_are_user_only(self, tmp_path: Path) -> None:
+    async def test_perms_are_user_only(self, tmp_path: pathlib.Path) -> None:
         store = FileTokenStorage("test-server", base_dir=tmp_path)
         await store.set_tokens(_sample_tokens())
         token_file = store.server_dir / "tokens.json"
@@ -125,14 +125,14 @@ class TestFileTokenStorage:
         assert dir_mode == 0o700
 
     @pytest.mark.asyncio
-    async def test_atomic_write_no_tmp_left(self, tmp_path: Path) -> None:
+    async def test_atomic_write_no_tmp_left(self, tmp_path: pathlib.Path) -> None:
         store = FileTokenStorage("test-server", base_dir=tmp_path)
         await store.set_tokens(_sample_tokens())
         # No half-written temp file should remain.
         assert not list(store.server_dir.glob("*.tmp"))
 
     @pytest.mark.asyncio
-    async def test_overwrite_replaces(self, tmp_path: Path) -> None:
+    async def test_overwrite_replaces(self, tmp_path: pathlib.Path) -> None:
         store = FileTokenStorage("test-server", base_dir=tmp_path)
         await store.set_tokens(_sample_tokens())
         await store.set_tokens(OAuthToken(access_token="updated", token_type="Bearer"))
@@ -141,14 +141,14 @@ class TestFileTokenStorage:
         assert loaded.access_token == "updated"
 
     @pytest.mark.asyncio
-    async def test_malformed_file_returns_none(self, tmp_path: Path) -> None:
+    async def test_malformed_file_returns_none(self, tmp_path: pathlib.Path) -> None:
         store = FileTokenStorage("test-server", base_dir=tmp_path)
         store.server_dir.mkdir(parents=True)
         (store.server_dir / "tokens.json").write_text("{not json")
         assert await store.get_tokens() is None
 
     @pytest.mark.asyncio
-    async def test_unreadable_file_returns_none(self, tmp_path: Path) -> None:
+    async def test_unreadable_file_returns_none(self, tmp_path: pathlib.Path) -> None:
         store = FileTokenStorage("test-server", base_dir=tmp_path)
         store.server_dir.mkdir(parents=True)
         token_file = store.server_dir / "tokens.json"
@@ -172,7 +172,7 @@ class TestGpgRoundTrip:
     @pytest.mark.asyncio
     async def test_gpg_round_trip(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         if not _gpg_available():

@@ -12,10 +12,10 @@ receive a dollar figure back.  Unknown models return ``0.0`` — we
 prefer an under-report to a scary, fabricated figure.
 """
 
-from dataclasses import dataclass
+import dataclasses
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class Price:
     """Per-million-token USD rates for one model.
 

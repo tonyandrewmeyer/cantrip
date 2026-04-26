@@ -1,6 +1,6 @@
 """Executor tests: followup."""
 
-from pathlib import Path
+import pathlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,7 +24,7 @@ class TestFollowupTaskCreation:
     """Tests for automatic follow-up task creation after task execution."""
 
     @pytest.mark.asyncio
-    async def test_deploy_task_creates_verify_followup(self, tmp_path: Path) -> None:
+    async def test_deploy_task_creates_verify_followup(self, tmp_path: pathlib.Path) -> None:
         queue = WorkQueue()
         task = AgentTask(id="d1", title="Deploy app", category=TaskCategory.DEPLOY)
         queue.add_task(task)
@@ -56,7 +56,7 @@ class TestFollowupTaskCreation:
         assert len(queue.all_tasks()) == 1
 
     @pytest.mark.asyncio
-    async def test_followup_tasks_added_to_queue(self, tmp_path: Path) -> None:
+    async def test_followup_tasks_added_to_queue(self, tmp_path: pathlib.Path) -> None:
         queue = WorkQueue()
         task = AgentTask(id="d1", title="Deploy", category=TaskCategory.DEPLOY)
         queue.add_task(task)
@@ -72,7 +72,7 @@ class TestFollowupTaskCreation:
         assert followups[0].status == TaskStatus.PENDING
 
     @pytest.mark.asyncio
-    async def test_no_followup_without_dev_model(self, tmp_path: Path) -> None:
+    async def test_no_followup_without_dev_model(self, tmp_path: pathlib.Path) -> None:
         queue = WorkQueue()
         task = AgentTask(id="d1", title="Deploy", category=TaskCategory.DEPLOY)
         queue.add_task(task)
@@ -109,7 +109,7 @@ class TestFollowupTaskCreation:
         assert deploy.dependencies == ["b1"]
 
     @pytest.mark.asyncio
-    async def test_failed_verify_creates_debug_followup(self, tmp_path: Path) -> None:
+    async def test_failed_verify_creates_debug_followup(self, tmp_path: pathlib.Path) -> None:
         queue = WorkQueue()
         task = AgentTask(
             id="v1",

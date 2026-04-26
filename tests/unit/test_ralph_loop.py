@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -158,7 +158,7 @@ class TestRunRalph:
         assert result.iterations == 3
 
     @pytest.mark.asyncio
-    async def test_stalls_when_response_repeats(self, tmp_path: Path):
+    async def test_stalls_when_response_repeats(self, tmp_path: pathlib.Path):
         """Two identical responses with no tree change → stall."""
 
         async def fake_process(_prompt: str) -> str:
@@ -367,7 +367,7 @@ class TestEvents:
         assert received[0].payload["cap"] == 3
 
     @pytest.mark.asyncio
-    async def test_emits_stalled_event(self, tmp_path: Path):
+    async def test_emits_stalled_event(self, tmp_path: pathlib.Path):
         bus = ui_events.EventBus()
         received: list[ui_events.Event] = []
         bus.subscribe(ui_events.EventType.RALPH_STALLED, received.append)
@@ -459,12 +459,12 @@ class TestOnIterationCallback:
 
 class TestTreeSignature:
     def test_returns_none_for_non_existent_path(self):
-        assert ralph._tree_signature(Path("/no/such/path/exists")) is None
+        assert ralph._tree_signature(pathlib.Path("/no/such/path/exists")) is None
 
     def test_returns_none_for_none_path(self):
         assert ralph._tree_signature(None) is None
 
-    def test_returns_signature_for_git_repo(self, tmp_path: Path):
+    def test_returns_signature_for_git_repo(self, tmp_path: pathlib.Path):
         # Create a tiny git repo so we exercise the happy path.
         try:
             subprocess.run(
@@ -638,7 +638,7 @@ class TestRalphSlashCommand:
 
 class TestPrintModeRalph:
     @pytest.mark.asyncio
-    async def test_ralph_enabled_drives_loop_through_print_mode(self, tmp_path: Path):
+    async def test_ralph_enabled_drives_loop_through_print_mode(self, tmp_path: pathlib.Path):
         """``--ralph`` triggers the wrapper and drives multiple iterations."""
         from cantrip import print_mode
         from cantrip.agent.core import CantripAgent
@@ -674,7 +674,7 @@ class TestPrintModeRalph:
         assert "ship the charm" in captured[1]
 
     @pytest.mark.asyncio
-    async def test_ralph_exhausted_returns_one(self, tmp_path: Path):
+    async def test_ralph_exhausted_returns_one(self, tmp_path: pathlib.Path):
         from cantrip import print_mode
         from cantrip.agent.core import CantripAgent
         from tests.conftest import FakeProvider
@@ -709,7 +709,7 @@ class TestPrintModeRalph:
         assert rc == 1
 
     @pytest.mark.asyncio
-    async def test_ralph_stalled_returns_one(self, tmp_path: Path):
+    async def test_ralph_stalled_returns_one(self, tmp_path: pathlib.Path):
         from cantrip import print_mode
         from cantrip.agent.core import CantripAgent
         from tests.conftest import FakeProvider

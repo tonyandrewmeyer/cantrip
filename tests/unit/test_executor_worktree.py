@@ -8,10 +8,10 @@ exercise with mocks alone.
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import shutil
 import subprocess
-from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -59,13 +59,13 @@ def _make_tool(name: str) -> Tool:
     return _Stub()
 
 
-@dataclass
+@dataclasses.dataclass
 class _AllocCall:
     task_id: str
     base_path: pathlib.Path
 
 
-@dataclass
+@dataclasses.dataclass
 class _ReleaseCall:
     task_id: str
     keep_branch: bool

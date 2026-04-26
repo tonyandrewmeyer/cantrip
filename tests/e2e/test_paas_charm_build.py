@@ -17,7 +17,7 @@ All tests require ``GEMINI_API_KEY`` and a Kubernetes Juju controller.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -107,7 +107,7 @@ class TestPaasCharmBuild:
     @pytest.mark.parametrize("spec_key", list(_ALL_SPECS.keys()))
     @pytest.mark.asyncio
     async def test_build_and_deploy(
-        self, spec_key: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, spec_key: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         spec = _ALL_SPECS[spec_key]
 
@@ -144,7 +144,7 @@ class TestPaasCharmBuild:
 
     # -- Assertion helpers -------------------------------------------------
 
-    def _assert_scaffold(self, workspace: Path) -> None:
+    def _assert_scaffold(self, workspace: pathlib.Path) -> None:
         charm_root = _find_charm_root(workspace)
         assert charm_root is not None, (
             f"No charmcraft.yaml found. Files: "
@@ -165,7 +165,7 @@ class TestPaasCharmBuild:
             f"charmcraft.yaml does not look like a PaaS charm:\n{content}"
         )
 
-    def _assert_packed(self, workspace: Path) -> None:
+    def _assert_packed(self, workspace: pathlib.Path) -> None:
         archives = list(workspace.rglob("*.charm"))
         assert archives, "No .charm file produced — charmcraft_pack did not run"
         log.info("packed charm: %s (%d bytes)", archives[0].name, archives[0].stat().st_size)
@@ -207,7 +207,7 @@ class TestPaasCharmBuild:
 # ---------------------------------------------------------------------------
 
 
-def _find_charm_root(base: Path) -> Path | None:
+def _find_charm_root(base: pathlib.Path) -> pathlib.Path | None:
     for path in base.rglob("charmcraft.yaml"):
         return path.parent
     return None

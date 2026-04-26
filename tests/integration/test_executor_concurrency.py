@@ -5,7 +5,7 @@ afterwards) and the light-vs-primary model routing for different task
 categories.
 """
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -25,7 +25,7 @@ class TestExecutorPauseResume:
     @pytest.mark.asyncio
     async def test_process_message_pauses_executor(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """During process_message(), the executor is paused."""
@@ -72,7 +72,7 @@ class TestExecutorPauseResume:
     @pytest.mark.asyncio
     async def test_executor_resumes_after_conversation(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """After process_message() completes, pending tasks get picked up."""
@@ -104,7 +104,7 @@ class TestExecutorPauseResume:
     @pytest.mark.asyncio
     async def test_executor_started_via_agent(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """CantripAgent.start_executor() creates and starts the executor."""

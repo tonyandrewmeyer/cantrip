@@ -1,6 +1,6 @@
 """Tests for subagent conversation recording."""
 
-from pathlib import Path
+import pathlib
 from unittest import mock
 
 import pytest
@@ -25,7 +25,7 @@ def _make_context(task_id: str = "test-task") -> SubagentContext:
 
 class TestSubagentRecording:
     @pytest.fixture
-    def store(self, tmp_path: Path):
+    def store(self, tmp_path: pathlib.Path):
         s = SessionStore(tmp_path / ".cantrip")
         s.open()
         yield s

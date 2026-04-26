@@ -6,7 +6,7 @@ JSONL), including filter options (--task, --phase, --since).
 """
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -26,7 +26,7 @@ from tests.conftest import FakeProvider
 # ---------------------------------------------------------------------------
 
 
-def _seed_database(db_path: Path) -> SessionStore:
+def _seed_database(db_path: pathlib.Path) -> SessionStore:
     """Create a .cantrip database with realistic session data.
 
     Returns the open store so callers can add more data if needed.
@@ -113,7 +113,7 @@ class TestTranscriptRoundTrip:
     """Conversation → SQLite → export → verify content."""
 
     @pytest.mark.asyncio
-    async def test_conversation_exported_to_all_formats(self, tmp_path: Path):
+    async def test_conversation_exported_to_all_formats(self, tmp_path: pathlib.Path):
         """Run a multi-turn conversation, save, export in all formats."""
         provider = FakeProvider(
             [
@@ -168,7 +168,7 @@ class TestTranscriptRoundTrip:
             assert "type" in parsed
 
     @pytest.mark.asyncio
-    async def test_state_round_trip_preserves_transcript(self, tmp_path: Path):
+    async def test_state_round_trip_preserves_transcript(self, tmp_path: pathlib.Path):
         """Save state, create a new agent, load state, export — data intact."""
         provider = FakeProvider([Response(content="Hello!")])
         agent1 = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -196,7 +196,7 @@ class TestTranscriptRoundTrip:
 class TestTranscriptFilters:
     """Verify --task, --phase, and --since filters."""
 
-    def test_filter_by_task(self, tmp_path: Path):
+    def test_filter_by_task(self, tmp_path: pathlib.Path):
         """Only the specified task and its subagent messages are included."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
@@ -210,7 +210,7 @@ class TestTranscriptFilters:
         # Conversation messages are still included (for context).
         assert len(data.messages) >= 1
 
-    def test_filter_by_phase_research(self, tmp_path: Path):
+    def test_filter_by_phase_research(self, tmp_path: pathlib.Path):
         """Phase=research includes only research and confirm tasks."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
@@ -225,7 +225,7 @@ class TestTranscriptFilters:
         assert "build-charm" not in task_ids
         assert "deploy-charm" not in task_ids
 
-    def test_filter_by_phase_build(self, tmp_path: Path):
+    def test_filter_by_phase_build(self, tmp_path: pathlib.Path):
         """Phase=build includes only build tasks."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
@@ -236,7 +236,7 @@ class TestTranscriptFilters:
         assert len(data.tasks) == 1
         assert data.tasks[0]["id"] == "build-charm"
 
-    def test_filter_by_since(self, tmp_path: Path):
+    def test_filter_by_since(self, tmp_path: pathlib.Path):
         """Since filter excludes older messages and events."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
@@ -265,7 +265,7 @@ class TestTranscriptFilters:
 class TestTranscriptSubagentAndEvents:
     """Verify subagent messages and events appear in exports."""
 
-    def test_subagent_messages_in_export(self, tmp_path: Path):
+    def test_subagent_messages_in_export(self, tmp_path: pathlib.Path):
         """Subagent messages for included tasks are present in the export."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
@@ -279,7 +279,7 @@ class TestTranscriptSubagentAndEvents:
         assert msgs[0]["role"] == "system"
         assert "autonomous subagent" in msgs[0]["content"]
 
-    def test_events_in_export(self, tmp_path: Path):
+    def test_events_in_export(self, tmp_path: pathlib.Path):
         """Events are included in the export."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
@@ -292,7 +292,7 @@ class TestTranscriptSubagentAndEvents:
         assert "task_started" in event_types
         assert "task_completed" in event_types
 
-    def test_token_usage_in_export(self, tmp_path: Path):
+    def test_token_usage_in_export(self, tmp_path: pathlib.Path):
         """Aggregate token usage is included."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
@@ -303,7 +303,7 @@ class TestTranscriptSubagentAndEvents:
         assert data.token_usage["prompt_tokens"] == 800
         assert data.token_usage["completion_tokens"] == 350
 
-    def test_subagent_messages_in_all_formats(self, tmp_path: Path):
+    def test_subagent_messages_in_all_formats(self, tmp_path: pathlib.Path):
         """Subagent messages appear in HTML, Markdown, and JSONL output."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
@@ -334,7 +334,7 @@ class TestTranscriptSubagentAndEvents:
 class TestTranscriptEdgeCases:
     """Edge cases and error resilience."""
 
-    def test_empty_database(self, tmp_path: Path):
+    def test_empty_database(self, tmp_path: pathlib.Path):
         """Export from a freshly created database produces valid empty output."""
         db_path = tmp_path / ".cantrip"
         store = SessionStore(db_path)
@@ -357,7 +357,7 @@ class TestTranscriptEdgeCases:
         jsonl = render_jsonl(data)
         assert jsonl == ""
 
-    def test_filter_nonexistent_task(self, tmp_path: Path):
+    def test_filter_nonexistent_task(self, tmp_path: pathlib.Path):
         """Filtering by a task ID that doesn't exist returns no tasks."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
@@ -368,7 +368,7 @@ class TestTranscriptEdgeCases:
         assert data.tasks == []
         assert data.subagent_messages == {}
 
-    def test_combined_filters(self, tmp_path: Path):
+    def test_combined_filters(self, tmp_path: pathlib.Path):
         """Phase and since filters combine correctly."""
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)

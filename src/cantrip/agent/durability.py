@@ -29,11 +29,11 @@ resume.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import json
 import logging
 import os
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from cantrip.agent.tools.base import ToolResult
@@ -121,7 +121,7 @@ def _canonicalise(value: object) -> bytes:
         return repr(value).encode("utf-8")
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class CheckpointRecord:
     """Typed wrapper over a ``step_checkpoints`` row.
 
@@ -298,7 +298,7 @@ class CheckpointStore:
             log.debug("purged %d checkpoint(s) for completed task %s", removed, task_id)
 
 
-@dataclass
+@dataclasses.dataclass
 class CheckpointCtx:
     """Per-task context for :func:`checkpoint` — ordinal bookkeeping + store handle.
 
@@ -312,7 +312,7 @@ class CheckpointCtx:
 
     store: CheckpointStore
     task_id: str
-    _counters: dict[str, int] = field(default_factory=dict)
+    _counters: dict[str, int] = dataclasses.field(default_factory=dict)
 
     def next_ordinal(self, step_name: str) -> int:
         """Increment and return the per-step counter for *step_name*.

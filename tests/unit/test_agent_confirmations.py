@@ -7,7 +7,7 @@ exercise the agent-side plumbing (dependency walking, state updates,
 event logging, push-confirm append).
 """
 
-from pathlib import Path
+import pathlib
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -18,7 +18,7 @@ from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from tests.conftest import FakeProvider
 
 
-def _agent(tmp_path: Path | None = None) -> CantripAgent:
+def _agent(tmp_path: pathlib.Path | None = None) -> CantripAgent:
     return CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
 
 
@@ -53,12 +53,12 @@ class TestHandleDesignConfirmation:
     """Every early-exit and the happy path of ``handle_design_confirmation``."""
 
     @pytest.mark.asyncio
-    async def test_missing_confirm_task_returns_empty(self, tmp_path: Path) -> None:
+    async def test_missing_confirm_task_returns_empty(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         assert await agent.handle_design_confirmation("missing") == []
 
     @pytest.mark.asyncio
-    async def test_no_synthesis_result_returns_empty(self, tmp_path: Path) -> None:
+    async def test_no_synthesis_result_returns_empty(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         confirm = AgentTask(
             id="confirm-design",
@@ -69,7 +69,7 @@ class TestHandleDesignConfirmation:
         assert await agent.handle_design_confirmation("confirm-design") == []
 
     @pytest.mark.asyncio
-    async def test_happy_path_records_decisions_and_plans(self, tmp_path: Path) -> None:
+    async def test_happy_path_records_decisions_and_plans(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         _confirm_with_synthesis(agent, "confirm-design", "## Design\n...")
 
@@ -108,7 +108,7 @@ class TestHandleDesignConfirmation:
         assert agent.state.design_proposal is fake_proposal
 
     @pytest.mark.asyncio
-    async def test_one_shot_build_uses_deterministic_planner(self, tmp_path: Path) -> None:
+    async def test_one_shot_build_uses_deterministic_planner(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         _confirm_with_synthesis(agent, "confirm-design", "## Design")
         proposal = DesignProposal(workload_name="w", raw_design_md="md")
@@ -132,7 +132,7 @@ class TestHandleDesignConfirmation:
         assert tasks == [one_shot_task]
 
     @pytest.mark.asyncio
-    async def test_day2_phase_appended_when_anchor_found(self, tmp_path: Path) -> None:
+    async def test_day2_phase_appended_when_anchor_found(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         _confirm_with_synthesis(agent, "confirm-design", "## Design")
         proposal = DesignProposal(workload_name="w", raw_design_md="md")
@@ -170,19 +170,19 @@ class TestHandleDay2Confirmation:
     """Every early-exit and the happy path of ``handle_day2_confirmation``."""
 
     @pytest.mark.asyncio
-    async def test_missing_confirm_task_returns_empty(self, tmp_path: Path) -> None:
+    async def test_missing_confirm_task_returns_empty(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         assert await agent.handle_day2_confirmation("missing") == []
 
     @pytest.mark.asyncio
-    async def test_no_synthesis_result_returns_empty(self, tmp_path: Path) -> None:
+    async def test_no_synthesis_result_returns_empty(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         confirm = AgentTask(id="confirm-day2", title="C", category=TaskCategory.CONFIRM)
         agent.work_queue.add_task(confirm)
         assert await agent.handle_day2_confirmation("confirm-day2") == []
 
     @pytest.mark.asyncio
-    async def test_happy_path_plans_from_findings(self, tmp_path: Path) -> None:
+    async def test_happy_path_plans_from_findings(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         _confirm_with_synthesis(agent, "confirm-day2", "## Findings\nstuff")
 

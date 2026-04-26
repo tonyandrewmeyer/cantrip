@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
 import enum
-from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -14,7 +14,7 @@ class TransportKind(enum.StrEnum):
     HTTP = "http"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class OAuthConfig:
     """Per-server OAuth 2.1 configuration (Phase 45.4b).
 
@@ -32,12 +32,12 @@ class OAuthConfig:
     """
 
     client_name: str = "cantrip"
-    scopes: list[str] = field(default_factory=list)
+    scopes: list[str] = dataclasses.field(default_factory=list)
     redirect_port: int = 9876
     client_metadata_url: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ServerConfig:
     """Declarative description of one MCP server.
 
@@ -52,12 +52,12 @@ class ServerConfig:
     transport: TransportKind = TransportKind.STDIO
     # stdio fields
     command: str | None = None
-    args: list[str] = field(default_factory=list)
-    env: dict[str, str] = field(default_factory=dict)
+    args: list[str] = dataclasses.field(default_factory=list)
+    env: dict[str, str] = dataclasses.field(default_factory=dict)
     cwd: str | None = None
     # HTTP fields
     url: str | None = None
-    headers: dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = dataclasses.field(default_factory=dict)
     # Optional OAuth 2.1 config — HTTP transport only.
     oauth: OAuthConfig | None = None
     # Common
@@ -65,10 +65,10 @@ class ServerConfig:
     # Tool allowlist — names exactly as the server reports them.  An
     # empty list means "expose every tool the server publishes"; a
     # non-empty list means only those explicit names are surfaced.
-    allowed_tools: list[str] = field(default_factory=list)
+    allowed_tools: list[str] = dataclasses.field(default_factory=list)
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class MCPToolInfo:
     """Cantrip-side view of one tool advertised by an MCP server.
 

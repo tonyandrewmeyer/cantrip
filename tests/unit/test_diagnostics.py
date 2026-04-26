@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -23,7 +23,9 @@ def _raise_and_capture() -> Exception:
 
 
 class TestLogPath:
-    def test_honours_xdg_state_home(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_honours_xdg_state_home(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
         assert diagnostics.log_path() == tmp_path / "cantrip" / "diagnostics.log"
 
@@ -38,7 +40,7 @@ class TestLogPath:
 
 class TestReportInternalError:
     def test_writes_full_traceback_to_log(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
         exc = _raise_and_capture()
@@ -62,7 +64,7 @@ class TestReportInternalError:
         assert "Traceback" not in result
 
     def test_appends_subsequent_entries(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
         diagnostics.report_internal_error("first", _raise_and_capture())
@@ -76,7 +78,7 @@ class TestReportInternalError:
         assert body.count("RuntimeError: synthetic boom") == 2
 
     def test_creates_parent_directory(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # XDG_STATE_HOME points at a directory that doesn't exist yet.
         target = tmp_path / "nested" / "state"
@@ -85,7 +87,7 @@ class TestReportInternalError:
         assert (target / "cantrip" / "diagnostics.log").exists()
 
     def test_returns_chat_string_even_when_log_write_fails(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Point at an unwritable path so the file open fails.
         unwritable = tmp_path / "blocked"
@@ -104,7 +106,7 @@ class TestReportCommandCrash:
     """Tests for ``report_command_crash`` — non-exception subprocess dumps."""
 
     def test_writes_full_dump_with_extra(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
 
@@ -128,7 +130,9 @@ class TestReportCommandCrash:
         assert "some stdout" in body
         assert "cmd_run.go" in body
 
-    def test_accepts_string_cmd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_accepts_string_cmd(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
         diagnostics.report_command_crash(
             context="x",
@@ -140,7 +144,9 @@ class TestReportCommandCrash:
         body = (tmp_path / "cantrip" / "diagnostics.log").read_text(encoding="utf-8")
         assert "command: juju status" in body
 
-    def test_empty_streams_marked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_empty_streams_marked(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
         diagnostics.report_command_crash(
             context="x",
@@ -153,7 +159,9 @@ class TestReportCommandCrash:
         assert "--- stdout ---\n(empty)" in body
         assert "--- stderr ---\n(empty)" in body
 
-    def test_swallows_write_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_swallows_write_failure(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # Putting cantrip/ underneath a *file* makes mkdir raise
         # FileExistsError — exercises the OSError swallow path.  Dumps
         # must never propagate (the caller already has an error to
@@ -173,7 +181,9 @@ class TestReportCommandCrash:
 
 
 class TestLogSizeBounded:
-    def test_log_size_bounded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_log_size_bounded(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # Pre-fill the log past the soft cap, then write again — the
         # head should be trimmed so the file stays bounded.
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))

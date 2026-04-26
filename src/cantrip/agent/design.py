@@ -1,10 +1,10 @@
 """Design proposal data structures and parsing."""
 
+import dataclasses
 import re
-from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclasses.dataclass
 class CompanionCharm:
     """A companion charm that should be co-deployed with the primary charm.
 
@@ -18,7 +18,7 @@ class CompanionCharm:
     interface: str
 
 
-@dataclass
+@dataclasses.dataclass
 class DesignQuestion:
     """A single design question with suggested answers.
 
@@ -28,11 +28,11 @@ class DesignQuestion:
 
     key: str
     text: str
-    suggestions: list[str] = field(default_factory=list)
+    suggestions: list[str] = dataclasses.field(default_factory=list)
     answer: str | None = None
 
 
-@dataclass
+@dataclasses.dataclass
 class DesignProposal:
     """Structured design proposal extracted from a synthesis task result.
 
@@ -48,16 +48,16 @@ class DesignProposal:
     charm_path_reasoning: str = ""
     charmhub_recommendation: str = ""
     charmhub_details: str = ""
-    integrations: list[str] = field(default_factory=list)
-    config_options: list[str] = field(default_factory=list)
-    actions: list[str] = field(default_factory=list)
+    integrations: list[str] = dataclasses.field(default_factory=list)
+    config_options: list[str] = dataclasses.field(default_factory=list)
+    actions: list[str] = dataclasses.field(default_factory=list)
     scaling_strategy: str = ""
     operational_patterns: str = ""
-    questions_for_user: list[DesignQuestion] = field(default_factory=list)
-    security_surface: list[str] = field(default_factory=list)
-    security_event_types: list[str] = field(default_factory=list)
-    companions: list[CompanionCharm] = field(default_factory=list)
-    sources: list[str] = field(default_factory=list)
+    questions_for_user: list[DesignQuestion] = dataclasses.field(default_factory=list)
+    security_surface: list[str] = dataclasses.field(default_factory=list)
+    security_event_types: list[str] = dataclasses.field(default_factory=list)
+    companions: list[CompanionCharm] = dataclasses.field(default_factory=list)
+    sources: list[str] = dataclasses.field(default_factory=list)
     raw_design_md: str = ""
 
     def format_for_chat(self) -> str:

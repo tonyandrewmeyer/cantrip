@@ -1,6 +1,6 @@
 """Tests for Juju agent tools."""
 
-from pathlib import Path
+import pathlib
 from unittest import mock
 
 import jubilant
@@ -150,7 +150,7 @@ class TestJujuStatusTool:
 
     @pytest.mark.asyncio
     async def test_crash_shaped_clierror_writes_dump(
-        self, tool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A crash-shaped ``CLIError`` from Jubilant lands in diagnostics.log.
 
@@ -268,7 +268,7 @@ class TestJujuDestroyModelTool:
         """
         # Point the policy discovery at an empty directory so the test
         # is deterministic regardless of what's in $HOME.
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
         result = await tool.execute(model="dev")
 
         assert not result.success
@@ -651,7 +651,7 @@ class TestJujuDeploySnapConfinement:
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
             mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
-            mock.patch("cantrip.agent.tools.juju.Path.home", return_value=home),
+            mock.patch("cantrip.agent.tools.juju.pathlib.Path.home", return_value=home),
         ):
             result = await tool.execute(charm=str(charm_file))
 
@@ -672,7 +672,7 @@ class TestJujuDeploySnapConfinement:
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
             mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
-            mock.patch("cantrip.agent.tools.juju.Path.home", return_value=tmp_path),
+            mock.patch("cantrip.agent.tools.juju.pathlib.Path.home", return_value=tmp_path),
         ):
             result = await tool.execute(charm=str(charm_file))
 
@@ -694,7 +694,7 @@ class TestJujuDeploySnapConfinement:
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
             mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
-            mock.patch("cantrip.agent.tools.juju.Path.home", return_value=home),
+            mock.patch("cantrip.agent.tools.juju.pathlib.Path.home", return_value=home),
         ):
             await tool.execute(charm=str(charm_file))
 
@@ -715,7 +715,7 @@ class TestJujuDeploySnapConfinement:
         with (
             mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
             mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
-            mock.patch("cantrip.agent.tools.juju.Path.home", return_value=home),
+            mock.patch("cantrip.agent.tools.juju.pathlib.Path.home", return_value=home),
         ):
             result = await tool.execute(charm=str(charm_file))
 

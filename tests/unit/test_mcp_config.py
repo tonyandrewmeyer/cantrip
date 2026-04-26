@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -11,7 +11,7 @@ from cantrip.mcp.config import _parse_yaml
 from cantrip.mcp.types import TransportKind
 
 
-def _write_yaml(path: Path, content: str) -> Path:
+def _write_yaml(path: pathlib.Path, content: str) -> pathlib.Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
     return path
@@ -21,7 +21,7 @@ def _write_yaml(path: Path, content: str) -> Path:
 
 
 class TestParseYaml:
-    def test_minimal_stdio(self, tmp_path: Path) -> None:
+    def test_minimal_stdio(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             "servers:\n  fs:\n    command: my-server\n",
@@ -36,7 +36,7 @@ class TestParseYaml:
         assert cfg.allowed_tools == []
         assert cfg.timeout_seconds == 30.0
 
-    def test_full_stdio(self, tmp_path: Path) -> None:
+    def test_full_stdio(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             """
@@ -59,7 +59,7 @@ servers:
         assert cfg.timeout_seconds == 60.0
         assert cfg.allowed_tools == ["search", "info"]
 
-    def test_http(self, tmp_path: Path) -> None:
+    def test_http(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             """
@@ -76,25 +76,25 @@ servers:
         assert cfg.url == "https://grafana.example.com/mcp"
         assert cfg.headers == {"Authorization": "Bearer xyz"}
 
-    def test_empty_file(self, tmp_path: Path) -> None:
+    def test_empty_file(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(tmp_path / "mcp.yaml", "")
         assert _parse_yaml(f) == []
 
-    def test_no_servers_block(self, tmp_path: Path) -> None:
+    def test_no_servers_block(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(tmp_path / "mcp.yaml", "other: stuff\n")
         assert _parse_yaml(f) == []
 
-    def test_top_level_must_be_mapping(self, tmp_path: Path) -> None:
+    def test_top_level_must_be_mapping(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(tmp_path / "mcp.yaml", "- a\n- b\n")
         with pytest.raises(MCPConfigError, match="must be a mapping"):
             _parse_yaml(f)
 
-    def test_servers_must_be_mapping(self, tmp_path: Path) -> None:
+    def test_servers_must_be_mapping(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(tmp_path / "mcp.yaml", "servers: [1, 2]\n")
         with pytest.raises(MCPConfigError, match="`servers`"):
             _parse_yaml(f)
 
-    def test_unknown_transport(self, tmp_path: Path) -> None:
+    def test_unknown_transport(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             "servers:\n  bad:\n    transport: telnet\n    command: x\n",
@@ -102,12 +102,12 @@ servers:
         with pytest.raises(MCPConfigError, match="unknown transport"):
             _parse_yaml(f)
 
-    def test_stdio_requires_command(self, tmp_path: Path) -> None:
+    def test_stdio_requires_command(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(tmp_path / "mcp.yaml", "servers:\n  bad: {}\n")
         with pytest.raises(MCPConfigError, match="requires `command`"):
             _parse_yaml(f)
 
-    def test_http_requires_url(self, tmp_path: Path) -> None:
+    def test_http_requires_url(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             "servers:\n  bad:\n    transport: http\n",
@@ -115,7 +115,7 @@ servers:
         with pytest.raises(MCPConfigError, match="requires `url`"):
             _parse_yaml(f)
 
-    def test_negative_timeout(self, tmp_path: Path) -> None:
+    def test_negative_timeout(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             "servers:\n  bad:\n    command: x\n    timeout_seconds: -1\n",
@@ -123,7 +123,7 @@ servers:
         with pytest.raises(MCPConfigError, match="positive"):
             _parse_yaml(f)
 
-    def test_args_must_be_string_list(self, tmp_path: Path) -> None:
+    def test_args_must_be_string_list(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             "servers:\n  bad:\n    command: x\n    args: [1, 2, 3]\n",
@@ -131,7 +131,7 @@ servers:
         with pytest.raises(MCPConfigError, match="items must be strings"):
             _parse_yaml(f)
 
-    def test_env_must_be_string_dict(self, tmp_path: Path) -> None:
+    def test_env_must_be_string_dict(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(
             tmp_path / "mcp.yaml",
             "servers:\n  bad:\n    command: x\n    env:\n      KEY: 5\n",
@@ -139,7 +139,7 @@ servers:
         with pytest.raises(MCPConfigError, match="keys and values must be strings"):
             _parse_yaml(f)
 
-    def test_malformed_yaml(self, tmp_path: Path) -> None:
+    def test_malformed_yaml(self, tmp_path: pathlib.Path) -> None:
         f = _write_yaml(tmp_path / "mcp.yaml", "{unbalanced: [\n")
         with pytest.raises(MCPConfigError, match="could not parse"):
             _parse_yaml(f)
@@ -149,11 +149,13 @@ servers:
 
 
 class TestLoadConfigs:
-    def test_no_files_returns_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_files_returns_empty(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("CANTRIP_MCP_USER_CONFIG", str(tmp_path / "missing.yaml"))
         assert load_configs(repo_root=tmp_path / "no-such-dir") == []
 
-    def test_user_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_user_only(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         user = _write_yaml(
             tmp_path / "user.yaml",
             "servers:\n  fs:\n    command: user-fs\n",
@@ -163,7 +165,7 @@ class TestLoadConfigs:
         assert [c.name for c in cfgs] == ["fs"]
         assert cfgs[0].command == "user-fs"
 
-    def test_repo_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_repo_only(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # Make sure the user-scope path is unreachable.
         monkeypatch.setenv("CANTRIP_MCP_USER_CONFIG", str(tmp_path / "missing.yaml"))
         repo_root = tmp_path / "repo"
@@ -177,7 +179,7 @@ class TestLoadConfigs:
         assert cfgs[0].command == "repo-fs"
 
     def test_repo_overrides_user_on_collision(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         user = _write_yaml(
             tmp_path / "user.yaml",
@@ -195,7 +197,7 @@ class TestLoadConfigs:
         assert cfgs[0].command == "repo-fs"
 
     def test_union_when_no_collision(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         user = _write_yaml(
             tmp_path / "user.yaml",
@@ -213,7 +215,7 @@ class TestLoadConfigs:
 
     def test_malformed_user_file_skipped(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:

@@ -1,6 +1,6 @@
 """Tests for CLAUDE.md generation."""
 
-from pathlib import Path
+import pathlib
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.prompts.claude_md import render_claude_md
@@ -46,7 +46,7 @@ class TestRenderClaudeMd:
 class TestEnsureClaudeMd:
     """Tests for CantripAgent._ensure_claude_md integration."""
 
-    def test_creates_file(self, tmp_path: Path) -> None:
+    def test_creates_file(self, tmp_path: pathlib.Path) -> None:
         """Agent with charm_path creates CLAUDE.md on init."""
         CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         claude_md = tmp_path / "CLAUDE.md"
@@ -55,14 +55,14 @@ class TestEnsureClaudeMd:
         # Uses directory name as charm_name fallback.
         assert tmp_path.name in content
 
-    def test_does_not_overwrite(self, tmp_path: Path) -> None:
+    def test_does_not_overwrite(self, tmp_path: pathlib.Path) -> None:
         """Existing CLAUDE.md is not touched."""
         existing = tmp_path / "CLAUDE.md"
         existing.write_text("custom content")
         CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         assert existing.read_text() == "custom content"
 
-    def test_uses_charm_name_from_state(self, tmp_path: Path) -> None:
+    def test_uses_charm_name_from_state(self, tmp_path: pathlib.Path) -> None:
         """When state.charm_name is set via loaded session, it is used."""
         provider = FakeProvider()
         # Create an agent, set charm_name, save state.

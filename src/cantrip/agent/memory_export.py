@@ -28,10 +28,10 @@ Both directions sanitise:
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import logging
+import pathlib
 import re
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
@@ -64,28 +64,28 @@ _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ExportResult:
     """Outcome of an export call."""
 
-    output_path: Path
+    output_path: pathlib.Path
     entries: list[str]  # Titles exported.
     redactions: int  # Count of secret-pattern hits redacted.
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ImportResult:
     """Outcome of an import call."""
 
-    imported: list[str] = field(default_factory=list)  # Titles imported.
-    skipped: list[str] = field(default_factory=list)  # Titles already present.
-    failed: list[tuple[str, str]] = field(default_factory=list)  # (title, reason).
+    imported: list[str] = dataclasses.field(default_factory=list)  # Titles imported.
+    skipped: list[str] = dataclasses.field(default_factory=list)  # Titles already present.
+    failed: list[tuple[str, str]] = dataclasses.field(default_factory=list)  # (title, reason).
 
 
 # ── Sanitisation ────────────────────────────────────────────────────────
 
 
-def sanitise_body(body: str, *, charm_path: Path | None = None) -> tuple[str, int]:
+def sanitise_body(body: str, *, charm_path: pathlib.Path | None = None) -> tuple[str, int]:
     """Replace charm-specific paths and obvious secrets in ``body``.
 
     Returns ``(scrubbed_body, num_redactions)``.  The redaction count is
@@ -125,7 +125,9 @@ def sanitise_body(body: str, *, charm_path: Path | None = None) -> tuple[str, in
     return out, redactions
 
 
-def _entry_to_skill_section(entry: MemoryEntry, charm_path: Path | None) -> tuple[str, int]:
+def _entry_to_skill_section(
+    entry: MemoryEntry, charm_path: pathlib.Path | None
+) -> tuple[str, int]:
     """Render a single memory as a ``## Memory: …`` block plus redaction count."""
     body, redactions = sanitise_body(entry.body, charm_path=charm_path)
     tag_line = f"*Tags:* {', '.join(entry.tags)}\n\n" if entry.tags else ""
@@ -141,10 +143,10 @@ def export_to_skill(
     manager: MemoryManager,
     *,
     name: str,
-    output_path: Path,
+    output_path: pathlib.Path,
     scope: str | None = None,
     description: str | None = None,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
 ) -> ExportResult:
     """Bundle memories from *scope* into a single SKILL.md file.
 
@@ -184,9 +186,9 @@ def export_to_skill(
 def export_to_markdown(
     manager: MemoryManager,
     *,
-    output_dir: Path,
+    output_dir: pathlib.Path,
     scope: str | None = None,
-    charm_path: Path | None = None,
+    charm_path: pathlib.Path | None = None,
 ) -> ExportResult:
     """Write one Markdown file per memory under ``output_dir``.
 
@@ -220,7 +222,7 @@ def export_to_markdown(
     return ExportResult(output_path=output_dir, entries=titles, redactions=redactions)
 
 
-def _resolve_skill_output(output_path: Path, name: str) -> Path:
+def _resolve_skill_output(output_path: pathlib.Path, name: str) -> pathlib.Path:
     """Pick the final file path for a SKILL.md export.
 
     A directory becomes ``<dir>/<name>/SKILL.md`` so the result drops
@@ -241,7 +243,7 @@ _TAGS_RE = re.compile(r"^\*Tags:\*\s*(.+?)\s*$", re.MULTILINE)
 
 def import_from_path(
     manager: MemoryManager,
-    source: Path,
+    source: pathlib.Path,
     *,
     target_scope: str = "global",
     overwrite: bool = False,
@@ -295,7 +297,7 @@ def import_from_path(
 
 
 def _extract_from_skill_or_markdown(
-    path: Path,
+    path: pathlib.Path,
 ) -> list[tuple[str, str, str, list[str]]]:
     """Pull memory entries out of a SKILL.md or single-memory markdown file.
 

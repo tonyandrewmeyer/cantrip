@@ -7,6 +7,7 @@ autonomously.
 
 import asyncio
 import contextlib
+import dataclasses
 import hashlib
 import json
 import logging
@@ -15,7 +16,6 @@ import shlex
 import time
 import urllib.parse
 from collections.abc import Callable
-from dataclasses import dataclass, field
 
 import jubilant
 
@@ -34,7 +34,7 @@ _HOOK_FAILED_RE = re.compile(r"\bhook failed\b", re.IGNORECASE)
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class UnitSnapshot:
     """Lightweight snapshot of a single unit's state."""
 
@@ -44,7 +44,7 @@ class UnitSnapshot:
     agent_status: str
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class AppSnapshot:
     """Lightweight snapshot of an application's state."""
 
@@ -55,7 +55,7 @@ class AppSnapshot:
     relations: frozenset[str]
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class OfferSnapshot:
     """Lightweight snapshot of a cross-model offer."""
 
@@ -66,7 +66,7 @@ class OfferSnapshot:
     total_connected_count: int
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class StatusSnapshot:
     """Lightweight snapshot of the full model status."""
 
@@ -74,7 +74,7 @@ class StatusSnapshot:
     offers: tuple[OfferSnapshot, ...] = ()
 
 
-@dataclass
+@dataclasses.dataclass
 class WatcherEvent:
     """An event detected by the watcher."""
 
@@ -84,7 +84,7 @@ class WatcherEvent:
     detail: str
     app: str | None = None
     unit: str | None = None
-    timestamp: float = field(default_factory=time.time)
+    timestamp: float = dataclasses.field(default_factory=time.time)
     dedup_key: str = ""
 
     def __post_init__(self) -> None:
@@ -94,7 +94,7 @@ class WatcherEvent:
             self.dedup_key = hashlib.md5(raw.encode()).hexdigest()  # noqa: S324
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class DatabagSnapshot:
     """Lightweight snapshot of a relation databag for diffing.
 
@@ -106,7 +106,7 @@ class DatabagSnapshot:
     entries: tuple[tuple[str, str, str, frozenset[str]], ...] = ()
 
 
-@dataclass
+@dataclasses.dataclass
 class WatcherConfig:
     """Configuration for the EventWatcher polling intervals and limits."""
 

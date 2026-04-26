@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import yaml
@@ -42,11 +42,11 @@ from cantrip.mcp.types import OAuthConfig, ServerConfig, TransportKind
 log = logging.getLogger(__name__)
 
 # Filenames Cantrip looks for in each scope.
-USER_CONFIG_PATH = Path("~/.config/cantrip/mcp.yaml")
+USER_CONFIG_PATH = pathlib.Path("~/.config/cantrip/mcp.yaml")
 REPO_CONFIG_FILENAME = "cantrip.mcp.yaml"
 
 
-def load_configs(repo_root: Path | None = None) -> list[ServerConfig]:
+def load_configs(repo_root: pathlib.Path | None = None) -> list[ServerConfig]:
     """Discover and merge MCP server configs from user + repo scope.
 
     Returns the configured servers as a deterministic, alphabetised list
@@ -70,7 +70,7 @@ def load_configs(repo_root: Path | None = None) -> list[ServerConfig]:
 
 
 def load_marketplace_sources(
-    repo_root: Path | None = None,
+    repo_root: pathlib.Path | None = None,
 ) -> list[MarketplaceSource]:
     """Discover marketplace sources from user + repo scope (Phase 45.5).
 
@@ -99,7 +99,7 @@ def load_marketplace_sources(
     return out
 
 
-def _parse_marketplaces_from_path(path: Path) -> list[MarketplaceSource]:
+def _parse_marketplaces_from_path(path: pathlib.Path) -> list[MarketplaceSource]:
     """Pull the ``marketplaces:`` block from one YAML file."""
     try:
         raw = yaml.safe_load(path.read_text())
@@ -117,24 +117,24 @@ def _parse_marketplaces_from_path(path: Path) -> list[MarketplaceSource]:
     return [parse_source(entry, source_label=str(path)) for entry in block]
 
 
-def _candidate_paths(repo_root: Path | None) -> list[Path]:
+def _candidate_paths(repo_root: pathlib.Path | None) -> list[pathlib.Path]:
     """Return the user- then repo-scope config paths in load order."""
     user = _user_config_path()
-    paths: list[Path] = [user] if user else []
+    paths: list[pathlib.Path] = [user] if user else []
     if repo_root is not None:
         paths.append(repo_root / REPO_CONFIG_FILENAME)
     return paths
 
 
-def _user_config_path() -> Path | None:
+def _user_config_path() -> pathlib.Path | None:
     """Resolve the user-scope config path, honouring the env override."""
     override = os.environ.get("CANTRIP_MCP_USER_CONFIG")
     if override:
-        return Path(override).expanduser()
+        return pathlib.Path(override).expanduser()
     return USER_CONFIG_PATH.expanduser()
 
 
-def _parse_yaml(path: Path) -> list[ServerConfig]:
+def _parse_yaml(path: pathlib.Path) -> list[ServerConfig]:
     """Parse a single YAML file into ``ServerConfig`` instances.
 
     Raises :class:`MCPConfigError` on any structural problem so the
@@ -170,7 +170,7 @@ def _parse_yaml(path: Path) -> list[ServerConfig]:
     return out
 
 
-def _parse_server(name: str, spec: dict[str, Any], *, source: Path) -> ServerConfig:
+def _parse_server(name: str, spec: dict[str, Any], *, source: pathlib.Path) -> ServerConfig:
     """Validate a single server block and build its :class:`ServerConfig`."""
     transport_raw = str(spec.get("transport", "stdio")).lower()
     try:
@@ -200,7 +200,7 @@ def _parse_server(name: str, spec: dict[str, Any], *, source: Path) -> ServerCon
     if cwd_raw is not None:
         if not isinstance(cwd_raw, str):
             raise MCPConfigError(f"server {name!r} in {source}: `cwd` must be a string")
-        cwd = str(Path(cwd_raw).expanduser())
+        cwd = str(pathlib.Path(cwd_raw).expanduser())
 
     command_raw = spec.get("command")
     command: str | None = None
@@ -244,7 +244,7 @@ def _parse_server(name: str, spec: dict[str, Any], *, source: Path) -> ServerCon
     return config
 
 
-def _parse_oauth(value: Any, *, name: str, source: Path) -> OAuthConfig | None:
+def _parse_oauth(value: Any, *, name: str, source: pathlib.Path) -> OAuthConfig | None:
     """Parse the optional ``oauth:`` block.  Returns ``None`` when absent."""
     if value is None:
         return None
@@ -283,7 +283,7 @@ def _parse_oauth(value: Any, *, name: str, source: Path) -> OAuthConfig | None:
     )
 
 
-def _string_list(value: Any, *, name: str, key: str, source: Path) -> list[str]:
+def _string_list(value: Any, *, name: str, key: str, source: pathlib.Path) -> list[str]:
     """Coerce ``value`` to ``list[str]`` or raise :class:`MCPConfigError`."""
     if value is None:
         return []
@@ -299,7 +299,7 @@ def _string_list(value: Any, *, name: str, key: str, source: Path) -> list[str]:
     return out
 
 
-def _string_dict(value: Any, *, name: str, key: str, source: Path) -> dict[str, str]:
+def _string_dict(value: Any, *, name: str, key: str, source: pathlib.Path) -> dict[str, str]:
     """Coerce ``value`` to ``dict[str, str]`` or raise :class:`MCPConfigError`."""
     if value is None:
         return {}

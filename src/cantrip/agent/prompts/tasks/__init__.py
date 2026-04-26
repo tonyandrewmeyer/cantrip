@@ -18,10 +18,10 @@ match the pre-extraction f-string behaviour — task descriptions never
 ended with a final newline.
 """
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
-_TEMPLATE_DIR = Path(__file__).parent
+_TEMPLATE_DIR = pathlib.Path(__file__).parent
 
 _JINJA_ENV: Any = None
 _TEMPLATE_CACHE: dict[str, Any] = {}

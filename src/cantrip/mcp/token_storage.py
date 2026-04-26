@@ -18,9 +18,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import pathlib
 import stat
 import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -40,14 +40,14 @@ _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 # Override for the storage root — tests use this to keep ~/.config alone.
 TOKEN_DIR_ENV = "CANTRIP_MCP_TOKEN_DIR"
-_DEFAULT_TOKEN_DIR = Path("~/.config/cantrip/mcp_tokens")
+_DEFAULT_TOKEN_DIR = pathlib.Path("~/.config/cantrip/mcp_tokens")
 
 
-def default_token_dir() -> Path:
+def default_token_dir() -> pathlib.Path:
     """Resolve the per-server token storage directory."""
     override = os.environ.get(TOKEN_DIR_ENV)
     if override:
-        return Path(override).expanduser()
+        return pathlib.Path(override).expanduser()
     return _DEFAULT_TOKEN_DIR.expanduser()
 
 
@@ -73,7 +73,7 @@ class FileTokenStorage:
         self,
         server_name: str,
         *,
-        base_dir: Path | None = None,
+        base_dir: pathlib.Path | None = None,
     ) -> None:
         self._server_name = server_name
         self._base_dir = base_dir or default_token_dir()
@@ -103,7 +103,7 @@ class FileTokenStorage:
     # ── File helpers ────────────────────────────────────────────────────
 
     @property
-    def server_dir(self) -> Path:
+    def server_dir(self) -> pathlib.Path:
         """Directory holding this server's token + client-info files."""
         return self._base_dir / self._server_name
 
@@ -143,13 +143,13 @@ class FileTokenStorage:
         payload = model.model_dump_json(exclude_none=True)
         self._write_payload(path, payload)
 
-    def _read_payload(self, path: Path) -> str:
+    def _read_payload(self, path: pathlib.Path) -> str:
         """Read a file, decrypting via GPG when opted in."""
         if gpg_enabled():
             return _gpg_decrypt(path)
         return path.read_text()
 
-    def _write_payload(self, path: Path, payload: str) -> None:
+    def _write_payload(self, path: pathlib.Path, payload: str) -> None:
         """Write JSON to *path* at 0600, GPG-encrypting when opted in.
 
         Writes go to a temp file in the same directory then ``rename``
@@ -168,7 +168,7 @@ class FileTokenStorage:
         tmp.replace(path)
 
 
-def _gpg_encrypt(path: Path, payload: str) -> None:
+def _gpg_encrypt(path: pathlib.Path, payload: str) -> None:
     """Symmetric GPG encryption to ``path`` (binary)."""
     completed = subprocess.run(  # noqa: S603 - opted-in GPG path
         ["gpg", "--batch", "--yes", "--symmetric", "-o", str(path)],
@@ -182,7 +182,7 @@ def _gpg_encrypt(path: Path, payload: str) -> None:
         )
 
 
-def _gpg_decrypt(path: Path) -> str:
+def _gpg_decrypt(path: pathlib.Path) -> str:
     """Symmetric GPG decryption from ``path`` to text."""
     completed = subprocess.run(  # noqa: S603 - opted-in GPG path
         ["gpg", "--batch", "--decrypt", str(path)],

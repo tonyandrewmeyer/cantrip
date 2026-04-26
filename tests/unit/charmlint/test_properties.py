@@ -22,8 +22,8 @@ Invariants under test:
 
 from __future__ import annotations
 
+import pathlib
 import string
-from pathlib import Path
 
 import yaml
 from hypothesis import HealthCheck, given, settings
@@ -132,7 +132,7 @@ def _charmcraft_metadata(draw: st.DrawFn) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _write_and_lint(tmp_charm: Path, metadata: dict):
+def _write_and_lint(tmp_charm: pathlib.Path, metadata: dict):
     """Write *metadata* to ``tmp_charm/charmcraft.yaml`` and run ``lint()``.
 
     The fixture re-creates ``tmp_charm`` between tests but not between
@@ -158,7 +158,7 @@ class TestCharmlintProperties:
 
     @_charm_settings
     @given(metadata=_charmcraft_metadata())
-    def test_lint_never_raises(self, tmp_charm: Path, metadata: dict) -> None:
+    def test_lint_never_raises(self, tmp_charm: pathlib.Path, metadata: dict) -> None:
         """Arbitrary valid metadata must not crash the rule engine."""
         report = _write_and_lint(tmp_charm, metadata)
         # Report is always returned — even for catastrophic input, the
@@ -167,7 +167,7 @@ class TestCharmlintProperties:
 
     @_charm_settings
     @given(metadata=_charmcraft_metadata())
-    def test_lint_is_deterministic(self, tmp_charm: Path, metadata: dict) -> None:
+    def test_lint_is_deterministic(self, tmp_charm: pathlib.Path, metadata: dict) -> None:
         """Two consecutive lints over the same dir produce identical diagnostics.
 
         Rules may iterate dict keys or filesystem entries internally —
@@ -182,7 +182,7 @@ class TestCharmlintProperties:
 
     @_charm_settings
     @given(metadata=_charmcraft_metadata())
-    def test_diagnostics_are_well_formed(self, tmp_charm: Path, metadata: dict) -> None:
+    def test_diagnostics_are_well_formed(self, tmp_charm: pathlib.Path, metadata: dict) -> None:
         """Every ``Diagnostic`` has populated mandatory fields.
 
         ``rule_id`` must be non-empty, severity must be a real enum

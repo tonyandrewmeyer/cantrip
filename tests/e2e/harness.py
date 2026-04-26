@@ -17,11 +17,11 @@ import asyncio
 import dataclasses
 import json
 import logging
+import pathlib
 import shutil
 import subprocess
 import time
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -115,7 +115,7 @@ class CharmSpec:
 # ---------------------------------------------------------------------------
 
 
-def seed_workspace(workspace: Path, files: dict[str, str]) -> None:
+def seed_workspace(workspace: pathlib.Path, files: dict[str, str]) -> None:
     """Write *files* into *workspace*, creating parent directories."""
     workspace.mkdir(parents=True, exist_ok=True)
     for rel, content in files.items():
@@ -226,7 +226,7 @@ def derive_app_name(deploy_args: dict) -> str:
     if app_name:
         return str(app_name)
     charm_ref = deploy_args.get("charm", "unknown")
-    return Path(str(charm_ref)).stem.split("_")[0]
+    return pathlib.Path(str(charm_ref)).stem.split("_")[0]
 
 
 def find_deployed_app(deploy_calls: list[dict]) -> tuple[str, str | None]:
@@ -270,7 +270,7 @@ class BuildProgress:
 
 def snapshot_progress(
     agent: CantripAgent,
-    workspace: Path,
+    workspace: pathlib.Path,
     qualified_model: str | None,
 ) -> BuildProgress:
     has_charm = bool(list(workspace.rglob("*.charm")))
@@ -457,7 +457,7 @@ class DriveResult:
 async def drive_to_deploy(
     agent: CantripAgent,
     spec: CharmSpec,
-    workspace: Path,
+    workspace: pathlib.Path,
     qualified_model: str | None,
     *,
     max_follow_ups: int = MAX_FOLLOW_UPS,

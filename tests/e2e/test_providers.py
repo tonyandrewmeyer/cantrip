@@ -13,7 +13,7 @@ charm-build scenarios live in their own files.
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -50,7 +50,9 @@ class TestAllProviders:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("provider_name", _all_provider_params())
-    async def test_provider_completes_tool_call(self, provider_name: str, tmp_path: Path) -> None:
+    async def test_provider_completes_tool_call(
+        self, provider_name: str, tmp_path: pathlib.Path
+    ) -> None:
         """Ask the agent to analyse a tiny Flask app and verify it tool-calls.
 
         Confirms each provider is wired up correctly: the API key works,
@@ -75,7 +77,9 @@ class TestAllProviders:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("provider_name", _all_provider_params())
-    async def test_provider_responds_to_greeting(self, provider_name: str, tmp_path: Path) -> None:
+    async def test_provider_responds_to_greeting(
+        self, provider_name: str, tmp_path: pathlib.Path
+    ) -> None:
         """A bare 'hello' returns non-empty text from every provider.
 
         Cheaper than the tool-call test — confirms the provider can

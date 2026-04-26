@@ -5,8 +5,8 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import pathlib
 import time
-from pathlib import Path
 
 from cantrip.repomap.graph import FileRanking, rank_files
 from cantrip.repomap.render import render, render_full_markdown, render_summary
@@ -136,11 +136,11 @@ class RepoMap:
 
     def __init__(
         self,
-        repo_root: Path,
+        repo_root: pathlib.Path,
         *,
         token_budget: int = DEFAULT_TOKEN_BUDGET,
     ) -> None:
-        self._repo_root = Path(repo_root).resolve()
+        self._repo_root = pathlib.Path(repo_root).resolve()
         self._token_budget = token_budget
         # Per-file parse cache, keyed by relative POSIX path.
         self._entries: dict[str, _CacheEntry] = {}
@@ -151,7 +151,7 @@ class RepoMap:
     # -- public surface ------------------------------------------------
 
     @property
-    def repo_root(self) -> Path:
+    def repo_root(self) -> pathlib.Path:
         return self._repo_root
 
     @property
@@ -272,15 +272,15 @@ class RepoMap:
             return max(1, self._token_budget // 2)
         return self._token_budget
 
-    def _parse_one(self, path: Path) -> FileSymbols:
+    def _parse_one(self, path: pathlib.Path) -> FileSymbols:
         if path.suffix == ".py":
             return parse_python_file(path, repo_root=self._repo_root)
         if is_charm_metadata(path):
             return parse_charm_metadata(path, repo_root=self._repo_root)
         return FileSymbols(file=self._relative(path))
 
-    def _discover_files(self) -> list[Path]:
-        results: list[Path] = []
+    def _discover_files(self) -> list[pathlib.Path]:
+        results: list[pathlib.Path] = []
         for path in _walk(self._repo_root, _SKIP_DIRECTORIES):
             if path.suffix != ".py" and not is_charm_metadata(path):
                 continue
@@ -291,7 +291,7 @@ class RepoMap:
         results.sort()
         return results
 
-    def _relative(self, path: Path) -> str:
+    def _relative(self, path: pathlib.Path) -> str:
         try:
             return path.resolve().relative_to(self._repo_root).as_posix()
         except ValueError:
@@ -299,7 +299,7 @@ class RepoMap:
 
     # -- cache ---------------------------------------------------------
 
-    def _cache_path(self) -> Path:
+    def _cache_path(self) -> pathlib.Path:
         return self._repo_root / _CACHE_FILENAME
 
     def _load_cache(self) -> None:
@@ -332,11 +332,11 @@ class RepoMap:
             log.debug("repomap: cannot write cache %s: %s", path, exc)
 
 
-def _walk(root: Path, skip: set[str]) -> list[Path]:
+def _walk(root: pathlib.Path, skip: set[str]) -> list[pathlib.Path]:
     """Recursive walk that prunes by directory name."""
     if not root.exists():
         return []
-    out: list[Path] = []
+    out: list[pathlib.Path] = []
     stack = [root]
     while stack:
         current = stack.pop()

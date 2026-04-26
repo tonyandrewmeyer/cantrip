@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import textwrap
-from pathlib import Path
 
 import pytest
 
@@ -22,7 +22,7 @@ from cantrip.repomap.symbols import (
 # ---------------------------------------------------------------------------
 
 
-def _make_charm(root: Path) -> None:
+def _make_charm(root: pathlib.Path) -> None:
     """Create a small but realistic charm tree under *root*.
 
     Three Python files (``src/charm.py``, ``src/handlers.py``,
@@ -125,7 +125,7 @@ def _make_charm(root: Path) -> None:
 
 
 class TestPythonParser:
-    def test_extracts_classes_methods_and_functions(self, tmp_path: Path) -> None:
+    def test_extracts_classes_methods_and_functions(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         result = parse_python_file(tmp_path / "src" / "charm.py", repo_root=tmp_path)
         kinds = {s.kind for s in result.definitions}
@@ -138,19 +138,19 @@ class TestPythonParser:
         assert "MyCharm._on_install" in names
         assert "MyCharm._on_config_changed" in names
 
-    def test_records_call_references(self, tmp_path: Path) -> None:
+    def test_records_call_references(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         result = parse_python_file(tmp_path / "src" / "charm.py", repo_root=tmp_path)
         assert "IngressHandler" in result.references
         assert "build_layer" in result.references
 
-    def test_records_inheritance_as_reference(self, tmp_path: Path) -> None:
+    def test_records_inheritance_as_reference(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         result = parse_python_file(tmp_path / "src" / "charm.py", repo_root=tmp_path)
         # `class MyCharm(ops.CharmBase)` — the root name is `ops`.
         assert "ops" in result.references
 
-    def test_skips_nested_function_definitions(self, tmp_path: Path) -> None:
+    def test_skips_nested_function_definitions(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "f.py").write_text(
             textwrap.dedent(
                 """
@@ -167,20 +167,20 @@ class TestPythonParser:
         assert "outer" in names
         assert "inner" not in names
 
-    def test_handles_syntax_errors(self, tmp_path: Path) -> None:
+    def test_handles_syntax_errors(self, tmp_path: pathlib.Path) -> None:
         bad = tmp_path / "broken.py"
         bad.write_text("def oops(:\n")
         result = parse_python_file(bad, repo_root=tmp_path)
         assert result.definitions == []
         assert result.references == []
 
-    def test_returns_relative_path(self, tmp_path: Path) -> None:
+    def test_returns_relative_path(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "src").mkdir()
         (tmp_path / "src" / "x.py").write_text("def hi():\n    pass\n")
         result = parse_python_file(tmp_path / "src" / "x.py", repo_root=tmp_path)
         assert result.file == "src/x.py"
 
-    def test_function_signature_includes_annotations(self, tmp_path: Path) -> None:
+    def test_function_signature_includes_annotations(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "f.py").write_text("def add(a: int, b: int = 0) -> int:\n    return a + b\n")
         result = parse_python_file(tmp_path / "f.py", repo_root=tmp_path)
         sig = next(s.signature for s in result.definitions if s.name == "add")
@@ -190,7 +190,7 @@ class TestPythonParser:
 
 
 class TestCharmMetadataParser:
-    def test_extracts_relations_config_and_actions(self, tmp_path: Path) -> None:
+    def test_extracts_relations_config_and_actions(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         result = parse_charm_metadata(tmp_path / "charmcraft.yaml", repo_root=tmp_path)
 
@@ -203,13 +203,13 @@ class TestCharmMetadataParser:
         assert "requires.ingress" in relations
         assert "provides.metrics-endpoint" in relations
 
-    def test_relation_signature_carries_interface_name(self, tmp_path: Path) -> None:
+    def test_relation_signature_carries_interface_name(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         result = parse_charm_metadata(tmp_path / "charmcraft.yaml", repo_root=tmp_path)
         ingress = next(s for s in result.definitions if s.name == "ingress")
         assert "ingress" in ingress.signature
 
-    def test_handles_invalid_yaml(self, tmp_path: Path) -> None:
+    def test_handles_invalid_yaml(self, tmp_path: pathlib.Path) -> None:
         bad = tmp_path / "metadata.yaml"
         bad.write_text("foo: [unclosed\n")
         result = parse_charm_metadata(bad, repo_root=tmp_path)
@@ -348,7 +348,7 @@ class TestRender:
 
 
 class TestRepoMap:
-    def test_build_picks_up_python_and_yaml(self, tmp_path: Path) -> None:
+    def test_build_picks_up_python_and_yaml(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
         rm.build()
@@ -357,7 +357,7 @@ class TestRepoMap:
         assert "src/handlers.py" in files
         assert "charmcraft.yaml" in files
 
-    def test_render_for_prompt_returns_text(self, tmp_path: Path) -> None:
+    def test_render_for_prompt_returns_text(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
         rm.build()
@@ -365,7 +365,7 @@ class TestRepoMap:
         assert "MyCharm" in rendered
         assert "src/charm.py" in rendered
 
-    def test_writes_cache_file(self, tmp_path: Path) -> None:
+    def test_writes_cache_file(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
         rm.build()
@@ -376,7 +376,7 @@ class TestRepoMap:
         files = {entry["file"] for entry in data["entries"]}
         assert "src/charm.py" in files
 
-    def test_cache_path_does_not_collide_with_session_db(self, tmp_path: Path) -> None:
+    def test_cache_path_does_not_collide_with_session_db(self, tmp_path: pathlib.Path) -> None:
         # The session SQLite store lives at ``<charm>/.cantrip``.  The
         # repo-map cache must be a sibling so it doesn't try to mkdir
         # over that file on every turn.
@@ -390,7 +390,7 @@ class TestRepoMap:
         # The fake session DB is untouched.
         assert (tmp_path / ".cantrip").read_text() == "fake session db"
 
-    def test_cache_invalidates_on_mtime_change(self, tmp_path: Path) -> None:
+    def test_cache_invalidates_on_mtime_change(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
         rm.build()
@@ -411,7 +411,7 @@ class TestRepoMap:
         rendered = rm.render_for_prompt()
         assert "brand_new" in rendered
 
-    def test_force_rebuild_drops_existing_cache(self, tmp_path: Path) -> None:
+    def test_force_rebuild_drops_existing_cache(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
         rm.build()
@@ -422,7 +422,7 @@ class TestRepoMap:
         files = {r.file for r in rm.rankings}
         assert "src/handlers.py" not in files
 
-    def test_pressure_shrinks_budget(self, tmp_path: Path) -> None:
+    def test_pressure_shrinks_budget(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         # Pick a budget tight enough that halving it forces a trim —
         # the fixture renders to ~140 tokens, so 80 vs 40 brackets it.
@@ -433,19 +433,19 @@ class TestRepoMap:
         assert squeezed != full
         assert len(squeezed) < len(full)
 
-    def test_pressure_above_drop_threshold_returns_empty(self, tmp_path: Path) -> None:
+    def test_pressure_above_drop_threshold_returns_empty(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
         rm.build()
         assert rm.render_for_prompt(context_pressure=0.99) == ""
 
-    def test_handles_missing_charm_path(self, tmp_path: Path) -> None:
+    def test_handles_missing_charm_path(self, tmp_path: pathlib.Path) -> None:
         rm = RepoMap(tmp_path / "nope")
         rm.build()
         assert rm.rankings == []
         assert rm.render_for_prompt() == ""
 
-    def test_handle_map_renders_under_markdown(self, tmp_path: Path) -> None:
+    def test_handle_map_renders_under_markdown(self, tmp_path: pathlib.Path) -> None:
         # The /map output is delivered with ``markdown=True`` on the
         # SlashResult, and inside a Markdown fenced code block the
         # bracketed kind labels (``[relation]``, ``[container]``) and
@@ -479,7 +479,7 @@ class TestRepoMap:
         assert result.markdown is True
 
     def test_handle_map_never_raises_on_build_failure(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # If the repo-map build blows up for any reason, the slash
         # command must surface a friendly chat string and write the
@@ -513,7 +513,7 @@ class TestRepoMap:
         assert "Traceback" in body
         assert "/map" in body
 
-    def test_skips_excluded_directories(self, tmp_path: Path) -> None:
+    def test_skips_excluded_directories(self, tmp_path: pathlib.Path) -> None:
         _make_charm(tmp_path)
         # Create a venv with code that should be ignored.
         (tmp_path / ".venv" / "lib").mkdir(parents=True)
@@ -523,7 +523,7 @@ class TestRepoMap:
         files = {r.file for r in rm.rankings}
         assert not any(f.startswith(".venv/") for f in files)
 
-    def test_skips_lib_charms_vendored_dir(self, tmp_path: Path) -> None:
+    def test_skips_lib_charms_vendored_dir(self, tmp_path: pathlib.Path) -> None:
         # ``lib/charms/<name>/v<N>/<lib>.py`` holds vendored interface
         # libraries from other charms (charmcraft fetch-libs).  They're
         # third-party API surface, not user-edited code, and indexing
@@ -539,7 +539,7 @@ class TestRepoMap:
         # The user's own src/charm.py still ranks.
         assert "src/charm.py" in files
 
-    def test_render_summary_one_line_per_file(self, tmp_path: Path) -> None:
+    def test_render_summary_one_line_per_file(self, tmp_path: pathlib.Path) -> None:
         # Default ``/map`` view: one line per file with the primary
         # symbol and a "+N more" hint.  Stays well under the
         # full-render character count so a small chat panel isn't
@@ -562,7 +562,7 @@ class TestRepoMap:
             assert "\n" not in line
             assert len(line) <= 120
 
-    def test_render_summary_caps_top_n(self, tmp_path: Path) -> None:
+    def test_render_summary_caps_top_n(self, tmp_path: pathlib.Path) -> None:
         # When there are more files than the cap, only top_n appear.
         _make_charm(tmp_path)
         # Add several extra files so we have more than top_n with symbols.
@@ -574,7 +574,7 @@ class TestRepoMap:
         lines = [line for line in summary.splitlines() if line.strip()]
         assert len(lines) <= 5
 
-    def test_handle_map_default_is_compact(self, tmp_path: Path) -> None:
+    def test_handle_map_default_is_compact(self, tmp_path: pathlib.Path) -> None:
         # The slash command default is the compact summary plus a
         # footer pointing at ``/map full`` for the wall-of-text view.
         from unittest.mock import MagicMock
@@ -594,7 +594,7 @@ class TestRepoMap:
         # And the compact body is much smaller than the full render.
         assert len(text) < len(rm.render_full())
 
-    def test_handle_map_full_returns_markdown_sections(self, tmp_path: Path) -> None:
+    def test_handle_map_full_returns_markdown_sections(self, tmp_path: pathlib.Path) -> None:
         # ``/map full`` formats each file as a Markdown ``###`` heading
         # plus bullet-point symbols so a long output keeps visible
         # navigation landmarks instead of dissolving into one monospace
@@ -624,7 +624,7 @@ class TestRepoMap:
         assert opening_fences == 0
 
     def test_dispatch_catches_handler_exceptions(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Last-resort safety net: even if a handler raises *before*
         # its own try/except can catch (e.g. accessing a property),

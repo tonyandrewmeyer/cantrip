@@ -24,8 +24,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import pathlib
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cantrip.agent.core import CantripAgent
@@ -374,7 +374,7 @@ def run_print(args: argparse.Namespace) -> int:
         light_snap_name=light_snap_name,
     )
 
-    charm_path: Path = Path(args.path)
+    charm_path: pathlib.Path = pathlib.Path(args.path)
 
     agent = CantripAgent(
         provider=provider,

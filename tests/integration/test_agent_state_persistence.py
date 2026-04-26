@@ -4,7 +4,7 @@ These tests verify that CantripAgent correctly persists and restores
 state through the SQLite-backed SessionStore.
 """
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -17,7 +17,7 @@ from tests.conftest import FakeProvider
 class TestAgentStatePersistence:
     """Verify state round-trips through save_state/load_state."""
 
-    def test_save_load_preserves_decisions(self, tmp_path: Path):
+    def test_save_load_preserves_decisions(self, tmp_path: pathlib.Path):
         """Decisions survive a save/load cycle."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -37,7 +37,7 @@ class TestAgentStatePersistence:
         assert agent2.state.decisions[1].type == "framework"
 
     @pytest.mark.asyncio
-    async def test_usage_persists_across_instances(self, tmp_path: Path):
+    async def test_usage_persists_across_instances(self, tmp_path: pathlib.Path):
         """Token usage recorded in one agent instance is visible after reload."""
         provider = FakeProvider(
             [Response(content="hi", usage={"prompt_tokens": 50, "completion_tokens": 25})]
@@ -54,7 +54,7 @@ class TestAgentStatePersistence:
         assert total["completion_tokens"] == 25
 
     @pytest.mark.asyncio
-    async def test_messages_persisted_across_sessions(self, tmp_path: Path):
+    async def test_messages_persisted_across_sessions(self, tmp_path: pathlib.Path):
         """Messages survive a save/load cycle (Phase 31.11)."""
         provider = FakeProvider([Response(content="Reply")])
         agent = CantripAgent(provider=provider, charm_path=tmp_path)

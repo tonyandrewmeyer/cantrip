@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime
 import enum
 import logging
+import pathlib
 import re as _re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from importlib import resources
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.audit import AUDIT_FILENAME, AuditAction, AuditWriter, make_entry
@@ -93,7 +93,7 @@ class ExitState(enum.StrEnum):
     NOOP = "noop"  # Nothing to do — task may already be satisfied.
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class SubagentResult:
     """Structured outcome of a subagent run."""
 
@@ -465,7 +465,7 @@ _CATEGORY_TOOLS: dict[TaskCategory, frozenset[str]] = {
 }
 
 
-@dataclass
+@dataclasses.dataclass
 class SubagentContext:
     """Everything a subagent needs — constructed by the executor before each run."""
 
@@ -476,8 +476,8 @@ class SubagentContext:
     framework: str | None = None
     dev_model: str | None = None
     cos_model: str | None = None
-    decisions: list[dict[str, Any]] = field(default_factory=list)
-    prior_results: dict[str, str] = field(default_factory=dict)
+    decisions: list[dict[str, Any]] = dataclasses.field(default_factory=list)
+    prior_results: dict[str, str] = dataclasses.field(default_factory=dict)
     design_content: str | None = None
     # Phase 72.4 — pre-rendered project diagnostics (ruff/ty/charmlint),
     # attached for BUILD/DEBUG tasks so the subagent prompt can show
@@ -609,7 +609,7 @@ def _build_policy_enforcer(
     else:
         category_layer = category_policy(category.value, allowlist)
     layers: list[GovernancePolicy] = [ORG_WIDE_POLICY, category_layer]
-    charm_dir: Path | None = Path(charm_path) if charm_path else None
+    charm_dir: pathlib.Path | None = pathlib.Path(charm_path) if charm_path else None
     layers.extend(discover_policies(charm_path=charm_dir))
     layers.extend(extra_policies)
     return PolicyEnforcer(policy=compose_policies(*layers))
@@ -924,7 +924,7 @@ class Subagent:
         # audit shape as production callers.
         self._audit_writer = audit_writer
         if self._audit_writer is None and context.charm_path:
-            charm_dir = Path(context.charm_path)
+            charm_dir = pathlib.Path(context.charm_path)
             if charm_dir.is_dir():
                 self._audit_writer = AuditWriter(charm_dir / AUDIT_FILENAME)
         # Phase 68.2: declarative allow/ask/deny policy from
@@ -955,8 +955,8 @@ class Subagent:
         """
         if self._audit_writer is None:
             return
-        charm_dir: Path | None = (
-            Path(self._context.charm_path) if self._context.charm_path else None
+        charm_dir: pathlib.Path | None = (
+            pathlib.Path(self._context.charm_path) if self._context.charm_path else None
         )
         try:
             entry = make_entry(

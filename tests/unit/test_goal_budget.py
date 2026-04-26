@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -19,7 +19,7 @@ from cantrip.agent.store import SessionStore
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> SessionStore:
+def store(tmp_path: pathlib.Path) -> SessionStore:
     db = tmp_path / ".cantrip"
     store = SessionStore(db)
     store.open()

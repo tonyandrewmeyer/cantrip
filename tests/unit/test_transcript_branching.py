@@ -9,9 +9,9 @@ and exports keep agreeing on what the active conversation is.
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -23,13 +23,13 @@ from tests.conftest import FakeProvider
 
 
 @pytest.fixture
-def db_path(tmp_path: Path) -> Path:
+def db_path(tmp_path: pathlib.Path) -> pathlib.Path:
     """Return a temporary database path."""
     return tmp_path / ".cantrip"
 
 
 @pytest.fixture
-def store(db_path: Path) -> Iterator[SessionStore]:
+def store(db_path: pathlib.Path) -> Iterator[SessionStore]:
     """Yield an open store backed by a temp .cantrip file."""
     s = SessionStore(db_path)
     s.open()
@@ -132,7 +132,7 @@ class TestActiveBranchEdgeCases:
 class TestBranchSlashCommand:
     """``/branch`` moves the head and rebuilds ``state.messages``."""
 
-    def _seed_agent(self, tmp_path: Path) -> tuple[CantripAgent, list[int]]:
+    def _seed_agent(self, tmp_path: pathlib.Path) -> tuple[CantripAgent, list[int]]:
         """Build an agent with three persisted user/assistant turns."""
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         agent._ensure_store()
@@ -147,7 +147,7 @@ class TestBranchSlashCommand:
         agent._rebuild_messages_from_active_branch()
         return agent, ids
 
-    def test_branch_with_explicit_turn_id(self, tmp_path: Path) -> None:
+    def test_branch_with_explicit_turn_id(self, tmp_path: pathlib.Path) -> None:
         agent, ids = self._seed_agent(tmp_path)
         first_user, first_reply, _bad_user, _off = ids
         result = handle_branch(agent, str(first_reply))
@@ -166,7 +166,7 @@ class TestBranchSlashCommand:
         user_msgs = [m for m in agent.state.messages if m.role == Role.USER]
         assert user_msgs[0].metadata.get("db_message_id") == first_user
 
-    def test_branch_with_no_arg_forks_before_last_user(self, tmp_path: Path) -> None:
+    def test_branch_with_no_arg_forks_before_last_user(self, tmp_path: pathlib.Path) -> None:
         agent, ids = self._seed_agent(tmp_path)
         _first_user, first_reply, _bad_user, _off = ids
         result = handle_branch(agent, "")
@@ -177,20 +177,20 @@ class TestBranchSlashCommand:
         assert agent.store.get_active_head() == first_reply
         assert [m.content for m in agent.state.messages] == ["first ask", "first reply"]
 
-    def test_branch_with_invalid_turn_id_returns_error(self, tmp_path: Path) -> None:
+    def test_branch_with_invalid_turn_id_returns_error(self, tmp_path: pathlib.Path) -> None:
         agent, _ids = self._seed_agent(tmp_path)
         result = handle_branch(agent, "not-an-int")
         assert "expected an integer" in result
         # State unchanged.
         assert len(agent.state.messages) == 4
 
-    def test_branch_with_unknown_turn_returns_error(self, tmp_path: Path) -> None:
+    def test_branch_with_unknown_turn_returns_error(self, tmp_path: pathlib.Path) -> None:
         agent, _ids = self._seed_agent(tmp_path)
         result = handle_branch(agent, "9999")
         assert "not found" in result
         assert len(agent.state.messages) == 4
 
-    def test_branch_no_user_turns_returns_error(self, tmp_path: Path) -> None:
+    def test_branch_no_user_turns_returns_error(self, tmp_path: pathlib.Path) -> None:
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         agent._ensure_store()
         store = agent.store
@@ -204,7 +204,7 @@ class TestBranchSlashCommand:
 class TestResumeFollowsBranch:
     """A /branch made before quitting carries through to the next resume."""
 
-    def test_resume_loads_active_branch_only(self, tmp_path: Path) -> None:
+    def test_resume_loads_active_branch_only(self, tmp_path: pathlib.Path) -> None:
         # Seed messages, then rewind via /branch, then close and reopen.
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         agent._ensure_store()
@@ -265,13 +265,13 @@ class TestTreeBuilder:
 class TestTreeSlashCommand:
     """``/tree`` produces a markdown summary with branch markers."""
 
-    def test_empty_session_returns_friendly_message(self, tmp_path: Path) -> None:
+    def test_empty_session_returns_friendly_message(self, tmp_path: pathlib.Path) -> None:
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         agent._ensure_store()
         result = handle_tree(agent, "")
         assert "No turns yet" in result
 
-    def test_lists_active_branch_with_marker(self, tmp_path: Path) -> None:
+    def test_lists_active_branch_with_marker(self, tmp_path: pathlib.Path) -> None:
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         agent._ensure_store()
         store = agent.store
@@ -332,7 +332,7 @@ class TestTreePickerScreen:
 class TestExportFollowsBranch:
     """``load_transcript`` defaults to the active branch and respects --branch."""
 
-    def test_default_export_excludes_off_branch_messages(self, tmp_path: Path) -> None:
+    def test_default_export_excludes_off_branch_messages(self, tmp_path: pathlib.Path) -> None:
         from cantrip.transcript.export import load_transcript
 
         db_path = tmp_path / ".cantrip"
@@ -351,7 +351,7 @@ class TestExportFollowsBranch:
         data = load_transcript(db_path)
         assert [m["content"] for m in data.messages] == ["a"]
 
-    def test_explicit_branch_id_walks_that_path(self, tmp_path: Path) -> None:
+    def test_explicit_branch_id_walks_that_path(self, tmp_path: pathlib.Path) -> None:
         from cantrip.transcript.export import load_transcript
 
         db_path = tmp_path / ".cantrip"
@@ -375,7 +375,7 @@ class TestExportFollowsBranch:
 class TestV12Migration:
     """A pre-v12 .cantrip file gains the parent chain on first open."""
 
-    def test_existing_messages_get_chained(self, db_path: Path) -> None:
+    def test_existing_messages_get_chained(self, db_path: pathlib.Path) -> None:
         # Hand-craft a v11 database: add three rows without parent
         # pointers, then bump the schema_version row backwards.
         conn = sqlite3.connect(str(db_path))

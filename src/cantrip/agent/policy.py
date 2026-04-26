@@ -31,7 +31,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 import logging
-from pathlib import Path
+import pathlib
 
 import yaml
 
@@ -249,7 +249,7 @@ def policy_to_dict(policy: GovernancePolicy) -> dict[str, object]:
     }
 
 
-def load_policy_file(path: Path) -> GovernancePolicy:
+def load_policy_file(path: pathlib.Path) -> GovernancePolicy:
     """Load a single YAML policy file.
 
     The filename stem is the default ``name`` if the file doesn't
@@ -270,8 +270,8 @@ def load_policy_file(path: Path) -> GovernancePolicy:
 
 def discover_policies(
     *,
-    charm_path: Path | None = None,
-    user_config_dir: Path | None = None,
+    charm_path: pathlib.Path | None = None,
+    user_config_dir: pathlib.Path | None = None,
 ) -> list[GovernancePolicy]:
     """Discover and load the active policy stack.
 
@@ -296,7 +296,7 @@ def discover_policies(
     policies: list[GovernancePolicy] = []
 
     if user_config_dir is None:
-        user_config_dir = Path.home() / ".config" / "cantrip" / "policies"
+        user_config_dir = pathlib.Path.home() / ".config" / "cantrip" / "policies"
 
     if user_config_dir.is_dir():
         # Sort so the composition order is stable across runs.
@@ -379,8 +379,8 @@ def _is_short_flag(token: str, letter: str) -> bool:
 def destructive_gate(
     tool_name: str,
     *,
-    charm_path: Path | None = None,
-    user_config_dir: Path | None = None,
+    charm_path: pathlib.Path | None = None,
+    user_config_dir: pathlib.Path | None = None,
     extra_policies: tuple[GovernancePolicy, ...] = (),
 ) -> tuple[bool, str]:
     """Check whether a destructive tool is approved to run.

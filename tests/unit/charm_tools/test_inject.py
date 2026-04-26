@@ -1,7 +1,7 @@
 """Tests for _inject_coverage_threshold and the GitHub workflow injector."""
 
+import pathlib
 import tempfile
-from pathlib import Path
 
 from cantrip.agent.tools.charm import (
     _inject_coverage_threshold,
@@ -17,7 +17,7 @@ class TestInjectCoverageThreshold:
 
     def test_adds_fail_under_to_existing_report_section(self):
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             pyproject = target / "pyproject.toml"
             pyproject.write_text(
                 "[tool.coverage.run]\nbranch = true\n\n"
@@ -31,7 +31,7 @@ class TestInjectCoverageThreshold:
 
     def test_skips_when_fail_under_already_set(self):
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             pyproject = target / "pyproject.toml"
             pyproject.write_text("[tool.coverage.report]\nfail_under = 90\nshow_missing = true\n")
             actions = _inject_coverage_threshold(target)
@@ -42,7 +42,7 @@ class TestInjectCoverageThreshold:
 
     def test_creates_report_section_when_only_run_exists(self):
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             pyproject = target / "pyproject.toml"
             pyproject.write_text("[tool.coverage.run]\nbranch = true\n")
             _inject_coverage_threshold(target)
@@ -52,7 +52,7 @@ class TestInjectCoverageThreshold:
 
     def test_creates_both_sections_when_no_coverage_config(self):
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             pyproject = target / "pyproject.toml"
             pyproject.write_text("[project]\nname = 'my-charm'\n")
             _inject_coverage_threshold(target)
@@ -63,7 +63,7 @@ class TestInjectCoverageThreshold:
 
     def test_no_pyproject_returns_skip_message(self):
         with tempfile.TemporaryDirectory() as td:
-            actions = _inject_coverage_threshold(Path(td))
+            actions = _inject_coverage_threshold(pathlib.Path(td))
             assert "skipped" in actions[0]
 
 
@@ -74,7 +74,7 @@ class TestInjectGithubWorkflows:
         from cantrip.agent.tools.workflows import inject_github_workflows
 
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             actions = inject_github_workflows(target, "my-charm")
 
             assert (target / ".github" / "workflows" / "ci.yaml").exists()
@@ -89,7 +89,7 @@ class TestInjectGithubWorkflows:
         from cantrip.agent.tools.workflows import inject_github_workflows
 
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             workflows = target / ".github" / "workflows"
             workflows.mkdir(parents=True)
             existing_ci = workflows / "ci.yaml"
@@ -105,7 +105,7 @@ class TestInjectGithubWorkflows:
         from cantrip.agent.tools.workflows import inject_github_workflows
 
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             inject_github_workflows(target, "my-charm")
             ci = (target / ".github" / "workflows" / "ci.yaml").read_text()
             security = (target / ".github" / "workflows" / "security.yaml").read_text()
@@ -124,7 +124,7 @@ class TestInjectGithubWorkflows:
         from cantrip.agent.tools.workflows import inject_github_workflows
 
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             inject_github_workflows(target, "my-charm")
             for name in ("ci.yaml", "security.yaml", "release.yaml"):
                 content = (target / ".github" / "workflows" / name).read_text()
@@ -139,7 +139,7 @@ class TestInjectGithubWorkflows:
         from cantrip.agent.tools.workflows import inject_github_workflows
 
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             inject_github_workflows(target, "my-charm")
             for name in ("ci.yaml", "security.yaml", "release.yaml"):
                 content = (target / ".github" / "workflows" / name).read_text()
@@ -154,7 +154,7 @@ class TestInjectGithubWorkflows:
         from cantrip.agent.tools.workflows import inject_github_workflows
 
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             inject_github_workflows(target, "my-charm")
             release = (target / ".github" / "workflows" / "release.yaml").read_text()
             assert "environment: charmhub" in release
@@ -170,7 +170,7 @@ class TestInjectGithubWorkflows:
         from cantrip.agent.tools.workflows import inject_github_workflows
 
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             inject_github_workflows(target, "my-charm")
             config = (target / ".github" / "dependabot.yml").read_text()
             assert "cooldown:" in config
@@ -185,7 +185,7 @@ class TestInjectGithubWorkflows:
         from cantrip.agent.tools.workflows import inject_github_workflows
 
         with tempfile.TemporaryDirectory() as td:
-            target = Path(td)
+            target = pathlib.Path(td)
             inject_github_workflows(target, "my-charm")
             for path in (
                 target / ".github" / "workflows" / "ci.yaml",

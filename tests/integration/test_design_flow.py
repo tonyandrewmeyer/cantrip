@@ -6,7 +6,7 @@ generates build tasks from the approved design, and the executor picks
 them up.
 """
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -28,7 +28,7 @@ class TestDesignConfirmation:
     """Test the design confirmation and build task generation flow."""
 
     @pytest.mark.asyncio
-    async def test_handle_design_confirmation_creates_build_tasks(self, tmp_path: Path):
+    async def test_handle_design_confirmation_creates_build_tasks(self, tmp_path: pathlib.Path):
         """Synthesis DONE + confirm BLOCKED -> build tasks added to queue."""
         # The provider is called for plan_from_design inside handle_design_confirmation.
         provider = FakeProvider(
@@ -70,7 +70,7 @@ class TestDesignConfirmation:
         assert len(all_tasks) == 8  # synthesis + confirm + 3 build + 3 day-2
 
     @pytest.mark.asyncio
-    async def test_design_confirmation_with_overrides(self, tmp_path: Path):
+    async def test_design_confirmation_with_overrides(self, tmp_path: pathlib.Path):
         """Passing overrides string reaches the planner."""
         received_messages: list[str] = []
 
@@ -115,7 +115,7 @@ class TestDesignConfirmation:
         assert any("Use machine substrate instead of k8s" in msg for msg in received_messages)
 
     @pytest.mark.asyncio
-    async def test_design_confirmation_missing_synthesis(self, tmp_path: Path):
+    async def test_design_confirmation_missing_synthesis(self, tmp_path: pathlib.Path):
         """Confirm task with no synthesis result returns empty list."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -144,7 +144,7 @@ class TestDesignConfirmation:
     @pytest.mark.asyncio
     async def test_confirmation_then_executor_runs_builds(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         fast_executor,  # noqa: ARG002
     ):
         """Full flow: confirm -> build tasks -> executor completes them."""
@@ -198,7 +198,7 @@ class TestDesignConfirmation:
         assert all(s == TaskStatus.DONE for s in build_statuses)
 
     @pytest.mark.asyncio
-    async def test_design_proposal_parsed_into_state(self, tmp_path: Path):
+    async def test_design_proposal_parsed_into_state(self, tmp_path: pathlib.Path):
         """state.design_proposal is populated with parsed design fields."""
         provider = FakeProvider(responses=[Response(content=BUILD_PLAN_JSON)])
         agent = CantripAgent(provider=provider, charm_path=tmp_path)

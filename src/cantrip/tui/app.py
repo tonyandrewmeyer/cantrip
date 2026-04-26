@@ -3,8 +3,8 @@
 import asyncio
 import contextlib
 import datetime
+import pathlib
 import traceback
-from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -86,13 +86,13 @@ class CantripApp(App):
         self,
         provider: str = "gemini",
         model: str | None = None,
-        charm_path: Path | None = None,
+        charm_path: pathlib.Path | None = None,
         light_model: str | None = None,
         max_concurrency: int | None = None,
         snap_name: str = "gemma3",
         light_snap_name: str | None = None,
         light_provider_name: str | None = None,
-        improve_path: Path | None = None,
+        improve_path: pathlib.Path | None = None,
         theme_name: str | None = None,
         base_url: str | None = None,
         max_iterations: int | None = None,
@@ -109,7 +109,7 @@ class CantripApp(App):
         super().__init__()
         self.provider_name = provider
         self.model_name = model
-        self.charm_path = charm_path or Path.cwd()
+        self.charm_path = charm_path or pathlib.Path.cwd()
         self._light_model_override = light_model
         self._snap_name = snap_name
         self._light_snap_name = light_snap_name

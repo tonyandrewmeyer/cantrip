@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+import pathlib
 from unittest import mock
 
 import pytest
@@ -21,7 +21,7 @@ from tests.conftest import FakeProvider
 # ---------------------------------------------------------------------------
 
 
-def _make_args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
+def _make_args(tmp_path: pathlib.Path, **overrides: object) -> argparse.Namespace:
     """Build a minimally-populated argparse Namespace for ``run_print``."""
     base: dict[str, object] = {
         "provider": "claude",
@@ -45,7 +45,7 @@ def _make_args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
-def _make_agent(tmp_path: Path, *, provider: FakeProvider | None = None) -> CantripAgent:
+def _make_agent(tmp_path: pathlib.Path, *, provider: FakeProvider | None = None) -> CantripAgent:
     """Build a real CantripAgent with a FakeProvider so tests can drive
     the public surface without mocking the agent itself."""
     return CantripAgent(provider=provider or FakeProvider(), charm_path=tmp_path)
@@ -156,7 +156,7 @@ class TestEmitProgress:
 
 
 class TestPendingConfirmations:
-    def test_returns_pending_and_blocked_confirm_tasks(self, tmp_path: Path) -> None:
+    def test_returns_pending_and_blocked_confirm_tasks(self, tmp_path: pathlib.Path) -> None:
         agent = _make_agent(tmp_path)
         agent.work_queue.add_task(
             AgentTask(title="Approve push", category=TaskCategory.CONFIRM, id="c1")
@@ -181,7 +181,7 @@ class TestPendingConfirmations:
         ids = {t.id for t in pending}
         assert ids == {"c1", "c2"}
 
-    def test_format_includes_task_titles_and_yolo_hint(self, tmp_path: Path) -> None:
+    def test_format_includes_task_titles_and_yolo_hint(self, tmp_path: pathlib.Path) -> None:
         agent = _make_agent(tmp_path)
         task = AgentTask(title="Approve push", category=TaskCategory.CONFIRM, id="c1")
         agent.work_queue.add_task(task)
@@ -198,18 +198,18 @@ class TestPendingConfirmations:
 
 
 class TestFinalExitCode:
-    def test_zero_when_queue_empty(self, tmp_path: Path) -> None:
+    def test_zero_when_queue_empty(self, tmp_path: pathlib.Path) -> None:
         agent = _make_agent(tmp_path)
         assert print_mode._final_exit_code(agent) == 0
 
-    def test_zero_when_all_tasks_done(self, tmp_path: Path) -> None:
+    def test_zero_when_all_tasks_done(self, tmp_path: pathlib.Path) -> None:
         agent = _make_agent(tmp_path)
         agent.work_queue.add_task(
             AgentTask(title="Pack", category=TaskCategory.BUILD, id="t1", status=TaskStatus.DONE)
         )
         assert print_mode._final_exit_code(agent) == 0
 
-    def test_nonzero_when_any_task_failed(self, tmp_path: Path) -> None:
+    def test_nonzero_when_any_task_failed(self, tmp_path: pathlib.Path) -> None:
         agent = _make_agent(tmp_path)
         agent.work_queue.add_task(
             AgentTask(
@@ -221,7 +221,7 @@ class TestFinalExitCode:
         )
         assert print_mode._final_exit_code(agent) == 1
 
-    def test_nonzero_when_any_task_blocked(self, tmp_path: Path) -> None:
+    def test_nonzero_when_any_task_blocked(self, tmp_path: pathlib.Path) -> None:
         agent = _make_agent(tmp_path)
         agent.work_queue.add_task(
             AgentTask(
@@ -242,12 +242,12 @@ class TestFinalExitCode:
 
 class TestDrainQueue:
     @pytest.mark.asyncio
-    async def test_returns_true_when_queue_is_empty(self, tmp_path: Path) -> None:
+    async def test_returns_true_when_queue_is_empty(self, tmp_path: pathlib.Path) -> None:
         agent = _make_agent(tmp_path)
         assert await print_mode._drain_queue(agent) is True
 
     @pytest.mark.asyncio
-    async def test_returns_true_when_all_tasks_settle(self, tmp_path: Path) -> None:
+    async def test_returns_true_when_all_tasks_settle(self, tmp_path: pathlib.Path) -> None:
         agent = _make_agent(tmp_path)
         agent.work_queue.add_task(
             AgentTask(title="t", category=TaskCategory.BUILD, id="t1", status=TaskStatus.DONE)
@@ -259,7 +259,7 @@ class TestDrainQueue:
 
     @pytest.mark.asyncio
     async def test_returns_false_when_timeout_fires(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Shrink the timeout so the test doesn't have to wait 30 minutes
         # for the false branch.
@@ -278,13 +278,15 @@ class TestDrainQueue:
 
 
 class TestRunPrint:
-    def test_rejects_empty_goal(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_rejects_empty_goal(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         rc = print_mode.run_print(_make_args(tmp_path, print_goal=""))
         assert rc == 2
         assert "non-empty goal" in capsys.readouterr().err
 
     def test_provider_error_returns_one(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         with mock.patch(
             "cantrip.print_mode.create_provider",
@@ -296,7 +298,7 @@ class TestRunPrint:
 
     def test_pending_confirm_blocks_run_when_not_yolo(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """A persisted CONFIRM task refuses-and-exits non-zero by default."""
@@ -321,7 +323,7 @@ class TestRunPrint:
         # bails before asyncio.run.
         fake_agent.start_executor.assert_not_called()
 
-    def test_pending_confirm_allowed_under_yolo(self, tmp_path: Path) -> None:
+    def test_pending_confirm_allowed_under_yolo(self, tmp_path: pathlib.Path) -> None:
         """``--yolo`` skips the up-front refusal."""
         fake_agent = mock.MagicMock()
         fake_agent.state.yolo_mode = True
@@ -344,7 +346,7 @@ class TestRunPrint:
         run_async.assert_called_once()
 
     def test_keyboard_interrupt_returns_130(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         fake_agent = mock.MagicMock()
         fake_agent.state.yolo_mode = False
@@ -366,7 +368,7 @@ class TestRunPrint:
         assert rc == 130
         assert "interrupted" in capsys.readouterr().err
 
-    def test_passes_yolo_flag_to_state(self, tmp_path: Path) -> None:
+    def test_passes_yolo_flag_to_state(self, tmp_path: pathlib.Path) -> None:
         """``--yolo`` flips ``state.yolo_mode`` before the runner starts."""
         captured: dict[str, object] = {}
 
@@ -407,7 +409,7 @@ class TestRunPrint:
 class TestRunAsync:
     @pytest.mark.asyncio
     async def test_emits_ndjson_for_chat_message(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         agent = _make_agent(tmp_path)
 
@@ -439,7 +441,7 @@ class TestRunAsync:
     @pytest.mark.asyncio
     async def test_pending_confirm_after_run_blocks_with_nonzero(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """A CONFIRM task created *during* the run still trips the refusal."""
@@ -470,7 +472,7 @@ class TestRunAsync:
     @pytest.mark.asyncio
     async def test_provider_error_returns_one(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         agent = _make_agent(tmp_path)
@@ -494,7 +496,7 @@ class TestRunAsync:
     @pytest.mark.asyncio
     async def test_drain_timeout_returns_one(
         self,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -553,7 +555,7 @@ class TestMainDispatch:
         assert args.print_goal == "ship it"
 
     def test_print_with_web_is_rejected(
-        self, capsys: pytest.CaptureFixture[str], tmp_path: Path
+        self, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
     ) -> None:
         from cantrip import main
 

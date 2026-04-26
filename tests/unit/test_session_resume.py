@@ -1,7 +1,7 @@
 """Tests for session resume protocol (Phase 11.3)."""
 
+import pathlib
 import sqlite3
-from pathlib import Path
 from unittest.mock import patch
 
 from cantrip.agent.core import CantripAgent
@@ -28,7 +28,7 @@ class TestBuildResumeSummary:
         agent = CantripAgent(provider=provider)
         agent.state.charm_name = "my-charm"
         agent.state.charm_type = "k8s"
-        agent.state.charm_path = Path("/tmp/my-charm")
+        agent.state.charm_path = pathlib.Path("/tmp/my-charm")
 
         result = agent.build_resume_summary()
 
@@ -146,7 +146,7 @@ class TestBuildResumeSummary:
 class TestLoadStateErrorHandling:
     """Tests for CantripAgent.load_state exception handling."""
 
-    def test_sqlite_error_returns_false(self, tmp_path: Path):
+    def test_sqlite_error_returns_false(self, tmp_path: pathlib.Path):
         """An sqlite3.Error during load_state returns False gracefully."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -161,7 +161,7 @@ class TestLoadStateErrorHandling:
         assert result is False
         assert agent._store is None
 
-    def test_value_error_returns_false(self, tmp_path: Path):
+    def test_value_error_returns_false(self, tmp_path: pathlib.Path):
         """A ValueError during load_state returns False gracefully."""
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
@@ -178,7 +178,7 @@ class TestLoadStateErrorHandling:
 class TestStaleTaskRecovery:
     """Tests for resetting stale ACTIVE tasks on load_state."""
 
-    def test_active_tasks_reset_to_pending(self, tmp_path: Path):
+    def test_active_tasks_reset_to_pending(self, tmp_path: pathlib.Path):
         """Tasks that were ACTIVE when the session ended are reset to PENDING."""
         provider = FakeProvider()
 
@@ -229,13 +229,13 @@ class TestPreviewSession:
         preview = agent.preview_session()
         assert preview.exists is False
 
-    def test_no_cantrip_file_returns_empty(self, tmp_path: Path):
+    def test_no_cantrip_file_returns_empty(self, tmp_path: pathlib.Path):
         """Preview returns exists=False when the file isn't on disk."""
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         preview = agent.preview_session()
         assert preview.exists is False
 
-    def test_returns_session_metadata(self, tmp_path: Path):
+    def test_returns_session_metadata(self, tmp_path: pathlib.Path):
         """Preview returns charm name, models, and task counts without mutating state."""
         writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         writer.state.charm_name = "my-charm"
@@ -277,7 +277,7 @@ class TestPreviewSession:
         # Reader's state should be untouched.
         assert reader.state.charm_name is None
 
-    def test_has_unfinished_false_when_all_done(self, tmp_path: Path):
+    def test_has_unfinished_false_when_all_done(self, tmp_path: pathlib.Path):
         """has_unfinished_tasks is False when tasks are all terminal."""
         writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         writer.state.charm_name = "c"
@@ -301,7 +301,7 @@ class TestPreviewSession:
         assert preview.exists is True
         assert preview.has_unfinished_tasks is False
 
-    def test_preview_does_not_mutate_agent_state(self, tmp_path: Path):
+    def test_preview_does_not_mutate_agent_state(self, tmp_path: pathlib.Path):
         """Calling preview_session must leave agent.state.charm_name as-is."""
         writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         writer.state.charm_name = "untouched-probe"
@@ -312,7 +312,7 @@ class TestPreviewSession:
         assert reader.state.charm_name is None
         assert reader.state.messages == []
 
-    def test_summary_includes_charm_and_counts(self, tmp_path: Path):
+    def test_summary_includes_charm_and_counts(self, tmp_path: pathlib.Path):
         """Summary string includes the charm name and a task count breakdown."""
         writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         writer.state.charm_name = "my-charm"
@@ -341,12 +341,12 @@ class TestPreviewSession:
 class TestArchiveSession:
     """Tests for CantripAgent.archive_session."""
 
-    def test_no_file_returns_none(self, tmp_path: Path):
+    def test_no_file_returns_none(self, tmp_path: pathlib.Path):
         """archive_session returns None when there's nothing to archive."""
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         assert agent.archive_session() is None
 
-    def test_renames_to_backup(self, tmp_path: Path):
+    def test_renames_to_backup(self, tmp_path: pathlib.Path):
         """archive_session moves .cantrip to .cantrip.bak-TIMESTAMP."""
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         agent.state.charm_name = "to-be-archived"
@@ -363,7 +363,7 @@ class TestArchiveSession:
         # The store has been reset so the next save starts fresh.
         assert agent._store is None
 
-    def test_fresh_session_starts_empty_after_archive(self, tmp_path: Path):
+    def test_fresh_session_starts_empty_after_archive(self, tmp_path: pathlib.Path):
         """After archiving, save_state creates a new empty database."""
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         agent.state.charm_name = "stale"
@@ -381,7 +381,7 @@ class TestArchiveSession:
 class TestTranscriptTail:
     """Tests for CantripAgent.transcript_tail."""
 
-    def test_returns_last_n_messages(self, tmp_path: Path):
+    def test_returns_last_n_messages(self, tmp_path: pathlib.Path):
         """transcript_tail returns the last N persisted messages."""
         writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         writer.state.charm_name = "c"
@@ -398,7 +398,7 @@ class TestTranscriptTail:
         assert tail[-1].content == "msg-4"
         assert tail[0].content == "msg-2"
 
-    def test_empty_when_no_store(self, tmp_path: Path):
+    def test_empty_when_no_store(self, tmp_path: pathlib.Path):
         """transcript_tail returns [] when no store exists."""
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
         assert agent.transcript_tail() == []

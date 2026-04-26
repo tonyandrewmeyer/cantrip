@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -245,7 +245,7 @@ class TestBudgetEnforcement:
 
 class TestTranscriptRecording:
     @pytest.mark.asyncio
-    async def test_records_event_when_store_present(self, tmp_path: Path) -> None:
+    async def test_records_event_when_store_present(self, tmp_path: pathlib.Path) -> None:
         store = SessionStore(tmp_path / "session.db")
         state = AgentState(charm_name="db-charm")
         provider = _oracle_provider(content="Pick option A.")
@@ -279,7 +279,7 @@ class TestTranscriptRecording:
         assert result.success is True
 
     @pytest.mark.asyncio
-    async def test_failed_calls_do_not_record_event(self, tmp_path: Path) -> None:
+    async def test_failed_calls_do_not_record_event(self, tmp_path: pathlib.Path) -> None:
         store = SessionStore(tmp_path / "session.db")
         state = AgentState()
         # Cap at zero so the first call is refused.

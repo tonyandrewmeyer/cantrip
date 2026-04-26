@@ -4,9 +4,9 @@ import datetime
 import json
 import logging
 import os
+import pathlib
 import sqlite3
 import stat
-from pathlib import Path
 
 from cantrip.agent import design as design_mod
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
@@ -220,7 +220,7 @@ def _memory_row_to_dict(row: sqlite3.Row) -> dict[str, object]:
 class SessionStore:
     """SQLite-backed persistence for Cantrip session data and token usage."""
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: pathlib.Path) -> None:
         self._db_path = db_path
         self._conn: sqlite3.Connection | None = None
 
@@ -517,7 +517,7 @@ class SessionStore:
 
         state = AgentState(
             charm_name=row["charm_name"],
-            charm_path=Path(row["charm_path"]) if row["charm_path"] else None,
+            charm_path=pathlib.Path(row["charm_path"]) if row["charm_path"] else None,
             charm_type=row["charm_type"],
             framework=row["framework"],
             dev_model=row["dev_model"],
@@ -1458,7 +1458,7 @@ class SessionStore:
     # ── Migration ────────────────────────────────────────────────────────
 
     @staticmethod
-    def migrate_from_json(json_path: Path, db_path: Path) -> None:
+    def migrate_from_json(json_path: pathlib.Path, db_path: pathlib.Path) -> None:
         """Migrate an existing session.json file into a new SQLite database.
 
         Creates the database at *db_path*, loads the JSON data, and writes
@@ -1471,7 +1471,7 @@ class SessionStore:
         try:
             state = AgentState(
                 charm_name=data.get("charm_name"),
-                charm_path=Path(data["charm_path"]) if data.get("charm_path") else None,
+                charm_path=pathlib.Path(data["charm_path"]) if data.get("charm_path") else None,
                 charm_type=data.get("charm_type"),
                 framework=data.get("framework"),
                 dev_model=data.get("dev_model"),

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -19,7 +19,7 @@ from cantrip.agent.store import SessionStore
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> Iterator[SessionStore]:
+def store(tmp_path: pathlib.Path) -> Iterator[SessionStore]:
     s = SessionStore(tmp_path / "src.cantrip")
     s.open()
     yield s
@@ -27,7 +27,7 @@ def store(tmp_path: Path) -> Iterator[SessionStore]:
 
 
 @pytest.fixture
-def global_store(tmp_path: Path) -> GlobalMemoryStore:
+def global_store(tmp_path: pathlib.Path) -> GlobalMemoryStore:
     return GlobalMemoryStore(tmp_path / "src-globalmem")
 
 
@@ -37,7 +37,7 @@ def manager(store: SessionStore, global_store: GlobalMemoryStore) -> MemoryManag
 
 
 @pytest.fixture
-def import_target(tmp_path: Path) -> MemoryManager:
+def import_target(tmp_path: pathlib.Path) -> MemoryManager:
     """A second manager with separate stores — for round-trip imports."""
     s = SessionStore(tmp_path / "dst.cantrip")
     s.open()
@@ -49,7 +49,7 @@ def import_target(tmp_path: Path) -> MemoryManager:
 
 
 class TestSanitiseBody:
-    def test_charm_path_replaced(self, tmp_path: Path) -> None:
+    def test_charm_path_replaced(self, tmp_path: pathlib.Path) -> None:
         body = f"In {tmp_path}/src/charm.py we set foo=1"
         sanitised, redactions = sanitise_body(body, charm_path=tmp_path)
         assert CHARM_PATH_PLACEHOLDER in sanitised
@@ -105,7 +105,7 @@ class TestSanitiseBody:
 
 
 class TestExportToSkill:
-    def test_creates_skill_file(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_creates_skill_file(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         manager.write(scope="charm", title="t1", kind="fact", body="body one")
         manager.write(scope="charm", title="t2", kind="rule", body="body two")
         result = export_to_skill(manager, name="my-bundle", output_path=tmp_path / "out")
@@ -120,14 +120,16 @@ class TestExportToSkill:
         assert sorted(result.entries) == ["t1", "t2"]
         assert result.redactions == 0
 
-    def test_explicit_md_path_honoured(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_explicit_md_path_honoured(
+        self, manager: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
         manager.write(scope="charm", title="t", kind="fact", body="b")
         target = tmp_path / "explicit.md"
         result = export_to_skill(manager, name="x", output_path=target)
         assert result.output_path == target
         assert target.is_file()
 
-    def test_charm_path_sanitised(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_charm_path_sanitised(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         body = f"See {tmp_path}/charm.py for details"
         manager.write(scope="charm", title="t", kind="fact", body=body)
         result = export_to_skill(
@@ -140,7 +142,9 @@ class TestExportToSkill:
         assert CHARM_PATH_PLACEHOLDER in content
         assert str(tmp_path) not in content
 
-    def test_secrets_redacted_in_export(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_secrets_redacted_in_export(
+        self, manager: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
         manager.write(
             scope="charm",
             title="t",
@@ -153,13 +157,15 @@ class TestExportToSkill:
         assert "[REDACTED]" in content
         assert result.redactions == 1
 
-    def test_empty_scope_writes_placeholder(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_empty_scope_writes_placeholder(
+        self, manager: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
         result = export_to_skill(manager, name="empty", output_path=tmp_path / "out")
         content = result.output_path.read_text()
         assert "no memories" in content
         assert result.entries == []
 
-    def test_name_required(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_name_required(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         with pytest.raises(ValueError, match="name is required"):
             export_to_skill(manager, name="  ", output_path=tmp_path / "out")
 
@@ -168,7 +174,7 @@ class TestExportToSkill:
 
 
 class TestExportToMarkdown:
-    def test_one_file_per_memory(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_one_file_per_memory(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         manager.write(scope="charm", title="alpha", kind="fact", body="A")
         manager.write(scope="global", title="beta", kind="rule", body="B")
         result = export_to_markdown(manager, output_dir=tmp_path / "dump")
@@ -179,7 +185,7 @@ class TestExportToMarkdown:
             text = path.read_text()
             assert "title:" in text  # Frontmatter present.
 
-    def test_charm_path_sanitised(self, manager: MemoryManager, tmp_path: Path) -> None:
+    def test_charm_path_sanitised(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
         body = f"path: {tmp_path}/charm.py"
         manager.write(scope="charm", title="t", kind="fact", body=body)
         export_to_markdown(manager, output_dir=tmp_path / "dump", charm_path=tmp_path)
@@ -197,7 +203,7 @@ class TestImport:
         self,
         manager: MemoryManager,
         import_target: MemoryManager,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
     ) -> None:
         manager.write(scope="charm", title="t1", kind="fact", body="body 1", tags=["a"])
         manager.write(scope="charm", title="t2", kind="rule", body="body 2")
@@ -217,7 +223,7 @@ class TestImport:
         self,
         manager: MemoryManager,
         import_target: MemoryManager,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
     ) -> None:
         manager.write(scope="charm", title="alpha", kind="fact", body="A", tags=["x"])
         manager.write(scope="charm", title="beta", kind="rule", body="B")
@@ -230,7 +236,7 @@ class TestImport:
         assert alpha.tags == ["x"]
         assert alpha.kind == "fact"
 
-    def test_skip_duplicates(self, import_target: MemoryManager, tmp_path: Path) -> None:
+    def test_skip_duplicates(self, import_target: MemoryManager, tmp_path: pathlib.Path) -> None:
         # Write a memory once via export.
         src = SessionStore(tmp_path / "src.cantrip")
         src.open()
@@ -248,7 +254,9 @@ class TestImport:
         assert second.imported == []
         assert second.skipped == ["t"]
 
-    def test_overwrite_replaces(self, import_target: MemoryManager, tmp_path: Path) -> None:
+    def test_overwrite_replaces(
+        self, import_target: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
         src = SessionStore(tmp_path / "src.cantrip")
         src.open()
         try:
@@ -269,18 +277,20 @@ class TestImport:
         assert entry is not None
         assert entry.body == "v2"
 
-    def test_missing_source(self, import_target: MemoryManager, tmp_path: Path) -> None:
+    def test_missing_source(self, import_target: MemoryManager, tmp_path: pathlib.Path) -> None:
         with pytest.raises(FileNotFoundError):
             import_from_path(import_target, tmp_path / "missing.md")
 
-    def test_unknown_target_scope(self, import_target: MemoryManager, tmp_path: Path) -> None:
+    def test_unknown_target_scope(
+        self, import_target: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
         f = tmp_path / "x.md"
         f.write_text("---\nname: x\ndescription: x\n---\n\n## Memory: t\n\n*Kind:* fact\n\nb\n")
         with pytest.raises(Exception, match="unknown scope"):
             import_from_path(import_target, f, target_scope="elsewhere")
 
     def test_handles_skill_with_only_frontmatter(
-        self, import_target: MemoryManager, tmp_path: Path
+        self, import_target: MemoryManager, tmp_path: pathlib.Path
     ) -> None:
         """A SKILL.md with no Memory sections imports zero entries cleanly."""
         f = tmp_path / "skill.md"
@@ -298,7 +308,7 @@ class TestRoundTripSanitised:
         self,
         manager: MemoryManager,
         import_target: MemoryManager,
-        tmp_path: Path,
+        tmp_path: pathlib.Path,
     ) -> None:
         # Write a memory referencing the charm path.
         body = f"See {tmp_path}/src/charm.py"

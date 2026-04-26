@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -11,7 +11,7 @@ from cantrip.agent.mcp_commands import handle_mcp, mcp_help_text
 from cantrip.mcp import MCPRegistry, ServerConfig, ServerStatus
 from cantrip.mcp.types import TransportKind
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _stub_config(name: str = "stub", **overrides: object) -> ServerConfig:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 from cantrip.agent.audit import (
     AUDIT_FILENAME,
@@ -71,7 +71,7 @@ class TestScrubArguments:
         scrubbed = scrub_arguments({"count": 42, "flag": True, "items": ["a", "b"]})
         assert scrubbed == {"count": 42, "flag": True, "items": ["a", "b"]}
 
-    def test_charm_path_scrubbed(self, tmp_path: Path) -> None:
+    def test_charm_path_scrubbed(self, tmp_path: pathlib.Path) -> None:
         scrubbed = scrub_arguments(
             {"path": str(tmp_path / "src/charm.py")},
             charm_path=tmp_path,
@@ -108,7 +108,7 @@ class TestMakeEntry:
 class TestAuditWriter:
     """``AuditWriter`` appends one line per call and tolerates concurrent writes."""
 
-    def test_write_appends_a_line_per_entry(self, tmp_path: Path) -> None:
+    def test_write_appends_a_line_per_entry(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / AUDIT_FILENAME
         writer = AuditWriter(path)
         writer.write(
@@ -137,7 +137,7 @@ class TestAuditWriter:
             assert "timestamp" in parsed
             assert "tool" in parsed
 
-    def test_concurrent_writers_do_not_interleave(self, tmp_path: Path) -> None:
+    def test_concurrent_writers_do_not_interleave(self, tmp_path: pathlib.Path) -> None:
         """Two threads writing long entries still produce valid JSON lines.
 
         This is the whole reason ``AuditWriter`` holds a lock — without
@@ -178,7 +178,7 @@ class TestAuditWriter:
 class TestReadEntries:
     """Read-side helper for the CLI subcommand."""
 
-    def test_reads_back_written_entries(self, tmp_path: Path) -> None:
+    def test_reads_back_written_entries(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / AUDIT_FILENAME
         writer = AuditWriter(path)
         for tool in ("a", "b", "c"):
@@ -193,11 +193,11 @@ class TestReadEntries:
         entries = list(read_entries(path))
         assert [e.tool for e in entries] == ["a", "b", "c"]
 
-    def test_missing_file_returns_empty_iterator(self, tmp_path: Path) -> None:
+    def test_missing_file_returns_empty_iterator(self, tmp_path: pathlib.Path) -> None:
         entries = list(read_entries(tmp_path / "no-such-file.jsonl"))
         assert entries == []
 
-    def test_malformed_line_is_skipped(self, tmp_path: Path, caplog) -> None:
+    def test_malformed_line_is_skipped(self, tmp_path: pathlib.Path, caplog) -> None:
         """A corrupt line logs a warning and the good lines still come through."""
         import logging
 
@@ -215,7 +215,7 @@ class TestReadEntries:
         assert [e.tool for e in entries] == ["a", "b"]
         assert any("malformed" in rec.getMessage().lower() for rec in caplog.records)
 
-    def test_blank_lines_ignored(self, tmp_path: Path) -> None:
+    def test_blank_lines_ignored(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / AUDIT_FILENAME
         writer = AuditWriter(path)
         writer.write(

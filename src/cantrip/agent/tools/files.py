@@ -1,6 +1,6 @@
 """File operation tools for the agent."""
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
@@ -13,12 +13,12 @@ class PathAwareTool(Tool):
     against an optional *base_path* and prevents path-traversal escapes.
     """
 
-    def __init__(self, base_path: Path | None = None) -> None:
+    def __init__(self, base_path: pathlib.Path | None = None) -> None:
         self.base_path = base_path
 
-    def _resolve_path(self, path: str) -> Path:
+    def _resolve_path(self, path: str) -> pathlib.Path:
         """Resolve *path*, ensuring it stays within ``base_path`` when set."""
-        resolved = Path(path)
+        resolved = pathlib.Path(path)
         if not resolved.is_absolute() and self.base_path:
             resolved = self.base_path / path
         resolved = resolved.resolve()

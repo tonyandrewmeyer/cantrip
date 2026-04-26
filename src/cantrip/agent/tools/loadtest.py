@@ -1,6 +1,6 @@
 """Load test generation tool — produces charm-specific load test scripts."""
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import yaml
@@ -268,7 +268,7 @@ class GenerateLoadTestTool(Tool):
 
     async def execute(self, path: str = ".", charm_name: str | None = None) -> ToolResult:
         """Generate load test files in the charm directory."""
-        charm_dir = Path(path).resolve()
+        charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
                 success=False,

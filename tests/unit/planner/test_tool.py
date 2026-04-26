@@ -1,8 +1,8 @@
 """Planner tests: tool."""
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -154,7 +154,7 @@ class TestPlanTasksTool:
         state = AgentState(
             mode="improve",
             charm_name="my-charm",
-            charm_path=Path("/tmp/my-charm"),
+            charm_path=pathlib.Path("/tmp/my-charm"),
         )
         queue = WorkQueue()
         tool = PlanTasksTool(provider=provider, state=state, queue=queue)
@@ -352,7 +352,7 @@ class TestSprintAutoDetect:
         _patch_juju(monkeypatch, payload)
 
         provider = FakeProvider()
-        state = AgentState(charm_path=Path("/tmp/charms"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/charms"))
         queue = WorkQueue()
         tool = PlanTasksTool(provider=provider, state=state, queue=queue)
 
@@ -379,7 +379,7 @@ class TestSprintAutoDetect:
 
         provider = FakeProvider()
         state = AgentState(
-            charm_path=Path("/tmp/charms"),
+            charm_path=pathlib.Path("/tmp/charms"),
             dev_model="lxd-dev",  # stale: from a prior session/guess
         )
         queue = WorkQueue()

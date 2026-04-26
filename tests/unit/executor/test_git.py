@@ -1,7 +1,7 @@
 """Executor tests: git."""
 
+import pathlib
 import subprocess
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -23,7 +23,7 @@ class TestCheckUncommitted:
 
     def test_logs_warning_when_uncommitted_changes(self) -> None:
         """A warning is logged when git reports uncommitted changes."""
-        state = AgentState(charm_path=Path("/tmp/test-charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/test-charm"))
         queue = WorkQueue()
         task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
         queue.add_task(task)
@@ -47,7 +47,7 @@ class TestCheckUncommitted:
 
     def test_no_warning_when_clean(self) -> None:
         """No warning is logged when the working tree is clean."""
-        state = AgentState(charm_path=Path("/tmp/test-charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/test-charm"))
         queue = WorkQueue()
         task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
         queue.add_task(task)
@@ -93,7 +93,7 @@ class TestPreCheckEnvironment:
 
     def test_deploy_fails_without_dev_model(self) -> None:
         """DEPLOY pre-check rejects when no development model is set."""
-        state = AgentState(charm_path=Path("/tmp/charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/charm"))
         executor = _make_executor(state=state)
         task = AgentTask(id="d1", title="Deploy", category=TaskCategory.DEPLOY)
 
@@ -102,7 +102,7 @@ class TestPreCheckEnvironment:
         assert result is not None
         assert "No development model set" in result
 
-    def test_deploy_passes_with_dev_model_and_charm_path(self, tmp_path: Path) -> None:
+    def test_deploy_passes_with_dev_model_and_charm_path(self, tmp_path: pathlib.Path) -> None:
         """DEPLOY pre-check passes when dev_model and charm_path are set."""
         state = AgentState(dev_model="dev", charm_path=tmp_path)
         executor = _make_executor(state=state)
@@ -125,7 +125,7 @@ class TestPreCheckEnvironment:
 
     def test_deploy_fails_when_charm_path_does_not_exist(self) -> None:
         """DEPLOY pre-check rejects when charm directory does not exist."""
-        state = AgentState(dev_model="dev", charm_path=Path("/nonexistent/path"))
+        state = AgentState(dev_model="dev", charm_path=pathlib.Path("/nonexistent/path"))
         executor = _make_executor(state=state)
         task = AgentTask(id="d1", title="Deploy", category=TaskCategory.DEPLOY)
 
@@ -145,7 +145,7 @@ class TestPreCheckEnvironment:
         assert result is not None
         assert "No charm path set" in result
 
-    def test_test_fails_without_charm_file(self, tmp_path: Path) -> None:
+    def test_test_fails_without_charm_file(self, tmp_path: pathlib.Path) -> None:
         """TEST pre-check rejects when no .charm file exists."""
         state = AgentState(charm_path=tmp_path)
         executor = _make_executor(state=state)
@@ -156,7 +156,7 @@ class TestPreCheckEnvironment:
         assert result is not None
         assert "No packed charm found" in result
 
-    def test_test_passes_with_charm_file(self, tmp_path: Path) -> None:
+    def test_test_passes_with_charm_file(self, tmp_path: pathlib.Path) -> None:
         """TEST pre-check passes when a .charm file exists."""
         (tmp_path / "myapp.charm").touch()
         state = AgentState(charm_path=tmp_path)
@@ -184,7 +184,7 @@ class TestPreCheckEnvironment:
         task = AgentTask(id="d1", title="Deploy app", category=TaskCategory.DEPLOY)
         queue.add_task(task)
 
-        state = AgentState(charm_path=Path("/tmp/charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/charm"))
         failed_cb = MagicMock()
         executor = _make_executor(queue=queue, state=state, on_task_failed=failed_cb)
 
@@ -219,7 +219,7 @@ class TestSnapshotHead:
 
     def test_returns_commit_hash_when_charm_path_set(self) -> None:
         """Returns the HEAD commit hash from subprocess output."""
-        state = AgentState(charm_path=Path("/tmp/test-charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/test-charm"))
         executor = _make_executor(state=state)
 
         completed = subprocess.CompletedProcess(
@@ -235,7 +235,7 @@ class TestSnapshotHead:
 
     def test_returns_none_on_git_failure(self) -> None:
         """Returns None when git rev-parse fails."""
-        state = AgentState(charm_path=Path("/tmp/test-charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/test-charm"))
         executor = _make_executor(state=state)
 
         completed = subprocess.CompletedProcess(
@@ -260,7 +260,7 @@ class TestRevertOnFailure:
 
     def test_runs_git_checkout_and_logs_warning(self) -> None:
         """Reverts tracked files and logs a warning."""
-        state = AgentState(charm_path=Path("/tmp/test-charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/test-charm"))
         queue = WorkQueue()
         task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
         queue.add_task(task)
@@ -291,7 +291,7 @@ class TestRevertOnFailure:
 
     def test_prepends_diff_to_task_result(self) -> None:
         """The captured diff is prepended to the task result."""
-        state = AgentState(charm_path=Path("/tmp/test-charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/test-charm"))
         queue = WorkQueue()
         task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
         task.result = "original error"
@@ -334,7 +334,7 @@ class TestGitRevertOnTaskFailure:
     @pytest.mark.asyncio
     async def test_revert_called_on_build_failure(self) -> None:
         """_revert_on_failure is called when a BUILD task fails."""
-        state = AgentState(charm_path=Path("/tmp/test-charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/test-charm"))
         queue = WorkQueue()
         task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
         queue.add_task(task)
@@ -356,7 +356,7 @@ class TestGitRevertOnTaskFailure:
     @pytest.mark.asyncio
     async def test_revert_called_on_build_timeout(self) -> None:
         """_revert_on_failure is called when a BUILD task times out."""
-        state = AgentState(charm_path=Path("/tmp/test-charm"))
+        state = AgentState(charm_path=pathlib.Path("/tmp/test-charm"))
         queue = WorkQueue()
         task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
         queue.add_task(task)

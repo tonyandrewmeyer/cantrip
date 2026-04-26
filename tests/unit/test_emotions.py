@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -138,7 +138,7 @@ class TestBuildContextMessage:
         assert "substrate: k8s — no state" in msg
         assert "framework: paas" in msg
 
-    def test_inlines_sampled_files(self, tmp_path: Path) -> None:
+    def test_inlines_sampled_files(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "charmcraft.yaml").write_text("type: charm\nname: demo\n")
         (tmp_path / "README.md").write_text("# Demo\n")
         msg = emotions.build_context_message(
@@ -152,7 +152,7 @@ class TestBuildContextMessage:
         assert "type: charm" in msg
         assert "README.md" in msg
 
-    def test_oversized_files_are_skipped(self, tmp_path: Path) -> None:
+    def test_oversized_files_are_skipped(self, tmp_path: pathlib.Path) -> None:
         big = "x" * 10_000
         (tmp_path / "src").mkdir()
         (tmp_path / "src" / "charm.py").write_text(big)

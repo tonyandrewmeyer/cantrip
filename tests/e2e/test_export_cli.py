@@ -6,8 +6,8 @@ valid output files. No LLM API key required.
 """
 
 import json
+import pathlib
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -20,7 +20,7 @@ from cantrip.agent.store import SessionStore
 # ---------------------------------------------------------------------------
 
 
-def _seed_database(charm_path: Path) -> None:
+def _seed_database(charm_path: pathlib.Path) -> None:
     """Create a .cantrip database with enough data for meaningful exports."""
     db_path = charm_path / ".cantrip"
     store = SessionStore(db_path)
@@ -100,7 +100,7 @@ def _run_cantrip(*args: str) -> subprocess.CompletedProcess:
 class TestExportCLI:
     """Test the ``cantrip export-transcript`` subcommand."""
 
-    def test_export_html(self, tmp_path: Path):
+    def test_export_html(self, tmp_path: pathlib.Path):
         """Export as HTML produces a valid HTML file."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
@@ -117,7 +117,7 @@ class TestExportCLI:
         assert "<html" in content
         assert "cli-test-charm" in content
 
-    def test_export_markdown(self, tmp_path: Path):
+    def test_export_markdown(self, tmp_path: pathlib.Path):
         """Export as Markdown produces a valid .md file."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
@@ -135,7 +135,7 @@ class TestExportCLI:
         assert "## Tasks" in content
         assert "## Conversation" in content
 
-    def test_export_jsonl(self, tmp_path: Path):
+    def test_export_jsonl(self, tmp_path: pathlib.Path):
         """Export as JSONL produces valid newline-delimited JSON."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
@@ -156,7 +156,7 @@ class TestExportCLI:
             assert "type" in parsed
             assert parsed["type"] in {"message", "event", "task", "subagent_message"}
 
-    def test_export_custom_output_path(self, tmp_path: Path):
+    def test_export_custom_output_path(self, tmp_path: pathlib.Path):
         """--output writes to the specified path."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
@@ -176,7 +176,7 @@ class TestExportCLI:
         assert output_file.exists()
         assert "cli-test-charm" in output_file.read_text()
 
-    def test_export_filter_task(self, tmp_path: Path):
+    def test_export_filter_task(self, tmp_path: pathlib.Path):
         """--task filters to a single task."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
@@ -202,7 +202,7 @@ class TestExportCLI:
         assert len(task_lines) == 1
         assert task_lines[0]["id"] == "research"
 
-    def test_export_filter_phase(self, tmp_path: Path):
+    def test_export_filter_phase(self, tmp_path: pathlib.Path):
         """--phase filters tasks by category group."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
@@ -228,7 +228,7 @@ class TestExportCLI:
         assert len(task_lines) == 1
         assert task_lines[0]["id"] == "build"
 
-    def test_export_no_cantrip_file_fails(self, tmp_path: Path):
+    def test_export_no_cantrip_file_fails(self, tmp_path: pathlib.Path):
         """Exporting from a directory with no .cantrip file fails gracefully."""
         charm_path = tmp_path / "empty-charm"
         charm_path.mkdir()

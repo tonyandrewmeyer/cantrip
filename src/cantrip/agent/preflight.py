@@ -12,14 +12,14 @@ and ensures a COS model is deployed.
 
 import asyncio
 import collections.abc
+import dataclasses
 import json
 import logging
+import pathlib
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 
 import jubilant
@@ -59,7 +59,7 @@ class CheckStatus(StrEnum):
     SKIPPED = "skipped"
 
 
-@dataclass
+@dataclasses.dataclass
 class PreflightEvent:
     """An event emitted during preflight checks."""
 
@@ -69,7 +69,7 @@ class PreflightEvent:
     detail: str = ""
 
 
-@dataclass
+@dataclasses.dataclass
 class PreflightResult:
     """Aggregate result of all preflight checks."""
 
@@ -80,8 +80,8 @@ class PreflightResult:
     cos_ready: bool = False
     cos_controller: str | None = None  # Controller hosting COS (if cross-controller)
     preset: str | None = None
-    controllers: list[dict[str, Any]] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
+    controllers: list[dict[str, Any]] = dataclasses.field(default_factory=list)
+    errors: list[str] = dataclasses.field(default_factory=list)
 
     @property
     def fully_ready(self) -> bool:
@@ -151,7 +151,7 @@ class PreflightRunner:
         self._emit(
             "snap_install", CheckStatus.RUNNING, "Installing snaps (Juju, LXD, craft tools)"
         )
-        config_path: Path | None = None
+        config_path: pathlib.Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w",
@@ -160,7 +160,7 @@ class PreflightRunner:
                 delete=False,
             ) as tmp:
                 tmp.write(_WARMUP_CONFIG)
-                config_path = Path(tmp.name)
+                config_path = pathlib.Path(tmp.name)
 
             rc, stdout, stderr = await _run_concierge(
                 "prepare", "-c", str(config_path), timeout=600

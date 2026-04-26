@@ -13,7 +13,7 @@ import ast
 import dataclasses
 import enum
 import logging
-from pathlib import Path
+import pathlib
 from typing import Any
 
 import yaml
@@ -78,7 +78,7 @@ class FileSymbols:
 # ---------------------------------------------------------------------------
 
 
-def parse_python_file(path: Path, *, repo_root: Path) -> FileSymbols:
+def parse_python_file(path: pathlib.Path, *, repo_root: pathlib.Path) -> FileSymbols:
     """Parse one Python file and return its definitions + references.
 
     Returns an empty :class:`FileSymbols` if the file cannot be read or
@@ -219,7 +219,7 @@ _METADATA_FILES = {
 }
 
 
-def parse_charm_metadata(path: Path, *, repo_root: Path) -> FileSymbols:
+def parse_charm_metadata(path: pathlib.Path, *, repo_root: pathlib.Path) -> FileSymbols:
     """Extract relations, config options, actions, etc. from a charm YAML."""
     rel = _relative(path, repo_root)
     try:
@@ -273,7 +273,7 @@ def parse_charm_metadata(path: Path, *, repo_root: Path) -> FileSymbols:
     return FileSymbols(file=rel, definitions=definitions, references=references)
 
 
-def is_charm_metadata(path: Path) -> bool:
+def is_charm_metadata(path: pathlib.Path) -> bool:
     """True if *path* is a charm-metadata YAML we know how to parse."""
     return path.name in _METADATA_FILES
 
@@ -308,7 +308,7 @@ def _emit_keyed(
 # ---------------------------------------------------------------------------
 
 
-def _relative(path: Path, root: Path) -> str:
+def _relative(path: pathlib.Path, root: pathlib.Path) -> str:
     """Return ``path`` relative to ``root`` as a forward-slash string."""
     try:
         return path.resolve().relative_to(root.resolve()).as_posix()

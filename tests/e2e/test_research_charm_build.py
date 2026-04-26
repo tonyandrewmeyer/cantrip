@@ -28,7 +28,7 @@ signal.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+import pathlib
 
 import pytest
 
@@ -113,7 +113,7 @@ class TestResearchCharmBuild:
 
     @pytest.mark.asyncio
     async def test_redis_from_minimal_prompt(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         harness.require_controller("k8s")
         provider = harness.make_provider("gemini")
@@ -158,7 +158,7 @@ class TestResearchCharmBuild:
 
     # -- Assertions --------------------------------------------------------
 
-    def _assert_charm_produced(self, workspace: Path) -> None:
+    def _assert_charm_produced(self, workspace: pathlib.Path) -> None:
         charm_yaml = next(workspace.rglob("charmcraft.yaml"), None)
         assert charm_yaml is not None, (
             f"No charmcraft.yaml anywhere in the workspace. "

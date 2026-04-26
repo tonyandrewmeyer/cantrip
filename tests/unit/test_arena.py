@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
+import pathlib
 import random
-from pathlib import Path
 
 import pytest
 
@@ -24,7 +24,7 @@ def _named_provider(model_name: str, response_text: str = "ok") -> FakeProvider:
     return provider
 
 
-def _memory_manager(tmp_path: Path) -> MemoryManager:
+def _memory_manager(tmp_path: pathlib.Path) -> MemoryManager:
     return MemoryManager(
         session_store=None,
         global_store=GlobalMemoryStore(tmp_path / "globalmem"),
@@ -202,7 +202,7 @@ class TestFormatBlindArena:
 
 
 class TestRecordPreference:
-    def test_picked_a_writes_directional_memory(self, tmp_path: Path) -> None:
+    def test_picked_a_writes_directional_memory(self, tmp_path: pathlib.Path) -> None:
         manager = _memory_manager(tmp_path)
         session = _session(a_model="claude-opus", b_model="gemini-pro")
         entry = arena.record_preference(manager, session, arena.ArenaOutcome.PICKED_A)
@@ -212,7 +212,7 @@ class TestRecordPreference:
         assert "gemini-pro" in entry.body
         assert "preferred" in entry.body
 
-    def test_picked_b_writes_directional_memory(self, tmp_path: Path) -> None:
+    def test_picked_b_writes_directional_memory(self, tmp_path: pathlib.Path) -> None:
         manager = _memory_manager(tmp_path)
         session = _session(a_model="claude-opus", b_model="gemini-pro")
         entry = arena.record_preference(manager, session, arena.ArenaOutcome.PICKED_B)
@@ -222,27 +222,27 @@ class TestRecordPreference:
         loser_idx = entry.body.index("claude-opus")
         assert winner_idx < loser_idx
 
-    def test_tie_writes_equivalence_memory(self, tmp_path: Path) -> None:
+    def test_tie_writes_equivalence_memory(self, tmp_path: pathlib.Path) -> None:
         manager = _memory_manager(tmp_path)
         session = _session()
         entry = arena.record_preference(manager, session, arena.ArenaOutcome.TIE)
         assert entry is not None
         assert "equivalent" in entry.body.lower()
 
-    def test_skipped_outcome_writes_nothing(self, tmp_path: Path) -> None:
+    def test_skipped_outcome_writes_nothing(self, tmp_path: pathlib.Path) -> None:
         manager = _memory_manager(tmp_path)
         session = _session()
         entry = arena.record_preference(manager, session, arena.ArenaOutcome.SKIPPED)
         assert entry is None
         assert manager.list_entries(scope="global") == []
 
-    def test_unrecognised_outcome_writes_nothing(self, tmp_path: Path) -> None:
+    def test_unrecognised_outcome_writes_nothing(self, tmp_path: pathlib.Path) -> None:
         manager = _memory_manager(tmp_path)
         session = _session()
         entry = arena.record_preference(manager, session, arena.ArenaOutcome.UNRECOGNISED)
         assert entry is None
 
-    def test_prompt_excerpt_truncated_at_200_chars(self, tmp_path: Path) -> None:
+    def test_prompt_excerpt_truncated_at_200_chars(self, tmp_path: pathlib.Path) -> None:
         manager = _memory_manager(tmp_path)
         long_prompt = "word " * 100  # ~500 chars
         session = dataclasses.replace(_session(), prompt=long_prompt)
