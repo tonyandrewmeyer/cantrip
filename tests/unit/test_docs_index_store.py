@@ -141,6 +141,36 @@ class TestDocsStore:
         # All hits carry the configured site name.
         assert all(hit.site == "juju" for hit in hits)
 
+    def test_search_ties_break_on_url_then_ordinal(self, tmp_path: pathlib.Path) -> None:
+        """Equal-score hits sort url-asc, then ordinal-asc.
+
+        The store's docstring promises a deterministic tiebreak so a
+        repeated query against an unchanged corpus produces stable
+        result ordering — without it, a downstream consumer that
+        deduplicates by ``(url, ordinal)`` would see the order
+        flip-flop on each call.  A previous implementation only
+        included url in the sort key; two chunks from the same page
+        with identical scores landed in arbitrary SQLite order.
+        """
+        store = DocsStore("juju", tmp_path / "j" / "index.db")
+        # Three chunks with identical query-cosine but staggered urls
+        # and ordinals.  ``b`` page has two chunks (ordinals 0 and 1)
+        # so the within-page tiebreak fires.
+        v = (1.0, 1.0, 0.0)
+        store.upsert(
+            [
+                _make_chunk(url="https://x/b", ordinal=1, vector=v, text="b1"),
+                _make_chunk(url="https://x/a", ordinal=0, vector=v, text="a0"),
+                _make_chunk(url="https://x/b", ordinal=0, vector=v, text="b0"),
+            ]
+        )
+        hits = store.search((1.0, 1.0, 0.0), top_k=3)
+        assert [(h.url, h.excerpt) for h in hits] == [
+            ("https://x/a", "a0"),
+            ("https://x/b", "b0"),
+            ("https://x/b", "b1"),
+        ]
+
     def test_search_top_k_limits(self, tmp_path: pathlib.Path) -> None:
         store = DocsStore("juju", tmp_path / "j" / "index.db")
         store.upsert(
