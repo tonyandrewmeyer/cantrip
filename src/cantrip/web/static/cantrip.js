@@ -208,12 +208,16 @@ const cantrip = (() => {
         appendMessage(
           "system",
           `Wrote ${msg.data.kind} memory: ${msg.data.title} (${msg.data.scope})`,
+          "",
+          new Date().toISOString(),
         );
         break;
       case "memory_recalled":
         appendMessage(
           "system",
           `Recalled memory: ${msg.data.title} (${msg.data.scope})`,
+          "",
+          new Date().toISOString(),
         );
         break;
       case "update_available":

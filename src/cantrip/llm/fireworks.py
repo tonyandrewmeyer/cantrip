@@ -188,7 +188,10 @@ class FireworksProvider(OpenAICompatBase):
                 resp = client.get("/models")
                 resp.raise_for_status()
                 payload = resp.json()
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, ValueError) as e:
+            # ``ValueError`` covers ``json.JSONDecodeError`` so a probe
+            # endpoint that returns non-JSON degrades to the fallback
+            # context window instead of crashing provider construction.
             log.debug("Fireworks /models probe failed: %s", e)
             return
 

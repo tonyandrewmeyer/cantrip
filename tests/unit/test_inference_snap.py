@@ -971,3 +971,44 @@ class TestListInferenceSnapsTool:
         assert "running" in result.output
         assert "gemma-3-4b-it" in result.output
         assert result.data["snaps"] == ["gemma3"]
+
+    @pytest.mark.asyncio
+    async def test_non_json_response_does_not_crash(self):
+        """A broken snap returning HTML must not crash the listing tool.
+
+        ``except httpx.HTTPError`` doesn't catch ``json.JSONDecodeError``
+        (which is a ``ValueError`` subclass), so a snap whose ``/models``
+        endpoint returns an error page used to take the entire listing
+        tool down with it.
+        """
+        from cantrip.agent.tools.inference import ListInferenceSnapsTool
+
+        tool = ListInferenceSnapsTool()
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.side_effect = ValueError("Expecting value: line 1 column 1 (char 0)")
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.get.return_value = mock_resp
+
+        with (
+            patch(
+                "cantrip.agent.tools.inference.list_available_snaps",
+                return_value=["broken-snap"],
+            ),
+            patch(
+                "cantrip.agent.tools.inference.discover_snap_endpoint",
+                return_value="http://localhost:8080/v1",
+            ),
+            patch("cantrip.agent.tools.inference.httpx.Client", return_value=mock_client),
+        ):
+            result = await tool.execute()
+
+        assert result.success is True
+        assert "broken-snap" in result.output
+        # Failed to read /models → counted as unreachable.
+        assert "unreachable" in result.output
+        assert "0 running" in result.caption

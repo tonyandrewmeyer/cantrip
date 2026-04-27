@@ -196,6 +196,49 @@ class TestWebFetchTool:
         assert len(result.output) == MAX_RESPONSE_CHARS
         assert result.data["truncated"] is True
 
+    @pytest.mark.asyncio
+    async def test_redirect_to_private_address_blocked(self, tool):
+        """A public URL must not be able to 302-bounce into a private IP.
+
+        ``_is_private_url`` only validates the URL the caller passed.
+        Without per-hop revalidation, an attacker-controlled HTTP server
+        can return ``302 Location: http://169.254.169.254/...`` and
+        leak cloud-metadata credentials back to the LLM.  Walk redirects
+        manually so each hop is checked.
+        """
+        redirect_resp = httpx.Response(
+            status_code=302,
+            headers={"Location": "http://192.168.1.99/secret"},
+            request=httpx.Request("GET", "http://public.example.test/page"),
+        )
+
+        async def mock_get(url, **_kwargs):
+            assert "public.example.test" in str(url), (
+                "redirect target must never be requested directly"
+            )
+            return redirect_resp
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        # Pretend the original URL is public, the redirect target private.
+        def fake_is_private(url):
+            if "192.168" in url or "169.254" in url:
+                return "private/internal address"
+            return None
+
+        with (
+            patch("cantrip.agent.tools.web.httpx.AsyncClient", return_value=mock_client),
+            patch("cantrip.agent.tools.web._is_private_url", side_effect=fake_is_private),
+        ):
+            result = await tool.execute(url="http://public.example.test/page")
+
+        assert not result.success
+        assert "192.168.1.99" in result.error
+        assert "Blocked" in result.error
+
 
 class TestLlmsTxtAwareness:
     """Tests for llms.txt probing and preference."""

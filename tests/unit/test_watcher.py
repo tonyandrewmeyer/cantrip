@@ -1,6 +1,7 @@
 """Tests for the event-driven watcher."""
 
 import json
+import re
 import time
 from unittest import mock
 
@@ -824,6 +825,37 @@ class TestLokiPolling:
         assert event is not None
         assert event.category == "log_error"
         assert event.app == "myapp"
+
+    @pytest.mark.asyncio
+    async def test_poll_loki_url_uses_nanosecond_window(self):
+        """The watcher must send Loki the nanosecond timestamps it parses,
+        not Grafana shortcuts like ``now-20s``.
+
+        Loki's ``query_range`` 400s on ``now`` / ``now-Ns``, which used to
+        surface as a quiet "Malformed JSON from Loki" debug line every poll
+        with events silently dried up.  Pin the URL shape so a regression
+        is visible as a test failure.
+        """
+        loki_response = {"data": {"result": []}}
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        mock_juju.ssh.return_value = json.dumps(loki_response)
+
+        watcher = EventWatcher(dev_model="dev", cos_model="cos")
+        with mock.patch(
+            "cantrip.agent.watcher._find_cos_unit",
+            return_value=(mock_juju, "loki-k8s/0"),
+        ):
+            await watcher._poll_loki_once()
+
+        ssh_command = mock_juju.ssh.call_args[0][1]
+        # The full URL is the second shell-quoted argument in the script.
+        assert "now-" not in ssh_command and "end=now" not in ssh_command
+        match = re.search(r"start=(\d+)&end=(\d+)", ssh_command)
+        assert match is not None, f"missing nanos in {ssh_command!r}"
+        start_ns, end_ns = int(match.group(1)), int(match.group(2))
+        # Default loki_interval is 15s, +5s slack → 20s window.
+        gap = end_ns - start_ns
+        assert 19_900_000_000 <= gap <= 20_100_000_000, gap
 
     @pytest.mark.asyncio
     async def test_poll_loki_no_cos_model(self):

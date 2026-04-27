@@ -544,17 +544,20 @@ class LokiQueryTool(Tool):
         except ValueError as exc:
             return ToolResult(success=False, output="", error=str(exc))
 
-        # Pre-compute the full URL on the agent side to avoid shell-escaping
-        # issues with LogQL's {}, |=, and quotes.
-        end_ns = "now"
-        # Loki expects nanosecond timestamps for 'start'; we compute a
-        # relative offset as a duration string instead.
-        start = f"now-{hours}h" if hours != 1 else "now-1h"
+        # Loki's ``query_range`` parses ``start`` / ``end`` as either
+        # nanosecond Unix epochs, RFC3339 timestamps, or a bare
+        # Prometheus-style duration like ``1h``.  ``now`` and
+        # ``now-1h`` are Grafana shortcuts that look natural but
+        # 400 here — convert relative hours to nanoseconds at the
+        # agent so the API gets a shape it understands, regardless
+        # of fractional input or Loki version.
+        end_dt = datetime.datetime.now(datetime.UTC)
+        start_dt = end_dt - datetime.timedelta(hours=hours)
         params = {
             "query": query,
             "limit": str(limit),
-            "start": start,
-            "end": end_ns,
+            "start": str(int(start_dt.timestamp() * 1_000_000_000)),
+            "end": str(int(end_dt.timestamp() * 1_000_000_000)),
         }
         url = f"http://localhost:3100/loki/api/v1/query_range?{urllib.parse.urlencode(params)}"
 

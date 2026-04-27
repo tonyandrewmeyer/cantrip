@@ -91,3 +91,18 @@ class TestLintFiltering:
         report = lint(charm_dir)
         assert report.error_count == 1
         assert report.diagnostics[0].rule_id == "FATAL"
+        assert "No charmcraft.yaml" in report.diagnostics[0].message
+
+    def test_malformed_charmcraft_yaml_returns_parse_error(self, tmp_path: pathlib.Path):
+        charm_dir = tmp_path / "broken"
+        charm_dir.mkdir()
+        # Mapping value with a colon at top level confuses safe_load.
+        (charm_dir / "charmcraft.yaml").write_text("name: foo\nbad: this: that\n")
+        report = lint(charm_dir)
+        assert report.error_count == 1
+        diag = report.diagnostics[0]
+        assert diag.rule_id == "FATAL"
+        # The misleading "No charmcraft.yaml" text must NOT appear when
+        # the file is right there but malformed.
+        assert "No charmcraft.yaml" not in diag.message
+        assert "Could not parse charmcraft.yaml" in diag.message

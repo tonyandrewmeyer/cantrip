@@ -94,6 +94,7 @@ class RegistrySearchTool(Tool):
                     params={"query": query, "page_size": 25},
                 )
                 response.raise_for_status()
+                body = response.json()
         except httpx.TimeoutException:
             return ToolResult(
                 success=False,
@@ -113,9 +114,17 @@ class RegistrySearchTool(Tool):
                 output="",
                 error=f"Connection error searching Docker Hub: {exc}",
             )
+        except ValueError as exc:
+            # ``json.JSONDecodeError`` is a ``ValueError`` subclass.  A
+            # 200 with non-JSON (captive portal, broken CDN edge) used
+            # to crash this tool with an unhandled traceback.
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Docker Hub returned non-JSON response for '{query}': {exc}",
+            )
 
-        body = response.json()
-        raw_results = body.get("results", [])
+        raw_results = body.get("results", []) if isinstance(body, dict) else []
         total = len(raw_results)
         truncated = total > MAX_SEARCH_RESULTS
         results = raw_results[:MAX_SEARCH_RESULTS]
@@ -212,6 +221,7 @@ class RegistryImageInfoTool(Tool):
                     params={"page_size": 25, "ordering": "last_updated"},
                 )
                 response.raise_for_status()
+                body = response.json()
         except httpx.TimeoutException:
             return ToolResult(
                 success=False,
@@ -239,9 +249,16 @@ class RegistryImageInfoTool(Tool):
                 output="",
                 error=f"Connection error fetching Docker Hub info: {exc}",
             )
+        except ValueError as exc:
+            # ``json.JSONDecodeError`` is a ``ValueError`` subclass — a
+            # 200 with non-JSON used to crash this tool unhandled.
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Docker Hub returned non-JSON response for '{image}': {exc}",
+            )
 
-        body = response.json()
-        raw_tags = body.get("results", [])
+        raw_tags = body.get("results", []) if isinstance(body, dict) else []
 
         tags: list[dict[str, Any]] = []
         lines: list[str] = []

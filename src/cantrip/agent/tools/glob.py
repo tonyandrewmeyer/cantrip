@@ -4,6 +4,7 @@ Uses ``pathlib.Path.glob`` to find files by pattern, filtering out
 common noise directories (``.git``, ``__pycache__``, etc.).
 """
 
+import heapq
 import logging
 import pathlib
 from typing import Any
@@ -99,7 +100,7 @@ class GlobTool(PathAwareTool):
 
         max_results = min(max(1, max_results), _ABSOLUTE_MAX_RESULTS)
 
-        matches = _collect_matches(resolved, pattern, max_results)
+        matches, total_seen = _collect_matches(resolved, pattern, max_results)
 
         if not matches:
             return ToolResult(
@@ -112,9 +113,7 @@ class GlobTool(PathAwareTool):
         # Report paths relative to the search directory.
         rel_paths = [str(m.relative_to(resolved)) for m in matches]
 
-        truncated = len(rel_paths) > max_results
-        if truncated:
-            rel_paths = rel_paths[:max_results]
+        truncated = total_seen > max_results
 
         display = "\n".join(rel_paths)
         if truncated:
@@ -135,22 +134,50 @@ def _collect_matches(
     root: pathlib.Path,
     pattern: str,
     limit: int,
-) -> list[pathlib.Path]:
-    """Collect up to *limit* + 1 matches, skipping noise directories.
+) -> tuple[list[pathlib.Path], int]:
+    """Return the alphabetically-first *limit* matches plus a total count.
 
-    Collects one extra to detect truncation.  Results are sorted
-    alphabetically for deterministic output.
+    ``root.glob`` yields in OS-defined order — usually directory-walk
+    order, not alphabetical — so picking the first *limit* hits and
+    sorting *afterwards* would silently mask alphabetically-earlier
+    files when the pattern matches more than *limit* entries.
+    Use a heap so memory stays bounded at ``O(limit)`` while still
+    returning the correct slice.
+
+    The second tuple element is the total match count (after the
+    skip-dir filter), used by the caller to detect truncation
+    honestly.
     """
-    results: list[pathlib.Path] = []
+    seen = 0
+    heap: list[pathlib.Path] = []
     for match in root.glob(pattern):
         if _in_skip_dir(match, root):
             continue
-        if match.is_file():
-            results.append(match)
-            if len(results) > limit:
-                break
-    results.sort()
-    return results
+        if not match.is_file():
+            continue
+        seen += 1
+        # ``nsmallest``-style invariant: keep the *limit* smallest paths
+        # by alphabetical order via a max-heap of negated keys.  Store
+        # ``(neg_index, path)`` so ties resolve on path itself.
+        if len(heap) < limit:
+            heapq.heappush(heap, _MaxHeapEntry(match))
+        elif heap[0].path > match:
+            heapq.heapreplace(heap, _MaxHeapEntry(match))
+    return sorted(entry.path for entry in heap), seen
+
+
+class _MaxHeapEntry:
+    """Wrap a Path so a ``heapq`` min-heap behaves like a max-heap on paths."""
+
+    __slots__ = ("path",)
+
+    def __init__(self, path: pathlib.Path) -> None:
+        self.path = path
+
+    def __lt__(self, other: "_MaxHeapEntry") -> bool:
+        # Reversed compare turns the min-heap into a max-heap so
+        # ``heap[0]`` is the *largest* path currently kept.
+        return self.path > other.path
 
 
 def _in_skip_dir(path: pathlib.Path, root: pathlib.Path) -> bool:

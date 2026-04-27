@@ -192,7 +192,20 @@ class MessageWidget(Static):
                 renderables.append(progress_markup)
             return Group(*renderables)
 
-        content = self._highlighted_content() if self._search_query else self.message.content
+        # Plain (non-Markdown) bodies are concatenated into a Textual
+        # markup string for the underlying Static.  The header and
+        # reasoning paths already escape; the message content used to
+        # be inserted raw, which crashed the entire TUI when text
+        # contained brackets that look like a Textual tag — e.g. the
+        # literal ``[/model]`` that ``/help`` renders to document
+        # ``/model [provider[/model]]``.  Escape unconditionally on
+        # the no-search path; the search path already escapes per
+        # match in ``_highlighted_content``.
+        content = (
+            self._highlighted_content()
+            if self._search_query
+            else rich_escape(self.message.content)
+        )
         content_lines = []
         if reasoning_block:
             content_lines.append(reasoning_block)
@@ -201,7 +214,9 @@ class MessageWidget(Static):
         for item in self.message.progress_items:
             status_char = self._status_char(item.status)
             status_class = f"progress-{item.status.value.replace('_', '-')}"
-            content_lines.append(f"[{status_class}]{status_char}[/{status_class}] {item.text}")
+            content_lines.append(
+                f"[{status_class}]{status_char}[/{status_class}] {rich_escape(item.text)}"
+            )
 
         return header + "\n".join(content_lines)
 

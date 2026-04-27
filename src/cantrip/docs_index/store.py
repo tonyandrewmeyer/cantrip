@@ -247,7 +247,7 @@ class DocsStore:
         if top_k <= 0:
             return []
         rows = self._conn.execute(
-            "SELECT url, title, section, text, vector, model FROM chunks"
+            "SELECT url, title, section, ordinal, text, vector, model FROM chunks"
         ).fetchall()
         if not rows:
             return []
@@ -257,7 +257,10 @@ class DocsStore:
             vec = _unpack_vector(row["vector"])
             score = _cosine(query, vec)
             scored.append((score, row))
-        scored.sort(key=lambda pair: (-pair[0], pair[1]["url"]))
+        # Sort key matches the docstring: score desc, then url asc, then
+        # ordinal asc — without ``ordinal`` two chunks from the same page
+        # with identical scores would land in unreproducible SQLite order.
+        scored.sort(key=lambda pair: (-pair[0], pair[1]["url"], pair[1]["ordinal"]))
         hits: list[SearchHit] = []
         for score, row in scored[:top_k]:
             text = row["text"] or ""

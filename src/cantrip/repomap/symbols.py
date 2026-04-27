@@ -87,13 +87,17 @@ def parse_python_file(path: pathlib.Path, *, repo_root: pathlib.Path) -> FileSym
     """
     rel = _relative(path, repo_root)
     try:
-        source = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
+        # Read bytes so ``ast.parse`` honours PEP 263 coding cookies and
+        # BOMs.  ``read_text(encoding="utf-8")`` would raise on any
+        # legitimate non-utf-8 file and the symbols would silently
+        # vanish from the rank.
+        source = path.read_bytes()
+    except OSError as exc:
         log.debug("repomap: cannot read %s: %s", path, exc)
         return FileSymbols(file=rel)
     try:
         tree = ast.parse(source, filename=str(path))
-    except SyntaxError as exc:
+    except (SyntaxError, ValueError) as exc:
         log.debug("repomap: cannot parse %s: %s", path, exc)
         return FileSymbols(file=rel)
 

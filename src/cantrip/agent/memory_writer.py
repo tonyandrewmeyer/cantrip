@@ -122,31 +122,42 @@ def collect_file_citations(
     Scans for calls to the file-editing tools (``read_file``,
     ``write_file``, ``edit_file``, ``multi_edit``) and returns the
     deduplicated list of files they touched — resolved against
-    ``base_path`` when the tool argument is relative.  Unresolvable
-    or non-existent paths are dropped; the writer only cites real files.
+    ``base_path`` when the tool argument is relative.  ``multi_edit``
+    carries its targets in an ``edits`` list rather than a top-level
+    ``path``, so each edit's ``file`` key is harvested separately.
+    Unresolvable or non-existent paths are dropped; the writer only
+    cites real files.
     """
     seen: set[pathlib.Path] = set()
     ordered: list[pathlib.Path] = []
+
+    def _visit(raw: object) -> None:
+        if not isinstance(raw, str) or not raw.strip():
+            return
+        candidate = pathlib.Path(raw)
+        if not candidate.is_absolute():
+            if base_path is None:
+                return
+            candidate = base_path / candidate
+        if not candidate.is_file():
+            return
+        resolved = candidate.resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        ordered.append(resolved)
+
     for call in tool_calls:
         name = call.get("name")
         if name not in _FILE_TOOL_NAMES:
             continue
         args = call.get("arguments") or {}
-        raw = args.get("path") or args.get("file_path")
-        if not isinstance(raw, str) or not raw.strip():
-            continue
-        candidate = pathlib.Path(raw)
-        if not candidate.is_absolute():
-            if base_path is None:
-                continue
-            candidate = base_path / candidate
-        if not candidate.is_file():
-            continue
-        resolved = candidate.resolve()
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        ordered.append(resolved)
+        _visit(args.get("path") or args.get("file_path"))
+        edits = args.get("edits")
+        if isinstance(edits, list):
+            for edit in edits:
+                if isinstance(edit, dict):
+                    _visit(edit.get("file") or edit.get("path") or edit.get("file_path"))
     return ordered
 
 
@@ -273,7 +284,15 @@ def _decision_from_response(content: str) -> AutoWriteDecision:
     scope = str(memory.get("scope", "")).strip().lower()
     body = str(memory.get("body", "")).strip()
     tags_raw = memory.get("tags") or []
-    tags = [str(t) for t in tags_raw if isinstance(t, str)]
+    if isinstance(tags_raw, list):
+        tags = [str(t).strip() for t in tags_raw if isinstance(t, str) and str(t).strip()]
+    elif isinstance(tags_raw, str):
+        # Tolerate the model emitting a comma-separated string instead
+        # of the list the prompt asks for — iterating a raw string would
+        # otherwise produce one tag per character.
+        tags = [part.strip() for part in tags_raw.split(",") if part.strip()]
+    else:
+        tags = []
     if not (title and kind and scope and body):
         return AutoWriteDecision(
             decision="skip",

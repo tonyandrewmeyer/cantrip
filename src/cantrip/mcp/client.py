@@ -24,6 +24,11 @@ log = logging.getLogger(__name__)
 # seconds — matches the existing tool-call retry path in ``cantrip.agent.retry``.
 _INITIAL_RECONNECT_BACKOFF = 1.0
 _MAX_RECONNECT_BACKOFF = 30.0
+# Cap reconnect attempts so a permanently-dead server surfaces a clean
+# error instead of hanging the conversation forever.  Five attempts with
+# the backoff schedule above is ~31 s of wait — enough for a transient
+# blip, short enough that the user sees a failure rather than a hang.
+_MAX_RECONNECT_ATTEMPTS = 5
 
 
 class MCPClient:
@@ -297,28 +302,42 @@ class MCPClient:
     async def _reconnect(self) -> None:
         """Tear down and re-establish the session with bounded backoff.
 
-        Repeatedly retries on :class:`MCPConnectionError` so a server
-        that briefly went away comes back online without losing the
-        client.  :class:`MCPConfigError` aborts immediately — the config
-        cannot recover by retry alone.
+        Retries up to :data:`_MAX_RECONNECT_ATTEMPTS` times on
+        :class:`MCPConnectionError` so a server that briefly went away
+        comes back online without losing the client.  After the cap the
+        last error propagates so a permanently-dead server surfaces as
+        a tool-call failure instead of hanging the conversation forever.
+        :class:`MCPConfigError` aborts immediately — the config cannot
+        recover by retry alone.
         """
         await self.stop()
         backoff = _INITIAL_RECONNECT_BACKOFF
-        while True:
+        last_error: MCPConnectionError | None = None
+        for attempt in range(1, _MAX_RECONNECT_ATTEMPTS + 1):
             try:
                 await self.start()
                 return
             except MCPConfigError:
                 raise
             except MCPConnectionError as exc:
+                last_error = exc
+                if attempt >= _MAX_RECONNECT_ATTEMPTS:
+                    break
                 log.warning(
-                    "Reconnect to %s failed: %s; retrying in %.1fs",
+                    "Reconnect to %s failed (attempt %d/%d): %s; retrying in %.1fs",
                     self._config.name,
+                    attempt,
+                    _MAX_RECONNECT_ATTEMPTS,
                     exc,
                     backoff,
                 )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, _MAX_RECONNECT_BACKOFF)
+        assert last_error is not None
+        raise MCPConnectionError(
+            f"reconnect to {self._config.name!r} failed after "
+            f"{_MAX_RECONNECT_ATTEMPTS} attempts: {last_error}"
+        ) from last_error
 
     def _is_tool_allowed(self, name: str) -> bool:
         """Check the per-server allowlist.  Empty allowlist = allow all."""

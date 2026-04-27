@@ -250,6 +250,21 @@ class TestMarketplaceLoader:
         assert markets[0].name == "sample"
 
     @pytest.mark.asyncio
+    async def test_http_get_wraps_aiohttp_error_as_oserror(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """aiohttp errors are converted to OSError so load_all's catch clause skips them."""
+        import aiohttp
+
+        def _raise(*_args: object, **_kwargs: object) -> object:
+            raise aiohttp.ClientError("simulated network glitch")
+
+        monkeypatch.setattr(aiohttp, "ClientSession", _raise)
+        loader = MarketplaceLoader(cache_dir=tmp_path / "cache")
+        with pytest.raises(OSError, match="HTTP fetch failed"):
+            await loader._http_get("http://example.invalid/marketplace.json")
+
+    @pytest.mark.asyncio
     async def test_cache_hit_skips_re_read(self, tmp_path: pathlib.Path) -> None:
         catalog = tmp_path / "catalog"
         catalog.mkdir()

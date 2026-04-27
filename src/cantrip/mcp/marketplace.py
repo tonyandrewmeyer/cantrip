@@ -309,13 +309,19 @@ class MarketplaceLoader:
         import aiohttp
 
         timeout = aiohttp.ClientTimeout(total=15)
-        async with (
-            aiohttp.ClientSession(timeout=timeout) as session,
-            session.get(url) as resp,
-        ):
-            if resp.status != 200:
-                raise OSError(f"HTTP {resp.status} fetching {url}")
-            return await resp.text()
+        # aiohttp.ClientError isn't OSError, so callers that catch
+        # OSError to "skip and continue" would otherwise propagate the
+        # error and take down the whole /mcp marketplace listing.
+        try:
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.get(url) as resp,
+            ):
+                if resp.status != 200:
+                    raise OSError(f"HTTP {resp.status} fetching {url}")
+                return await resp.text()
+        except aiohttp.ClientError as exc:
+            raise OSError(f"HTTP fetch failed for {url}: {exc}") from exc
 
     @staticmethod
     def _parse(

@@ -28,6 +28,12 @@ MAX_SEARCH_RESULTS = 20
 
 _BASE_URL = "https://api.charmhub.io/v2/charms"
 
+# Cap ``git clone`` so a wedged remote can't park the agent
+# indefinitely.  Charm libraries are small, but the cap covers
+# slow networks and depth=1 + blob filtering should comfortably
+# finish well inside it.
+_GIT_CLONE_TIMEOUT_SECONDS = 120.0
+
 # Phase 70.1 — a charm with no release in this many days is treated as
 # stale by ``charmhub_search``'s quality flags.  Twelve months matches
 # the Librarian guidance: "drop hits that look stale".
@@ -640,7 +646,27 @@ class CharmhubFetchTool(Tool):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout_bytes, stderr_bytes = await proc.communicate()
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=_GIT_CLONE_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"git clone for '{name}' timed out after "
+                    f"{_GIT_CLONE_TIMEOUT_SECONDS:.0f}s ({upstream_url})"
+                ),
+                data={
+                    "name": name,
+                    "upstream_url": upstream_url,
+                    "timeout": True,
+                },
+            )
         if proc.returncode != 0:
             stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
             return ToolResult(

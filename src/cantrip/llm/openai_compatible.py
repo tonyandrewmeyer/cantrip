@@ -120,7 +120,11 @@ class OpenAICompatibleProvider(OpenAICompatBase):
                 resp = client.get("/models")
                 resp.raise_for_status()
                 payload = resp.json()
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, ValueError) as e:
+            # ``ValueError`` covers ``json.JSONDecodeError`` — a probe
+            # endpoint that 200s with HTML (captive portal, misconfigured
+            # proxy) used to crash provider construction instead of
+            # falling back to the conservative default context window.
             log.debug("openai-compatible /models probe failed: %s", e)
             return
 

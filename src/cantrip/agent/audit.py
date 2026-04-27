@@ -111,22 +111,33 @@ def scrub_arguments(
     *,
     charm_path: pathlib.Path | None = None,
 ) -> dict[str, Any]:
-    """Scrub string values in *arguments* through the Phase 50.2 sanitiser.
+    """Recursively scrub string values in *arguments* through the Phase 50.2 sanitiser.
 
-    Non-string values pass through unchanged.  The sanitiser knows
-    about the canonical secret shapes (GitHub / AWS / Slack tokens,
-    ``password=`` pairs, Bearer tokens) and is used elsewhere to
-    clean memory exports and skill bodies — reusing it keeps the
-    "what counts as a secret" answer in one place.
+    Walks the argument tree so secrets buried in nested dicts (e.g.
+    ``juju_config``'s ``values`` map) or lists (e.g. a ``run_command``
+    argv carrying a token) are redacted alongside top-level strings.
+    Non-collection, non-string values (numbers, booleans, ``None``)
+    pass through unchanged.  The sanitiser knows about the canonical
+    secret shapes (GitHub / AWS / Slack tokens, ``password=`` pairs,
+    Bearer tokens) and is used elsewhere to clean memory exports and
+    skill bodies — reusing it keeps the "what counts as a secret"
+    answer in one place.
     """
-    scrubbed: dict[str, Any] = {}
-    for key, value in arguments.items():
-        if isinstance(value, str):
-            cleaned, _ = sanitise_body(value, charm_path=charm_path)
-            scrubbed[key] = cleaned
-        else:
-            scrubbed[key] = value
-    return scrubbed
+    return {key: _scrub_value(value, charm_path=charm_path) for key, value in arguments.items()}
+
+
+def _scrub_value(value: Any, *, charm_path: pathlib.Path | None) -> Any:
+    """Apply :func:`sanitise_body` recursively over JSON-shaped data."""
+    if isinstance(value, str):
+        cleaned, _ = sanitise_body(value, charm_path=charm_path)
+        return cleaned
+    if isinstance(value, dict):
+        return {k: _scrub_value(v, charm_path=charm_path) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub_value(v, charm_path=charm_path) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub_value(v, charm_path=charm_path) for v in value)
+    return value
 
 
 class AuditWriter:

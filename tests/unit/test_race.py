@@ -703,6 +703,42 @@ class TestRaceCoordinator:
         assert crashed_score.exit_state is ExitState.FAILED
 
     @pytest.mark.asyncio
+    async def test_unexpected_exception_type_does_not_cancel_siblings(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """A candidate raising an exception type the coordinator didn't
+        enumerate (TypeError, KeyError, AttributeError, …) must still
+        be recorded as a failed outcome instead of propagating through
+        gather and taking the rest of the race down with it.
+
+        The previous catch enumerated only ``OSError``, ``RuntimeError``,
+        ``ValueError``; anything else cancelled every other candidate.
+        """
+        allocator = _FakeAllocator(tmp_path)
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+        results: dict[str, SubagentResult | Exception] = {
+            "good": SubagentResult(ExitState.COMPLETED, summary="done", detail=""),
+            # ``TypeError`` is outside the old narrow catch — used to
+            # propagate and cancel the "good" candidate's run.
+            "weird": TypeError("argument of unexpected type"),
+        }
+        specs = [_spec("good"), _spec("weird")]
+
+        result = await coord.run(
+            task_id="t-unexpected",
+            base_path=tmp_path,
+            specs=specs,
+            build_subagent=_fake_factory(results),
+        )
+
+        assert result.winner is not None
+        assert result.winner.candidate_id == "good"
+        weird_outcome = result.outcome_for("weird")
+        assert weird_outcome is not None
+        assert weird_outcome.result is None
+        assert "argument of unexpected type" in (weird_outcome.error or "")
+
+    @pytest.mark.asyncio
     async def test_clamps_candidate_pool_to_max(self, tmp_path: pathlib.Path) -> None:
         allocator = _FakeAllocator(tmp_path)
         config = race.RaceConfig(max_candidates=2)

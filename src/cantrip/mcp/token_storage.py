@@ -168,14 +168,30 @@ class FileTokenStorage:
         tmp.replace(path)
 
 
+# Cap GPG calls so a missing / unconfigured ``gpg-agent`` can't park the
+# request indefinitely.  ``--batch`` already promises non-interactive
+# behaviour, but a misconfigured agent will wait on a passphrase pipe
+# even with batch mode set.  Symmetric crypto on a small payload
+# completes in well under a second; 30s leaves plenty of headroom for
+# a slow agent socket.
+_GPG_TIMEOUT_SECONDS = 30.0
+
+
 def _gpg_encrypt(path: pathlib.Path, payload: str) -> None:
     """Symmetric GPG encryption to ``path`` (binary)."""
-    completed = subprocess.run(  # noqa: S603 - opted-in GPG path
-        ["gpg", "--batch", "--yes", "--symmetric", "-o", str(path)],
-        input=payload.encode("utf-8"),
-        capture_output=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(  # noqa: S603 - opted-in GPG path
+            ["gpg", "--batch", "--yes", "--symmetric", "-o", str(path)],
+            input=payload.encode("utf-8"),
+            capture_output=True,
+            check=False,
+            timeout=_GPG_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise OSError(
+            f"gpg encryption timed out after {_GPG_TIMEOUT_SECONDS:.0f}s — "
+            "is gpg-agent configured?"
+        ) from exc
     if completed.returncode != 0:
         raise OSError(
             f"gpg encryption failed: {completed.stderr.decode('utf-8', errors='replace')}"
@@ -184,11 +200,18 @@ def _gpg_encrypt(path: pathlib.Path, payload: str) -> None:
 
 def _gpg_decrypt(path: pathlib.Path) -> str:
     """Symmetric GPG decryption from ``path`` to text."""
-    completed = subprocess.run(  # noqa: S603 - opted-in GPG path
-        ["gpg", "--batch", "--decrypt", str(path)],
-        capture_output=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(  # noqa: S603 - opted-in GPG path
+            ["gpg", "--batch", "--decrypt", str(path)],
+            capture_output=True,
+            check=False,
+            timeout=_GPG_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise OSError(
+            f"gpg decryption timed out after {_GPG_TIMEOUT_SECONDS:.0f}s — "
+            "is gpg-agent configured?"
+        ) from exc
     if completed.returncode != 0:
         raise OSError(
             f"gpg decryption failed: {completed.stderr.decode('utf-8', errors='replace')}"

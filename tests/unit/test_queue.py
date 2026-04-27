@@ -1,6 +1,5 @@
 """Tests for the work queue and agent task model."""
 
-import asyncio
 import datetime
 import pathlib
 from collections.abc import Iterator
@@ -104,6 +103,38 @@ class TestWorkQueue:
         q = WorkQueue()
         with pytest.raises(ValueError, match="Duplicate task ID"):
             q.add_tasks([_task(id="same"), _task(id="same", title="Dupe")])
+
+    def test_add_tasks_is_atomic_on_duplicate(self) -> None:
+        """A bad batch leaves the queue untouched — no partial commit.
+
+        The previous loop-and-add implementation would insert the first
+        N-1 tasks and only raise on the colliding one, leaving the queue
+        in a half-applied state.
+        """
+        q = WorkQueue()
+        q.add_task(_task(id="existing"))
+        with pytest.raises(ValueError, match="Duplicate task ID"):
+            q.add_tasks(
+                [
+                    _task(id="fresh-1", title="Should not land"),
+                    _task(id="fresh-2", title="Also should not land"),
+                    _task(id="existing", title="Collision"),
+                ]
+            )
+        # Only the originally-added task remains.
+        assert [t.id for t in q.all_tasks()] == ["existing"]
+
+    def test_add_tasks_is_atomic_on_in_batch_duplicate(self) -> None:
+        """An in-batch duplicate also leaves the queue untouched."""
+        q = WorkQueue()
+        with pytest.raises(ValueError, match="Duplicate task ID"):
+            q.add_tasks(
+                [
+                    _task(id="a", title="First"),
+                    _task(id="a", title="Collision in same batch"),
+                ]
+            )
+        assert q.all_tasks() == []
 
     def test_next_ready_returns_first_pending(self) -> None:
         """next_ready returns the first pending task."""
@@ -309,11 +340,6 @@ class TestWorkQueue:
         result = q.all_tasks()
         result.clear()
         assert len(q.all_tasks()) == 1
-
-    def test_lock_attribute_is_asyncio_lock(self) -> None:
-        """WorkQueue exposes an asyncio.Lock for callers that need atomicity."""
-        q = WorkQueue()
-        assert isinstance(q._lock, asyncio.Lock)
 
     def test_all_tasks_returns_deep_copies(self) -> None:
         """Mutating returned task objects does not affect the queue."""

@@ -810,6 +810,42 @@ class TestJujuRefreshTool:
         assert not result.success
         assert "app not found" in result.error
 
+    @pytest.mark.asyncio
+    async def test_refresh_resolves_relative_path(
+        self, tool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A relative ``./foo.charm`` is resolved to absolute before refresh.
+
+        Mirrors deploy's snap-confinement handling: a juju snap running
+        in strict confinement cannot follow ``./foo.charm`` because its
+        cwd differs from the user's.  Pre-fix refresh passed the raw
+        relative string straight through, so ``cantrip refresh
+        ./mycharm.charm`` reliably failed with "file not found" inside
+        the snap, even when the charm sat in the user's working dir.
+        """
+        # Real file under tmp_path; the test cd's into tmp_path so the
+        # ``./mycharm.charm`` shape exists relative to cwd.
+        charm_file = tmp_path / "mycharm.charm"
+        charm_file.write_bytes(b"PK\x03\x04")  # zip magic — real refresh just opens.
+        monkeypatch.chdir(tmp_path)
+        # Pretend ``$HOME`` is somewhere else so the snap-copy branch
+        # would trigger if the path stayed relative.
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        with (
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await tool.execute(app_name="my-app", path="./mycharm.charm")
+
+        assert result.success
+        # The path passed to jubilant.refresh must be the absolute path,
+        # not the original ``./mycharm.charm``.
+        kwargs = mock_juju.refresh.call_args.kwargs
+        assert kwargs["app"] == "my-app"
+        assert kwargs["path"] == str(charm_file.resolve())
+
 
 class TestJujuTrustTool:
     """Tests for JujuTrustTool."""

@@ -1,6 +1,5 @@
 """Work queue for autonomous agent task scheduling."""
 
-import asyncio
 import copy
 import dataclasses
 import datetime
@@ -84,10 +83,9 @@ class WorkQueue:
     Holds ``AgentTask`` objects and provides status transitions, dependency
     checking, and an optional callback fired on every task mutation.
 
-    All synchronous mutation methods are atomic within asyncio's single-threaded
-    event loop (no ``await`` points mid-operation).  The ``_lock`` is provided
-    for any future ``async`` callers that need to compose multiple queue
-    operations atomically across ``await`` boundaries.
+    All mutation methods run synchronously within asyncio's single-threaded
+    event loop, so they are atomic relative to one another — no caller
+    needs to take an explicit lock.
     """
 
     def __init__(
@@ -96,7 +94,6 @@ class WorkQueue:
     ) -> None:
         self._tasks: list[AgentTask] = []
         self._on_task_changed = on_task_changed
-        self._lock = asyncio.Lock()
 
     # -- Mutation helpers ----------------------------------------------------
 
@@ -137,10 +134,22 @@ class WorkQueue:
         """Bulk-add tasks (for planner output).
 
         Raises ``ValueError`` if any task ID collides with an existing
-        task or with another task in the same batch.
+        task or with another task in the same batch.  Atomic — a
+        collision rejects the whole batch, leaving the queue untouched.
         """
+        existing_ids = {t.id for t in self._tasks}
+        seen_ids: set[str] = set()
         for task in tasks:
-            self.add_task(task)
+            if task.id in existing_ids:
+                raise ValueError(
+                    f"Duplicate task ID {task.id!r} — IDs must be unique within a queue"
+                )
+            if task.id in seen_ids:
+                raise ValueError(f"Duplicate task ID {task.id!r} appears twice in the same batch")
+            seen_ids.add(task.id)
+        for task in tasks:
+            self._tasks.append(task)
+            self._notify(task)
 
     # -- Scheduling ---------------------------------------------------------
 
@@ -232,15 +241,13 @@ class WorkQueue:
         if task.status != TaskStatus.PENDING:
             raise ValueError(f"Cannot reprioritise task in {task.status.value} status")
         self._tasks.remove(task)
-        # Insert after any non-pending tasks (active/done/failed/blocked)
-        # so it becomes the first pending task.
-        insert_idx = 0
-        for i, t in enumerate(self._tasks):
-            if t.status == TaskStatus.PENDING:
-                insert_idx = i
-                break
-        else:
-            insert_idx = len(self._tasks)
+        # Insert at the first pending slot so the task becomes the
+        # next-ready candidate; if no other tasks are pending, the
+        # default sends us to the end of the queue.
+        insert_idx = next(
+            (i for i, t in enumerate(self._tasks) if t.status == TaskStatus.PENDING),
+            len(self._tasks),
+        )
         self._tasks.insert(insert_idx, task)
         self._notify(task)
 

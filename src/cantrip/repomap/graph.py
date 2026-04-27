@@ -117,7 +117,6 @@ def rank_files(files: list[FileSymbols]) -> list[FileRanking]:
     edges = build_graph(files)
     nodes = [fs.file for fs in files]
     scores = pagerank(edges, nodes)
-    by_file = {fs.file: fs for fs in files}
     rankings = [
         FileRanking(
             file=fs.file,
@@ -127,7 +126,4 @@ def rank_files(files: list[FileSymbols]) -> list[FileRanking]:
         for fs in files
     ]
     rankings.sort(key=lambda r: (-r.score, r.file))
-    # Suppress unused-var warning for ``by_file`` — kept for future use
-    # (per-symbol ranking would index into it).
-    del by_file
     return rankings

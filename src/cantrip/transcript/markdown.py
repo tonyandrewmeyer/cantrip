@@ -5,6 +5,26 @@ import json
 from cantrip.transcript import export as export_mod
 
 
+def _fence_for(content: str) -> str:
+    """Return a backtick fence long enough to wrap *content* safely.
+
+    CommonMark requires the closing fence to be at least as long as
+    the opening fence, so to embed content that itself contains runs
+    of backticks (very common in LLM-generated tool output) the fence
+    must be longer than the longest run inside.  Falls back to the
+    standard triple fence when the content is fence-free.
+    """
+    longest = 0
+    run = 0
+    for ch in content:
+        if ch == "`":
+            run += 1
+            longest = max(longest, run)
+        else:
+            run = 0
+    return "`" * max(3, longest + 1)
+
+
 def render_message(msg: dict, *, include_header: bool = True) -> str:
     """Render a single transcript message as Markdown.
 
@@ -23,18 +43,19 @@ def render_message(msg: dict, *, include_header: bool = True) -> str:
         parts.append(msg["content"])
     for tc in msg.get("tool_calls") or []:
         args_json = json.dumps(tc.get("arguments", {}), indent=2)
+        fence = _fence_for(args_json)
         parts.append(
             f"\n<details><summary>Tool: {tc.get('name', 'unknown')}"
             f"</summary>\n\n"
-            f"```json\n{args_json}\n```\n"
+            f"{fence}json\n{args_json}\n{fence}\n"
             f"</details>"
         )
     for tr in msg.get("tool_results") or []:
         prefix = "Error" if tr.get("is_error") else "Result"
+        body = str(tr.get("content", ""))
+        fence = _fence_for(body)
         parts.append(
-            f"\n<details><summary>{prefix}</summary>\n\n"
-            f"```\n{tr.get('content', '')}\n```\n"
-            f"</details>"
+            f"\n<details><summary>{prefix}</summary>\n\n{fence}\n{body}\n{fence}\n</details>"
         )
     return "\n".join(parts)
 

@@ -172,15 +172,28 @@ CREATE TABLE IF NOT EXISTS step_checkpoints (
 );
 CREATE INDEX IF NOT EXISTS ix_step_checkpoints_task
     ON step_checkpoints(task_id);
+
+-- Indexes for tables that grow with session size and are routinely
+-- queried by a column other than the primary key.  Idempotent — added
+-- to ``_SCHEMA_SQL`` so they land on every open without bumping the
+-- migration version.
+CREATE INDEX IF NOT EXISTS ix_subagent_messages_task
+    ON subagent_messages(task_id);
+CREATE INDEX IF NOT EXISTS ix_events_event_type
+    ON events(event_type);
+CREATE INDEX IF NOT EXISTS ix_events_timestamp
+    ON events(timestamp);
 """
 
 
 def _truncate(text: str, max_bytes: int = _MAX_CONTENT_BYTES) -> str:
     """Truncate text exceeding *max_bytes* with a marker."""
-    if len(text.encode("utf-8", errors="replace")) <= max_bytes:
+    encoded = text.encode("utf-8", errors="replace")
+    if len(encoded) <= max_bytes:
         return text
-    # Truncate at character boundary.
-    truncated = text.encode("utf-8", errors="replace")[:max_bytes].decode("utf-8", errors="ignore")
+    # Truncate at character boundary — slice the bytes once and let
+    # the lossy decode drop any partial code unit at the end.
+    truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
     return truncated + f"\n\n[truncated — {len(text)} characters total]"
 
 
@@ -267,8 +280,10 @@ class SessionStore:
     def _apply_migrations(self) -> None:
         """Apply incremental schema migrations based on stored version."""
         assert self._conn is not None  # noqa: S101
+        # Caller (``open``) only invokes this when the schema_version
+        # table has at least one row, so the SELECT always returns one.
         row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
-        current = row[0] if row else 1
+        current = row[0]
 
         if current < 3:
             # v3: add model_hint column to tasks.

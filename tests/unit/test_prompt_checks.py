@@ -248,6 +248,36 @@ class TestGlobScoping:
         target.write_text("ok")
         assert checks._matches_globs(target, ("src/**/*.py",), tmp_path)
 
+    def test_double_star_matches_zero_intermediate_segments(self, tmp_path: pathlib.Path) -> None:
+        """``src/**/*.py`` must also match files directly under ``src/``.
+
+        Standard glob convention (zsh / git / pathlib.full_match):
+        ``a/**/b`` matches ``a/b`` as well as ``a/x/b``.  Without this
+        a check authored as ``src/**/*.py`` silently skips the top
+        level of the package — easy to miss because deeper files
+        still match.
+        """
+        target = tmp_path / "src" / "charm.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("ok")
+        assert checks._matches_globs(target, ("src/**/*.py",), tmp_path)
+
+    def test_leading_double_star(self, tmp_path: pathlib.Path) -> None:
+        """``**/foo`` matches ``foo`` and any nested ``…/foo``."""
+        for relative in ("README.md", "docs/README.md", "docs/sub/README.md"):
+            target = tmp_path / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("ok")
+            assert checks._matches_globs(target, ("**/README.md",), tmp_path), relative
+
+    def test_trailing_double_star(self, tmp_path: pathlib.Path) -> None:
+        """``src/**`` matches ``src`` and any descendant under it."""
+        for relative in ("src/charm.py", "src/sub/handler.py"):
+            target = tmp_path / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("ok")
+            assert checks._matches_globs(target, ("src/**",), tmp_path), relative
+
     def test_scope_files_returns_subset(self, tmp_path: pathlib.Path) -> None:
         readme = tmp_path / "README.md"
         readme.write_text("hi")

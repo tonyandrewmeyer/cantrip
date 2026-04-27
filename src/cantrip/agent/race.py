@@ -683,9 +683,13 @@ class RaceCoordinator:
 
         start = time.monotonic()
 
-        # Run each candidate concurrently.  ``return_exceptions=True``
-        # keeps one crashing candidate from cancelling the others —
-        # we'll record it as a failed outcome and let the pool continue.
+        # Run each candidate concurrently.  ``_run_candidate`` itself
+        # catches every non-cancel exception and returns a failed
+        # ``CandidateOutcome`` so one crashing candidate cannot
+        # cancel the others — the gather call therefore keeps the
+        # default ``return_exceptions=False`` and only sees normal
+        # outcomes.  ``CancelledError`` is re-raised on purpose so
+        # operator-driven cancellation still propagates.
         coros = [self._run_candidate(task_id, base_path, spec, build_subagent) for spec in clamped]
         outcomes: list[CandidateOutcome] = await asyncio.gather(*coros, return_exceptions=False)
 
@@ -768,7 +772,17 @@ class RaceCoordinator:
             if handle is not None:
                 await self._safe_release(handle, keep_branch=False)
             raise
-        except (OSError, RuntimeError, ValueError) as exc:
+        except Exception as exc:  # noqa: BLE001
+            # Catch every non-cancel exception type so an unexpected
+            # crash (``TypeError``, ``KeyError``, anything else outside
+            # the ``OSError``/``RuntimeError``/``ValueError`` set we
+            # used to enumerate) becomes a recorded failed outcome
+            # instead of propagating through ``asyncio.gather`` and
+            # cancelling every other candidate's run.  The race's
+            # whole point is "even if one candidate explodes, the
+            # others should still produce useful results"; the prior
+            # narrow catch silently lost that property for any
+            # exception type the author hadn't thought to list.
             log.exception(
                 "Race candidate %s/%s: subagent.run() raised",
                 task_id,

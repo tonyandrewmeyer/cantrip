@@ -533,3 +533,78 @@ class TestDestructiveCommandCheck:
     def test_git_reset_soft_is_not_destructive(self) -> None:
         is_destructive, _ = destructive_command_check(["git", "reset", "--soft", "HEAD~1"])
         assert is_destructive is False
+
+    def test_git_push_force_with_lease_is_destructive(self) -> None:
+        is_destructive, shape = destructive_command_check(
+            ["git", "push", "--force-with-lease", "origin", "main"]
+        )
+        assert is_destructive is True
+        assert shape == "git push --force"
+
+    def test_git_push_force_with_lease_with_ref_is_destructive(self) -> None:
+        """``--force-with-lease=ref`` is the same destructive shape as the bare flag."""
+        is_destructive, _ = destructive_command_check(
+            ["git", "push", "--force-with-lease=feature", "origin", "main"]
+        )
+        assert is_destructive is True
+
+    def test_git_push_short_flag_bundle_is_destructive(self) -> None:
+        """``-fu`` / ``-uf`` (force + set-upstream) trip the same gate as ``-f``."""
+        for argv in (
+            ["git", "push", "-fu", "origin", "main"],
+            ["git", "push", "-uf", "origin", "main"],
+        ):
+            is_destructive, _ = destructive_command_check(argv)
+            assert is_destructive is True, f"{argv!r} should trip the gate"
+
+    def test_git_push_delete_is_destructive(self) -> None:
+        """``git push --delete`` / ``-d`` deletes a remote branch — irreversible."""
+        for argv in (
+            ["git", "push", "--delete", "origin", "feature"],
+            ["git", "push", "-d", "origin", "feature"],
+            ["git", "push", "origin", "--delete", "feature"],
+        ):
+            is_destructive, shape = destructive_command_check(argv)
+            assert is_destructive is True, f"{argv!r} should trip the gate"
+            assert shape == "git push --delete"
+
+    def test_git_branch_capital_D_is_destructive(self) -> None:
+        """``git branch -D`` force-deletes even unmerged branches."""
+        for argv in (
+            ["git", "branch", "-D", "feature"],
+            ["git", "branch", "-Df", "feature"],  # combined short flags.
+        ):
+            is_destructive, shape = destructive_command_check(argv)
+            assert is_destructive is True, f"{argv!r} should trip the gate"
+            assert shape == "git branch -D"
+
+    def test_git_branch_lowercase_d_not_destructive(self) -> None:
+        """``git branch -d`` only deletes merged branches — git refuses otherwise."""
+        is_destructive, _ = destructive_command_check(["git", "branch", "-d", "feature"])
+        assert is_destructive is False
+
+    def test_git_branch_delete_force_long_is_destructive(self) -> None:
+        """``git branch --delete --force`` is the long-form equivalent of ``-D``."""
+        is_destructive, shape = destructive_command_check(
+            ["git", "branch", "--delete", "--force", "feature"]
+        )
+        assert is_destructive is True
+        assert shape == "git branch -D"
+
+    def test_git_clean_force_is_destructive(self) -> None:
+        """``git clean -f`` (and ``-fd``, ``-ff``, ``--force``) destroys untracked files."""
+        for argv in (
+            ["git", "clean", "-f"],
+            ["git", "clean", "-fd"],
+            ["git", "clean", "-ffd"],
+            ["git", "clean", "--force"],
+            ["git", "clean", "-fdx"],
+        ):
+            is_destructive, shape = destructive_command_check(argv)
+            assert is_destructive is True, f"{argv!r} should trip the gate"
+            assert shape == "git clean -f"
+
+    def test_git_clean_dry_run_not_destructive(self) -> None:
+        """``git clean -n`` (dry-run) shouldn't trip the gate."""
+        is_destructive, _ = destructive_command_check(["git", "clean", "-n", "-d"])
+        assert is_destructive is False

@@ -16,6 +16,7 @@ from cantrip.agent.tools.acceptance import (
     WorkloadEndpointTool,
     _generate_action_params,
     _generate_test_value,
+    _load_charm_metadata,
     _verify_relation_data,
 )
 
@@ -128,6 +129,95 @@ class TestActionExerciserTool:
 
         assert result.data["actions_skipped"] == 0
         assert result.data["actions_tested"] == 2
+
+
+# ---------------------------------------------------------------------------
+# _load_charm_metadata — split-yaml legacy shape
+# ---------------------------------------------------------------------------
+
+
+class TestLoadCharmMetadata:
+    """``_load_charm_metadata`` must merge legacy split-yaml charms.
+
+    Pre-fix the helper read only ``charmcraft.yaml``, so a charm with
+    actions in ``actions.yaml`` (or relations in ``metadata.yaml``,
+    options in ``config.yaml``) would silently report "nothing to
+    test" from every acceptance tool.  Each test pins one shape.
+    """
+
+    def test_no_files_returns_none(self, tmp_path: pathlib.Path) -> None:
+        assert _load_charm_metadata(tmp_path) is None
+
+    def test_charmcraft_only(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "charmcraft.yaml").write_text("name: c\nactions:\n  go: {description: ok}\n")
+        merged = _load_charm_metadata(tmp_path)
+        assert merged is not None
+        assert merged["actions"] == {"go": {"description": "ok"}}
+
+    def test_legacy_actions_yaml(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "charmcraft.yaml").write_text("name: c\n")
+        (tmp_path / "actions.yaml").write_text(
+            "go:\n  description: ok\nstop:\n  description: also ok\n"
+        )
+        merged = _load_charm_metadata(tmp_path)
+        assert merged is not None
+        assert set(merged["actions"]) == {"go", "stop"}
+
+    def test_charmcraft_actions_win_over_legacy(self, tmp_path: pathlib.Path) -> None:
+        """charmcraft.yaml's ``actions:`` block beats a legacy actions.yaml."""
+        (tmp_path / "charmcraft.yaml").write_text(
+            "name: c\nactions:\n  go: {description: from-charmcraft}\n"
+        )
+        (tmp_path / "actions.yaml").write_text("ignored: {description: legacy}\n")
+        merged = _load_charm_metadata(tmp_path)
+        assert merged is not None
+        assert merged["actions"] == {"go": {"description": "from-charmcraft"}}
+
+    def test_legacy_metadata_yaml_relations(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "metadata.yaml").write_text(
+            "name: c\nrequires:\n  db:\n    interface: pgsql\n"
+        )
+        merged = _load_charm_metadata(tmp_path)
+        assert merged is not None
+        assert merged["requires"] == {"db": {"interface": "pgsql"}}
+
+    def test_legacy_config_yaml(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "charmcraft.yaml").write_text("name: c\n")
+        (tmp_path / "config.yaml").write_text(
+            "options:\n  port:\n    type: int\n    default: 80\n"
+        )
+        merged = _load_charm_metadata(tmp_path)
+        assert merged is not None
+        # Promoted into the charmcraft.yaml shape: config.options.<key>.
+        assert merged["config"]["options"]["port"]["type"] == "int"
+
+    def test_charmcraft_config_wins_over_legacy(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "charmcraft.yaml").write_text(
+            "name: c\nconfig:\n  options:\n    port: {type: int, default: 80}\n"
+        )
+        (tmp_path / "config.yaml").write_text("options:\n  ignored:\n    type: string\n")
+        merged = _load_charm_metadata(tmp_path)
+        assert merged is not None
+        assert "ignored" not in merged["config"]["options"]
+        assert merged["config"]["options"]["port"]["default"] == 80
+
+    def test_malformed_yaml_falls_back(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "charmcraft.yaml").write_text("name: c\n: bad\n")
+        # Malformed file is treated as empty; no crash even if every file
+        # is malformed except none — return None.
+        assert _load_charm_metadata(tmp_path) is None
+
+    def test_split_only_no_charmcraft(self, tmp_path: pathlib.Path) -> None:
+        """A pure legacy charm (no charmcraft.yaml) still parses."""
+        (tmp_path / "metadata.yaml").write_text(
+            "name: legacy\nprovides:\n  http:\n    interface: http\n"
+        )
+        (tmp_path / "actions.yaml").write_text("ping: {description: pong}\n")
+        merged = _load_charm_metadata(tmp_path)
+        assert merged is not None
+        assert merged["name"] == "legacy"
+        assert merged["provides"] == {"http": {"interface": "http"}}
+        assert merged["actions"] == {"ping": {"description": "pong"}}
 
 
 # ---------------------------------------------------------------------------

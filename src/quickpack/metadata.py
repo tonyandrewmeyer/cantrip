@@ -85,6 +85,45 @@ def resolve_entrypoint(project: dict[str, Any]) -> str:
     return "src/charm.py"
 
 
+# Maps the Ubuntu series to the system-supplied CPython on that LTS.
+# Used to pick the build venv's Python version so the resulting
+# ``venv/lib/pythonX.Y`` directory matches what the unit's ``python3``
+# will read at runtime.  Out-of-range or unknown series fall back to
+# whatever Python the build host's ``python3`` resolves to — which is
+# the historical behaviour, so existing quickpack runs that happened
+# to match the host Python don't change.
+_UBUNTU_PYTHON: dict[str, str] = {
+    "20.04": "3.8",
+    "22.04": "3.10",
+    "24.04": "3.12",
+    "24.10": "3.12",
+    "25.04": "3.13",
+    "26.04": "3.14",
+}
+
+
+def resolve_target_python(project: dict[str, Any]) -> str | None:
+    """Return the CPython version label the unit will run, or ``None``.
+
+    Reads the (optional) ``build-base`` field first, since that's the
+    series the charm code is actually compiled and packed against; the
+    runtime ``base`` falls through when ``build-base`` is omitted.
+    Returns a string like ``"3.12"`` suitable for ``uv venv --python``,
+    or ``None`` when the series is unknown so callers can fall back to
+    the host's default.
+    """
+    build_base = str(project.get("build-base") or "").strip()
+    if "@" in build_base:
+        _, _, series = build_base.partition("@")
+        if series in _UBUNTU_PYTHON:
+            return _UBUNTU_PYTHON[series]
+
+    distro, series = resolve_base(project)
+    if distro != "ubuntu":
+        return None
+    return _UBUNTU_PYTHON.get(series)
+
+
 def generate_metadata(project: dict[str, Any]) -> dict[str, Any]:
     """Build the ``metadata.yaml`` content from a parsed ``charmcraft.yaml``.
 

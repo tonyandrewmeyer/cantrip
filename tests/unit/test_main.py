@@ -326,6 +326,29 @@ class TestRun:
         assert rc == 0
         run_cli.assert_called_once()
 
+    def test_print_with_empty_string_routes_to_print_mode(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``--print ""`` must select print mode, not silently fall through.
+
+        A truthy check (``if args.print_goal``) treats the empty string
+        as "no print flag" and drops the user into the interactive REPL,
+        which is surprising and clobbers any redirected stdin in CI.
+        Print mode itself surfaces the empty-goal error with exit 2.
+        """
+        monkeypatch.setenv("GEMINI_API_KEY", "test")
+        with (
+            mock.patch("cantrip.print_mode.run_print", return_value=2) as run_print,
+            mock.patch("cantrip.cli.run_cli", return_value=0) as run_cli,
+            mock.patch("cantrip.main._install_unraisable_hook"),
+        ):
+            rc = cantrip_main._run(_run_args(tmp_path, no_tui=True, print_goal=""))
+        assert rc == 2
+        run_print.assert_called_once()
+        run_cli.assert_not_called()
+
     def test_tui_mode_launches_cantrip_app(
         self,
         tmp_path: pathlib.Path,

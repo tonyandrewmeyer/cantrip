@@ -162,7 +162,9 @@ class InferenceSnapProvider(OpenAICompatBase):
                 f"  Try: sudo snap start {self.snap_name}\n"
                 f"  Check: {self.snap_name} status"
             ) from e
-        except httpx.HTTPError:
+        except (httpx.HTTPError, ValueError):
+            # ``ValueError`` covers ``json.JSONDecodeError`` — a snap that
+            # 200s with non-JSON shouldn't crash provider construction.
             log.debug("Failed to probe snap server at %s", self.base_url)
 
     def _detect_model(self) -> str:
@@ -187,7 +189,10 @@ class InferenceSnapProvider(OpenAICompatBase):
                 f"  Try: sudo snap start {self.snap_name}\n"
                 f"  Check: {self.snap_name} status"
             ) from e
-        except (httpx.HTTPError, KeyError, IndexError):
+        except (httpx.HTTPError, KeyError, IndexError, ValueError):
+            # ``ValueError`` covers ``json.JSONDecodeError``.  Any of the
+            # listed failure modes degrade to the snap-name fallback,
+            # which is the conservative thing for an opaque local server.
             pass
         return self.snap_name
 

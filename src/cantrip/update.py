@@ -212,7 +212,12 @@ def set_update_check_disabled(disabled: bool) -> pathlib.Path:
             data = parsed
     data["update_check_disabled"] = bool(disabled)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # Atomic write so an interrupted run (crash, Ctrl-C between
+    # truncate and write) can't leave the user with no settings file
+    # at all and silently discard unrelated keys they had added.
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
     return path
 
 

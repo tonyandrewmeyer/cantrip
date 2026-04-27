@@ -448,7 +448,17 @@ class TestLokiQueryTool:
 
     @pytest.mark.asyncio
     async def test_custom_hours(self, tool):
-        """Passes custom hours parameter."""
+        """``hours`` translates into a 24h gap between start and end nanos.
+
+        Loki's ``query_range`` rejects ``now`` / ``now-24h`` — start and
+        end must be a nanosecond Unix epoch (or RFC3339 / pure
+        duration like ``24h``).  The agent now converts ``hours`` to
+        absolute nanosecond timestamps; this test pulls them out of the
+        fetch URL and asserts the gap matches the requested window.
+        """
+        import re as _re
+        import urllib.parse as _urllib
+
         patch, mock_juju = self._mock_find_cos_unit()
         loki_response = {
             "data": {
@@ -466,10 +476,20 @@ class TestLokiQueryTool:
             result = await tool.execute(query='{juju_application="my-charm"}', hours=24)
 
         assert result.success
-        # Verify the URL contains the custom hours (inside the base64-encoded script).
         ssh_call = mock_juju.ssh.call_args[0][1]
         script = _decode_ssh_script(ssh_call)
-        assert "now-24h" in script
+        # The Grafana-style "now-Nh" must not leak through to Loki.
+        assert "now-" not in script and "end=now" not in script
+        match = _re.search(r"start=(\d+)&end=(\d+)", script)
+        assert match is not None, f"could not find nanos in {script!r}"
+        start_ns, end_ns = int(match.group(1)), int(match.group(2))
+        # 24h = 86_400_000_000_000ns; allow a small slack for the test's
+        # own wall-clock drift between params build and assertion.
+        gap = end_ns - start_ns
+        assert 86_399_900_000_000 <= gap <= 86_400_100_000_000, gap
+        # Decoded URL has plain integers, not "now"-shapes.
+        decoded = _urllib.unquote(script)
+        assert "start=now" not in decoded
 
     @pytest.mark.asyncio
     async def test_loki_not_found_in_cos(self, tool):

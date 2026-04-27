@@ -241,10 +241,15 @@ class TestTranscriptFilters:
         db_path = tmp_path / ".cantrip"
         store = _seed_database(db_path)
 
-        # Record a message with a known future timestamp by inserting directly.
+        # Record a message normally so it's chained into the active branch
+        # (raw INSERTs leave ``parent_turn_id`` NULL, which makes
+        # ``load_active_branch`` rightfully treat the row as orphaned),
+        # then back-fill its timestamp to a known future value the
+        # ``since`` filter can match against.
+        store.record_message("user", "A late message")
         store._db.execute(
-            "INSERT INTO messages (role, content, timestamp) VALUES (?, ?, ?)",
-            ("user", "A late message", "2099-01-01T00:00:00"),
+            "UPDATE messages SET timestamp = ? WHERE id = (SELECT MAX(id) FROM messages)",
+            ("2099-01-01T00:00:00",),
         )
         store._db.commit()
         store.close()

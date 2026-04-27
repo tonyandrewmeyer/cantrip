@@ -98,6 +98,17 @@ class TestBroadcast:
         # Should not raise.
         _broadcast(app, "test_event", {"key": "value"})
 
+    def test_broadcast_skips_non_serialisable_payload(self) -> None:
+        """A non-JSON-serialisable payload is logged and dropped — not raised."""
+        import weakref
+
+        import aiohttp.web as web
+
+        app = web.Application()
+        app[WS_CLIENTS_KEY] = weakref.WeakSet()
+        # ``object()`` has no JSON encoder; the broadcaster must not crash.
+        _broadcast(app, "weird", {"obj": object()})
+
 
 class TestBroadcastChat:
     """Tests for the ``_broadcast_chat`` helper (Phase 77)."""
@@ -1175,6 +1186,60 @@ class TestWebSocketHandler:
 
         asyncio.run(_run())
 
+    def test_websocket_rejects_cross_origin_upgrade(self) -> None:
+        """A WS upgrade from a foreign Origin gets 403, not a connection."""
+        import aiohttp
+
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                try:
+                    await client.ws_connect("/ws", headers={"Origin": "http://evil.example.com"})
+                except aiohttp.WSServerHandshakeError as exc:
+                    assert exc.status == 403
+                    return
+                raise AssertionError("expected handshake error from cross-origin Origin")
+
+        asyncio.run(_run())
+
+    def test_websocket_allows_missing_origin(self) -> None:
+        """Non-browser clients (no Origin) still connect."""
+        agent = _make_agent()
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                await asyncio.sleep(0)
+                assert len(app[WS_CLIENTS_KEY]) == 1
+                await ws.close()
+
+        asyncio.run(_run())
+
+    def test_websocket_ignores_non_dict_json(self) -> None:
+        """Scalar/array JSON doesn't AttributeError on payload.get."""
+        agent = _make_agent(response="ok")
+        app = _build_ws_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                ws = await client.ws_connect("/ws")
+                # All three are valid JSON but not dicts.
+                await ws.send_str("null")
+                await ws.send_str("123")
+                await ws.send_str('["x"]')
+                # Loop should still be alive — a real chat_input proves recovery.
+                import json as _json
+
+                await ws.send_str(_json.dumps({"type": "chat_input", "data": {"content": "hi"}}))
+                msg = await ws.receive(timeout=2.0)
+                assert msg.json()["type"] == "thinking"
+                await ws.close()
+
+        asyncio.run(_run())
+
 
 # ---------------------------------------------------------------------------
 # REST handlers
@@ -1335,6 +1400,7 @@ class TestApiSession:
 
         app = _build_ws_app(agent)
         app[server.SESSION_DECIDED_KEY] = {"value": False}
+        app[server.SESSION_DECIDE_LOCK_KEY] = asyncio.Lock()
         app.router.add_get("/api/session/preview", server._api_session_preview)
         app.router.add_post("/api/session/decide", server._api_session_decide)
         app.router.add_get("/api/session/transcript", server._api_session_transcript)
@@ -1473,6 +1539,68 @@ class TestApiSession:
             async with TestClient(TestServer(app)) as client:
                 resp = await client.post("/api/session/decide", data="not json")
                 assert resp.status == 400
+
+        asyncio.run(_run())
+
+    def test_decide_concurrent_requests_serialise(self) -> None:
+        """Two concurrent POSTs — exactly one wins, the other gets 409.
+
+        Without the lock, both could pass the ``decided`` gate before
+        either flipped it (TOCTOU across the ``await request.json()``
+        window) and both ``archive_session`` / ``load_state`` paths
+        would fire.
+        """
+        agent = _make_agent()
+        agent.archive_session = MagicMock(return_value=None)
+        agent.load_state = MagicMock(return_value=False)
+        agent.build_resume_summary = MagicMock(return_value=None)
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                r1, r2 = await asyncio.gather(
+                    client.post("/api/session/decide", json={"choice": "resume"}),
+                    client.post("/api/session/decide", json={"choice": "fresh"}),
+                )
+                statuses = sorted([r1.status, r2.status])
+                assert statuses == [200, 409]
+                # At most one of the write paths fired.
+                fires = agent.archive_session.call_count + agent.load_state.call_count
+                assert fires == 1
+
+        asyncio.run(_run())
+
+    def test_decide_rejects_cross_origin(self) -> None:
+        """A POST from a foreign Origin gets 403."""
+        agent = _make_agent()
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post(
+                    "/api/session/decide",
+                    json={"choice": "resume"},
+                    headers={"Origin": "http://evil.example.com"},
+                )
+                assert resp.status == 403
+
+        asyncio.run(_run())
+
+    def test_decide_accepts_matching_origin(self) -> None:
+        """A POST from the bound origin succeeds."""
+        agent = _make_agent()
+        agent.load_state = MagicMock(return_value=False)
+        agent.build_resume_summary = MagicMock(return_value=None)
+        app = self._build_session_app(agent)
+
+        async def _run() -> None:
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post(
+                    "/api/session/decide",
+                    json={"choice": "resume"},
+                    headers={"Origin": "http://127.0.0.1:8471"},
+                )
+                assert resp.status == 200
 
         asyncio.run(_run())
 

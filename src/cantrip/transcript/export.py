@@ -62,7 +62,8 @@ def load_transcript(
     (``research``, ``build``, ``deploy``, ``test``).
 
     *since* — include only messages and events at or after the given
-    ISO 8601 timestamp.
+    ISO 8601 timestamp.  Tasks and token-usage totals are not narrowed
+    by this filter; messages without a timestamp are kept.
 
     *branch* — Phase 67.1: export the conversation path leading to
     a specific turn id rather than the currently active branch.
@@ -88,7 +89,11 @@ def load_transcript(
         # conversation, not every dead end the user explored.
         all_messages = session_store.load_active_branch(head=branch)
         if since:
-            data.messages = [m for m in all_messages if str(m.get("timestamp", "")) >= since]
+            # Keep messages with no timestamp — losing data silently
+            # is worse than over-including a row whose time is unknown.
+            data.messages = [
+                m for m in all_messages if not m.get("timestamp") or str(m["timestamp"]) >= since
+            ]
         else:
             data.messages = all_messages
 
@@ -128,7 +133,9 @@ def load_transcript(
         # Load events, with optional time filter.
         data.events = session_store.load_events(since=since)
 
-        # Load token usage.
+        # Load token usage.  Whole-session totals — `since` narrows the
+        # displayed messages and events but not the token totals, which
+        # would require per-message usage joins the store doesn't surface.
         data.token_usage = session_store.get_total_usage()
 
         # Phase 52.6 — aggregate tokens replayed from checkpoints so

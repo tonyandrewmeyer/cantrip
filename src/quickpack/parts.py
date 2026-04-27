@@ -15,6 +15,7 @@ from typing import Any
 
 import pypi_attest
 from quickpack import jujuignore
+from quickpack import metadata as _metadata
 
 logger = logging.getLogger(__name__)
 
@@ -135,17 +136,61 @@ def _verify_installed_attestations(
             )
 
 
+def _run_uv(
+    cmd: list[str],
+    *,
+    cwd: pathlib.Path,
+    env: dict[str, str] | None = None,
+) -> None:
+    """Run a ``uv`` invocation and re-raise failures with stderr context.
+
+    ``subprocess.run(check=True, capture_output=True)`` raises
+    ``CalledProcessError`` on a non-zero exit, but the CLI only catches
+    ``FileNotFoundError | ValueError | RuntimeError | OSError`` — letting
+    a uv failure (missing lock file, wheel build error, network
+    failure) bubble up as an unhandled traceback rather than a clean
+    error.  Translate it here so ``quickpack`` users see *why* uv
+    failed instead of a Python stack frame.
+    """
+    try:
+        subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        stdout = (exc.stdout or "").strip()
+        detail = stderr or stdout or f"exit code {exc.returncode}"
+        raise RuntimeError(f"`{' '.join(cmd)}` failed: {detail}") from exc
+
+
 def process_uv_part(
     charm_dir: pathlib.Path,
     prime_dir: pathlib.Path,
     part_config: dict[str, Any],
     *,
     verify_attestations: bool = False,
+    target_python: str | None = None,
 ) -> None:
     """Process a UV plugin part: copy src/lib and install deps.
 
     The UV plugin only copies ``src/`` and ``lib/`` from the project
     (not the full tree), then installs Python dependencies into ``venv/``.
+
+    *target_python* is the CPython label (e.g. ``"3.12"``) the unit
+    will run — passed straight through to ``uv venv --python`` so the
+    resulting ``venv/lib/pythonX.Y/`` directory matches what the unit's
+    ``python3`` reads at dispatch.  When ``None`` we fall back to
+    whatever the host's ``python3`` resolves to (the historical
+    behaviour); that's correct on a host whose system Python matches
+    the unit, and broken on a host where ``uv python install`` has
+    pulled a newer interpreter into ``$PATH`` (Python 3.14 venv +
+    Python 3.12 unit ⇒ ``ModuleNotFoundError: No module named 'ops'``
+    at install-hook time).
 
     When attestation checking runs (always for must-have packages, and
     for every package when ``verify_attestations`` is True) PyPI is
@@ -166,19 +211,17 @@ def process_uv_part(
     # Install Python dependencies via uv.
     venv_dir = prime_dir / "venv"
 
-    subprocess.run(
+    python_spec = target_python or "python3"
+    _run_uv(
         [
             "uv",
             "venv",
             "--relocatable",
             "--python",
-            "python3",
+            python_spec,
             str(venv_dir),
         ],
-        cwd=str(charm_dir),
-        check=True,
-        capture_output=True,
-        text=True,
+        cwd=charm_dir,
     )
 
     sync_cmd = [
@@ -205,14 +248,7 @@ def process_uv_part(
         "VIRTUAL_ENV": str(venv_dir),
     }
 
-    subprocess.run(
-        sync_cmd,
-        cwd=str(charm_dir),
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    _run_uv(sync_cmd, cwd=charm_dir, env=env)
 
     # Clean up venv to match charmcraft's UV plugin behaviour:
     # remove python* binaries and extra scripts, keep only activate.
@@ -396,6 +432,12 @@ def process_parts(
             "one part with plugin: uv."
         )
 
+    # Match the venv's Python to the series the unit will boot — see
+    # ``process_uv_part`` for the failure shape when these diverge.  Done
+    # once at the top of ``process_parts`` rather than inside the loop so
+    # multi-part charms (uv + dump + nil) all see the same value.
+    target_python = _metadata.resolve_target_python(project)
+
     found_uv = False
     for name, part_config in parts.items():
         plugin = part_config.get("plugin", name)
@@ -431,6 +473,7 @@ def process_parts(
                 prime_dir,
                 part_config,
                 verify_attestations=verify_attestations,
+                target_python=target_python,
             )
             found_uv = True
 

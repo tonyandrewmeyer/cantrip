@@ -11,16 +11,42 @@ from . import models
 from . import rules as _rules
 
 
+class _YamlParseError(Exception):
+    """Raised when a YAML file exists but cannot be parsed.
+
+    Distinct from the absent-file case so the linter can tell the user
+    which file is broken instead of falsely claiming the manifest is
+    missing.  Carries the original ``yaml.YAMLError`` message so the
+    diagnostic surfaces the parser's line/column hint.
+    """
+
+    def __init__(self, path: pathlib.Path, reason: str) -> None:
+        super().__init__(f"{path.name}: {reason}")
+        self.path = path
+        self.reason = reason
+
+
 def _load_yaml(path: pathlib.Path) -> dict[str, Any]:
-    """Load a YAML file, returning an empty dict on failure."""
+    """Load a YAML file, returning an empty dict on failure.
+
+    Raises :class:`_YamlParseError` when *path* exists but the parser
+    rejects it — a malformed manifest is fundamentally different from
+    a missing one, and silently coercing to ``{}`` would have us
+    report ``FATAL: No charmcraft.yaml or metadata.yaml found`` for a
+    file that is right there but has a typo.  ``OSError`` still maps
+    to an empty dict because an unreadable file is closer to "not
+    there" than to "broken syntax".
+    """
     if not path.exists():
         return {}
     try:
         with path.open() as f:
             data = yaml.safe_load(f)
-        return data if isinstance(data, dict) else {}
-    except (yaml.YAMLError, OSError):
+    except yaml.YAMLError as exc:
+        raise _YamlParseError(path, str(exc)) from exc
+    except OSError:
         return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _collect_python_files(charm_dir: pathlib.Path) -> list[pathlib.Path]:
@@ -149,7 +175,22 @@ def lint(
     # Ensure all rule modules are imported so rules register themselves.
     _ensure_rules_loaded()
 
-    context = build_context(charm_dir)
+    try:
+        context = build_context(charm_dir)
+    except _YamlParseError as exc:
+        return models.LintReport(
+            charm_dir=charm_dir,
+            diagnostics=[
+                models.Diagnostic(
+                    rule_id="FATAL",
+                    severity=models.Severity.ERROR,
+                    message=f"Could not parse {exc.path.name}: {exc.reason}",
+                    path=str(exc.path.relative_to(charm_dir))
+                    if exc.path.is_relative_to(charm_dir)
+                    else str(exc.path),
+                )
+            ],
+        )
 
     if not context.metadata:
         return models.LintReport(

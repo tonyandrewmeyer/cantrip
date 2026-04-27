@@ -156,6 +156,31 @@ class TestGlobToolExecution:
         assert "truncated" in result.output
 
     @pytest.mark.anyio
+    async def test_truncation_returns_alphabetically_first(self, tmp_path):
+        """When the pattern matches more than ``max_results`` files, the
+        returned slice must be the alphabetically-first ``max_results``
+        — not the OS-walk-order-first slice sorted afterwards.
+
+        Previously ``_collect_matches`` collected up to ``limit + 1``
+        in walk order, broke, sorted, then truncated, which silently
+        masked alphabetically-earlier files when the OS happened to
+        yield later ones first.
+        """
+        from cantrip.agent.tools.glob import GlobTool
+
+        # Names chosen so the alphabetic order differs from any
+        # plausible filesystem-walk order.
+        for ch in ("z", "y", "x", "w", "a", "b", "c"):
+            (tmp_path / f"{ch}.py").write_text("")
+        tool = GlobTool(base_path=tmp_path)
+        result = await tool.execute(pattern="*.py", max_results=3)
+
+        assert result.success
+        files = [line for line in result.output.split("\n") if line.endswith(".py")]
+        assert files == ["a.py", "b.py", "c.py"]
+        assert result.data["truncated"]
+
+    @pytest.mark.anyio
     async def test_results_sorted_alphabetically(self, tool):
         result = await tool.execute(pattern="**/*.py")
         assert result.success

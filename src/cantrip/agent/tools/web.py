@@ -53,6 +53,11 @@ def _is_private_url(url: str) -> str | None:
 # Truncate responses beyond this to avoid blowing up LLM context.
 MAX_RESPONSE_CHARS = 100_000
 
+# Maximum redirect hops before we give up — matches httpx's own default.
+# Each hop is re-validated by :func:`_is_private_url` so a public URL
+# can't 302-bounce into AWS metadata or a LAN host.
+_MAX_REDIRECTS = 10
+
 # Tags whose content should be discarded entirely when stripping HTML.
 _SKIP_TAGS = frozenset({"script", "style"})
 
@@ -149,6 +154,55 @@ def clear_llms_txt_cache() -> None:
     _llms_txt_cache.clear()
 
 
+class _SSRFRedirectError(Exception):
+    """Raised when a redirect chain points at a private/internal address."""
+
+    def __init__(self, hop_url: str, reason: str) -> None:
+        super().__init__(f"redirect to {hop_url} blocked: {reason}")
+        self.hop_url = hop_url
+        self.reason = reason
+
+
+async def _get_with_validated_redirects(
+    client: httpx.AsyncClient,
+    url: str,
+) -> httpx.Response:
+    """Fetch *url*, walking redirects manually so each hop is SSRF-checked.
+
+    httpx's ``follow_redirects=True`` only validates the *first* URL.
+    A public URL that returns ``302 Location: http://169.254.169.254/...``
+    (AWS metadata) or ``http://192.168.1.1/admin`` would leak the
+    response back into the LLM's context.  Resolve and re-validate
+    every hop, including relative ``Location`` headers, before
+    issuing the next request.
+
+    Caller has already validated *url*; this helper handles every
+    subsequent hop.  Raises :class:`_SSRFRedirectError` if a hop
+    targets a private destination.
+    """
+    current_url = url
+    for _ in range(_MAX_REDIRECTS + 1):
+        response = await client.get(current_url)
+        if not response.is_redirect:
+            return response
+        location = response.headers.get("Location")
+        if not location:
+            return response
+        # ``Location`` may be relative — resolve against the current URL
+        # so the SSRF check sees a fully-qualified target.
+        next_url = str(httpx.URL(response.url).join(location))
+        reason = _is_private_url(next_url)
+        if reason is not None:
+            raise _SSRFRedirectError(next_url, reason)
+        current_url = next_url
+    # Out of hops; surface httpx's own error so callers see something
+    # consistent with what ``follow_redirects=True`` would have raised.
+    raise httpx.TooManyRedirects(
+        f"exceeded {_MAX_REDIRECTS} redirect hops fetching {url}",
+        request=response.request,
+    )
+
+
 class WebFetchTool(Tool):
     """Tool to fetch content from a URL."""
 
@@ -203,15 +257,18 @@ class WebFetchTool(Tool):
                 error=f"Blocked: {reason}",
             )
         try:
+            # ``follow_redirects=False`` is deliberate — we walk redirects
+            # ourselves through :func:`_get_with_validated_redirects` so
+            # each hop is re-checked against :func:`_is_private_url`.
             async with httpx.AsyncClient(
                 timeout=30.0,
-                follow_redirects=True,
+                follow_redirects=False,
                 headers={"User-Agent": "Cantrip/0.1"},
             ) as client:
                 # Probe for llms.txt on first visit to this domain.
                 llms_url = await _probe_llms_txt(client, url)
 
-                response = await client.get(url)
+                response = await _get_with_validated_redirects(client, url)
                 response.raise_for_status()
 
                 content_type = response.headers.get("content-type", "")
@@ -223,6 +280,12 @@ class WebFetchTool(Tool):
                 if llms_url and "text/html" in content_type:
                     llms_content = await _fetch_llms_txt(client, llms_url)
 
+        except _SSRFRedirectError as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Blocked: {exc}",
+            )
         except httpx.TimeoutException:
             return ToolResult(
                 success=False,

@@ -173,6 +173,41 @@ class TestClaudeProviderCacheEligibility:
         warnings = [r for r in caplog.records if "1024-token minimum" in r.getMessage()]
         assert len(warnings) == 1
 
+    def test_short_prompt_logs_warning_haiku(self, caplog):
+        """Haiku models warn at the 2048-token threshold, not 1024.
+
+        Anthropic's documented Haiku minimum is 2048 tokens (Sonnet
+        uses 1024).  A live bisect against ``claude-haiku-4-5`` showed
+        the API silently ignores the ``cache_control`` hint below that
+        threshold — the call goes through with ``cache_creation_input_tokens=0``
+        and no error.  Treating Haiku like Sonnet here used to make the
+        warning under-fire, so an operator with a 1500-token Haiku
+        system prompt thought they were caching when they weren't.
+        """
+        import logging
+
+        provider = self._make_provider("claude-haiku-4-5-20251001")
+        # ~1500 tokens — fine for Sonnet but below Haiku's 2048 threshold.
+        prompt = "x" * (1500 * 4)
+        with caplog.at_level(logging.WARNING, logger="cantrip.llm.claude"):
+            provider._check_cache_eligibility(prompt)
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("2048-token minimum" in m for m in warnings)
+
+    def test_haiku_long_prompt_does_not_warn(self, caplog):
+        """A Haiku prompt well over 2048 tokens produces no warning."""
+        import logging
+
+        provider = self._make_provider("claude-haiku-4-5-20251001")
+        # ~3000 tokens — over Haiku's 2048-token floor.
+        prompt = "x" * (3000 * 4)
+        with caplog.at_level(logging.WARNING, logger="cantrip.llm.claude"):
+            provider._check_cache_eligibility(prompt)
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert not any("caching" in m.lower() for m in warnings)
+
 
 class TestClaudeProviderCountTokens:
     """Tests for ClaudeProvider.count_tokens with tool data."""
