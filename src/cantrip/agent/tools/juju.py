@@ -628,11 +628,21 @@ class JujuRefreshTool(Tool):
             juju = jubilant.Juju(model=model)
             refresh_args: dict[str, Any] = {"app": app_name}
             if path:
+                # Resolve relative .charm paths to absolute first — the
+                # snap-confined juju runs from its own cwd and cannot
+                # reach a path like ``./mycharm.charm`` even when it
+                # exists in the user's working directory.  Mirrors the
+                # deploy path's resolution at line 263.
+                charm_path = pathlib.Path(path)
+                if charm_path.suffix == ".charm" and charm_path.exists():
+                    path = str(charm_path.resolve())
+                elif not charm_path.is_absolute() and (pathlib.Path.cwd() / charm_path).exists():
+                    path = str((pathlib.Path.cwd() / charm_path).resolve())
                 # Copy to snap-accessible path if needed (same as deploy).
                 charm_file = pathlib.Path(path)
                 if charm_file.suffix == ".charm" and charm_file.exists():
                     home = pathlib.Path.home()
-                    if not str(charm_file.resolve()).startswith(str(home)):
+                    if not str(charm_file).startswith(str(home)):
                         snap_dir = home / "snap" / "juju" / "common"
                         snap_dir.mkdir(parents=True, exist_ok=True)
                         temp_copy = snap_dir / charm_file.name
