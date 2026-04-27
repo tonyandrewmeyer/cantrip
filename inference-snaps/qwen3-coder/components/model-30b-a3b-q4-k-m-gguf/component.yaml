@@ -1,0 +1,5 @@
+environment:
+  # The engine's server script reads MODEL_FILE; the snapcraft `model`
+  # part lays the GGUF here at build time (fetched from Hugging Face,
+  # or copied from cache/ if pre-warmed locally).
+  - MODEL_FILE=$COMPONENT/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf

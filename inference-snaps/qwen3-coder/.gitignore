@@ -7,8 +7,9 @@ squashfs-root
 *.snap
 *.comp
 
-# Model weights — fetched by prepare-models.sh from Hugging Face.
+# Model weights cache — fetched by prepare-models.sh from Hugging Face.
 # Not committed because GGUFs are 10GB+ and HF is the source of truth.
+/cache/
 *.gguf
 
 # Local snapcraft.yaml symlink (some workflows symlink snap/snapcraft.yaml here)

@@ -75,19 +75,36 @@ parts:
     stage-packages:
       - pciutils # for lspci, used by hardware detection
 
+  component-support-files:
+    # Hand-authored per-component metadata (component.yaml + server
+    # script) that modelctl reads at runtime. These live under
+    # `components/` and are committed to git; the GGUF cache lives in
+    # `cache/` so this part doesn't have to copy 18GB to find a few
+    # hundred bytes of yaml.
+    plugin: dump
+    source: components
+    organize:
+      "llamacpp/component.yaml": (component/llamacpp)/component.yaml
+      "llamacpp/server": (component/llamacpp)/server
+      "model-30b-a3b-q4-k-m-gguf/component.yaml": (component/model-30b-a3b-q4-k-m-gguf)/component.yaml
+    prime:
+      # Exclude everything not explicitly organised; the support files
+      # are routed entirely into components.
+      - -*
+
   model:
     # The GGUF is fetched at build time so this snap is self-contained
     # and remote-buildable on Launchpad. Prefers a local cache at
-    # `components/model-30b-a3b-q4-k-m-gguf/<file>` if present (so
-    # `prepare-models.sh` still saves the redownload on local builds);
-    # otherwise pulls from Hugging Face.
+    # `cache/<file>` if present (so `prepare-models.sh` saves the
+    # redownload on repeat local builds); otherwise pulls from
+    # Hugging Face.
     plugin: nil
     build-packages:
       - curl
     override-pull: |
       set -e
       filename="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-      local_path="$CRAFT_PROJECT_DIR/components/model-30b-a3b-q4-k-m-gguf/$filename"
+      local_path="$CRAFT_PROJECT_DIR/cache/$filename"
       if [ -f "$local_path" ]; then
         echo "Using locally-cached GGUF at $local_path"
         cp "$local_path" "$CRAFT_PART_SRC/$filename"
