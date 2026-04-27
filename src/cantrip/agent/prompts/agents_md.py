@@ -1,4 +1,4 @@
-"""Render a CLAUDE.md file for a charm project."""
+"""Render an AGENTS.md file for a charm project."""
 
 import pathlib
 
@@ -10,11 +10,11 @@ _ENV = jinja2.Environment(
     keep_trailing_newline=True,
     undefined=jinja2.StrictUndefined,
 )
-_TEMPLATE = _ENV.get_template("claude_md.md.j2")
+_TEMPLATE = _ENV.get_template("agents_md.md.j2")
 
 
-def render_claude_md(charm_name: str, charm_type: str | None = None) -> str:
-    """Render a CLAUDE.md tailored to a charm project.
+def render_agents_md(charm_name: str, charm_type: str | None = None) -> str:
+    """Render an AGENTS.md tailored to a charm project.
 
     Args:
         charm_name: Name of the charm (used in Juju commands, etc.).

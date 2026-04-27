@@ -423,7 +423,7 @@ def destructive_command_check(argv: list[str]) -> tuple[bool, str]:
     shape rather than the tool name.
 
     Shapes caught, each corresponding to one of the destructive
-    operations called out in CLAUDE.md's "executing actions with care"
+    operations called out in AGENTS.md's "executing actions with care"
     list:
 
     * ``rm`` with both ``-r`` and ``-f`` flags (combined or split —

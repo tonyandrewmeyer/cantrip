@@ -48,14 +48,15 @@ is:
 7. **Skills loaded on demand** — see [SKILLS.md](SKILLS.md).  Not
    part of the static prompt stack; brought in by `load_skill` tool
    calls.
-8. **`claude_md.md.j2`** — generates the per-charm `CLAUDE.md` file
-   written into a scaffolded charm directory.  Not seen by the
-   Cantrip agent; it's a deliverable.
+8. **`agents_md.md.j2`** — generates the per-charm `AGENTS.md` file
+   written into a scaffolded charm directory (with a `CLAUDE.md`
+   symlink alongside, for tools that prefer that name).  Not seen by
+   the Cantrip agent; it's a deliverable.
 
 ## Jinja2 conventions
 
 Every template loader in the tree follows the same shape
-(`prompts/system.py`, `prompts/claude_md.py`,
+(`prompts/system.py`, `prompts/agents_md.py`,
 `prompts/planning/__init__.py`, `prompts/tasks/__init__.py`):
 
 ```python

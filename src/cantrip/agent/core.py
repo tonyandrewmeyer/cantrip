@@ -71,7 +71,7 @@ from cantrip.agent.preflight import (
     PreflightResult,
     PreflightRunner,
 )
-from cantrip.agent.prompts import build_system_prompt, claude_md
+from cantrip.agent.prompts import agents_md, build_system_prompt
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.race import RACE_CONFIRM_PREFIX
 from cantrip.agent.retry import complete_with_retry
@@ -495,7 +495,7 @@ class CantripAgent:
         )
 
         if charm_path:
-            self._ensure_claude_md(charm_path)
+            self._ensure_agents_md(charm_path)
 
     @property
     def event_bus(self) -> ui_events.EventBus:
@@ -834,17 +834,25 @@ class CantripAgent:
 
         sandbox.set_event_sink(_sandbox_event_sink)
 
-    def _ensure_claude_md(self, charm_path: pathlib.Path) -> None:
-        """Write a CLAUDE.md into the charm directory if one does not exist."""
-        target = charm_path / "CLAUDE.md"
-        if target.exists():
-            return
+    def _ensure_agents_md(self, charm_path: pathlib.Path) -> None:
+        """Write AGENTS.md and a CLAUDE.md → AGENTS.md symlink into the charm directory.
+
+        AGENTS.md is the cross-tool convention (https://agents.md) read
+        by Claude Code, Cursor, Codex, Aider, and others. The CLAUDE.md
+        symlink keeps Claude Code's primary discovery path working
+        without a duplicate file. Skips if either name already exists.
+        """
         if not charm_path.is_dir():
             return
+        agents_path = charm_path / "AGENTS.md"
+        claude_path = charm_path / "CLAUDE.md"
+        if agents_path.exists() or claude_path.exists() or claude_path.is_symlink():
+            return
         charm_name = self.state.charm_name or charm_path.name
-        content = claude_md.render_claude_md(charm_name, charm_type=self.state.charm_type)
-        target.write_text(content)
-        log.info("Wrote CLAUDE.md to %s", charm_path)
+        content = agents_md.render_agents_md(charm_name, charm_type=self.state.charm_type)
+        agents_path.write_text(content)
+        claude_path.symlink_to("AGENTS.md")
+        log.info("Wrote AGENTS.md to %s (with CLAUDE.md symlink)", charm_path)
 
     def _record_usage(
         self,

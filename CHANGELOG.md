@@ -46,6 +46,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   smoke-test, and publish steps.
 
 ### Changed
+- **Charm-scaffold guidance file is now `AGENTS.md` with a `CLAUDE.md`
+  symlink.**  When the agent enters a charm directory it writes an
+  `AGENTS.md` (the cross-tool [agents.md](https://agents.md)
+  convention read by Claude Code, Cursor, Codex, Aider, and other
+  agentic tools) and a relative `CLAUDE.md → AGENTS.md` symlink so
+  Claude Code's primary discovery path keeps working without a
+  duplicate file.  Existing `AGENTS.md` or `CLAUDE.md` files are
+  preserved untouched.  Renames the internal
+  `prompts/claude_md.{py,md.j2}` modules to `prompts/agents_md.*`
+  and `_ensure_claude_md` → `_ensure_agents_md`.
+- **`inference-snap` provider knows about `qwen3-coder` (port 8332).**
+  Added to `_SNAP_DEFAULTS` so `--provider inference-snap --snap
+  qwen3-coder` resolves without an explicit `--base-url`.  The
+  unsuffixed name covers a future Canonical edition; today's
+  personal-namespace `qwen3-coder-tonyandrewmeyer` snap also serves
+  on 8332, so discovery falls back to the same default.
 - **OpenAI embed provider works keyless against local OSS servers.**
   ``OpenAIEmbedProvider`` no longer demands ``OPENAI_API_KEY`` when
   ``OPENAI_EMBED_BASE_URL`` is set.  Setting the override flips the
