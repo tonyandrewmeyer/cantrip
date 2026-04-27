@@ -68,10 +68,11 @@ is what Cantrip drives over the OpenAI-compatible endpoint.
    before publishing a snap built from these weights.
 
 3. **Choose your GGUF source.** Qwen does not ship official GGUFs
-   for every release; community conversions live on Hugging Face
-   under repos like `bartowski/...` (a widely-trusted GGUF
-   maintainer). Edit `prepare-models.sh` if you'd rather pin a
-   different conversion.
+   for every release; `unsloth` and `lmstudio-community` are the
+   trusted conversions for this model. The scaffold defaults to
+   `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF`. Edit
+   `prepare-models.sh` if you'd rather pin a different conversion or
+   try Unsloth's "UD" (Dynamic) quants.
 
 ## Build and test locally
 

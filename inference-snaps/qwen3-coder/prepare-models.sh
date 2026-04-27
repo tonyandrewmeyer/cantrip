@@ -19,11 +19,17 @@ cd "$SCRIPT_DIR"
 # CHANGE THESE: pick the GGUF host + filename you trust.
 # Qwen's official repo (PyTorch + safetensors) is at
 # https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct — Apache
-# 2.0, no gating. Community GGUF conversions live on Hugging Face
-# under repos like the one below; verify the conversion lineage and
-# checksum before you publish a snap built from it.
-GGUF_REPO="${GGUF_REPO:-bartowski/Qwen_Qwen3-Coder-30B-A3B-Instruct-GGUF}"
-GGUF_FILE="${GGUF_FILE:-Qwen_Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf}"
+# 2.0, no gating. Community GGUF conversions live on Hugging Face;
+# `unsloth` and `lmstudio-community` are the trusted conversions for
+# this model. Verify the lineage and checksum before publishing a
+# snap built from these weights.
+#
+# Alternative: Unsloth also publishes UD ("Dynamic") quants — set
+# GGUF_FILE=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf for slightly
+# better quality at ~10% more size, or Q5_K_M for the next quality
+# tier up at ~21GB.
+GGUF_REPO="${GGUF_REPO:-unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF}"
+GGUF_FILE="${GGUF_FILE:-Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf}"
 
 DEST_DIR="components/model-30b-a3b-q4-k-m-gguf"
 DEST="${DEST_DIR}/${GGUF_FILE}"
