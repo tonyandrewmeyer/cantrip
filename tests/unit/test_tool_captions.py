@@ -379,6 +379,16 @@ class TestRunCommandCaption:
 
 
 class TestJujuCaptions:
+    @pytest.fixture(autouse=True)
+    def _local_controller(self):
+        """Phase 10b: bypass the controller-safety gate so caption tests
+        target the underlying tool output rather than the gate."""
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(False, ""),
+        ) as patched:
+            yield patched
+
     @pytest.mark.asyncio
     async def test_status_caption_pluralisation(self) -> None:
         from cantrip.agent.tools import juju as juju_mod

@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Controller-safety guard for mutating Juju tools.**  The
+  ``juju_deploy``, ``juju_refresh``, ``juju_relate``,
+  ``juju_destroy_model``, and ``juju_remove_application`` tools
+  now refuse to run against a non-local controller without an
+  explicit ``confirmed=true`` from the agent.  Two axes decide
+  whether the gate fires: a heuristic that treats ``localhost``
+  / ``lxd`` and loopback-bound k8s as local (anything else
+  non-local), and a ``production_controllers`` array in
+  ``~/.config/cantrip/settings.json`` that names controllers
+  which always require confirm regardless of cloud type.
+  Production-list matches escalate the refusal language so the
+  operator notices what they are about to touch.  Stops the
+  charm-improvement skill from accidentally landing test units
+  in a production controller registered earlier with ``juju
+  register`` and left as the local default.  See
+  ``docs/docs/reference-cli.html`` for the full setting and
+  detection rules.
 - **`operator` field in hook payloads.**  Every hook now receives
   an ``operator`` key on stdin alongside ``event`` and
   ``timestamp`` — a ``{"name": ..., "email": ...}`` dict sourced

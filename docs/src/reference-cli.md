@@ -1311,3 +1311,38 @@ persistent opt-out without hand-editing
 The `CANTRIP_NO_UPDATE_CHECK` environment variable
 shadows the settings file and stays in force for the running
 session regardless of `/update --check`.
+
+## Controller-safety guard
+
+Mutating Juju tools (`juju_deploy`, `juju_refresh`,
+`juju_relate`, `juju_destroy_model`,
+`juju_remove_application`) refuse to run against a non-local
+controller without an explicit per-call `confirmed=true` from
+the agent. The agent surfaces the target controller and cloud
+to the operator and asks for confirmation before re-calling.
+Two axes decide whether the gate fires:
+
+- **Heuristic.** `localhost` and `lxd` clouds are always
+  treated as local. `microk8s` and `k8s` clouds are local only
+  when their API endpoints point at loopback
+  (`127.0.0.1`, `[::1]`, `localhost`) or a snap-managed socket
+  (e.g. `/var/snap/microk8s/...`). Anything else is non-local.
+- **Explicit list.** A `production_controllers` array in
+  `~/.config/cantrip/settings.json` names controllers that
+  always require confirm regardless of cloud type. The error
+  message escalates language ("**production controller**
+  `<name>`") so the operator notices what they are about to
+  touch:
+
+  ```json
+  {
+    "production_controllers": ["prod-aws", "canonical-prod"]
+  }
+  ```
+
+The two axes compose: a controller hits the gate when *either*
+axis says non-local. When the heuristic cannot classify the
+controller (juju is not installed, or
+`juju show-controller` produces nothing), the gate falls
+silent so test environments that do not have juju available do
+not see spurious refusals.

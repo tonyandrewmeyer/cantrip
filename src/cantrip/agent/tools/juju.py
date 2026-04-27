@@ -14,6 +14,7 @@ from typing import Any
 import jubilant
 
 from cantrip import diagnostics
+from cantrip.agent.controller_safety import controller_confirm_required
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.tools.juju_subprocess import (
     juju_available as _juju_available,
@@ -232,6 +233,16 @@ class JujuDeployTool(Tool):
                     "type": "string",
                     "description": "Ubuntu base for the charm (e.g. 'ubuntu@24.04').",
                 },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to deploy when the target controller is "
+                        "non-local (or in the operator's production_controllers "
+                        "list). Show the operator the controller name and cloud "
+                        "and ask them to confirm before setting this."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["charm"],
         }
@@ -247,8 +258,15 @@ class JujuDeployTool(Tool):
         trust: bool = False,
         channel: str | None = None,
         base: str | None = None,
+        confirmed: bool = False,
     ) -> ToolResult:
         """Deploy a charm."""
+        blocked, reason = controller_confirm_required(
+            "juju_deploy", model=model, confirmed=confirmed
+        )
+        if blocked:
+            return ToolResult(success=False, output="", error=reason)
+
         if not _juju_available():
             return ToolResult(
                 success=False,
@@ -603,6 +621,16 @@ class JujuRefreshTool(Tool):
                     "type": "string",
                     "description": "Charmhub channel to refresh from (e.g. 'latest/edge').",
                 },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to refresh when the target controller is "
+                        "non-local (or in the operator's production_controllers "
+                        "list). Show the operator the controller name and cloud "
+                        "and ask them to confirm before setting this."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["app_name"],
         }
@@ -614,8 +642,15 @@ class JujuRefreshTool(Tool):
         model: str | None = None,
         resources: dict[str, str] | None = None,
         channel: str | None = None,
+        confirmed: bool = False,
     ) -> ToolResult:
         """Refresh a charm."""
+        blocked, reason = controller_confirm_required(
+            "juju_refresh", model=model, confirmed=confirmed
+        )
+        if blocked:
+            return ToolResult(success=False, output="", error=reason)
+
         if not _juju_available():
             return ToolResult(
                 success=False,
@@ -707,6 +742,16 @@ class JujuRelateTool(Tool):
                     "type": "string",
                     "description": "Model name",
                 },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to integrate when the target controller is "
+                        "non-local (or in the operator's production_controllers "
+                        "list). Show the operator the controller name and cloud "
+                        "and ask them to confirm before setting this."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["app1", "app2"],
         }
@@ -716,8 +761,15 @@ class JujuRelateTool(Tool):
         app1: str,
         app2: str,
         model: str | None = None,
+        confirmed: bool = False,
     ) -> ToolResult:
         """Create a relation."""
+        blocked, reason = controller_confirm_required(
+            "juju_relate", model=model, confirmed=confirmed
+        )
+        if blocked:
+            return ToolResult(success=False, output="", error=reason)
+
         if not _juju_available():
             return ToolResult(
                 success=False,
@@ -1003,12 +1055,34 @@ class JujuDestroyModelTool(Tool):
                     "description": "Force destruction, ignoring errors",
                     "default": False,
                 },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to destroy when the target controller is "
+                        "non-local (or in the operator's production_controllers "
+                        "list). Show the operator the controller name and cloud "
+                        "and ask them to confirm before setting this."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["model"],
         }
 
-    async def execute(self, model: str, force: bool = False) -> ToolResult:
+    async def execute(
+        self, model: str, force: bool = False, confirmed: bool = False
+    ) -> ToolResult:
         """Destroy a Juju model."""
+        # Phase 10b: production-controller guard fires *before* the
+        # blanket destructive gate so operators see "production
+        # controller X" in the error rather than a generic policy
+        # message.
+        blocked, reason = controller_confirm_required(
+            "juju_destroy_model", model=model, confirmed=confirmed
+        )
+        if blocked:
+            return ToolResult(success=False, output="", error=reason)
+
         # Phase 80.5: destructive-command gate.  Refuses unless a
         # policy layer explicitly sets ``approve_destructive: true``.
         from cantrip.agent.policy import destructive_gate
@@ -2340,6 +2414,16 @@ class JujuRemoveApplicationTool(Tool):
                     "description": "Force removal even if the application has errors.",
                     "default": False,
                 },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to remove when the target controller is "
+                        "non-local (or in the operator's production_controllers "
+                        "list). Show the operator the controller name and cloud "
+                        "and ask them to confirm before setting this."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["app_name"],
         }
@@ -2349,8 +2433,19 @@ class JujuRemoveApplicationTool(Tool):
         app_name: str,
         model: str | None = None,
         force: bool = False,
+        confirmed: bool = False,
     ) -> ToolResult:
         """Remove an application."""
+        # Phase 10b: production-controller guard fires *before* the
+        # blanket destructive gate so operators see "production
+        # controller X" in the error rather than a generic policy
+        # message.
+        blocked, reason = controller_confirm_required(
+            "juju_remove_application", model=model, confirmed=confirmed
+        )
+        if blocked:
+            return ToolResult(success=False, output="", error=reason)
+
         # Phase 80.5: destructive-command gate.  Refuses unless a
         # policy layer explicitly sets ``approve_destructive: true``.
         from cantrip.agent.policy import destructive_gate

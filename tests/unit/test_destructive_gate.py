@@ -28,6 +28,17 @@ def _isolate_policies(tmp_path, monkeypatch):
     yield tmp_path
 
 
+@pytest.fixture(autouse=True)
+def _local_controller(monkeypatch):
+    """Phase 10b: bypass the controller-safety gate so these tests target
+    the destructive gate, not the controller-safety layer that fires
+    first inside the same tools."""
+    monkeypatch.setattr(
+        "cantrip.agent.tools.juju.controller_confirm_required",
+        lambda *_args, **_kwargs: (False, ""),
+    )
+
+
 class TestJujuDestroyModelGate:
     @pytest.mark.asyncio
     async def test_gate_blocks_without_approval(self, _isolate_policies) -> None:

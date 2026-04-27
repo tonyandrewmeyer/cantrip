@@ -1269,6 +1269,41 @@ persistent opt-out without hand-editing
 <p>The <code>CANTRIP_NO_UPDATE_CHECK</code> environment variable
 shadows the settings file and stays in force for the running
 session regardless of <code>/update --check</code>.</p>
+<h2>Controller-safety guard</h2>
+<p>Mutating Juju tools (<code>juju_deploy</code>, <code>juju_refresh</code>,
+<code>juju_relate</code>, <code>juju_destroy_model</code>,
+<code>juju_remove_application</code>) refuse to run against a non-local
+controller without an explicit per-call <code>confirmed=true</code> from
+the agent. The agent surfaces the target controller and cloud
+to the operator and asks for confirmation before re-calling.
+Two axes decide whether the gate fires:</p>
+<ul>
+<li>
+<p><strong>Heuristic.</strong> <code>localhost</code> and <code>lxd</code> clouds are always
+treated as local. <code>microk8s</code> and <code>k8s</code> clouds are local only
+when their API endpoints point at loopback
+(<code>127.0.0.1</code>, <code>[::1]</code>, <code>localhost</code>) or a snap-managed socket
+(e.g. <code>/var/snap/microk8s/...</code>). Anything else is non-local.</p>
+</li>
+<li>
+<p><strong>Explicit list.</strong> A <code>production_controllers</code> array in
+<code>~/.config/cantrip/settings.json</code> names controllers that
+always require confirm regardless of cloud type. The error
+message escalates language (&quot;<strong>production controller</strong>
+<code>&lt;name&gt;</code>&quot;) so the operator notices what they are about to
+touch:</p>
+<pre><code class="language-json">{
+  &quot;production_controllers&quot;: [&quot;prod-aws&quot;, &quot;canonical-prod&quot;]
+}
+</code></pre>
+</li>
+</ul>
+<p>The two axes compose: a controller hits the gate when <em>either</em>
+axis says non-local. When the heuristic cannot classify the
+controller (juju is not installed, or
+<code>juju show-controller</code> produces nothing), the gate falls
+silent so test environments that do not have juju available do
+not see spurious refusals.</p>
   </main>
 </div>
 

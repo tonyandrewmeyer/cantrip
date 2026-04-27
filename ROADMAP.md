@@ -652,7 +652,7 @@ shared-decisions paths against a temp repo.
 
 ---
 
-## Phase 10b: Charm-Improvement Production-Controller Guard
+## Phase 10b: Charm-Improvement Production-Controller Guard ✓
 
 **Goal:** Stop the charm-improvement skill from deploying test
 charms to a production controller by default.  Today
@@ -670,39 +670,43 @@ charm-improvement pipeline stands; this only adds a confirm gate
 in front of mutating Juju calls when the target controller looks
 non-local.
 
-### 10b.1 Heuristic default
+### 10b.1 Heuristic default ✓
 
-- [ ] Detect controllers that are not the local
-  concierge-prepared one — cloud type ``localhost``,
-  ``microk8s`` on 127.0.0.1, ``k8s`` on a local socket.
-  Anything else flips a "non-local" flag at controller-resolution
-  time (``src/cantrip/agent/preflight.py``).
-- [ ] Charm-improvement-mode tools that mutate
-  (``juju_deploy``, ``juju_relate``, ``juju_refresh``,
-  ``juju_destroy_model``, etc.) emit a CONFIRM before executing
-  when the current controller is non-local.  CONFIRM message
-  names the controller and its cloud so the operator sees what
-  they're about to touch.
+- [x] Detect controllers that are not the local
+  concierge-prepared one — cloud type ``localhost`` / ``lxd``,
+  ``microk8s`` / ``k8s`` whose API endpoints point at loopback
+  (``127.0.0.1``, ``[::1]``, ``localhost``) or a snap-managed
+  socket (``/var/snap/microk8s/...``).  Anything else flips a
+  ``ControllerKind.NON_LOCAL`` flag at controller-resolution
+  time (``src/cantrip/agent/controller_safety.py``).
+- [x] Charm-improvement-mode tools that mutate (``juju_deploy``,
+  ``juju_relate``, ``juju_refresh``, ``juju_destroy_model``,
+  ``juju_remove_application``) require ``confirmed=true``
+  before executing when the current controller is non-local.
+  Refusal message names the controller and its cloud so the
+  operator sees what they're about to touch.
 
-### 10b.2 Explicit production list
+### 10b.2 Explicit production list ✓
 
-- [ ] Settings-schema field ``production_controllers: [str]``
-  lets the operator name controllers that always require
-  explicit confirm regardless of cloud type.  Belt-and-braces
-  with the heuristic for cases where the heuristic
-  under-classifies (e.g., a remote controller on a private
-  network that *looks* local).
-- [ ] When a controller name matches the production list, the
-  CONFIRM message escalates language ("Deploy to **production
-  controller** ``foo``?") so the operator notices.
+- [x] Settings-file field ``production_controllers: [str]`` in
+  ``~/.config/cantrip/settings.json`` lets the operator name
+  controllers that always require explicit confirm regardless
+  of cloud type.  Belt-and-braces with the heuristic for cases
+  where the heuristic under-classifies (e.g., a remote
+  controller on a private network that *looks* local).
+- [x] When a controller name matches the production list, the
+  refusal message escalates language ("Refusing to run … against
+  **production controller** `foo`") so the operator notices.
 
-### 10b.3 Tests
+### 10b.3 Tests ✓
 
-- [ ] Unit tests for the heuristic classifier — local clouds
-  pass through, non-local clouds get flagged.
-- [ ] Integration test scaffolds a fake controller list and
-  verifies the CONFIRM gate fires for non-local entries.
-- [ ] Test covers the explicit-list override.
+- [x] Unit tests for the heuristic classifier — local clouds
+  pass through, non-local clouds get flagged
+  (``tests/unit/test_controller_safety.py``).
+- [x] Unit tests for the gate firing across all five tools
+  (``tests/unit/test_juju_tools.py::TestControllerSafetyGate``).
+- [x] Test covers the explicit-list override and the
+  ``confirmed=true`` bypass.
 
 **Exit criteria:** Charm-improvement runs against a non-local
 controller emit a CONFIRM.  Settings field documented in

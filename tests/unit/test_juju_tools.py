@@ -244,6 +244,16 @@ class TestJujuAddModelTool:
 class TestJujuDestroyModelTool:
     """Tests for JujuDestroyModelTool."""
 
+    @pytest.fixture(autouse=True)
+    def _local_controller(self):
+        """Phase 10b: bypass the controller-safety gate for tests that target
+        the underlying juju logic, not the gate itself."""
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(False, ""),
+        ) as patched:
+            yield patched
+
     @pytest.fixture
     def tool(self):
         return JujuDestroyModelTool()
@@ -467,6 +477,16 @@ class TestJujuConsumeTool:
 class TestJujuDeployTool:
     """Tests for JujuDeployTool resources and trust parameters."""
 
+    @pytest.fixture(autouse=True)
+    def _local_controller(self):
+        """Phase 10b: bypass the controller-safety gate so these tests target
+        the underlying deploy logic rather than the gate."""
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(False, ""),
+        ) as patched:
+            yield patched
+
     @pytest.fixture
     def tool(self):
         return JujuDeployTool()
@@ -633,6 +653,16 @@ class TestBundleDeployTool:
 class TestJujuDeploySnapConfinement:
     """Tests for snap confinement workaround in JujuDeployTool."""
 
+    @pytest.fixture(autouse=True)
+    def _local_controller(self):
+        """Phase 10b: bypass the controller-safety gate so these tests target
+        the snap-confinement logic rather than the gate."""
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(False, ""),
+        ) as patched:
+            yield patched
+
     @pytest.fixture
     def tool(self):
         return JujuDeployTool()
@@ -726,6 +756,16 @@ class TestJujuDeploySnapConfinement:
 
 class TestJujuRefreshTool:
     """Tests for JujuRefreshTool."""
+
+    @pytest.fixture(autouse=True)
+    def _local_controller(self):
+        """Phase 10b: bypass the controller-safety gate so these tests target
+        the underlying refresh logic rather than the gate."""
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(False, ""),
+        ) as patched:
+            yield patched
 
     @pytest.fixture
     def tool(self):
@@ -845,6 +885,94 @@ class TestJujuRefreshTool:
         kwargs = mock_juju.refresh.call_args.kwargs
         assert kwargs["app"] == "my-app"
         assert kwargs["path"] == str(charm_file.resolve())
+
+
+class TestControllerSafetyGate:
+    """Phase 10b: the controller-safety CONFIRM gate fires for non-local
+    controllers across the mutating juju tools."""
+
+    @pytest.mark.asyncio
+    async def test_deploy_blocks_on_non_local_controller(self):
+        """juju_deploy refuses without confirmed=true when the gate fires."""
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(True, "REFUSE: non-local controller 'prod' (cloud='aws')."),
+        ):
+            result = await JujuDeployTool().execute(charm="my-charm")
+        assert not result.success
+        assert "non-local controller" in result.error
+        assert "prod" in result.error
+
+    @pytest.mark.asyncio
+    async def test_deploy_passes_through_when_confirmed(self):
+        """confirmed=true silences the gate and the tool proceeds."""
+        gate_called = mock.MagicMock(return_value=(False, ""))
+        mock_juju = mock.MagicMock(spec=jubilant.Juju)
+        with (
+            mock.patch(
+                "cantrip.agent.tools.juju.controller_confirm_required",
+                gate_called,
+            ),
+            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+        ):
+            result = await JujuDeployTool().execute(charm="my-charm", confirmed=True)
+        assert result.success
+        # The gate was called with confirmed=True so it short-circuited
+        # without inspecting the controller.
+        gate_called.assert_called_once_with("juju_deploy", model=None, confirmed=True)
+
+    @pytest.mark.asyncio
+    async def test_refresh_blocks_on_non_local_controller(self):
+        from cantrip.agent.tools.juju import JujuRefreshTool
+
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(True, "REFUSE: production controller 'prod'"),
+        ):
+            result = await JujuRefreshTool().execute(app_name="my-app")
+        assert not result.success
+        assert "production controller" in result.error
+
+    @pytest.mark.asyncio
+    async def test_relate_blocks_on_non_local_controller(self):
+        from cantrip.agent.tools.juju import JujuRelateTool
+
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(True, "REFUSE: non-local"),
+        ):
+            result = await JujuRelateTool().execute(app1="redis", app2="traefik")
+        assert not result.success
+        assert "non-local" in result.error
+
+    @pytest.mark.asyncio
+    async def test_destroy_model_blocks_on_non_local_controller(self):
+        """The controller gate fires *before* the destructive policy gate so
+        the operator sees the controller name in the refusal."""
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(True, "REFUSE: production controller 'prod-aws'"),
+        ):
+            result = await JujuDestroyModelTool().execute(model="dev")
+        assert not result.success
+        assert "prod-aws" in result.error
+        # The destructive gate's keyword shouldn't appear — the
+        # controller gate fired first.
+        assert "approve_destructive" not in result.error
+
+    @pytest.mark.asyncio
+    async def test_remove_application_blocks_on_non_local_controller(self):
+        from cantrip.agent.tools.juju import JujuRemoveApplicationTool
+
+        with mock.patch(
+            "cantrip.agent.tools.juju.controller_confirm_required",
+            return_value=(True, "REFUSE: non-local controller 'remote'"),
+        ):
+            result = await JujuRemoveApplicationTool().execute(app_name="redis")
+        assert not result.success
+        assert "remote" in result.error
+        assert "approve_destructive" not in result.error
 
 
 class TestJujuTrustTool:
