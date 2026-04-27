@@ -55,8 +55,9 @@
     <img src="logo-dark.png" alt="" class="hero-logo logo-dark" width="96" height="96" aria-hidden="true">
     <h1>Build Juju charms<br><em>with AI</em></h1>
     <p class="hero-subtitle">
-      Describe your workload. Cantrip researches it, designs the charm,
-      writes the code, deploys it, and runs the tests &mdash; autonomously.
+      Describe your workload. Cantrip researches it, designs the
+      charm, writes the code, deploys it, and runs the tests &mdash;
+      autonomously, with citations and a tight cost loop.
     </p>
     <div class="hero-actions">
       <a href="#quickstart" class="btn btn-primary">Get Started</a>
@@ -82,7 +83,21 @@
           Cantrip analyses your workload &mdash; documentation, source code,
           existing charms &mdash; and proposes a design grounded in real
           operational best practices, including companion charms for
-          databases, caches, and ingress.
+          databases, caches, and ingress.  A cross-charm Librarian
+          surfaces existing Charmhub and Launchpad work before the
+          agent reinvents it.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">&#x1F4DA;</div>
+        <h3>Cited Charm-Ecosystem Retrieval</h3>
+        <p>
+          Index Juju, ops, charmcraft, rockcraft, jubilant, and
+          Charmhub locally with one command.  The agent cites
+          official URLs instead of paraphrasing from memory, and the
+          <code>@docs</code> mention pulls top passages straight into
+          a chat message &mdash; every claim traceable.
         </p>
       </div>
 
@@ -94,6 +109,19 @@
           and packs &mdash; without waiting for instructions. Concurrent
           subagents tackle research, build, deploy, test, and debug
           tasks in parallel.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">&#x1F4B8;</div>
+        <h3>Cost-Aware Multi-Model</h3>
+        <p>
+          Architect-then-editor mode runs each turn as
+          <em>propose</em> on a strong model, <em>edit</em> on a
+          cheap one &mdash; design quality without paying for design
+          tokens on every diff.  Light models handle research and
+          summarisation; the <code>/cost</code> slash command shows
+          spend per role so the bill never surprises you.
         </p>
       </div>
 
@@ -201,6 +229,31 @@
       </div>
 
       <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">&#x1F517;</div>
+        <h3>Inline @-Mention Context</h3>
+        <p>
+          Drop file excerpts, git diffs, charm metadata, live
+          <code>juju status</code>, indexed-docs passages, or
+          fetched URLs straight into a chat message with
+          Tab-completable <code>@</code> mentions &mdash;
+          substituted before the LLM sees the message, no extra
+          tool round-trip.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">&#x1F500;</div>
+        <h3>Plan, Branch, Ralph, Yolo</h3>
+        <p>
+          Pick the loop that fits the task: <code>/plan</code> for a
+          read-only proposal, <code>/branch</code> to fork a session
+          and explore alternatives, <code>--ralph N</code> to iterate
+          until green, <code>--yolo</code> for unattended CI.  Every
+          mode shares the same agent, permissions, and snapshots.
+        </p>
+      </div>
+
+      <div class="feature-card">
         <div class="feature-icon" aria-hidden="true">&#x1F50C;</div>
         <h3>MCP Extensibility</h3>
         <p>
@@ -233,7 +286,7 @@
       <li class="step">
         <div class="step-content">
           <h3>Review the design</h3>
-          <p>Cantrip researches the workload via web search and Charmhub, then proposes integrations, config, actions, companion charms, and operational patterns.</p>
+          <p>Cantrip researches the workload via web search, Charmhub, and a searchable index of canonical charm-ecosystem documentation, then proposes integrations, config, actions, companion charms, and operational patterns &mdash; with citation URLs on every recommendation.</p>
         </div>
       </li>
       <li class="step">
