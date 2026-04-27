@@ -145,7 +145,7 @@ dirty-commit also skips, so a turn that starts with a dirty
 tree just runs the agent against that state.</p>
 
 <h2 id="undo">Interaction with /undo</h2>
-<p>Phase 68.1 <a href="howto-undo.html"><code>/undo</code></a>
+<p><a href="howto-undo.html"><code>/undo</code></a>
 restores the working tree from the snapshot taken just before
 the user turn. Because snapshots and the user's repo are
 independent, the auto-commit's contents are still in
@@ -166,7 +166,7 @@ at the agent commit but the working tree no longer matches it.</p>
   <li>Not a push. Cantrip never runs <code>git push</code>; the
     user pushes when they're ready.</li>
   <li>Not a snapshot replacement.
-    <a href="howto-undo.html">Phase 68.1 snapshots</a> still
+    <a href="howto-undo.html"><code>/undo</code> snapshots</a> still
     fire — the snapshot system runs in a hidden parallel git
     repo independent of your charm's repo.</li>
   <li>Not a remote-history rewriter. Auto-commit creates new

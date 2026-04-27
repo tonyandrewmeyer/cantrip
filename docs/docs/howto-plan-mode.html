@@ -172,14 +172,14 @@ is active:</p>
     most-restrictive-wins semantics. A tool your
     <code>permissions.yaml</code> explicitly allowed is still
     denied by plan mode while the flag is on.</li>
-  <li><strong>Hooks.</strong> Phase 46 pre-tool hooks still fire
+  <li><strong>Hooks.</strong> Pre-tool hooks still fire
     in plan mode &mdash; a hook that rewrites arguments runs
     before the plan-mode gate sees the call, so the decision is
     made against the rewritten arguments.</li>
   <li><strong>/undo.</strong> Plan mode doesn't take snapshots
     beyond what the session already does &mdash; there's nothing
     to snapshot because nothing mutates. Your pre-plan snapshot
-    from Phase 68.1 is still there if you need it.</li>
+    is still there if you need it.</li>
   <li><strong>Custom commands.</strong> A
     <a href="howto-custom-commands.html">user-defined slash
     command</a> that uses <code>!`cmd`</code> shell expansion

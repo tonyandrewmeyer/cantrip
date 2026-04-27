@@ -3,30 +3,61 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Index the charm docs · Cantrip</title>
+<title>How to index the charm docs &mdash; Cantrip</title>
+<meta name="description" content="Build a local index of Canonical's charm-ecosystem documentation so the agent retrieves cited passages instead of paraphrasing.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
 <link rel="stylesheet" href="docs.css">
 </head>
-<body class="doc-body">
-<a href="#main" class="skip-link">Skip to content</a>
-<header class="doc-header">
-  <div class="doc-header-inner">
-    <a class="doc-logo" href="index.html">Cantrip</a>
-    <nav>
-      <a href="index.html">Docs</a>
-    </nav>
-  </div>
-</header>
+<body>
 
-<div class="doc-shell">
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
   <aside class="doc-sidebar">
     <h4>How-to guides</h4>
     <ul>
       <li><a href="howto-provider.html">Choose an LLM provider</a></li>
-      <li><a href="howto-docs-index.html" class="current">Index the charm docs</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
       <li><a href="howto-light-models.html">Configure light models</a></li>
       <li><a href="howto-memory.html">Use durable memory</a></li>
       <li><a href="howto-skills.html">Add a custom skill</a></li>
       <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
+      <li><a href="howto-docs-index.html" class="current">Index the charm docs</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
     </ul>
     <h4>See also</h4>
     <ul>
@@ -37,25 +68,32 @@
 
   <main id="main" class="doc-content">
     <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>How-to<span class="sep">/</span>Index the charm docs
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Index the charm docs
     </div>
+
     <h1>Index the charm docs</h1>
+    <p class="subtitle">
+      Build a local index of Canonical&rsquo;s charm-ecosystem
+      documentation so the agent answers from cited passages
+      instead of plausible-sounding paraphrase.
+    </p>
+
     <p>
-      Phase 72.1 ships a local index of the canonical Canonical
-      documentation surfaces (Juju, ops, charmcraft, rockcraft,
-      jubilant, Charmhub).  Once indexed, the agent reaches for
-      <code>docs_search</code> before answering "how do I &hellip;"
-      questions, and you can pull cited passages mid-message via
-      <code>@docs &lt;site&gt; &lt;query&gt;</code>.  Both surfaces
-      return canonical URLs &mdash; never paraphrased text &mdash;
-      so the agent can no longer fall back to plausible-sounding
-      hallucinations.
+      Cantrip can index the canonical Canonical documentation
+      surfaces (Juju, ops, charmcraft, rockcraft, jubilant,
+      Charmhub).  Once indexed, the agent reaches for
+      <code>docs_search</code> before answering &ldquo;how do
+      I&hellip;&rdquo; questions, and you can pull cited passages
+      mid-message via <code>@docs &lt;site&gt; &lt;query&gt;</code>.
+      Both surfaces return canonical URLs &mdash; never paraphrased
+      text &mdash; so the agent can no longer fall back to
+      plausible-sounding hallucinations.
     </p>
 
     <h2 id="setup">One-time setup</h2>
     <p>
       The index needs an embed provider.  Voyage is the
-      Anthropic-ecosystem recommendation; OpenAI's
+      Anthropic-ecosystem recommendation; OpenAI&rsquo;s
       <code>text-embedding-3-small</code> works too.  Configure
       either in your shell:
     </p>
@@ -74,16 +112,17 @@ Indexing ops (https://ops.readthedocs.io/) &hellip;
   pages: 184  chunks: 612  embed-batches: 10  errors: 0</code></pre>
     <p>
       Re-running the same command crawls fresh and replaces stored
-      rows by stable <code>(url, ordinal)</code> hash &mdash; you do
-      not need to clear the cache by hand.  Crawl errors (timeouts,
-      404s) are absorbed; the rest of the pages still index.
+      rows by stable <code>(url, ordinal)</code> hash &mdash; you
+      do not need to clear the cache by hand.  Crawl errors
+      (timeouts, 404s) are absorbed; the rest of the pages still
+      index.
     </p>
     <p>
       <code>--all</code> indexes every registered site:
     </p>
 <pre><code><span class="prompt">$</span> cantrip docs index --all</code></pre>
 
-    <h2 id="list">See what's indexed</h2>
+    <h2 id="list">See what&rsquo;s indexed</h2>
 <pre><code><span class="prompt">$</span> cantrip docs list
 Cache root: /home/&lt;you&gt;/.cache/cantrip/docs-index
 
@@ -128,27 +167,27 @@ charmhub     no       -        Charmhub charm-author guidelines</code></pre>
       Every batch of chunks goes through the embed provider, so
       costs are roughly the per-million-token rate of your
       embed model multiplied by the corpus size.  At
-      <code>voyage-3</code>'s $0.06/1M rate, indexing the ops
-      reference (~600 chunks &times; 500 tokens) is well under a
-      cent.  The <code>/cost</code> slash command shows a separate
-      <strong>By role</strong> section once embed traffic exists,
-      so retrieval spend is easy to spot.
+      <code>voyage-3</code>&rsquo;s $0.06/1M rate, indexing the
+      ops reference (~600 chunks &times; 500 tokens) is well
+      under a cent.  The <code>/cost</code> slash command shows a
+      separate <strong>By role</strong> section once embed
+      traffic exists, so retrieval spend is easy to spot.
     </p>
 
     <h2 id="caveats">Caveats</h2>
     <ul>
       <li>
-        The crawler is sitemap-driven only; sites that don't expose
-        <code>sitemap.xml</code> are not currently supported.
+        The crawler is sitemap-driven only; sites that don&rsquo;t
+        expose <code>sitemap.xml</code> are not currently
+        supported.
       </li>
       <li>
-        V1 re-crawls everything on each <code>cantrip docs
-        index</code>.  Incremental refresh with
-        <code>If-Modified-Since</code> is a planned 72.1b
-        follow-up.
+        <code>cantrip docs index</code> re-crawls everything on
+        each run.  Incremental refresh with
+        <code>If-Modified-Since</code> is a planned follow-up.
       </li>
       <li>
-        Indexing fails fast when the embed provider isn't
+        Indexing fails fast when the embed provider isn&rsquo;t
         configured &mdash; the error message names the env var to
         set.  Sessions without retrieval gracefully skip
         <code>@docs</code> registration so an unconfigured user
@@ -161,11 +200,34 @@ charmhub     no       -        Charmhub charm-author guidelines</code></pre>
 
 <footer class="doc-footer">
   <div class="doc-footer-inner">
-    <div>&copy; 2026 Cantrip contributors</div>
+    <span>Cantrip &mdash; free &amp; open source</span>
     <div>
       <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
 </footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
 </body>
 </html>

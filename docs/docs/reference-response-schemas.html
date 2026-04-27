@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Response schemas reference &mdash; Cantrip</title>
-<meta name="description" content="Built-in JSON schemas for structured LLM output, plus the validation pipeline (Phase 73.3).">
+<meta name="description" content="Built-in JSON schemas for structured LLM output, plus the validation pipeline.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
@@ -64,12 +64,11 @@
 <h2 id="when-to-use">When to use a schema</h2>
 <p>
   Pass a <code>response_schema</code> when the caller will parse the
-  reply rather than show it to the user.  Recipes (Phase 73.1)
-  consume planner briefings.  The oracle (Phase 70.2) returns a
-  structured second opinion that downstream code feeds back into
-  decision points.  Acceptance reports (Phase 17) populate test
-  matrices.  Free-form prose stays untyped &mdash; schemas are for
-  data, not conversation.
+  reply rather than show it to the user.  Recipes consume planner
+  briefings.  The oracle returns a structured second opinion that
+  downstream code feeds back into decision points.  Acceptance
+  reports populate test matrices.  Free-form prose stays untyped
+  &mdash; schemas are for data, not conversation.
 </p>
 <p>
   Schemas are <em>plain dicts</em> matching JSON Schema draft
@@ -96,14 +95,14 @@
   </dd>
   <dt><code>ORACLE_ANSWER</code></dt>
   <dd>
-    Shape of a Phase 70.2 oracle reply when the caller wants more
+    Shape of an oracle reply when the caller wants more
     than free-form prose: <code>answer</code> (required), optional
     <code>confidence</code> in <code>[0, 1]</code>, and lists of
     <code>caveats</code> and <code>references</code>.
   </dd>
   <dt><code>CHECK_RESULT</code></dt>
   <dd>
-    Output of a Phase 70.4 prompt-based "Check" &mdash; the LLM evaluates
+    Output of a prompt-based "Check" &mdash; the LLM evaluates
     a named rule against the active charm and returns
     <code>status: pass | fail</code>, a <code>message</code>, and
     optionally <code>severity</code>, <code>evidence</code>, and a
@@ -111,7 +110,7 @@
   </dd>
   <dt><code>ACCEPTANCE_REPORT</code></dt>
   <dd>
-    Phase 17 acceptance-test report &mdash; what the agent produces after
+    Acceptance-test report &mdash; what the agent produces after
     exercising a deployed charm.  <code>app</code> and
     <code>overall_status</code> (<code>pass | fail | partial</code>)
     are required; <code>coverage</code> records which areas were

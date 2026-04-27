@@ -207,7 +207,7 @@ cantrip --help
   </dd>
   <dt>--architect</dt>
   <dd>
-    Phase 71.2 architect/editor two-model split. Each agent
+    Architect/editor two-model split. Each agent
     turn runs in two passes: an <em>architect</em> pass on the
     main model emits a plain-prose proposal (no tool calls),
     then an <em>editor</em> pass on a cheaper model translates
@@ -231,7 +231,7 @@ cantrip --help
   </dd>
   <dt>--no-auto-commit</dt>
   <dd>
-    Disable Phase 71.3 per-turn auto-commit. By default every
+    Disable per-turn auto-commit. By default every
     turn that mutates files lands as a discrete git commit in
     the charm repo with a Cantrip co-author trailer; pre-existing
     dirty work commits separately as <code>chore(pre-cantrip):
@@ -313,8 +313,8 @@ straight to drift.</p>
   </dd>
   <dt>--branch TURN_ID</dt>
   <dd>
-    Export the conversation path leading to a specific turn id
-    (Phase 67.1).  Without this flag, the export follows the
+    Export the conversation path leading to a specific turn id.
+    Without this flag, the export follows the
     session's currently active branch &mdash; a forked session
     therefore exports only the active path by default.
     Off-branch turns stay reachable: list them with
@@ -418,7 +418,7 @@ existing-target errors.</p>
 <h2 id="checkpoints">cantrip checkpoints</h2>
 <p>Inspect and surgically remove step-level durable-execution
 checkpoints stored under a session's <code>.cantrip</code> SQLite file.
-Phase 52 persists each LLM turn and each tool call for an
+Cantrip persists each LLM turn and each tool call for an
 in-flight subagent task so that an interrupted run resumes from
 the last completed step instead of re-burning tokens from turn 1.
 The <code>cantrip checkpoints</code> subcommand is the out-of-band surface
@@ -559,13 +559,13 @@ user/repo file present the listing prints
 &quot;<code>No permission rules loaded.</code>&quot; so an empty config is visible at
 a glance instead of looking the same as a missing one.</p>
 <h2 id="docs">cantrip docs</h2>
-<p>Phase 72.1.  Index Canonical's documentation surfaces (Juju, ops,
+<p>Index Canonical's documentation surfaces (Juju, ops,
 charmcraft, rockcraft, jubilant, Charmhub) so the agent's
 <code>docs_search</code> tool and the <code>@docs &lt;site&gt;
 &lt;query&gt;</code> mention can return cited passages instead of
 paraphrasing from memory.  Requires an embed provider configured
-via the <a href="howto-provider.html#retrieval-roles">Phase 72.3
-role router</a>.</p>
+via the <a href="howto-provider.html#retrieval-roles">role
+router</a>.</p>
 <dl>
   <dt><code>cantrip docs index --site &lt;name&gt;</code></dt>
   <dd>
@@ -716,7 +716,7 @@ a specific hybrid should restart the session.</p>
 <dl>
   <dt><code>/auto-commit</code></dt>
   <dd>
-    Toggle the Phase 71.3 per-turn auto-commit.  Bare flips
+    Toggle the per-turn auto-commit.  Bare flips
     on/off; <code>/auto-commit on</code> and
     <code>/auto-commit off</code> are explicit.  When on,
     every turn that mutates files lands as a discrete git
@@ -741,7 +741,7 @@ The most recent agent commit's SHA lands on
 <dl>
   <dt><code>/architect</code></dt>
   <dd>
-    Toggle the Phase 71.2 architect/editor split. With no
+    Toggle the architect/editor split. With no
     argument, flips on/off; <code>/architect on</code> and
     <code>/architect off</code> are explicit. With a second
     token, sets the editor (same syntax as
@@ -870,7 +870,7 @@ for configuration.</p>
   </dd>
 </dl>
 <h3 id="branching">Branch and tree</h3>
-<p>Phase 67.1 turns the conversation history into a tree.
+<p>Cantrip stores the conversation history as a tree.
 <code>/undo</code> deletes; <code>/branch</code> rewinds without
 deleting, so every dead end stays reachable.</p>
 <dl>
@@ -989,7 +989,7 @@ listed as <code>[skipped]</code> notes rather than silently
 masking issues &mdash; a missing <code>ty</code> doesn't look the same
 as &quot;all clear.&quot;</p>
 <h2 id="mentions">@-mention context providers</h2>
-<p>Phase 72.2.  Type <code>@&lt;name&gt; [args]</code> in the chat
+<p>Type <code>@&lt;name&gt; [args]</code> in the chat
 input and the mention is replaced with structured context
 <em>before</em> the message reaches the LLM &mdash; one fewer
 tool round-trip than asking the agent to read the same content,
@@ -1045,8 +1045,8 @@ is truncated with a <code>[truncated N chars]</code> footer rather
 than silently elided.  Multi-line blocks get a
 <code>[@name]&hellip;[/@name]</code> fence so the typed mention
 stays visible in the transcript.</p>
-<p>Third-party providers register via Phase 45 MCP servers or
-Phase 46 hooks &mdash; the protocol and conventions are in
+<p>Third-party providers register via MCP servers or
+hooks &mdash; the protocol and conventions are in
 <code>design/CONTEXT_PROVIDERS.md</code>.</p>
 <h2 id="env-vars">Environment variables</h2>
 <table>
@@ -1086,37 +1086,37 @@ Phase 46 hooks &mdash; the protocol and conventions are in
 <tr>
 <td><code>VOYAGE_API_KEY</code></td>
 <td><code>--embed-provider voyage</code> / <code>--rerank-provider voyage</code></td>
-<td>Voyage AI key.  Required when Voyage serves the <code>embed</code> or <code>rerank</code> role (Phase 72.3).</td>
+<td>Voyage AI key.  Required when Voyage serves the <code>embed</code> or <code>rerank</code> role.</td>
 </tr>
 <tr>
 <td><code>OPENAI_API_KEY</code></td>
 <td><code>--embed-provider openai</code></td>
-<td>OpenAI key for the embed role (Phase 72.3).  The chat-side <code>--provider openai-compatible</code> path uses <code>OPENAI_COMPATIBLE_API_KEY</code> instead.</td>
+<td>OpenAI key for the embed role.  The chat-side <code>--provider openai-compatible</code> path uses <code>OPENAI_COMPATIBLE_API_KEY</code> instead.</td>
 </tr>
 <tr>
 <td><code>OPENAI_EMBED_BASE_URL</code></td>
 <td>optional</td>
-<td>Override the OpenAI embed endpoint (Phase 72.3).  Set to a self-hosted vLLM or any OpenAI-wire-compatible host that serves <code>/v1/embeddings</code>.</td>
+<td>Override the OpenAI embed endpoint.  Set to a self-hosted vLLM or any OpenAI-wire-compatible host that serves <code>/v1/embeddings</code>.</td>
 </tr>
 <tr>
 <td><code>CANTRIP_EMBED_PROVIDER</code></td>
 <td>optional</td>
-<td>Phase 72.3: provider for the <code>embed</code> role.  Accepts <code>voyage</code> or <code>openai</code>; <code>--embed-provider</code> overrides.</td>
+<td>Provider for the <code>embed</code> role.  Accepts <code>voyage</code> or <code>openai</code>; <code>--embed-provider</code> overrides.</td>
 </tr>
 <tr>
 <td><code>CANTRIP_EMBED_MODEL</code></td>
 <td>optional</td>
-<td>Phase 72.3: embed model identifier.  Defaults: <code>voyage-3</code> (Voyage), <code>text-embedding-3-small</code> (OpenAI).</td>
+<td>Embed model identifier.  Defaults: <code>voyage-3</code> (Voyage), <code>text-embedding-3-small</code> (OpenAI).</td>
 </tr>
 <tr>
 <td><code>CANTRIP_RERANK_PROVIDER</code></td>
 <td>optional</td>
-<td>Phase 72.3: provider for the <code>rerank</code> role.  Currently <code>voyage</code> only.</td>
+<td>Provider for the <code>rerank</code> role.  Currently <code>voyage</code> only.</td>
 </tr>
 <tr>
 <td><code>CANTRIP_RERANK_MODEL</code></td>
 <td>optional</td>
-<td>Phase 72.3: rerank model identifier.  Default <code>rerank-2</code>.</td>
+<td>Rerank model identifier.  Default <code>rerank-2</code>.</td>
 </tr>
 <tr>
 <td><code>CANTRIP_MEMORY_DIR</code></td>

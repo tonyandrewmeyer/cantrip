@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to generate a charm icon &mdash; Cantrip</title>
-<meta name="description" content="Use the Phase 70.5 Painter to generate a Charmhub-style icon.svg for a charm.">
+<meta name="description" content="Use the Painter to generate a Charmhub-style icon.svg for a charm.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
@@ -81,7 +81,7 @@ It's what the Charmhub catalogue lists, what the Web UI shows beside
 each application in <code>juju status</code>, and what people see on the charm's
 page.  Authors today either hand-roll one in Inkscape, hire a
 designer, or ship the default placeholder &mdash; most charms do the third.</p>
-<p>The <strong>Painter</strong> (Phase 70.5) is Cantrip's <code>charm_icon_generate</code> tool
+<p>The <strong>Painter</strong> is Cantrip's <code>charm_icon_generate</code> tool
 (plus the <code>/icon</code> slash for interactive use).  It routes a structured
 prompt to an image-generation provider (Imagen by default), gets back
 a square PNG, and writes it into <code>icon.svg</code> as an embedded image so
@@ -110,7 +110,7 @@ language is settled.</p>
 <td>Programmatic: the agent calls it during a BUILD phase, or you can <code>/run charm_icon_generate ...</code>.</td>
 </tr>
 <tr>
-<td><code>generate_icon</code> (existing, Phase 7)</td>
+<td><code>generate_icon</code> (placeholder)</td>
 <td>Deterministic placeholder &mdash; coloured circle with the charm's initial.  Shipped before Painter; still the right call when no image-provider API key is configured.</td>
 </tr>
 </tbody>
@@ -145,7 +145,7 @@ message); the session cap alone is enough.</p>
 embed on every Painter output (so successive <code>/icon</code> calls iterate
 freely on a Painter-generated icon);</li>
 <li>The file matches the deterministic placeholder shape from the
-Phase 7 <code>generate_icon</code> tool (a coloured <code>&lt;circle&gt;</code> at 128, 128); or</li>
+<code>generate_icon</code> tool (a coloured <code>&lt;circle&gt;</code> at 128, 128); or</li>
 <li>You pass <code>force=true</code> (or call <code>charm_icon_generate force=true</code>).</li>
 </ul>
 <p>Anything else &mdash; your own SVG, a designer's work, an existing
@@ -186,8 +186,7 @@ what's actually happening; a follow-up can add a <code>--vectorise</code> path
 once the dependency cost is acceptable.</li>
 <li><strong>Auto-invocation at BUILD completion</strong> &mdash; the agent will call
 <code>charm_icon_generate</code> mid-build today, but there's no
-end-of-build CONFIRM that asks &quot;want to paint an icon now?&quot; yet.
-Tracked as a follow-up under Phase 64 (CONFIRM tasks).</li>
+end-of-build CONFIRM that asks &quot;want to paint an icon now?&quot; yet.</li>
 </ul>
   </main>
 </div>

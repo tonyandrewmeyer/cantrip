@@ -132,7 +132,7 @@ redeployment is a separate, much larger operation
 outside the charm root. Memories live in <code>~/.config/cantrip/</code>
 and survive <code>/undo</code>.</li>
 <li>It does not snapshot files Cantrip itself manages inside
-the charm tree (<code>.cantrip/</code> session store, Phase 44
+the charm tree (<code>.cantrip/</code> session store,
 <code>.cantrip-worktrees/</code> for parallel subagents). Restoring
 those would corrupt agent state that lives outside the
 per-turn contract.</li>

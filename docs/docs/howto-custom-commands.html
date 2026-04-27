@@ -77,9 +77,9 @@
 <p>Some prompts come up again and again &mdash; "triage this issue",
 "walk the relation between these two charms", "generate a
 release note from the last five commits". Typing the same 200
-characters every time gets old fast. Phase 68.3 lets a charm
-team ship those prompts as ordinary markdown files, discoverable
-by every session that opens the charm.</p>
+characters every time gets old fast. Custom slash commands let a
+charm team ship those prompts as ordinary markdown files,
+discoverable by every session that opens the charm.</p>
 
 <h2 id="file-locations">Where Cantrip looks</h2>
 <p>Two locations, read on every agent startup; the repo wins when
@@ -164,7 +164,7 @@ silent "typed a key wrong, command gets wrong defaults".</p>
   <li><strong><code>!`cmd`</code></strong> &mdash; stdout of a shell
     command, run in the repo root with a 10&nbsp;s timeout and
     a 10&nbsp;000-character cap. Every expansion flows through
-    the Phase 68.2 <a href="howto-permissions.html">permission
+    the <a href="howto-permissions.html">permission
     policy</a> &mdash; a <code>deny</code> refuses the command
     and an <code>ask</code> parks on the CONFIRM surface.</li>
 </ul>
@@ -203,8 +203,8 @@ That has two practical consequences:</p>
     shows up in the task panel; the agent continues the
     foreground conversation unchanged.</li>
 </ol>
-<p>The catalogue (<code>/help</code>, Phase 61 autocomplete, the
-CLI startup banner) picks up every loaded command automatically.
+<p>The catalogue (<code>/help</code>, slash-command autocomplete,
+the CLI startup banner) picks up every loaded command automatically.
 No config entry required.</p>
 
 <h2 id="troubleshooting">Troubleshooting</h2>

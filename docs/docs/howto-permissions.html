@@ -75,9 +75,9 @@
 
 <h2 id="overview">What permissions control</h2>
 <p>Cantrip wraps every subagent tool call in a three-layer gate.
-Phase&nbsp;46 user hooks run first and can mutate or veto calls.
-Phase&nbsp;80 governance policies come next &mdash; coarse, category-scoped
-allow/deny/review. Phase&nbsp;68.2 permissions are the declarative
+User hooks run first and can mutate or veto calls.
+Governance policies come next &mdash; coarse, category-scoped
+allow/deny/review. Permissions are the declarative
 layer on top, matching the <em>post-hook</em> arguments so a command
 your hook rewrote still sees the right pattern.</p>
 <p>Each call resolves to one of three outcomes:</p>
@@ -220,11 +220,11 @@ transcripts record the full decision trail.</p>
 
 <h2 id="what-it-does-not">What permissions do not do</h2>
 <ul>
-  <li>They do not bypass Phase&nbsp;80 governance policy. A tool
+  <li>They do not bypass governance policy. A tool
     category blocked by <code>cantrip.policies.yaml</code> stays
     blocked even if <code>permissions.yaml</code> says
     <code>allow</code>.</li>
-  <li>They do not replace the subprocess sandbox (Phase&nbsp;49).
+  <li>They do not replace the subprocess sandbox.
     A <code>bash: "*": "allow"</code> still runs inside the
     namespace-isolated shell; permissions gate <em>whether</em> a
     call fires, not how.</li>

@@ -228,7 +228,7 @@ KeyError crashes.</p>
 </tr>
 </tbody>
 </table>
-<p>The following event names are reserved for future sub-phases:
+<p>The following event names are reserved for future use:
 <code>pre_pack</code>, <code>pre_push</code>, <code>pre_pr</code>,
 <code>on_task_complete</code>, <code>on_session_end</code>.
 You can register hooks for them today &mdash; they will just
@@ -422,11 +422,11 @@ executions, not an attempt log.</p>
 A slow hook blocks the next one and the agent itself. Keep
 <code>timeout</code> aggressive.</li>
 <li>Hook stdout is captured but not yet injected into the agent
-conversation. (A future sub-phase will let <code>pre_*</code>
+conversation. (A future iteration will let <code>pre_*</code>
 hooks mutate the pending payload via a JSON-patch envelope.)</li>
 <li>Stdout from a <code>pre_tool_call</code> hook is captured
 but not yet merged into the pending payload &mdash; a
-follow-up sub-phase will document a JSON envelope so a hook
+follow-up iteration will document a JSON envelope so a hook
 can redact a secret out of <code>arguments</code> before the
 tool runs.</li>
 </ul>
