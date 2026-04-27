@@ -57,15 +57,56 @@ _INTERFACE_PARTNERS: dict[str, str] = {
 
 
 def _load_charm_metadata(charm_dir: pathlib.Path) -> dict[str, Any] | None:
-    """Load and parse charmcraft.yaml from a charm directory."""
-    charmcraft_yaml = charm_dir / "charmcraft.yaml"
-    if not charmcraft_yaml.exists():
+    """Load charm metadata, merging the legacy split-yaml shape into one dict.
+
+    Modern charms keep everything in ``charmcraft.yaml``, but legacy
+    charms still split into ``metadata.yaml`` (``requires``/``provides``/
+    ``peers``), ``config.yaml`` (``options:``), and ``actions.yaml``
+    (top-level action map).  When a split file exists *and* the
+    charmcraft.yaml block is missing, the legacy file is folded into
+    the same shape the acceptance tools expect from charmcraft.yaml —
+    so a smoke run against a split-shape charm doesn't silently report
+    "nothing to test".
+
+    ``charmcraft.yaml`` always wins on conflict, mirroring how
+    ``charmcraft`` itself merges the two formats.  Returns ``None``
+    only when no metadata is found at all.
+    """
+
+    def _safe_load(path: pathlib.Path) -> dict[str, Any]:
+        if not path.exists():
+            return {}
+        try:
+            data = yaml.safe_load(path.read_text())
+        except yaml.YAMLError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    charmcraft = _safe_load(charm_dir / "charmcraft.yaml")
+    metadata = _safe_load(charm_dir / "metadata.yaml")
+    config_yaml = _safe_load(charm_dir / "config.yaml")
+    actions_yaml = _safe_load(charm_dir / "actions.yaml")
+
+    if not (charmcraft or metadata or config_yaml or actions_yaml):
         return None
-    try:
-        data = yaml.safe_load(charmcraft_yaml.read_text())
-        return data if isinstance(data, dict) else None
-    except yaml.YAMLError:
-        return None
+
+    # Start from metadata.yaml (top-level requires/provides/peers/name shape
+    # already matches charmcraft.yaml), then layer charmcraft.yaml on top.
+    merged: dict[str, Any] = dict(metadata)
+    merged.update(charmcraft)
+
+    # actions.yaml: top-level keys are action names; promote into ``actions:``
+    # only when charmcraft.yaml didn't already set the block.
+    if actions_yaml and not merged.get("actions"):
+        merged["actions"] = actions_yaml
+
+    # config.yaml: top-level ``options:``; promote into ``config: options:``.
+    if config_yaml and not merged.get("config"):
+        options = config_yaml.get("options")
+        if isinstance(options, dict):
+            merged["config"] = {"options": options}
+
+    return merged
 
 
 def _verify_relation_data(
