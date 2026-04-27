@@ -3385,7 +3385,7 @@ fallback; this phase tracks them so they don't rot.
 
 ---
 
-## Phase 82: Pre/Post Tool Captions — Inline Status Replacement
+## Phase 82: Pre/Post Tool Captions — Inline Status Replacement ✓
 
 **Goal:** When a tool is invoked, render an *intro* caption immediately
 (``"Packing the charm…"``, ``"Querying Tempo for the last 5 traces…"``)
@@ -3403,69 +3403,88 @@ prompt-guidance recommendation (preambles before tool calls improve
 perceived responsiveness in agent rollouts) — we already ship the
 post-call half via Phases 75 and 81; the intro half closes the gap.
 
-### 82.1 Core — ``intro_caption`` hook + pending event
+### 82.1 Core — ``intro_caption`` hook + pending event ✓
 
-- [ ] Add ``intro_caption(arguments)`` to ``Tool`` in
-  ``cantrip.agent.tools.base`` — optional method returning a
-  present-continuous string.  Default returns ``None`` so existing
-  tools keep working unchanged.
-- [ ] Synthesise a generic fallback (``"Running <tool_name>…"`` or
-  ``"<verb> <key>=<value>…"`` derived from
-  ``_CAPTION_KEY_PREFERENCE``) when no override is set.
-- [ ] Emit a new ``TOOL_INVOKED_PENDING`` event from the agent loop
-  and the subagent runner *before* dispatching the tool, carrying
-  the intro caption and the tool-call id.  ``TOOL_INVOKED`` keeps
-  its existing payload and is matched to the pending event by
-  tool-call id at the renderer.
+- [x] Added ``intro_caption(arguments)`` on
+  :class:`cantrip.agent.tools.base.Tool` — optional override
+  returning a present-continuous string.  Default returns ``None``
+  so existing tools keep working unchanged.
+- [x] :func:`build_tool_intro_caption` synthesises the generic
+  ``"Running <tool_name>(<key>=<value>)…"`` fallback using the same
+  ``_CAPTION_KEY_PREFERENCE`` list as the post-call helper, so the
+  pre/post pair share one key-picking discipline.
+- [x] New ``TOOL_INVOKED_PENDING`` event type + factory; the agent
+  main loop (sync + streaming) and subagent runner publish it
+  before dispatch, carrying the LLM-assigned ``tool_call_id``.
+  ``TOOL_INVOKED`` gained the same id field (default ``None`` for
+  back-compat) so renderers can match the pair.
 
-### 82.2 Bespoke intro captions for high-traffic tools
+### 82.2 Bespoke intro captions for high-traffic tools ✓
 
-- [ ] File-system: ``read_file`` → ``"Reading src/charm.py…"``,
+- [x] File-system: ``read_file`` → ``"Reading src/charm.py…"``,
   ``write_file`` → ``"Writing tests/integration/test_charm.py…"``,
-  ``edit_file`` / ``multi_edit`` → ``"Editing <path>…"``.
-- [ ] Git: ``git_clone`` → ``"Cloning <url>…"``, ``git_commit`` →
-  ``"Committing…"``, ``git_push`` → ``"Pushing to <remote>/<branch>…"``.
-- [ ] Charm tooling: ``charmcraft_pack`` →
-  ``"Packing the charm…"``, ``quick_pack`` →
-  ``"Quick-packing…"``, ``charm_validate`` →
-  ``"Validating the charm…"``, ``charm_audit`` →
-  ``"Auditing the charm…"``.
-- [ ] Juju: ``juju_deploy`` → ``"Deploying <app>…"``,
-  ``juju_wait`` → ``"Waiting for <model> to settle…"``,
+  ``edit_file`` → ``"Editing <path>…"``, ``multi_edit`` →
+  ``"Applying N edits to/across <files>…"``.
+- [x] Git: ``git_clone`` → ``"Cloning <trimmed-url>…"`` (matches the
+  post-call URL trim), ``git_commit`` → ``"Committing…"``,
+  ``git_push`` → ``"Pushing → <remote>/<branch>…"``.
+- [x] Charm tooling: ``charmcraft_pack`` → ``"Packing the charm…"``,
+  ``quick_pack`` → ``"Quick-packing the charm…"``,
+  ``charm_validate`` → ``"Validating the charm…"``,
+  ``charm_audit`` → ``"Auditing the charm…"``.
+- [x] Juju: ``juju_status`` → ``"Reading juju status[ (<model>)]…"``,
+  ``juju_deploy`` → ``"Deploying <app>…"``,
   ``juju_refresh`` → ``"Refreshing <app>…"``,
-  ``juju_status`` → ``"Reading juju status…"``.
-- [ ] Acceptance / observability: ``run_charm_tests`` →
-  ``"Running unit tests…"`` / ``"Running integration tests…"``,
-  ``tempo_query`` → ``"Querying Tempo…"``, ``loki_query`` →
+  ``juju_wait`` →
+  ``"Waiting for <app[ (model)]> to settle…"``.
+- [x] Acceptance / observability: ``run_charm_tests`` →
+  ``"Running unit/integration tests[ (<pattern>)]…"``,
+  ``tempo_query`` → ``"Fetching trace …"`` /
+  ``"Querying Tempo for <service>…"``, ``loki_query`` →
   ``"Querying Loki…"``.
-- [ ] Web / registry: ``web_fetch`` → ``"Fetching <host>…"``,
-  ``registry_search`` → ``"Searching Docker Hub…"``,
-  ``registry_image_info`` → ``"Inspecting <image>…"``.
+- [x] Web / registry: ``web_fetch`` → ``"Fetching <host>…"``,
+  ``registry_search`` →
+  ``"Searching Docker Hub for '<query>'…"``,
+  ``registry_image_info`` → ``"Inspecting <image[:tag]>…"``.
 
-### 82.3 Renderers — in-place update by tool-call id
+### 82.3 Renderers — in-place update by tool-call id ✓
 
-- [ ] TUI: render the pending block with a spinner glyph; replace
-  it with the ``TOOL_INVOKED`` line when the matching event
-  arrives.  No new chat lines — the block updates in place.
-- [ ] Web UI: same behaviour with a CSS spinner that swaps to the
-  Phase 75 success/failure colour cue on update.  Match the
-  event-bus contract documented in ``design/UI.md``.
-- [ ] Failure path: if the tool errors before producing a
-  ``TOOL_INVOKED`` (timeout, cancellation, dispatcher exception),
-  the pending block must still resolve — convert it to an error
-  line rather than leaving a dangling spinner.
+- [x] TUI: ``ChatWidget`` tracks pending blocks in
+  ``_pending_tool_blocks`` (id → widget).  ``add_pending_tool_block``
+  renders ``⟳ <caption>`` with a ``tool-pending`` class;
+  ``add_tool_block`` short-circuits to ``resolve_tool_block`` when
+  the matching id is on file, so the pending block updates in place
+  rather than appending a new line.
+- [x] Web UI: ``cantrip.js`` parallel implementation with
+  ``_pendingToolBlocks`` Map; matching id triggers
+  ``_renderToolBlockBody`` against the existing div.  CSS class
+  ``msg-tool-pending`` carries the dim-italic style.
+  ``design/UI.md`` event contract gained the two TOOL_INVOKED
+  variants.
+- [x] Failure path: ``scrub_pending_tool_blocks`` (TUI) and
+  ``scrubPendingToolBlocks`` (Web) convert any orphans into failed
+  ``"cancelled"`` lines.  Wired to the worker-state-changed
+  handler / ``setThinking(false)`` so a cancelled mid-tool turn
+  never leaves a dangling spinner.
 
-### 82.4 Tests
+### 82.4 Tests ✓
 
-- [ ] Unit: ``intro_caption`` default + per-tool overrides return
-  the expected strings; tool-call id round-trips between the
-  pending and final events.
-- [ ] Renderer integration: emit pending then final, assert the
-  rendered transcript contains exactly one inline block per tool
-  call (no duplicate lines).
-- [ ] Failure path: emit pending then a synthetic dispatcher
-  exception; assert the block becomes an error line, not an
-  orphan spinner.
+- [x] Unit: ``test_tool_caption.py`` covers the
+  ``build_tool_intro_caption`` fallback (overrides, no-tool
+  caller, empty-args bare form, exception swallowing, long-value
+  truncation).  ``test_tool_intro_captions.py`` (41 cases) asserts
+  every bespoke 82.2 override.
+- [x] Event round-trip: ``test_ui_events.py`` exercises the
+  ``tool_invoked_pending`` factory + ``tool_call_id`` round-trip
+  on ``tool_invoked``.  ``test_agent.py`` asserts the agent loop
+  emits ``TOOL_INVOKED_PENDING`` then ``TOOL_INVOKED`` with the
+  same id (and distinct captions).
+- [x] Renderer integration: ``test_chat_tool_blocks.py`` (10 cases
+  via Textual pilot) covers pending-then-final updating in place,
+  failed-final swap, no-pending append fallback, duplicate
+  pending no-op, scrub orphans as cancelled, late-final after
+  scrub, unknown-id fallback to append, plus the bus-handler path
+  for both event types.
 
 ### What this phase is *not*
 
