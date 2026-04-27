@@ -74,27 +74,70 @@ is what Cantrip drives over the OpenAI-compatible endpoint.
    `prepare-models.sh` if you'd rather pin a different conversion or
    try Unsloth's "UD" (Dynamic) quants.
 
-## Build and test locally
+## Build options
+
+The `snapcraft.yaml` is self-contained: the model component fetches
+the GGUF from Hugging Face at build time. You don't have to run
+`prepare-models.sh` first — it's only a cache warmer that saves the
+redownload on repeated local rebuilds.
+
+### Option A: Remote build on Launchpad (recommended)
+
+Builds on Canonical's infrastructure with no local resource pressure
+— the right choice if you're working on a constrained host or in a
+Multipass VM (where heavy I/O against the 17GB GGUF can trigger
+host-side hypervisor kills). Requires a free
+[Launchpad](https://launchpad.net) account.
 
 ```bash
-# 1. Download the model GGUF (~17GB).
+snapcraft remote-build --launchpad-accept-public-upload
+```
+
+The artefact `.snap` and `.comp` files stream back when the build
+finishes. Skip to the **Install and test** section below.
+
+### Option B: Local pack (LXD-managed)
+
+```bash
+# Optional: pre-cache the GGUF so the local build skips the redownload.
 ./prepare-models.sh
 
-# 2. Pack the snap.
+# Build with the default LXD-managed environment.
 snapcraft pack
+```
 
-# 3. Install the snap and its components.
+Tested on a 39GB Multipass VM and reliably crashes the VM during
+the model copy step — the host hypervisor kills the VM under page-cache
+pressure. If you must build locally, use Option C instead.
+
+### Option C: Local pack (destructive mode, no LXD)
+
+Builds directly on the host, skipping the nested LXD container:
+
+```bash
+./prepare-models.sh   # optional cache warmer
+snapcraft pack --destructive-mode
+```
+
+Halves resource pressure (no second kernel, no double-copy through
+the bind mount). Side effect: installs build packages onto the
+host. Fine on a dedicated build VM; less so on a workstation.
+
+## Install and test
+
+```bash
+# Install the snap and its components.
 sudo snap install --dangerous qwen3-coder-*_*.snap
 sudo snap install --dangerous qwen3-coder-*+*.comp
 
-# 4. Grant hardware-observe (needed for engine selection).
+# Grant hardware-observe (needed for engine selection).
 sudo snap connect qwen3-coder-tonyandrewmeyer:hardware-observe
 
-# 5. Pick an engine and start the server.
+# Pick an engine and start the server.
 sudo qwen3-coder-tonyandrewmeyer use-engine --auto
 sudo snap start qwen3-coder-tonyandrewmeyer
 
-# 6. Smoke-test (chat completion).
+# Smoke-test (chat completion).
 curl http://localhost:8332/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{

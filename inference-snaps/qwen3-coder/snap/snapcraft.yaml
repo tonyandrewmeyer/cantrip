@@ -74,16 +74,33 @@ parts:
     stage-packages:
       - pciutils # for lspci, used by hardware detection
 
-  local-component-files:
-    plugin: dump
-    source: components
+  model:
+    # The GGUF is fetched at build time so this snap is self-contained
+    # and remote-buildable on Launchpad. Prefers a local cache at
+    # `components/model-30b-a3b-q4-k-m-gguf/<file>` if present (so
+    # `prepare-models.sh` still saves the redownload on local builds);
+    # otherwise pulls from Hugging Face.
+    plugin: nil
+    build-packages:
+      - curl
+    override-pull: |
+      set -e
+      filename="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+      local_path="$CRAFT_PROJECT_DIR/components/model-30b-a3b-q4-k-m-gguf/$filename"
+      if [ -f "$local_path" ]; then
+        echo "Using locally-cached GGUF at $local_path"
+        cp "$local_path" "$CRAFT_PART_SRC/$filename"
+      else
+        echo "Fetching GGUF from Hugging Face (~17GB)"
+        curl -L --fail \
+          -o "$CRAFT_PART_SRC/$filename" \
+          "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/$filename"
+      fi
+    override-build: |
+      mkdir -p "$CRAFT_PART_INSTALL"
+      cp "$CRAFT_PART_SRC/"*.gguf "$CRAFT_PART_INSTALL/"
     organize:
-      "llamacpp/*": (component/llamacpp)
-      "model-30b-a3b-q4-k-m-gguf/*": (component/model-30b-a3b-q4-k-m-gguf)
-    prime:
-      # Exclude everything not explicitly organised; the local files
-      # are routed entirely into components.
-      - -*
+      "*": (component/model-30b-a3b-q4-k-m-gguf)
 
   llamacpp:
     plugin: dump

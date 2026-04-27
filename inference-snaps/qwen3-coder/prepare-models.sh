@@ -1,9 +1,15 @@
 #!/bin/bash
-# Download the Qwen3-Coder-30B-A3B-Instruct GGUF weights into the
-# model component.
+# Optional: download the Qwen3-Coder-30B-A3B-Instruct GGUF weights
+# into the model component directory.
 #
-# Run this before `snapcraft pack`. The downloaded *.gguf is gitignored
-# and not committed.
+# This is a *cache warmer*. The snapcraft build now fetches the
+# GGUF itself (so `snapcraft remote-build` works without local
+# weights), but prefers a copy at this path if present — so running
+# this script before `snapcraft pack` saves a ~17GB redownload on
+# every local rebuild. It also gives you the GGUF in a stable place
+# for direct llama-server testing without going through the snap.
+#
+# The downloaded *.gguf is gitignored and not committed.
 #
 # Customise: pick a quantisation that suits your RAM and latency
 # budget. Q4_K_M (~17GB) is the sweet spot for CPU-only inference and

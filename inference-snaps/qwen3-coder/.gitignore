@@ -13,3 +13,6 @@ squashfs-root
 
 # Local snapcraft.yaml symlink (some workflows symlink snap/snapcraft.yaml here)
 /snapcraft.yaml
+
+# snapcraft-pack.log — locally-tee'd build log
+snapcraft-pack.log
