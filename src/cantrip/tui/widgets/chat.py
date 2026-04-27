@@ -200,12 +200,19 @@ class MessageWidget(Static):
         # literal ``[/model]`` that ``/help`` renders to document
         # ``/model [provider[/model]]``.  Escape unconditionally on
         # the no-search path; the search path already escapes per
-        # match in ``_highlighted_content``.
-        content = (
-            self._highlighted_content()
-            if self._search_query
-            else rich_escape(self.message.content)
-        )
+        # match in ``_highlighted_content``.  TOOL-role messages are
+        # composed by ``add_tool_block`` which escapes the caller-
+        # supplied caption itself before wrapping the duration suffix
+        # in ``[dim]…[/dim]`` markup; escaping again here would render
+        # those tags literally.
+        if self.message.role == MessageRole.TOOL:
+            content = self.message.content
+        else:
+            content = (
+                self._highlighted_content()
+                if self._search_query
+                else rich_escape(self.message.content)
+            )
         content_lines = []
         if reasoning_block:
             content_lines.append(reasoning_block)
@@ -1128,7 +1135,7 @@ class ChatWidget(Widget):
         suffix = ""
         if duration_ms is not None and duration_ms >= _TOOL_BLOCK_DURATION_THRESHOLD_MS:
             suffix = f" [dim]({duration_ms} ms)[/dim]"
-        content = f"{glyph} {caption}{suffix}"
+        content = f"{glyph} {rich_escape(caption)}{suffix}"
         widget = self.add_message(
             ChatMessage(
                 role=MessageRole.TOOL,

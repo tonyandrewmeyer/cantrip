@@ -218,6 +218,44 @@ class TestTuiWidgets:
                 assert "ms" not in widget.message.content
 
     @pytest.mark.asyncio
+    async def test_tool_block_dim_markup_is_not_escaped(self):
+        """The ``[dim](N ms)[/dim]`` suffix renders as markup, not literal."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block(
+                    "fetch(url=https://example.com)",
+                    success=True,
+                    duration_ms=1291,
+                )
+                await pilot.pause()
+                rendered = widget._render_body()
+                assert isinstance(rendered, str)
+                assert "[dim](1291 ms)[/dim]" in rendered
+                assert r"\[dim\]" not in rendered
+
+    @pytest.mark.asyncio
+    async def test_tool_block_escapes_caption_brackets(self):
+        """Brackets inside the caption are escaped so they can't break rendering."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block(
+                    "read_file(path=[a/b])",
+                    success=True,
+                    duration_ms=600,
+                )
+                await pilot.pause()
+                rendered = widget._render_body()
+                assert isinstance(rendered, str)
+                # ``rich.markup.escape`` escapes the tag-opening ``[`` so the
+                # bracketed substring can't be misread as a Rich tag.
+                assert r"\[a/b]" in rendered
+                assert "[dim](600 ms)[/dim]" in rendered
+
+    @pytest.mark.asyncio
     async def test_ctrl_l_clears_chat(self):
         """Ctrl+L clears chat and restores the welcome message."""
         p1, p2, _ = _patch_app()
