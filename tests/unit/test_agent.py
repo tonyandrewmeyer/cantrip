@@ -995,10 +995,15 @@ class TestToolInvokedEvent:
         ]
         assert events_seen[0].payload["tool_call_id"] == "tc-pending"
         assert events_seen[1].payload["tool_call_id"] == "tc-pending"
-        # The pending caption is the present-continuous "Running …"
-        # form; the final caption is the post-call summary.
-        assert events_seen[0].payload["caption"].startswith("Running ")
+        # The pending caption is a present-continuous "doing now"
+        # form ending in a horizontal ellipsis.  ReadFileTool
+        # overrides intro_caption to "Reading x…"; without an
+        # override the synthesised fallback would be
+        # "Running tool(arg=value)…" — both end in ``…``.
         assert events_seen[0].payload["caption"].endswith("…")
+        # The final caption is the post-call summary, not the
+        # pre-call form, so the two must differ.
+        assert events_seen[0].payload["caption"] != events_seen[1].payload["caption"]
 
     @pytest.mark.asyncio
     async def test_explicit_caption_wins_over_fallback(self):

@@ -128,6 +128,13 @@ class RunCharmTestsTool(Tool):
             "or test function (e.g. 'test_deploy' or 'test_relations::test_db')."
         )
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        test_type = arguments.get("test_type", "unit")
+        pattern = arguments.get("pattern")
+        if pattern:
+            return f"Running {test_type} tests ({pattern})…"
+        return f"Running {test_type} tests…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {

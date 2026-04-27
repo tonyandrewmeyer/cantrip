@@ -5,6 +5,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Pre-call tool blocks update in place.**  When the agent
+  dispatches a slow tool — ``charmcraft_pack``, ``juju_wait``,
+  ``web_fetch`` — the chat now renders an immediate "running now"
+  block (``"Packing the charm…"``) that updates in place to the
+  post-call summary (``"Packed redis.charm (2340 ms)"``) when the
+  tool returns.  No more silent gap between the agent's last line
+  and the next visible event.  The pre-call caption comes from a new
+  optional ``Tool.intro_caption(arguments)`` hook, with bespoke
+  overrides on twenty high-traffic tools (file-system, git, charm,
+  juju, testing, observability, web, registry); tools without an
+  override get a synthesised ``"Running tool(arg=value)…"`` fallback
+  using the same key-preference list the post-call helper uses.  The
+  TUI chat widget and Web UI dispatcher both match the pre/post pair
+  by ``tool_call_id``, so a cancelled mid-tool turn never leaves a
+  dangling spinner — orphan pending blocks scrub to a failed
+  "cancelled" line when the turn ends.
 - **Controller-safety guard for mutating Juju tools.**  The
   ``juju_deploy``, ``juju_refresh``, ``juju_relate``,
   ``juju_destroy_model``, and ``juju_remove_application`` tools

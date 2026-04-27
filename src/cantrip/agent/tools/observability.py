@@ -353,6 +353,13 @@ class TempoQueryTool(Tool):
             "Requires a COS model with Tempo deployed."
         )
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        if arguments.get("trace_id"):
+            return f"Fetching Tempo trace {arguments['trace_id']}…"
+        if arguments.get("service_name"):
+            return f"Querying Tempo for {arguments['service_name']}…"
+        return "Querying Tempo…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -493,6 +500,10 @@ class LokiQueryTool(Tool):
             "Useful for finding workload errors, tracebacks, and application log output. "
             "Requires a COS model with Loki deployed."
         )
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        del arguments
+        return "Querying Loki…"
 
     @property
     def parameters(self) -> dict[str, Any]:

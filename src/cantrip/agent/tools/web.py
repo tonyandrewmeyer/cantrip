@@ -219,6 +219,16 @@ class WebFetchTool(Tool):
             " visit to each domain."
         )
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        url = arguments.get("url")
+        if not url:
+            return None
+        try:
+            host = urllib.parse.urlparse(str(url)).hostname or str(url)
+        except (ValueError, TypeError):
+            host = str(url)
+        return f"Fetching {host}…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {

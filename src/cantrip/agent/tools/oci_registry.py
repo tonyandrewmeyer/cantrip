@@ -69,6 +69,10 @@ class RegistrySearchTool(Tool):
             " Use this to find existing images for K8s charm OCI resources."
         )
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        query = arguments.get("query")
+        return f"Searching Docker Hub for {query!r}…" if query else "Searching Docker Hub…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -186,6 +190,15 @@ class RegistryImageInfoTool(Tool):
             " Use this after registry_search to evaluate whether an image is"
             " suitable as an OCI resource for a K8s charm."
         )
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        image = arguments.get("image")
+        tag = arguments.get("tag")
+        if image and tag:
+            return f"Inspecting {image}:{tag}…"
+        if image:
+            return f"Inspecting {image}…"
+        return "Inspecting Docker Hub image…"
 
     @property
     def parameters(self) -> dict[str, Any]:

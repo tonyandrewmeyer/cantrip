@@ -42,6 +42,10 @@ class ReadFileTool(PathAwareTool):
     def description(self) -> str:
         return "Read the contents of a file. Use this to examine existing code or configuration."
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        path = arguments.get("path")
+        return f"Reading {path}…" if path else None
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -140,6 +144,10 @@ class WriteFileTool(PathAwareTool):
         return (
             "Write content to a file. Creates the file if it doesn't exist, overwrites if it does."
         )
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        path = arguments.get("path")
+        return f"Writing {path}…" if path else None
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -258,6 +266,10 @@ class EditFileTool(PathAwareTool):
     @property
     def description(self) -> str:
         return "Replace a specific string in a file. Use for targeted edits without rewriting the whole file."
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        path = arguments.get("path")
+        return f"Editing {path}…" if path else None
 
     @property
     def parameters(self) -> dict[str, Any]:

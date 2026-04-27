@@ -23,6 +23,20 @@ class MultiEditTool(PathAwareTool):
             "are kept and the error is reported."
         )
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        edits = arguments.get("edits") or []
+        if not isinstance(edits, list) or not edits:
+            return None
+        files = {edit.get("file", "") for edit in edits if isinstance(edit, dict)}
+        files.discard("")
+        n = len(edits)
+        if len(files) == 1:
+            target = next(iter(files))
+            return f"Applying {n} edit{'s' if n != 1 else ''} to {target}…"
+        if files:
+            return f"Applying {n} edit{'s' if n != 1 else ''} across {len(files)} files…"
+        return f"Applying {n} edit{'s' if n != 1 else ''}…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {

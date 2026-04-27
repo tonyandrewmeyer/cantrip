@@ -218,6 +218,10 @@ class CharmAuditTool(Tool):
             "(must-fix, should-fix, nice-to-have). Powered by charmlint."
         )
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        del arguments
+        return "Auditing the charm…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {

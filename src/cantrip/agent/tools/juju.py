@@ -101,6 +101,10 @@ class JujuStatusTool(Tool):
     def description(self) -> str:
         return "Get the current status of a Juju model, including all applications and units."
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        model = arguments.get("model")
+        return f"Reading juju status ({model})…" if model else "Reading juju status…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -186,6 +190,14 @@ class JujuDeployTool(Tool):
     @property
     def description(self) -> str:
         return "Deploy a charm to the current Juju model."
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        target = arguments.get("app_name") or arguments.get("charm")
+        if not target:
+            return "Deploying…"
+        # Path-shaped charms (./redis.charm) read better with their basename.
+        target = pathlib.Path(str(target)).name if "/" in str(target) else target
+        return f"Deploying {target}…"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -592,6 +604,10 @@ class JujuRefreshTool(Tool):
     @property
     def description(self) -> str:
         return "Refresh a deployed charm with a new version or local .charm file."
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        app = arguments.get("app_name")
+        return f"Refreshing {app}…" if app else "Refreshing…"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -1382,6 +1398,12 @@ class JujuWaitTool(Tool):
             "Wait for an application to reach active/idle status. "
             "Use after deploy or refresh instead of polling juju_status."
         )
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        app = arguments.get("app_name")
+        model = arguments.get("model")
+        target = f"{app} ({model})" if app and model else (app or model)
+        return f"Waiting for {target} to settle…" if target else "Waiting for the model to settle…"
 
     @property
     def parameters(self) -> dict[str, Any]:

@@ -113,6 +113,18 @@ class GitCloneTool(Tool):
             "Useful for fetching the source code of an application to be charmed."
         )
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        url = arguments.get("url")
+        if not url:
+            return None
+        # Match the post-call helper's URL trim so the pre/post pair
+        # reads as one continuous block ("Cloning github.com/foo/bar…"
+        # then "Cloned github.com/foo/bar").
+        display = re.sub(r"^[a-z]+://(?:[^@]+@)?", "", str(url))
+        display = re.sub(r"^git@", "", display)
+        display = re.sub(r"\.git$", "", display)
+        return f"Cloning {display}…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -448,6 +460,10 @@ class GitCommitTool(Tool):
     def description(self) -> str:
         return "Create a git commit with the staged changes."
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        del arguments
+        return "Committing…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -498,6 +514,12 @@ class GitPushTool(Tool):
             "Push local commits to a remote repository. "
             "Requires that the remote is configured and that you have push access."
         )
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        remote = arguments.get("remote") or "origin"
+        branch = arguments.get("branch")
+        target = f"{remote}/{branch}" if branch else remote
+        return f"Pushing → {target}…"
 
     @property
     def parameters(self) -> dict[str, Any]:

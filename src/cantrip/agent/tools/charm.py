@@ -544,6 +544,10 @@ class CharmcraftPackTool(Tool):
             "instead of in an LXD container)."
         )
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        del arguments
+        return "Packing the charm…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -677,6 +681,10 @@ class CharmValidateTool(Tool):
             "Call this before telling the user a charm is complete."
         )
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        del arguments
+        return "Validating the charm…"
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -797,6 +805,10 @@ class QuickPackTool(Tool):
             "analysis. Only supports charms using the uv plugin. "
             "Use this for initial deploys and upgrade testing."
         )
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        del arguments
+        return "Quick-packing the charm…"
 
     @property
     def parameters(self) -> dict[str, Any]:
