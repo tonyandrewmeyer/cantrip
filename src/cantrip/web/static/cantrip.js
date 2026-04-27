@@ -241,8 +241,17 @@ const cantrip = (() => {
       case "tool_invoked":
         // Phase 75: render a compact tool block so the user can see
         // what the agent just did between "Let me check the file:"
-        // and the agent's next narrative message.
+        // and the agent's next narrative message.  Phase 82: when a
+        // matching pending block is on screen, the helper updates it
+        // in place rather than appending a new line.
         appendToolBlock(msg.data || {});
+        break;
+      case "tool_invoked_pending":
+        // Phase 82: render the "running now" block immediately so
+        // slow tools (charmcraft_pack, juju_wait, web_fetch) don't
+        // leave the chat staring at silence between the agent's last
+        // line and the tool's eventual completion.
+        appendPendingToolBlock(msg.data || {});
         break;
       case "cache_metrics_updated":
         // Phase 78.2: keep the header cache indicator in sync with
@@ -458,17 +467,17 @@ const cantrip = (() => {
   // attention threshold (500 ms) so fast calls don't clutter the
   // chat.
   const _TOOL_BLOCK_DURATION_THRESHOLD_MS = 500;
-  function appendToolBlock(data) {
-    const container = chatMessages();
-    if (!container) return;
-    const empty = document.getElementById("chat-empty");
-    if (empty) empty.remove();
 
+  // Phase 82: tool-call-id → pending DOM div, so a later TOOL_INVOKED
+  // event with the same id replaces the spinner caption in place
+  // rather than appending a duplicate line.
+  const _pendingToolBlocks = new Map();
+
+  function _renderToolBlockBody(div, data) {
     const success = Boolean(data.success);
     const glyph = success ? "🔧" : "✗";
     const caption = data.caption || data.tool_name || "(tool)";
 
-    const div = document.createElement("div");
     div.className = "msg msg-tool";
     if (!success) div.classList.add("msg-tool-failed");
 
@@ -487,7 +496,29 @@ const cantrip = (() => {
       body.appendChild(suffix);
     }
 
-    div.appendChild(body);
+    // Replace existing children — used when updating a pending block.
+    div.replaceChildren(body);
+  }
+
+  function appendToolBlock(data) {
+    const container = chatMessages();
+    if (!container) return;
+    const empty = document.getElementById("chat-empty");
+    if (empty) empty.remove();
+
+    const tcid = data.tool_call_id;
+    // Phase 82: when a pending block exists for this id, update it
+    // in place instead of appending a fresh line.
+    if (tcid && _pendingToolBlocks.has(tcid)) {
+      const div = _pendingToolBlocks.get(tcid);
+      _pendingToolBlocks.delete(tcid);
+      _renderToolBlockBody(div, data);
+      _updateScrollBottomButton();
+      return;
+    }
+
+    const div = document.createElement("div");
+    _renderToolBlockBody(div, data);
 
     const wasAtBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight
@@ -495,6 +526,58 @@ const cantrip = (() => {
     container.appendChild(div);
     if (wasAtBottom) container.scrollTop = container.scrollHeight;
     _updateScrollBottomButton();
+  }
+
+  // Phase 82: render the pre-call "running now" block.  Tagged with
+  // a ``msg-tool-pending`` class so CSS can dim it / show a
+  // spinner glyph; the matching TOOL_INVOKED event swaps the body
+  // out via ``appendToolBlock`` above.
+  function appendPendingToolBlock(data) {
+    const container = chatMessages();
+    if (!container) return;
+    const tcid = data.tool_call_id;
+    if (!tcid || _pendingToolBlocks.has(tcid)) return;
+    const empty = document.getElementById("chat-empty");
+    if (empty) empty.remove();
+
+    const caption = data.caption || data.tool_name || "(running)";
+
+    const div = document.createElement("div");
+    div.className = "msg msg-tool msg-tool-pending";
+
+    const body = document.createElement("div");
+    body.className = "msg-body";
+
+    const text = document.createElement("span");
+    text.textContent = `⟳ ${caption}`;
+    body.appendChild(text);
+
+    div.appendChild(body);
+
+    const wasAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight
+        < _SCROLL_BOTTOM_THRESHOLD;
+    container.appendChild(div);
+    _pendingToolBlocks.set(tcid, div);
+    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    _updateScrollBottomButton();
+  }
+
+  // Phase 82: convert any orphan pending blocks (e.g. cancelled mid-
+  // tool, server crash) into failed tool blocks so the chat never
+  // leaves a dangling spinner.  Called when the thinking indicator
+  // turns off — the turn has ended and any unresolved pending event
+  // can no longer expect a matching final.
+  function scrubPendingToolBlocks() {
+    if (_pendingToolBlocks.size === 0) return;
+    for (const [tcid, div] of _pendingToolBlocks) {
+      _renderToolBlockBody(div, {
+        success: false,
+        caption: "cancelled",
+        tool_call_id: tcid,
+      });
+    }
+    _pendingToolBlocks.clear();
   }
 
   // Format an ISO timestamp as HH:MM in the browser's locale.  Falls
@@ -516,6 +599,11 @@ const cantrip = (() => {
       // TUI's per-phase re-roll cadence.
       const label = document.getElementById("thinking-label");
       if (label) label.textContent = ` ${pickFlavourLabel()}…`;
+    } else {
+      // Phase 82: turn ended — any pending tool block that never got
+      // its matching TOOL_INVOKED becomes a failed "cancelled" block
+      // so the chat never leaves a dangling spinner.
+      scrubPendingToolBlocks();
     }
     el.hidden = !active;
   }

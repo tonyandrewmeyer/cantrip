@@ -693,6 +693,14 @@ class CantripApp(App):
         self._agent.event_bus.subscribe(
             ui_events.EventType.TOOL_INVOKED, self._on_bus_tool_invoked
         )
+        # Phase 82: pre-call "running now" block.  Carries the same
+        # tool_call_id as the matching TOOL_INVOKED so the chat widget
+        # can update the same line in place when the tool returns —
+        # one block per tool call, not two.
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.TOOL_INVOKED_PENDING,
+            self._on_bus_tool_invoked_pending,
+        )
         # Phase 78.2: update the modelbar cache indicator reactively on
         # every turn with cache activity, matching the same signal the
         # Web UI's header badge uses.  The 5-second polling timer in
@@ -775,17 +783,38 @@ class CantripApp(App):
         chat.add_system_message(f"Recalled memory: {title} ({scope})")
 
     def _on_bus_tool_invoked(self, event: ui_events.Event) -> None:
-        """Render an inline tool-invocation block in the chat (Phase 75)."""
+        """Render an inline tool-invocation block in the chat (Phase 75).
+
+        When the matching pending block exists (Phase 82), the chat
+        widget updates it in place rather than appending a fresh line.
+        """
         chat = self.query_one("#chat", chat_widget.ChatWidget)
         payload = event.payload
         caption = payload.get("caption") or payload.get("tool_name", "?")
         success = bool(payload.get("success", False))
         duration_ms = payload.get("duration_ms")
+        tool_call_id = payload.get("tool_call_id")
         chat.add_tool_block(
             caption,
             success=success,
             duration_ms=duration_ms if isinstance(duration_ms, int) else None,
+            tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
         )
+
+    def _on_bus_tool_invoked_pending(self, event: ui_events.Event) -> None:
+        """Render the pre-call "running now" block (Phase 82).
+
+        A pending event without a usable ``tool_call_id`` is dropped —
+        without an id we have no way to match the matching final event
+        and would leave a permanent spinner on the screen.
+        """
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        payload = event.payload
+        tool_call_id = payload.get("tool_call_id")
+        if not isinstance(tool_call_id, str) or not tool_call_id:
+            return
+        caption = payload.get("caption") or payload.get("tool_name", "?")
+        chat.add_pending_tool_block(caption, tool_call_id=tool_call_id)
 
     def _on_bus_status_bar(self, event: ui_events.Event) -> None:
         """Apply a STATUS_BAR_CHANGED event to the status bar reactives."""
@@ -1817,6 +1846,11 @@ class CantripApp(App):
         # Remove the thinking indicator and reset status bar.  The
         # indicator may still be up if the stream yielded nothing.
         chat.hide_thinking()
+        # Phase 82: any pending tool block left over from a cancelled
+        # or crashed turn would otherwise read as a spinner forever.
+        # Scrub them as failed "cancelled" blocks so the chat never
+        # leaves a dangling ⟳.
+        chat.scrub_pending_tool_blocks()
         self.query_one("#status-bar", statusbar_widget.StatusBar).task_label = ""
         self.query_one("#task-checklist", tasks_widget.TaskChecklistWidget).set_agent_activity(
             None

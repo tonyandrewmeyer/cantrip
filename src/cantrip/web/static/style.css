@@ -256,6 +256,16 @@ main {
   color: var(--red);
 }
 
+/* Phase 82: pre-call "running now" tool block.  Animated spinner-
+   coloured border and dimmed text so the user can tell at a glance
+   the call hasn't completed yet — replaced in place by the post-call
+   block when the matching TOOL_INVOKED arrives. */
+.msg-tool.msg-tool-pending {
+  border-left-color: var(--primary, var(--accent));
+  opacity: 0.75;
+  font-style: italic;
+}
+
 .msg-tool .msg-header {
   display: none;
 }

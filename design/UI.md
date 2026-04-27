@@ -41,6 +41,8 @@ All UI updates flow through typed events defined in `src/cantrip/ui/events.py`.
 | `WATCHER_EVENT` | source, category, summary, detail, app, unit | EventWatcher |
 | `STATUS_BAR_CHANGED` | task_label, cos_health, test_summary, watcher_status | Various |
 | `PREFLIGHT_UPDATED` | group_index, item_index, status | PreflightRunner |
+| `TOOL_INVOKED_PENDING` | tool_name, caption, tool_call_id, source | Pre-dispatch (Phase 82) |
+| `TOOL_INVOKED` | tool_name, caption, success, duration_ms, source, tool_call_id | Post-tool-call |
 
 Adding a new UI feature means:
 1. Add an `EventType` variant and factory function in `events.py`

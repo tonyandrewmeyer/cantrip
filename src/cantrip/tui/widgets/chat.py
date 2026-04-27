@@ -112,6 +112,12 @@ class MessageWidget(Static):
         border-left: thick $error;
     }
 
+    MessageWidget.tool-pending {
+        color: $text-muted;
+        border-left: thick $primary;
+        text-style: dim;
+    }
+
     MessageWidget .message-header {
         color: $text-muted;
         text-style: dim;
@@ -952,6 +958,10 @@ class ChatWidget(Widget):
         # current search query, rebuilt on every query change.
         self._match_index: list[tuple[MessageWidget, int]] = []
         self._active_match: int = 0
+        # Phase 82: tool-call-id → pending tool block widget, so a
+        # later TOOL_INVOKED can replace the spinner caption with the
+        # post-call summary in place rather than appending a new line.
+        self._pending_tool_blocks: dict[str, MessageWidget] = {}
 
     def compose(self) -> ComposeResult:
         """Compose the chat widget."""
@@ -1117,6 +1127,7 @@ class ChatWidget(Widget):
         *,
         success: bool,
         duration_ms: int | None = None,
+        tool_call_id: str | None = None,
     ) -> MessageWidget:
         """Add a compact tool-invocation block to the chat (Phase 75).
 
@@ -1130,7 +1141,20 @@ class ChatWidget(Widget):
         the block's left border to the error colour and swaps the
         leading glyph.  ``duration_ms`` is appended in parentheses
         when supplied so slow calls stand out.
+
+        Phase 82: when ``tool_call_id`` matches a pending block added
+        earlier via :meth:`add_pending_tool_block`, the pending block
+        is updated *in place* rather than appending a new line — so
+        the user sees one block per tool call (spinner → result),
+        not two.
         """
+        if tool_call_id is not None and tool_call_id in self._pending_tool_blocks:
+            return self.resolve_tool_block(
+                tool_call_id,
+                caption,
+                success=success,
+                duration_ms=duration_ms,
+            )
         glyph = "🔧" if success else "✗"
         suffix = ""
         if duration_ms is not None and duration_ms >= _TOOL_BLOCK_DURATION_THRESHOLD_MS:
@@ -1145,6 +1169,98 @@ class ChatWidget(Widget):
         if not success:
             widget.add_class("tool-failed")
         return widget
+
+    def add_pending_tool_block(
+        self,
+        caption: str,
+        *,
+        tool_call_id: str,
+    ) -> MessageWidget:
+        """Add a "running now" tool block tagged with ``tool_call_id`` (Phase 82).
+
+        Mirrors :meth:`add_tool_block` but uses a spinner glyph
+        (``⟳``) and the dim ``tool-pending`` class so the user can
+        tell at a glance the call hasn't finished yet.  The matching
+        :meth:`resolve_tool_block` call (when the post-call event
+        arrives) updates this same widget in place rather than adding
+        a second chat line.
+
+        Replacing a pending block for the same id is a no-op — we
+        keep the existing widget so a stray duplicate event never
+        leaks an orphan spinner.
+        """
+        existing = self._pending_tool_blocks.get(tool_call_id)
+        if existing is not None:
+            return existing
+        content = f"⟳ {rich_escape(caption)}"
+        widget = self.add_message(
+            ChatMessage(
+                role=MessageRole.TOOL,
+                content=content,
+            )
+        )
+        widget.add_class("tool-pending")
+        self._pending_tool_blocks[tool_call_id] = widget
+        return widget
+
+    def resolve_tool_block(
+        self,
+        tool_call_id: str,
+        caption: str,
+        *,
+        success: bool,
+        duration_ms: int | None = None,
+    ) -> MessageWidget:
+        """Replace a pending tool block in place with its post-call form (Phase 82).
+
+        Looks up the widget registered by
+        :meth:`add_pending_tool_block`, rewrites its caption, swaps
+        the spinner glyph for the success / failure indicator, and
+        drops the ``tool-pending`` class.  If no pending block is
+        registered for *tool_call_id* (renderer started after the
+        pending event, or the agent crashed mid-call), falls back to
+        :meth:`add_tool_block` so the user still sees *something*.
+        """
+        widget = self._pending_tool_blocks.pop(tool_call_id, None)
+        if widget is None:
+            return self.add_tool_block(
+                caption,
+                success=success,
+                duration_ms=duration_ms,
+            )
+        glyph = "🔧" if success else "✗"
+        suffix = ""
+        if duration_ms is not None and duration_ms >= _TOOL_BLOCK_DURATION_THRESHOLD_MS:
+            suffix = f" [dim]({duration_ms} ms)[/dim]"
+        widget.message.content = f"{glyph} {rich_escape(caption)}{suffix}"
+        widget.remove_class("tool-pending")
+        if success:
+            widget.remove_class("tool-failed")
+        else:
+            widget.add_class("tool-failed")
+        # ``_rerender`` is a no-op pre-mount; the next compose pass
+        # picks up the updated content from ``message.content``.
+        widget._rerender()
+        return widget
+
+    def scrub_pending_tool_blocks(self) -> int:
+        """Resolve any orphan pending blocks as cancelled (Phase 82).
+
+        Called from the TUI when a turn ends without a matching
+        ``TOOL_INVOKED`` for every ``TOOL_INVOKED_PENDING`` — typically
+        because the user cancelled mid-tool or the dispatcher raised.
+        Each orphan turns into a failed tool block carrying a
+        ``cancelled`` caption so the chat never leaves a dangling
+        spinner.  Returns the number of blocks scrubbed.
+        """
+        if not self._pending_tool_blocks:
+            return 0
+        # Materialise the keys before mutation: ``resolve_tool_block``
+        # pops from the same dict.
+        ids = list(self._pending_tool_blocks)
+        for tcid in ids:
+            self.resolve_tool_block(tcid, "cancelled", success=False)
+        return len(ids)
 
     def append_streaming_chunk(self, widget: MessageWidget, chunk: str) -> None:
         """Append *chunk* to *widget* and keep the scroll pinned to the bottom.
