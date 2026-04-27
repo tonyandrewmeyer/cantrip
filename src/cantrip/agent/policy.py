@@ -422,15 +422,22 @@ def destructive_command_check(argv: list[str]) -> tuple[bool, str]:
     semantic as :func:`destructive_gate` but triggered by the command
     shape rather than the tool name.
 
-    Shapes caught, each corresponding to one of the command forms
-    Phase 80.5 committed to gating:
+    Shapes caught, each corresponding to one of the destructive
+    operations called out in CLAUDE.md's "executing actions with care"
+    list:
 
     * ``rm`` with both ``-r`` and ``-f`` flags (combined or split —
       ``-rf``, ``-fr``, ``-r -f``, ``-r --force`` all trip).
     * ``git push`` with ``--force``, ``-f``, ``--force-with-lease``
       (with or without an ``=expected-ref`` suffix), or any short-flag
       bundle containing ``f`` (``-fu``, ``-uf``).
+    * ``git push --delete`` / ``git push -d`` — irreversibly deletes
+      a remote branch / tag.
     * ``git reset`` with ``--hard``.
+    * ``git branch -D`` / ``git branch --delete --force`` —
+      force-deletes a local branch even if its commits aren't merged.
+    * ``git clean`` with ``-f`` / ``--force`` — destroys untracked
+      files in the working tree.
 
     A long-form flag that happens to contain the letter (e.g.
     ``--recurse-submodules``) does not trip the ``rm`` rule because
@@ -448,13 +455,34 @@ def destructive_command_check(argv: list[str]) -> tuple[bool, str]:
     if base == "git" and len(rest) >= 1:
         subcommand = rest[0]
         subargs = rest[1:]
-        if subcommand == "push" and any(
-            _is_short_flag(arg, "f") or arg == "--force" or arg.startswith("--force-with-lease")
-            for arg in subargs
-        ):
-            return True, "git push --force"
+        if subcommand == "push":
+            if any(
+                _is_short_flag(arg, "f")
+                or arg == "--force"
+                or arg.startswith("--force-with-lease")
+                for arg in subargs
+            ):
+                return True, "git push --force"
+            if any(_is_short_flag(arg, "d") or arg == "--delete" for arg in subargs):
+                return True, "git push --delete"
         if subcommand == "reset" and "--hard" in subargs:
             return True, "git reset --hard"
+        if subcommand == "branch":
+            # ``-D`` is the force-delete short form (uppercase D — distinct
+            # from ``-d`` which only deletes merged branches).  The long
+            # form is ``--delete --force`` (or ``--delete -f``).
+            if any(
+                arg.startswith("-") and not arg.startswith("--") and "D" in arg for arg in subargs
+            ):
+                return True, "git branch -D"
+            has_delete = "--delete" in subargs or any(_is_short_flag(arg, "d") for arg in subargs)
+            has_force = "--force" in subargs or any(_is_short_flag(arg, "f") for arg in subargs)
+            if has_delete and has_force:
+                return True, "git branch -D"
+        if subcommand == "clean" and (
+            "--force" in subargs or any(_is_short_flag(arg, "f") for arg in subargs)
+        ):
+            return True, "git clean -f"
     return False, ""
 
 
