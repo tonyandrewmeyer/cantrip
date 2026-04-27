@@ -16,6 +16,7 @@ description: |
   edition.
 
 version: 'v0'
+license: Apache-2.0 AND MIT
 
 grade: devel
 confinement: strict
