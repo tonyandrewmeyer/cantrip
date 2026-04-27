@@ -1,6 +1,6 @@
 ---
 title: "How to search the charm library — Cantrip"
-description: "Use the Phase 70.1 Librarian subagent to find existing Charmhub and Launchpad charms before reinventing them."
+description: "Use the Librarian subagent to find existing Charmhub and Launchpad charms before reinventing them."
 h1: "Search the charm library"
 subtitle: "Find existing Charmhub and Launchpad charms before building your own."
 section: howto
@@ -20,7 +20,7 @@ charm this LDAP service?"), the wrong answer is "build it from
 scratch."  The right answer is "find the five most maintained existing
 charms that already do this, and reuse what we can."
 
-The **Librarian** is a read-only subagent introduced in Phase 70.1.
+The **Librarian** is a read-only subagent.
 It searches Charmhub and Launchpad in parallel, applies a quality
 filter, and returns ranked excerpts with citations the primary agent
 can paste into its design document.

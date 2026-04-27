@@ -155,7 +155,7 @@ The following events are fired today:
 | `pre_subagent` | Before a subagent starts a task. | `task_id`, `title`, `category` |
 | `post_subagent` | After the subagent returns (even on failure). | `task_id`, `title`, `category`, `exit_state` |
 
-The following event names are reserved for future sub-phases:
+The following event names are reserved for future use:
 `pre_pack`, `pre_push`, `pre_pr`,
 `on_task_complete`, `on_session_end`.
 You can register hooks for them today — they will just
@@ -399,10 +399,10 @@ executions, not an attempt log.
   A slow hook blocks the next one and the agent itself. Keep
   `timeout` aggressive.
 - Hook stdout is captured but not yet injected into the agent
-  conversation. (A future sub-phase will let `pre_*`
+  conversation. (A future iteration will let `pre_*`
   hooks mutate the pending payload via a JSON-patch envelope.)
 - Stdout from a `pre_tool_call` hook is captured
   but not yet merged into the pending payload — a
-  follow-up sub-phase will document a JSON envelope so a hook
+  follow-up iteration will document a JSON envelope so a hook
   can redact a secret out of `arguments` before the
   tool runs.

@@ -84,7 +84,7 @@ inherited environment.
   outside the charm root. Memories live in `~/.config/cantrip/`
   and survive `/undo`.
 - It does not snapshot files Cantrip itself manages inside
-  the charm tree (`.cantrip/` session store, Phase 44
+  the charm tree (`.cantrip/` session store,
   `.cantrip-worktrees/` for parallel subagents). Restoring
   those would corrupt agent state that lives outside the
   per-turn contract.

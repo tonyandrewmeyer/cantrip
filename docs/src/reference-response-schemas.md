@@ -1,6 +1,6 @@
 ---
 title: "Response schemas reference — Cantrip"
-description: "Built-in JSON schemas for structured LLM output, plus the validation pipeline (Phase 73.3)."
+description: "Built-in JSON schemas for structured LLM output, plus the validation pipeline."
 h1: "Response schemas"
 subtitle: "Cantrip ships JSON schemas for the recurring structured-output shapes its callers consume. Pass one to `complete_structured()` (or directly to `provider.complete(response_schema=…)`) when you want a parseable reply rather than free text."
 section: reference
@@ -17,12 +17,11 @@ on_this_page:
 
 <p>
   Pass a <code>response_schema</code> when the caller will parse the
-  reply rather than show it to the user.  Recipes (Phase 73.1)
-  consume planner briefings.  The oracle (Phase 70.2) returns a
-  structured second opinion that downstream code feeds back into
-  decision points.  Acceptance reports (Phase 17) populate test
-  matrices.  Free-form prose stays untyped — schemas are for
-  data, not conversation.
+  reply rather than show it to the user.  Recipes consume planner
+  briefings.  The oracle returns a structured second opinion that
+  downstream code feeds back into decision points.  Acceptance
+  reports populate test matrices.  Free-form prose stays untyped
+  — schemas are for data, not conversation.
 </p>
 
 <p>
@@ -54,7 +53,7 @@ on_this_page:
 
   <dt><code>ORACLE_ANSWER</code></dt>
   <dd>
-    Shape of a Phase 70.2 oracle reply when the caller wants more
+    Shape of an oracle reply when the caller wants more
     than free-form prose: <code>answer</code> (required), optional
     <code>confidence</code> in <code>[0, 1]</code>, and lists of
     <code>caveats</code> and <code>references</code>.
@@ -62,7 +61,7 @@ on_this_page:
 
   <dt><code>CHECK_RESULT</code></dt>
   <dd>
-    Output of a Phase 70.4 prompt-based "Check" — the LLM evaluates
+    Output of a prompt-based "Check" — the LLM evaluates
     a named rule against the active charm and returns
     <code>status: pass | fail</code>, a <code>message</code>, and
     optionally <code>severity</code>, <code>evidence</code>, and a
@@ -71,7 +70,7 @@ on_this_page:
 
   <dt><code>ACCEPTANCE_REPORT</code></dt>
   <dd>
-    Phase 17 acceptance-test report — what the agent produces after
+    Acceptance-test report — what the agent produces after
     exercising a deployed charm.  <code>app</code> and
     <code>overall_status</code> (<code>pass | fail | partial</code>)
     are required; <code>coverage</code> records which areas were

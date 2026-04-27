@@ -17,10 +17,14 @@ sections:
       - { slug: howto-mcp, label: "Configure MCP servers" }
       - { slug: howto-charm-library, label: "Search the charm library" }
       - { slug: howto-charm-icon, label: "Generate a charm icon" }
+      - { slug: howto-docs-index, label: "Index the charm docs" }
+      - { slug: howto-mentions, label: "Use @-mention context" }
       - { slug: howto-hooks, label: "Configure hooks" }
       - { slug: howto-undo, label: "Undo agent changes" }
+      - { slug: howto-session-branching, label: "Branch a session" }
       - { slug: howto-auto-commit, label: "Auto-commit per turn" }
       - { slug: howto-permissions, label: "Configure tool permissions" }
+      - { slug: howto-diagnostics-review, label: "Run diagnostics and review" }
       - { slug: howto-custom-commands, label: "Define custom slash commands" }
       - { slug: howto-plan-mode, label: "Use plan mode" }
       - { slug: howto-architect-mode, label: "Use architect mode" }
@@ -41,6 +45,7 @@ sections:
     pages:
       - { slug: explanation-architecture, label: "How Cantrip works" }
       - { slug: explanation-charm-paths, label: "The three charm paths" }
+      - { slug: explanation-repo-map, label: "The repository map" }
       - { slug: explanation-observability, label: "Observability and debugging" }
       - { slug: explanation-quickpack-rs, label: "Quickpack Rust backend" }
       - { slug: explanation-charmlint-rs, label: "Charmlint Rust backend" }

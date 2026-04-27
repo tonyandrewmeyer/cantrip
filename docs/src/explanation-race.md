@@ -211,9 +211,8 @@ False and the executor falls through to a single-subagent run.
   <dd>
     Per-candidate token estimate used to multiply out the
     pre-race cost. Deliberately low so the CONFIRM gate fires
-    early for racy tasks. Once streaming-usage aggregation lands
-    (Phase 41.6), mid-flight accounting will replace this
-    static estimate.
+    early for racy tasks. Once streaming-usage aggregation lands,
+    mid-flight accounting will replace this static estimate.
   </dd>
 
   <dt><code>cancel_on_perfect</code> (default: True)</dt>
@@ -430,7 +429,7 @@ can reconstruct what happened after the fact.
   argument, but there are no CLI flags or environment variables
   to set `enabled_categories` and friends. Racing is
   reachable today through the Python API only; a proper surface
-  lands with the next iteration of Phase 47.
+  is planned.
 - **No early cancellation.**
   `cancel_on_perfect` is a config knob but the
   coordinator waits for every candidate before scoring. A
@@ -439,7 +438,7 @@ can reconstruct what happened after the fact.
   `baseline_tokens_per_run` is a rough guess, not
   measured usage. Mid-flight budget accounting (“cancel
   once we’ve burned through the budget”) is deferred
-  until streaming-usage aggregation lands in Phase 41.6.
+  until streaming-usage aggregation lands.
 - **Unit tests only.** The test subscore measures
   unit-test pass/total. Integration test counts are not yet
   surfaced to the rubric.

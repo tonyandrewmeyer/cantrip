@@ -1,6 +1,6 @@
 ---
 title: "How to generate a charm icon — Cantrip"
-description: "Use the Phase 70.5 Painter to generate a Charmhub-style icon.svg for a charm."
+description: "Use the Painter to generate a Charmhub-style icon.svg for a charm."
 h1: "Generate a charm icon"
 subtitle: "Painter — LLM-driven charm-icon generation with a session cost cap."
 section: howto
@@ -21,7 +21,7 @@ each application in `juju status`, and what people see on the charm's
 page.  Authors today either hand-roll one in Inkscape, hire a
 designer, or ship the default placeholder — most charms do the third.
 
-The **Painter** (Phase 70.5) is Cantrip's `charm_icon_generate` tool
+The **Painter** is Cantrip's `charm_icon_generate` tool
 (plus the `/icon` slash for interactive use).  It routes a structured
 prompt to an image-generation provider (Imagen by default), gets back
 a square PNG, and writes it into `icon.svg` as an embedded image so
@@ -41,7 +41,7 @@ language is settled.
 |---|---|
 | `/icon <description>` | Interactive: paint a fresh icon for the active charm. |
 | `charm_icon_generate` agent tool | Programmatic: the agent calls it during a BUILD phase, or you can `/run charm_icon_generate ...`. |
-| `generate_icon` (existing, Phase 7) | Deterministic placeholder — coloured circle with the charm's initial.  Shipped before Painter; still the right call when no image-provider API key is configured. |
+| `generate_icon` (placeholder) | Deterministic placeholder — coloured circle with the charm's initial.  Shipped before Painter; still the right call when no image-provider API key is configured. |
 
 The Painter and the placeholder coexist intentionally: the
 deterministic placeholder is fast, free, and offline-friendly; the
@@ -87,7 +87,7 @@ The tool **refuses** to overwrite an existing `icon.svg` unless one of:
   embed on every Painter output (so successive `/icon` calls iterate
   freely on a Painter-generated icon);
 - The file matches the deterministic placeholder shape from the
-  Phase 7 `generate_icon` tool (a coloured `<circle>` at 128, 128); or
+  `generate_icon` tool (a coloured `<circle>` at 128, 128); or
 - You pass `force=true` (or call `charm_icon_generate force=true`).
 
 Anything else — your own SVG, a designer's work, an existing
@@ -141,4 +141,3 @@ The MVP deliberately defers a few things:
 - **Auto-invocation at BUILD completion** — the agent will call
   `charm_icon_generate` mid-build today, but there's no
   end-of-build CONFIRM that asks "want to paint an icon now?" yet.
-  Tracked as a follow-up under Phase 64 (CONFIRM tasks).

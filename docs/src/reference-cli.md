@@ -187,7 +187,7 @@ Start the agent and build or improve a charm.
 
   <dt>--architect</dt>
   <dd>
-    Phase 71.2 architect/editor two-model split. Each agent
+    Architect/editor two-model split. Each agent
     turn runs in two passes: an <em>architect</em> pass on the
     main model emits a plain-prose proposal (no tool calls),
     then an <em>editor</em> pass on a cheaper model translates
@@ -214,7 +214,7 @@ Start the agent and build or improve a charm.
 
   <dt>--no-auto-commit</dt>
   <dd>
-    Disable Phase 71.3 per-turn auto-commit. By default every
+    Disable per-turn auto-commit. By default every
     turn that mutates files lands as a discrete git commit in
     the charm repo with a Cantrip co-author trailer; pre-existing
     dirty work commits separately as <code>chore(pre-cantrip):
@@ -315,8 +315,8 @@ Export a session transcript from a `.cantrip` file.
 
   <dt>--branch TURN_ID</dt>
   <dd>
-    Export the conversation path leading to a specific turn id
-    (Phase 67.1).  Without this flag, the export follows the
+    Export the conversation path leading to a specific turn id.
+    Without this flag, the export follows the
     session's currently active branch — a forked session
     therefore exports only the active path by default.
     Off-branch turns stay reachable: list them with
@@ -442,7 +442,7 @@ cantrip skill export NAME PATH [--charm-path DIR] [--force]
 
 Inspect and surgically remove step-level durable-execution
 checkpoints stored under a session's `.cantrip` SQLite file.
-Phase 52 persists each LLM turn and each tool call for an
+Cantrip persists each LLM turn and each tool call for an
 in-flight subagent task so that an interrupted run resumes from
 the last completed step instead of re-burning tokens from turn 1.
 The `cantrip checkpoints` subcommand is the out-of-band surface
@@ -761,7 +761,7 @@ a specific hybrid should restart the session.
 <dl>
   <dt><code>/auto-commit</code></dt>
   <dd>
-    Toggle the Phase 71.3 per-turn auto-commit.  Bare flips
+    Toggle the per-turn auto-commit.  Bare flips
     on/off; <code>/auto-commit on</code> and
     <code>/auto-commit off</code> are explicit.  When on,
     every turn that mutates files lands as a discrete git
@@ -790,7 +790,7 @@ The most recent agent commit's SHA lands on
 <dl>
   <dt><code>/architect</code></dt>
   <dd>
-    Toggle the Phase 71.2 architect/editor split. With no
+    Toggle the architect/editor split. With no
     argument, flips on/off; <code>/architect on</code> and
     <code>/architect off</code> are explicit. With a second
     token, sets the editor (same syntax as
@@ -942,7 +942,7 @@ for configuration.
 {#branching}
 ### Branch and tree
 
-Phase 67.1 turns the conversation history into a tree.
+Cantrip stores the conversation history as a tree.
 <code>/undo</code> deletes; <code>/branch</code> rewinds without
 deleting, so every dead end stays reachable.
 
