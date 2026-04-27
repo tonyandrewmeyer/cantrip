@@ -1,0 +1,149 @@
+name: embeddinggemma-CHANGEME
+base: core24
+summary: EmbeddingGemma 300M text-embedding inference snap
+description: |
+  Runs Google's EmbeddingGemma 300M text-embedding model via the
+  llama.cpp HTTP server in embedding mode. Exposes an
+  OpenAI-compatible /v1/embeddings endpoint suitable for retrieval
+  pipelines.
+
+  This snap is published under a personal namespace; the unsuffixed
+  `embeddinggemma` name is reserved for a future
+  Canonical-published edition.
+
+version: 'v0'
+
+grade: devel
+confinement: strict
+
+assumes:
+  - snapd2.68 # for components support
+
+compression: lzo
+
+platforms:
+  amd64:
+  arm64:
+
+environment:
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+hooks:
+  install:
+    plugs: &install-plugs
+      - hardware-observe
+      - kernel-module-observe
+      - opengl
+  post-refresh:
+    plugs: *install-plugs
+
+parts:
+  scripts:
+    source: scripts
+    plugin: dump
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  engines:
+    source: engines
+    plugin: dump
+    organize:
+      "*": engines/
+
+  cli:
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v1.0.0-beta.42/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v1.0.0-beta.42/inference-snaps-cli-linux-arm64.tar.xz
+    plugin: dump
+    override-build: |
+      mkdir -p bin
+      mv cli bin/modelctl
+      # Symlink so the CLI is reachable as the snap's command name
+      ln --symbolic ./modelctl bin/embeddinggemma-CHANGEME
+      craftctl default
+
+  cli-dependencies:
+    plugin: nil
+    stage-packages:
+      - pciutils # for lspci, used by hardware detection
+
+  local-component-files:
+    plugin: dump
+    source: components
+    organize:
+      "llamacpp/*": (component/llamacpp)
+      "model-300m-q8-0-gguf/*": (component/model-300m-q8-0-gguf)
+    prime:
+      # Exclude everything not explicitly organised; the local files
+      # are routed entirely into components.
+      - -*
+
+  llamacpp:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-amd64.tar.gz
+      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-arm64.tar.gz
+    stage-packages:
+      - libgomp1
+    organize:
+      "*": (component/llamacpp)
+
+  llamacpp-license:
+    plugin: dump
+    source: https://github.com/ggerganov/llama.cpp.git
+    source-depth: 1
+    override-build: |
+      license_dir=$CRAFT_PART_INSTALL/usr/share/doc/llama.cpp
+      mkdir -p $license_dir
+      cp LICENSE $license_dir/
+      cp -r licenses/* $license_dir/
+
+  notice:
+    plugin: nil
+    source: NOTICE
+    source-type: file
+    override-build: |
+      license_dir=$CRAFT_PART_INSTALL/usr/share/doc
+      mkdir -p $license_dir
+      cp NOTICE $license_dir/
+      # Add the Gemma terms file once you've dropped it in alongside
+      # NOTICE — see README.md for the download step.
+      if [ -f $SNAPCRAFT_PROJECT_DIR/LICENSE-gemma.md ]; then
+        cp $SNAPCRAFT_PROJECT_DIR/LICENSE-gemma.md $license_dir/
+      fi
+
+components:
+  llamacpp:
+    type: standard
+    summary: llama.cpp using default CPU instruction sets
+    description: LLM inference in C/C++
+    version: b8589
+
+  model-300m-q8-0-gguf:
+    type: standard
+    summary: EmbeddingGemma 300M Q8_0 GGUF
+    description: |
+      EmbeddingGemma 300M parameters in GGUF format with Q8_0 weight
+      encoding. Subject to the Gemma Terms of Use
+      (ai.google.dev/gemma/terms).
+
+apps:
+  embeddinggemma-CHANGEME:
+    command: bin/embeddinggemma-CHANGEME
+    plugs:
+      - hardware-observe
+      - opengl
+      - network
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - opengl
+      - network-bind
+      - network
+      - hardware-observe
+      - process-control

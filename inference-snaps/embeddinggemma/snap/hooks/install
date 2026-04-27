@@ -1,0 +1,34 @@
+#!/bin/bash -eu
+
+tag="snap.$SNAP_INSTANCE_NAME.hook.install"
+
+# Redirect stdout to stdout+syslog
+exec 1> >(tee >(logger --tag=$tag))
+# Redirect stderr to stderr+syslog
+exec 2> >(logger --stderr --priority error --tag=$tag)
+
+#
+# Generic config
+#
+
+modelctl set --package verbose="false"
+
+# HTTP server config. Port 8331 was picked to sit alongside the
+# Canonical chat snaps already in Cantrip's _SNAP_DEFAULTS table
+# (gemma3=8328, deepseek-r1=8324, qwen-vl=8326,
+# nemotron-3-nano=8330) without colliding.
+modelctl set --package http.port="8331"
+modelctl set --package http.host="127.0.0.1"
+
+#
+# Auto select an engine
+#
+
+if snapctl is-connected hardware-observe; then
+    modelctl use-engine --auto --assume-yes
+elif lscpu -V &> /dev/null; then
+    echo "Able to access hardware info without hardware-observe interface connection: assuming dev mode installation."
+    modelctl use-engine --auto --assume-yes
+else
+    echo "hardware-observe interface not auto connected. Skip auto engine selection."
+fi

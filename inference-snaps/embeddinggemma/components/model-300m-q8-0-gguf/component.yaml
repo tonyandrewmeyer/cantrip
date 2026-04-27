@@ -1,0 +1,4 @@
+environment:
+  # The engine's server script reads MODEL_FILE; prepare-models.sh
+  # drops the GGUF here before `snapcraft pack`.
+  - MODEL_FILE=$COMPONENT/embeddinggemma-300m.Q8_0.gguf

@@ -1,0 +1,17 @@
+name: cpu
+description: Use CPU. EmbeddingGemma runs comfortably on any modern CPU.
+vendor: CHANGEME
+grade: stable
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+memory: 1G
+disk-space: 1G
+components:
+  - llamacpp
+  - model-300m-q8-0-gguf
+configurations:
+  sleep-idle-seconds: 600

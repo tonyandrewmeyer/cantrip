@@ -1,0 +1,13 @@
+#!/bin/bash -eu
+
+# Embed mode: --embedding flips llama-server from completions to
+# the /v1/embeddings endpoint; --pooling mean is what
+# EmbeddingGemma was trained against and produces the best vectors
+# for retrieval.
+sleep_idle_seconds="$(modelctl get sleep-idle-seconds)"
+
+exec "$SNAP_COMPONENTS/llamacpp/server" \
+  --embedding \
+  --pooling mean \
+  --sleep-idle-seconds "$sleep_idle_seconds" \
+  "$@"

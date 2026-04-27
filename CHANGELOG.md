@@ -4,6 +4,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **`inference-snaps/embeddinggemma/` scaffold.**  A self-contained
+  snapcraft project that packages Google's EmbeddingGemma 300M
+  text-embedding model as an Ubuntu snap, modelled on
+  ``canonical/gemma3-snap`` but stripped to one CPU engine and
+  augmented with ``--embedding --pooling mean`` so ``llama-server``
+  serves ``/v1/embeddings``.  Build artefacts and GGUFs are
+  gitignored; ``prepare-models.sh`` fetches the weights from
+  Hugging Face.  Once built, the running snap exposes an
+  OpenAI-compatible endpoint that the Phase 72.3
+  ``OpenAIEmbedProvider`` can reach via ``OPENAI_EMBED_BASE_URL`` —
+  no API key required.  Intended to ship under a personal namespace
+  (the snap name is ``embeddinggemma-CHANGEME``); the unsuffixed
+  ``embeddinggemma`` reserved-name on the snap store stays available
+  for a future Canonical edition.  See
+  ``inference-snaps/embeddinggemma/README.md`` for build, install,
+  smoke-test, and publish steps.
+
 ### Changed
 - **OpenAI embed provider works keyless against local OSS servers.**
   ``OpenAIEmbedProvider`` no longer demands ``OPENAI_API_KEY`` when
