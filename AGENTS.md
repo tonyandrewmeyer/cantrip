@@ -71,6 +71,7 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
   - `docs/docs/explanation-*.html` — subsystem explanations (architecture, observability, TUI screens, Rust backends)
   - `docs/docs/tutorial.html` — launch-to-first-charm walk-through
   - `docs/docs/reference-tools.html` — tool catalogue surfaced to subagents
+- **Keep phase / roadmap language out of `docs/docs/`.** These pages are for users, who do not know or care about our internal phase numbering. Never write "Phase 72.3 ships X" or "introduced in Phase 70.1" or "(Phase 68.2)" in user docs — describe the feature, not the development milestone. Likewise no "the next sub-phase will…" — say "a follow-up will…" or just describe the gap. The exception is the four agent workflow phases (`research`, `build`, `deploy`, `test`) and the BUILD/RESEARCH/DEPLOY/TEST CLI vocabulary — those are user concepts, keep them. Phase numbers belong in `ROADMAP.md`, `ROADMAP_ARCHIVE.md`, `CHANGELOG.md`, and `design/*.md` only.
 
 ## Reference Documents
 
