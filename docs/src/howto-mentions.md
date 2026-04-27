@@ -1,86 +1,21 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to use @-mention context &mdash; Cantrip</title>
-<meta name="description" content="Pull file excerpts, git diffs, charm metadata, live Juju status, indexed docs, and URLs straight into a chat message with Tab-completable @ mentions.">
-<link rel="icon" href="../favicon.png" type="image/png">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
-<link rel="stylesheet" href="docs.css">
-</head>
-<body>
-
-<a href="#main" class="skip-link">Skip to content</a>
-
-<nav class="doc-nav" aria-label="Main">
-  <div class="doc-nav-inner">
-    <a href="../index.html" class="doc-nav-logo">
-      <picture>
-        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
-      <span>Cantrip</span>
-    </a>
-    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="doc-nav-links" id="nav-menu">
-      <a href="index.html" class="current">Docs</a>
-      <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</nav>
-<div class="doc-layout">
-  <aside class="doc-sidebar">
-    <h4>How-to guides</h4>
-    <ul>
-      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
-      <li><a href="howto-improve.html">Improve an existing charm</a></li>
-      <li><a href="howto-export.html">Export transcripts</a></li>
-      <li><a href="howto-light-models.html">Configure light models</a></li>
-      <li><a href="howto-memory.html">Use durable memory</a></li>
-      <li><a href="howto-skills.html">Add a custom skill</a></li>
-      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
-      <li><a href="howto-charm-library.html">Search the charm library</a></li>
-      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
-      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
-      <li><a href="howto-mentions.html" class="current">Use @-mention context</a></li>
-      <li><a href="howto-hooks.html">Configure hooks</a></li>
-      <li><a href="howto-undo.html">Undo agent changes</a></li>
-      <li><a href="howto-session-branching.html">Branch a session</a></li>
-      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
-      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
-      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
-      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
-      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
-      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
-      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
-      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
-      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
-      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
-    </ul>
-    <h4>See also</h4>
-    <ul>
-      <li><a href="reference-cli.html#mentions">CLI reference &mdash; @-mention providers</a></li>
-      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
-      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
-    </ul>
-  </aside>
-
-  <main id="main" class="doc-content">
-    <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Use @-mention context
-    </div>
-
-    <h1>Use @-mention context</h1>
-    <p class="subtitle">
-      Inline a file, diff, charm spec, live Juju view, indexed docs passage, or URL straight into your message &mdash; before the LLM sees it &mdash; instead of asking the agent to fetch it.
-    </p>
+---
+title: "How to use @-mention context — Cantrip"
+description: "Pull file excerpts, git diffs, charm metadata, live Juju status, indexed docs, and URLs straight into a chat message with Tab-completable @ mentions."
+h1: "Use @-mention context"
+subtitle: "Inline a file, diff, charm spec, live Juju view, indexed docs passage, or URL straight into your message &mdash; before the LLM sees it &mdash; instead of asking the agent to fetch it."
+section: howto
+breadcrumb_label: "Use @-mention context"
+see_also:
+  - label: "CLI reference &mdash; @-mention providers"
+    href: "reference-cli.html#mentions"
+  - label: "Index the charm docs"
+    href: "howto-docs-index.html"
+  - label: "Configure MCP servers"
+    href: "howto-mcp.html"
+---
 
 <h2 id="why">Why mention context inline</h2>
+
 <p>
   The agent has tools for reading files, running
   <code>git diff</code>, fetching URLs, and so on.  When you
@@ -89,6 +24,7 @@
   tokens) that you can skip by pasting the content with a
   mention.
 </p>
+
 <p>
   Mentions are expanded <em>before</em> the message is sent to
   the LLM.  The substituted block is wrapped in a
@@ -97,6 +33,7 @@
   <code>config.yaml</code> in&rdquo;) stays visible alongside the
   content.
 </p>
+
 <div class="callout">
   <p>
     Don't pre-fetch context for things the agent will discover
@@ -107,7 +44,9 @@
     memory.
   </p>
 </div>
+
 <h2 id="quickref">The provider catalogue</h2>
+
 <table>
   <thead>
     <tr><th>Mention</th><th>Substitutes</th></tr>
@@ -147,19 +86,24 @@
     </tr>
   </tbody>
 </table>
+
 <p>
   Each provider has a per-call character cap; over-budget output
   is truncated with a <code>[truncated N chars]</code> footer
   rather than silently elided.
 </p>
+
 <h2 id="tab">Tab-complete in the TUI</h2>
+
 <p>
   Type <code>@</code> mid-message and a popup lists every
   registered provider.  Keep typing to filter:
 </p>
+
 <pre><code><span class="prompt">cantrip&gt;</span> look at @fi<span class="cursor">|</span>
             @file
             @file &lt;path&gt;</code></pre>
+
 <p>
   <kbd>Tab</kbd> completes the highlighted suggestion without
   disturbing the surrounding prose.  <kbd>Up</kbd> /
@@ -167,41 +111,57 @@
   the popup so a literal <code>@x</code> stays a literal
   <code>@x</code>.
 </p>
+
 <h2 id="examples">Realistic examples</h2>
+
 <h3>Pull in a config file before steering</h3>
+
 <pre><code><span class="prompt">cantrip&gt;</span> the existing config is @file config/app.yaml &mdash;
 keep the same shape but split the database connection into its
 own section.</code></pre>
+
 <p>
   The agent receives the file contents inline and can reason
   about the change without calling <code>read_file</code>
   first.
 </p>
+
 <h3>Cite indexed docs in a question</h3>
+
 <pre><code><span class="prompt">cantrip&gt;</span> how do I model a database relation? @docs ops relation</code></pre>
+
 <p>
   The top retrieved passages from the indexed
   <code>ops</code> documentation are pasted in with their
   canonical URLs, so the answer is grounded in cited text
   rather than the model's recollection of the API.
 </p>
+
 <h3>Compare a live Juju model against expectations</h3>
+
 <pre><code><span class="prompt">cantrip&gt;</span> the deploy looked off &mdash; here's status now: @juju status
 why is the relation showing as pending?</code></pre>
+
 <p>
   <code>@juju</code> runs only the read-only allowlisted
   subcommand; a typo cannot reach a destructive verb.
 </p>
+
 <h3>Forward a remote document for review</h3>
+
 <pre><code><span class="prompt">cantrip&gt;</span> here's the spec the team agreed on:
 @url https://internal.example.com/specs/charm.html
 does our current design match?</code></pre>
+
 <h2 id="slash">Mentions inside slash commands</h2>
+
 <p>
   Slash commands run before mention expansion, so a literal
   <code>@x</code> inside a slash argument is not substituted:
 </p>
+
 <pre><code><span class="prompt">cantrip&gt;</span> /remember user wants @-mentions tested before merging</code></pre>
+
 <p>
   The memory captures the literal text including the
   <code>@</code>.  Combined with
@@ -210,10 +170,13 @@ does our current design match?</code></pre>
   itself a clean string &mdash; mention expansion only fires on the
   raw chat input.
 </p>
+
 <h2 id="extending">Add your own provider</h2>
+
 <p>
   The mention catalogue is extensible:
 </p>
+
 <ul>
   <li>
     An <a href="howto-mcp.html">MCP server</a> can register a
@@ -226,11 +189,14 @@ does our current design match?</code></pre>
     built-in providers do.
   </li>
 </ul>
+
 <p>
   The protocol and registration shape are documented in
   <a href="https://github.com/tonyandrewmeyer/cantrip/blob/main/design/CONTEXT_PROVIDERS.md" target="_blank" rel="noopener">design/CONTEXT_PROVIDERS.md</a>.
 </p>
+
 <h2 id="caveats">Caveats</h2>
+
 <ul>
   <li>
     Mentions are local-only context.  Pasting
@@ -252,39 +218,3 @@ does our current design match?</code></pre>
     configuration rather than failing silently.
   </li>
 </ul>
-  </main>
-</div>
-
-<footer class="doc-footer">
-  <div class="doc-footer-inner">
-    <span>Cantrip &mdash; free &amp; open source</span>
-    <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</footer>
-
-<script>
-(function() {
-  var toggle = document.querySelector('.doc-nav-toggle');
-  var links = document.querySelector('.doc-nav-links');
-  if (!toggle || !links) return;
-  toggle.addEventListener('click', function() {
-    var open = links.classList.toggle('open');
-    toggle.classList.toggle('open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-  });
-  links.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      links.classList.remove('open');
-      toggle.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open menu');
-    });
-  });
-})();
-</script>
-
-</body>
-</html>

@@ -1,92 +1,28 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to configure tool permissions &mdash; Cantrip</title>
-<meta name="description" content="Write a .cantrip/permissions.yaml file to allow, ask before, or deny tool calls with glob patterns.">
-<link rel="icon" href="../favicon.png" type="image/png">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
-<link rel="stylesheet" href="docs.css">
-</head>
-<body>
-
-<a href="#main" class="skip-link">Skip to content</a>
-
-<nav class="doc-nav" aria-label="Main">
-  <div class="doc-nav-inner">
-    <a href="../index.html" class="doc-nav-logo">
-      <picture>
-        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
-      <span>Cantrip</span>
-    </a>
-    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="doc-nav-links" id="nav-menu">
-      <a href="index.html" class="current">Docs</a>
-      <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</nav>
-<div class="doc-layout">
-  <aside class="doc-sidebar">
-    <h4>How-to guides</h4>
-    <ul>
-      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
-      <li><a href="howto-improve.html">Improve an existing charm</a></li>
-      <li><a href="howto-export.html">Export transcripts</a></li>
-      <li><a href="howto-light-models.html">Configure light models</a></li>
-      <li><a href="howto-memory.html">Use durable memory</a></li>
-      <li><a href="howto-skills.html">Add a custom skill</a></li>
-      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
-      <li><a href="howto-charm-library.html">Search the charm library</a></li>
-      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
-      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
-      <li><a href="howto-mentions.html">Use @-mention context</a></li>
-      <li><a href="howto-hooks.html">Configure hooks</a></li>
-      <li><a href="howto-undo.html">Undo agent changes</a></li>
-      <li><a href="howto-session-branching.html">Branch a session</a></li>
-      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
-      <li><a href="howto-permissions.html" class="current">Configure tool permissions</a></li>
-      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
-      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
-      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
-      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
-      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
-      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
-      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
-      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
-    </ul>
-    <h4>See also</h4>
-    <ul>
-      <li><a href="reference-cli.html">CLI reference</a></li>
-      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
-    </ul>
-  </aside>
-
-  <main id="main" class="doc-content">
-    <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Configure tool permissions
-    </div>
-
-    <h1>Configure tool permissions</h1>
-    <p class="subtitle">
-      Declare which tool calls, shell commands, and file paths are allowed, require confirmation, or are forbidden.
-    </p>
+---
+title: "How to configure tool permissions — Cantrip"
+description: "Write a .cantrip/permissions.yaml file to allow, ask before, or deny tool calls with glob patterns."
+h1: "Configure tool permissions"
+subtitle: "Declare which tool calls, shell commands, and file paths are allowed, require confirmation, or are forbidden."
+section: howto
+breadcrumb_label: "Configure tool permissions"
+see_also:
+  - label: "CLI reference"
+    href: "reference-cli.html"
+  - label: "How Cantrip works"
+    href: "explanation-architecture.html"
+---
 
 <h2 id="overview">What permissions control</h2>
+
 <p>Cantrip wraps every subagent tool call in a three-layer gate.
 User hooks run first and can mutate or veto calls.
 Governance policies come next &mdash; coarse, category-scoped
 allow/deny/review. Permissions are the declarative
 layer on top, matching the <em>post-hook</em> arguments so a command
 your hook rewrote still sees the right pattern.</p>
+
 <p>Each call resolves to one of three outcomes:</p>
+
 <ul>
   <li><strong><code>allow</code></strong> &mdash; the call proceeds silently.</li>
   <li><strong><code>ask</code></strong> &mdash; the subagent pauses while a CONFIRM
@@ -95,18 +31,24 @@ task surfaces on the queue; the user types <code>yes</code> or
   <li><strong><code>deny</code></strong> &mdash; the call is refused with a clear
 error; the agent sees the denial and can course-correct.</li>
 </ul>
+
 <h2 id="file-locations">File locations</h2>
+
 <p>Permissions are read from two files, composed in order so repo
 rules override user rules when both match:</p>
+
 <ol>
   <li><code>~/.config/cantrip/permissions.yaml</code> &mdash; your
 personal defaults, applied to every charm.</li>
   <li><code>&lt;charm&gt;/.cantrip/permissions.yaml</code> &mdash; the
 per-charm overlay, committed alongside the code.</li>
 </ol>
+
 <p>Both files are optional. When neither exists, the built-in
 defaults (below) still apply.</p>
+
 <h2 id="schema">Schema</h2>
+
 <pre><code>tools:
   "&lt;tool-name-glob&gt;": "allow" | "ask" | "deny"
 
@@ -124,6 +66,7 @@ paths: { ... }
 
 bash_tools:
   - run_command</code></pre>
+
 <p>The three sections match independently; the
 <strong>most restrictive outcome wins</strong> when they disagree
 (<code>deny</code> &gt; <code>ask</code> &gt; <code>allow</code>). Within a
@@ -131,7 +74,9 @@ section, <strong>last-match-wins</strong> &mdash; the later-written
 glob takes effect. Globs use standard Unix shell syntax
 (<code>*</code>, <code>?</code>, <code>[abc]</code>) and are
 case-sensitive.</p>
+
 <h2 id="sections">What each section matches</h2>
+
 <ul>
   <li><strong><code>tools</code></strong> &mdash; globs on the tool name
 (<code>fs_read</code>, <code>juju_deploy</code>, <code>git_*</code>).</li>
@@ -143,7 +88,9 @@ shell-joined before matching.</li>
 <code>file_path</code>, or <code>filename</code> argument of any
 tool call.</li>
 </ul>
+
 <h2 id="example">A typical file</h2>
+
 <pre><code>tools:
   # Shell wrappers always need a second look.
   "run_command": "ask"
@@ -170,8 +117,11 @@ agents:
 tools:
   "fs_write": "deny"
   "charmcraft_*": "deny"</code></pre>
+
 <h2 id="defaults">Built-in defaults</h2>
+
 <p>Even with no file present, Cantrip ships these safe defaults:</p>
+
 <ul>
   <li><code>rm -rf *</code> and <code>rm -fr *</code> &mdash;
 <code>deny</code>.</li>
@@ -181,9 +131,12 @@ tools:
 <code>*/.env</code>) &mdash; <code>deny</code>.</li>
   <li>Everything else &mdash; <code>allow</code>.</li>
 </ul>
+
 <p>Your rules override them because built-ins are composed first
 and your file appends later.</p>
+
 <h2 id="agents">Per-agent overrides</h2>
+
 <p>The <code>agents:</code> block tightens or loosens rules for a
 specific subagent category. Agent names match the task category
 (<code>research</code>, <code>build</code>, <code>deploy</code>,
@@ -191,11 +144,14 @@ specific subagent category. Agent names match the task category
 rules are evaluated <em>after</em> the top-level rules, so a
 later-written <code>agents.research.tools</code> entry overrides
 any earlier global rule.</p>
+
 <h2 id="opencode-compat">Transferring from OpenCode</h2>
+
 <p>The section / outcome shape is deliberately identical to
 OpenCode's <code>opencode.json</code> <code>permission:</code> block,
 so a rule like <code>{"bash": {"*": "ask", "git *": "allow", "rm *":
 "deny"}}</code> carries over one-for-one. The only differences are:</p>
+
 <ul>
   <li>Cantrip's file is YAML, not JSON.</li>
   <li>Cantrip adds a <code>paths</code> section with argument
@@ -203,7 +159,9 @@ globbing for file tools.</li>
   <li>Cantrip's per-agent key is <code>agents:</code> (matching
 subagent categories) rather than a flat scope.</li>
 </ul>
+
 <h2 id="resolving-asks">Resolving an <code>ask</code></h2>
+
 <p>When a subagent hits an <code>ask</code>, a CONFIRM task appears
 in the work-queue widget with the tool name, the reason the rule
 matched, and the command or path at issue. Respond in the chat
@@ -211,11 +169,14 @@ with <code>yes</code> to approve or <code>no</code> to refuse.
 A <code>PERMISSION_DECIDED</code> event lands on the event bus each
 time an <code>ask</code> opens or resolves, so the TUI and Web
 transcripts record the full decision trail.</p>
+
 <p>Approvals are scoped to that single call &mdash; approving
 <code>git push origin main</code> does not approve a later
 <code>git push --force</code>. Edit the rule to
 <code>allow</code> if you want the decision to stick.</p>
+
 <h2 id="what-it-does-not">What permissions do not do</h2>
+
 <ul>
   <li>They do not bypass governance policy. A tool
 category blocked by <code>cantrip.policies.yaml</code> stays
@@ -229,39 +190,3 @@ call fires, not how.</li>
 gated by per-server <code>allowed_tools</code> in
 <code>mcp.yaml</code>.</li>
 </ul>
-  </main>
-</div>
-
-<footer class="doc-footer">
-  <div class="doc-footer-inner">
-    <span>Cantrip &mdash; free &amp; open source</span>
-    <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</footer>
-
-<script>
-(function() {
-  var toggle = document.querySelector('.doc-nav-toggle');
-  var links = document.querySelector('.doc-nav-links');
-  if (!toggle || !links) return;
-  toggle.addEventListener('click', function() {
-    var open = links.classList.toggle('open');
-    toggle.classList.toggle('open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-  });
-  links.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      links.classList.remove('open');
-      toggle.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open menu');
-    });
-  });
-})();
-</script>
-
-</body>
-</html>

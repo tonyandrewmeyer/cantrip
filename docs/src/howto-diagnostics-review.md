@@ -1,86 +1,21 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to run diagnostics and review &mdash; Cantrip</title>
-<meta name="description" content="Use /diagnostics for deterministic linting and /review for prompt-based checks before asking the agent for the next round of changes.">
-<link rel="icon" href="../favicon.png" type="image/png">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
-<link rel="stylesheet" href="docs.css">
-</head>
-<body>
-
-<a href="#main" class="skip-link">Skip to content</a>
-
-<nav class="doc-nav" aria-label="Main">
-  <div class="doc-nav-inner">
-    <a href="../index.html" class="doc-nav-logo">
-      <picture>
-        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
-      <span>Cantrip</span>
-    </a>
-    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="doc-nav-links" id="nav-menu">
-      <a href="index.html" class="current">Docs</a>
-      <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</nav>
-<div class="doc-layout">
-  <aside class="doc-sidebar">
-    <h4>How-to guides</h4>
-    <ul>
-      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
-      <li><a href="howto-improve.html">Improve an existing charm</a></li>
-      <li><a href="howto-export.html">Export transcripts</a></li>
-      <li><a href="howto-light-models.html">Configure light models</a></li>
-      <li><a href="howto-memory.html">Use durable memory</a></li>
-      <li><a href="howto-skills.html">Add a custom skill</a></li>
-      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
-      <li><a href="howto-charm-library.html">Search the charm library</a></li>
-      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
-      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
-      <li><a href="howto-mentions.html">Use @-mention context</a></li>
-      <li><a href="howto-hooks.html">Configure hooks</a></li>
-      <li><a href="howto-undo.html">Undo agent changes</a></li>
-      <li><a href="howto-session-branching.html">Branch a session</a></li>
-      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
-      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
-      <li><a href="howto-diagnostics-review.html" class="current">Run diagnostics and review</a></li>
-      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
-      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
-      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
-      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
-      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
-      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
-      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
-    </ul>
-    <h4>See also</h4>
-    <ul>
-      <li><a href="reference-cli.html#review-checks">CLI reference &mdash; review checks</a></li>
-      <li><a href="reference-cli.html#project-diagnostics">CLI reference &mdash; diagnostics</a></li>
-      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
-    </ul>
-  </aside>
-
-  <main id="main" class="doc-content">
-    <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Run diagnostics and review
-    </div>
-
-    <h1>Run diagnostics and review</h1>
-    <p class="subtitle">
-      Two complementary inspectors: <code>/diagnostics</code> runs the deterministic linters, <code>/review</code> runs prompt-based checks for the &ldquo;an experienced human would notice this&rdquo; class of issues.
-    </p>
+---
+title: "How to run diagnostics and review — Cantrip"
+description: "Use /diagnostics for deterministic linting and /review for prompt-based checks before asking the agent for the next round of changes."
+h1: "Run diagnostics and review"
+subtitle: "Two complementary inspectors: <code>/diagnostics</code> runs the deterministic linters, <code>/review</code> runs prompt-based checks for the &ldquo;an experienced human would notice this&rdquo; class of issues."
+section: howto
+breadcrumb_label: "Run diagnostics and review"
+see_also:
+  - label: "CLI reference &mdash; review checks"
+    href: "reference-cli.html#review-checks"
+  - label: "CLI reference &mdash; diagnostics"
+    href: "reference-cli.html#project-diagnostics"
+  - label: "Configure tool permissions"
+    href: "howto-permissions.html"
+---
 
 <h2 id="overview">Two surfaces, two scopes</h2>
+
 <table>
   <thead>
     <tr><th></th><th><code>/diagnostics</code></th><th><code>/review</code></th></tr>
@@ -108,12 +43,15 @@
     </tr>
   </tbody>
 </table>
+
 <p>
   Both run against the active charm, not the whole repo.  Both
   cap their output so a noisy charm doesn't blow the chat
   panel.
 </p>
+
 <h2 id="diagnostics">/diagnostics</h2>
+
 <pre><code><span class="prompt">cantrip&gt;</span> /diagnostics
 charmlint:
   ERROR    metadata.yaml:5  unknown integration interface "promethus"
@@ -122,6 +60,7 @@ ruff:
   F401     src/charm.py:1   unused import "ops.testing"
 ty:
   &lt;clean&gt;</code></pre>
+
 <p>
   Issues are grouped by tool and severity.  Output is capped at
   ~1500 tokens; over-budget charms get a
@@ -131,13 +70,16 @@ ty:
   <code>--refresh</code> to bust the cache after editing files
   outside the agent.
 </p>
+
 <p>
   Tools that aren't installed are listed as
   <code>[skipped]</code> rather than treated as silent passes
   &mdash; a missing <code>ty</code> doesn't look the same as
   &ldquo;all clear.&rdquo;
 </p>
+
 <h3 id="pre-turn">Diagnostics also run pre-turn</h3>
+
 <p>
   The same aggregator runs automatically when the autonomous
   loop starts a BUILD or DEBUG subagent, so the agent begins
@@ -146,14 +88,18 @@ ty:
   &ldquo;here are the four type errors I'll fix&rdquo;
   rather than &ldquo;let me run the linter.&rdquo;
 </p>
+
 <p>
   The <code>@problems</code>
   <a href="howto-mentions.html">mention</a> exposes the same
   cache, so you can drop current diagnostics into a steering
   message without re-running anything:
 </p>
+
 <pre><code><span class="prompt">cantrip&gt;</span> tighten the type errors first: @problems</code></pre>
+
 <h2 id="review">/review</h2>
+
 <p>
   <code>/review</code> runs every loaded prompt-based Check.
   Each Check is one structured LLM call &mdash; the
@@ -162,6 +108,7 @@ ty:
   &mdash; so the report is uniform regardless of which model
   you're using.
 </p>
+
 <pre><code><span class="prompt">cantrip&gt;</span> /review
 FAILED  charm-readme-coherence  warning
   README claims a `prometheus` relation but metadata.yaml only
@@ -174,6 +121,7 @@ Deterministic checks
 charmlint: 1 error in metadata.yaml
 ruff:      2 issues across 1 file
 ty:        clean</code></pre>
+
 <p>
   Failures appear first, then errors (couldn't reach a
   verdict), then skipped (no matching files), then passes.
@@ -182,10 +130,13 @@ ty:        clean</code></pre>
   &ldquo;is the code well-formed?&rdquo; and &ldquo;does it
   hang together?&rdquo;
 </p>
+
 <h3 id="default-checks">What ships by default</h3>
+
 <p>
   Three Checks are bundled:
 </p>
+
 <dl>
   <dt><code>charm-readme-coherence</code></dt>
   <dd>
@@ -206,16 +157,20 @@ ty:        clean</code></pre>
     <code>juju secrets</code>.
   </dd>
 </dl>
+
 <h3 id="custom-checks">Add your own Check</h3>
+
 <p>
   Checks are loaded from three layered locations (later wins
   on name conflict):
 </p>
+
 <ol>
   <li>Bundled defaults shipped with Cantrip.</li>
   <li><code>~/.config/cantrip/checks/*.md</code> &mdash; user scope.</li>
   <li><code>&lt;charm&gt;/.cantrip/checks/*.md</code> &mdash; repo scope.</li>
 </ol>
+
 <p>
   Each Check is YAML frontmatter plus a markdown body.  See
   <a href="https://github.com/tonyandrewmeyer/cantrip/blob/main/design/CHECKS.md" target="_blank" rel="noopener">design/CHECKS.md</a>
@@ -225,7 +180,9 @@ ty:        clean</code></pre>
   experienced human would notice this is off but you can't
   write it as a regex.&rdquo;
 </p>
+
 <h2 id="workflow">A typical workflow</h2>
+
 <ol>
   <li>
     <strong>Mid-build</strong> &mdash; let the autonomous loop's
@@ -246,7 +203,9 @@ ty:        clean</code></pre>
     repo-scoped Checks you've added.
   </li>
 </ol>
+
 <h2 id="caveats">Caveats</h2>
+
 <ul>
   <li>
     <code>/review</code> calls the LLM once per loaded Check.
@@ -270,39 +229,3 @@ ty:        clean</code></pre>
     than latency.
   </li>
 </ul>
-  </main>
-</div>
-
-<footer class="doc-footer">
-  <div class="doc-footer-inner">
-    <span>Cantrip &mdash; free &amp; open source</span>
-    <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</footer>
-
-<script>
-(function() {
-  var toggle = document.querySelector('.doc-nav-toggle');
-  var links = document.querySelector('.doc-nav-links');
-  if (!toggle || !links) return;
-  toggle.addEventListener('click', function() {
-    var open = links.classList.toggle('open');
-    toggle.classList.toggle('open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-  });
-  links.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      links.classList.remove('open');
-      toggle.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open menu');
-    });
-  });
-})();
-</script>
-
-</body>
-</html>

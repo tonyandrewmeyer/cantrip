@@ -1,94 +1,31 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to define custom slash commands &mdash; Cantrip</title>
-<meta name="description" content="Drop a markdown file into .cantrip/commands/ and it becomes a new slash verb with YAML frontmatter, positional args, file includes, and shell expansion.">
-<link rel="icon" href="../favicon.png" type="image/png">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
-<link rel="stylesheet" href="docs.css">
-</head>
-<body>
-
-<a href="#main" class="skip-link">Skip to content</a>
-
-<nav class="doc-nav" aria-label="Main">
-  <div class="doc-nav-inner">
-    <a href="../index.html" class="doc-nav-logo">
-      <picture>
-        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
-      <span>Cantrip</span>
-    </a>
-    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="doc-nav-links" id="nav-menu">
-      <a href="index.html" class="current">Docs</a>
-      <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</nav>
-<div class="doc-layout">
-  <aside class="doc-sidebar">
-    <h4>How-to guides</h4>
-    <ul>
-      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
-      <li><a href="howto-improve.html">Improve an existing charm</a></li>
-      <li><a href="howto-export.html">Export transcripts</a></li>
-      <li><a href="howto-light-models.html">Configure light models</a></li>
-      <li><a href="howto-memory.html">Use durable memory</a></li>
-      <li><a href="howto-skills.html">Add a custom skill</a></li>
-      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
-      <li><a href="howto-charm-library.html">Search the charm library</a></li>
-      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
-      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
-      <li><a href="howto-mentions.html">Use @-mention context</a></li>
-      <li><a href="howto-hooks.html">Configure hooks</a></li>
-      <li><a href="howto-undo.html">Undo agent changes</a></li>
-      <li><a href="howto-session-branching.html">Branch a session</a></li>
-      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
-      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
-      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
-      <li><a href="howto-custom-commands.html" class="current">Define custom slash commands</a></li>
-      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
-      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
-      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
-      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
-      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
-      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
-    </ul>
-    <h4>See also</h4>
-    <ul>
-      <li><a href="reference-cli.html">CLI reference</a></li>
-      <li><a href="howto-permissions.html">Tool permissions</a></li>
-    </ul>
-  </aside>
-
-  <main id="main" class="doc-content">
-    <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Define custom slash commands
-    </div>
-
-    <h1>Define custom slash commands</h1>
-    <p class="subtitle">
-      Drop a markdown file into <code>.cantrip/commands/</code> and the filename becomes a new slash verb.
-    </p>
+---
+title: "How to define custom slash commands — Cantrip"
+description: "Drop a markdown file into .cantrip/commands/ and it becomes a new slash verb with YAML frontmatter, positional args, file includes, and shell expansion."
+h1: "Define custom slash commands"
+subtitle: "Drop a markdown file into <code>.cantrip/commands/</code> and the filename becomes a new slash verb."
+section: howto
+breadcrumb_label: "Define custom slash commands"
+see_also:
+  - label: "CLI reference"
+    href: "reference-cli.html"
+  - label: "Tool permissions"
+    href: "howto-permissions.html"
+---
 
 <h2 id="overview">The idea</h2>
+
 <p>Some prompts come up again and again &mdash; "triage this issue",
 "walk the relation between these two charms", "generate a
 release note from the last five commits". Typing the same 200
 characters every time gets old fast. Custom slash commands let a
 charm team ship those prompts as ordinary markdown files,
 discoverable by every session that opens the charm.</p>
+
 <h2 id="file-locations">Where Cantrip looks</h2>
+
 <p>Two locations, read on every agent startup; the repo wins when
 verbs collide:</p>
+
 <ol>
   <li><code>~/.config/cantrip/commands/*.md</code> &mdash; your personal
 commands, available across every charm.</li>
@@ -96,13 +33,17 @@ commands, available across every charm.</li>
 commands, committed alongside the code so every team
 member gets them automatically.</li>
 </ol>
+
 <p>The filename becomes the slash verb: <code>relation-check.md</code>
 registers <code>/relation-check</code>. Filenames must match
 <code>[a-z0-9][a-z0-9_-]*</code>; anything else is rejected with
 a clear error.</p>
+
 <h2 id="example">A working example</h2>
+
 <p>Save this as <code>.cantrip/commands/relation-check.md</code> in
 a charm:</p>
+
 <pre><code>---
 description: Inspect a relation on a deployed charm
 agent: primary
@@ -114,14 +55,19 @@ relations according to Juju:
 
 Walk through what the relation is carrying, whether the
 endpoint is bound, and whether the remote side looks healthy.</code></pre>
+
 <p>Then, in any Cantrip session for that charm:</p>
+
 <pre><code><span class="prompt">&gt;</span> /relation-check redis</code></pre>
+
 <p>Cantrip substitutes <code>$1</code> with <code>redis</code>, runs
 <code>juju show-unit redis/0</code>, folds the output into the
 prompt, and hands the whole thing to the agent. The agent sees
 a fully-hydrated message &mdash; same tools, same context, no
 special case.</p>
+
 <h2 id="schema">Frontmatter schema</h2>
+
 <pre><code>---
 description: &lt;one-line summary; shown in /help and autocomplete&gt;
 agent: primary | research | build | deploy | test | debug | infra
@@ -129,6 +75,7 @@ model: &lt;optional model override&gt;
 subtask: &lt;optional bool; default false&gt;
 ---
 &lt;markdown prompt template&gt;</code></pre>
+
 <dl>
   <dt><code>description</code></dt>
   <dd>One-liner shown in <code>/help</code> and the autocomplete
@@ -150,14 +97,18 @@ task and a subagent of that category picks it up.</dd>
 <code>primary</code>. Useful when you want a command to run
 in the background without pausing the current conversation.</dd>
 </dl>
+
 <p>Unknown frontmatter keys raise a clear error on load &mdash; no
 silent "typed a key wrong, command gets wrong defaults".</p>
+
 <h2 id="placeholders">Placeholders</h2>
+
 <p>The body is plain markdown with four substitution shapes:</p>
+
 <ul>
   <li><strong><code>$ARGUMENTS</code></strong> &mdash; every token after
 the verb, verbatim.</li>
-  <li><strong><code>$1</code>, <code>$2</code>, &hellip;</strong> &mdash; positional
+  <li><strong><code>$1</code>, <code>$2</code>, …</strong> &mdash; positional
 arguments, split with <a href="https://docs.python.org/3/library/shlex.html" target="_blank" rel="noopener"><code>shlex</code></a>.
 Unset positionals expand to the empty string.</li>
   <li><strong><code>@path</code></strong> &mdash; contents of a
@@ -170,15 +121,19 @@ the <a href="howto-permissions.html">permission
 policy</a> &mdash; a <code>deny</code> refuses the command
 and an <code>ask</code> parks on the CONFIRM surface.</li>
 </ul>
+
 <p>Evaluation order is fixed: arguments first, then
 <code>@path</code>, then <code>!`cmd` ``</code>. This means a
 shell command can carry a filled-in positional argument, and a
 file reference can include a path built from arguments. It also
 means an earlier expansion cannot accidentally leak content that
 gets re-expanded as a placeholder.</p>
+
 <h2 id="permissions">Interaction with permissions</h2>
+
 <p>Shell expansion runs through the same policy the subagent uses.
 That has two practical consequences:</p>
+
 <ul>
   <li>A command that tries to <code>!`rm -rf *`</code> is denied
 by the built-in defaults; the user does not have to be
@@ -188,8 +143,11 @@ pauses for approval by default (because <code>git push *</code>
 asks under the defaults). Authors can add a more specific
 <code>allow</code> rule if they want to skip the prompt.</li>
 </ul>
+
 <h2 id="dispatch">Dispatch semantics</h2>
+
 <p>When you type a custom verb Cantrip:</p>
+
 <ol>
   <li>Looks up the command in the registry loaded at session
 start.</li>
@@ -203,10 +161,13 @@ typed it. The answer lands in chat.</li>
 shows up in the task panel; the agent continues the
 foreground conversation unchanged.</li>
 </ol>
+
 <p>The catalogue (<code>/help</code>, slash-command autocomplete,
 the CLI startup banner) picks up every loaded command automatically.
 No config entry required.</p>
+
 <h2 id="troubleshooting">Troubleshooting</h2>
+
 <ul>
   <li><em>"invalid command name"</em> &mdash; filename must be
 lowercase, start with a letter/digit, and contain only
@@ -222,39 +183,3 @@ asks about) the specific shape.</li>
 the agent log; the loader logs a warning per bad file
 rather than halting discovery.</li>
 </ul>
-  </main>
-</div>
-
-<footer class="doc-footer">
-  <div class="doc-footer-inner">
-    <span>Cantrip &mdash; free &amp; open source</span>
-    <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</footer>
-
-<script>
-(function() {
-  var toggle = document.querySelector('.doc-nav-toggle');
-  var links = document.querySelector('.doc-nav-links');
-  if (!toggle || !links) return;
-  toggle.addEventListener('click', function() {
-    var open = links.classList.toggle('open');
-    toggle.classList.toggle('open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-  });
-  links.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      links.classList.remove('open');
-      toggle.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open menu');
-    });
-  });
-})();
-</script>
-
-</body>
-</html>

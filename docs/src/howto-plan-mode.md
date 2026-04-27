@@ -1,87 +1,22 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to use plan mode &mdash; Cantrip</title>
-<meta name="description" content="Switch the session into a read-only stance with /plan, produce a Proposed changes summary, then flip to /build to execute.">
-<link rel="icon" href="../favicon.png" type="image/png">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
-<link rel="stylesheet" href="docs.css">
-</head>
-<body>
-
-<a href="#main" class="skip-link">Skip to content</a>
-
-<nav class="doc-nav" aria-label="Main">
-  <div class="doc-nav-inner">
-    <a href="../index.html" class="doc-nav-logo">
-      <picture>
-        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
-      <span>Cantrip</span>
-    </a>
-    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="doc-nav-links" id="nav-menu">
-      <a href="index.html" class="current">Docs</a>
-      <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</nav>
-<div class="doc-layout">
-  <aside class="doc-sidebar">
-    <h4>How-to guides</h4>
-    <ul>
-      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
-      <li><a href="howto-improve.html">Improve an existing charm</a></li>
-      <li><a href="howto-export.html">Export transcripts</a></li>
-      <li><a href="howto-light-models.html">Configure light models</a></li>
-      <li><a href="howto-memory.html">Use durable memory</a></li>
-      <li><a href="howto-skills.html">Add a custom skill</a></li>
-      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
-      <li><a href="howto-charm-library.html">Search the charm library</a></li>
-      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
-      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
-      <li><a href="howto-mentions.html">Use @-mention context</a></li>
-      <li><a href="howto-hooks.html">Configure hooks</a></li>
-      <li><a href="howto-undo.html">Undo agent changes</a></li>
-      <li><a href="howto-session-branching.html">Branch a session</a></li>
-      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
-      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
-      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
-      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
-      <li><a href="howto-plan-mode.html" class="current">Use plan mode</a></li>
-      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
-      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
-      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
-      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
-      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
-    </ul>
-    <h4>See also</h4>
-    <ul>
-      <li><a href="reference-cli.html">CLI reference</a></li>
-      <li><a href="howto-permissions.html">Tool permissions</a></li>
-    </ul>
-  </aside>
-
-  <main id="main" class="doc-content">
-    <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Use plan mode
-    </div>
-
-    <h1>Use plan mode</h1>
-    <p class="subtitle">
-      Walk the agent through a change without side effects, then flip the switch to execute.
-    </p>
+---
+title: "How to use plan mode — Cantrip"
+description: "Switch the session into a read-only stance with /plan, produce a Proposed changes summary, then flip to /build to execute."
+h1: "Use plan mode"
+subtitle: "Walk the agent through a change without side effects, then flip the switch to execute."
+section: howto
+breadcrumb_label: "Use plan mode"
+see_also:
+  - label: "CLI reference"
+    href: "reference-cli.html"
+  - label: "Tool permissions"
+    href: "howto-permissions.html"
+---
 
 <h2 id="when-to-use">When to use it</h2>
+
 <p>Plan mode is the right fit for three moments a charm author
 routinely hits:</p>
+
 <ul>
   <li><strong>Design reviews.</strong> You want the agent to read
 the code, look at Juju, and explain what it <em>would</em> do
@@ -92,10 +27,12 @@ through a build without risking stale state on-screen.</li>
 which refactor is right; plan mode lets the agent propose
 each one on its own before anything is written.</li>
 </ul>
+
 <h2 id="how-to-use">How to use it</h2>
+
 <pre><code><span class="prompt">&gt;</span> /plan
 **Plan mode on.**  I will read the code, Juju state, git history,
-and web, and produce a *Proposed changes* summary &mdash; but I won't
+and web, and produce a *Proposed changes* summary — but I won't
 edit files, run shells, or deploy.  Flip back with `/build`.
 
 <span class="prompt">&gt;</span> Reshape src/charm.py to use collect-status.
@@ -111,13 +48,16 @@ edit files, run shells, or deploy.  Flip back with `/build`.
 
 <span class="prompt">&gt;</span> /build
 **Build mode on.**  Every tool is available again.  Resumed the
-plan's *Proposed changes* section as context &mdash; the next turn
+plan's *Proposed changes* section as context — the next turn
 will execute against it.</code></pre>
+
 <h2 id="read-only-tools">What plan mode lets through</h2>
+
 <p>Plan mode is implemented as a stricter
 <a href="howto-permissions.html">permission policy</a> layered on
 top of whatever you already have configured. The allow-list is
 intentionally narrow:</p>
+
 <ul>
   <li>File reads: <code>read_file</code>, <code>list_directory</code>,
 <code>glob</code>, <code>grep</code>.</li>
@@ -133,6 +73,7 @@ intentionally narrow:</p>
 only).</li>
   <li>Network: <code>web_search</code>, <code>web_fetch</code>.</li>
 </ul>
+
 <p>Every other tool returns a refused <code>ToolResult</code> with
 a clear "Plan mode &mdash; <em>tool</em> is not available"
 message so the LLM knows to stop rather than retrying. MCP-provided
@@ -140,7 +81,9 @@ tools bypass plan mode because they are gated by their own
 <a href="howto-mcp.html">per-server allow-lists</a> and are not
 inherently destructive; if you want to tighten those too, tighten
 the MCP config.</p>
+
 <h2 id="proposed-changes">Capturing Proposed changes</h2>
+
 <p>While plan mode is on, Cantrip injects a short guidance block
 into the system prompt asking the agent to end each response with
 a <code>## Proposed changes</code> section. When the agent
@@ -149,14 +92,18 @@ produces one, Cantrip captures the body into
 splices that summary back in as an assistant-role message so the
 agent picks up where the plan left off &mdash; no re-planning from
 scratch, no re-reading files.</p>
+
 <p>The heading is recognised case-insensitively at any heading
 depth (<code>##</code> through <code>######</code>). A response
 without the section leaves whatever summary was captured before
 untouched, so a mid-plan clarification question does not blow away
 the earlier plan.</p>
+
 <h2 id="status-indicator">Status indicator</h2>
+
 <p>Every surface that shows a status bar tints it while plan mode
 is active:</p>
+
 <ul>
   <li>The TUI status bar gains a <code>-plan-mode</code> CSS
 class backed by the theme's <code>$warning-darken-2</code>
@@ -166,7 +113,9 @@ colour, plus a literal "plan mode" badge on the left.</li>
 field, so any surface that reads it picks up the signal
 without extra wiring.</li>
 </ul>
+
 <h2 id="interaction-with-other-guards">Interaction with other guards</h2>
+
 <ul>
   <li><strong>Permissions.</strong> The plan overlay composes
 onto your existing rules with
@@ -187,7 +136,9 @@ command</a> that uses <code>!`cmd`</code> shell expansion
 still hits the permission gate; plan mode makes that gate
 stricter.</li>
 </ul>
+
 <h2 id="what-it-is-not">What plan mode is <em>not</em></h2>
+
 <ul>
   <li>Not a git branch. Plan mode doesn't touch your tree; it
 prevents tools from touching it.</li>
@@ -197,39 +148,3 @@ Cantrip drops the flag back to build mode.</li>
 mode is on see the same permission stack; they can't
 smuggle in a write by running on the work queue.</li>
 </ul>
-  </main>
-</div>
-
-<footer class="doc-footer">
-  <div class="doc-footer-inner">
-    <span>Cantrip &mdash; free &amp; open source</span>
-    <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</footer>
-
-<script>
-(function() {
-  var toggle = document.querySelector('.doc-nav-toggle');
-  var links = document.querySelector('.doc-nav-links');
-  if (!toggle || !links) return;
-  toggle.addEventListener('click', function() {
-    var open = links.classList.toggle('open');
-    toggle.classList.toggle('open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-  });
-  links.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      links.classList.remove('open');
-      toggle.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open menu');
-    });
-  });
-})();
-</script>
-
-</body>
-</html>

@@ -1,92 +1,28 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to branch a session &mdash; Cantrip</title>
-<meta name="description" content="Fork a Cantrip session at any prior turn &mdash; explore alternatives, recover from a bad steering message, compare paths &mdash; without losing the work that came before.">
-<link rel="icon" href="../favicon.png" type="image/png">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
-<link rel="stylesheet" href="docs.css">
-</head>
-<body>
-
-<a href="#main" class="skip-link">Skip to content</a>
-
-<nav class="doc-nav" aria-label="Main">
-  <div class="doc-nav-inner">
-    <a href="../index.html" class="doc-nav-logo">
-      <picture>
-        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
-      <span>Cantrip</span>
-    </a>
-    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="doc-nav-links" id="nav-menu">
-      <a href="index.html" class="current">Docs</a>
-      <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</nav>
-<div class="doc-layout">
-  <aside class="doc-sidebar">
-    <h4>How-to guides</h4>
-    <ul>
-      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
-      <li><a href="howto-improve.html">Improve an existing charm</a></li>
-      <li><a href="howto-export.html">Export transcripts</a></li>
-      <li><a href="howto-light-models.html">Configure light models</a></li>
-      <li><a href="howto-memory.html">Use durable memory</a></li>
-      <li><a href="howto-skills.html">Add a custom skill</a></li>
-      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
-      <li><a href="howto-charm-library.html">Search the charm library</a></li>
-      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
-      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
-      <li><a href="howto-mentions.html">Use @-mention context</a></li>
-      <li><a href="howto-hooks.html">Configure hooks</a></li>
-      <li><a href="howto-undo.html">Undo agent changes</a></li>
-      <li><a href="howto-session-branching.html" class="current">Branch a session</a></li>
-      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
-      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
-      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
-      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
-      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
-      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
-      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
-      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
-      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
-      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
-    </ul>
-    <h4>See also</h4>
-    <ul>
-      <li><a href="howto-undo.html">Undo agent changes</a></li>
-      <li><a href="reference-cli.html#branching">CLI reference &mdash; branch and tree</a></li>
-      <li><a href="howto-export.html">Export transcripts</a></li>
-    </ul>
-  </aside>
-
-  <main id="main" class="doc-content">
-    <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Branch a session
-    </div>
-
-    <h1>Branch a session</h1>
-    <p class="subtitle">
-      Fork at any prior turn so dead ends stay reachable, alternative paths run side by side, and a misdirected steering message no longer means losing the work it sat on top of.
-    </p>
+---
+title: "How to branch a session — Cantrip"
+description: "Fork a Cantrip session at any prior turn — explore alternatives, recover from a bad steering message, compare paths — without losing the work that came before."
+h1: "Branch a session"
+subtitle: "Fork at any prior turn so dead ends stay reachable, alternative paths run side by side, and a misdirected steering message no longer means losing the work it sat on top of."
+section: howto
+breadcrumb_label: "Branch a session"
+see_also:
+  - label: "Undo agent changes"
+    href: "howto-undo.html"
+  - label: "CLI reference &mdash; branch and tree"
+    href: "reference-cli.html#branching"
+  - label: "Export transcripts"
+    href: "howto-export.html"
+---
 
 <h2 id="overview">/undo deletes, /branch rewinds</h2>
+
 <p>
   Cantrip stores the conversation as a tree, not a flat list.
   Every assistant turn carries the id of the turn it replied to,
   and the active session is just &ldquo;which leaf is currently
   live.&rdquo;
 </p>
+
 <p>
   <a href="howto-undo.html"><code>/undo</code></a> walks back by
   <em>removing</em> rows: the messages disappear from history and
@@ -94,6 +30,7 @@
   Use it when the last turn was wrong and you want the alternate
   reality where it never happened.
 </p>
+
 <p>
   <code>/branch</code> walks back without removing anything: the
   session pointer moves to a prior turn, but every turn that
@@ -102,7 +39,9 @@
   <em>or</em> might be salvageable, and you want both options
   available later.
 </p>
+
 <h2 id="quick">Quick reference</h2>
+
 <table>
   <thead>
     <tr><th>Command</th><th>What it does</th></tr>
@@ -126,28 +65,35 @@
     </tr>
   </tbody>
 </table>
+
 <h2 id="recover">Recover from a bad steering message</h2>
+
 <p>
   You typed &ldquo;use Path B for this Flask workload&rdquo; and
   the agent dutifully started scaffolding a Path B charm even
   though you meant Path A.  Three turns later you realise the
   mistake.
 </p>
+
 <pre><code><span class="prompt">cantrip&gt;</span> /branch
 Forked before turn 14 (your last user message).
 Active branch: turn 13 &mdash; &ldquo;Looks good, go ahead.&rdquo;</code></pre>
+
 <p>
   The Path B work didn't disappear &mdash; it's still on the old
   branch.  Your next user message extends the active branch
   from turn 13.  If you ever want to inspect the abandoned
   Path B exploration, <code>/tree</code> will show it.
 </p>
+
 <h2 id="explore">Explore alternatives in parallel</h2>
+
 <p>
   For a charm where the substrate or relation graph has more
   than one defensible answer, branching lets you walk both
   paths and compare them rather than picking blind.
 </p>
+
 <ol>
   <li>Drive the agent down option A as a normal session.</li>
   <li>Inspect the result, then <code>/branch &lt;id&gt;</code>
@@ -158,29 +104,37 @@ Active branch: turn 13 &mdash; &ldquo;Looks good, go ahead.&rdquo;</code></pre>
   <li>Pick one as the active branch; export the other for
     reference if it had useful artefacts.</li>
 </ol>
+
 <pre><code><span class="prompt">cantrip&gt;</span> /tree
 Session 4f8a&hellip; (charm: my-flask)
 * turn 18 &mdash; &ldquo;Run acceptance tests&rdquo; (Path B branch)
   turn 25 &mdash; &ldquo;Add ingress integration&rdquo; (Path A branch)</code></pre>
+
 <p>
   Press Enter on a row in the TUI picker to dispatch
   <code>/branch &lt;id&gt;</code> for that turn.  Escape leaves
   the active branch alone.
 </p>
+
 <h2 id="export">Export an off-branch path</h2>
+
 <p>
   Branching changes which turns are live, not which turns exist.
   Every leaf is exportable by id even after the head moves
   elsewhere:
 </p>
+
 <pre><code><span class="prompt">$</span> cantrip export-transcript ./my-flask --branch t-25 --format html
 Wrote transcript_t-25.html (Path A exploration, 18 turns).</code></pre>
+
 <p>
   Without <code>--branch</code>, exports follow the currently
   active branch, so a forked session exports only the active
   path by default.
 </p>
+
 <h2 id="snapshots">Snapshots, undo, and branches together</h2>
+
 <p>
   Every user turn takes a working-tree snapshot before it
   executes (unless <code>--no-snapshots</code> /
@@ -188,6 +142,7 @@ Wrote transcript_t-25.html (Path A exploration, 18 turns).</code></pre>
   snapshots back <em>both</em> <code>/undo</code> and
   <code>/branch</code>:
 </p>
+
 <ul>
   <li><strong><code>/undo</code></strong> restores the snapshot
     and deletes the conversation row.</li>
@@ -195,13 +150,16 @@ Wrote transcript_t-25.html (Path A exploration, 18 turns).</code></pre>
     snapshot of the target turn and leaves every existing
     conversation row in place.</li>
 </ul>
+
 <p>
   The snapshot repo lives at
   <code>$XDG_STATE_HOME/cantrip/snapshots/&lt;hash&gt;/</code>,
   outside the charm tree, so <code>git clean -fdx</code> on the
   charm cannot wipe out your branch history.
 </p>
+
 <h2 id="caveats">Caveats</h2>
+
 <ul>
   <li>
     Branching is a session-local feature.  Off-branch turns
@@ -227,39 +185,3 @@ Wrote transcript_t-25.html (Path A exploration, 18 turns).</code></pre>
     empty.
   </li>
 </ul>
-  </main>
-</div>
-
-<footer class="doc-footer">
-  <div class="doc-footer-inner">
-    <span>Cantrip &mdash; free &amp; open source</span>
-    <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</footer>
-
-<script>
-(function() {
-  var toggle = document.querySelector('.doc-nav-toggle');
-  var links = document.querySelector('.doc-nav-links');
-  if (!toggle || !links) return;
-  toggle.addEventListener('click', function() {
-    var open = links.classList.toggle('open');
-    toggle.classList.toggle('open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-  });
-  links.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      links.classList.remove('open');
-      toggle.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open menu');
-    });
-  });
-})();
-</script>
-
-</body>
-</html>

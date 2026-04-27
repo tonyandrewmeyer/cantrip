@@ -1,89 +1,25 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to use architect mode &mdash; Cantrip</title>
-<meta name="description" content="Split each agent turn into a propose-then-edit pair: a strong architect model designs the change, a cheap editor model emits the tool calls.">
-<link rel="icon" href="../favicon.png" type="image/png">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
-<link rel="stylesheet" href="docs.css">
-</head>
-<body>
-
-<a href="#main" class="skip-link">Skip to content</a>
-
-<nav class="doc-nav" aria-label="Main">
-  <div class="doc-nav-inner">
-    <a href="../index.html" class="doc-nav-logo">
-      <picture>
-        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
-      <span>Cantrip</span>
-    </a>
-    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="doc-nav-links" id="nav-menu">
-      <a href="index.html" class="current">Docs</a>
-      <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</nav>
-<div class="doc-layout">
-  <aside class="doc-sidebar">
-    <h4>How-to guides</h4>
-    <ul>
-      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
-      <li><a href="howto-improve.html">Improve an existing charm</a></li>
-      <li><a href="howto-export.html">Export transcripts</a></li>
-      <li><a href="howto-light-models.html">Configure light models</a></li>
-      <li><a href="howto-memory.html">Use durable memory</a></li>
-      <li><a href="howto-skills.html">Add a custom skill</a></li>
-      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
-      <li><a href="howto-charm-library.html">Search the charm library</a></li>
-      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
-      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
-      <li><a href="howto-mentions.html">Use @-mention context</a></li>
-      <li><a href="howto-hooks.html">Configure hooks</a></li>
-      <li><a href="howto-undo.html">Undo agent changes</a></li>
-      <li><a href="howto-session-branching.html">Branch a session</a></li>
-      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
-      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
-      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
-      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
-      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
-      <li><a href="howto-architect-mode.html" class="current">Use architect mode</a></li>
-      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
-      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
-      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
-      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
-    </ul>
-    <h4>See also</h4>
-    <ul>
-      <li><a href="reference-cli.html">CLI reference</a></li>
-      <li><a href="howto-light-models.html">Light models</a></li>
-      <li><a href="explanation-race.html">Multi-model patterns</a></li>
-    </ul>
-  </aside>
-
-  <main id="main" class="doc-content">
-    <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Use architect mode
-    </div>
-
-    <h1>Use architect mode</h1>
-    <p class="subtitle">
-      Spend on thinking once per turn, edit on a cheap model.
-    </p>
+---
+title: "How to use architect mode — Cantrip"
+description: "Split each agent turn into a propose-then-edit pair: a strong architect model designs the change, a cheap editor model emits the tool calls."
+h1: "Use architect mode"
+subtitle: "Spend on thinking once per turn, edit on a cheap model."
+section: howto
+breadcrumb_label: "Use architect mode"
+see_also:
+  - label: "CLI reference"
+    href: "reference-cli.html"
+  - label: "Light models"
+    href: "howto-light-models.html"
+  - label: "Multi-model patterns"
+    href: "explanation-race.html"
+---
 
 <h2 id="when-to-use">When to use it</h2>
+
 <p>Architect mode is the right fit when an architecture call has to
 happen but the actual edits are mechanical. Three concrete
 moments:</p>
+
 <ul>
   <li><strong>Long BUILD sessions.</strong> The agent will spend a
 lot of tool calls on file edits whose intent is already
@@ -98,7 +34,9 @@ explains where, the editor applies it.</li>
 <code>--print</code>, every iteration runs the architect
 once and the editor as many times as the diff needs.</li>
 </ul>
+
 <h2 id="how-to-use">How to use it</h2>
+
 <pre><code><span class="prompt">&gt;</span> /architect
 **Architect mode on.**  Architect: `claude/claude-opus-4-7` &mdash;
 Editor: `claude/claude-haiku-4-5-20251001`.  Each turn now runs as
@@ -118,17 +56,24 @@ transcript ...
 
 <span class="prompt">&gt;</span> /architect off
 **Architect mode off.**  Single-model conversation resumed.</code></pre>
+
 <p>Override the editor with a second token in the slash command:</p>
+
 <pre><code><span class="prompt">&gt;</span> /architect on gemini/gemini-3-flash-preview
 <span class="prompt">&gt;</span> /architect on gemini             # provider only; uses the default model
 <span class="prompt">&gt;</span> /architect on claude/claude-haiku-4-5-20251001</code></pre>
+
 <p>At session start, the same options live on the CLI:</p>
+
 <pre><code>$ cantrip run --architect .
 $ cantrip run --architect --editor-provider claude --editor-model claude-haiku-4-5-20251001 .
 $ cantrip run --print --ralph 5 --architect "add ops-tracing to this charm"</code></pre>
+
 <h2 id="how-it-works">How it works</h2>
+
 <p>When architect mode is on, every LLM call inside the
 conversation loop runs as two passes:</p>
+
 <ol>
   <li><strong>Architect pass.</strong> The main provider runs
 <em>without tools</em>. A short SYSTEM instruction asks for a
@@ -143,6 +88,7 @@ The editor's job is to translate the proposal into the
 concrete <code>write_file</code> / <code>edit_file</code> /
 <code>multi_edit</code> calls.</li>
 </ol>
+
 <p>Both passes write to the session's
 <code>token_usage</code> table with their own provider/model
 attribution, so <code>/cost</code> shows two rows per turn
@@ -151,8 +97,11 @@ one. Both passes also fire transcript events
 (<code>architect_pass</code> / <code>editor_pass</code>) so
 auditors can replay the design call when reviewing what the
 agent did.</p>
+
 <h2 id="editor-resolution">Picking the editor</h2>
+
 <p>Three resolution rules apply, top-to-bottom:</p>
+
 <ol>
   <li><strong>Per-session override.</strong> When you set
 <code>state.editor_provider</code> via
@@ -172,7 +121,9 @@ provider. The dual-pass shape stays &mdash; you still get
 the proposal-then-edit transcript &mdash; but there is no
 cost saving.</li>
 </ol>
+
 <h2 id="fall-through">Fall-through after editor failures</h2>
+
 <p>A weak editor can stall when the architect's proposal is
 ambiguous. Cantrip tracks a per-turn counter
 (<code>state.architect_consecutive_failures</code>) that ticks
@@ -183,7 +134,9 @@ resets on a successful round. When the counter reaches
 editor &mdash; the same model that wrote the proposal applies
 it. Counter resets on the next user turn so a single sticky
 problem doesn't escalate every subsequent round.</p>
+
 <h2 id="status-indicator">Status indicator</h2>
+
 <p>Every surface that shows a status bar repaints when architect
 mode toggles. The TUI tints with the same
 <code>STATUS_BAR_CHANGED</code> event the
@@ -191,7 +144,9 @@ mode toggles. The TUI tints with the same
 <a href="howto-unattended.html">yolo-mode</a> indicators use, so
 a Web or CLI surface that already listens picks up the new
 mode without extra wiring.</p>
+
 <h2 id="interaction-with-other-guards">Interaction with other guards</h2>
+
 <ul>
   <li><strong>Plan mode.</strong> The architect pass still
 respects the plan-mode tool allow-list because the editor
@@ -216,7 +171,9 @@ response as a single chunk. You lose token-by-token
 streaming inside an architect-mode session in exchange for
 the dual-pass cost split.</li>
 </ul>
+
 <h2 id="what-it-is-not">What architect mode is <em>not</em></h2>
+
 <ul>
   <li>Not a multi-provider router. Picking and ranking across
 many models is what
@@ -232,39 +189,3 @@ catches the obvious case but bad models stay bad.</li>
   <li>Not persistent. The mode is session-scoped. Restarting
 Cantrip drops the flag back off.</li>
 </ul>
-  </main>
-</div>
-
-<footer class="doc-footer">
-  <div class="doc-footer-inner">
-    <span>Cantrip &mdash; free &amp; open source</span>
-    <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</footer>
-
-<script>
-(function() {
-  var toggle = document.querySelector('.doc-nav-toggle');
-  var links = document.querySelector('.doc-nav-links');
-  if (!toggle || !links) return;
-  toggle.addEventListener('click', function() {
-    var open = links.classList.toggle('open');
-    toggle.classList.toggle('open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-  });
-  links.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      links.classList.remove('open');
-      toggle.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open menu');
-    });
-  });
-})();
-</script>
-
-</body>
-</html>

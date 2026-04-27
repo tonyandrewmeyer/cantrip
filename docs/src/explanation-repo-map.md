@@ -1,73 +1,20 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The repository map &mdash; Cantrip</title>
-<meta name="description" content="How Cantrip builds a graph-ranked map of a charm's source code, why it's in the system prompt, and how /map exposes it for inspection.">
-<link rel="icon" href="../favicon.png" type="image/png">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
-<link rel="stylesheet" href="docs.css">
-</head>
-<body>
-
-<a href="#main" class="skip-link">Skip to content</a>
-
-<nav class="doc-nav" aria-label="Main">
-  <div class="doc-nav-inner">
-    <a href="../index.html" class="doc-nav-logo">
-      <picture>
-        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
-        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
-      </picture>
-      <span>Cantrip</span>
-    </a>
-    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="doc-nav-links" id="nav-menu">
-      <a href="index.html" class="current">Docs</a>
-      <a href="../index.html#features">Features</a>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</nav>
-<div class="doc-layout">
-  <aside class="doc-sidebar">
-    <h4>Explanation</h4>
-    <ul>
-      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
-      <li><a href="explanation-charm-paths.html">The three charm paths</a></li>
-      <li><a href="explanation-repo-map.html" class="current">The repository map</a></li>
-      <li><a href="explanation-observability.html">Observability and debugging</a></li>
-      <li><a href="explanation-quickpack-rs.html">Quickpack Rust backend</a></li>
-      <li><a href="explanation-charmlint-rs.html">Charmlint Rust backend</a></li>
-      <li><a href="explanation-emotions.html">Emotion subagents</a></li>
-      <li><a href="explanation-race.html">Multi-model patterns</a></li>
-      <li><a href="explanation-tui-screens.html">TUI screens and shortcuts</a></li>
-    </ul>
-    <h4>On this page</h4>
-    <ul>
-      <li><a href="#why">Why the agent needs a map</a></li>
-      <li><a href="#how">How the map is built</a></li>
-      <li><a href="#injection">When it reaches the LLM</a></li>
-      <li><a href="#inspect">Inspecting it with /map</a></li>
-      <li><a href="#cache">Caching and refresh</a></li>
-    </ul>
-  </aside>
-
-  <main id="main" class="doc-content">
-    <div class="breadcrumb">
-      <a href="index.html">Docs</a><span class="sep">/</span>Explanation<span class="sep">/</span>The repository map
-    </div>
-
-    <h1>The repository map</h1>
-    <p class="subtitle">
-      A bird's-eye view of the active charm, ranked by reference importance, that the agent carries into every turn.
-    </p>
+---
+title: "The repository map — Cantrip"
+description: "How Cantrip builds a graph-ranked map of a charm's source code, why it's in the system prompt, and how /map exposes it for inspection."
+h1: "The repository map"
+subtitle: "A bird's-eye view of the active charm, ranked by reference importance, that the agent carries into every turn."
+section: explanation
+breadcrumb_label: "The repository map"
+on_this_page:
+  - { anchor: "why", label: "Why the agent needs a map" }
+  - { anchor: "how", label: "How the map is built" }
+  - { anchor: "injection", label: "When it reaches the LLM" }
+  - { anchor: "inspect", label: "Inspecting it with /map" }
+  - { anchor: "cache", label: "Caching and refresh" }
+---
 
 <h2 id="why">Why the agent needs a map</h2>
+
 <p>
   A typical Juju charm is too big to paste into the LLM's
   context window in full, but small enough that the model
@@ -78,6 +25,7 @@
   on navigation that could have been spent on the actual
   change.
 </p>
+
 <p>
   Cantrip mirrors the
   <a href="https://aider.chat/docs/repomap.html" target="_blank" rel="noopener">aider</a>-style
@@ -86,10 +34,13 @@
   injected into the system prompt on every turn.  When the
   agent reaches for code, it already knows where to look.
 </p>
+
 <h2 id="how">How the map is built</h2>
+
 <p>
   Three layers of analysis combine into a single ranking:
 </p>
+
 <ol>
   <li>
     <strong>Symbol extraction.</strong>  Each source file is
@@ -113,17 +64,21 @@
     scaffolding file falls.
   </li>
 </ol>
+
 <p>
   The output is a per-file summary &mdash; the file's primary
   symbol with a <code>+N more</code> hint &mdash; ordered top to
   bottom by rank.
 </p>
+
 <h2 id="injection">When it reaches the LLM</h2>
+
 <p>
   The map injects automatically into the system prompt under a
   configurable token budget (default 1500).  Two adaptive
   thresholds keep it from crowding out room to think:
 </p>
+
 <ul>
   <li>
     Past <strong>80%</strong> of the context window, the
@@ -137,16 +92,20 @@
     immediate task.
   </li>
 </ul>
+
 <p>
   The map is regenerated incrementally: only files whose mtime
   changed get reparsed.  A working session that touches a
   handful of files per turn pays a few milliseconds for the
   map; a clean clone or a large rename triggers a full rebuild.
 </p>
+
 <h2 id="inspect">Inspecting it with /map</h2>
+
 <p>
   Two slash commands expose the same map the agent sees:
 </p>
+
 <dl>
   <dt><code>/map</code></dt>
   <dd>
@@ -162,13 +121,16 @@
     precisely what's in scope.
   </dd>
 </dl>
+
 <p>
   <code>/map-refresh</code> (and <code>/map-refresh full</code>)
   discards the cache and reparses every source file from
   scratch.  Reach for it after a large rename or when the cache
   looks stale.
 </p>
+
 <h2 id="cache">Caching and refresh</h2>
+
 <p>
   The map persists at <code>.cantrip-repomap.json</code> in
   the charm root, alongside the rest of Cantrip's per-charm
@@ -177,6 +139,7 @@
   to gitignore without losing meaningful state &mdash; the cache
   rebuilds in seconds on a fresh clone.
 </p>
+
 <p>
   Because the map is keyed by file mtime, a
   <code>git checkout</code> that changes file timestamps
@@ -185,45 +148,11 @@
   cases where filesystem mtimes lie &mdash; a tarball extraction
   that preserves the original timestamps, for instance.
 </p>
+
 <h2 id="see-also">See also</h2>
+
 <ul>
   <li><a href="reference-cli.html#repository-map">CLI reference &mdash; <code>/map</code></a></li>
   <li><a href="howto-mentions.html"><code>@file</code> and <code>@tree</code> mentions</a> &mdash; complementary surfaces for inline navigation</li>
   <li><a href="explanation-architecture.html">How Cantrip works</a> &mdash; where the map fits in the system-prompt assembly</li>
 </ul>
-  </main>
-</div>
-
-<footer class="doc-footer">
-  <div class="doc-footer-inner">
-    <span>Cantrip &mdash; free &amp; open source</span>
-    <div>
-      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
-    </div>
-  </div>
-</footer>
-
-<script>
-(function() {
-  var toggle = document.querySelector('.doc-nav-toggle');
-  var links = document.querySelector('.doc-nav-links');
-  if (!toggle || !links) return;
-  toggle.addEventListener('click', function() {
-    var open = links.classList.toggle('open');
-    toggle.classList.toggle('open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-  });
-  links.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      links.classList.remove('open');
-      toggle.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open menu');
-    });
-  });
-})();
-</script>
-
-</body>
-</html>
