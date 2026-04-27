@@ -561,11 +561,10 @@ a glance instead of looking the same as a missing one.</p>
 <h2 id="docs">cantrip docs</h2>
 <p>Index Canonical's documentation surfaces (Juju, ops,
 charmcraft, rockcraft, jubilant, Charmhub) so the agent's
-<code>docs_search</code> tool and the <code>@docs &lt;site&gt;
-&lt;query&gt;</code> mention can return cited passages instead of
-paraphrasing from memory.  Requires an embed provider configured
-via the <a href="howto-provider.html#retrieval-roles">role
-router</a>.</p>
+<code>docs_search</code> tool and the <code>@docs &lt;site&gt; &lt;query&gt;</code> mention can
+return cited passages instead of paraphrasing from memory.
+Requires an embed provider configured via the
+<a href="howto-provider.html#retrieval-roles">role router</a>.</p>
 <dl>
   <dt><code>cantrip docs index --site &lt;name&gt;</code></dt>
   <dd>
@@ -592,9 +591,8 @@ router</a>.</p>
     excerpt.  Composes with shell pipelines.
   </dd>
 </dl>
-<p>The <a href="howto-docs-index.html">how-to guide</a> walks
-through one-time setup and the in-chat surfaces.</p>
-
+<p>The <a href="howto-docs-index.html">how-to guide</a> walks through one-time
+setup and the in-chat surfaces.</p>
 <h2 id="slash-commands">Slash commands</h2>
 <p>Type these directly into the chat (TUI or Web) to drive features
 that don&rsquo;t go through the LLM. Output renders as a system
@@ -989,18 +987,17 @@ listed as <code>[skipped]</code> notes rather than silently
 masking issues &mdash; a missing <code>ty</code> doesn't look the same
 as &quot;all clear.&quot;</p>
 <h2 id="mentions">@-mention context providers</h2>
-<p>Type <code>@&lt;name&gt; [args]</code> in the chat
-input and the mention is replaced with structured context
-<em>before</em> the message reaches the LLM &mdash; one fewer
-tool round-trip than asking the agent to read the same content,
-and the substituted block is recorded in the transcript with a
-<code>[@name]&hellip;[/@name]</code> fence so intent stays visible
-alongside content.  Slash commands run first, so a literal
-<code>@x</code> inside a slash argument is not substituted.</p>
-<p>Tab-complete in the TUI: typing <code>look at @fi</code> with the
-cursor at the end pops a suggestion list; <code>Tab</code>
-completes to <code>look at @file </code> without disturbing the
-surrounding prose.  Up/Down move the highlight, Escape dismisses.</p>
+<p>Type <code>@&lt;name&gt; [args]</code> in the chat input and the mention is replaced
+with structured context <em>before</em> the message reaches the LLM &mdash;
+one fewer tool round-trip than asking the agent to read the same
+content, and the substituted block is recorded in the transcript
+with a <code>[@name]&hellip;[/@name]</code> fence so intent stays visible alongside
+content.  Slash commands run first, so a literal <code>@x</code> inside a
+slash argument is not substituted.</p>
+<p>Tab-complete in the TUI: typing <code>look at @fi</code> with the cursor at
+the end pops a suggestion list; <code>Tab</code> completes to <code>look at @file </code>
+without disturbing the surrounding prose.  Up/Down move the
+highlight, Escape dismisses.</p>
 <dl>
   <dt><code>@file &lt;path&gt;</code></dt>
   <dd>
@@ -1037,17 +1034,23 @@ surrounding prose.  Up/Down move the highlight, Escape dismisses.</p>
     <code>show-application</code>, <code>show-model</code>,
     <code>config</code>, <code>list-secrets</code>,
     <code>show-relation</code>, <code>list-models</code>.
-    Anything else is rejected so a typo cannot reach a destructive verb.
+    Anything else is rejected so a typo cannot reach a destructive
+    verb.
+  </dd>
+  <dt><code>@docs &lt;site&gt; &lt;query&gt;</code></dt>
+  <dd>
+    Top hits from the indexed Canonical docs (see
+    <a href="howto-docs-index.html">Index the charm docs</a>).
+    Requires an embed provider; the mention reports the missing
+    configuration if none is wired.
   </dd>
 </dl>
-<p>Each provider has a per-call character cap; over-budget output
-is truncated with a <code>[truncated N chars]</code> footer rather
-than silently elided.  Multi-line blocks get a
-<code>[@name]&hellip;[/@name]</code> fence so the typed mention
-stays visible in the transcript.</p>
-<p>Third-party providers register via MCP servers or
-hooks &mdash; the protocol and conventions are in
-<code>design/CONTEXT_PROVIDERS.md</code>.</p>
+<p>Each provider has a per-call character cap; over-budget output is
+truncated with a <code>[truncated N chars]</code> footer rather than silently
+elided.  Multi-line blocks get a <code>[@name]&hellip;[/@name]</code> fence so the
+typed mention stays visible in the transcript.</p>
+<p>Third-party providers register via MCP servers or hooks &mdash; the
+protocol and conventions are in <code>design/CONTEXT_PROVIDERS.md</code>.</p>
 <h2 id="env-vars">Environment variables</h2>
 <table>
 <thead>

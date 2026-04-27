@@ -192,6 +192,49 @@ string.
   </p>
 </div>
 
+{#retrieval-roles}
+## Configure embed and rerank
+
+Retrieval features &mdash; the planned `@docs` index and memory recall
+&mdash; need an *embedding* provider, and rerank quality benefits
+from a dedicated rerank provider.  Cantrip routes these via a
+separate `RoleRouter` so you pick them independently of the chat
+provider.
+
+The Anthropic-ecosystem recommendation is Voyage:
+
+<pre><code><span class="prompt">$</span> export VOYAGE_API_KEY=...
+<span class="prompt">$</span> cantrip --provider claude \
+    --embed-provider voyage --embed-model voyage-3 \
+    --rerank-provider voyage --rerank-model rerank-2</code></pre>
+
+OpenAI users can pair their embed endpoint with Voyage rerank
+(OpenAI does not ship a rerank API):
+
+<pre><code><span class="prompt">$</span> export OPENAI_API_KEY=... VOYAGE_API_KEY=...
+<span class="prompt">$</span> cantrip --provider claude \
+    --embed-provider openai --embed-model text-embedding-3-large \
+    --rerank-provider voyage</code></pre>
+
+Equivalent environment variables for stable shells:
+`CANTRIP_EMBED_PROVIDER`, `CANTRIP_EMBED_MODEL`,
+`CANTRIP_RERANK_PROVIDER`, `CANTRIP_RERANK_MODEL`.  The CLI flag
+wins when both are present.  A self-hosted vLLM that speaks the
+OpenAI embed wire format can be reached via
+`OPENAI_EMBED_BASE_URL`.
+
+Costs surface in `/cost` under a separate **By role** section once
+an embed or rerank call has fired, so retrieval spend is visible
+without merging into chat.  Pricing entries cover voyage-3,
+voyage-3-lite, voyage-3-large, voyage-code-3, rerank-2,
+rerank-2-lite, text-embedding-3-small, and text-embedding-3-large;
+unknown models render as `free`.
+
+An offline sentence-transformers fallback is on the roadmap but not
+yet shipped &mdash; sessions without a configured embed provider
+raise `RoleNotConfigured` from the first retrieval call rather than
+silently degrading.
+
 {#hybrid}
 ## Hybrid setups
 

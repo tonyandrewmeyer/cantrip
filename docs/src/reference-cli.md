@@ -12,7 +12,9 @@ on_this_page:
   - { anchor: "hooks", label: "cantrip hooks" }
   - { anchor: "skill", label: "cantrip skill" }
   - { anchor: "checkpoints", label: "cantrip checkpoints" }
+  - { anchor: "docs", label: "cantrip docs" }
   - { anchor: "slash-commands", label: "Slash commands" }
+  - { anchor: "mentions", label: "@-mention context providers" }
   - { anchor: "auto-commit", label: "Auto-commit per turn" }
   - { anchor: "architect-mode", label: "Architect / editor mode" }
   - { anchor: "env-vars", label: "Environment variables" }
@@ -618,6 +620,46 @@ user/repo file present the listing prints
 "`No permission rules loaded.`" so an empty config is visible at
 a glance instead of looking the same as a missing one.
 
+{#docs}
+## cantrip docs
+
+Index Canonical's documentation surfaces (Juju, ops,
+charmcraft, rockcraft, jubilant, Charmhub) so the agent's
+`docs_search` tool and the `@docs <site> <query>` mention can
+return cited passages instead of paraphrasing from memory.
+Requires an embed provider configured via the
+[role router](howto-provider.html#retrieval-roles).
+
+<dl>
+  <dt><code>cantrip docs index --site &lt;name&gt;</code></dt>
+  <dd>
+    Crawl the named site, chunk + embed every page, and upsert
+    into the per-site SQLite cache under
+    <code>~/.cache/cantrip/docs-index/&lt;name&gt;/index.db</code>.
+    Re-running replaces rows with a stable
+    <code>(url, ordinal)</code> hash &mdash; no need to clear the
+    cache by hand.  Pass <code>--all</code> to index every
+    registered site.  Per-page errors (404s, timeouts) are
+    absorbed; the rest of the crawl proceeds.
+  </dd>
+  <dt><code>cantrip docs list</code></dt>
+  <dd>
+    Print every registered site with its index status and chunk
+    count.  Pass <code>--root &lt;path&gt;</code> to read from a
+    non-default cache directory.
+  </dd>
+  <dt><code>cantrip docs search &lt;site&gt; &lt;query&gt;</code></dt>
+  <dd>
+    Embed <code>&lt;query&gt;</code> through the configured embed
+    provider, cosine-search the per-site store, print the top
+    <code>--top-k</code> hits (default 5) with score, URL, and
+    excerpt.  Composes with shell pipelines.
+  </dd>
+</dl>
+
+The [how-to guide](howto-docs-index.html) walks through one-time
+setup and the in-chat surfaces.
+
 {#slash-commands}
 ## Slash commands
 
@@ -979,6 +1021,7 @@ will not appear in <code>git status</code> or be touched by
 [Undo agent changes](howto-undo.html) for the full
 how-to.
 
+{#repository-map}
 ### Repository map
 
 <dl>
@@ -1017,6 +1060,7 @@ fills past 80% of the context window the budget halves; past 95%
 it drops entirely so a near-full window isn't carrying a
 bird's-eye view it can't act on.
 
+{#review-checks}
 ### Review checks
 
 <dl>
@@ -1049,6 +1093,7 @@ is off but you can't write it as a regex").
 Three checks ship by default: <code>charm-readme-coherence</code>,
 <code>action-ergonomics</code>, <code>relation-data-hygiene</code>.
 
+{#project-diagnostics}
 ### Project diagnostics
 
 <dl>
@@ -1077,6 +1122,78 @@ listed as <code>[skipped]</code> notes rather than silently
 masking issues — a missing <code>ty</code> doesn't look the same
 as "all clear."
 
+{#mentions}
+## @-mention context providers
+
+Type `@<name> [args]` in the chat input and the mention is replaced
+with structured context *before* the message reaches the LLM &mdash;
+one fewer tool round-trip than asking the agent to read the same
+content, and the substituted block is recorded in the transcript
+with a `[@name]…[/@name]` fence so intent stays visible alongside
+content.  Slash commands run first, so a literal `@x` inside a
+slash argument is not substituted.
+
+Tab-complete in the TUI: typing `look at @fi` with the cursor at
+the end pops a suggestion list; `Tab` completes to `look at @file `
+without disturbing the surrounding prose.  Up/Down move the
+highlight, Escape dismisses.
+
+<dl>
+  <dt><code>@file &lt;path&gt;</code></dt>
+  <dd>
+    Inline the contents of a repo-relative file.  Absolute paths
+    and <code>..</code> traversal are rejected.
+  </dd>
+  <dt><code>@diff</code></dt>
+  <dd>Output of <code>git diff HEAD</code> in the active charm.</dd>
+  <dt><code>@tree [path]</code></dt>
+  <dd>
+    Repo-tracked file listing via <code>git ls-files</code>
+    (<code>.gitignore</code> respected).  Falls back to a plain
+    walk when the directory is not a git checkout.
+  </dd>
+  <dt><code>@problems</code></dt>
+  <dd>
+    Current <code>ruff</code> / <code>ty</code> /
+    <code>charmlint</code> diagnostics.  Shares a 30-second cache
+    with <code>/diagnostics</code> so a quick check followed by a
+    mention does not re-run the linters.
+  </dd>
+  <dt><code>@url &lt;url&gt;</code></dt>
+  <dd>
+    Fetch the URL via the same web-fetch path the agent uses
+    (private-IP block, <code>llms.txt</code> probing,
+    HTML-to-text extraction).
+  </dd>
+  <dt><code>@charm &lt;name&gt;</code></dt>
+  <dd>Charmhub metadata (relations, config, revision) for the named charm.</dd>
+  <dt><code>@juju &lt;subcmd&gt;</code></dt>
+  <dd>
+    Run a read-only <code>juju</code> subcommand.  The first token is
+    hard-allowlisted: <code>status</code>, <code>show-unit</code>,
+    <code>show-application</code>, <code>show-model</code>,
+    <code>config</code>, <code>list-secrets</code>,
+    <code>show-relation</code>, <code>list-models</code>.
+    Anything else is rejected so a typo cannot reach a destructive
+    verb.
+  </dd>
+  <dt><code>@docs &lt;site&gt; &lt;query&gt;</code></dt>
+  <dd>
+    Top hits from the indexed Canonical docs (see
+    <a href="howto-docs-index.html">Index the charm docs</a>).
+    Requires an embed provider; the mention reports the missing
+    configuration if none is wired.
+  </dd>
+</dl>
+
+Each provider has a per-call character cap; over-budget output is
+truncated with a `[truncated N chars]` footer rather than silently
+elided.  Multi-line blocks get a `[@name]…[/@name]` fence so the
+typed mention stays visible in the transcript.
+
+Third-party providers register via MCP servers or hooks &mdash; the
+protocol and conventions are in `design/CONTEXT_PROVIDERS.md`.
+
 {#env-vars}
 ## Environment variables
 
@@ -1087,6 +1204,13 @@ as "all clear."
 | `FIREWORKS_API_KEY` | `--provider fireworks` | Fireworks.ai API key |
 | `OPENROUTER_API_KEY` | `--provider openrouter` | OpenRouter.ai API key |
 | `OPENAI_COMPATIBLE_API_KEY` | `--provider openai-compatible` | Bearer token for the configured endpoint; set to any non-empty string when auth is not required. |
+| `VOYAGE_API_KEY` | `--embed-provider voyage` / `--rerank-provider voyage` | Voyage AI key.  Required when Voyage serves the `embed` or `rerank` role. |
+| `OPENAI_API_KEY` | `--embed-provider openai` | OpenAI key for the embed role.  The chat-side `--provider openai-compatible` path uses `OPENAI_COMPATIBLE_API_KEY` instead. |
+| `OPENAI_EMBED_BASE_URL` | optional | Override the OpenAI embed endpoint.  Set to a self-hosted vLLM or any OpenAI-wire-compatible host that serves `/v1/embeddings`. |
+| `CANTRIP_EMBED_PROVIDER` | optional | Provider for the `embed` role.  Accepts `voyage` or `openai`; `--embed-provider` overrides. |
+| `CANTRIP_EMBED_MODEL` | optional | Embed model identifier.  Defaults: `voyage-3` (Voyage), `text-embedding-3-small` (OpenAI). |
+| `CANTRIP_RERANK_PROVIDER` | optional | Provider for the `rerank` role.  Currently `voyage` only. |
+| `CANTRIP_RERANK_MODEL` | optional | Rerank model identifier.  Default `rerank-2`. |
 | `CANTRIP_MEMORY_DIR` | optional | Override the global memory directory. Defaults to `$XDG_CONFIG_HOME/cantrip/memory` (falls back to `~/.config/cantrip/memory`). |
 | `CANTRIP_MEMORY_SOFT_EXPIRY_DAYS` | optional | Days untouched before a memory is archived by `memory_sweep`. Default `60`. Non-integer or non-positive values log a warning and fall back to the default. |
 | `CANTRIP_MEMORY_HARD_EXPIRY_DAYS` | optional | Days archived before a memory is surfaced as a deletion candidate by `memory_purge_check`. Default `180`. |
