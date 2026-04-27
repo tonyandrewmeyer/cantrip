@@ -26,6 +26,7 @@ _SNAP_DEFAULTS: dict[str, int] = {
     "deepseek-r1": 8324,
     "qwen-vl": 8326,
     "nemotron-3-nano": 8330,
+    "qwen3-coder": 8332,
 }
 
 # Small local models have limited context windows.  The training context
