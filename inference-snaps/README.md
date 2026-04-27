@@ -12,14 +12,21 @@ install, and publish them independently.
 
 ## Why these exist
 
-Cantrip's primary embed/rerank provider is Voyage (cloud, paid). For
-users who want a local-first, free option, an inference snap is the
-most aligned shape: it follows the same install/discovery pattern as
-the chat snaps Cantrip already wires up (`gemma3`, `deepseek-r1`,
-`qwen-vl`, `nemotron-3-nano`) and exposes an OpenAI-compatible
-`/v1/embeddings` endpoint that the existing
-[`OpenAIEmbedProvider`](../src/cantrip/llm/openai_embeddings.py) can
-reach via `OPENAI_EMBED_BASE_URL` (no API key needed).
+The snaps in this directory cover two shapes:
+
+- **Embed snaps** (e.g. `embeddinggemma/`) — local-first, free
+  alternative to Cantrip's primary embed/rerank provider (Voyage).
+  Exposes an OpenAI-compatible `/v1/embeddings` endpoint that the
+  existing
+  [`OpenAIEmbedProvider`](../src/cantrip/llm/openai_embeddings.py)
+  reaches via `OPENAI_EMBED_BASE_URL` (no API key needed).
+- **Chat snaps for charm-coding** (e.g. `qwen3-coder/`) — a code-tuned
+  alternative to the Canonical-published chat snaps Cantrip already
+  wires up (`gemma3`, `deepseek-r1`, `qwen-vl`, `nemotron-3-nano`),
+  none of which are specialised for code. Exposes an
+  OpenAI-compatible `/v1/chat/completions` endpoint that the existing
+  [`InferenceSnapProvider`](../src/cantrip/llm/inference_snap.py)
+  drives.
 
 ## Namespacing
 
@@ -35,6 +42,7 @@ take over without a rename.
 | Directory | Model | Role | Status |
 |---|---|---|---|
 | [`embeddinggemma/`](embeddinggemma/) | EmbeddingGemma 300M | embed | Scaffold, not built |
+| [`qwen3-coder/`](qwen3-coder/) | Qwen3-Coder 30B-A3B Instruct (Q4_K_M) | chat (code) | Scaffold, not built |
 
 ## Building a snap
 
@@ -51,8 +59,9 @@ sudo snap start <snap-name>
 
 ## Wiring into Cantrip
 
-Once the snap is running locally, point Cantrip's
-`OpenAIEmbedProvider` at it:
+### Embed snaps
+
+Point Cantrip's `OpenAIEmbedProvider` at the running snap:
 
 ```bash
 # Discover the endpoint (varies per snap)
@@ -67,3 +76,16 @@ cantrip --provider claude \
 The keyless override path was added in
 [`feat(embed): allow keyless OpenAIEmbedProvider with custom base URL`](../CHANGELOG.md);
 no `OPENAI_API_KEY` is needed.
+
+### Chat snaps
+
+Drive a chat snap directly through `InferenceSnapProvider`:
+
+```bash
+cantrip run --provider inference-snap \
+    --snap <snap-name> --base-url http://localhost:<port>/v1
+```
+
+Once a chat snap stabilises, add it to `_SNAP_DEFAULTS` in
+[`src/cantrip/llm/inference_snap.py`](../src/cantrip/llm/inference_snap.py)
+so `--snap <name>` discovers it automatically.

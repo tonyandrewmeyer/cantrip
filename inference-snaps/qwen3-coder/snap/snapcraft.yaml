@@ -1,0 +1,151 @@
+name: qwen3-coder-tonyandrewmeyer
+base: core24
+summary: Qwen3-Coder 30B-A3B chat-completions inference snap
+description: |
+  Runs Alibaba's Qwen3-Coder-30B-A3B-Instruct code model via the
+  llama.cpp HTTP server. A Mixture-of-Experts model with ~3B active
+  parameters per token, it generates roughly as fast as a 3B dense
+  model on CPU while quality tracks much larger dense models on
+  coding benchmarks. Exposes an OpenAI-compatible
+  /v1/chat/completions endpoint with native tool-calling support
+  (via --jinja), suitable for driving Cantrip's
+  InferenceSnapProvider.
+
+  This snap is published under a personal namespace; the unsuffixed
+  `qwen3-coder` name is reserved for a future Canonical-published
+  edition.
+
+version: 'v0'
+
+grade: devel
+confinement: strict
+
+assumes:
+  - snapd2.68 # for components support
+
+compression: lzo
+
+platforms:
+  amd64:
+  arm64:
+
+environment:
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+hooks:
+  install:
+    plugs: &install-plugs
+      - hardware-observe
+      - kernel-module-observe
+      - opengl
+  post-refresh:
+    plugs: *install-plugs
+
+parts:
+  scripts:
+    source: scripts
+    plugin: dump
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  engines:
+    source: engines
+    plugin: dump
+    organize:
+      "*": engines/
+
+  cli:
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v1.0.0-beta.42/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v1.0.0-beta.42/inference-snaps-cli-linux-arm64.tar.xz
+    plugin: dump
+    override-build: |
+      mkdir -p bin
+      mv cli bin/modelctl
+      # Symlink so the CLI is reachable as the snap's command name
+      ln --symbolic ./modelctl bin/qwen3-coder-tonyandrewmeyer
+      craftctl default
+
+  cli-dependencies:
+    plugin: nil
+    stage-packages:
+      - pciutils # for lspci, used by hardware detection
+
+  local-component-files:
+    plugin: dump
+    source: components
+    organize:
+      "llamacpp/*": (component/llamacpp)
+      "model-30b-a3b-q4-k-m-gguf/*": (component/model-30b-a3b-q4-k-m-gguf)
+    prime:
+      # Exclude everything not explicitly organised; the local files
+      # are routed entirely into components.
+      - -*
+
+  llamacpp:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-amd64.tar.gz
+      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-arm64.tar.gz
+    stage-packages:
+      - libgomp1
+    organize:
+      "*": (component/llamacpp)
+
+  llamacpp-license:
+    plugin: dump
+    source: https://github.com/ggerganov/llama.cpp.git
+    source-depth: 1
+    override-build: |
+      license_dir=$CRAFT_PART_INSTALL/usr/share/doc/llama.cpp
+      mkdir -p $license_dir
+      cp LICENSE $license_dir/
+      cp -r licenses/* $license_dir/
+
+  notice:
+    plugin: nil
+    source: NOTICE
+    source-type: file
+    override-build: |
+      license_dir=$CRAFT_PART_INSTALL/usr/share/doc
+      mkdir -p $license_dir
+      cp NOTICE $license_dir/
+
+components:
+  llamacpp:
+    type: standard
+    summary: llama.cpp using default CPU instruction sets
+    description: LLM inference in C/C++
+    version: b8589
+
+  model-30b-a3b-q4-k-m-gguf:
+    type: standard
+    summary: Qwen3-Coder-30B-A3B-Instruct Q4_K_M GGUF
+    description: |
+      Qwen3-Coder-30B-A3B-Instruct in GGUF format with Q4_K_M weight
+      encoding. ~17GB on disk. A Mixture-of-Experts model with ~3B
+      active parameters per token. Released by Alibaba's Qwen team
+      under Apache License 2.0; verify the licence on the model card
+      before redistribution.
+    version: q4-k-m
+
+apps:
+  qwen3-coder-tonyandrewmeyer:
+    command: bin/qwen3-coder-tonyandrewmeyer
+    plugs:
+      - hardware-observe
+      - opengl
+      - network
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - opengl
+      - network-bind
+      - network
+      - hardware-observe
+      - process-control

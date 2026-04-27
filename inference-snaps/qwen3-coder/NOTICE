@@ -1,0 +1,13 @@
+Qwen3-Coder is published by Alibaba Cloud's Qwen team. The
+Qwen3-Coder-30B-A3B-Instruct weights are released under the Apache
+License 2.0; see the Hugging Face model card
+(https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct) for the
+authoritative licence statement and verify it before redistribution.
+
+The snap packaging code is licensed under the same terms as Cantrip
+(see the top-level LICENSE file in this repository).
+
+All artifacts and dependencies included within this snap package are
+subject to their respective licenses, which are documented and
+available at /snap/<snap-name>/current/usr/share/doc within the
+installed snap package.

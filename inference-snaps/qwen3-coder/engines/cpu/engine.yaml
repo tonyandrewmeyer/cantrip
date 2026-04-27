@@ -1,0 +1,22 @@
+name: cpu
+description: |
+  Use CPU. Qwen3-Coder-30B-A3B is a Mixture-of-Experts model with
+  ~3B active parameters per token, so generation is roughly as fast
+  as a 3B dense model on CPU while quality tracks much larger dense
+  models. Plenty of RAM is the main requirement.
+vendor: Tony Andrew Meyer
+grade: stable
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+memory: 24G
+disk-space: 20G
+components:
+  - llamacpp
+  - model-30b-a3b-q4-k-m-gguf
+configurations:
+  sleep-idle-seconds: 600
+  ctx-size: 32768

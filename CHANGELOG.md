@@ -5,6 +5,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`inference-snaps/qwen3-coder/` scaffold.**  A self-contained
+  snapcraft project that packages Alibaba's
+  Qwen3-Coder-30B-A3B-Instruct (Q4_K_M GGUF, ~17GB) as an Ubuntu
+  snap, modelled on the embeddinggemma scaffold but switched to chat
+  mode: `llama-server` is invoked with `--jinja` (so the GGUF's
+  embedded chat template handles Qwen3-Coder's native tool calling)
+  and no `--embedding` flag. The MoE architecture (~3B active
+  parameters per token) is what makes a 30B-class coder feasible on
+  CPU only — generation throughput tracks a 3B dense model while
+  quality tracks much larger dense models on coding benchmarks. The
+  motivating use case is charm-writing on a Multipass VM without GPU
+  passthrough; the Canonical-published chat snaps Cantrip already
+  wires up (`gemma3`, `deepseek-r1`, `qwen-vl`, `nemotron-3-nano`)
+  are general / reasoning / vision and weren't strong enough on
+  charm code. Default port 8332 (next free after embeddinggemma's
+  8331); engine declares `memory: 24G`, `disk-space: 20G`. Build
+  artefacts and GGUFs are gitignored; `prepare-models.sh` fetches
+  the weights from a community GGUF conversion. Intended to ship
+  under a personal namespace (`qwen3-coder-tonyandrewmeyer`); the
+  unsuffixed `qwen3-coder` reserved name on the snap store stays
+  available for a future Canonical edition. See
+  `inference-snaps/qwen3-coder/README.md` for build, install,
+  smoke-test, and Cantrip-wire-in steps.
 - **`inference-snaps/embeddinggemma/` scaffold.**  A self-contained
   snapcraft project that packages Google's EmbeddingGemma 300M
   text-embedding model as an Ubuntu snap, modelled on

@@ -1,0 +1,15 @@
+# Snap build artefacts
+parts/
+stage/
+prime/
+partitions/
+squashfs-root
+*.snap
+*.comp
+
+# Model weights — fetched by prepare-models.sh from Hugging Face.
+# Not committed because GGUFs are 10GB+ and HF is the source of truth.
+*.gguf
+
+# Local snapcraft.yaml symlink (some workflows symlink snap/snapcraft.yaml here)
+/snapcraft.yaml
