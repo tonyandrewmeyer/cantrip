@@ -26,10 +26,11 @@ flow are intentionally left to the human builder.
 
 ## Before you build
 
-1. **Pick a snap-store namespace.** Edit `snap/snapcraft.yaml` and
-   replace `embeddinggemma-CHANGEME` with your namespaced name (e.g.
-   `embeddinggemma-tonymeyer`). Register it on the snap store before
-   the first upload — see
+1. **Snap-store namespace.** The snap is named
+   `embeddinggemma-tonyandrewmeyer`. Local builds
+   (`snapcraft pack` + `snap install --dangerous`) work without
+   registration. Register the name only before the first upload —
+   see
    <https://snapcraft.io/docs/reference/development/registering-your-app-name/>.
 
 2. **Accept the Gemma terms** on Hugging Face. EmbeddingGemma is
@@ -61,11 +62,11 @@ sudo snap install --dangerous embeddinggemma-*_*.snap
 sudo snap install --dangerous embeddinggemma-*+*.comp
 
 # 4. Grant hardware-observe (needed for engine selection)
-sudo snap connect embeddinggemma-CHANGEME:hardware-observe
+sudo snap connect embeddinggemma-tonyandrewmeyer:hardware-observe
 
 # 5. Pick an engine and start the server
-sudo embeddinggemma-CHANGEME use-engine --auto
-sudo snap start embeddinggemma-CHANGEME
+sudo embeddinggemma-tonyandrewmeyer use-engine --auto
+sudo snap start embeddinggemma-tonyandrewmeyer
 
 # 6. Smoke-test
 curl http://localhost:8331/v1/embeddings \

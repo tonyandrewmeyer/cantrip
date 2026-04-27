@@ -1,6 +1,6 @@
 name: cpu
 description: Use CPU. EmbeddingGemma runs comfortably on any modern CPU.
-vendor: CHANGEME
+vendor: Tony Andrew Meyer
 grade: stable
 devices:
   anyof:

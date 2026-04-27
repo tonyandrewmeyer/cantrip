@@ -1,4 +1,4 @@
-name: embeddinggemma-CHANGEME
+name: embeddinggemma-tonyandrewmeyer
 base: core24
 summary: EmbeddingGemma 300M text-embedding inference snap
 description: |
@@ -62,7 +62,7 @@ parts:
       mkdir -p bin
       mv cli bin/modelctl
       # Symlink so the CLI is reachable as the snap's command name
-      ln --symbolic ./modelctl bin/embeddinggemma-CHANGEME
+      ln --symbolic ./modelctl bin/embeddinggemma-tonyandrewmeyer
       craftctl default
 
   cli-dependencies:
@@ -131,8 +131,8 @@ components:
       (ai.google.dev/gemma/terms).
 
 apps:
-  embeddinggemma-CHANGEME:
-    command: bin/embeddinggemma-CHANGEME
+  embeddinggemma-tonyandrewmeyer:
+    command: bin/embeddinggemma-tonyandrewmeyer
     plugs:
       - hardware-observe
       - opengl
