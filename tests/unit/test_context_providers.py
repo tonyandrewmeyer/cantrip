@@ -420,6 +420,32 @@ class TestJujuProvider:
         result = await expand_mentions("look @juju", registry, ExpansionContext())
         assert "missing subcommand" in result.expanded
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "args",
+        [
+            "config myapp --reset key",
+            "config myapp --reset-from-file overrides.yaml",
+            "config myapp --file overrides.yaml",
+            "config myapp foo=bar",
+            "config myapp --reset=key",
+            "config myapp --file=overrides.yaml",
+        ],
+    )
+    async def test_rejects_destructive_config_form(self, args: str) -> None:
+        """``@juju config`` must reject every shape that mutates state.
+
+        The verb-only allowlist treats ``config`` as read-only, but
+        the same verb writes when given ``--reset``,
+        ``--reset-from-file``, ``--file``, or any positional
+        ``key=value``.  Without the flag-shape guard a user could
+        wipe an app's config via context expansion.
+        """
+        registry = context_providers_builtin.build_default_registry()
+        result = await expand_mentions(f"@juju {args}", registry, ExpansionContext())
+        assert result.blocks[0].ok is False
+        assert "read-only" in result.expanded.lower()
+
 
 class TestUrlProvider:
     """``@url`` — early validation paths."""

@@ -79,6 +79,27 @@ _JUJU_READONLY_VERBS: frozenset[str] = frozenset(
 )
 
 
+def _juju_config_is_readonly(rest: list[str]) -> bool:
+    """Return ``True`` when ``juju config <rest>`` doesn't mutate state.
+
+    ``juju config <app>`` and ``juju config <app> <key>`` are
+    read-only, but the same verb mutates runtime state when given
+    ``--reset <key>``, ``--file <path>``, or any positional
+    ``key=value`` form.  The verb-only allowlist on its own would let
+    a stray ``@juju config myapp --reset secret`` blow away an app's
+    configuration; this helper rejects every destructive shape so the
+    read-only allowlist actually means read-only.
+    """
+    for arg in rest:
+        if "=" in arg:
+            return False
+        if arg in {"--reset", "--reset-from-file", "--file"}:
+            return False
+        if arg.startswith(("--reset=", "--reset-from-file=", "--file=")):
+            return False
+    return True
+
+
 def _resolve_within(
     raw: str,
     *,
@@ -496,6 +517,15 @@ class JujuProvider:
             return ContextBlock(
                 raw=raw,
                 rendered=f"[@juju {verb}: not a read-only verb. Allowed: {allowed}]",
+                error="not read-only",
+            )
+        if verb == "config" and not _juju_config_is_readonly(rest):
+            return ContextBlock(
+                raw=raw,
+                rendered=(
+                    "[@juju config: read-only form only. Drop "
+                    "key=value, --reset, --reset-from-file, and --file.]"
+                ),
                 error="not read-only",
             )
         if shutil.which("juju") is None:
