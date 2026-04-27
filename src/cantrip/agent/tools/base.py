@@ -79,6 +79,24 @@ class Tool(ABC):
     async def execute(self, **kwargs: Any) -> ToolResult:
         """Execute the tool with given parameters."""
 
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        """Return a present-continuous "running now" caption (Phase 82).
+
+        The pre-call counterpart to :attr:`ToolResult.caption`: rendered
+        in place when the tool is dispatched (``"Packing the charm…"``,
+        ``"Querying Tempo for the last 5 traces…"``) and replaced by the
+        post-call caption when the tool returns.  Override on tools whose
+        users would otherwise stare at silence between the agent's last
+        line and the next visible event — slow file packers, network
+        queries, long juju waits.
+
+        Returning ``None`` (the default) lets
+        :func:`build_tool_intro_caption` synthesise a generic
+        ``"Running <tool_name>…"`` from the tool's name and arguments.
+        """
+        del arguments
+        return None
+
 
 # Keys checked, in priority order, when synthesising a fallback
 # caption for a tool call.  Most high-traffic tools use one of these
@@ -142,6 +160,44 @@ def build_tool_caption(
         return f"{tool_name}({key}={value})"
 
     return f"{tool_name}()"
+
+
+def build_tool_intro_caption(
+    tool: Tool | None,
+    tool_name: str,
+    arguments: dict[str, Any] | None,
+) -> str:
+    """Return a pre-call "running now" caption for a tool invocation (Phase 82).
+
+    Prefers :meth:`Tool.intro_caption` when the tool overrides it.
+    Falls back to ``"Running <tool_name>(<key>=<value>)…"`` using the
+    same :data:`_CAPTION_KEY_PREFERENCE` list as
+    :func:`build_tool_caption` so the fallback intro and post-call
+    fallback share their key-picking discipline.  When no argument
+    matches, returns ``"Running <tool_name>…"``.
+    """
+    if tool is not None:
+        try:
+            override = tool.intro_caption(arguments or {})
+        except (TypeError, ValueError, KeyError, AttributeError):
+            log.exception("intro_caption raised for %s", tool_name)
+            override = None
+        if override:
+            return override
+
+    args = arguments or {}
+    for key in _CAPTION_KEY_PREFERENCE:
+        if key in args and args[key] not in (None, ""):
+            value = _format_caption_value(args[key])
+            return f"Running {tool_name}({key}={value})…"
+
+    for key, raw in args.items():
+        if raw in (None, ""):
+            continue
+        value = _format_caption_value(raw)
+        return f"Running {tool_name}({key}={value})…"
+
+    return f"Running {tool_name}…"
 
 
 def _format_caption_value(value: Any) -> str:

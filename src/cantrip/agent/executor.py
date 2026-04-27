@@ -46,6 +46,7 @@ from cantrip.agent.subagent import (
     SubagentContext,
     SubagentResult,
     ToolInvokedCallback,
+    ToolInvokedPendingCallback,
 )
 from cantrip.agent.tools.base import Tool
 from cantrip.agent.tools.git import _gpg_sign_enabled
@@ -369,6 +370,7 @@ class BackgroundExecutor:
         extra_providers: list[llm.LLMProvider] | None = None,
         hook_runner: HookRunner | None = None,
         on_tool_invoked: ToolInvokedCallback | None = None,
+        on_tool_invoked_pending: ToolInvokedPendingCallback | None = None,
         on_budget_exceeded: BudgetExceededCallback = None,
         on_rate_limited: RateLimitedCallback = None,
     ) -> None:
@@ -411,6 +413,10 @@ class BackgroundExecutor:
         # ``allowed_tools`` config (Phase 45.2), not by the policy
         # stack's rate limit.
         self._on_tool_invoked = self._wrap_tool_invoked(on_tool_invoked)
+        # Phase 82: forward "running now" events to the chat surfaces;
+        # no rate-limit accounting on the pending side — the count is
+        # bumped only when the tool returns (post-call wrapper above).
+        self._on_tool_invoked_pending = on_tool_invoked_pending
 
         # Injected services — fall back to defaults when not provided.
         self._git: GitService = git_service or _DefaultGitService()
@@ -812,11 +818,12 @@ class BackgroundExecutor:
             arguments: dict[str, object],
             result: object,
             duration_ms: int,
+            tool_call_id: str,
         ) -> None:
             if not tool_name.startswith(MCP_TOOL_PREFIX):
                 self._tool_calls_made += 1
             if inner is not None:
-                inner(tool_name, arguments, result, duration_ms)
+                inner(tool_name, arguments, result, duration_ms, tool_call_id)
 
         return _wrapped
 
@@ -1074,6 +1081,7 @@ class BackgroundExecutor:
             on_phase_change=self._queue.notify_task,
             hook_runner=self._hook_runner,
             on_tool_invoked=self._on_tool_invoked,
+            on_tool_invoked_pending=self._on_tool_invoked_pending,
             permissions=self._effective_permissions(),
             permission_manager=self._permission_manager,
             on_permission_decided=self._on_permission_decided,
@@ -1324,6 +1332,7 @@ class BackgroundExecutor:
                 on_phase_change=self._queue.notify_task,
                 hook_runner=self._hook_runner,
                 on_tool_invoked=self._on_tool_invoked,
+                on_tool_invoked_pending=self._on_tool_invoked_pending,
                 permissions=self._effective_permissions(),
                 permission_manager=self._permission_manager,
                 on_permission_decided=self._on_permission_decided,

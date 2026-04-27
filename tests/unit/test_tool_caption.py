@@ -9,7 +9,14 @@ preferred-key list so the fallback stays informative without
 per-tool configuration.
 """
 
-from cantrip.agent.tools.base import ToolResult, build_tool_caption
+from typing import Any
+
+from cantrip.agent.tools.base import (
+    Tool,
+    ToolResult,
+    build_tool_caption,
+    build_tool_intro_caption,
+)
 
 
 class TestBuildToolCaption:
@@ -89,3 +96,79 @@ class TestBuildToolCaption:
         # double-quotes confusing the reader.
         assert caption.startswith("fake(command=")
         assert caption.count('"') <= 2  # Leading + trailing only.
+
+
+class _StubTool(Tool):
+    """Minimal Tool used to exercise the ``intro_caption`` hook."""
+
+    def __init__(self, *, override: str | None = None, raises: bool = False) -> None:
+        self._override = override
+        self._raises = raises
+
+    @property
+    def name(self) -> str:
+        return "stub"
+
+    @property
+    def description(self) -> str:
+        return "stub"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}}
+
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        del kwargs
+        return ToolResult(success=True, output="")
+
+    def intro_caption(self, arguments: dict[str, Any]) -> str | None:
+        if self._raises:
+            raise ValueError("boom")
+        return self._override
+
+
+class TestBuildToolIntroCaption:
+    """Phase 82 — the pre-call intro caption helper."""
+
+    def test_default_returns_none_so_fallback_kicks_in(self):
+        # The base class's intro_caption returns None; the helper falls
+        # back to the synthesised "Running tool_name(key=value)…" form.
+        caption = build_tool_intro_caption(_StubTool(), "stub", {"path": "src/foo.py"})
+        assert caption == "Running stub(path=src/foo.py)…"
+
+    def test_tool_override_wins(self):
+        tool = _StubTool(override="Packing the charm…")
+        caption = build_tool_intro_caption(tool, "charmcraft_pack", {"path": "."})
+        assert caption == "Packing the charm…"
+
+    def test_no_tool_falls_back_to_synthesised(self):
+        # When the tool object is unknown (renderer-only callers), the
+        # helper still yields a useful intro from the arguments alone.
+        caption = build_tool_intro_caption(None, "web_fetch", {"url": "https://x"})
+        assert caption == "Running web_fetch(url=https://x)…"
+
+    def test_no_args_yields_bare_running_string(self):
+        caption = build_tool_intro_caption(None, "juju_status", {})
+        assert caption == "Running juju_status…"
+
+    def test_tool_intro_caption_exception_falls_back(self):
+        tool = _StubTool(raises=True)
+        caption = build_tool_intro_caption(tool, "stub", {"path": "x"})
+        # Exception in the override is swallowed; the fallback synthesis
+        # still produces a useful pending caption.
+        assert caption == "Running stub(path=x)…"
+
+    def test_tool_returning_empty_string_falls_back(self):
+        # An override of "" is treated as "no override" so the fallback
+        # synthesis still produces a useful caption rather than a blank
+        # spinner line.
+        tool = _StubTool(override="")
+        caption = build_tool_intro_caption(tool, "stub", {"path": "x"})
+        assert caption == "Running stub(path=x)…"
+
+    def test_long_value_truncated_in_intro(self):
+        long_cmd = "x" * 200
+        caption = build_tool_intro_caption(None, "bash", {"command": long_cmd})
+        assert caption.startswith("Running bash(command=")
+        assert caption.endswith("…)…")
+        assert len(caption) < 100

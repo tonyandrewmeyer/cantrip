@@ -194,6 +194,49 @@ class TestToolInvokedEvent:
         )
         assert event.payload["success"] is False
 
+    def test_tool_call_id_round_trips(self):
+        """Phase 82: ``tool_call_id`` lets the renderer match a final
+        event back to its pending counterpart and update in place."""
+        event = events.tool_invoked(
+            tool_name="read_file",
+            caption="Read 47 lines from src/foo.py",
+            success=True,
+            duration_ms=12,
+            tool_call_id="tc-abc",
+        )
+        assert event.payload["tool_call_id"] == "tc-abc"
+
+    def test_tool_call_id_defaults_to_none(self):
+        """Back-compat: callers that pre-date Phase 82 still work."""
+        event = events.tool_invoked(tool_name="read_file", caption="read_file()", success=True)
+        assert event.payload["tool_call_id"] is None
+
+
+class TestToolInvokedPendingEvent:
+    """Phase 82: ``TOOL_INVOKED_PENDING`` carries the pre-call payload."""
+
+    def test_required_fields_surface_on_event(self):
+        event = events.tool_invoked_pending(
+            tool_name="charmcraft_pack",
+            caption="Packing the charm…",
+            tool_call_id="tc-1",
+        )
+        assert event.type is events.EventType.TOOL_INVOKED_PENDING
+        payload = event.payload
+        assert payload["tool_name"] == "charmcraft_pack"
+        assert payload["caption"] == "Packing the charm…"
+        assert payload["tool_call_id"] == "tc-1"
+        assert payload["source"] == "main"
+
+    def test_source_tag_distinguishes_subagent_calls(self):
+        event = events.tool_invoked_pending(
+            tool_name="juju_deploy",
+            caption="Deploying redis…",
+            tool_call_id="tc-2",
+            source="subagent",
+        )
+        assert event.payload["source"] == "subagent"
+
 
 class TestBusBroadcastContract:
     """The wildcard subscriber pattern used by the web server works for all types."""
@@ -241,6 +284,11 @@ class TestBusBroadcastContract:
                 request_id="x", server_name="x", mode="form", message="x"
             ).type,
             events.tool_invoked(tool_name="read_file", caption="read_file()", success=True).type,
+            events.tool_invoked_pending(
+                tool_name="read_file",
+                caption="Reading src/foo.py…",
+                tool_call_id="tc1",
+            ).type,
             events.model_switched(
                 provider="claude",
                 model="claude-sonnet-4-6",

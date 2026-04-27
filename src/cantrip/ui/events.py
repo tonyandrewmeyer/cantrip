@@ -33,6 +33,7 @@ class EventType(enum.StrEnum):
     MEMORY_RECALLED = "memory_recalled"
     MCP_ELICITATION_REQUEST = "mcp_elicitation_request"
     TOOL_INVOKED = "tool_invoked"
+    TOOL_INVOKED_PENDING = "tool_invoked_pending"
     MODEL_SWITCHED = "model_switched"
     COMPACTION_STARTED = "compaction_started"
     COMPACTION_COMPLETED = "compaction_completed"
@@ -466,6 +467,7 @@ def tool_invoked(
     success: bool,
     duration_ms: int | None = None,
     source: str = "main",
+    tool_call_id: str | None = None,
 ) -> Event:
     """Build a ``TOOL_INVOKED`` event.
 
@@ -476,7 +478,9 @@ def tool_invoked(
     / ``subagent`` so subscribers that care about context (a test
     harness recording only main-agent calls, say) can filter.
     ``duration_ms`` is optional — ``None`` means "not measured" rather
-    than "zero".
+    than "zero".  ``tool_call_id`` (Phase 82) carries the LLM-assigned
+    call id so renderers can match this final event back to the
+    matching :func:`tool_invoked_pending` block and update it in place.
     """
     return Event(
         type=EventType.TOOL_INVOKED,
@@ -485,6 +489,35 @@ def tool_invoked(
             "caption": caption,
             "success": success,
             "duration_ms": duration_ms,
+            "source": source,
+            "tool_call_id": tool_call_id,
+        },
+    )
+
+
+def tool_invoked_pending(
+    *,
+    tool_name: str,
+    caption: str,
+    tool_call_id: str,
+    source: str = "main",
+) -> Event:
+    """Build a ``TOOL_INVOKED_PENDING`` event (Phase 82).
+
+    Fired *before* the agent loop dispatches a tool so the chat
+    surfaces can render an immediate "running now" block rather than
+    leaving the user staring at silence between the agent's last line
+    and the tool's eventual completion.  The matching
+    :func:`tool_invoked` event arrives once the tool returns and is
+    paired by ``tool_call_id`` so the renderer can update the existing
+    block in place — no duplicate lines, no orphan spinners.
+    """
+    return Event(
+        type=EventType.TOOL_INVOKED_PENDING,
+        payload={
+            "tool_name": tool_name,
+            "caption": caption,
+            "tool_call_id": tool_call_id,
             "source": source,
         },
     )

@@ -1353,6 +1353,7 @@ class CantripAgent:
         *,
         source: str,
         duration_ms: int | None = None,
+        tool_call_id: str | None = None,
     ) -> None:
         """Emit a ``TOOL_INVOKED`` event for the chat surfaces (Phase 75).
 
@@ -1361,6 +1362,11 @@ class CantripAgent:
         ``tool_name(key=value)`` fallback otherwise.  Published on the
         shared event bus; the TUI chat widget and the Web UI each
         render a compact tool block when they receive it.
+
+        ``tool_call_id`` (Phase 82) round-trips with the matching
+        :meth:`_publish_tool_invoked_pending` event so the renderers can
+        update the existing block in place rather than appending a new
+        line.
         """
         from cantrip.agent.tools.base import build_tool_caption
 
@@ -1371,6 +1377,37 @@ class CantripAgent:
                 caption=caption,
                 success=result.success,
                 duration_ms=duration_ms,
+                source=source,
+                tool_call_id=tool_call_id,
+            )
+        )
+
+    def _publish_tool_invoked_pending(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        source: str,
+        tool_call_id: str,
+    ) -> None:
+        """Emit a ``TOOL_INVOKED_PENDING`` event before tool dispatch (Phase 82).
+
+        Renders the chat-surface "running now" block immediately so
+        slow tools (``charmcraft_pack``, ``juju_wait``, ``web_fetch``)
+        produce visible feedback the moment they're dispatched rather
+        than after they return.  The matching ``TOOL_INVOKED`` event,
+        carrying the same ``tool_call_id``, replaces the pending block
+        with the post-call caption when the tool finishes.
+        """
+        from cantrip.agent.tools.base import build_tool_intro_caption
+
+        tool = self._tool_map.get(tool_name) if self._tool_map else None
+        caption = build_tool_intro_caption(tool, tool_name, arguments)
+        self._event_bus.publish(
+            ui_events.tool_invoked_pending(
+                tool_name=tool_name,
+                caption=caption,
+                tool_call_id=tool_call_id,
                 source=source,
             )
         )
@@ -1872,6 +1909,18 @@ class CantripAgent:
                 # the plan-mode flag for scope reasons.
                 plan_block = _plan_mode_refusal(self.state, tc.name)
                 tool_start = time.monotonic()
+                # Phase 82: emit the "running now" block before
+                # dispatch so slow tools (charmcraft_pack, juju_wait,
+                # web_fetch) produce visible feedback immediately.  The
+                # matching TOOL_INVOKED below carries the same
+                # tool_call_id so the renderer updates the same block
+                # in place rather than appending a fresh line.
+                self._publish_tool_invoked_pending(
+                    tc.name,
+                    effective_arguments,
+                    source="main",
+                    tool_call_id=tc.id,
+                )
                 if veto is not None:
                     # A pre-hook blocked the call \u2014 synthesise an error
                     # ToolResult so the LLM sees the veto on its next turn
@@ -1913,6 +1962,7 @@ class CantripAgent:
                     result,
                     source="main",
                     duration_ms=tool_elapsed_ms,
+                    tool_call_id=tc.id,
                 )
                 content = result.output if result.success else (result.error or "Unknown error")
                 # Wrap tool output in delimiters to reduce prompt injection risk.
@@ -2137,6 +2187,12 @@ class CantripAgent:
                 effective_arguments = final_arguments(pre_results) or tc.arguments
                 plan_block = _plan_mode_refusal(self.state, tc.name)
                 tool_start = time.monotonic()
+                self._publish_tool_invoked_pending(
+                    tc.name,
+                    effective_arguments,
+                    source="main-stream",
+                    tool_call_id=tc.id,
+                )
                 if veto is not None:
                     log.warning(
                         "Tool call %r vetoed by %s",
@@ -2172,6 +2228,7 @@ class CantripAgent:
                     result,
                     source="main-stream",
                     duration_ms=tool_elapsed_ms,
+                    tool_call_id=tc.id,
                 )
                 content = result.output if result.success else (result.error or "Unknown error")
                 content = f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"
@@ -3332,6 +3389,7 @@ class CantripAgent:
             arguments: dict[str, Any],
             result: ToolResult,
             duration_ms: int,
+            tool_call_id: str,
         ) -> None:
             self._publish_tool_invoked(
                 tool_name,
@@ -3339,6 +3397,22 @@ class CantripAgent:
                 result,
                 source="subagent",
                 duration_ms=duration_ms,
+                tool_call_id=tool_call_id,
+            )
+
+        # Phase 82: forward subagent "running now" events so the chat
+        # renders a pending block before each subagent tool returns —
+        # mirrors the main-agent pre-dispatch emission above.
+        def _forward_subagent_tool_invoked_pending(
+            tool_name: str,
+            arguments: dict[str, Any],
+            tool_call_id: str,
+        ) -> None:
+            self._publish_tool_invoked_pending(
+                tool_name,
+                arguments,
+                source="subagent",
+                tool_call_id=tool_call_id,
             )
 
         # Phase 55.3: forward goal-budget trips to both the transcript
@@ -3380,6 +3454,7 @@ class CantripAgent:
             "hook_runner": self._hook_runner,
             "on_task_done": _purge_task_checkpoints,
             "on_tool_invoked": _forward_subagent_tool_invoked,
+            "on_tool_invoked_pending": _forward_subagent_tool_invoked_pending,
             "on_budget_exceeded": _forward_budget_exceeded,
             "on_rate_limited": _forward_rate_limited,
         }

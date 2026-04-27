@@ -82,7 +82,9 @@ class TestCounterIncrementsViaCallback:
         assert executor._tool_calls_made == 0
         # ``_on_tool_invoked`` is the wrapped callback the subagent
         # would have called.
-        executor._on_tool_invoked("read_file", {}, ToolResult(success=True, output=""), 10)
+        executor._on_tool_invoked(
+            "read_file", {}, ToolResult(success=True, output=""), 10, "call-1"
+        )
         assert executor._tool_calls_made == 1
 
     def test_mcp_call_does_not_increment(self, tmp_path: pathlib.Path) -> None:
@@ -92,6 +94,7 @@ class TestCounterIncrementsViaCallback:
             {},
             ToolResult(success=True, output=""),
             10,
+            "call-1",
         )
         assert executor._tool_calls_made == 0
 
@@ -100,7 +103,9 @@ class TestCounterIncrementsViaCallback:
         future tooling surface "calls made so far" even before a cap
         is introduced."""
         executor = self._make(tmp_path, cap=None)
-        executor._on_tool_invoked("read_file", {}, ToolResult(success=True, output=""), 10)
+        executor._on_tool_invoked(
+            "read_file", {}, ToolResult(success=True, output=""), 10, "call-1"
+        )
         assert executor._tool_calls_made == 1
 
     def test_inner_callback_still_fires(self, tmp_path: pathlib.Path) -> None:
@@ -109,23 +114,31 @@ class TestCounterIncrementsViaCallback:
         Otherwise the rate-limit wrapper would accidentally swallow
         the UI event and TOOL_INVOKED would never reach the chat.
         """
-        captured: list[tuple[str, int]] = []
+        captured: list[tuple[str, int, str]] = []
         state = AgentState(charm_path=tmp_path)
         executor = BackgroundExecutor(
             queue=WorkQueue(),
             tools=[_make_tool("read_file")],
             provider=FakeProvider(responses=[Response(content="done")]),
             state=state,
-            on_tool_invoked=lambda name, _args, _result, ms: captured.append((name, ms)),
+            on_tool_invoked=lambda name, _args, _result, ms, tcid: captured.append(
+                (name, ms, tcid)
+            ),
         )
-        executor._on_tool_invoked("read_file", {}, ToolResult(success=True, output=""), 17)
+        executor._on_tool_invoked(
+            "read_file", {}, ToolResult(success=True, output=""), 17, "call-a"
+        )
         executor._on_tool_invoked(
             "mcp__grafana__query",
             {},
             ToolResult(success=True, output=""),
             22,
+            "call-b",
         )
-        assert captured == [("read_file", 17), ("mcp__grafana__query", 22)]
+        assert captured == [
+            ("read_file", 17, "call-a"),
+            ("mcp__grafana__query", 22, "call-b"),
+        ]
 
 
 class TestRateLimitGate:

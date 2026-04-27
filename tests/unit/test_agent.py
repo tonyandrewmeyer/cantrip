@@ -967,6 +967,40 @@ class TestToolInvokedEvent:
         assert received[0].payload["success"] is False
 
     @pytest.mark.asyncio
+    async def test_pending_event_precedes_invoked_with_matching_id(self):
+        """Phase 82: TOOL_INVOKED_PENDING fires before TOOL_INVOKED with
+        the same ``tool_call_id`` so renderers can update in place."""
+        from cantrip.ui import events as ui_events
+
+        tool_call = ToolCall(id="tc-pending", name="read_file", arguments={"path": "x"})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="ok"),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="ok"))
+
+        events_seen: list[ui_events.Event] = []
+        agent.event_bus.subscribe(ui_events.EventType.TOOL_INVOKED_PENDING, events_seen.append)
+        agent.event_bus.subscribe(ui_events.EventType.TOOL_INVOKED, events_seen.append)
+
+        await agent.process_message("read it")
+
+        types = [e.type for e in events_seen]
+        assert types == [
+            ui_events.EventType.TOOL_INVOKED_PENDING,
+            ui_events.EventType.TOOL_INVOKED,
+        ]
+        assert events_seen[0].payload["tool_call_id"] == "tc-pending"
+        assert events_seen[1].payload["tool_call_id"] == "tc-pending"
+        # The pending caption is the present-continuous "Running …"
+        # form; the final caption is the post-call summary.
+        assert events_seen[0].payload["caption"].startswith("Running ")
+        assert events_seen[0].payload["caption"].endswith("…")
+
+    @pytest.mark.asyncio
     async def test_explicit_caption_wins_over_fallback(self):
         """A tool setting ``ToolResult.caption`` overrides the formulaic fallback."""
         tool_call = ToolCall(id="tc1", name="read_file", arguments={"path": "src/foo.py"})

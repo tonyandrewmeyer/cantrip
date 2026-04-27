@@ -68,9 +68,19 @@ PhaseChangeCallback = Callable[[AgentTask], None] | None
 
 # Called after each subagent tool call so the UI can render an inline
 # "tool block" in the chat (Phase 75).  Args: (tool_name, arguments,
-# result, duration_ms).  The executor wires this to publish a
-# ``TOOL_INVOKED`` event on the shared bus.
-ToolInvokedCallback = Callable[[str, dict[str, Any], ToolResult, int], None] | None
+# result, duration_ms, tool_call_id).  ``tool_call_id`` (Phase 82)
+# pairs the post-call event with its matching pending event so the
+# renderer updates the existing block in place rather than appending.
+# The executor wires this to publish a ``TOOL_INVOKED`` event on the
+# shared bus.
+ToolInvokedCallback = Callable[[str, dict[str, Any], ToolResult, int, str], None] | None
+
+# Called *before* each subagent tool call (Phase 82) so the UI can
+# render a "running now" block immediately rather than waiting for
+# completion.  Args: (tool_name, arguments, tool_call_id).  The
+# executor wires this to publish a ``TOOL_INVOKED_PENDING`` event on
+# the shared bus.
+ToolInvokedPendingCallback = Callable[[str, dict[str, Any], str], None] | None
 
 
 # Tool-call "running" phases shorter than this threshold feel like flicker,
@@ -888,6 +898,7 @@ class Subagent:
         on_phase_change: PhaseChangeCallback = None,
         hook_runner: HookRunner | None = None,
         on_tool_invoked: ToolInvokedCallback = None,
+        on_tool_invoked_pending: ToolInvokedPendingCallback = None,
         audit_writer: AuditWriter | None = None,
         permissions: PermissionRuleset | None = None,
         permission_manager: PermissionManager | None = None,
@@ -918,6 +929,7 @@ class Subagent:
         self._on_phase_change = on_phase_change
         self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
         self._on_tool_invoked = on_tool_invoked
+        self._on_tool_invoked_pending = on_tool_invoked_pending
         # Phase 80.4: streaming JSONL audit trail for every policy
         # decision.  Lazily created from ``context.charm_path`` when no
         # writer was injected, so tests and one-off runs get the same
@@ -1382,6 +1394,23 @@ class Subagent:
                         result = await self._execute_tool_with_checkpoint(ctx, tc.name, arguments)
                 return result, int((time.monotonic() - call_start) * 1000)
 
+            # Phase 82: publish "running now" events upfront so the chat
+            # renders a pending block per concurrent call before the
+            # gather.  Matched by tool_call_id with the post-call
+            # TOOL_INVOKED below; the renderer updates the same block
+            # in place when each call returns.
+            if self._on_tool_invoked_pending is not None:
+                for tc, args in zip(response.tool_calls, call_arguments, strict=True):
+                    try:
+                        self._on_tool_invoked_pending(tc.name, args, tc.id)
+                    except (
+                        TypeError,
+                        ValueError,
+                        RuntimeError,
+                        AttributeError,
+                    ):
+                        log.exception("on_tool_invoked_pending callback raised for %s", tc.name)
+
             timed_results = await asyncio.gather(
                 *(
                     _tool_or_veto(tc, denial, veto, args, permission)
@@ -1430,7 +1459,7 @@ class Subagent:
                 await self._hook_runner.fire(HookEvent.POST_TOOL_CALL, payload)
                 if self._on_tool_invoked is not None:
                     try:
-                        self._on_tool_invoked(tc.name, args, tool_result, duration_ms)
+                        self._on_tool_invoked(tc.name, args, tool_result, duration_ms, tc.id)
                     except (  # noqa: PERF203
                         TypeError,
                         ValueError,
