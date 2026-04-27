@@ -4,6 +4,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **OpenAI embed provider works keyless against local OSS servers.**
+  ``OpenAIEmbedProvider`` no longer demands ``OPENAI_API_KEY`` when
+  ``OPENAI_EMBED_BASE_URL`` is set.  Setting the override flips the
+  key from required to optional so users running Ollama
+  (``http://localhost:11434/v1``), vLLM, llama.cpp-server, or any
+  other OpenAI-wire-compatible local embed endpoint can wire it in
+  without a placeholder key.  When no key is configured, the
+  ``Authorization`` header is omitted entirely &mdash; some local
+  servers reject ``Bearer `` with an empty token instead of treating
+  it as anonymous.  ``OPENAI_API_KEY`` is still forwarded when set,
+  for self-hosted endpoints that *do* authenticate.
+
 ### Added
 - **Phase 72.1 (indexed charm-ecosystem documentation).**  A new
   ``cantrip.docs_index`` subsystem crawls the canonical Canonical

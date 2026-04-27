@@ -13,8 +13,13 @@ cosine-similarity reranker on top of :meth:`embed` themselves) — the
 :class:`~cantrip.llm.roles.RoleRouter` is the place to mix and match.
 
 Auth: ``OPENAI_API_KEY``, with an optional ``base_url`` override
-(``OPENAI_EMBED_BASE_URL`` env var) so a self-hosted vLLM or
-Fireworks endpoint can serve the same shape.
+(``OPENAI_EMBED_BASE_URL`` env var) so a self-hosted vLLM, Ollama,
+llama.cpp-server, LocalAI, or Canonical inference snap can serve the
+same shape.  When the base URL is overridden, the API key becomes
+optional — most local OSS servers do not authenticate.  Users who do
+want to authenticate against a self-hosted endpoint can still set
+``OPENAI_API_KEY``; it will be forwarded as a bearer token whenever
+present.
 """
 
 from __future__ import annotations
@@ -39,22 +44,42 @@ _TIMEOUT_SECONDS = 30.0
 _DEFAULT_MODEL = "text-embedding-3-small"
 
 
-def _resolve_endpoint(base_url: str | None) -> str:
-    """Return the ``/embeddings`` URL, with env override support."""
-    base = base_url or os.environ.get("OPENAI_EMBED_BASE_URL") or _DEFAULT_BASE_URL
-    return f"{base.rstrip('/')}/embeddings"
+def _resolve_base(base_url: str | None) -> tuple[str, bool]:
+    """Resolve the embed base URL and whether it points at default OpenAI.
+
+    Returns ``(base, is_default_openai)``.  Callers use the second
+    element to decide whether ``OPENAI_API_KEY`` is mandatory: the
+    real OpenAI service always needs a key, but a local
+    OpenAI-compatible server (Ollama, vLLM, llama.cpp-server,
+    inference-snap) usually does not.
+    """
+    override = base_url or os.environ.get("OPENAI_EMBED_BASE_URL")
+    if override:
+        return override, False
+    return _DEFAULT_BASE_URL, True
 
 
-def _api_key() -> str:
-    """Return ``OPENAI_API_KEY`` or raise a friendly error."""
+def _api_key(*, required: bool) -> str | None:
+    """Return ``OPENAI_API_KEY``; raise if *required* and unset.
+
+    *required* is true when the endpoint is the default OpenAI host;
+    callers pointing at a self-hosted OpenAI-compatible server pass
+    ``required=False`` so the key becomes optional.  An empty key
+    when the call is keyless returns ``None`` — the embed method
+    omits the ``Authorization`` header in that case rather than
+    sending ``Bearer ``.
+    """
     key = os.environ.get("OPENAI_API_KEY")
-    if not key:
+    if key:
+        return key
+    if required:
         raise ProviderError(
             "OPENAI_API_KEY is not set. "
             "Get a key from https://platform.openai.com/ and export it before "
-            "starting cantrip."
+            "starting cantrip, or set OPENAI_EMBED_BASE_URL to point at a "
+            "self-hosted OpenAI-compatible embed server (no key required)."
         )
-    return key
+    return None
 
 
 def _raise_for_status(response: httpx.Response) -> None:
@@ -80,9 +105,12 @@ class OpenAIEmbedProvider(EmbedProvider):
         base_url: str | None = None,
     ) -> None:
         self._model = model
-        self._endpoint = _resolve_endpoint(base_url)
+        base, is_default = _resolve_base(base_url)
+        self._endpoint = f"{base.rstrip('/')}/embeddings"
         # Probe the env var at construction (matches Voyage's fail-fast).
-        self._key = _api_key()
+        # Custom endpoints make the key optional — local OSS servers
+        # (Ollama, vLLM, llama.cpp-server) don't authenticate.
+        self._key = _api_key(required=is_default)
 
     @property
     def model_name(self) -> str:
@@ -107,14 +135,17 @@ class OpenAIEmbedProvider(EmbedProvider):
             "model": self._model,
             "input": texts,
         }
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        # Omit Authorization entirely when keyless — some local
+        # servers (Ollama, llama.cpp-server) reject ``Bearer `` with
+        # an empty token instead of treating it as anonymous.
+        if self._key:
+            headers["Authorization"] = f"Bearer {self._key}"
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
             response = await client.post(
                 self._endpoint,
                 json=payload,
-                headers={
-                    "Authorization": f"Bearer {self._key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
             )
         _raise_for_status(response)
         body = response.json()

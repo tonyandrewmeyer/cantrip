@@ -285,10 +285,100 @@ class TestVoyageRerankProvider:
 class TestOpenAIEmbedProvider:
     """OpenAI embed wire format and base-URL override."""
 
-    def test_missing_api_key_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_missing_api_key_raises_on_default_endpoint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Default OpenAI endpoint demands a key — fail fast at construction."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        with pytest.raises(ProviderError):
+        monkeypatch.delenv("OPENAI_EMBED_BASE_URL", raising=False)
+        with pytest.raises(ProviderError, match="OPENAI_API_KEY"):
             OpenAIEmbedProvider()
+
+    def test_missing_api_key_ok_with_base_url_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Local OSS servers (Ollama, vLLM, llama.cpp) don't authenticate.
+
+        Setting ``OPENAI_EMBED_BASE_URL`` flips the key from required
+        to optional so a user pointing at a self-hosted endpoint
+        doesn't need to invent a placeholder.
+        """
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_EMBED_BASE_URL", "http://localhost:11434/v1")
+        provider = OpenAIEmbedProvider()
+        assert provider._endpoint == "http://localhost:11434/v1/embeddings"
+        assert provider._key is None
+
+    def test_missing_api_key_ok_with_base_url_constructor_arg(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Explicit ``base_url=`` should also relax the key requirement."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_EMBED_BASE_URL", raising=False)
+        provider = OpenAIEmbedProvider(base_url="http://localhost:8000/v1")
+        assert provider._endpoint == "http://localhost:8000/v1/embeddings"
+        assert provider._key is None
+
+    @pytest.mark.asyncio
+    async def test_keyless_request_omits_authorization_header(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When keyless, the embed call must not send ``Authorization: Bearer``.
+
+        Some local servers (notably llama.cpp-server) reject an
+        empty bearer token with a 401 instead of treating it as
+        anonymous, so the header has to be omitted entirely.
+        """
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_EMBED_BASE_URL", "http://localhost:11434/v1")
+        body = {
+            "data": [{"index": 0, "embedding": [0.1, 0.2]}],
+            "usage": {"prompt_tokens": 3},
+        }
+        response = httpx.Response(
+            200, json=body, request=httpx.Request("POST", "http://localhost:11434/v1")
+        )
+        provider = OpenAIEmbedProvider()
+        with patch("cantrip.llm.openai_embeddings.httpx.AsyncClient") as mock_client:
+            instance = AsyncMock()
+            instance.post.return_value = response
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client.return_value = instance
+            await provider.embed(["hi"])
+            sent_headers = instance.post.call_args.kwargs["headers"]
+        assert "Authorization" not in sent_headers
+        assert sent_headers.get("Content-Type") == "application/json"
+
+    @pytest.mark.asyncio
+    async def test_overridden_base_url_still_forwards_key_when_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A user who *wants* to authenticate against a self-hosted endpoint can.
+
+        Setting both ``OPENAI_EMBED_BASE_URL`` and ``OPENAI_API_KEY``
+        should keep the bearer token; the relaxation is permissive,
+        not exclusive.
+        """
+        monkeypatch.setenv("OPENAI_API_KEY", "secret")
+        monkeypatch.setenv("OPENAI_EMBED_BASE_URL", "http://localhost:8000/v1")
+        body = {
+            "data": [{"index": 0, "embedding": [0.1]}],
+            "usage": {"prompt_tokens": 1},
+        }
+        response = httpx.Response(
+            200, json=body, request=httpx.Request("POST", "http://localhost:8000/v1")
+        )
+        provider = OpenAIEmbedProvider()
+        with patch("cantrip.llm.openai_embeddings.httpx.AsyncClient") as mock_client:
+            instance = AsyncMock()
+            instance.post.return_value = response
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client.return_value = instance
+            await provider.embed(["hi"])
+            sent_headers = instance.post.call_args.kwargs["headers"]
+        assert sent_headers["Authorization"] == "Bearer secret"
 
     @pytest.mark.asyncio
     async def test_embed_orders_by_index(self, monkeypatch: pytest.MonkeyPatch) -> None:

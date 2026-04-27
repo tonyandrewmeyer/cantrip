@@ -275,9 +275,34 @@ provider.</p>
 <p>Equivalent environment variables for stable shells:
 <code>CANTRIP_EMBED_PROVIDER</code>, <code>CANTRIP_EMBED_MODEL</code>,
 <code>CANTRIP_RERANK_PROVIDER</code>, <code>CANTRIP_RERANK_MODEL</code>.  The CLI flag
-wins when both are present.  A self-hosted vLLM that speaks the
-OpenAI embed wire format can be reached via
-<code>OPENAI_EMBED_BASE_URL</code>.</p>
+wins when both are present.</p>
+<h3>Local embed servers (Ollama, vLLM, llama.cpp)</h3>
+<p>Anything that exposes the OpenAI <code>/v1/embeddings</code> wire format can
+serve as the embed provider.  Set <code>OPENAI_EMBED_BASE_URL</code> to the
+endpoint &mdash; the API-key requirement is automatically relaxed
+when this override is present, since most local servers do not
+authenticate.</p>
+<pre><code><span class="prompt">$</span> ollama pull nomic-embed-text
+<span class="prompt">$</span> export OPENAI_EMBED_BASE_URL="http://localhost:11434/v1"
+<span class="prompt">$</span> cantrip --provider claude \
+    --embed-provider openai --embed-model nomic-embed-text \
+    --rerank-provider voyage</code></pre>
+<p>Tested shapes:</p>
+<ul>
+<li><strong>Ollama</strong> &mdash; <code>http://localhost:11434/v1</code>, model name matches
+the pulled tag (e.g. <code>nomic-embed-text</code>, <code>mxbai-embed-large</code>,
+<code>bge-m3</code>).</li>
+<li><strong>vLLM</strong> &mdash; <code>http://localhost:8000/v1</code> when launched with
+<code>vllm serve &lt;embed-model&gt; --task embed</code>.</li>
+<li><strong>llama.cpp <code>llama-server</code></strong> &mdash; <code>http://localhost:8080/v1</code>
+when launched with <code>--embedding --pooling mean</code>.</li>
+<li><strong>Canonical inference snaps</strong> &mdash; the chat snaps (gemma3,
+deepseek-r1, etc.) do not expose <code>/v1/embeddings</code>; an embed-only
+inference snap is in development.</li>
+</ul>
+<p>If the local server <em>does</em> require authentication, set
+<code>OPENAI_API_KEY</code> alongside <code>OPENAI_EMBED_BASE_URL</code> and the bearer
+token will be forwarded.</p>
 <p>Costs surface in <code>/cost</code> under a separate <strong>By role</strong> section once
 an embed or rerank call has fired, so retrieval spend is visible
 without merging into chat.  Pricing entries cover voyage-3,

@@ -219,9 +219,38 @@ OpenAI users can pair their embed endpoint with Voyage rerank
 Equivalent environment variables for stable shells:
 `CANTRIP_EMBED_PROVIDER`, `CANTRIP_EMBED_MODEL`,
 `CANTRIP_RERANK_PROVIDER`, `CANTRIP_RERANK_MODEL`.  The CLI flag
-wins when both are present.  A self-hosted vLLM that speaks the
-OpenAI embed wire format can be reached via
-`OPENAI_EMBED_BASE_URL`.
+wins when both are present.
+
+### Local embed servers (Ollama, vLLM, llama.cpp)
+
+Anything that exposes the OpenAI `/v1/embeddings` wire format can
+serve as the embed provider.  Set `OPENAI_EMBED_BASE_URL` to the
+endpoint &mdash; the API-key requirement is automatically relaxed
+when this override is present, since most local servers do not
+authenticate.
+
+<pre><code><span class="prompt">$</span> ollama pull nomic-embed-text
+<span class="prompt">$</span> export OPENAI_EMBED_BASE_URL="http://localhost:11434/v1"
+<span class="prompt">$</span> cantrip --provider claude \
+    --embed-provider openai --embed-model nomic-embed-text \
+    --rerank-provider voyage</code></pre>
+
+Tested shapes:
+
+- **Ollama** &mdash; `http://localhost:11434/v1`, model name matches
+  the pulled tag (e.g. `nomic-embed-text`, `mxbai-embed-large`,
+  `bge-m3`).
+- **vLLM** &mdash; `http://localhost:8000/v1` when launched with
+  `vllm serve <embed-model> --task embed`.
+- **llama.cpp `llama-server`** &mdash; `http://localhost:8080/v1`
+  when launched with `--embedding --pooling mean`.
+- **Canonical inference snaps** &mdash; the chat snaps (gemma3,
+  deepseek-r1, etc.) do not expose `/v1/embeddings`; an embed-only
+  inference snap is in development.
+
+If the local server *does* require authentication, set
+`OPENAI_API_KEY` alongside `OPENAI_EMBED_BASE_URL` and the bearer
+token will be forwarded.
 
 Costs surface in `/cost` under a separate **By role** section once
 an embed or rerank call has fired, so retrieval spend is visible
