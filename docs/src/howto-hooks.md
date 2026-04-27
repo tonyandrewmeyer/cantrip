@@ -164,11 +164,17 @@ never fire until the matching agent code lands.
 {#payload}
 ## Payload shape
 
-Every hook receives a JSON object on stdin with at least two
+Every hook receives a JSON object on stdin with at least three
 fields:
 
 - `event` — the event name (mirrors the hook’s `event:` field).
 - `timestamp` — ISO-8601 local time of the event.
+- `operator` — `{"name": ..., "email": ...}` taken from
+  `git config user.name` / `user.email`, or `null`
+  when neither is set. Use it from a hook to route on identity:
+  `if: operator.email == "ada@example.org"`. Resolved once per
+  Cantrip session and cached, so changes to git config require
+  a restart to take effect.
 
 The remaining fields vary by event, as listed above. Parse with
 `jq`, or `python -c 'import json, sys;

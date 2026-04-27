@@ -8,6 +8,7 @@ import pathlib
 import pytest
 import yaml
 
+from cantrip import hooks as hooks_module
 from cantrip.hooks import (
     DEFAULT_HOOK_TIMEOUT,
     REPO_CONFIG_FILENAME,
@@ -20,6 +21,7 @@ from cantrip.hooks import (
     _FilterExpr,
     _parse_mutation_envelope,
     _parse_yaml,
+    _resolve_operator,
     final_arguments,
     first_veto,
     load_hooks,
@@ -1548,3 +1550,172 @@ class TestHookRunnerAppliesMutations:
         assert result.succeeded
         assert result.mutated_arguments is None
         assert "arguments" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Operator identity in payload (Phase 46b)
+# ---------------------------------------------------------------------------
+
+
+class TestOperatorField:
+    """``HookRunner.fire`` populates the ``operator`` payload field.
+
+    The field is sourced from ``git config user.name`` / ``user.email``
+    at first fire and cached for the runner's lifetime.  Hooks that
+    don't reference the field keep working unchanged.
+    """
+
+    @pytest.mark.asyncio
+    async def test_operator_present_when_git_configured(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        out = tmp_path / "captured.json"
+        hook = HookConfig(
+            name="capture",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"cat > {out}",
+            timeout=10,
+        )
+
+        async def fake_resolve(_repo_root):
+            return {"name": "Ada Lovelace", "email": "ada@example.org"}
+
+        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "git_push"})
+        assert result.exit_code == 0
+
+        payload = json.loads(out.read_text())
+        assert payload["operator"] == {"name": "Ada Lovelace", "email": "ada@example.org"}
+
+    @pytest.mark.asyncio
+    async def test_operator_none_when_git_unconfigured(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        out = tmp_path / "captured.json"
+        hook = HookConfig(
+            name="capture",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"cat > {out}",
+            timeout=10,
+        )
+
+        async def fake_resolve(_repo_root):
+            return None
+
+        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+        runner = HookRunner([hook])
+
+        await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "git_push"})
+        payload = json.loads(out.read_text())
+        # Field is always present (so ``if: operator != None`` filters
+        # work), even when no identity is configured.
+        assert "operator" in payload
+        assert payload["operator"] is None
+
+    @pytest.mark.asyncio
+    async def test_existing_hooks_ignore_operator_field(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Hooks that don't reference the field keep working unchanged."""
+        marker = tmp_path / "ran"
+        hook = HookConfig(
+            name="legacy",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"jq -r .tool > {marker}",
+            timeout=10,
+        )
+
+        async def fake_resolve(_repo_root):
+            return {"name": "Ada", "email": "ada@example.org"}
+
+        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+        runner = HookRunner([hook])
+
+        [result] = await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "juju_status"})
+        assert result.exit_code == 0
+        assert marker.read_text().strip() == "juju_status"
+
+    @pytest.mark.asyncio
+    async def test_operator_resolved_once_per_runner(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Repeated fires reuse the cached operator — git is not re-shelled."""
+        calls = 0
+
+        async def fake_resolve(_repo_root):
+            nonlocal calls
+            calls += 1
+            return {"name": "Ada", "email": "ada@example.org"}
+
+        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+
+        hook = HookConfig(
+            name="noop",
+            event=HookEvent.PRE_TOOL_CALL,
+            run="true",
+            timeout=5,
+        )
+        runner = HookRunner([hook])
+
+        for _ in range(3):
+            await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "x"})
+        assert calls == 1
+
+    @pytest.mark.asyncio
+    async def test_operator_filter_in_if_expression(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """``if: operator.email == ...`` filters work end-to-end."""
+        marker = tmp_path / "matched"
+        hook = HookConfig(
+            name="route",
+            event=HookEvent.PRE_TOOL_CALL,
+            run=f"touch {marker}",
+            timeout=5,
+            if_expr=_FilterExpr('operator.email == "ada@example.org"'),
+        )
+
+        async def fake_resolve(_repo_root):
+            return {"name": "Ada", "email": "ada@example.org"}
+
+        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+        runner = HookRunner([hook])
+
+        await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "git_push"})
+        assert marker.exists(), "hook should have fired for the matching operator"
+
+    @pytest.mark.asyncio
+    async def test_resolve_operator_with_isolated_git(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Smoke test: real ``git config`` plumbing runs and returns a dict.
+
+        Uses ``GIT_CONFIG_GLOBAL`` / ``GIT_CONFIG_SYSTEM`` to point git
+        at a tmp config so the test doesn't pick up the dev's identity.
+        """
+        config_path = tmp_path / "gitconfig"
+        config_path.write_text(
+            "[user]\n\tname = Test User\n\temail = test@example.invalid\n",
+        )
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config_path))
+        monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+        # ``tmp_path`` is not a git repo, so ``git -C`` won't pick up
+        # the cantrip checkout's local user.name when the test runs
+        # from inside the project tree.
+        operator = await _resolve_operator(tmp_path)
+        assert operator == {"name": "Test User", "email": "test@example.invalid"}
+
+    @pytest.mark.asyncio
+    async def test_resolve_operator_returns_none_when_unset(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """No git identity → ``None`` (so the payload field is null)."""
+        empty_config = tmp_path / "gitconfig"
+        empty_config.write_text("")
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty_config))
+        monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+
+        operator = await _resolve_operator(tmp_path)
+        assert operator is None

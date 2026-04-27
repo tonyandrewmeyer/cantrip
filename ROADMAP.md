@@ -718,41 +718,6 @@ check`` passes.
 
 ---
 
-## Phase 46b: Operator Identity in Hook Payloads
-
-**Goal:** Add an optional ``operator`` field to Phase 46 hook
-payloads so role-aware policy is expressible by future hook
-scripts (and so adding the field is not a breaking change to
-existing scripts later).  See
-[`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
-§8.2 for context.
-
-This is a small forward-compatibility patch.  Existing hook
-scripts that don't read ``operator`` keep working unchanged;
-new scripts can branch on it.
-
-- [ ] Extend ``hooks.py`` payload schema (``hooks.py:39-52``):
-  new ``operator: dict | None`` field with sub-fields ``name``
-  / ``email`` populated from ``git config user.name`` /
-  ``user.email`` at hook-fire time.  ``None`` when no git
-  config is set.
-- [ ] Document the new field in ``docs/docs/howto-hooks.html``
-  alongside the existing payload table.
-- [ ] Test covers: field present when git config set, ``None``
-  when unset, scripts that don't reference the field continue
-  to function.
-
-**Exit criteria:** ``operator`` field documented and tested.
-Existing hooks unaffected.  ``make check`` passes.  CHANGELOG
-entry.
-
-**Dependencies:**
-| Item | Depends On | Notes |
-|------|-----------|-------|
-| Payload extension | Phase 46 hook plumbing | Pure additive change |
-
----
-
 ## Phase 56: Publish Juju Copilot / Claude Code Assets
 
 **Goal:** The awesome-copilot survey turned up zero Juju-specific

@@ -648,6 +648,72 @@ def _parse_hook(spec: dict[str, Any], path: pathlib.Path, index: int) -> HookCon
 HookResultListener = typing.Callable[[HookResult], None]
 
 
+class _OperatorUnset:
+    """Sentinel distinguishing 'not yet looked up' from 'looked up, returned None'."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<operator-unset>"
+
+
+_OPERATOR_UNSET = _OperatorUnset()
+
+
+async def _read_git_config(key: str, repo_root: pathlib.Path | None) -> str | None:
+    """Run ``git config <key>`` and return the value, or None when unset.
+
+    Uses ``-C repo_root`` when *repo_root* is supplied so the lookup
+    targets the charm's repo rather than wherever the agent process
+    happens to be running.  Falls back to git's normal discovery when
+    *repo_root* is None.  Any subprocess failure (git missing, bad
+    args, non-git directory) resolves to None — the operator field is
+    advisory, not load-bearing.
+    """
+    cmd: list[str] = ["git"]
+    if repo_root is not None:
+        cmd += ["-C", str(repo_root)]
+    cmd += ["config", "--get", key]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except (OSError, FileNotFoundError):
+        return None
+    try:
+        stdout_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=5.0)
+    except TimeoutError:
+        proc.kill()
+        return None
+    if proc.returncode != 0:
+        return None
+    value = stdout_bytes.decode("utf-8", errors="replace").strip()
+    return value or None
+
+
+async def _resolve_operator(repo_root: pathlib.Path | None) -> dict[str, str] | None:
+    """Build the ``operator`` payload field from git's user identity.
+
+    Returns ``{"name": ..., "email": ...}`` with whichever fields are
+    set, or ``None`` when neither ``git config user.name`` nor
+    ``user.email`` resolves.  Hook scripts can branch on the field's
+    presence to detect a configured operator without parsing two
+    sub-keys.
+    """
+    name = await _read_git_config("user.name", repo_root)
+    email = await _read_git_config("user.email", repo_root)
+    if name is None and email is None:
+        return None
+    operator: dict[str, str] = {}
+    if name is not None:
+        operator["name"] = name
+    if email is not None:
+        operator["email"] = email
+    return operator
+
+
 @dataclasses.dataclass
 class _HookHistory:
     """Mutable per-hook accumulator tracked by :class:`HookStats`.
@@ -738,17 +804,35 @@ class HookRunner:
     tool invocation.
     """
 
-    def __init__(self, hooks: list[HookConfig] | None = None):
-        """Build a runner for *hooks* (defaults to no hooks)."""
+    def __init__(
+        self,
+        hooks: list[HookConfig] | None = None,
+        *,
+        repo_root: pathlib.Path | str | None = None,
+    ):
+        """Build a runner for *hooks* (defaults to no hooks).
+
+        *repo_root* tells :meth:`fire` where to read git's user.name /
+        user.email from when populating the ``operator`` payload field.
+        ``None`` falls back to git's normal cwd-based discovery (which
+        in turn falls back to the global config).
+        """
         self._by_event: dict[HookEvent, list[HookConfig]] = {}
         for hook in hooks or []:
             self._by_event.setdefault(hook.event, []).append(hook)
         self._listener: HookResultListener | None = None
+        self._repo_root: pathlib.Path | None = (
+            pathlib.Path(repo_root) if repo_root is not None else None
+        )
+        # Operator identity is cached after the first fire() so we don't
+        # spawn ``git config`` on every tool call.  Sentinel is ``...``
+        # because ``None`` is a valid resolved value (git unconfigured).
+        self._operator_cache: dict[str, str] | None | _OperatorUnset = _OPERATOR_UNSET
 
     @classmethod
     def from_disk(cls, repo_root: pathlib.Path | str | None = None) -> HookRunner:
         """Convenience constructor that loads ``hooks.yaml`` from disk."""
-        return cls(load_hooks(repo_root=repo_root))
+        return cls(load_hooks(repo_root=repo_root), repo_root=repo_root)
 
     def set_listener(self, listener: HookResultListener | None) -> None:
         """Register (or clear) a per-result callback.
@@ -797,6 +881,14 @@ class HookRunner:
         enriched = dict(payload or {})
         enriched["event"] = event.value
         enriched.setdefault("timestamp", datetime.datetime.now().isoformat())
+        # Operator identity is resolved once per HookRunner — git config
+        # rarely changes mid-session and shelling out twice on every
+        # tool call would dwarf the cost of a fast hook.  Hooks that
+        # don't reference ``operator`` keep working unchanged; the field
+        # is purely additive.
+        if isinstance(self._operator_cache, _OperatorUnset):
+            self._operator_cache = await _resolve_operator(self._repo_root)
+        enriched["operator"] = self._operator_cache
 
         # Only ``pre_tool_call`` honours the mutation envelope, so for
         # every other event we serialise stdin once and reuse it — the

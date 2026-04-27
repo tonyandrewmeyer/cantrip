@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`operator` field in hook payloads.**  Every hook now receives
+  an ``operator`` key on stdin alongside ``event`` and
+  ``timestamp`` — a ``{"name": ..., "email": ...}`` dict sourced
+  from ``git config user.name`` / ``user.email`` (looked up
+  against the charm's repo, not the agent's CWD), or ``null``
+  when neither is set.  Hook scripts can now route on identity
+  (``if: operator.email == "ada@example.org"``) without parsing
+  ``$GIT_AUTHOR_*`` env vars themselves.  The field is purely
+  additive — existing hooks that don't reference ``operator``
+  keep working unchanged.  Resolved once per runner and cached
+  so a hot ``pre_tool_call`` chain doesn't re-shell out.  See
+  ``docs/docs/howto-hooks.html`` for the updated payload shape.
 - **`inference-snaps/qwen3-coder/` scaffold.**  A self-contained
   snapcraft project that packages Alibaba's
   Qwen3-Coder-30B-A3B-Instruct (Q4_K_M GGUF, ~17GB) as an Ubuntu

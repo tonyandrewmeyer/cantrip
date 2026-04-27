@@ -9565,3 +9565,39 @@ Grafana baseline.  Profiling decision is recorded in
 four triggers there if continuous profiling becomes a real need.
 
 ---
+
+## Phase 46b: Operator Identity in Hook Payloads ✓
+
+**Goal:** Add an optional ``operator`` field to Phase 46 hook
+payloads so role-aware policy is expressible by future hook
+scripts, and so adding the field is not a breaking change to
+existing scripts later.  See
+[`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
+§8.2 for context.
+
+A small forward-compatibility patch.  Existing hook scripts that
+don't read ``operator`` keep working unchanged; new scripts can
+branch on it (e.g. ``if: operator.email == "ada@example.org"``).
+
+- [x] Extended the ``HookRunner.fire`` payload with an
+  ``operator`` field — ``{"name": ..., "email": ...}`` populated
+  from ``git config user.name`` / ``user.email``, or ``null``
+  when neither is set.  Resolved via ``-C repo_root`` so the
+  lookup targets the charm's repo (not the agent's CWD), and
+  cached on the runner so we don't shell out twice on every tool
+  call.
+- [x] Field documented in ``docs/src/howto-hooks.md`` (rebuilt
+  HTML committed alongside) inside the existing "Payload shape"
+  section.
+- [x] Tests cover: field present when git is configured, ``null``
+  when unset, hooks that don't reference the field still work,
+  ``if: operator.email == ...`` filters route correctly,
+  resolution happens once per runner, and the real ``git config``
+  pipeline runs against an isolated ``GIT_CONFIG_GLOBAL`` tmp
+  config.
+
+**Exit criteria met:** ``operator`` field documented and tested.
+Existing hooks unaffected.  ``make check`` passes.  CHANGELOG
+entry under "Unreleased".
+
+---

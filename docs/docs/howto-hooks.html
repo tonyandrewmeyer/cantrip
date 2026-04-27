@@ -238,11 +238,17 @@ KeyError crashes.</p>
 You can register hooks for them today &mdash; they will just
 never fire until the matching agent code lands.</p>
 <h2 id="payload">Payload shape</h2>
-<p>Every hook receives a JSON object on stdin with at least two
+<p>Every hook receives a JSON object on stdin with at least three
 fields:</p>
 <ul>
 <li><code>event</code> &mdash; the event name (mirrors the hook&rsquo;s <code>event:</code> field).</li>
 <li><code>timestamp</code> &mdash; ISO-8601 local time of the event.</li>
+<li><code>operator</code> &mdash; <code>{&quot;name&quot;: ..., &quot;email&quot;: ...}</code> taken from
+<code>git config user.name</code> / <code>user.email</code>, or <code>null</code>
+when neither is set. Use it from a hook to route on identity:
+<code>if: operator.email == &quot;ada@example.org&quot;</code>. Resolved once per
+Cantrip session and cached, so changes to git config require
+a restart to take effect.</li>
 </ul>
 <p>The remaining fields vary by event, as listed above. Parse with
 <code>jq</code>, or <code>python -c 'import json, sys; d = json.load(sys.stdin)'</code>, or whatever your hook prefers.</p>
