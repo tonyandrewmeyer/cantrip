@@ -12,7 +12,7 @@ import tempfile
 
 import pytest
 
-from cantrip.agent.tools import build_tools
+from cantrip.agent.tools import build_tools, expand_leaves
 from cantrip.agent.tools.base import ToolResult
 
 
@@ -76,9 +76,15 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def tool_map() -> dict:
-    """Build the full tool set with a temporary charm path."""
+    """Build the full tool set with a temporary charm path.
+
+    ``expand_leaves`` flattens ``SubcommandTool`` bundles (e.g. ``juju``)
+    into their leaves, so tests can look up ``juju_status`` /
+    ``juju_deploy`` directly the way the agent does after the
+    dispatcher rewrites a bundle call to its leaf.
+    """
     with tempfile.TemporaryDirectory() as tmp:
-        tools = build_tools(base_path=pathlib.Path(tmp))
+        tools = expand_leaves(build_tools(base_path=pathlib.Path(tmp)))
         yield {t.name: t for t in tools}
 
 
@@ -205,7 +211,7 @@ class TestSnapConfinement:
             f.write(b"not-a-real-charm")
 
         try:
-            tools = build_tools(base_path=dummy_charm.parent)
+            tools = expand_leaves(build_tools(base_path=dummy_charm.parent))
             tool_map = {t.name: t for t in tools}
             deploy = tool_map["juju_deploy"]
 
