@@ -45,6 +45,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``inference-snaps/embeddinggemma/README.md`` for build, install,
   smoke-test, and publish steps.
 
+### Fixed
+- **`qwen3-coder` inference snap now actually receives the agent's
+  tool catalogue.**  llama.cpp's `/v1/models` reports
+  `capabilities: ["completion"]` (the model task type, not a
+  tool-support flag), and `InferenceSnapProvider._apply_model_metadata`
+  was reading the absence of `tool_use`/`tools` in that list as
+  "server has no function calling" and dropping `tools=[...]` from
+  every request.  With no tools advertised, llama.cpp's tool-call
+  grammar never engaged and Qwen3-Coder leaked
+  `<function=name><parameter=k>v</parameter></function></tool_call>`
+  markup into the assistant's `content`.  Adds a
+  `_TOOL_CAPABLE_SNAP_NAMES` allowlist (mirroring the existing
+  vision-snap allowlist) so known-tool-capable snaps skip the
+  negative inference; seeded with `qwen3-coder`.  The OVMS-style
+  guard still applies to unknown snaps.
+
 ### Changed
 - **Charm-scaffold guidance file is now `AGENTS.md` with a `CLAUDE.md`
   symlink.**  When the agent enters a charm directory it writes an

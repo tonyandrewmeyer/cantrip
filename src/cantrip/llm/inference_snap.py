@@ -39,6 +39,15 @@ _DEFAULT_CONTEXT_WINDOW = 8_192
 # extends this at runtime when a server advertises a vision flag.
 _VISION_SNAP_NAMES: frozenset[str] = frozenset({"qwen-vl", "gemma3"})
 
+# Inference snaps known to support OpenAI-style tool calling once
+# llama.cpp is launched with ``--jinja``.  llama.cpp's ``/v1/models``
+# reports ``capabilities: ["completion"]`` (the model task type, not a
+# tool-support flag), so the negative-inference branch in
+# ``_apply_model_metadata`` would otherwise wrongly disable tools for
+# every llama.cpp-backed snap.  Add a snap here once you've confirmed
+# tool-call round-tripping works against it.
+_TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset({"qwen3-coder"})
+
 
 def discover_snap_endpoint(snap_name: str) -> str:
     """Discover the OpenAI API endpoint for an inference snap.
@@ -215,8 +224,17 @@ class InferenceSnapProvider(OpenAICompatBase):
 
         # Tool support: some backends (e.g. OVMS) don't support function
         # calling.  Check for an explicit capability flag if present.
+        # llama.cpp-backed snaps report ``capabilities: ["completion"]``
+        # (the task type), so allowlisted snaps skip the negative
+        # inference — tool-calling is enabled there by ``--jinja``, not
+        # by this metadata.
         capabilities = meta.get("capabilities", [])
-        if capabilities and "tool_use" not in capabilities and "tools" not in capabilities:
+        if (
+            capabilities
+            and "tool_use" not in capabilities
+            and "tools" not in capabilities
+            and self.snap_name not in _TOOL_CAPABLE_SNAP_NAMES
+        ):
             self._supports_tools = False
             log.info(
                 "Model %s does not advertise tool support; "

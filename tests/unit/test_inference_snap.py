@@ -921,6 +921,24 @@ class TestGracefulDegradation:
         provider._apply_model_metadata({"data": [{"id": "test"}]})
         assert provider._supports_tools is True
 
+    def test_tool_capable_allowlist_overrides_negative_inference(self):
+        """Allowlisted snaps keep tools on even when ``capabilities`` omits tool flags.
+
+        llama.cpp's ``/v1/models`` reports ``capabilities: ["completion"]``
+        for any chat model — that's the task type, not a tool-support
+        flag.  Without the allowlist, the negative-inference branch
+        would drop ``tools=[...]`` from the request body and the model
+        would emit tool-call markup as plain ``content``.
+        """
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="qwen3-coder",
+                model="test-model",
+                base_url="http://test:8332/v1",
+            )
+        provider._apply_model_metadata({"data": [{"id": "test", "capabilities": ["completion"]}]})
+        assert provider._supports_tools is True
+
 
 class TestListInferenceSnapsTool:
     """Tests for the ListInferenceSnapsTool agent tool."""
