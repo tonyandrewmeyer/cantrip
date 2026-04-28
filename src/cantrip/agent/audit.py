@@ -13,7 +13,7 @@ The module is intentionally small:
 * Write the line atomically under a lock so parallel subagent runs
   don't interleave their JSON.
 * Scrub string arguments through the existing
-  :func:`cantrip.agent.memory_export.sanitise_body` so secrets
+  :func:`cantrip.agent.memory.export.sanitise_body` so secrets
   (GitHub tokens, AWS keys, Bearer tokens, Slack tokens, ``password=``
   values) never reach the audit file.
 
@@ -33,7 +33,7 @@ import threading
 from collections.abc import Iterable, Iterator
 from typing import Any
 
-from cantrip.agent.memory_export import sanitise_body
+from cantrip.agent.memory.export import sanitise_body
 
 log = logging.getLogger(__name__)
 

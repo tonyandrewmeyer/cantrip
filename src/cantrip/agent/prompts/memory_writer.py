@@ -7,7 +7,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from cantrip.agent.memory_writer import WriteMemoryContext
+    from cantrip.agent.memory.writer import WriteMemoryContext
 
 # Characters that could trigger Jinja2 template logic in user-controlled
 # strings.  Matches the sanitisation approach in ``system.py``.

@@ -8,7 +8,7 @@ from collections.abc import Iterator
 import pytest
 
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
-from cantrip.agent.memory_export import (
+from cantrip.agent.memory.export import (
     CHARM_PATH_PLACEHOLDER,
     export_to_markdown,
     export_to_skill,

@@ -3736,24 +3736,30 @@ decomposition last.
   inside a string literal (Django `settings.py` fixture
   content).
 
-### 85.2 Move — `agent/memory/` subpackage
+### 85.2 Move — `agent/memory/` subpackage ✓
 
-- [ ] Convert the four-file memory family into a subpackage:
-  `agent/memory.py` (1 017 lines) becomes `agent/memory/
-  core.py`; `agent/memory_writer.py` →
-  `agent/memory/writer.py`; `agent/memory_export.py` →
-  `agent/memory/export.py`; `agent/memory_commands.py` →
-  `agent/memory/commands.py`.
-- [ ] Re-export the public surface (currently
-  `MemoryEntry`, `MemoryManager`, plus the writer/export
-  entry points imported by `agent/core.py`) from
-  `agent/memory/__init__.py` so import sites elsewhere change
-  by one segment, not by symbol.
-- [ ] Update test imports and move
-  `tests/unit/test_memory*.py` (4 files) into
-  `tests/unit/agent/memory/` to mirror.
-- [ ] Run `make check` and `make unit`; confirm no behavioural
-  drift.
+- [x] Converted the four-file memory family into a subpackage:
+  `agent/memory.py` → `agent/memory/core.py`;
+  `agent/memory_writer.py` → `agent/memory/writer.py`;
+  `agent/memory_export.py` → `agent/memory/export.py`;
+  `agent/memory_commands.py` → `agent/memory/commands.py`.
+- [x] Re-exported the public surface — `MemoryEntry`,
+  `MemoryManager`, `MemoryScopeError`, `GlobalMemoryStore`,
+  `VALID_KINDS`/`VALID_STATUSES`, `slugify_title`,
+  `sha_for_range`, `validate_citation`, citation/sweep
+  dataclasses, plus the writer entry points
+  (`AutoWriter`, `TriggerKind`, `WriteMemoryContext`,
+  `collect_file_citations`) used by `agent/core.py` — from
+  `agent/memory/__init__.py`.  External `from
+  cantrip.agent.memory import …` lines are unchanged; only
+  sites referencing `memory_writer`/`memory_export`/
+  `memory_commands` move by one path segment.
+- [x] Moved `tests/unit/test_memory*.py` (4 files) into
+  `tests/unit/agent/memory/` (`test_core.py`, `test_writer.py`,
+  `test_export.py`, `test_commands.py`) with `__init__.py`
+  scaffolding, and updated their submodule imports.
+- [x] `make check` (lint + ty + ruff format) and `make unit`
+  (6 194 passed, 8 skipped) both green.
 
 ### 85.3 Move — `agent/commands/` subpackage
 

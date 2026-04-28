@@ -7,7 +7,7 @@ straight into ``~/.claude/skills/`` or a teammate's
 ``~/.config/cantrip/skills/`` and is picked up by :class:`SkillsIndex`
 without translation.
 
-Sanitisation reuses :func:`cantrip.agent.memory_export.sanitise_body` so a
+Sanitisation reuses :func:`cantrip.agent.memory.export.sanitise_body` so a
 shared skill is scrubbed the same way a shared memory bundle is: the current
 charm path becomes ``<CHARM_PATH>`` and obvious credential shapes are
 replaced with ``[REDACTED]``.
@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from cantrip.agent.memory_export import sanitise_body
+from cantrip.agent.memory.export import sanitise_body
 
 if TYPE_CHECKING:
     from cantrip.agent.skills import SkillsIndex

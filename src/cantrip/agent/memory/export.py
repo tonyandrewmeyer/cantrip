@@ -36,10 +36,10 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from cantrip.agent.memory import MemoryScopeError, slugify_title
+from cantrip.agent.memory.core import MemoryScopeError, slugify_title
 
 if TYPE_CHECKING:
-    from cantrip.agent.memory import MemoryEntry, MemoryManager
+    from cantrip.agent.memory.core import MemoryEntry, MemoryManager
 
 log = logging.getLogger(__name__)
 

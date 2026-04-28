@@ -8,7 +8,7 @@ from collections.abc import Iterator
 import pytest
 
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
-from cantrip.agent.memory_commands import (
+from cantrip.agent.memory.commands import (
     handle_forget,
     handle_memory,
     handle_remember,

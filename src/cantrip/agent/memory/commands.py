@@ -23,11 +23,11 @@ import re
 import shlex
 from typing import TYPE_CHECKING
 
-from cantrip.agent import memory_export
-from cantrip.agent.memory import VALID_KINDS, MemoryScopeError
+from cantrip.agent.memory import export as memory_export
+from cantrip.agent.memory.core import VALID_KINDS, MemoryScopeError
 
 if TYPE_CHECKING:
-    from cantrip.agent.memory import MemoryEntry, MemoryManager
+    from cantrip.agent.memory.core import MemoryEntry, MemoryManager
 
 
 _SCOPES = frozenset({"charm", "global"})

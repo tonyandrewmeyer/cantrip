@@ -23,12 +23,12 @@ import pathlib
 import re
 from typing import TYPE_CHECKING, Any
 
-from cantrip.agent.memory import sha_for_range
+from cantrip.agent.memory.core import sha_for_range
 from cantrip.agent.prompts.memory_writer import render_memory_writer_prompt
 from cantrip.llm.base import Message, Role
 
 if TYPE_CHECKING:
-    from cantrip.agent.memory import MemoryEntry, MemoryManager
+    from cantrip.agent.memory.core import MemoryEntry, MemoryManager
     from cantrip.llm.base import LLMProvider
 
 log = logging.getLogger(__name__)
@@ -37,8 +37,8 @@ log = logging.getLogger(__name__)
 # Tool names whose arguments carry a file ``path``.  Used by
 # ``collect_file_citations`` to harvest candidate citations from a
 # subagent's tool-call log.  Added here rather than in the tools module
-# to avoid a dependency cycle (memory_writer imports from memory, not
-# from tools).
+# to avoid a dependency cycle (memory.writer imports from memory.core,
+# not from tools).
 _FILE_TOOL_NAMES = frozenset({"read_file", "write_file", "edit_file", "multi_edit"})
 
 

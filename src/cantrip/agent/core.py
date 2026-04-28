@@ -45,9 +45,10 @@ from cantrip.agent.github_issues import (
     IssueTriage,
     build_issue_work_tasks,
 )
-from cantrip.agent.memory import MemoryEntry, MemoryManager
-from cantrip.agent.memory_writer import (
+from cantrip.agent.memory import (
     AutoWriter,
+    MemoryEntry,
+    MemoryManager,
     TriggerKind,
     WriteMemoryContext,
     collect_file_citations,

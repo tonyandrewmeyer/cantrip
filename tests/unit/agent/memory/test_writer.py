@@ -9,7 +9,7 @@ from collections.abc import Iterator
 import pytest
 
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
-from cantrip.agent.memory_writer import (
+from cantrip.agent.memory.writer import (
     AutoWriter,
     TriggerKind,
     WriteMemoryContext,

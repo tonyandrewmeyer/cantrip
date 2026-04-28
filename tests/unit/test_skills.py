@@ -960,7 +960,7 @@ class TestExportSkill:
 
     def test_charm_path_scrubbed_to_placeholder(self, tmp_path: pathlib.Path) -> None:
         """The current charm path becomes ``<CHARM_PATH>`` in the exported body."""
-        from cantrip.agent.memory_export import CHARM_PATH_PLACEHOLDER
+        from cantrip.agent.memory.export import CHARM_PATH_PLACEHOLDER
         from cantrip.agent.skill_export import export_skill
 
         source = tmp_path / "source"
