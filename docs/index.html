@@ -51,8 +51,8 @@
 <main id="main">
 <section class="hero">
   <div class="container">
-    <img src="logo-light.png" alt="Cantrip logo" class="hero-logo logo-light" width="96" height="96">
-    <img src="logo-dark.png" alt="" class="hero-logo logo-dark" width="96" height="96" aria-hidden="true">
+    <img src="logo-light.png" alt="Cantrip logo" class="hero-logo logo-light" width="200" height="220">
+    <img src="logo-dark.png" alt="" class="hero-logo logo-dark" width="200" height="220" aria-hidden="true">
     <h1>Build Juju charms<br><em>with AI</em></h1>
     <p class="hero-subtitle">
       Describe your workload. Cantrip researches it, designs the
@@ -348,8 +348,13 @@
 <span class="prompt">$</span> cantrip --provider inference-snap --snap gemma3</code></pre>
     </div>
     <p class="quickstart-note">
-      Supports <strong>Gemini</strong>, <strong>Claude</strong>, and
-      <strong>local inference snaps</strong> (no API key needed).
+      Chat works with <strong>Claude</strong>, <strong>Gemini</strong>,
+      <strong>Fireworks.ai</strong>, <strong>OpenRouter</strong>, any
+      <strong>OpenAI-compatible</strong> endpoint, or a local
+      <strong>inference snap</strong> &mdash; stock <em>or</em>
+      custom-built, no API key needed. Embeddings and rerank route
+      through <strong>Voyage</strong> or <strong>OpenAI</strong>, and
+      a custom inference snap can serve embeddings too.
     </p>
   </div>
 </section>
@@ -373,6 +378,16 @@
         <h3>CLI</h3>
         <p>Minimal REPL for scripting and headless environments.</p>
         <code>cantrip --no-tui</code>
+      </div>
+      <div class="interface-card">
+        <h3>Print mode</h3>
+        <p>Non-interactive one-shot for pipelines and CI &mdash; emits an NDJSON event stream or plain progress lines, and combines with <code>--yolo</code> and <code>--ralph N</code> for unattended runs.</p>
+        <code>cantrip --print "build a redis charm"</code>
+      </div>
+      <div class="interface-card">
+        <h3>Standalone CLIs</h3>
+        <p>The bundled <code>charmlint</code> runs 40+ lint rules and <code>quickpack</code> packs a charm in under 50&nbsp;ms &mdash; both work without the agent loop and need no API key.</p>
+        <code>charmlint ./my-charm</code>
       </div>
       <div class="interface-card">
         <h3>Export</h3>
