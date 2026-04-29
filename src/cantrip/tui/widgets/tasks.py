@@ -158,6 +158,20 @@ class _CollapsedGroupRow(Static):
         self.category = category
 
 
+class _CategoryHeader(Static):
+    """A clickable category header that toggles group collapse.
+
+    Clicking an expanded header (e.g. ``Approve``) folds the group
+    into a single summary row; clicking a collapsed summary row
+    (``_CollapsedGroupRow``) expands it again.  Symmetric with the
+    per-task expand / collapse on ``_TaskRow``.
+    """
+
+    def __init__(self, category: TaskCategory, content: str, **kwargs: object) -> None:
+        super().__init__(content, **kwargs)
+        self.category = category
+
+
 class TaskChecklistWidget(Widget):
     """Live checklist of autonomous agent tasks.
 
@@ -181,6 +195,7 @@ class TaskChecklistWidget(Widget):
 
     TaskChecklistWidget .task-header {
         text-style: bold;
+        margin-top: 1;
     }
 
     TaskChecklistWidget .task-pinned-header {
@@ -229,6 +244,7 @@ class TaskChecklistWidget(Widget):
 
     TaskChecklistWidget .task-collapsed {
         text-style: italic;
+        margin-top: 1;
     }
 
     TaskChecklistWidget .subagent-phase {
@@ -247,7 +263,14 @@ class TaskChecklistWidget(Widget):
         self._lock = threading.Lock()
         self._tasks_available_posted = False
         self._expanded_id: str | None = None
+        # ``_expanded_groups`` forces an otherwise-naturally-collapsed
+        # all-DONE category to render expanded (when the user clicked
+        # the summary row to peek inside).  ``_collapsed_groups`` does
+        # the opposite — forces an otherwise-expanded category to fold
+        # into a summary row, which is the only way to hide a group
+        # whose tasks are still PENDING.
         self._expanded_groups: set[TaskCategory] = set()
+        self._collapsed_groups: set[TaskCategory] = set()
         self._agent_activity: str | None = None
 
     def set_agent_activity(self, label: str | None) -> None:
@@ -329,7 +352,7 @@ class TaskChecklistWidget(Widget):
             if isinstance(node, (_TaskRow, _TaskDetail)):
                 self._toggle_detail(node.task_id)
                 return
-            if isinstance(node, _CollapsedGroupRow):
+            if isinstance(node, (_CollapsedGroupRow, _CategoryHeader)):
                 self._toggle_group(node.category)
                 return
             if node is self:
@@ -345,12 +368,40 @@ class TaskChecklistWidget(Widget):
         self._refresh_display()
 
     def _toggle_group(self, category: TaskCategory) -> None:
-        """Expand or collapse a fully-done category group."""
-        if category in self._expanded_groups:
-            self._expanded_groups.discard(category)
-        else:
+        """Toggle a category between collapsed (one summary row) and expanded.
+
+        Works for any category — including ones with PENDING tasks where
+        the natural state would be expanded.  Maintains the two override
+        sets so the next refresh renders the user's choice.
+        """
+        currently_collapsed = self._is_group_collapsed(category)
+        if currently_collapsed:
+            # Force-expand: clear any prior collapse override, set expand override.
             self._expanded_groups.add(category)
+            self._collapsed_groups.discard(category)
+        else:
+            # Force-collapse.
+            self._collapsed_groups.add(category)
+            self._expanded_groups.discard(category)
         self._refresh_display()
+
+    def _is_group_collapsed(self, category: TaskCategory) -> bool:
+        """Return whether *category* is currently rendering as collapsed."""
+        if category in self._expanded_groups:
+            return False
+        if category in self._collapsed_groups:
+            return True
+        # Natural state: collapsed iff every task is DONE and no detail is open.
+        group = [
+            t for t in self._tasks if t.category == category and t.status not in _PINNED_STATUSES
+        ]
+        if not group:
+            return False
+        has_unfinished = any(t.status != TaskStatus.DONE for t in group)
+        has_opened_detail = self._expanded_id is not None and any(
+            t.id == self._expanded_id for t in group
+        )
+        return not has_unfinished and not has_opened_detail
 
     def _check_dirty(self) -> None:
         """Timer callback — refresh if dirty, or if a subagent is running.
@@ -462,28 +513,41 @@ class TaskChecklistWidget(Widget):
                 has_opened_detail = self._expanded_id is not None and any(
                     t.id == self._expanded_id for t in group
                 )
-                collapsed = (
-                    not has_unfinished
-                    and category not in self._expanded_groups
-                    and not has_opened_detail
-                )
+                # Three layers \u2014 explicit overrides win over the
+                # natural default (collapsed iff every task is DONE).
+                if category in self._expanded_groups:
+                    collapsed = False
+                elif category in self._collapsed_groups:
+                    collapsed = True
+                else:
+                    collapsed = not has_unfinished and not has_opened_detail
 
-                # A fully-DONE category collapses to a single self-describing
-                # row \u2014 header + divider + summary would be three lines for
-                # one piece of information, and at end-of-session every
-                # category is in this state at once.
+                # A collapsed group renders as a single row.  Use the
+                # ``\u2713 \u2026 done`` form when every task is DONE, and the
+                # plainer ``Category \u00b7 N tasks`` form for a manually-
+                # collapsed group with PENDING work inside (so we don't
+                # claim "done" when it isn't).
                 if collapsed:
                     count = len(group)
                     plural = "task" if count == 1 else "tasks"
+                    if not has_unfinished:
+                        text = f"\u2713 {label} \u00b7 {count} {plural} done"
+                        row_classes = "task-row task-done task-collapsed"
+                    else:
+                        text = f"{label} \u00b7 {count} {plural}"
+                        row_classes = "task-row task-collapsed"
                     summary = _CollapsedGroupRow(
                         category,
-                        f"\u2713 {label} \u00b7 {count} {plural} done",
-                        classes="task-row task-done task-collapsed",
+                        text,
+                        classes=row_classes,
                     )
                     container.mount(summary)
                     continue
 
-                container.mount(Static(label, classes="task-header"))
+                # Header is clickable so the user can fold the group
+                # back up after expanding (or fold a still-pending
+                # group out of sight).
+                container.mount(_CategoryHeader(category, label, classes="task-header"))
                 container.mount(Static("\u2500" * 20, classes="task-divider"))
 
                 for task in group:

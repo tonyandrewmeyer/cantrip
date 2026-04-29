@@ -590,3 +590,48 @@ class TestTaskChecklistWidget:
 
             combined = " ".join(str(s.render()) for s in container.query("Static"))
             assert "Analyse" in combined
+
+    @pytest.mark.asyncio
+    async def test_pending_group_collapses_on_header_toggle(self):
+        """A header click folds a still-pending group into a summary row.
+
+        Symmetric with ``test_collapsed_group_expands_on_toggle``: an
+        all-DONE group naturally collapses and clicking expands it; a
+        group with pending work naturally expands and clicking the
+        header collapses it.  Was the bug behind "individual tasks
+        collapse but groups like Approve don't".
+        """
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            tasks = [
+                _make_task("First", status=TaskStatus.PENDING, category=TaskCategory.BUILD),
+                _make_task("Second", status=TaskStatus.PENDING, category=TaskCategory.BUILD),
+            ]
+            checklist.notify_changed(tasks)
+            await pilot.pause(delay=0.7)
+
+            container = checklist.query_one("#task-container")
+            texts = [str(s.render()) for s in container.query("Static")]
+            assert "First" in " ".join(texts)
+            assert "Second" in " ".join(texts)
+
+            # Toggle — the group folds into a single summary row.
+            checklist._toggle_group(TaskCategory.BUILD)
+            await pilot.pause(delay=0.1)
+
+            texts = [str(s.render()) for s in container.query("Static")]
+            combined = " ".join(texts)
+            # Tasks are hidden; the manual-collapse summary appears.
+            assert "First" not in combined
+            assert "Second" not in combined
+            assert "Build · 2 tasks" in texts
+            # No "done" claim — it's a manually-collapsed pending group.
+            assert "tasks done" not in combined
+
+            # Toggle again — group re-expands.
+            checklist._toggle_group(TaskCategory.BUILD)
+            await pilot.pause(delay=0.1)
+            texts = [str(s.render()) for s in container.query("Static")]
+            combined = " ".join(texts)
+            assert "First" in combined
