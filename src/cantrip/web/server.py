@@ -536,11 +536,10 @@ async def _api_logs(request: web.Request) -> web.Response:
             "debug-log",
             "--model",
             dev_model,
-            "-n",
+            "--limit",
             str(lines),
             "--level",
             level,
-            "--no-tail",
         ]
         result = await asyncio.to_thread(
             subprocess.run, cmd, capture_output=True, text=True, timeout=15

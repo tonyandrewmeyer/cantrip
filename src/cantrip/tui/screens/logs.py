@@ -195,11 +195,10 @@ class LogScreen(ModalScreen):
             "debug-log",
             "--model",
             model,
-            "-n",
+            "--limit",
             str(_MAX_LINES),
             "--level",
             level,
-            "--no-tail",
         ]
 
         try:

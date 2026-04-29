@@ -181,7 +181,7 @@ class HookBenchmarkTool(Tool):
                 error="juju CLI not found on PATH.",
             )
 
-        cmd = ["juju", "debug-log", "-n", str(lines), "--no-tail"]
+        cmd = ["juju", "debug-log", "--limit", str(lines)]
         if model:
             cmd.extend(["--model", model])
         if app:

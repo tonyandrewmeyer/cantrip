@@ -32,7 +32,7 @@ def _check_hook_failures(app: str, model: str | None, lines: int = 100) -> list[
     """Check debug-log for hook failures during upgrade."""
     try:
         result = juju_subprocess.run_juju(
-            ["debug-log", "-n", str(lines), "--no-tail", "--include", app],
+            ["debug-log", "--limit", str(lines), "--include", app],
             model,
         )
     except (FileNotFoundError, OSError):
