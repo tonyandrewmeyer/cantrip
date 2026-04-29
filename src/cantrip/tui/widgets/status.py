@@ -4,7 +4,7 @@ import collections
 
 from jubilant import statustypes
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.events import Click
 from textual.message import Message
 from textual.reactive import reactive
@@ -489,8 +489,14 @@ class MultiModelStatusWidget(Widget):
     cos_expanded: reactive[bool] = reactive(False, init=False)
 
     def compose(self) -> ComposeResult:
-        """Compose the multi-model display."""
-        yield Vertical(
+        """Compose the multi-model display.
+
+        Wrap the two sections in a ``VerticalScroll`` so that when dev
+        + expanded-COS together exceed the pane's allocated height, the
+        user gets a real scrollbar instead of having content silently
+        clipped at the bottom.
+        """
+        yield VerticalScroll(
             Vertical(
                 Static("Dev Model", classes="section-title"),
                 id="dev-section",
@@ -501,6 +507,7 @@ class MultiModelStatusWidget(Widget):
                 id="cos-section",
                 classes="model-section",
             ),
+            id="multi-model-scroll",
         )
 
     def on_mount(self) -> None:
