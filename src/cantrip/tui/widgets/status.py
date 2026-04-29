@@ -52,30 +52,20 @@ def _cos_collapsed_summary(status: statustypes.Status) -> str:
 
 
 class AppBox(Static):
-    """Widget representing a single application."""
+    """Widget representing a single application — compact two-line form.
+
+    Renders as ``● app-name · active: message`` followed by indented
+    unit / subordinate lines.  No border (the per-status colour at
+    the line head makes the app boundary clear without a frame), no
+    explicit "N units" line (the indented unit list itself shows
+    the count), unit indicators carry their own status colour so a
+    blocked unit jumps out under an otherwise-active app.
+    """
 
     DEFAULT_CSS = """
     AppBox {
-        border: solid $primary;
-        padding: 0 1;
-        margin: 0 0 1 0;
         height: auto;
-    }
-
-    AppBox.active {
-        border: solid $success;
-    }
-
-    AppBox.waiting {
-        border: solid $warning;
-    }
-
-    AppBox.blocked {
-        border: solid $error;
-    }
-
-    AppBox .app-name {
-        text-style: bold;
+        margin: 0 0 1 0;
     }
 
     AppBox .status-active {
@@ -90,8 +80,16 @@ class AppBox(Static):
         color: $error;
     }
 
+    AppBox .status-error {
+        color: $error;
+    }
+
     AppBox .status-maintenance {
         color: $primary;
+    }
+
+    AppBox .status-unknown {
+        color: $text-muted;
     }
     """
 
@@ -102,54 +100,47 @@ class AppBox(Static):
         self.app_data = app
         self.highlight = highlight
 
-        status = app.app_status.current
-        if status == "active":
-            self.add_class("active")
-        elif status in ("waiting", "unknown"):
-            self.add_class("waiting")
-        elif status in ("blocked", "error"):
-            self.add_class("blocked")
-
     def compose(self) -> ComposeResult:
-        """Compose the app box."""
+        """Compose the compact app rendering."""
         status = self.app_data.app_status.current
         status_char = self._status_char(status)
         status_class = f"status-{status}"
 
-        name_line = f"[bold]{self.app_name}[/bold]"
+        # ``● flask-app · active: ready`` — colour on indicator + status.
+        head = (
+            f"[{status_class}]{status_char}[/{status_class}] "
+            f"[bold]{self.app_name}[/bold] · "
+            f"[{status_class}]{status}[/{status_class}]"
+        )
         if self.highlight:
-            name_line += " ← you are here"
-
-        status_line = f"[{status_class}]{status_char}[/{status_class}] {status}"
+            head += " ← you are here"
         message = self.app_data.app_status.message
         if message:
-            status_line += f": {message[:30]}"
+            head += f": {message[:30]}"
 
-        unit_count = len(self.app_data.units)
-        units_line = f"{unit_count} unit{'s' if unit_count != 1 else ''}"
-
-        # Build unit tree with subordinates nested under principals.
         unit_lines: list[str] = []
         for unit_name, unit in sorted(self.app_data.units.items()):
-            u_char = self._status_char(unit.workload_status.current)
+            u_status = unit.workload_status.current
+            u_char = self._status_char(u_status)
+            u_class = f"status-{u_status}"
             u_msg = unit.workload_status.message
-            line = f"  {u_char} {unit_name}"
+            line = f"  [{u_class}]{u_char}[/{u_class}] {unit_name}"
             if u_msg:
                 line += f": {u_msg[:25]}"
             unit_lines.append(line)
-            # Render subordinate units indented under their principal.
             for sub_name, sub in sorted(unit.subordinates.items()):
-                s_char = self._status_char(sub.workload_status.current)
+                s_status = sub.workload_status.current
+                s_char = self._status_char(s_status)
+                s_class = f"status-{s_status}"
                 s_msg = sub.workload_status.message
-                sub_line = f"    └ {s_char} {sub_name}"
+                sub_line = f"    └ [{s_class}]{s_char}[/{s_class}] {sub_name}"
                 if s_msg:
                     sub_line += f": {s_msg[:20]}"
                 unit_lines.append(sub_line)
 
-        tree_text = "\n".join(unit_lines) if unit_lines else ""
-        body = f"{name_line}\n{status_line}\n{units_line}"
-        if tree_text:
-            body += f"\n{tree_text}"
+        body = head
+        if unit_lines:
+            body += "\n" + "\n".join(unit_lines)
 
         yield Static(body)
 
@@ -274,6 +265,16 @@ class JujuStatusWidget(Widget):
         margin-bottom: 1;
     }
 
+    JujuStatusWidget #status-container {
+        /* Without an explicit ``height: auto`` the container picks up
+         * the default Vertical sizing (``1fr``), which makes it
+         * expand to fill the JujuStatusWidget regardless of how much
+         * actual content it has — and that in turn makes the parent
+         * widget claim space it doesn't need, hiding the next
+         * section underneath. */
+        height: auto;
+    }
+
     JujuStatusWidget #status-filter {
         dock: top;
         height: 1;
@@ -294,12 +295,21 @@ class JujuStatusWidget(Widget):
         self,
         status: statustypes.Status | None = None,
         current_app: str | None = None,
+        role: str = "",
         **kwargs,
     ) -> None:
-        """Initialise with optional status."""
+        """Initialise with optional status.
+
+        ``role`` (e.g. ``"Dev"``, ``"COS"``) renders as a single
+        combined header line ``"{role}: {model.name} ({cloud})"``,
+        replacing the surrounding section-title that the
+        :class:`MultiModelStatusWidget` would otherwise mount above
+        the widget — saves two vertical lines per model.
+        """
         super().__init__(**kwargs)
         self.status = status
         self.current_app = current_app
+        self.role = role
 
     def compose(self) -> ComposeResult:
         """Compose the status display."""
@@ -386,20 +396,23 @@ class JujuStatusWidget(Widget):
             )
             return
 
-        # Model header
-        container.mount(
-            Static(
-                f"Model: {self.status.model.name} ({self.status.model.cloud})",
-                classes="model-header",
-            )
-        )
-
-        # Summary
+        # Model header — single line carrying role, model name, cloud,
+        # and the app/unit counts that the old "model-summary" Static
+        # used to render below.
+        prefix = self.role if self.role else "Model"
         total_units = sum(len(app.units) for app in self.status.apps.values())
+        n_apps = len(self.status.apps)
+        if n_apps:
+            counts = (
+                f" · {n_apps} app{'s' if n_apps != 1 else ''},"
+                f" {total_units} unit{'s' if total_units != 1 else ''}"
+            )
+        else:
+            counts = ""
         container.mount(
             Static(
-                f"Apps: {len(self.status.apps)}  Units: {total_units}",
-                classes="model-summary",
+                f"{prefix}: {self.status.model.name} ({self.status.model.cloud}){counts}",
+                classes="model-header",
             )
         )
 
@@ -551,8 +564,7 @@ class MultiModelStatusWidget(Widget):
         dev_section.remove_children()
         if self.dev_status:
             dev_section.display = True
-            dev_section.mount(Static("Dev Model", classes="section-title"))
-            dev_section.mount(JujuStatusWidget(status=self.dev_status))
+            dev_section.mount(JujuStatusWidget(status=self.dev_status, role="Dev"))
         else:
             dev_section.display = False
 
@@ -560,10 +572,13 @@ class MultiModelStatusWidget(Widget):
         cos_section.remove_children()
         if self.cos_status:
             cos_section.display = True
-            cos_section.mount(Static("COS Model", classes="section-title"))
             if self.cos_expanded:
-                cos_section.mount(JujuStatusWidget(status=self.cos_status))
+                cos_section.mount(JujuStatusWidget(status=self.cos_status, role="COS"))
             else:
+                # Collapsed COS still needs a label to identify itself,
+                # since the JujuStatusWidget (which would otherwise
+                # carry the role) doesn't mount in this branch.
+                cos_section.mount(Static("COS", classes="section-title"))
                 cos_section.mount(
                     Static(
                         _cos_collapsed_summary(self.cos_status),
