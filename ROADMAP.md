@@ -4314,6 +4314,129 @@ status during a representative session.
 
 ---
 
+## Phase 91: Adopt from canonical/skills — 12-Factor Scripts and Skill Shape
+
+**Goal:** Canonical's public skills repo
+(``github.com/canonical/skills``) opened PR #4 — three
+tightly-coupled skills for the 12-factor flow:
+``12factor-fit`` (preflight + framework detect + question bank
+→ handoff payload), ``12factor-charm`` (``charmcraft init
+--profile <fw>`` + paas-charm contract enforcement), and
+``12factor-rock`` (``rockcraft init --profile <fw>`` + strict
+edits-only-inside-extension boundary).  The skill bodies
+encode operational rigour we mostly handle implicitly today,
+and four self-contained Python scripts under those skills are
+effectively deterministic tools wearing skill-script clothing.
+Cantrip already ships its own ``twelve-factor`` skill and a
+mature tool catalogue under ``src/cantrip/agent/tools/``; this
+phase pulls in what's worth pulling in without fork-and-rebrand.
+
+The upstream is Apache-2.0; ported scripts must carry an
+attribution header citing the upstream path.
+
+### 91.1 Steal verbatim — port the four scripts as Cantrip tools
+
+- [ ] ``detect_framework.py`` (284 lines, ``12factor-fit/
+  scripts/``) → replace the heuristic guts of the existing
+  ``AnalyseFrameworkTool`` (``analyse_framework``) with the
+  upstream's scoring algorithm: dependency parsing
+  (``go.mod``, ``package.json``, ``pyproject.toml`` including
+  Poetry, ``requirements.txt`` with ``-r`` includes,
+  ``pom.xml``, ``build.gradle``) plus source-pattern
+  regex.  Add ``candidates``, ``signals``, ``web_app_guess``,
+  ``web_app_signals``, and ``notes`` to the tool's ``data``
+  payload.  Keep the existing surface (``path`` arg, profile
+  mapping, ``needs_experimental`` flag, ``workload_hints``)
+  so callers downstream are unaffected.  No new tool name —
+  one detection tool, better detection.
+- [ ] ``check_rock_contract.py`` (289 lines, ``12factor-rock/
+  scripts/``) → new tool that runs framework-specific fit
+  checks (deps present, ASGI/WSGI entrypoint at standard
+  paths, Maven-XOR-Gradle, base/framework compatibility) and
+  returns JSON blockers + advisories.  Wire into the BUILD
+  allowlist so the agent runs it before ``rockcraft pack``.
+- [ ] ``inspect_env_keys.py`` (144 lines, ``12factor-charm/
+  scripts/``) → new tool: multi-language env-var extractor
+  (Python, JS, Go, Java, Spring ``${…}``, ``.env``) with
+  framework-aware contract hints.  Useful for charm⇄rock
+  contract validation even outside the 12-factor path.
+- [ ] ``preflight_targets.py`` (212 lines, ``12factor-fit/
+  scripts/``) → adapt as a session-start environment
+  snapshot tool (kubectl context, juju controller,
+  rockcraft/charmcraft snap channel, registry reachability,
+  experimental-extension env vars).  Trim the rockcraft-snap
+  skopeo path detection where Cantrip already has its own
+  registry helpers; keep the JSON output shape.
+- [ ] Each ported tool ships an Apache-2.0 attribution header
+  citing ``canonical/skills@<sha>:<path>`` and adheres to the
+  Cantrip tool conventions: ``ToolBase`` subclass, populated
+  ``ToolResult.caption`` (per Phase 81), unit tests covering
+  every framework branch and a no-match case, registration
+  in the matching tool allowlist.
+
+### 91.2 Adapt — twelve-factor skill body and handoff contract
+
+- [ ] Restructure ``src/cantrip/skills/twelve-factor/SKILL.md``
+  around the upstream's checkpoint workflow: inspect, detect
+  (call the 91.1 tool), ask the mandatory questions, run
+  preflight (call the 91.1 tool), produce a handoff payload.
+  Keep the Cantrip-shape skill body single-file — embed the
+  question bank inline rather than splitting into a
+  ``references/`` sibling (our loader is single-file by
+  design; see ``design/SKILLS.md``).
+- [ ] Adopt the upstream handoff YAML shape (framework,
+  repo_path, deployment context, relations with explicit
+  ``optional`` flags, migrations mode, background services,
+  experimental flag) as Cantrip's internal relay structure
+  between the fit, charm, and rock phases.  Document in
+  ``design/SKILLS.md`` if non-trivial.
+- [ ] Pull the framework-specific contract tables from
+  upstream's ``framework-rock-contracts.md`` and
+  ``framework-charm-contracts.md`` (Spring Boot's
+  no-``migrate.sh``, Django's auto-migrate, Go ``cmd/*``
+  awareness, ExpressJS ``app/package.json`` requirements)
+  into the Cantrip charm/rock skill bodies as concrete rules
+  the agent can cite.
+
+### 91.3 Watch — items deferred behind named triggers
+
+- [ ] **Relation-optionality enforcement** — upstream's rule
+  that relation ``optional`` must come from explicit user
+  input, never inference (``12factor-charm/SKILL.md:50-112``).
+  Trigger to adopt: Cantrip starts generating relations
+  declaratively rather than via charmcraft templates.
+- [ ] **Experimental-extension gating** — surface
+  ``ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS`` /
+  ``CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS`` requirements
+  for FastAPI / Go / ExpressJS / Spring Boot.  Trigger:
+  Cantrip's twelve-factor skill claims first-class support
+  for any of those four frameworks.
+- [ ] **``generate-agent-skills`` workflow + validator
+  pipeline** — upstream's strict skill-authoring ceremony
+  (scaffold script, validator, banned manual file creation).
+  Trigger: Cantrip opens a public skills registry of its own.
+
+### What this phase is *not*
+
+- Not a wholesale fork of canonical/skills — Cantrip has its
+  own skill-loader shape, its own tool conventions, and its
+  own checkpoints.  We're cherry-picking deterministic
+  helpers and concrete rules, not the surrounding ceremony.
+- Not the meta ``generate-agent-skills`` skill — that's
+  registry-publishing infrastructure, deferred to 91.3.
+- Not the ``retrospective-artifacts`` skill — orthogonal to
+  charm building.
+
+**Exit criteria:** the four upstream scripts ship as Cantrip
+tools with attribution, tests, captions, and allowlist
+registration; the ``twelve-factor`` skill body adopts the
+checkpoint workflow and handoff contract; the framework
+contract tables are inlined into the charm and rock skill
+bodies; ``make check`` is green; ``CHANGELOG.md`` notes the
+adoption with credit to canonical/skills PR #4.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4398,4 +4521,5 @@ status during a representative session.
 | M86: K8s/kubectl Research | 86 ✓ | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
 | M87: COS Coverage | 87 | Alertmanager, Catalogue-k8s, and Sloth gain skill-level guidance and worked examples at parity with Prometheus/Grafana; Parca/Pyroscope decision recorded in ``design/PROFILING.md`` (deferred to Phase 89 against four named triggers) |
 | M88: Identity Platform | 88 | A user asking for "Canonical-Identity-Platform-backed login" gets a charm with correctly-wired Hydra relations, secret fabric, and a passing Phase 17 acceptance test |
+| M91: Canonical/skills Adoption | 91 | Four upstream 12-factor scripts (framework detect, rock-contract check, env-key inspect, preflight targets) ship as Cantrip tools with attribution and tests; ``twelve-factor`` skill body adopts the upstream checkpoint workflow and handoff payload; framework-specific contract tables inlined into the charm and rock skill bodies |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
