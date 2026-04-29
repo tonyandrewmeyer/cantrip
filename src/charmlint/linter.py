@@ -264,8 +264,10 @@ def _ensure_rules_loaded() -> None:
         deprecated,  # noqa: F401
         documentation,  # noqa: F401
         libraries,  # noqa: F401
+        library_versions,  # noqa: F401
         metadata,  # noqa: F401
         observability,  # noqa: F401
+        relation_data,  # noqa: F401
         security,  # noqa: F401
         status,  # noqa: F401
         structure,  # noqa: F401

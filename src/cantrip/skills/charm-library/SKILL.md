@@ -296,7 +296,8 @@ If your library is general-purpose (not tied to a specific charm's schema), cons
 
 ## Common Pitfalls
 
-- **Forgetting to bump `LIBPATCH`.** `charmcraft publish-lib` will refuse the upload. Always bump in the commit that changes the file.
+- **Missing or malformed `LIBID`/`LIBAPI`/`LIBPATCH`, or a public name removed between `v<N>` and `v<N+1>`.** `charmlint` covers both deterministically — `LIB003` checks the four metadata constants are present, of the right types, and that `LIBAPI` matches the `v<N>` directory; `LIB004` flags any public top-level name dropped between sibling-versioned files. Run `charmlint` to surface these.
+- **Forgetting to bump `LIBPATCH`.** `charmcraft publish-lib` will refuse the upload. Always bump in the commit that changes the file. (charmlint cannot see git history; this one stays an LLM-side check.)
 - **Breaking change shipped as a patch.** If a consumer's tests break after `charmcraft fetch-libs`, the change was breaking. Roll back, bump `LIBAPI`, move the new code to `v<N+1>/`.
 - **`PYDEPS` lists a package the library doesn't actually import.** Dead deps bloat every consumer. Lint the library against `PYDEPS` — every import of an external package should appear.
 - **Mutable module-level state.** Juju re-imports the library on every hook; any module-level `dict` or `list` that's written to during a hook is lost. Store state on the relation or on `ops.StoredState`.

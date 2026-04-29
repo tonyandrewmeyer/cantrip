@@ -4510,7 +4510,7 @@ file-by-file lint loop.
 
 ### 92.2 Charmlint extensions — library and relation hygiene
 
-- [ ] **Charm-library semver validator** (new
+- [x] **Charm-library semver validator** (new
   ``src/charmlint/rules/library_versions.py``).  Walk
   ``lib/charms/*/v*/*.py``; verify ``LIBID`` / ``LIBAPI`` /
   ``LIBPATCH`` are present and shaped right; flag ``LIBPATCH``
@@ -4520,8 +4520,15 @@ file-by-file lint loop.
   ``libraries.py`` only covers PyPI fetch-libs concerns
   (``LIB001``); the metadata + semver gap is real.  AST walk
   for module-level names, ~150 LoC.  Cross-references the
-  ``charm-library`` skill's authoring rules.
-- [ ] **Relation-data missing-guard detector** (new
+  ``charm-library`` skill's authoring rules.  Shipped as
+  ``LIB003`` (metadata shape — present, typed, and ``LIBAPI``
+  matches the ``v<N>`` directory) and ``LIB004`` (public name
+  dropped between sibling versioned files).  ``LIBPATCH``-
+  decrease detection across git revisions is intentionally
+  out of scope — charmlint is a static linter, and the
+  ``charm-library`` skill body keeps that one as an LLM-side
+  check.
+- [x] **Relation-data missing-guard detector** (new
   ``src/charmlint/rules/relation_data.py``).  Every relation
   event handler that reads ``event.relation.data[event.app]``
   / ``event.relation.data[event.unit]`` should guard with an
@@ -4530,7 +4537,11 @@ file-by-file lint loop.
   ``relation-data-design`` skill describes these rules; the
   agent currently grep-and-reasons over each handler.
   Per-handler regex over the relation-event functions, ~60
-  LoC.
+  LoC.  Shipped as ``REL001`` (subscript read without a
+  ``None`` guard) and ``REL002`` (write to ``self.app``
+  databag without ``is_leader()``); the
+  ``relation-data-design`` skill body's pitfall list now
+  points at the rules.
 
 ### 92.3 Charmlint extensions — Pebble layer validation
 

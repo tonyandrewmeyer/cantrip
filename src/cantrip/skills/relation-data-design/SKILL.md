@@ -177,8 +177,7 @@ def _on_db_relation_changed(self, event):
 
 ## Common Pitfalls
 
-- **Writing app data from a non-leader unit** causes a runtime error. Always check `is_leader()`.
-- **Reading `event.relation.data[event.app]` when `event.app` is `None`** — this happens on some event types. Guard against it.
+- **Writing app data from a non-leader unit, or reading `event.relation.data[event.app]` without guarding `event.app`.** Both are checked deterministically by `charmlint` — `REL001` flags subscript reads on `event.app` / `event.unit` without an `is None` / `.get()` guard; `REL002` flags writes to `event.relation.data[self.app]` without an `is_leader()` guard. Run `charmlint` to surface these.
 - **Forgetting to handle `relation-broken`** — the charm should gracefully degrade when a relation is removed.
 - **Putting secret *bodies* in relation data** — share the opaque secret
   ID instead, and grant access via `secret.grant(relation)`.

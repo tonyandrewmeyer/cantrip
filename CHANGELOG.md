@@ -17,6 +17,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   or ``event.fail(...)``, the no. 1 cause of an action that hangs
   until Juju times it out.  The ``adding-actions`` skill body's
   pitfall list now points at the new rules instead of reciting them.
+- **``charmlint`` ``LIB003``, ``LIB004``, ``REL001``, ``REL002``
+  (Phase 92.2).**  Four new rules close out the library- and
+  relation-hygiene items.  ``LIB003`` (error,
+  ``library-metadata-shape``) walks ``lib/charms/*/v*/*.py`` and
+  verifies that ``LIBID`` / ``LIBAPI`` / ``LIBPATCH`` are present
+  and shaped right; ``LIBAPI`` must match the ``v<N>`` directory.
+  ``LIB004`` (warning, ``library-breaking-change``) compares
+  sibling-versioned library files and flags any public top-level
+  name dropped between ``v<N>`` and ``v<N+1>``.  ``REL001``
+  (warning, ``relation-data-read-unguarded``) flags handlers that
+  read ``event.relation.data[event.app]`` (or ``[event.unit]``)
+  without an ``is None`` / ``.get()`` guard.  ``REL002`` (warning,
+  ``relation-data-write-without-leader``) flags handlers that
+  write to ``event.relation.data[self.app]`` without an
+  ``is_leader()`` guard.  Skill bodies for ``charm-library`` and
+  ``relation-data-design`` now point at the rules instead of
+  reciting them.  ``LIBPATCH``-decrease detection across git
+  history is intentionally out of scope (charmlint is a static
+  linter; the ``charm-library`` skill keeps that one as an
+  LLM-side check).
 - **``charmlint`` ``CFG004`` and ``CFG005`` (Phase 92.1).**  Two
   more deterministic rules cover the config contract the
   ``adding-config`` skill used to recite.  ``CFG004`` (warning,

@@ -164,6 +164,165 @@ class TestLibraryRules:
         assert "LIB002" in {d.rule_id for d in report.diagnostics}
 
 
+class TestLibraryVersions:
+    """Tests for LIB003/LIB004 (library metadata + breaking-change)."""
+
+    @staticmethod
+    def _write_lib(charm: pathlib.Path, charm_name: str, api: int, name: str, body: str) -> None:
+        lib_dir = charm / "lib" / "charms" / charm_name / f"v{api}"
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        (lib_dir / f"{name}.py").write_text(body)
+
+    def test_library_with_full_metadata_passes(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        self._write_lib(
+            tmp_charm,
+            "test_charm",
+            0,
+            "thing",
+            "LIBID = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'\nLIBAPI = 0\nLIBPATCH = 1\nPYDEPS = []\n",
+        )
+        report = lint(tmp_charm)
+        assert "LIB003" not in {d.rule_id for d in report.diagnostics}
+
+    def test_library_missing_libid_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        self._write_lib(tmp_charm, "test_charm", 0, "thing", "LIBAPI = 0\nLIBPATCH = 1\n")
+        report = lint(tmp_charm)
+        msgs = [d.message for d in report.diagnostics if d.rule_id == "LIB003"]
+        assert any("LIBID" in m for m in msgs)
+
+    def test_library_libapi_dir_mismatch_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        # File is in v0/ but LIBAPI says 1.
+        self._write_lib(
+            tmp_charm,
+            "test_charm",
+            0,
+            "thing",
+            "LIBID = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'\nLIBAPI = 1\nLIBPATCH = 0\n",
+        )
+        report = lint(tmp_charm)
+        lib003 = [d for d in report.diagnostics if d.rule_id == "LIB003"]
+        assert any("does not match directory v0" in d.message for d in lib003)
+
+    def test_library_breaking_change_detected(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        self._write_lib(
+            tmp_charm,
+            "test_charm",
+            0,
+            "thing",
+            "LIBID = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'\n"
+            "LIBAPI = 0\nLIBPATCH = 7\n\nclass Foo:\n    pass\n\nclass Bar:\n    pass\n",
+        )
+        # v1 drops Bar.
+        self._write_lib(
+            tmp_charm,
+            "test_charm",
+            1,
+            "thing",
+            "LIBID = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'\n"
+            "LIBAPI = 1\nLIBPATCH = 0\n\nclass Foo:\n    pass\n",
+        )
+        report = lint(tmp_charm)
+        lib004 = [d for d in report.diagnostics if d.rule_id == "LIB004"]
+        assert len(lib004) == 1
+        assert "Bar" in lib004[0].message
+
+    def test_library_additive_change_passes(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        self._write_lib(
+            tmp_charm,
+            "test_charm",
+            0,
+            "thing",
+            "LIBID = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'\n"
+            "LIBAPI = 0\nLIBPATCH = 1\n\nclass Foo:\n    pass\n",
+        )
+        # v1 adds Bar but keeps Foo.
+        self._write_lib(
+            tmp_charm,
+            "test_charm",
+            1,
+            "thing",
+            "LIBID = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'\n"
+            "LIBAPI = 1\nLIBPATCH = 0\n\nclass Foo:\n    pass\n\nclass Bar:\n    pass\n",
+        )
+        report = lint(tmp_charm)
+        assert "LIB004" not in {d.rule_id for d in report.diagnostics}
+
+
+class TestRelationDataRules:
+    """Tests for REL001/REL002 (relation-data guards)."""
+
+    def test_unguarded_app_subscript_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_db_changed(self, event):\n"
+            "        data = event.relation.data[event.app]\n"
+            "        host = data.get('host')\n",
+        )
+        report = lint(tmp_charm)
+        rel001 = [d for d in report.diagnostics if d.rule_id == "REL001"]
+        assert len(rel001) == 1
+        assert "_on_db_changed" in rel001[0].message
+
+    def test_app_subscript_with_guard_passes(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_db_changed(self, event):\n"
+            "        if event.app is None:\n"
+            "            return\n"
+            "        data = event.relation.data[event.app]\n",
+        )
+        report = lint(tmp_charm)
+        assert "REL001" not in {d.rule_id for d in report.diagnostics}
+
+    def test_app_data_get_form_passes(self, tmp_charm: pathlib.Path):
+        """`event.relation.data.get(event.app)` is intrinsically safe."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_db_changed(self, event):\n"
+            "        data = event.relation.data.get(event.app, {})\n"
+            "        host = data.get('host')\n",
+        )
+        report = lint(tmp_charm)
+        assert "REL001" not in {d.rule_id for d in report.diagnostics}
+
+    def test_app_write_without_leader_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_website_joined(self, event):\n"
+            "        event.relation.data[self.app]['url'] = 'http://x'\n",
+        )
+        report = lint(tmp_charm)
+        rel002 = [d for d in report.diagnostics if d.rule_id == "REL002"]
+        assert len(rel002) == 1
+        assert "_on_website_joined" in rel002[0].message
+
+    def test_app_write_with_leader_guard_passes(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_website_joined(self, event):\n"
+            "        if not self.unit.is_leader():\n"
+            "            return\n"
+            "        event.relation.data[self.app]['url'] = 'http://x'\n",
+        )
+        report = lint(tmp_charm)
+        assert "REL002" not in {d.rule_id for d in report.diagnostics}
+
+
 class TestActionRules:
     """Tests for action quality checks."""
 
