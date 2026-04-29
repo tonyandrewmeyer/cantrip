@@ -20,25 +20,28 @@ Screen {
     padding: 1;
 }
 
+/* The TaskChecklistWidget already declares height/max-height in its
+ * DEFAULT_CSS; only the right-panel-specific divider lives here. */
 #task-checklist {
-    height: auto;
-    max-height: 50%;
     overflow-y: auto;
     border-bottom: solid $primary;
     padding-bottom: 1;
     margin-bottom: 1;
 }
 
+/* max-height caps it; height: 1fr would be redundant. */
 #charm-files {
-    height: 1fr;
     max-height: 50%;
     border-bottom: solid $primary;
     padding-bottom: 1;
     margin-bottom: 1;
 }
 
+/* Auto-sized — the widget hides itself entirely while no model is
+ * connected, so 1fr would either claim space for a hidden block or
+ * leave a fixed gap once it shows up. */
 #juju-status {
-    height: 1fr;
+    height: auto;
     overflow-y: auto;
 }
 
