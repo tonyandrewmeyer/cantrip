@@ -42,14 +42,11 @@ execute: |
   grep -q '## Tasks' "$CHARM_DIR/transcript.md"
   grep -q '## Conversation' "$CHARM_DIR/transcript.md"
 
-  # JSONL lines should be valid JSON with a "type" field.
+  # JSONL lines should be valid JSON with a "type" field.  Compressed
+  # to a single-quoted one-liner so the surrounding YAML block scalar
+  # (``prepare: |``) doesn't break on a column-0 continuation line.
   while IFS= read -r line; do
-    echo "$line" | python3 -c "
-import sys, json
-data = json.loads(sys.stdin.read())
-assert 'type' in data, 'Missing type field'
-assert data['type'] in ('message', 'event', 'task', 'subagent_message'), f'Bad type: {data[\"type\"]}'
-"
+    echo "$line" | python3 -c 'import json, sys; d = json.loads(sys.stdin.read()); assert "type" in d, "Missing type field"; assert d["type"] in ("message", "event", "task", "subagent_message"), "Bad type: " + str(d.get("type"))'
   done < "$CHARM_DIR/transcript.jsonl"
 
   # Verify filter flags work.
