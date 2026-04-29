@@ -323,6 +323,112 @@ class TestRelationDataRules:
         assert "REL002" not in {d.rule_id for d in report.diagnostics}
 
 
+class TestPebbleRules:
+    """Tests for PEB001/PEB002/PEB003 (Pebble layer hygiene)."""
+
+    def test_add_layer_no_combine_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_pebble_ready(self, event):\n"
+            "        self._container.add_layer('app', {})\n",
+        )
+        report = lint(tmp_charm)
+        assert "PEB001" in {d.rule_id for d in report.diagnostics}
+
+    def test_add_layer_with_combine_passes(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_pebble_ready(self, event):\n"
+            "        self._container.add_layer('app', {}, combine=True)\n",
+        )
+        report = lint(tmp_charm)
+        assert "PEB001" not in {d.rule_id for d in report.diagnostics}
+
+    def test_pebble_call_without_can_connect_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_config_changed(self, event):\n"
+            "        self._container.add_layer('app', {}, combine=True)\n"
+            "        self._container.replan()\n",
+        )
+        report = lint(tmp_charm)
+        peb002 = [d for d in report.diagnostics if d.rule_id == "PEB002"]
+        assert len(peb002) == 1
+        assert "_on_config_changed" in peb002[0].message
+
+    def test_pebble_call_with_can_connect_passes(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_config_changed(self, event):\n"
+            "        if not self._container.can_connect():\n"
+            "            event.defer()\n"
+            "            return\n"
+            "        self._container.replan()\n",
+        )
+        report = lint(tmp_charm)
+        assert "PEB002" not in {d.rule_id for d in report.diagnostics}
+
+    def test_pebble_ready_handler_skipped(self, tmp_charm: pathlib.Path):
+        """The pebble_ready handler runs when Pebble is reachable; no guard needed."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_pebble_ready(self, event):\n"
+            "        self._container.add_layer('app', {}, combine=True)\n"
+            "        self._container.autostart()\n",
+        )
+        report = lint(tmp_charm)
+        assert "PEB002" not in {d.rule_id for d in report.diagnostics}
+
+    def test_layer_service_missing_keys_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _layer(self):\n"
+            "        return {\n"
+            "            'services': {\n"
+            "                'app': {'command': '/bin/app'},\n"
+            "            },\n"
+            "        }\n",
+        )
+        report = lint(tmp_charm)
+        peb003 = [d for d in report.diagnostics if d.rule_id == "PEB003"]
+        assert len(peb003) == 1
+        msg = peb003[0].message
+        assert "override" in msg
+        assert "startup" in msg
+
+    def test_layer_service_full_keys_passes(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _layer(self):\n"
+            "        return {\n"
+            "            'summary': 'app',\n"
+            "            'services': {\n"
+            "                'app': {\n"
+            "                    'override': 'replace',\n"
+            "                    'command': '/bin/app',\n"
+            "                    'startup': 'enabled',\n"
+            "                },\n"
+            "            },\n"
+            "        }\n",
+        )
+        report = lint(tmp_charm)
+        assert "PEB003" not in {d.rule_id for d in report.diagnostics}
+
+
 class TestActionRules:
     """Tests for action quality checks."""
 

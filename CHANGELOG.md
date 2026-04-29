@@ -17,6 +17,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   or ``event.fail(...)``, the no. 1 cause of an action that hangs
   until Juju times it out.  The ``adding-actions`` skill body's
   pitfall list now points at the new rules instead of reciting them.
+- **``charmlint`` ``PEB001``, ``PEB002``, ``PEB003`` (Phase 92.3).**
+  Three new rules cover the K8s Pebble subsection of the
+  ``custom-charm`` skill.  ``PEB001`` (warning,
+  ``pebble-add-layer-no-combine``) flags ``container.add_layer(...)``
+  calls missing ``combine=True`` — without it, repeated calls
+  stack duplicate layers.  ``PEB002`` (warning,
+  ``pebble-call-without-can-connect``) flags any function that
+  calls ``add_layer`` / ``replan`` / ``restart`` / ``start`` /
+  ``stop`` / ``autostart`` / ``exec`` without a ``can_connect()``
+  reference in the same body; the ``pebble_ready`` handler is
+  exempt because the framework already guarantees Pebble is up.
+  ``PEB003`` (warning, ``pebble-layer-service-missing-keys``)
+  walks every ``services:`` dict-literal and flags entries
+  missing ``override``, ``command``, or ``startup``.  The
+  ``custom-charm`` skill body's pitfall list now points at the
+  rules.
 - **``charmlint`` ``LIB003``, ``LIB004``, ``REL001``, ``REL002``
   (Phase 92.2).**  Four new rules close out the library- and
   relation-hygiene items.  ``LIB003`` (error,

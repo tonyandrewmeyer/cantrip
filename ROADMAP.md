@@ -4545,7 +4545,7 @@ file-by-file lint loop.
 
 ### 92.3 Charmlint extensions — Pebble layer validation
 
-- [ ] **Pebble layer rule module** (new
+- [x] **Pebble layer rule module** (new
   ``src/charmlint/rules/pebble.py``).  K8s charms call
   ``container.add_layer(name, layer, combine=True)``,
   ``container.replan()``; layer dictionaries declare services
@@ -4554,7 +4554,15 @@ file-by-file lint loop.
   ``container.can_connect()``.  The ``custom-charm`` skill
   recites these rules in its K8s subsection — they all map
   cleanly to deterministic checks.  Pebble layer parser +
-  call-site detector, ~130 LoC.
+  call-site detector, ~130 LoC.  Shipped as ``PEB001``
+  (``add_layer`` missing ``combine=True``), ``PEB002``
+  (Pebble call without ``can_connect()`` guard, with
+  ``pebble_ready`` handlers exempt), and ``PEB003`` (service
+  dict missing ``override`` / ``command`` / ``startup``).
+  ``user`` is intentionally not checked — the skill says "for
+  non-root", which is not statically derivable.  The
+  ``custom-charm`` skill body's pitfall list now points at
+  the rules.
 
 ### 92.4 Standalone tools — inventory and migration
 

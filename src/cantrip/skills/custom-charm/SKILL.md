@@ -401,17 +401,15 @@ No rockcraft or registry push needed for custom charms (unlike 12-factor).
 
 ## Common Pitfalls
 
-1. **Interacting with Pebble before it is ready** — always check `can_connect()` and defer if the container is not reachable. The `pebble-ready` event fires when it becomes available.
+1. **Pebble layer hygiene** — `add_layer()` without `combine=True`, Pebble methods called without a `can_connect()` guard, or service entries missing `override` / `command` / `startup` are all checked deterministically by `charmlint` (`PEB001` / `PEB002` / `PEB003`). Run `charmlint` to surface them — the skill body no longer recites the rules.
 
-2. **Forgetting to `combine=True` in `add_layer()`** — without it, repeated calls create duplicate layers instead of merging.
+2. **Blocking the hook with long-running commands** — hooks have a timeout (default 5 minutes). For long installations, consider breaking work across events or increasing the timeout.
 
-3. **Blocking the hook with long-running commands** — hooks have a timeout (default 5 minutes). For long installations, consider breaking work across events or increasing the timeout.
+3. **Writing config directly in the install hook** — config values may not be set yet during install. Use `config-changed` for applying configuration.
 
-4. **Writing config directly in the install hook** — config values may not be set yet during install. Use `config-changed` for applying configuration.
+4. **Using `kubernetes` profile for a PaaS framework** — if the app is Flask/Django/etc., use the framework profile with the `twelve-factor` skill instead. The `kubernetes` profile gives a bare ops charm.
 
-5. **Using `kubernetes` profile for a PaaS framework** — if the app is Flask/Django/etc., use the framework profile with the `twelve-factor` skill instead. The `kubernetes` profile gives a bare ops charm.
-
-6. **Missing OCI image resource for K8s charms** — the `containers` section in `charmcraft.yaml` must reference a `resource`, and that resource must be declared in the `resources` section.
+5. **Missing OCI image resource for K8s charms** — the `containers` section in `charmcraft.yaml` must reference a `resource`, and that resource must be declared in the `resources` section.
 
 ## Troubleshooting
 
