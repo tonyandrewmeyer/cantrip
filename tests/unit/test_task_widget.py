@@ -321,6 +321,37 @@ class TestTaskChecklistWidget:
             assert "Charm built ok" not in combined
 
     @pytest.mark.asyncio
+    async def test_clicking_detail_collapses_task(self):
+        """A click anywhere on the expanded detail block collapses the task.
+
+        The user expects the whole expanded block to act like the row —
+        clicking ``Status: done`` (in the detail body, below the title
+        line) should collapse the task, not be inert.
+        """
+        from cantrip.tui.widgets.tasks import _TaskDetail
+
+        app = _ChecklistApp.build()
+        async with app.run_test() as pilot:
+            checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
+            task = _make_task(
+                "Build charm",
+                task_id="b1",
+                result="Charm built ok",
+                status=TaskStatus.DONE,
+            )
+            checklist.notify_changed([task])
+            await pilot.pause(delay=0.7)
+
+            checklist._toggle_detail("b1")
+            await pilot.pause(delay=0.1)
+            assert checklist._expanded_id == "b1"
+
+            # Click on the detail block, not the row.
+            await pilot.click(_TaskDetail)
+            await pilot.pause(delay=0.1)
+            assert checklist._expanded_id is None
+
+    @pytest.mark.asyncio
     async def test_tasks_grouped_by_category(self):
         """Tasks are grouped under category headers in display order."""
         app = _ChecklistApp.build()

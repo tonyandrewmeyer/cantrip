@@ -22,7 +22,10 @@ _CATEGORY_ORDER: list[tuple[TaskCategory, str]] = [
     (TaskCategory.TEST, "Test"),
     (TaskCategory.DEBUG, "Debug"),
     (TaskCategory.INFRA, "Infrastructure"),
-    (TaskCategory.CONFIRM, "Confirm"),
+    # ``CONFIRM`` is the enum's wire name; the display label is
+    # what the user actually sees, and "Approve" reads as a
+    # directive ("I need to approve this") instead of as a noun.
+    (TaskCategory.CONFIRM, "Approve"),
 ]
 
 # Statuses that are pinned to the top "In progress" section.  Keeping
@@ -133,6 +136,20 @@ class _TaskRow(Static):
         self.task_id = task_id
 
 
+class _TaskDetail(Static):
+    """The expanded-detail block under an expanded ``_TaskRow``.
+
+    Subclassed so a click anywhere on the detail body collapses the
+    task — the user expects "click the task" to toggle, regardless of
+    whether the click landed on the row's title line or one of the
+    detail lines below it.
+    """
+
+    def __init__(self, task_id: str, content: str, **kwargs: object) -> None:
+        super().__init__(content, **kwargs)
+        self.task_id = task_id
+
+
 class _CollapsedGroupRow(Static):
     """A clickable summary row for a fully-completed category."""
 
@@ -164,18 +181,15 @@ class TaskChecklistWidget(Widget):
 
     TaskChecklistWidget .task-header {
         text-style: bold;
-        margin-bottom: 1;
     }
 
     TaskChecklistWidget .task-pinned-header {
         text-style: bold reverse;
         color: $accent;
-        margin-bottom: 1;
     }
 
     TaskChecklistWidget .task-divider {
         color: $primary;
-        margin-bottom: 1;
     }
 
     TaskChecklistWidget .task-pending {
@@ -312,7 +326,7 @@ class TaskChecklistWidget(Widget):
             return
         node = widget
         while node is not None:
-            if isinstance(node, _TaskRow):
+            if isinstance(node, (_TaskRow, _TaskDetail)):
                 self._toggle_detail(node.task_id)
                 return
             if isinstance(node, _CollapsedGroupRow):
@@ -424,7 +438,9 @@ class TaskChecklistWidget(Widget):
                     if subagent_line:
                         container.mount(Static(subagent_line, classes="subagent-phase"))
                     if self._expanded_id == task.id:
-                        container.mount(Static(_format_detail(task), classes="task-detail"))
+                        container.mount(
+                            _TaskDetail(task.id, _format_detail(task), classes="task-detail")
+                        )
 
             # Category sections — only tasks not already shown in the pinned
             # section (i.e. PENDING or DONE).  If every remaining task in a
@@ -479,5 +495,6 @@ class TaskChecklistWidget(Widget):
 
                     # Show detail panel if this task is expanded.
                     if self._expanded_id == task.id:
-                        detail_text = _format_detail(task)
-                        container.mount(Static(detail_text, classes="task-detail"))
+                        container.mount(
+                            _TaskDetail(task.id, _format_detail(task), classes="task-detail")
+                        )
