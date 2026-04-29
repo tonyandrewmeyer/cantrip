@@ -200,6 +200,118 @@ class TestActionRules:
         report = lint(tmp_charm)
         assert "ACT004" in {d.rule_id for d in report.diagnostics}
 
+    def test_action_missing_observer_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(
+            tmp_charm,
+            {"name": "test", "actions": {"backup": {"description": "x"}}},
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def __init__(self, *args):\n        super().__init__(*args)\n",
+        )
+        report = lint(tmp_charm)
+        act006 = [d for d in report.diagnostics if d.rule_id == "ACT006"]
+        assert len(act006) == 1
+        assert "backup" in act006[0].message
+
+    def test_action_with_observer_passes(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(
+            tmp_charm,
+            {"name": "test", "actions": {"backup": {"description": "x"}}},
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def __init__(self, *args):\n"
+            "        super().__init__(*args)\n"
+            "        self.framework.observe(self.on.backup_action, self._on_backup)\n"
+            "    def _on_backup(self, event):\n"
+            "        event.set_results({'ok': True})\n",
+        )
+        report = lint(tmp_charm)
+        assert "ACT006" not in {d.rule_id for d in report.diagnostics}
+        assert "ACT007" not in {d.rule_id for d in report.diagnostics}
+
+    def test_action_hyphen_to_underscore_observer(self, tmp_charm: pathlib.Path):
+        """``rotate-credentials`` in YAML matches ``rotate_credentials_action`` event."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {"name": "test", "actions": {"rotate-credentials": {"description": "x"}}},
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def __init__(self, *args):\n"
+            "        super().__init__(*args)\n"
+            "        self.framework.observe(\n"
+            "            self.on.rotate_credentials_action, self._on_rotate\n"
+            "        )\n"
+            "    def _on_rotate(self, event):\n"
+            "        event.fail('not yet')\n",
+        )
+        report = lint(tmp_charm)
+        act_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("ACT00")}
+        assert "ACT006" not in act_ids
+        assert "ACT007" not in act_ids
+
+    def test_action_handler_incomplete_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(
+            tmp_charm,
+            {"name": "test", "actions": {"backup": {"description": "x"}}},
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def __init__(self, *args):\n"
+            "        super().__init__(*args)\n"
+            "        self.framework.observe(self.on.backup_action, self._on_backup)\n"
+            "    def _on_backup(self, event):\n"
+            "        event.log('starting')\n",
+        )
+        report = lint(tmp_charm)
+        act007 = [d for d in report.diagnostics if d.rule_id == "ACT007"]
+        assert len(act007) == 1
+        assert "_on_backup" in act007[0].message
+        assert act007[0].line is not None
+
+    def test_action_handler_fail_only_passes(self, tmp_charm: pathlib.Path):
+        """A leader-only action that calls ``event.fail()`` and returns is complete."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {"name": "test", "actions": {"rotate": {"description": "x"}}},
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def __init__(self, *args):\n"
+            "        super().__init__(*args)\n"
+            "        self.framework.observe(self.on.rotate_action, self._on_rotate)\n"
+            "    def _on_rotate(self, event):\n"
+            "        if not self.unit.is_leader():\n"
+            "            event.fail('leader only')\n"
+            "            return\n"
+            "        event.set_results({'ok': True})\n",
+        )
+        report = lint(tmp_charm)
+        assert "ACT007" not in {d.rule_id for d in report.diagnostics}
+
+    def test_act007_skipped_when_no_observer(self, tmp_charm: pathlib.Path):
+        """If the observer is missing, ACT006 fires but ACT007 stays quiet."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {"name": "test", "actions": {"backup": {"description": "x"}}},
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def __init__(self, *args):\n        super().__init__(*args)\n",
+        )
+        report = lint(tmp_charm)
+        ids = {d.rule_id for d in report.diagnostics}
+        assert "ACT006" in ids
+        assert "ACT007" not in ids
+
 
 class TestConfigRules:
     """Tests for config option quality checks."""

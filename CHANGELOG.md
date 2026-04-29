@@ -4,6 +4,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **``charmlint`` ``ACT006`` and ``ACT007`` (Phase 92.1).**  Two new
+  deterministic rules cover the action-handler contract that the
+  ``adding-actions`` skill used to recite at the agent every turn.
+  ``ACT006`` (warning, ``action-missing-observer``) flags any action
+  declared in ``charmcraft.yaml`` that has no
+  ``self.framework.observe(self.on.<name>_action, ...)`` registration
+  in ``src/`` (handles the YAML hyphen → Python underscore rename).
+  ``ACT007`` (warning, ``action-handler-incomplete``) flags any
+  action handler whose body never calls ``event.set_results(...)``
+  or ``event.fail(...)``, the no. 1 cause of an action that hangs
+  until Juju times it out.  The ``adding-actions`` skill body's
+  pitfall list now points at the new rules instead of reciting them.
+
 ### Changed
 - **``twelve-factor`` skill restructured around the canonical/skills
   checkpoint workflow (Phase 91.2).**  The skill body now opens with

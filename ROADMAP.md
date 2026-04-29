@@ -4479,7 +4479,7 @@ file-by-file lint loop.
 
 ### 92.1 Charmlint extensions — handler / metadata coverage
 
-- [ ] **Action handler coverage** (extend
+- [x] **Action handler coverage** (extend
   ``src/charmlint/rules/actions.py``).  Every action declared
   in ``charmcraft.yaml`` should have an observer registered
   in ``src/charm.py``'s ``__init__``, and every handler should
@@ -4490,7 +4490,9 @@ file-by-file lint loop.
   handler list, YAML scan for the action set, ``set_results``
   / ``fail`` regex pass over each handler body — one rule
   module, ~80 LoC, per-skill diagnostics replace per-turn
-  reasoning.
+  reasoning.  Shipped as ``ACT006`` (missing observer) and
+  ``ACT007`` (handler does not terminate); the ``adding-actions``
+  skill body's pitfall list now points at the rules.
 - [ ] **Config option coverage** (extend
   ``src/charmlint/rules/config_quality.py``).  Every option in
   ``charmcraft.yaml::config.options`` should be read by

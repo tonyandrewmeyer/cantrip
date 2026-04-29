@@ -72,6 +72,9 @@ from ops import BlockedStatus, WaitingStatus
 class TestCharm(ops.CharmBase):
     def __init__(self, *args) -> None:
         super().__init__(*args)
+        self.framework.observe(self.on.get_health_action, self._on_get_health)
+        self.framework.observe(self.on.pause_action, self._on_pause)
+        self.framework.observe(self.on.resume_action, self._on_resume)
 
     def _reconcile(self) -> None:
         if not self.config.get("port"):
@@ -80,6 +83,15 @@ class TestCharm(ops.CharmBase):
             self.unit.status = BlockedStatus("invalid config")
         if not self.model.relations.get("database"):
             self.unit.status = BlockedStatus("missing relation: database")
+
+    def _on_get_health(self, event: ops.ActionEvent) -> None:
+        event.set_results({"status": "ok"})
+
+    def _on_pause(self, event: ops.ActionEvent) -> None:
+        event.set_results({"status": "paused"})
+
+    def _on_resume(self, event: ops.ActionEvent) -> None:
+        event.set_results({"status": "running"})
 """,
     )
     # Add requirements with ops-tracing.
