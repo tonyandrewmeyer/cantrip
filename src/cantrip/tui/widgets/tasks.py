@@ -97,25 +97,31 @@ def _subagent_line(task: AgentTask) -> str | None:
 
 
 def _format_detail(task: AgentTask) -> str:
-    """Build the detail text shown when a task row is expanded."""
+    """Build the detail text shown when a task row is expanded.
+
+    The ``.task-detail`` CSS class adds ``margin-left: 2``, so this
+    helper produces lines without leading whitespace — otherwise the
+    detail block is doubly-indented and stops aligning with anything
+    else in the widget.
+    """
     lines: list[str] = []
-    lines.append(f"  Category: {task.category.value}")
-    lines.append(f"  Status: {task.status.value}")
+    lines.append(f"Category: {task.category.value}")
+    lines.append(f"Status: {task.status.value}")
     if task.worktree_path:
-        lines.append(f"  Worktree: {task.worktree_path}")
+        lines.append(f"Worktree: {task.worktree_path}")
     if task.blocked_reason:
-        lines.append(f"  Blocked: {task.blocked_reason}")
+        lines.append(f"Blocked: {task.blocked_reason}")
     if task.result:
         # Truncate very long results for the panel.
         result = task.result
         if len(result) > 200:
             result = result[:197] + "..."
-        lines.append(f"  Result: {result}")
+        lines.append(f"Result: {result}")
     if task.description:
         desc = task.description
         if len(desc) > 200:
             desc = desc[:197] + "..."
-        lines.append(f"  Info: {desc}")
+        lines.append(f"Info: {desc}")
     return "\n".join(lines)
 
 
