@@ -774,6 +774,41 @@ class TestTuiWidgets:
                 assert "grafana_dashboard" in rendered
 
     @pytest.mark.asyncio
+    async def test_multi_model_pane_hidden_until_a_model_attaches(self):
+        """The pane claims no real estate while neither model is connected.
+
+        Before Phase 65, an idle session showed "Dev Model / Not connected
+        / COS Model / Not deployed" — four lines of dead state — under the
+        charm-files tree.  The pane now hides itself until a status arrives,
+        and each section hides individually when its own model is None.
+        """
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pane = pilot.app.query_one("#juju-status", MultiModelStatusWidget)
+                await pilot.pause()
+                assert pane.display is False
+
+                mock_app = MagicMock()
+                mock_app.app_status.current = "active"
+                mock_app.app_status.message = ""
+                mock_app.units = {
+                    "flask/0": MagicMock(workload_status=MagicMock(current="active"))
+                }
+                mock_app.relations = {}
+                mock_status = MagicMock()
+                mock_status.model.name = "dev"
+                mock_status.model.cloud = "lxd"
+                mock_status.apps = {"flask": mock_app}
+                pane.dev_status = mock_status
+                await pilot.pause()
+                assert pane.display is True
+
+                # COS section stays hidden because cos_status is still None.
+                cos_section = pane.query_one("#cos-section")
+                assert cos_section.display is False
+
+    @pytest.mark.asyncio
     async def test_cos_expanded_reactive_repaints_on_direct_set(self):
         """Setting ``cos_expanded`` directly must repaint, not just via toggle.
 

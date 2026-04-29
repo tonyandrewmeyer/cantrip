@@ -487,17 +487,19 @@ class MultiModelStatusWidget(Widget):
         yield Vertical(
             Vertical(
                 Static("Dev Model", classes="section-title"),
-                Static("Not connected", classes="collapsed-summary"),
                 id="dev-section",
                 classes="model-section",
             ),
             Vertical(
                 Static("COS Model", classes="section-title"),
-                Static("Not deployed", classes="collapsed-summary"),
                 id="cos-section",
                 classes="model-section",
             ),
         )
+
+    def on_mount(self) -> None:
+        """Start hidden — no pane real estate while no model is connected."""
+        self._refresh_display()
 
     def watch_dev_status(self, _status: statustypes.Status | None) -> None:
         """React to dev status changes."""
@@ -518,23 +520,34 @@ class MultiModelStatusWidget(Widget):
         self._refresh_display()
 
     def _refresh_display(self) -> None:
-        """Refresh the display."""
-        # Dev model section
+        """Refresh the display.
+
+        The pane hides itself entirely while neither model is connected
+        — "Dev Model / Not connected / COS Model / Not deployed" used to
+        claim half the right panel before any work began, which earned
+        a bug report and the Phase 65 audit.  Each section also hides
+        when its own model is disconnected, so a connected dev model
+        without COS doesn't carry an empty COS section underneath.
+        """
+        if not self.dev_status and not self.cos_status:
+            self.display = False
+            return
+        self.display = True
+
         dev_section = self.query_one("#dev-section", Vertical)
         dev_section.remove_children()
-        dev_section.mount(Static("Dev Model", classes="section-title"))
-
         if self.dev_status:
+            dev_section.display = True
+            dev_section.mount(Static("Dev Model", classes="section-title"))
             dev_section.mount(JujuStatusWidget(status=self.dev_status))
         else:
-            dev_section.mount(Static("Not connected", classes="collapsed-summary"))
+            dev_section.display = False
 
-        # COS model section (collapsed by default)
         cos_section = self.query_one("#cos-section", Vertical)
         cos_section.remove_children()
-        cos_section.mount(Static("COS Model", classes="section-title"))
-
         if self.cos_status:
+            cos_section.display = True
+            cos_section.mount(Static("COS Model", classes="section-title"))
             if self.cos_expanded:
                 cos_section.mount(JujuStatusWidget(status=self.cos_status))
             else:
@@ -545,7 +558,7 @@ class MultiModelStatusWidget(Widget):
                     )
                 )
         else:
-            cos_section.mount(Static("Not deployed", classes="collapsed-summary"))
+            cos_section.display = False
 
     def on_click(self, event: Click) -> None:
         """Toggle COS expansion when the COS section is clicked."""
