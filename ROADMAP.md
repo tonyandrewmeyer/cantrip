@@ -4493,14 +4493,20 @@ file-by-file lint loop.
   reasoning.  Shipped as ``ACT006`` (missing observer) and
   ``ACT007`` (handler does not terminate); the ``adding-actions``
   skill body's pitfall list now points at the rules.
-- [ ] **Config option coverage** (extend
+- [x] **Config option coverage** (extend
   ``src/charmlint/rules/config_quality.py``).  Every option in
   ``charmcraft.yaml::config.options`` should be read by
   ``self.config.get(...)`` somewhere in ``src/charm.py``;
   every config-driven path should set ``BlockedStatus`` when
   the value is invalid.  Today the ``adding-config`` skill
   guides the agent through the same checks.  YAML option set
-  vs source-code regex sweep, ~100 LoC.
+  vs source-code regex sweep, ~100 LoC.  Shipped as
+  ``CFG004`` (option declared but never read) and ``CFG005``
+  (config options exist but no ``BlockedStatus`` reference);
+  the ``adding-config`` skill body's pitfall list now points
+  at the rules.  CFG005 is intentionally a floor (any
+  ``BlockedStatus`` reference satisfies it) rather than per-
+  path validation, which would need dataflow we do not have.
 
 ### 92.2 Charmlint extensions — library and relation hygiene
 

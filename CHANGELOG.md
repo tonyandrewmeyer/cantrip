@@ -17,6 +17,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   or ``event.fail(...)``, the no. 1 cause of an action that hangs
   until Juju times it out.  The ``adding-actions`` skill body's
   pitfall list now points at the new rules instead of reciting them.
+- **``charmlint`` ``CFG004`` and ``CFG005`` (Phase 92.1).**  Two
+  more deterministic rules cover the config contract the
+  ``adding-config`` skill used to recite.  ``CFG004`` (warning,
+  ``config-option-unread``) flags any option declared in
+  ``charmcraft.yaml::config.options`` that is never read via
+  ``self.config[...]`` or ``self.config.get(...)`` in ``src/`` —
+  catches dead config that an operator can set but the charm
+  silently ignores.  ``CFG005`` (info, ``config-no-blocked-status``)
+  flags charms that declare config options but never reference
+  ``BlockedStatus`` anywhere in ``src/`` — i.e. invalid config has
+  no visible status surface.  The ``adding-config`` skill body's
+  pitfall list now points at the new rules instead of reciting
+  them.
 
 ### Changed
 - **``twelve-factor`` skill restructured around the canonical/skills

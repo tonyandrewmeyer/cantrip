@@ -331,6 +331,117 @@ class TestConfigRules:
         cfg_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("CFG")}
         assert not cfg_ids
 
+    def test_config_option_unread_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test",
+                "config": {
+                    "options": {
+                        "port": {"type": "int", "default": 8080, "description": "x"},
+                        "unused": {"type": "string", "default": "y", "description": "x"},
+                    }
+                },
+            },
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_config_changed(self, event):\n"
+            "        port = self.config['port']\n"
+            "        if not port:\n"
+            "            self.unit.status = ops.BlockedStatus('bad port')\n",
+        )
+        report = lint(tmp_charm)
+        cfg004 = [d for d in report.diagnostics if d.rule_id == "CFG004"]
+        assert len(cfg004) == 1
+        assert "unused" in cfg004[0].message
+
+    def test_config_option_get_form_satisfies_unread(self, tmp_charm: pathlib.Path):
+        """``self.config.get('log-level', 'info')`` counts as a read."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test",
+                "config": {
+                    "options": {
+                        "log-level": {
+                            "type": "string",
+                            "default": "info",
+                            "description": "x",
+                        }
+                    }
+                },
+            },
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_config_changed(self, event):\n"
+            "        level = self.config.get('log-level', 'info')\n"
+            "        if level not in ('debug', 'info'):\n"
+            "            self.unit.status = ops.BlockedStatus('bad level')\n",
+        )
+        report = lint(tmp_charm)
+        assert "CFG004" not in {d.rule_id for d in report.diagnostics}
+
+    def test_config_no_blocked_status_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test",
+                "config": {
+                    "options": {
+                        "port": {"type": "int", "default": 8080, "description": "x"},
+                    }
+                },
+            },
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase):\n"
+            "    def _on_config_changed(self, event):\n"
+            "        port = self.config['port']\n"
+            "        self._apply(port)\n",
+        )
+        report = lint(tmp_charm)
+        assert "CFG005" in {d.rule_id for d in report.diagnostics}
+
+    def test_config_with_blocked_status_passes(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test",
+                "config": {
+                    "options": {
+                        "port": {"type": "int", "default": 8080, "description": "x"},
+                    }
+                },
+            },
+        )
+        write_charm_source(
+            tmp_charm,
+            "import ops\nfrom ops import BlockedStatus\n\nclass C(ops.CharmBase):\n"
+            "    def _on_config_changed(self, event):\n"
+            "        port = self.config['port']\n"
+            "        if not port:\n"
+            "            self.unit.status = BlockedStatus('bad port')\n",
+        )
+        report = lint(tmp_charm)
+        assert "CFG005" not in {d.rule_id for d in report.diagnostics}
+
+    def test_no_config_options_skips_cfg004_cfg005(self, tmp_charm: pathlib.Path):
+        """A charm without config options should not trip CFG004 or CFG005."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            "import ops\n\nclass C(ops.CharmBase): pass\n",
+        )
+        report = lint(tmp_charm)
+        ids = {d.rule_id for d in report.diagnostics}
+        assert "CFG004" not in ids
+        assert "CFG005" not in ids
+
 
 class TestSecurityRules:
     """Tests for security checks."""

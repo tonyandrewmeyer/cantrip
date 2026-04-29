@@ -207,6 +207,7 @@ juju config my-charm
 
 ## Common Pitfalls
 
+- **Declaring an option but never reading it; or validating without `BlockedStatus`.** `charmlint` covers both deterministically (`CFG004` flags any option that does not appear as `self.config[...]` / `self.config.get(...)` in `src/`; `CFG005` flags charms with config options but no `BlockedStatus` reference at all). Run `charmlint` to surface these — the skill body no longer recites them.
 - **Not handling `config-changed` at all** — config values are still accessible via `self.config`, but the workload will not be updated until the charm explicitly applies them.
 - **Crashing on invalid config** — always validate and set `BlockedStatus` instead of raising exceptions.
 - **Assuming config types are correct** — Juju enforces the type declared in metadata, but it is good practice to validate ranges and allowed values.
