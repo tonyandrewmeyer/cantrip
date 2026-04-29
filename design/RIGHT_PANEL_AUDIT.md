@@ -31,53 +31,38 @@ captures both an SVG screenshot and a flat dump of every rendered
 
 ## Findings
 
-### A. `TaskChecklistWidget` accumulates stale children on every refresh ⚠️
+### A. ~~`TaskChecklistWidget` accumulates stale children on every refresh~~ — **withdrawn**
 
-**Severity: correctness.**
+The first revision of this audit claimed `_refresh_display`'s
+mismatched `remove_children` (async) + `mount` (sync) pair leaked
+stale rows.  **This was a false alarm.**
 
-`_refresh_display` calls `container.remove_children()` and then
-`container.mount(...)` synchronously.  In Textual,
-`remove_children()` is async — it returns an `AwaitRemove` and the
-detach happens on the next event-loop tick.  So when a refresh runs,
-the old children are still attached when the new ones mount, and the
-display ends up with both.
-
-Evidence — `02_preflight_running.tree.txt`:
+Re-running the harness with the bug suspect reverted, the dump for
+`04_mid_build` shows clean output:
 
 ```
-<Static [task-header]> 'Preparing environment'
-<Static [task-divider]> '────────────────────'
-<Static [task-pending.task-row]> '○ Concierge'
-<Static [task-pending.task-row]> '○ Environment'
-<Static [task-pending.task-row]> '○ Juju CLI'
-<Static [task-pending.task-row]> '○ Controller'
-<Static [task-pending.task-row]> '○ COS'
-<Static [task-header]> 'Preparing environment'   ← duplicate
-<Static [task-divider]> '────────────────────'
-<Static [task-done.task-row]> '✓ Concierge'
-<Static [task-done.task-row]> '✓ Environment'
-<Static [task-active.task-row]> '⟳ Juju CLI'
-<Static [task-pending.task-row]> '○ Controller'
-<Static [task-pending.task-row]> '○ COS'
-<Static [task-active.task-row]> '⟳ Planning tasks…'
+<Static [task-collapsed.task-done.task-row]> '✓ Preparing environment · ready'
+<Static [task-header]> 'In progress'
+…
 ```
 
-Same group is rendered twice — once with the *initial* PENDING items,
-once with the *updated* mixed-status items.  Likewise in
-`04_mid_build` and `06_all_done` we see the per-item rows alongside
-the collapsed `✓ Preparing environment · ready` summary.
+The "duplicate" group rendering came from the harness adding a second
+`add_preflight_group("Preparing environment", …)` on top of the one
+the app's `_start_prepare` registers in its own `on_mount`.  The
+widget was correctly rendering both groups.
 
-**Fix:** make the refresh async-aware.  Two reasonable shapes:
+The reason there is no real leak: Textual's `Vertical.mount` is
+synchronous against `self.children` (the new widget is in the list
+immediately) but the layout/CSS work is queued.  The next
+`remove_children` call walks `self.children` and detaches every node
+present — including any newly-mounted ones whose layout hasn't
+caught up.  Order is preserved through the message queue, so the
+final state converges to whichever refresh ran last.
 
-1. Convert `_refresh_display` to async and `await
-   container.remove_children()` before mounting, dispatching it via
-   `self.run_worker(..., exclusive=True)` so rapid successive calls
-   cancel earlier ones.
-2. Iterate `list(container.children)` and call `child.remove()` on
-   each before mounting — `Widget.remove()` is the synchronous
-   equivalent the framework supports.
-
-Pick (2) — fewer moving parts, no async boundary, no worker.
+The harness is fixed (`tmp/audit_phase65/drive_right_panel.py`
+calls a `_eager_idx` helper that reuses
+`pilot.app._prepare_group_idx`) so this finding does not recur on
+re-runs.
 
 ### B. `_format_detail` double-indents under `.task-detail`
 
@@ -261,13 +246,13 @@ ship:
 
 Order of fixes, one commit each:
 
-1. **A** — stale-children correctness fix (highest impact, blocks
-   eyeballing the rest).
-2. **E** — collapse-row simplification (biggest visual win).
-3. **D** + **C** — pinned-section format and emphasis (related;
+1. **E** — collapse-row simplification (biggest visual win).
+2. **D** + **C** — pinned-section format and emphasis (related;
    ship as one commit).
-4. **B** — `_format_detail` indent.
-5. **F** — `watch_cos_expanded` watcher.
-6. **G** — auto-hide multi-model pane while no models connected,
+3. **B** — `_format_detail` indent.
+4. **F** — `watch_cos_expanded` watcher.
+5. **G** — auto-hide multi-model pane while no models connected,
    delete dead `Not connected` / `Not deployed` rendering.
-7. **65.3** — CSS sweep against the bullet list above.
+6. **65.3** — CSS sweep against the bullet list above.
+
+Finding **A** is withdrawn (see above).
