@@ -87,3 +87,7 @@ stage/
 # Benchmark run logs (transient stdout capture; JSON results are committed)
 benchmarks/**/benchmark-*.log
 /docs/localStorage.json
+
+# Throwaway local scratch — audit harnesses, ad-hoc captures, anything
+# the current session needs but that should not enter git.
+/tmp/
