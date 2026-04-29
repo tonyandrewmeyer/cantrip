@@ -4336,7 +4336,7 @@ attribution header citing the upstream path.
 
 ### 91.1 Steal verbatim — port the four scripts as Cantrip tools
 
-- [ ] ``detect_framework.py`` (284 lines, ``12factor-fit/
+- [x] ``detect_framework.py`` (284 lines, ``12factor-fit/
   scripts/``) → replace the heuristic guts of the existing
   ``AnalyseFrameworkTool`` (``analyse_framework``) with the
   upstream's scoring algorithm: dependency parsing
@@ -4349,7 +4349,7 @@ attribution header citing the upstream path.
   mapping, ``needs_experimental`` flag, ``workload_hints``)
   so callers downstream are unaffected.  No new tool name —
   one detection tool, better detection.
-- [ ] ``check_rock_contract.py`` (289 lines, ``12factor-rock/
+- [x] ``check_rock_contract.py`` (289 lines, ``12factor-rock/
   scripts/``) → new tool that runs framework-specific fit
   checks (deps present, ASGI/WSGI entrypoint at standard
   paths, Maven-XOR-Gradle, base/framework compatibility) and

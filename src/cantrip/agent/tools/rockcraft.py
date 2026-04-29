@@ -13,6 +13,11 @@ import jubilant
 
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.tools.juju_subprocess import juju_available as _juju_available
+from cantrip.agent.tools.rock_contract import (
+    SUPPORTED_FRAMEWORKS,
+    UnknownFrameworkError,
+    check_rock_contract,
+)
 
 # The microk8s registry add-on exposes the in-cluster registry at this
 # host:port on the dev box.  Canonical's ``k8s`` snap does NOT ship an
@@ -112,6 +117,94 @@ class RockcraftInitTool(Tool):
                 output="",
                 error="rockcraft init timed out",
             )
+
+
+class RockContractCheckTool(Tool):
+    """Validate a repo against the rock contract for a 12-factor framework.
+
+    Runs the per-framework checks ported from canonical/skills PR #4 —
+    dependency presence, ASGI / WSGI entrypoint location, Maven / Gradle
+    consistency for Spring Boot, ``app/package.json`` shape for Express,
+    Go module + cmd dir layout — and reports issues (blockers) plus
+    advisory warnings.  Use this *before* ``rockcraft pack`` to surface
+    misconfiguration up-front instead of after a multi-minute build.
+    """
+
+    @property
+    def name(self) -> str:
+        return "check_rock_contract"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Check whether a repository fits the rockcraft framework "
+            "contract for a given 12-factor framework. Returns blocking "
+            "issues, advisory warnings, and the list of supported "
+            "``base:`` values for the framework. Run this before "
+            "``rockcraft init`` / ``rockcraft pack`` to catch dependency, "
+            "entrypoint, or build-system problems early. Frameworks: "
+            "flask, django, fastapi, express, go, spring-boot."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Repository path to check.",
+                },
+                "framework": {
+                    "type": "string",
+                    "description": "Target 12-factor framework.",
+                    "enum": sorted(SUPPORTED_FRAMEWORKS),
+                },
+            },
+            "required": ["path", "framework"],
+        }
+
+    async def execute(self, path: str, framework: str) -> ToolResult:
+        repo = pathlib.Path(path).resolve()
+        if not repo.exists():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Path not found: {path}",
+            )
+
+        try:
+            report = check_rock_contract(repo, framework)
+        except UnknownFrameworkError as exc:
+            return ToolResult(success=False, output="", error=str(exc))
+
+        verdict = "FIT" if report.fit else "NO FIT"
+        lines = [f"{verdict} for {framework} rock at {repo}"]
+        if report.issues:
+            lines.append("Issues:")
+            lines.extend(f"  - {issue}" for issue in report.issues)
+        if report.warnings:
+            lines.append("Warnings:")
+            lines.extend(f"  - {warning}" for warning in report.warnings)
+        lines.append(f"Supported bases: {', '.join(report.supported_bases)}")
+
+        caption = (
+            f"check_rock_contract({framework}) → fit"
+            if report.fit
+            else f"check_rock_contract({framework}) → {len(report.issues)} issues"
+        )
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data={
+                "framework": report.framework,
+                "fit": report.fit,
+                "issues": list(report.issues),
+                "warnings": list(report.warnings),
+                "supported_bases": list(report.supported_bases),
+            },
+            caption=caption,
+        )
 
 
 class RockcraftPackTool(Tool):

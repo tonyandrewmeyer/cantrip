@@ -169,11 +169,23 @@ def _parse_requirement_file(path: pathlib.Path, visited: set[pathlib.Path]) -> s
     return deps
 
 
-def _parse_requirements(repo: pathlib.Path) -> set[str]:
+def parse_requirements(repo: pathlib.Path) -> set[str]:
+    """Return the set of dependency names declared in ``requirements.txt``.
+
+    Handles ``-r`` / ``--requirement`` includes recursively; skips
+    editable installs, VCS pins, and direct URLs.  Names are lowercased
+    and ``_`` is normalised to ``-`` to match PEP 503 distribution names.
+    """
     return _parse_requirement_file((repo / "requirements.txt").resolve(), set())
 
 
-def _parse_pyproject(repo: pathlib.Path) -> set[str]:
+def parse_pyproject(repo: pathlib.Path) -> set[str]:
+    """Return the set of dependency names declared in ``pyproject.toml``.
+
+    Reads PEP 621 ``[project.dependencies]`` and Poetry
+    ``[tool.poetry.dependencies]``.  ``python`` is filtered out of the
+    Poetry list because it's a Python version pin, not a dependency.
+    """
     deps: set[str] = set()
     path = repo / "pyproject.toml"
     if not path.exists():
@@ -199,7 +211,7 @@ def _score_frameworks(repo: pathlib.Path) -> dict[str, dict[str, Any]]:
     scores: dict[str, int] = collections.defaultdict(int)
     signals: dict[str, list[str]] = collections.defaultdict(list)
 
-    deps = _parse_requirements(repo) | _parse_pyproject(repo)
+    deps = parse_requirements(repo) | parse_pyproject(repo)
     project_name = _normalise_name(repo.name)
 
     def add(framework: str, score: int, signal: str) -> None:
@@ -262,7 +274,7 @@ def _score_frameworks(repo: pathlib.Path) -> dict[str, dict[str, Any]]:
 
     if "flask" in deps:
         add("flask", 4, "Python metadata includes flask")
-    for rel in _python_entrypoint_candidates(project_name):
+    for rel in python_entrypoint_candidates(project_name):
         path = repo / rel
         if not path.exists():
             continue
@@ -274,7 +286,7 @@ def _score_frameworks(repo: pathlib.Path) -> dict[str, dict[str, Any]]:
 
     if {"fastapi", "starlette"} & deps:
         add("fastapi", 4, "Python metadata includes fastapi or starlette")
-    for rel in _python_entrypoint_candidates(project_name):
+    for rel in python_entrypoint_candidates(project_name):
         path = repo / rel
         if not path.exists():
             continue
@@ -291,8 +303,12 @@ def _score_frameworks(repo: pathlib.Path) -> dict[str, dict[str, Any]]:
     }
 
 
-def _python_entrypoint_candidates(project_name: str) -> tuple[pathlib.Path, ...]:
-    """Return the standard list of paths that hold a Python web-app entrypoint."""
+def python_entrypoint_candidates(project_name: str) -> tuple[pathlib.Path, ...]:
+    """Return the standard list of paths that hold a Python web-app entrypoint.
+
+    The same candidate list is used by Flask and FastAPI detection here
+    and by their rock-fit checks in :mod:`cantrip.agent.tools.rock_contract`.
+    """
     return (
         pathlib.Path("app.py"),
         pathlib.Path("main.py"),

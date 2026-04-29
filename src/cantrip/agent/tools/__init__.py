@@ -167,6 +167,7 @@ def build_tools(
         LocalRegistryStatusTool,
         RegistryImageExistsTool,
         RegistryMirrorTool,
+        RockContractCheckTool,
         RockcraftInitTool,
         RockcraftPackTool,
         SetupLocalRegistryTool,
@@ -239,6 +240,7 @@ def build_tools(
         RegistryImageInfoTool(),
         # Rockcraft operations
         RockcraftInitTool(),
+        RockContractCheckTool(),
         RockcraftPackTool(),
         SkopeoRegistryPushTool(),
         RegistryImageExistsTool(),

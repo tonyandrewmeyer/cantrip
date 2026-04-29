@@ -41,6 +41,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   live in ``design/RIGHT_PANEL_AUDIT.md``.
 
 ### Added
+- **``check_rock_contract`` tool (Phase 91.1).**  Per-framework
+  rock-fit validator ported from canonical/skills PR #4
+  (Apache-2.0).  Runs the same checks the upstream skill does
+  before ``rockcraft init`` / ``rockcraft pack``: Flask requires
+  ``flask`` in deps plus a recognisable WSGI entrypoint; Django
+  requires ``requirements.txt`` plus a ``wsgi.py`` carrying
+  ``application`` at the standard project layout; FastAPI requires
+  ``fastapi`` or ``starlette`` in deps plus an ``app =`` ASGI
+  object; Express requires ``app/package.json`` with ``name`` and
+  ``scripts.start``; Go requires a root ``go.mod`` and warns about
+  ``cmd/*`` naming mismatches; Spring Boot rejects repos that
+  expose both Maven and Gradle (or both ``mvnw`` and ``gradlew``)
+  and flags non-executable build wrappers.  Returns blocking
+  issues, advisory warnings, and the supported ``base:`` list per
+  framework, so the agent can preflight a 12-factor build instead
+  of discovering the same problem after a multi-minute pack.
+  Also: the upstream's gradle check is extended to
+  ``build.gradle.kts`` (Kotlin DSL) since the upstream missed it.
+  Wired into the rockcraft tool group; ``express`` is the
+  framework name everywhere — the upstream's ``expressjs`` is
+  mapped at the helper boundary.
 - **Pre-call tool blocks update in place.**  When the agent
   dispatches a slow tool — ``charmcraft_pack``, ``juju_wait``,
   ``web_fetch`` — the chat now renders an immediate "running now"
