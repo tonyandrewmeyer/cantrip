@@ -20,28 +20,37 @@ Screen {
     padding: 1;
 }
 
-/* The TaskChecklistWidget already declares height/max-height in its
- * DEFAULT_CSS; only the right-panel-specific divider lives here. */
 #task-checklist {
+    height: auto;
+    max-height: 50%;
     overflow-y: auto;
     border-bottom: solid $primary;
     padding-bottom: 1;
     margin-bottom: 1;
 }
 
-/* max-height caps it; height: 1fr would be redundant. */
+/* ``height: 1fr`` is load-bearing — without it the pane resolves to
+ * height 0 and the file tree disappears, even though the widget's
+ * ``DEFAULT_CSS`` also declares ``1fr`` (the user CSS specificity
+ * wins, so omitting it here drops the value).  ``max-height: 50%``
+ * caps the share so it doesn't elbow out ``#juju-status`` when
+ * that pane is visible. */
 #charm-files {
+    height: 1fr;
     max-height: 50%;
     border-bottom: solid $primary;
     padding-bottom: 1;
     margin-bottom: 1;
 }
 
-/* Auto-sized — the widget hides itself entirely while no model is
- * connected, so 1fr would either claim space for a hidden block or
- * leave a fixed gap once it shows up. */
+/* The widget hides itself entirely while no model is connected
+ * (Phase 65 finding G), so ``1fr`` here doesn't claim space for an
+ * empty pane — the layout passes the residual to ``#charm-files``
+ * via its 1fr instead.  When the pane *is* visible, ``1fr`` and
+ * ``overflow-y: auto`` together let the user scroll through the
+ * apps if dev + expanded-COS overruns the allocated share. */
 #juju-status {
-    height: auto;
+    height: 1fr;
     overflow-y: auto;
 }
 

@@ -850,6 +850,59 @@ class TestTuiWidgets:
                 )
 
     @pytest.mark.asyncio
+    async def test_expanded_cos_renders_apps_visibly(self):
+        """COS expansion shows the app list, not just the model header.
+
+        Regression for the layout bug where ``JujuStatusWidget`` declared
+        ``height: 100%`` and got mounted inside ``.model-section``
+        (``height: auto``) — the recursion collapsed the inner content
+        so only the ``Model: cos (k8s)`` line ever rendered after a
+        click-to-expand.  Asserting on virtual_size catches the case
+        where AppBoxes exist in the DOM but get squashed to zero
+        height by their container.
+        """
+        from cantrip.tui.widgets.status import AppBox
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test(size=(140, 60)) as pilot:
+                await pilot.pause()
+                widget = pilot.app.query_one("#juju-status", MultiModelStatusWidget)
+
+                def _mock_app(name: str, status: str = "active") -> MagicMock:
+                    m = MagicMock()
+                    m.app_status.current = status
+                    m.app_status.message = ""
+                    m.units = {f"{name}/0": MagicMock(workload_status=MagicMock(current=status))}
+                    m.relations = {}
+                    return m
+
+                mock_status = MagicMock()
+                mock_status.model.name = "cos"
+                mock_status.model.cloud = "k8s"
+                mock_status.apps = {
+                    "prometheus": _mock_app("prometheus"),
+                    "loki": _mock_app("loki"),
+                    "grafana": _mock_app("grafana", status="blocked"),
+                }
+                widget.cos_status = mock_status
+                await pilot.pause()
+                widget.toggle_cos_expanded()
+                await pilot.pause()
+                await pilot.pause()
+
+                boxes = list(widget.query(AppBox))
+                assert len(boxes) == 3
+                # Each AppBox must have a non-zero virtual size; this
+                # is what the bug regressed (DOM said boxes existed,
+                # layout said they were zero-height).
+                for box in boxes:
+                    assert box.virtual_size.height > 0, (
+                        f"AppBox {box.app_name!r} rendered with virtual height 0 — "
+                        "JujuStatusWidget likely collapsed its layout"
+                    )
+
+    @pytest.mark.asyncio
     async def test_juju_status_pane_is_scrollable(self):
         """#juju-status must scroll when content exceeds its height.
 

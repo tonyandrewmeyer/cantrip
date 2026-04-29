@@ -249,7 +249,13 @@ class JujuStatusWidget(Widget):
 
     DEFAULT_CSS = """
     JujuStatusWidget {
-        height: 100%;
+        /* ``height: auto`` so the widget sizes to its contents (model
+         * header + summary + AppBoxes + offers).  ``height: 100%``
+         * here used to recurse into the surrounding ``.model-section``
+         * (also ``height: auto``), which collapsed the inner content
+         * to the first line — only ``Model: cos (k8s)`` would show
+         * after a click-to-expand. */
+        height: auto;
         padding: 1;
     }
 
