@@ -13,7 +13,8 @@ from textual.widgets import Header, Input
 from textual.worker import Worker, WorkerState
 
 from cantrip import __version__, diagnostics, notifications, update
-from cantrip.agent import context_providers, emotions, slash_commands
+from cantrip.agent import context_providers, emotions
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
@@ -1337,16 +1338,36 @@ class CantripApp(App):
                 chat.add_system_message(f"Working on the issue:\n{titles}")
             else:
                 chat.add_system_message("Could not generate work tasks for this issue.")
+            self._present_next_pending_triage()
             return True
 
         if lower in ("skip", "no", "n", "dismiss"):
             self._pending_confirm_id = None
             self._agent.work_queue.set_done(confirm_id, "Skipped by user")
             chat.add_system_message("Issue skipped.")
+            self._present_next_pending_triage()
             return True
 
         # Unrecognised response — don't consume it.
         return False
+
+    def _present_next_pending_triage(self) -> None:
+        """If another triage CONFIRM is already BLOCKED, present it now.
+
+        The executor blocks every PENDING triage CONFIRM in successive
+        polling ticks, so by the time the user answers the first one the
+        next two are already in ``BLOCKED`` state — no new
+        ``task_changed`` event will fire for them, and they'd otherwise
+        sit unanswered in the task pane.  Manually pick the next one and
+        run it through the same presenter the bus would have invoked.
+        """
+        if not self._agent:
+            return
+        for task in self._agent.work_queue.all_tasks():
+            if task.id.startswith(TRIAGE_CONFIRM_PREFIX) and task.status == TaskStatus.BLOCKED:
+                self._pending_confirm_id = task.id
+                self._present_triage_confirmation(task)
+                return
 
     def _present_triage_confirmation(self, task: AgentTask) -> None:
         """Show a GitHub issue summary in chat for user approval.

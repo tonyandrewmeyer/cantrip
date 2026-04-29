@@ -468,7 +468,7 @@ class TestSharedSlashCommands:
     @pytest.mark.asyncio
     async def test_dispatch_result_with_followup_spawns_worker(self):
         """A non-None SlashResult with followup starts an mcp_marketplace worker."""
-        from cantrip.agent.slash_commands import SlashResult
+        from cantrip.agent.commands.slash import SlashResult
 
         async def _followup() -> str:
             return "done"
@@ -492,7 +492,7 @@ class TestSharedSlashCommands:
     @pytest.mark.asyncio
     async def test_dispatch_quit_schedules_exit(self):
         """A SlashResult with quit=True schedules app.exit after refresh."""
-        from cantrip.agent.slash_commands import SlashResult
+        from cantrip.agent.commands.slash import SlashResult
 
         p1, p2, _ = _patch_app()
         with (
@@ -855,6 +855,39 @@ class TestTriageResponse:
                 pilot.app._pending_confirm_id = "triage-issue-42"
                 assert pilot.app._handle_triage_response("skip") is True
                 assert "Issue skipped." in _system_messages(pilot)
+
+    @pytest.mark.asyncio
+    async def test_skip_presents_next_blocked_triage(self):
+        """After skip, a second BLOCKED triage CONFIRM gets re-presented.
+
+        The executor blocks every PENDING triage CONFIRM in successive
+        ticks, so by the time the user answers the first one the next
+        is already in BLOCKED state — no fresh ``task_changed`` event
+        will fire.  The skip handler must walk the queue and present
+        the next stuck CONFIRM itself.
+        """
+        from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+
+        p1, p2, mock_agent = _patch_app()
+        mock_agent.work_queue.set_done = MagicMock()
+        next_task = AgentTask(
+            id="triage-issue-99",
+            title="Work on #99: refactor",
+            category=TaskCategory.CONFIRM,
+            status=TaskStatus.BLOCKED,
+            description="Issue #99 details",
+        )
+        mock_agent.work_queue.all_tasks = MagicMock(return_value=[next_task])
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app._pending_confirm_id = "triage-issue-42"
+                assert pilot.app._handle_triage_response("skip") is True
+                msgs = _system_messages(pilot)
+                assert "Issue skipped." in msgs
+                # The follow-up CONFIRM is now the pending one, and the
+                # presenter ran a second time for it.
+                assert pilot.app._pending_confirm_id == "triage-issue-99"
+                assert msgs.count("Issue triage") == 1
 
     @pytest.mark.asyncio
     async def test_unrelated_returns_false(self):
