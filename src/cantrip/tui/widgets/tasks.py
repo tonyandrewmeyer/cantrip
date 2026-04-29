@@ -23,9 +23,13 @@ _CATEGORY_ORDER: list[tuple[TaskCategory, str]] = [
     (TaskCategory.DEBUG, "Debug"),
     (TaskCategory.INFRA, "Infrastructure"),
     # ``CONFIRM`` is the enum's wire name; the display label is
-    # what the user actually sees, and "Approve" reads as a
-    # directive ("I need to approve this") instead of as a noun.
-    (TaskCategory.CONFIRM, "Approve"),
+    # what the user actually sees.  "Review" fits every CONFIRM
+    # site (issue triage, design proposal, improvement plan,
+    # bootstrap / push prompt, race go-ahead) — they're all
+    # points where the agent stops and waits for a user
+    # decision — and matches the user's own vocabulary for the
+    # issue-triage flow ("git issue review").
+    (TaskCategory.CONFIRM, "Review"),
 ]
 
 # Statuses that are pinned to the top "In progress" section.  Keeping

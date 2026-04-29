@@ -20,6 +20,22 @@ pytestmark = pytest.mark.tui
 # ---------------------------------------------------------------------------
 
 
+class TestCategoryLabels:
+    """Display labels for the category enum values."""
+
+    def test_confirm_label_is_review(self):
+        """The user-visible label for the CONFIRM enum is "Review".
+
+        The category covers issue triage, design / plan approvals,
+        bootstrap and push prompts, race go-aheads — every CONFIRM
+        site is a stop-and-decide point that reads naturally as
+        something the user reviews.  Pinning the label guards against
+        regressions to the original "Confirm" or the brief "Approve".
+        """
+        labels = dict(_CATEGORY_ORDER)
+        assert labels[TaskCategory.CONFIRM] == "Review"
+
+
 class TestStatusDisplay:
     """Test the _status_display helper for all five statuses."""
 
