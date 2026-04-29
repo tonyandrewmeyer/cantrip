@@ -469,7 +469,8 @@ class TestRepoMap:
         # block and contains the bracketed tokens unescaped.
         from unittest.mock import MagicMock
 
-        from cantrip.agent.commands.slash import dispatch, handle_map
+        from cantrip.agent.commands.map import handle_map
+        from cantrip.agent.commands.slash import dispatch
 
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
@@ -502,7 +503,7 @@ class TestRepoMap:
         # the exception or leak the stack into the chat.
         from unittest.mock import MagicMock
 
-        from cantrip.agent.commands.slash import handle_map
+        from cantrip.agent.commands.map import handle_map
 
         # Redirect the diagnostics log into tmp_path.
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -594,7 +595,7 @@ class TestRepoMap:
         # footer pointing at ``/map full`` for the wall-of-text view.
         from unittest.mock import MagicMock
 
-        from cantrip.agent.commands.slash import handle_map
+        from cantrip.agent.commands.map import handle_map
 
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
@@ -616,7 +617,7 @@ class TestRepoMap:
         # wall once scrolled past the top.
         from unittest.mock import MagicMock
 
-        from cantrip.agent.commands.slash import handle_map
+        from cantrip.agent.commands.map import handle_map
 
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)

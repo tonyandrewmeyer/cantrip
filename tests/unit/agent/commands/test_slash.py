@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from cantrip.agent.commands import share as share_commands
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.slash import SlashResult, dispatch
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
@@ -516,8 +517,8 @@ class TestShare:
         with (
             patch("cantrip.transcript.export.load_transcript", return_value={}),
             patch("cantrip.transcript.html.render_html", return_value="<html/>"),
-            patch("cantrip.agent.commands.slash.shutil.which", return_value="/usr/bin/gh"),
-            patch("cantrip.agent.commands.slash.asyncio.create_subprocess_exec") as mock_exec,
+            patch("cantrip.agent.commands.share.shutil.which", return_value="/usr/bin/gh"),
+            patch("cantrip.agent.commands.share.asyncio.create_subprocess_exec") as mock_exec,
         ):
             mock_proc = MagicMock()
             mock_proc.returncode = 0
@@ -528,7 +529,7 @@ class TestShare:
 
             mock_exec.side_effect = _fake_exec
 
-            result = await slash_commands._run_share_to_gist(
+            result = await share_commands.share_to_gist(
                 charm_path / ".cantrip",
                 charm_path,
             )
@@ -548,9 +549,9 @@ class TestShare:
         with (
             patch("cantrip.transcript.export.load_transcript", return_value={}),
             patch("cantrip.transcript.html.render_html", return_value="<html/>"),
-            patch("cantrip.agent.commands.slash.shutil.which", return_value=None),
+            patch("cantrip.agent.commands.share.shutil.which", return_value=None),
         ):
-            result = await slash_commands._run_share_to_gist(
+            result = await share_commands.share_to_gist(
                 charm_path / ".cantrip",
                 charm_path,
             )
@@ -576,8 +577,8 @@ class TestShare:
         with (
             patch("cantrip.transcript.export.load_transcript", return_value={}),
             patch("cantrip.transcript.html.render_html", return_value="<html/>"),
-            patch("cantrip.agent.commands.slash.shutil.which", return_value="/usr/bin/gh"),
-            patch("cantrip.agent.commands.slash.asyncio.create_subprocess_exec") as mock_exec,
+            patch("cantrip.agent.commands.share.shutil.which", return_value="/usr/bin/gh"),
+            patch("cantrip.agent.commands.share.asyncio.create_subprocess_exec") as mock_exec,
         ):
             mock_proc = MagicMock()
             mock_proc.returncode = 4
@@ -588,7 +589,7 @@ class TestShare:
 
             mock_exec.side_effect = _fake_exec
 
-            result = await slash_commands._run_share_to_gist(
+            result = await share_commands.share_to_gist(
                 charm_path / ".cantrip",
                 charm_path,
             )

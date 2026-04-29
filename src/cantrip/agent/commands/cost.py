@@ -1,0 +1,140 @@
+"""``/cost`` — token usage and estimated cost rollups.
+
+Mirrors the CLI's legacy ``_print_cost`` block so the same summary is
+useful as a system message in the TUI and Web surfaces.  Lifted out
+of the dispatcher in Phase 85.3.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from cantrip.llm import pricing
+
+if TYPE_CHECKING:
+    from cantrip.agent.core import CantripAgent
+
+
+def format_cost(agent: CantripAgent) -> str:
+    """Render token usage and estimated cost as plain text.
+
+    Mirrors the CLI's legacy ``_print_cost`` output so the same block
+    is useful in the TUI and Web as a system message.
+    """
+    store = agent.store
+    if not store:
+        return "_No usage data available._"
+
+    total = store.get_total_usage()
+    prompt = int(total.get("prompt_tokens", 0) or 0)
+    completion = int(total.get("completion_tokens", 0) or 0)
+    total_tokens = prompt + completion
+
+    if total_tokens == 0:
+        return "_No tokens used yet._"
+
+    lines = [
+        "**Token usage**",
+        f"- Prompt:     {prompt:>10,}",
+        f"- Completion: {completion:>10,}",
+        f"- Total:      {total_tokens:>10,}",
+    ]
+
+    if agent.cache_creation_tokens or agent.cache_read_tokens:
+        cache_total = agent.cache_creation_tokens + agent.cache_read_tokens
+        hit_pct = agent.cache_read_tokens / cache_total * 100 if cache_total else 0
+        lines.append(f"- Cache hit:  {hit_pct:>9.0f}%")
+
+    # Phase 52.6: tokens avoided via step-checkpoint replay.  These are
+    # billed zero this session (the live provider never fired) but the
+    # sum is worth showing so the user can see the cost-savings headroom
+    # the durable-execution machinery bought them.
+    savings = store.get_replay_savings()
+    saved_total = savings["prompt_tokens"] + savings["completion_tokens"]
+    if saved_total:
+        lines.append(
+            f"- Cached from checkpoint: {saved_total:,} tokens "
+            f"({savings['prompt_tokens']:,} prompt, "
+            f"{savings['completion_tokens']:,} completion, "
+            f"{savings['request_count']} replayed turn(s))"
+        )
+
+    by_model = store.get_usage_by_model()
+    total_cost = 0.0
+    if by_model:
+        lines.append("")
+        lines.append("**By model**")
+        for row in by_model:
+            model = row.get("model", "unknown")
+            reqs = int(row.get("request_count", 0) or 0)
+            prompt_t = int(row.get("prompt_tokens", 0) or 0)
+            completion_t = int(row.get("completion_tokens", 0) or 0)
+            tokens = prompt_t + completion_t
+            cost = pricing.estimate_cost(
+                str(model),
+                prompt_tokens=prompt_t,
+                completion_tokens=completion_t,
+            )
+            total_cost += cost
+            cost_str = pricing.format_cost(cost) if cost > 0 else "free"
+            lines.append(f"- {model}: {tokens:,} tokens, {reqs} requests, {cost_str}")
+
+    if agent.cache_read_tokens or agent.cache_creation_tokens:
+        cache_cost = pricing.estimate_cost(
+            agent.provider.model_name,
+            cache_read_tokens=agent.cache_read_tokens,
+            cache_write_tokens=agent.cache_creation_tokens,
+        )
+        total_cost += cache_cost
+
+    # Per-category breakdown (Phase 31.4) — aggregate across models so a
+    # category row sums every subagent that ran under it.  Cache cost is
+    # global (not category-attributed) so it stays out of this table.
+    by_cat = store.get_usage_by_category()
+    if by_cat:
+        cat_totals: dict[str, tuple[int, float, int]] = {}
+        for row in by_cat:
+            cat = str(row.get("category", "conversation"))
+            prompt_t = int(row.get("prompt_tokens", 0) or 0)
+            completion_t = int(row.get("completion_tokens", 0) or 0)
+            reqs = int(row.get("request_count", 0) or 0)
+            cost = pricing.estimate_cost(
+                str(row.get("model", "")),
+                prompt_tokens=prompt_t,
+                completion_tokens=completion_t,
+            )
+            tokens, running_cost, running_reqs = cat_totals.get(cat, (0, 0.0, 0))
+            cat_totals[cat] = (
+                tokens + prompt_t + completion_t,
+                running_cost + cost,
+                running_reqs + reqs,
+            )
+        lines.append("")
+        lines.append("**By category**")
+        for cat in sorted(cat_totals):
+            tokens, cat_cost, reqs = cat_totals[cat]
+            cost_str = pricing.format_cost(cat_cost) if cat_cost > 0 else "free"
+            lines.append(f"- {cat}: {tokens:,} tokens, {reqs} requests, {cost_str}")
+
+    # Phase 72.3: per-role rollup (chat / embed / rerank) — separates
+    # retrieval spend from chat so the user sees where the bill goes.
+    # NULL legacy rows fall under ``chat``; rolling them in keeps the
+    # historical total honest.
+    by_role = getattr(store, "get_usage_by_role", lambda: [])()
+    if by_role and any(row.get("role", "chat") != "chat" for row in by_role):
+        lines.append("")
+        lines.append("**By role**")
+        for row in by_role:
+            role = str(row.get("role", "chat"))
+            prompt_t = int(row.get("prompt_tokens", 0) or 0)
+            completion_t = int(row.get("completion_tokens", 0) or 0)
+            reqs = int(row.get("request_count", 0) or 0)
+            tokens = prompt_t + completion_t
+            lines.append(f"- {role}: {tokens:,} tokens, {reqs} requests")
+
+    if total_cost > 0:
+        lines.append("")
+        lines.append(f"_Estimated total: {pricing.format_cost(total_cost)}_")
+        lines.append("_(approximate; published list prices, may drift)_")
+
+    return "\n".join(lines)

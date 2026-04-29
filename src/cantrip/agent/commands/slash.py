@@ -20,12 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import datetime
 import logging
 import pathlib
-import shlex
-import shutil
-import tempfile
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING
 
@@ -34,10 +30,13 @@ from cantrip import update as update_module
 from cantrip.agent import sandbox
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.commands import mcp as mcp_commands
-from cantrip.agent.goal_budget import GoalBudget, format_summary, measure_usage
+from cantrip.agent.commands.budget import handle_budget
+from cantrip.agent.commands.cost import format_cost
+from cantrip.agent.commands.map import handle_map, handle_map_refresh
+from cantrip.agent.commands.share import share_to_gist
+from cantrip.agent.commands.transcript import export_transcript
 from cantrip.agent.memory import commands as memory_commands
 from cantrip.agent.queue import AgentTask, TaskCategory
-from cantrip.llm import pricing
 from cantrip.llm.base import Message, ProviderError, Role
 from cantrip.ui import events as ui_events
 
@@ -220,7 +219,7 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
     if verb == "/cost":
         return SlashResult(text=format_cost(agent))
     if verb == "/budget":
-        return SlashResult(text=_handle_budget(agent, args))
+        return SlashResult(text=handle_budget(agent, args))
     if verb == "/arena":
         if not args.strip():
             return SlashResult(
@@ -364,94 +363,6 @@ def _coerce_task_category(name: str) -> TaskCategory:
         return TaskCategory(name)
     except ValueError as exc:
         raise ValueError(f"unknown task category {name!r}") from exc
-
-
-def _handle_budget(agent: CantripAgent, args: str) -> str:
-    """Phase 55.3: show or raise the per-goal budget.
-
-    ``/budget`` with no args prints current usage against the cap.
-    ``/budget --max-iterations N`` sets or raises the iteration cap.
-    ``/budget --max-prompt-tokens N`` / ``--max-completion-tokens N``
-    set the equivalent token caps.  ``/budget --clear`` drops the
-    budget entirely so the autonomous loop runs uncapped again.
-    When a cap is raised, previously blocked tasks are moved back to
-    pending so the executor picks them up on the next poll.
-    """
-    tokens = args.split()
-    state = agent.state
-
-    # Raise / clear path.
-    if tokens:
-        if tokens[0] == "--clear":
-            state.goal_budget = None
-            _unblock_budget_tasks(agent)
-            return "Goal budget cleared.  Autonomous work is now uncapped."
-
-        flag = tokens[0]
-        if flag not in ("--max-iterations", "--max-prompt-tokens", "--max-completion-tokens"):
-            return (
-                "Usage: ``/budget`` (show) / "
-                "``/budget --max-iterations N`` / "
-                "``/budget --max-prompt-tokens N`` / "
-                "``/budget --max-completion-tokens N`` / "
-                "``/budget --clear``."
-            )
-        if len(tokens) != 2:
-            return f"Usage: ``/budget {flag} N``"
-        try:
-            value = int(tokens[1])
-        except ValueError:
-            return f"Cap must be an integer: {tokens[1]!r}"
-        if value < 0:
-            return f"Cap must be >= 0: {value}"
-
-        if state.goal_budget is None:
-            state.goal_budget = GoalBudget()
-        if flag == "--max-iterations":
-            state.goal_budget.max_iterations = value
-        elif flag == "--max-prompt-tokens":
-            state.goal_budget.max_prompt_tokens = value
-        else:
-            state.goal_budget.max_completion_tokens = value
-
-        _unblock_budget_tasks(agent)
-        return f"Goal budget updated.  {_format_budget_summary(agent)}"
-
-    return _format_budget_summary(agent)
-
-
-def _format_budget_summary(agent: CantripAgent) -> str:
-    """Return the one-line "used / cap" summary for the chat."""
-    state = agent.state
-    if state.goal_budget is None:
-        return (
-            "No goal budget set.  Set a cap with ``/budget --max-iterations N`` "
-            "or ``/budget --max-tokens N`` to add a hard stop."
-        )
-    store = agent.store
-    if store is None:
-        return (
-            f"Goal budget set (iterations={state.goal_budget.max_iterations}, "
-            f"prompt={state.goal_budget.max_prompt_tokens}, "
-            f"completion={state.goal_budget.max_completion_tokens}).  Usage "
-            "unavailable until the store opens."
-        )
-    usage = measure_usage(store, state.goal_budget)
-    return format_summary(state.goal_budget, usage)
-
-
-def _unblock_budget_tasks(agent: CantripAgent) -> None:
-    """Move every budget-blocked task back to pending.
-
-    Called after a cap is raised or cleared — the executor's next
-    poll will re-evaluate them against the new budget.  Tasks
-    blocked for any other reason stay put.
-    """
-    queue = agent.work_queue
-    for task in queue.all_tasks():
-        reason = task.blocked_reason or ""
-        if task.status.value == "blocked" and "Goal budget exceeded" in reason:
-            queue.set_pending(task.id)
 
 
 def _handle_update(args: str) -> SlashResult:
@@ -805,138 +716,6 @@ def format_hooks_status(agent: CantripAgent) -> str:
         "events carry per-call detail in the session store."
     )
     return "\n".join(lines)
-
-
-def format_cost(agent: CantripAgent) -> str:
-    """Render token usage and estimated cost as plain text.
-
-    Mirrors the CLI's legacy ``_print_cost`` output so the same block
-    is useful in the TUI and Web as a system message.
-    """
-    store = agent.store
-    if not store:
-        return "_No usage data available._"
-
-    total = store.get_total_usage()
-    prompt = int(total.get("prompt_tokens", 0) or 0)
-    completion = int(total.get("completion_tokens", 0) or 0)
-    total_tokens = prompt + completion
-
-    if total_tokens == 0:
-        return "_No tokens used yet._"
-
-    lines = [
-        "**Token usage**",
-        f"- Prompt:     {prompt:>10,}",
-        f"- Completion: {completion:>10,}",
-        f"- Total:      {total_tokens:>10,}",
-    ]
-
-    if agent.cache_creation_tokens or agent.cache_read_tokens:
-        cache_total = agent.cache_creation_tokens + agent.cache_read_tokens
-        hit_pct = agent.cache_read_tokens / cache_total * 100 if cache_total else 0
-        lines.append(f"- Cache hit:  {hit_pct:>9.0f}%")
-
-    # Phase 52.6: tokens avoided via step-checkpoint replay.  These are
-    # billed zero this session (the live provider never fired) but the
-    # sum is worth showing so the user can see the cost-savings headroom
-    # the durable-execution machinery bought them.
-    savings = store.get_replay_savings()
-    saved_total = savings["prompt_tokens"] + savings["completion_tokens"]
-    if saved_total:
-        lines.append(
-            f"- Cached from checkpoint: {saved_total:,} tokens "
-            f"({savings['prompt_tokens']:,} prompt, "
-            f"{savings['completion_tokens']:,} completion, "
-            f"{savings['request_count']} replayed turn(s))"
-        )
-
-    by_model = store.get_usage_by_model()
-    total_cost = 0.0
-    if by_model:
-        lines.append("")
-        lines.append("**By model**")
-        for row in by_model:
-            model = row.get("model", "unknown")
-            reqs = int(row.get("request_count", 0) or 0)
-            prompt_t = int(row.get("prompt_tokens", 0) or 0)
-            completion_t = int(row.get("completion_tokens", 0) or 0)
-            tokens = prompt_t + completion_t
-            cost = pricing.estimate_cost(
-                str(model),
-                prompt_tokens=prompt_t,
-                completion_tokens=completion_t,
-            )
-            total_cost += cost
-            cost_str = pricing.format_cost(cost) if cost > 0 else "free"
-            lines.append(f"- {model}: {tokens:,} tokens, {reqs} requests, {cost_str}")
-
-    if agent.cache_read_tokens or agent.cache_creation_tokens:
-        cache_cost = pricing.estimate_cost(
-            agent.provider.model_name,
-            cache_read_tokens=agent.cache_read_tokens,
-            cache_write_tokens=agent.cache_creation_tokens,
-        )
-        total_cost += cache_cost
-
-    # Per-category breakdown (Phase 31.4) — aggregate across models so a
-    # category row sums every subagent that ran under it.  Cache cost is
-    # global (not category-attributed) so it stays out of this table.
-    by_cat = store.get_usage_by_category()
-    if by_cat:
-        cat_totals: dict[str, tuple[int, float, int]] = {}
-        for row in by_cat:
-            cat = str(row.get("category", "conversation"))
-            prompt_t = int(row.get("prompt_tokens", 0) or 0)
-            completion_t = int(row.get("completion_tokens", 0) or 0)
-            reqs = int(row.get("request_count", 0) or 0)
-            cost = pricing.estimate_cost(
-                str(row.get("model", "")),
-                prompt_tokens=prompt_t,
-                completion_tokens=completion_t,
-            )
-            tokens, running_cost, running_reqs = cat_totals.get(cat, (0, 0.0, 0))
-            cat_totals[cat] = (
-                tokens + prompt_t + completion_t,
-                running_cost + cost,
-                running_reqs + reqs,
-            )
-        lines.append("")
-        lines.append("**By category**")
-        for cat in sorted(cat_totals):
-            tokens, cat_cost, reqs = cat_totals[cat]
-            cost_str = pricing.format_cost(cat_cost) if cat_cost > 0 else "free"
-            lines.append(f"- {cat}: {tokens:,} tokens, {reqs} requests, {cost_str}")
-
-    # Phase 72.3: per-role rollup (chat / embed / rerank) — separates
-    # retrieval spend from chat so the user sees where the bill goes.
-    # NULL legacy rows fall under ``chat``; rolling them in keeps the
-    # historical total honest.
-    by_role = getattr(store, "get_usage_by_role", lambda: [])()
-    if by_role and any(row.get("role", "chat") != "chat" for row in by_role):
-        lines.append("")
-        lines.append("**By role**")
-        for row in by_role:
-            role = str(row.get("role", "chat"))
-            prompt_t = int(row.get("prompt_tokens", 0) or 0)
-            completion_t = int(row.get("completion_tokens", 0) or 0)
-            reqs = int(row.get("request_count", 0) or 0)
-            tokens = prompt_t + completion_t
-            lines.append(f"- {role}: {tokens:,} tokens, {reqs} requests")
-
-    if total_cost > 0:
-        lines.append("")
-        lines.append(f"_Estimated total: {pricing.format_cost(total_cost)}_")
-        lines.append("_(approximate; published list prices, may drift)_")
-
-    return "\n".join(lines)
-
-
-_EXPORT_FORMATS: dict[str, str] = {
-    "html": ".html",
-    "jsonl": ".jsonl",
-    "markdown": ".md",
-}
 
 
 def handle_undo(agent: CantripAgent) -> str:
@@ -1538,129 +1317,6 @@ def handle_ralph(agent: CantripAgent, args: str) -> str:
     )
 
 
-def _format_map_response(
-    headline: str,
-    rendered: str,
-    file_count: int,
-    *,
-    shown_count: int | None = None,
-    footer_hint: str | None = None,
-    fenced: bool = True,
-) -> str:
-    """Build a Markdown-formatted response for the /map family.
-
-    The dispatcher returns this with ``markdown=True`` so the chat
-    surface renders the bold header, fenced code block (when
-    ``fenced=True``), and inline code spans as formatting rather
-    than literal characters.
-
-    ``fenced=False`` skips the triple-backtick wrapper so a body
-    that already contains its own Markdown structure (per-file
-    headings, bullet lists) renders with visible landmarks all the
-    way down — important for ``/map full``, where a single fenced
-    block scrolls past the viewport and looks unformatted to the
-    user.
-
-    ``shown_count`` and ``footer_hint`` produce a "showing N of M
-    files; use /map full for the rest" footer when the response is a
-    summary view.
-    """
-    if shown_count is not None and shown_count < file_count:
-        header = f"**{headline}** (showing {shown_count} of {file_count} files)"
-    else:
-        header = f"**{headline}** ({file_count} files)"
-    body = f"{header}\n\n```\n{rendered}\n```" if fenced else f"{header}\n\n{rendered}"
-    if footer_hint:
-        body += f"\n\n{footer_hint}"
-    return body
-
-
-def _wants_full_map(args: str) -> bool:
-    """``/map full`` (or ``/map -v``, ``/map all``) opts in to the wall-of-text view."""
-    return args.strip().lower() in {"full", "-v", "--verbose", "all"}
-
-
-def handle_map(agent: CantripAgent, args: str = "") -> str:
-    """``/map``: graph-ranked repository symbol map.
-
-    Default output is a compact summary (top files with their
-    primary symbol).  ``/map full`` prints the full per-file
-    breakdown — useful for digging into a specific area but
-    overwhelming as the default in a small chat panel.
-
-    Any unexpected exception lands in the diagnostics log; the
-    user sees a friendly notice with the log path so they can hand
-    it to a developer.
-    """
-    rm = agent.repo_map
-    if rm is None:
-        return (
-            "No repository map: this session has no active charm path.  "
-            "Open a charm and try again, or set the path with the CLI."
-        )
-    try:
-        rm.build()
-        if _wants_full_map(args):
-            rendered = rm.render_full_markdown()
-            return _format_map_response(
-                "Repository map",
-                rendered,
-                len(rm.rankings),
-                fenced=False,
-            )
-        rendered = rm.render_summary()
-    except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
-        return diagnostics.report_internal_error("/map", exc)
-    if not rendered:
-        return (
-            "Repository map is empty — no parseable Python or charm "
-            "metadata found under the active charm path."
-        )
-    shown = rendered.count("\n") + 1
-    footer = "Use `/map full` for the per-file symbol breakdown."
-    return _format_map_response(
-        "Repository map",
-        rendered,
-        len(rm.rankings),
-        shown_count=shown,
-        footer_hint=footer,
-    )
-
-
-def handle_map_refresh(agent: CantripAgent, args: str = "") -> str:
-    """``/map-refresh``: discard the cache and reparse from scratch.
-
-    Same compact-vs-full toggle as ``/map``.
-    """
-    rm = agent.repo_map
-    if rm is None:
-        return "No repository map: this session has no active charm path."
-    try:
-        rm.build(force=True)
-        if _wants_full_map(args):
-            rendered = rm.render_full_markdown()
-            return _format_map_response(
-                "Repository map rebuilt",
-                rendered,
-                len(rm.rankings),
-                fenced=False,
-            )
-        rendered = rm.render_summary()
-    except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
-        return diagnostics.report_internal_error("/map-refresh", exc)
-    if not rendered:
-        return "Repository map rebuilt — no parseable files found under the active charm path."
-    shown = rendered.count("\n") + 1
-    footer = "Use `/map-refresh full` for the per-file symbol breakdown."
-    return _format_map_response(
-        "Repository map rebuilt",
-        rendered,
-        len(rm.rankings),
-        shown_count=shown,
-        footer_hint=footer,
-    )
-
-
 def _handle_review(agent: CantripAgent, args: str) -> SlashResult:
     """``/review``: run all loaded prompt-based checks against the charm.
 
@@ -1877,167 +1533,8 @@ def _handle_share(agent: CantripAgent) -> SlashResult:
 
     return SlashResult(
         text="Uploading session as a secret gist…",
-        followup=_run_share_to_gist(db_path, charm_path),
+        followup=share_to_gist(db_path, charm_path),
     )
-
-
-async def _run_share_to_gist(db_path: pathlib.Path, charm_path: pathlib.Path) -> str:
-    """Export to HTML and upload via ``gh gist create``.
-
-    On ``gh`` absence or auth failure, write the HTML locally and
-    return a message containing the path + the exact ``gh`` command
-    the user can run manually.  The session is never blocked — every
-    error path returns a human-readable string.
-    """
-    # Import lazily so the slash module stays importable even when the
-    # renderer's optional deps are unusual.
-    from cantrip.transcript import export as transcript_export
-    from cantrip.transcript.html import render_html
-
-    try:
-        data = transcript_export.load_transcript(db_path)
-        content = render_html(data)
-    except (OSError, ValueError, RuntimeError) as exc:
-        return f"_Failed to render transcript: {exc}._"
-
-    timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
-    charm_name = charm_path.name or "cantrip"
-    description = f"Cantrip session — {charm_name} — {timestamp}"
-
-    # Write into a tempfile the subprocess call can read.  Use the
-    # charm name as a prefix so the gist's default filename is
-    # discoverable rather than being a random hex string.
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix=f"cantrip-session-{charm_name}-",
-            suffix=".html",
-            delete=False,
-        ) as tmp:
-            tmp.write(content.encode("utf-8"))
-            tmp_path = pathlib.Path(tmp.name)
-    except OSError as exc:
-        return f"_Failed to write temp transcript: {exc}._"
-
-    if not shutil.which("gh"):
-        return (
-            f"`gh` is not installed — transcript written to `{tmp_path}`.\n\n"
-            f"Install GitHub CLI and run:\n\n"
-            f"```\ngh gist create --desc {shlex.quote(description)} {shlex.quote(str(tmp_path))}\n```"
-        )
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "gh",
-            "gist",
-            "create",
-            "--desc",
-            description,
-            str(tmp_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout_bytes, stderr_bytes = await proc.communicate()
-    except (OSError, FileNotFoundError) as exc:
-        return (
-            f"_Failed to launch `gh`: {exc}._ Transcript written to "
-            f"`{tmp_path}` — upload manually with the `gh gist create` "
-            f"command."
-        )
-
-    stdout = stdout_bytes.decode("utf-8", errors="replace").strip()
-    stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
-
-    if proc.returncode != 0:
-        # gh auth status failure is the common case — the stderr
-        # carries the hint, so surface it verbatim.
-        hint = stderr or f"`gh` exited with code {proc.returncode}"
-        return (
-            f"_Failed to upload gist: {hint}._ Transcript written to "
-            f"`{tmp_path}` — run `gh auth login` and retry with:\n\n"
-            f"```\ngh gist create --desc {shlex.quote(description)} {shlex.quote(str(tmp_path))}\n```"
-        )
-
-    # ``gh gist create`` prints the URL on the last non-empty stdout
-    # line; older versions include a progress preamble.
-    url = next(
-        (line for line in reversed(stdout.splitlines()) if line.strip().startswith("http")),
-        "",
-    )
-    if not url:
-        return (
-            f"Uploaded, but could not parse a URL from `gh` output. "
-            f"Raw output:\n\n```\n{stdout}\n```"
-        )
-
-    # Clean up the local tempfile now that the gist is live — leaving
-    # it behind would gradually fill /tmp and the user has the URL.
-    try:
-        tmp_path.unlink()
-    except OSError:
-        log.debug("Failed to unlink temp transcript %s", tmp_path, exc_info=True)
-
-    return f"Shared session as a secret gist: {url}"
-
-
-def export_transcript(agent: CantripAgent, args: str) -> str:
-    """Export the live session transcript to a file.
-
-    ``args`` is the whitespace-separated remainder of the slash command;
-    a leading token matching an entry in :data:`_EXPORT_FORMATS` selects
-    the format, and a trailing token is treated as the output path.  Any
-    token that is neither is reported as an error so the user does not
-    silently overwrite an unintended file.
-    """
-    charm_path: pathlib.Path | None = getattr(agent.state, "charm_path", None)
-    if charm_path is None:
-        return "_Cannot export: no charm path for this session._"
-    db_path = charm_path / ".cantrip"
-    if not db_path.exists():
-        return f"_Cannot export: no `.cantrip` file at {charm_path}._"
-
-    try:
-        tokens = shlex.split(args)
-    except ValueError as exc:
-        return f"_Could not parse arguments: {exc}._"
-
-    fmt = "html"
-    output: pathlib.Path | None = None
-    if tokens and tokens[0].lower() in _EXPORT_FORMATS:
-        fmt = tokens.pop(0).lower()
-    if tokens:
-        output = pathlib.Path(tokens.pop(0)).expanduser()
-    if tokens:
-        return "_Usage: `/export [html|jsonl|markdown] [path]` — unexpected extra arguments._"
-
-    suffix = _EXPORT_FORMATS[fmt]
-    destination = output or (charm_path / f"transcript{suffix}")
-
-    # Import lazily so the slash module stays importable in environments
-    # where the transcript renderers' optional dependencies are unusual.
-    from cantrip.transcript import export as transcript_export
-
-    data = transcript_export.load_transcript(db_path)
-
-    if fmt == "html":
-        from cantrip.transcript.html import render_html
-
-        content = render_html(data)
-    elif fmt == "jsonl":
-        from cantrip.transcript.jsonl import render_jsonl
-
-        content = render_jsonl(data)
-    else:
-        from cantrip.transcript.markdown import render_markdown
-
-        content = render_markdown(data)
-
-    try:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(content)
-    except OSError as exc:
-        return f"_Failed to write {destination}: {exc}._"
-
-    return f"Exported transcript ({fmt}) to `{destination}`."
 
 
 # ---------------------------------------------------------------------------

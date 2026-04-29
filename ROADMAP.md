@@ -3774,22 +3774,30 @@ decomposition last.
 - [x] `make check` (lint + ty + ruff format) and `make unit`
   (6 194 passed, 8 skipped) both green.
 
-### 85.3 Move — `agent/commands/` subpackage
+### 85.3 Move — `agent/commands/` subpackage ✓
 
-- [ ] Group the slash-command handlers into one folder:
-  `agent/slash_commands.py` (1 663 lines) →
-  `agent/commands/slash.py`; `agent/custom_commands.py` →
-  `agent/commands/custom.py`; `agent/memory_commands.py`
-  (already moving to `agent/memory/` in 85.2 — keep it there
-  and re-export from `agent/commands/__init__.py` if the
-  dispatcher prefers a single entry point);
+- [x] Grouped the slash-command handlers into one folder:
+  `agent/slash_commands.py` → `agent/commands/slash.py`;
+  `agent/custom_commands.py` → `agent/commands/custom.py`;
   `agent/mcp_commands.py` → `agent/commands/mcp.py`.
-- [ ] If `agent/commands/slash.py` is still >1 000 lines after
-  the move, split the bigger handler clusters out:
-  `commands/budget.py`, `commands/cost.py`, `commands/map.py`,
-  `commands/share.py`, `commands/transcript.py`.  Keep
-  `dispatch()` and `_dispatch_inner()` in
-  `commands/__init__.py` so the entry point stays singular.
+  `agent/memory_commands.py` stayed in the memory subpackage
+  (`agent/memory/commands.py`) per 85.2.  Re-exports from
+  `agent/commands/__init__.py` keep `dispatch`, `SlashResult`,
+  `CommandInfo`, `COMMAND_CATALOGUE`, `catalogue_for`, and
+  `TreeNode` reachable from one entry point.
+- [x] Split the bigger handler clusters out of `commands/slash.py`
+  (was 2 174 lines after the rename):
+  `commands/budget.py` (104 lines — ``/budget``),
+  `commands/cost.py` (140 lines — ``/cost``),
+  `commands/map.py` (138 lines — ``/map`` / ``/map-refresh``),
+  `commands/share.py` (116 lines — gist upload helper for
+  ``/share``; the dispatcher's ``SlashResult`` wrapper stays in
+  `slash.py`), and `commands/transcript.py` (83 lines —
+  ``/export``).  `slash.py` is now 1 671 lines; remaining
+  handlers (help, undo/redo, branch/tree, plan/build, architect,
+  auto-commit, yolo, ralph, review, diagnostics, copy,
+  search-charms, icon, update, model, share-wrapper) stay
+  alongside the dispatcher.
 
 ### 85.4 Decompose — `CantripAgent` god class
 
