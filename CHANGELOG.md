@@ -4,6 +4,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **TUI right panel cleaned up.**  The task panel now collapses a
+  fully-DONE category to a single ``✓ Research · 3 tasks done``
+  row instead of a header / divider / summary triple — at
+  end-of-session that's six lines instead of fifteen for five
+  completed categories.  The pinned "In progress" header gained
+  its own emphasis (bold reverse, accent colour) so the live block
+  is visually distinct from the category sections that follow,
+  and its underline divider is gone.  Expanded task detail no
+  longer double-indents (the helper used to add literal leading
+  spaces *and* the CSS class added ``margin-left: 2``).  The
+  multi-model pane self-hides while no model is connected — the
+  old "Dev Model / Not connected / COS Model / Not deployed" dead
+  state used to claim half the right column before any work
+  began.  Right-panel CSS swept to drop redundant declarations
+  (duplicate ``height: auto`` / ``max-height: 50%`` on
+  ``#task-checklist``; redundant ``height: 1fr`` on
+  ``#charm-files``; ``#juju-status`` is now ``height: auto`` so it
+  costs nothing while hidden).  The full audit and the harness
+  used to ground it (``tmp/audit_phase65/drive_right_panel.py``)
+  live in ``design/RIGHT_PANEL_AUDIT.md``.
+
 ### Added
 - **Pre-call tool blocks update in place.**  When the agent
   dispatches a slow tool — ``charmcraft_pack``, ``juju_wait``,

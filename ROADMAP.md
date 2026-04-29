@@ -821,7 +821,7 @@ is announced to at least one charm-developer channel.
 
 ---
 
-## Phase 65: TUI Right-Panel Review — Task Panel and Multi-Model Pane
+## Phase 65: TUI Right-Panel Review — Task Panel and Multi-Model Pane ✓
 
 **Goal:** The right panel of the TUI hosts three widgets in a
 vertical stack: ``TaskChecklistWidget`` (``#task-checklist``),
@@ -837,45 +837,64 @@ This phase is a *review-and-fix* pass, not a rewrite.  The output
 is a short written audit of what's wrong on each widget, then the
 specific small fixes that follow.
 
-### 65.1 Medium — Audit the task panel
+### 65.1 Medium — Audit the task panel ✓
 
-- [ ] Sit with a non-trivial session (several research / build /
-  test tasks) and capture screenshots of the pinned section,
-  collapsed group rows, expanded detail, and the subagent-phase
-  indicator in every state transition (pending → active →
-  done / failed / blocked).
-- [ ] Write the findings into the roadmap or a short design note
-  under ``design/``.  Likely candidates based on a read of
-  ``src/cantrip/tui/widgets/tasks.py``: the ``_format_detail``
-  helper uses leading spaces for indent (fine in a ``RichLog``,
-  awkward in a ``Static`` with a CSS margin), the collapsed-group
-  row "✓ N tasks done (click to show)" doesn't visually align
-  with active group headers, and the ``⟳ Category · Title``
-  pinned format collides with the ``⟳ Title`` category format
-  when the same task category sits in both places.
-- [ ] Fix each finding as its own commit so blame stays
-  comprehensible.
+- [x] Drove the right panel under Textual's Pilot through ten
+  scenarios (empty / preflight running / preflight done / mid-build
+  with pinned ACTIVE+FAILED+BLOCKED + subagent phase / mid-build
+  expanded detail / all-done / four multi-model modes) and captured
+  both SVG screenshots and a flat text dump of every rendered
+  ``Static`` under ``tmp/audit_phase65/scenarios/``.  The harness at
+  ``tmp/audit_phase65/drive_right_panel.py`` is re-runnable.
+- [x] Wrote the findings to ``design/RIGHT_PANEL_AUDIT.md``.
+  Initial Finding A (a stale-children leak in
+  ``_refresh_display``) was later retracted as a false alarm caused
+  by the harness adding a duplicate preflight group on top of the
+  one ``_start_prepare`` already registers; once the harness was
+  fixed, the rendering was clean without intervention.  Findings
+  B–G survived: ``_format_detail`` double-indent, pinned header
+  visual indistinguishability, pinned ``Category · Title`` vs
+  category ``Title`` format mismatch (collision is hypothetical,
+  documented but not patched), three-line collapsed-group rendering,
+  ``cos_expanded`` reactive without a watcher, and the multi-model
+  pane wasting ``1fr`` while no model is connected.
+- [x] Each finding shipped as its own commit:
+  - **E** ``feat(tui): collapse fully-DONE category groups to a
+    single row``
+  - **C** ``feat(tui): give the pinned 'In progress' header its
+    own emphasis``
+  - **B** ``fix(tui): stop double-indenting expanded task detail``
+  - **F** ``fix(tui): wire watch_cos_expanded so direct sets
+    repaint``
+  - **G** ``feat(tui): hide multi-model pane while no model is
+    connected``
 
-### 65.2 Medium — Decide what the multi-model pane should show
+### 65.2 Medium — Decide what the multi-model pane should show ✓
 
-- [ ] For each mode Cantrip runs in (dev model only, dev + COS,
-  pre-deploy), list what the pane currently shows and what would
-  *actually* help the user.  Candidate answers: collapse the COS
-  section by default (already done; confirm it's still useful
-  when expanded), hide the pane entirely until a model is
-  connected, inline the single most useful datum (e.g.
-  "3 apps, 1 error" summary) so the pane earns its vertical
-  space without taking the full ``1fr`` allowance.
-- [ ] Either rework ``MultiModelStatusWidget`` to match the chosen
-  design, or retire it in favour of a one-line status strip and
-  move Juju detail to the existing ``/status`` modal.
+- [x] Decision logged in ``design/RIGHT_PANEL_AUDIT.md`` finding G:
+  hide the pane entirely while neither model is connected; once a
+  model attaches, render the dev section as before; keep the
+  collapsed-COS one-line summary as the default when both are
+  attached; expand on click, identical to today.  Each section
+  also hides individually when its own status is ``None`` so a
+  connected dev model alone doesn't carry an empty COS section
+  underneath.
+- [x] Reworked ``MultiModelStatusWidget`` to match: the widget
+  toggles its own ``display`` from the existing ``watch_dev_status``
+  / ``watch_cos_status`` watchers, the ``Not connected`` /
+  ``Not deployed`` Statics are gone (they only ever appeared in the
+  now-hidden state), and a regression test pins the
+  hide-while-empty contract.
 
-### 65.3 Low — Spacing and consistency
+### 65.3 Low — Spacing and consistency ✓
 
-- [ ] Review the right-panel CSS (``cantrip.tcss``) after 65.1 and
-  65.2 land: dividers, padding, ``max-height: 50%`` on
-  ``#task-checklist`` vs ``#charm-files``, and whether the
-  retired/shrunk multi-model pane still needs ``height: 1fr``.
+- [x] Right-panel CSS swept against ``cantrip.tcss``: dropped the
+  duplicate ``height: auto`` / ``max-height: 50%`` on
+  ``#task-checklist`` (the widget's ``DEFAULT_CSS`` already carries
+  them), dropped the redundant ``height: 1fr`` on ``#charm-files``
+  (``max-height: 50%`` caps it anyway), and switched
+  ``#juju-status`` from ``1fr`` to ``auto`` so the pane sizes to
+  its content (and takes zero space when hidden).
 
 ### What this phase is *not*
 
@@ -884,19 +903,13 @@ specific small fixes that follow.
 - Not a Web-UI counterpart — Web follows in a later phase once
   the TUI answers are clear.
 
-**Exit criteria:** written audit of the task panel committed;
-each audit finding resolved in its own commit; the multi-model
-pane either shows genuinely useful information in every mode or
-is retired; manual walk-through in a live session confirms the
-right panel looks tidy from empty state through mid-build through
-completion.
-
-**Dependencies:**
-| Item | Depends On | Notes |
-|------|-----------|-------|
-| Task audit (65.1) | none | Independent |
-| Multi-model decision (65.2) | none | Independent |
-| CSS cleanup (65.3) | 65.1, 65.2 | Follows the widget changes |
+**Exit criteria:** written audit of the task panel committed
+(``design/RIGHT_PANEL_AUDIT.md``, including a retraction of
+Finding A so the dead end is visible to future readers); each
+surviving finding (B, C, E, F, G) resolved in its own commit; the
+multi-model pane self-hides while no model is connected and
+otherwise behaves as before.  Full unit suite (6,196 tests) green
+after the sweep.
 
 ---
 
