@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.agent.tools.framework_detection import detect_frameworks
 from cantrip.agent.tools.testing import RunCharmTestsTool
 from cantrip.agent.tools.workflows import inject_github_workflows
 from cantrip.charm import terraform
@@ -1054,6 +1055,47 @@ class AnalyseFrameworkTool(Tool):
     # Frameworks requiring ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS.
     _EXPERIMENTAL_FRAMEWORKS: frozenset[str] = frozenset({"go", "fastapi", "express"})
 
+    # Upstream (canonical/skills) uses ``expressjs``; Cantrip's profile
+    # map and downstream consumers use ``express``.  Translate at the
+    # detector boundary so the rest of the tool only sees Cantrip names.
+    _UPSTREAM_NAME_MAP: dict[str, str] = {"expressjs": "express"}
+
+    # Maps detected framework to a coarse language label, kept on the
+    # tool so the legacy ``data["language"]`` field stays populated.
+    _LANGUAGE_MAP: dict[str, str] = {
+        "flask": "python",
+        "django": "python",
+        "fastapi": "python",
+        "go": "go",
+        "express": "javascript",
+        "spring-boot": "java",
+    }
+
+    # Evidence files that hint at a language ecosystem even when no
+    # PaaS framework is detected — used to keep ``language`` populated
+    # so custom-charm callers can still route on it.
+    _LANGUAGE_EVIDENCE: tuple[tuple[str, str], ...] = (
+        ("go.mod", "go"),
+        ("package.json", "javascript"),
+        ("app/package.json", "javascript"),
+        ("pom.xml", "java"),
+        ("build.gradle", "java"),
+        ("build.gradle.kts", "java"),
+        ("requirements.txt", "python"),
+        ("pyproject.toml", "python"),
+        ("setup.py", "python"),
+        ("manage.py", "python"),
+    )
+
+    @classmethod
+    def _infer_language_from_evidence(cls, files_found: list[str]) -> str | None:
+        """Pick a language label from the evidence files seen on disk."""
+        seen = set(files_found)
+        for evidence, language in cls._LANGUAGE_EVIDENCE:
+            if evidence in seen:
+                return language
+        return None
+
     async def execute(self, path: str) -> ToolResult:
         """Analyse the codebase."""
         try:
@@ -1079,72 +1121,55 @@ class AnalyseFrameworkTool(Tool):
                 "Load the 'twelve-factor' skill for step-by-step instructions."
             )
 
-            # Check for Python frameworks.
-            requirements = app_path / "requirements.txt"
-            pyproject = app_path / "pyproject.toml"
-            setup_py = app_path / "setup.py"
+            for evidence_file in (
+                "requirements.txt",
+                "pyproject.toml",
+                "setup.py",
+                "go.mod",
+                "package.json",
+                "app/package.json",
+                "pom.xml",
+                "build.gradle",
+                "build.gradle.kts",
+                "manage.py",
+            ):
+                if (app_path / evidence_file).exists():
+                    findings["files_found"].append(evidence_file)
 
-            python_deps = ""
-            if requirements.exists():
-                findings["files_found"].append("requirements.txt")
-                python_deps = requirements.read_text().lower()
-            if pyproject.exists():
-                findings["files_found"].append("pyproject.toml")
-                python_deps += pyproject.read_text().lower()
-            if setup_py.exists():
-                findings["files_found"].append("setup.py")
-
-            if python_deps:
-                findings["language"] = "python"
-                if "flask" in python_deps:
-                    findings["framework"] = "flask"
-                    findings["suggestions"].append(paas_hint)
-                elif "django" in python_deps:
-                    findings["framework"] = "django"
-                    findings["suggestions"].append(paas_hint)
-                elif "fastapi" in python_deps:
-                    findings["framework"] = "fastapi"
-                    findings["suggestions"].append(paas_hint)
-
-            # Check for Go.
-            go_mod = app_path / "go.mod"
-            if go_mod.exists():
-                findings["files_found"].append("go.mod")
-                findings["language"] = "go"
-                findings["framework"] = "go"
+            detection = detect_frameworks(app_path)
+            framework = (
+                self._UPSTREAM_NAME_MAP.get(detection.detected, detection.detected)
+                if detection.detected
+                else None
+            )
+            if framework:
+                findings["framework"] = framework
+                findings["language"] = self._LANGUAGE_MAP.get(framework)
                 findings["suggestions"].append(paas_hint)
+            else:
+                # No framework detected, but the file evidence still
+                # tells us which language ecosystem the repo lives in.
+                # Custom-charm callers downstream lean on this label.
+                findings["language"] = self._infer_language_from_evidence(findings["files_found"])
 
-            # Check for Node.js / Express.
-            package_json = app_path / "package.json"
-            if package_json.exists():
-                findings["files_found"].append("package.json")
-                findings["language"] = "javascript"
-                pkg_content = package_json.read_text().lower()
-                if "express" in pkg_content:
-                    findings["framework"] = "express"
-                    findings["suggestions"].append(paas_hint)
-
-            # Check for Spring Boot (Maven or Gradle).
-            pom_xml = app_path / "pom.xml"
-            build_gradle = app_path / "build.gradle"
-            build_gradle_kts = app_path / "build.gradle.kts"
-
-            for java_file in (pom_xml, build_gradle, build_gradle_kts):
-                if java_file.exists():
-                    findings["files_found"].append(java_file.name)
-                    java_content = java_file.read_text().lower()
-                    if (
-                        "spring-boot" in java_content
-                        or "spring.boot" in java_content
-                        or "springframework" in java_content
-                    ):
-                        findings["language"] = "java"
-                        findings["framework"] = "spring-boot"
-                        findings["suggestions"].append(paas_hint)
-                        break
+            findings["candidates"] = [
+                {
+                    **candidate,
+                    "framework": self._UPSTREAM_NAME_MAP.get(
+                        str(candidate["framework"]),
+                        candidate["framework"],
+                    ),
+                }
+                for candidate in detection.candidates
+            ]
+            findings["web_app_guess"] = detection.web_app_guess
+            findings["web_app_signals"] = {
+                "positive": detection.web_app_signals_positive,
+                "negative": detection.web_app_signals_negative,
+            }
+            findings["detection_notes"] = detection.notes
 
             # Map framework to profile.
-            framework = findings["framework"]
             if framework and framework in self._PROFILE_MAP:
                 findings["profile"] = self._PROFILE_MAP[framework]
                 findings["needs_experimental"] = framework in self._EXPERIMENTAL_FRAMEWORKS

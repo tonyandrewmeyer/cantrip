@@ -5,6 +5,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Stronger framework detection (Phase 91.1).**  ``analyse_framework``
+  swaps its substring-based heuristic for the canonical/skills PR #4
+  scoring algorithm (Apache-2.0).  Dependency parsing now handles
+  ``-r`` requirement-file includes, PEP 621 ``[project.dependencies]``,
+  and Poetry ``[tool.poetry.dependencies]``; gradle Kotlin DSL
+  (``build.gradle.kts``) is recognised as a Spring Boot signal; a
+  bare ``package.json`` no longer mislabels Next.js / Vite apps as
+  Express.  The tool's structured output gains ``candidates`` (full
+  ranked score list with per-framework signals), ``web_app_guess``,
+  ``web_app_signals.{positive,negative}``, and ``detection_notes``
+  so the agent can reason about *why* a framework was picked and
+  whether the project actually looks like a web service.  Existing
+  ``framework`` / ``profile`` / ``language`` / ``needs_experimental`` /
+  ``workload_hints`` fields are preserved for downstream callers.
 - **TUI right panel cleaned up.**  The task panel now collapses a
   fully-DONE category to a single ``✓ Research · 3 tasks done``
   row instead of a header / divider / summary triple — at
