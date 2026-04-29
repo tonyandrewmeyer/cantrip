@@ -1,10 +1,13 @@
 """Tests for the integration graph screen."""
 
+import pytest
 from jubilant import statustypes
 from rich.panel import Panel
 from rich.text import Text
 
 from cantrip.tui.screens.graph import GraphScreen, build_graph
+
+pytestmark = pytest.mark.tui
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -399,3 +402,97 @@ class TestGraphScreenFilterCycle:
         for _ in range(4):
             screen.action_cycle_filter()
         assert screen.filter_index == 0
+
+
+class TestGraphScreenClickableFooter:
+    """The footer ``[ r Refresh ]`` / ``[ f Filter ]`` / ``[ Esc Close ]``
+    text is wrapped in ``Static`` widgets that route their clicks to
+    the matching action — the bracketed labels look like buttons, so
+    clicks should behave like presses.
+    """
+
+    @pytest.mark.asyncio
+    async def test_clicking_filter_cycles(self) -> None:
+        from textual.app import App, ComposeResult
+
+        status = _make_status({"a": _app_data()})
+
+        class _Host(App):
+            def compose(self) -> ComposeResult:  # pragma: no cover - trivial
+                yield from ()
+
+        async with _Host().run_test() as pilot:
+            screen = GraphScreen(status=status)
+            await pilot.app.push_screen(screen)
+            await pilot.pause()
+            assert screen.filter_index == 0
+            await pilot.click("#graph-filter-btn")
+            await pilot.pause()
+            assert screen.filter_index == 1
+
+    @pytest.mark.asyncio
+    async def test_clicking_close_dismisses(self) -> None:
+        from textual.app import App, ComposeResult
+
+        status = _make_status({"a": _app_data()})
+
+        class _Host(App):
+            def compose(self) -> ComposeResult:  # pragma: no cover - trivial
+                yield from ()
+
+        async with _Host().run_test() as pilot:
+            screen = GraphScreen(status=status)
+            await pilot.app.push_screen(screen)
+            await pilot.pause()
+            await pilot.click("#graph-close-btn")
+            await pilot.pause()
+            assert pilot.app.screen is not screen
+
+
+class TestGraphScreenBothModels:
+    """``cos_status`` renders alongside the dev model in the same screen."""
+
+    @pytest.mark.asyncio
+    async def test_both_models_render_when_provided(self) -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import RichLog
+
+        dev = _make_status({"flask-app": _app_data(status="active")})
+        cos = _make_status({"prometheus": _app_data(status="active")})
+
+        class _Host(App):
+            def compose(self) -> ComposeResult:  # pragma: no cover - trivial
+                yield from ()
+
+        async with _Host().run_test() as pilot:
+            screen = GraphScreen(status=dev, cos_status=cos)
+            await pilot.app.push_screen(screen)
+            await pilot.pause(delay=0.1)
+            body = screen.query_one("#graph-body", RichLog)
+            text = " ".join(line.text for line in body.lines)
+            assert "Dev model" in text
+            assert "COS model" in text
+            assert "flask-app" in text
+            assert "prometheus" in text
+
+    @pytest.mark.asyncio
+    async def test_dev_only_omits_cos_section(self) -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import RichLog
+
+        dev = _make_status({"flask-app": _app_data(status="active")})
+
+        class _Host(App):
+            def compose(self) -> ComposeResult:  # pragma: no cover - trivial
+                yield from ()
+
+        async with _Host().run_test() as pilot:
+            screen = GraphScreen(status=dev, cos_status=None)
+            await pilot.app.push_screen(screen)
+            await pilot.pause(delay=0.1)
+            body = screen.query_one("#graph-body", RichLog)
+            text = " ".join(line.text for line in body.lines)
+            # No cos status was passed — no "COS model" header should
+            # appear, but the dev section still renders.
+            assert "COS model" not in text
+            assert "flask-app" in text

@@ -9,6 +9,7 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.events import Click
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 
@@ -234,6 +235,16 @@ class GraphScreen(ModalScreen):
         color: $text-muted;
         padding: 0 1;
     }
+
+    #graph-footer .clickable {
+        margin-right: 2;
+        width: auto;
+    }
+
+    .clickable:hover {
+        background: $surface-darken-1;
+        color: $text;
+    }
     """
 
     BINDINGS = [
@@ -247,12 +258,23 @@ class GraphScreen(ModalScreen):
         status: statustypes.Status | None = None,
         current_app: str | None = None,
         model: str | None = None,
+        cos_status: statustypes.Status | None = None,
+        cos_model: str | None = None,
     ) -> None:
-        """Initialise with current Juju status."""
+        """Initialise with current Juju status.
+
+        ``status`` / ``model`` carry the dev model (the primary work
+        surface).  ``cos_status`` / ``cos_model`` carry the optional
+        COS model so the graph can show both side by side — when the
+        user hits F8 they expect to see *all* the integration shapes
+        at once, not just the dev half.
+        """
         super().__init__()
         self._status = status
         self._current_app = current_app
         self._model = model
+        self._cos_status = cos_status
+        self._cos_model = cos_model
         # Held as a plain int so tests can cycle the filter without a
         # mounted DOM; the binding re-renders explicitly in
         # :meth:`action_cycle_filter`.
@@ -263,19 +285,50 @@ class GraphScreen(ModalScreen):
         with Vertical(id="graph-container"):
             with Horizontal(id="graph-title"):
                 yield Static("Integration Graph", classes="title-text")
-                yield Static("[Esc Close]", classes="title-hint")
+                yield Static(
+                    "[ Esc Close ]",
+                    id="graph-close",
+                    classes="title-hint clickable",
+                )
             yield RichLog(id="graph-body", wrap=True)
-            yield Static(
-                "[r] Refresh  [f] Filter  [Esc] Close",
-                id="graph-footer",
-            )
+            with Horizontal(id="graph-footer"):
+                yield Static("[ r Refresh ]", id="graph-refresh-btn", classes="clickable")
+                yield Static("[ f Filter ]", id="graph-filter-btn", classes="clickable")
+                yield Static("[ Esc Close ]", id="graph-close-btn", classes="clickable")
+
+    def on_click(self, event: Click) -> None:
+        """Make the text-shaped footer entries actually clickable.
+
+        The keybindings still cover keyboard users; this routes mouse
+        clicks on the visible labels to the matching action so the
+        affordance the bracketed text suggests actually fires.
+        """
+        widget = event.widget
+        if widget is None:
+            return
+        wid = getattr(widget, "id", None)
+        if wid == "graph-refresh-btn":
+            self.action_refresh()
+            event.stop()
+        elif wid == "graph-filter-btn":
+            self.action_cycle_filter()
+            event.stop()
+        elif wid in ("graph-close-btn", "graph-close"):
+            self.dismiss()
+            event.stop()
 
     def on_mount(self) -> None:
         """Render the graph on mount."""
         self._render_graph()
 
     def action_refresh(self) -> None:
-        """Fetch fresh Juju status and re-render the graph."""
+        """Fetch fresh Juju status and re-render the graph.
+
+        Refreshes the dev model only — COS models are typically more
+        stable than the dev surface, and pulling a fresh COS status
+        on every press would slow the refresh markedly.  The cached
+        ``self._cos_status`` continues to render alongside.
+        """
         if self._model:
             self.run_worker(self._fetch_and_render, thread=True)
         else:
@@ -306,18 +359,28 @@ class GraphScreen(ModalScreen):
         self._render_graph()
 
     def _render_graph(self) -> None:
-        """Build and display the integration graph."""
+        """Build and display the integration graph for both models."""
         body = self.query_one("#graph-body", RichLog)
         body.clear()
         self._update_title()
 
-        if not self._status:
+        if not self._status and not self._cos_status:
             body.write("No model connected.")
             return
 
         status_filter = _FILTER_CYCLE[self.filter_index]
-        for part in build_graph(self._status, self._current_app, status_filter):
-            body.write(part)
+
+        if self._status is not None:
+            body.write(Text("── Dev model ──", style="bold cyan"))
+            for part in build_graph(self._status, self._current_app, status_filter):
+                body.write(part)
+
+        if self._cos_status is not None:
+            if self._status is not None:
+                body.write("")
+            body.write(Text("── COS model ──", style="bold cyan"))
+            for part in build_graph(self._cos_status, None, status_filter):
+                body.write(part)
 
     def _update_title(self) -> None:
         """Reflect the active filter in the title bar."""

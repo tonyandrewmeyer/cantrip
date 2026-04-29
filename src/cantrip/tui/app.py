@@ -1989,11 +1989,14 @@ class CantripApp(App):
         status_widget = self.query_one("#juju-status", status_widgets.MultiModelStatusWidget)
         current_app = self._agent.state.charm_name if self._agent else None
         dev_model = self._agent.state.dev_model if self._agent else None
+        cos_model = self._agent.state.cos_model if self._agent else None
         self.push_screen(
             graph_screen.GraphScreen(
                 status=status_widget.dev_status,
                 current_app=current_app,
                 model=dev_model,
+                cos_status=status_widget.cos_status,
+                cos_model=cos_model,
             )
         )
 
