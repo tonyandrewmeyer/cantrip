@@ -4115,6 +4115,76 @@ fabric, and a passing acceptance test on the demo bundle.
 
 ---
 
+## Phase 89: TUI File Pane — Repo Stats Sidebar
+
+**Goal:** The TUI file pane (``CharmTreeWidget``, ``#charm-files``)
+is comfortably wide and shows a directory tree on the left with
+empty space to its right.  A live session reading "Phase 65" land
+flagged that the right-hand half of the pane is dead real estate
+that could carry quick repo signals — the kind of glance-and-go
+data a charm author asks for several times an hour and currently
+has to drop into a terminal to fetch.
+
+Candidate readouts (none final; the phase decides the slate):
+
+- **Lines of code** — total and by-language (``ops`` / Python vs
+  ``charmcraft`` YAML / Jinja).  Lines authored vs vendor.
+- **Most recently changed file** — the working-tree-newest entry
+  with a relative timestamp ("2 m ago"), so the user notices when
+  the agent has touched something during a long-running task.
+- **Most recent commit** — short hash, subject, age.  Useful as a
+  "what landed last" signal without leaving the TUI.
+- **Total files / directories** — for charms that scale into
+  many libs.
+- **Total tests / tests passing** — pulled from the most recent
+  ``pytest`` run via the existing test-results path.
+- **Lint state** — green / red, last run age.
+
+### 89.1 Decide the slate
+
+- [ ] List candidate stats (above + anything else that surfaces
+  during the design pass), score each on (a) read-frequency
+  during real charm sessions, (b) cost to compute live, (c)
+  cost to keep fresh.  Pick four to ship; defer the rest behind
+  named triggers in this phase note.
+
+### 89.2 Layout
+
+- [ ] Decide whether the stats column lives:
+  - inside ``CharmTreeWidget`` as a right-docked sidebar (single
+    widget, simpler placement), or
+  - as a sibling widget next to the tree, with the parent
+    ``#charm-files`` switching to a horizontal layout.
+- [ ] Confirm the column doesn't clip the file tree at narrow
+  terminal widths — gracefully fold to "tree only" below a
+  threshold (or tie visibility to a binding the user can toggle).
+
+### 89.3 Implementation
+
+- [ ] Refresh cadence — decide per-stat (some are file-system
+  watcher–driven, some are git-hook–driven, some can poll on
+  the existing 3 s tree-refresh tick).  Avoid blocking the UI
+  on a ``git log`` per tick; cache + invalidate.
+- [ ] Tests under ``tests/unit/test_tui*.py`` for the renderer
+  and a Pilot fixture that exercises a populated stats column
+  against a synthetic charm checkout.
+
+### What this phase is *not*
+
+- Not a CI dashboard.  Stats are local-repo only; nothing in
+  this phase reaches out to GitHub Actions or external services.
+- Not a charm-quality scorecard.  We're surfacing facts, not
+  judgements; "most recently changed file" is informational, not
+  a complaint.
+
+**Exit criteria:** the right-hand portion of ``#charm-files``
+carries the chosen four stats, refreshing without UI hitches in
+a normal-size charm checkout, with a graceful fold for narrow
+terminals.  Manual walk-through during a build session confirms
+the data is helpful rather than noise.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
