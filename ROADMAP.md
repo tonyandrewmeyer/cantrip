@@ -733,7 +733,7 @@ reusable assets (`*.instructions.md` scoped via `applyTo:`, plus
 skill folders) is cheap and unlocks ecosystem-wide value independent
 of Cantrip's own adoption curve.
 
-The target publishing destination is **`canonical/copilot-collections`**
+The target publishing destination is **`canonical/skills`**
 (not `awesome-copilot` upstream) — Canonical owns the narrative and
 versioning, and the assets can reference each other without waiting
 on upstream review cycles.
@@ -768,9 +768,9 @@ on upstream review cycles.
   how they stay in sync (ideally a `make` target that regenerates
   the published bundle from the Jinja2 sources)
 
-### 56.3 Medium — Publish to `canonical/copilot-collections`
+### 56.3 Medium — Publish to `canonical/skills`
 
-- [ ] Create the repo structure under `canonical/copilot-collections`
+- [ ] Create the repo structure under `canonical/skills`
   (or the existing bundle if it already exists; check before
   creating) — likely a `juju/` subdirectory to leave room for other
   Canonical domains (`lxd/`, `rockcraft/`, etc.)
@@ -797,14 +797,14 @@ on upstream review cycles.
   is a derivative, regenerated from Cantrip's source, not a parallel
   knowledge base to maintain.
 - Not a commitment to upstream to `awesome-copilot` itself.  Canonical
-  maintains control via `canonical/copilot-collections`; upstreaming
+  maintains control via `canonical/skills`; upstreaming
   to awesome-copilot is a possible future step, not part of this
   phase.
 - Not Juju-specific IDE plugins or VS Code extensions.  Assets only —
   the installation story leans on existing Copilot / Claude Code
   mechanisms.
 
-**Exit criteria:** `canonical/copilot-collections/juju/` (or the
+**Exit criteria:** `canonical/skills/juju/` (or the
 agreed-on path) exists with at least six instruction / skill assets
 covering the slices from 56.1.  A regeneration mechanism (ideally a
 `make` target in Cantrip) keeps the bundle in sync with Cantrip's
@@ -4365,7 +4365,7 @@ status during a representative session.
 | M53: Knowledge-in-Markdown | 53 | Planner prompts and task descriptions live in Jinja2 templates; `planner.py` split along the deterministic / LLM seam; dev design docs cover tools, skills, and prompts |
 | M54: Authored Docs | 54 ✓ | `docs/docs/` site rebuilds from committed markdown sources through `make docs`; no hand-authored HTML remains in the docs tree |
 | M55: Awesome-Copilot Survey | 55 ✓ | Eight awesome-copilot patterns investigated end-to-end; each has a committed decision, prototype, or recommendation |
-| M56: Juju Copilot Bundle | 56 | `canonical/copilot-collections` hosts a Juju-specific instruction/skill bundle derived from Cantrip's system prompt, with CI validation and a regeneration path |
+| M56: Juju Copilot Bundle | 56 | `canonical/skills` hosts a Juju-specific instruction/skill bundle derived from Cantrip's system prompt, with CI validation and a regeneration path |
 | M57: Test Cleanup | 57 | Unit coverage ≥85%; zero test warnings; oversized unit files split; quickpack tests reorganised to match charmlint |
 | M58: Rust Tested | 58 | `cargo test` runs in CI for both Rust crates; every `.rs` file above 60% coverage; regressions surface at unit-test time, not via spread |
 | M59: Property Tested | 59 | Hypothesis-backed property tests cover the planner dependency graph, charmlint rule engine, quickpack jujuignore, and watcher status-diff |

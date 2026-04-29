@@ -4019,7 +4019,8 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   (actions, relation-changed, pebble-ready, collect-status), a grep
   pattern for inventorying remaining Harness usage, and per-file
   workflow with done criteria. Adapted from the upstream
-  [canonical/copilot-collections](https://github.com/canonical/copilot-collections)
+  [canonical/skills](https://github.com/canonical/skills) (formerly
+  `canonical/copilot-collections`)
   `migrate-harness-tests-to-state-transition-test` skill (revision
   `a4e2d1d`) with UK English and cantrip tool names; the `charm-improvement`
   skill now cross-references it.
