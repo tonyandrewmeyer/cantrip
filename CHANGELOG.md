@@ -5,6 +5,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **``twelve-factor`` skill restructured around the canonical/skills
+  checkpoint workflow (Phase 91.2).**  The skill body now opens with
+  a four-phase plan (fit → rock → charm → build), inlines the
+  upstream's mandatory-question bank (fit / deployment / rock-and-
+  registry / cluster / runtime / layout), records the upstream's
+  YAML handoff payload as Cantrip's internal relay shape between
+  the fit, rock, and charm phases, and embeds the framework-specific
+  rock and charm contract tables (Flask / Django / FastAPI / Express
+  / Go / Spring Boot — including each framework's runtime style,
+  accepted bases, required evidence, and per-framework practical
+  lessons such as Spring Boot's exactly-one-build-system rule, the
+  Django ``manage.py migrate`` precedence over ``migrate.sh``, the
+  Go ``cmd/*`` naming awareness, and the Express ``app/package.json``
+  layout requirement).  The skill now points the agent at the four
+  Phase 91.1 tools at the right checkpoints — ``check_rock_contract``
+  before ``rockcraft init``, ``inspect_env_keys`` after
+  ``charmcraft init``, ``preflight_targets`` once the user has
+  answered the mandatory questions.  The existing build / push /
+  deploy / verify / database / ingress / OIDC / observability
+  sections are preserved.  Credit: canonical/skills PR #4
+  (Apache-2.0).
 - **Stronger framework detection (Phase 91.1).**  ``analyse_framework``
   swaps its substring-based heuristic for the canonical/skills PR #4
   scoring algorithm (Apache-2.0).  Dependency parsing now handles

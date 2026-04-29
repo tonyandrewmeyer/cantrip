@@ -4367,7 +4367,7 @@ attribution header citing the upstream path.
   experimental-extension env vars).  Trim the rockcraft-snap
   skopeo path detection where Cantrip already has its own
   registry helpers; keep the JSON output shape.
-- [ ] Each ported tool ships an Apache-2.0 attribution header
+- [x] Each ported tool ships an Apache-2.0 attribution header
   citing ``canonical/skills@<sha>:<path>`` and adheres to the
   Cantrip tool conventions: ``ToolBase`` subclass, populated
   ``ToolResult.caption`` (per Phase 81), unit tests covering
@@ -4376,7 +4376,7 @@ attribution header citing the upstream path.
 
 ### 91.2 Adapt — twelve-factor skill body and handoff contract
 
-- [ ] Restructure ``src/cantrip/skills/twelve-factor/SKILL.md``
+- [x] Restructure ``src/cantrip/skills/twelve-factor/SKILL.md``
   around the upstream's checkpoint workflow: inspect, detect
   (call the 91.1 tool), ask the mandatory questions, run
   preflight (call the 91.1 tool), produce a handoff payload.
@@ -4384,13 +4384,14 @@ attribution header citing the upstream path.
   question bank inline rather than splitting into a
   ``references/`` sibling (our loader is single-file by
   design; see ``design/SKILLS.md``).
-- [ ] Adopt the upstream handoff YAML shape (framework,
+- [x] Adopt the upstream handoff YAML shape (framework,
   repo_path, deployment context, relations with explicit
   ``optional`` flags, migrations mode, background services,
   experimental flag) as Cantrip's internal relay structure
-  between the fit, charm, and rock phases.  Document in
-  ``design/SKILLS.md`` if non-trivial.
-- [ ] Pull the framework-specific contract tables from
+  between the fit, charm, and rock phases.  Documented inside
+  the twelve-factor skill body itself rather than in
+  ``design/SKILLS.md`` — lives where the agent reads it.
+- [x] Pull the framework-specific contract tables from
   upstream's ``framework-rock-contracts.md`` and
   ``framework-charm-contracts.md`` (Spring Boot's
   no-``migrate.sh``, Django's auto-migrate, Go ``cmd/*``
