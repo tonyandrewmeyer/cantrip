@@ -4355,7 +4355,7 @@ attribution header citing the upstream path.
   paths, Maven-XOR-Gradle, base/framework compatibility) and
   returns JSON blockers + advisories.  Wire into the BUILD
   allowlist so the agent runs it before ``rockcraft pack``.
-- [ ] ``inspect_env_keys.py`` (144 lines, ``12factor-charm/
+- [x] ``inspect_env_keys.py`` (144 lines, ``12factor-charm/
   scripts/``) → new tool: multi-language env-var extractor
   (Python, JS, Go, Java, Spring ``${…}``, ``.env``) with
   framework-aware contract hints.  Useful for charm⇄rock

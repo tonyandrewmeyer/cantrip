@@ -67,6 +67,7 @@ def build_tools(
     )
     from cantrip.agent.tools.charmlint_tool import CharmlintTool
     from cantrip.agent.tools.docs_search import DocsSearchTool
+    from cantrip.agent.tools.env_keys import InspectEnvKeysTool
     from cantrip.agent.tools.environment import (
         ConciergePrepareTool,
         ConciergeRestoreTool,
@@ -206,6 +207,7 @@ def build_tools(
         CharmValidateTool(),
         CharmcraftFetchLibsTool(),
         AnalyseFrameworkTool(),
+        InspectEnvKeysTool(),
         # Terraform
         GenerateTerraformTool(),
         ValidateTerraformTool(),

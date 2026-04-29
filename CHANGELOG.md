@@ -41,6 +41,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   live in ``design/RIGHT_PANEL_AUDIT.md``.
 
 ### Added
+- **``inspect_env_keys`` tool (Phase 91.1).**  Multi-language
+  env-var auditor ported from canonical/skills PR #4
+  (Apache-2.0).  Sweeps Python (``os.getenv`` /
+  ``os.environ.get`` / ``os.environ[]``), JavaScript /
+  TypeScript (``process.env.X`` / ``process.env["X"]``), Go
+  (``os.Getenv`` / ``os.LookupEnv``), Java (``System.getenv``),
+  Spring (``${KEY}`` placeholders and ``@Value("${k:default}")``),
+  YAML, ``.properties``, and ``.env*`` files for env-var
+  references.  Returns a deduplicated sorted key list plus a
+  per-file usage map.  When ``framework`` is supplied (flask,
+  django, fastapi, express, go, spring-boot), the response also
+  carries that framework's expected env contract — built-in
+  vars, user-config prefix, relation env families — so the agent
+  can spot keys the workload reads that paas-charm won't deliver.
+  Cantrip-specific tweaks: walk-skip set extends the upstream's
+  with the Python-tooling caches Cantrip's repos accumulate
+  (``.ruff_cache``, ``.pytest_cache``, ``.ty_cache``, ``.nox``),
+  and the upstream ``expressjs`` framework name is normalised to
+  ``express`` everywhere.
 - **``check_rock_contract`` tool (Phase 91.1).**  Per-framework
   rock-fit validator ported from canonical/skills PR #4
   (Apache-2.0).  Runs the same checks the upstream skill does
