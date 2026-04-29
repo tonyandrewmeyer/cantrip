@@ -4566,7 +4566,7 @@ file-by-file lint loop.
 
 ### 92.4 Standalone tools — inventory and migration
 
-- [ ] **Harness-call inventory tool** (new
+- [x] **Harness-call inventory tool** (new
   ``src/cantrip/agent/tools/harness_inventory.py``,
   ``harness_inventory`` tool).  Walk ``tests/unit/``, run the
   Harness-call regex pattern the
@@ -4578,7 +4578,9 @@ file-by-file lint loop.
   N, scenario: M, mixed: bool}], total_remaining: int}``.
   ~50 LoC.  This is *not* a lint rule because the deliverable
   is a migration checklist, not a per-file pass / fail.
-- [ ] **Scenario-test coverage probe** (new
+  Shipped; the ``harness-migration`` skill body's "Inventory
+  first" section now points at the tool.
+- [x] **Scenario-test coverage probe** (new
   ``src/cantrip/agent/tools/scenario_coverage.py``,
   ``scenario_coverage`` tool).  Map every observer
   registration in ``src/charm.py`` (every
@@ -4591,7 +4593,9 @@ file-by-file lint loop.
   walk + grep, ~120 LoC.  ``pytest-cov`` measures *line*
   coverage; this measures *event-shape* coverage, which
   pytest-cov cannot see — a charm with 100% line coverage can
-  still ship without a single relation-broken test.
+  still ship without a single relation-broken test.  Shipped;
+  the ``scenario-tests`` skill body grew an "Auditing test
+  coverage" section that points at the tool.
 
 ### What this phase is *not*
 

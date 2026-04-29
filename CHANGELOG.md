@@ -17,6 +17,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   or ``event.fail(...)``, the no. 1 cause of an action that hangs
   until Juju times it out.  The ``adding-actions`` skill body's
   pitfall list now points at the new rules instead of reciting them.
+- **``harness_inventory`` and ``scenario_coverage`` tools (Phase 92.4).**
+  Two standalone agent tools replace the recurring grep-and-summarise
+  loops the ``harness-migration`` and ``scenario-tests`` skills used to
+  drive turn-by-turn.  ``harness_inventory`` walks ``tests/`` and
+  applies the upstream copilot-collections detector regex, returning a
+  per-file ``{path, harness, scenario, mixed}`` checklist plus a
+  total-remaining count.  ``scenario_coverage`` reads ``src/`` for
+  ``framework.observe(...)`` calls, correlates them with handler-name
+  references in ``tests/unit/``, and returns the unexercised-handler
+  list and the ``can_connect=False`` / ``relation-broken`` event-shape
+  gaps that ``pytest-cov`` cannot see.  Both tools surface in
+  ``cantrip``'s tool catalogue and ship with captions; the matching
+  skill bodies now point at the tools instead of recapping the grep.
 - **``charmlint`` ``PEB001``, ``PEB002``, ``PEB003`` (Phase 92.3).**
   Three new rules cover the K8s Pebble subsection of the
   ``custom-charm`` skill.  ``PEB001`` (warning,

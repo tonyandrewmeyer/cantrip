@@ -55,6 +55,8 @@ on_this_page:
 | `analyse_framework` | Detect application framework and suggest charm path |
 | `charm_audit` | Comprehensive charm quality audit |
 | `charmlint` | Run 35+ deterministic lint rules |
+| `harness_inventory` | Survey `tests/` for remaining `ops.testing.Harness` usages, with a per-file `harness`/`scenario`/`mixed` breakdown |
+| `scenario_coverage` | Audit observer-to-test coverage and flag missing `can_connect=False` / `relation-broken` event-shape tests |
 | `operational_readiness` | Evaluate against Canonical's Operational Readiness Metrics |
 
 {#juju-ops}

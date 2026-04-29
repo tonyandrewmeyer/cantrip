@@ -103,6 +103,7 @@ def build_tools(
     )
     from cantrip.agent.tools.glob import GlobTool
     from cantrip.agent.tools.grep import GrepTool
+    from cantrip.agent.tools.harness_inventory import HarnessInventoryTool
     from cantrip.agent.tools.icon import CharmIconGenerateTool
     from cantrip.agent.tools.inference import ListInferenceSnapsTool
     from cantrip.agent.tools.juju import (
@@ -178,6 +179,7 @@ def build_tools(
     from cantrip.agent.tools.rodney import RodneyTool
     from cantrip.agent.tools.run_command import RunCommandTool
     from cantrip.agent.tools.scaling import ScalingTestTool
+    from cantrip.agent.tools.scenario_coverage import ScenarioCoverageTool
     from cantrip.agent.tools.showboat import ShowboatTool
     from cantrip.agent.tools.skills import LoadSkillTool
     from cantrip.agent.tools.task_management import ManageTasksTool
@@ -200,6 +202,8 @@ def build_tools(
         # Audit & lint
         CharmAuditTool(),
         CharmlintTool(),
+        HarnessInventoryTool(),
+        ScenarioCoverageTool(),
         OperationalReadinessTool(),
         # Charm operations
         CharmcraftInitTool(),

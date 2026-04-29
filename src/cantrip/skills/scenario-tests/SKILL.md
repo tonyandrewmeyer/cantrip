@@ -250,6 +250,15 @@ that reproduces the exact databag and storage state, use
 Scenario-friendly form. Paste the snapshot into a test file as the input
 `State` and you have a deterministic reproduction of the production bug.
 
+## Auditing test coverage
+
+Run the `scenario_coverage` tool against the charm directory. It maps every
+`framework.observe(self.on.X, self._on_Y)` registration to the test functions
+under `tests/unit/` that reference the handler or event name, and flags two
+event-shape gaps `pytest-cov` cannot see: missing `container.can_connect=False`
+tests (when the charm has containers) and missing `relation-broken` tests
+(when the charm has any relation). Use it before declaring a suite "done".
+
 ## Common Pitfalls
 
 - **Do not pass `meta=` or `config=` to `Context()`** — Scenario reads

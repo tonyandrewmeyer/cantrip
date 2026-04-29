@@ -32,20 +32,11 @@ For writing a fresh Scenario suite from scratch, load `scenario-tests` instead.
 
 ## Inventory first
 
-Use the `grep` tool against `tests/` with this pattern to enumerate remaining
-Harness usages (the pattern is lifted from the upstream copilot-collections
-detector — see attribution above):
-
-```
-\btesting\.Harness\b|\bops\.testing\.Harness\b|\bHarness\(|\btesting\.Scenario\b|\bScenario\(
-```
-
-`testing.Scenario` / `Scenario(` are included because the legacy transitional
-package was named `ops-scenario`; hits usually mean a test is built against
-that package rather than `ops[testing]`.
-
-Migrate one file at a time and re-run the grep after each file to verify it
-drops out of the list.
+Run the `harness_inventory` tool to enumerate remaining Harness usages. It
+walks `tests/`, applies the upstream copilot-collections detector regex,
+and returns a per-file checklist with `harness` / `scenario` counts and a
+`mixed` flag for files that import both. Re-run after each migrated file
+to watch the count drop.
 
 ## Preflight
 
