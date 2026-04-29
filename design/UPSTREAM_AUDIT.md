@@ -2,9 +2,10 @@
 
 Cantrip's generated charms, prompts, skills, and tool wrappers must keep up
 with the upstream charm ecosystem (`canonical/operator`, `canonical/jubilant`,
-`canonical/charmcraft`, `canonical/rockcraft`, `jnsgruk/concierge`,
-charmlibs). When upstream changes guidance — a new test pattern, a renamed
-field, a deprecated API — Cantrip's outputs need to follow.
+`canonical/charmcraft`, `canonical/rockcraft`, `canonical/concierge`,
+`canonical/skills`, charmlibs). When upstream changes guidance — a new test
+pattern, a renamed field, a deprecated API, a new skill that maps onto
+Cantrip's tool surface — Cantrip's outputs need to follow.
 
 This file is the running log of when each upstream repository was last
 audited, what commit served as the cutoff, and how to repeat the sweep.
@@ -40,6 +41,7 @@ points at stale guidance. Each sweep:
 | `canonical/operator` (Pebble + ops.testing) | 2026-04-21 | Post-§37.1 re-scan across ``ops/pebble.py`` + ``testing/``; cutoff matches the main ``canonical/operator`` row above | Very little churn in ``ops/pebble.py`` itself (``0ce8a0f`` trims ``ExecError.__str__``, ``379d013`` fixes empty ``_checks_action`` — both transparent). The live-impact changes are in ``ops.testing`` (Scenario): ``61e606e`` enables plain ``breakpoint()`` inside a ``testing.Context.run`` (no more rebound ``sys.breakpointhook`` — fastest possible debug loop once you have a snapshot); ``55c41eb`` autoloads ``charmcraft`` extension metadata so 12-factor PaaS charms don't need manual meta reconstruction in tests; ``706b667`` lets ``State.get_relation`` accept a relation object (type-narrowed to peer/regular/subordinate). ``5e752be`` in ``ops`` proper now logs total deferred-event count per hook — a backlog signal worth spotting during Workload-bucket triage. ``scenario-tests`` and ``iterate-fix`` skills updated accordingly. |
 | `canonical/charmcraft` | 2026-04-22 | `fae9862` (HEAD on `main`); latest release v4.2.1 | Actionable findings: **all six framework extensions are not uniformly stable** — Flask and Django returned `is_experimental() = False` in `charmcraft/extensions/app.py`, but FastAPI, Go, ExpressJS, and Spring Boot are still experimental. Cantrip's `CharmcraftInitTool` was running `charmcraft init` without the experimental flag, which would have failed downstream at `charmcraft pack` for four out of six profiles; fixed by gating on a `_CHARMCRAFT_EXPERIMENTAL_PROFILES` frozenset. The `simple` profile is gone (`fc17daa`, replaced by `kubernetes` — Cantrip already used `kubernetes`). New 12-factor integrations: HTTP proxy (`2d6022a`) and OpenID Connect (`2b6a9cf`); Spring Boot got app profiles (`7a9a3b4`). K8s/machine scaffolding now includes a `src/workload.py` alongside `src/charm.py` (`040cce3`) — skill guidance updated. Ubuntu 25.10 is stable, 26.04 devel (`562b748`, `24ef777`); docs default to 26.04 (`6839f16`) but K8s/machine profiles still scaffold 24.04 (`f05c915`). pytest-jubilant adoption in templates (`77c4d69`) already aligned via §37.1. |
 | `canonical/rockcraft` | 2026-04-22 | `e03ed9f` (HEAD on `main`); latest release v1.18.0 | **All rockcraft framework extensions (Flask, Django, FastAPI, Go, ExpressJS, Spring Boot) are still flagged experimental upstream** — even the long-stable Flask and Django ones return `is_experimental() = True`. Cantrip's `RockcraftInitTool` previously gated the env var on a subset (`go-framework`, `express-framework`, `fastapi-framework`), so Flask / Django / Spring Boot users would have hit "Extension is experimental" errors. Fix: set `ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS=true` unconditionally (matching `RockcraftPackTool`). Notable feature changes: Flask / Django / FastAPI extensions default to a bare base (`3fba20c`, Feb 2026) — smaller rocks, no shell or apt; `entrypoint-command` added (`0f919f9`); uv and poetry plugins disabled on 25.10+ until usrmerge-ready (`5e1e347`) — affects bleeding-edge bases but not the 24.04 default; Bazel plugin added (`5f91cc8`); 26.04 devel base (`0c9f355`). `twelve-factor` skill updated with accurate experimental flags and the bare-base note. |
+| `canonical/skills` | 2026-04-29 | `d05ed1f` on `main` plus PR #4 at `ecfcf46` | Phase 91 reviewed the repo end-to-end. Two shipped skills on `main` (`meta/generate-agent-skills`, `practices/retrospective-artifacts`); the substantive content is open PR #4 — three coupled skills (`12factor-fit`, `12factor-charm`, `12factor-rock`) for the 12-factor flow plus four self-contained Python scripts. Phase 91.1 ported the four scripts as Cantrip tools (``analyse_framework`` rewrite, ``check_rock_contract``, ``inspect_env_keys``, ``preflight_targets``); Phase 91.2 restructured the ``twelve-factor`` skill body around the upstream's checkpoint workflow + handoff payload + per-framework contract tables. Repo is small enough (≤10 commits on `main` to date) to walk in full each sweep — no commit-prefix filter needed. Watch for: (a) PR #4 merging (re-diff for any post-review tweaks), (b) further sub-skills under `engineering/` mapping to Cantrip tool gaps, (c) `meta/generate-agent-skills` evolution if Cantrip ever opens its own public skills registry. |
 | `canonical/charmlibs` + PyPI ecosystem (data-platform-libs, observability-libs, traefik-k8s, grafana-agent, loki-k8s, prometheus-k8s, catalogue-k8s, charmlibs-* namespace, dpcharmlibs, cosl) | 2026-04-22 | PyPI simple index + `canonical/charmlibs` HEAD | The headline finding: **Cantrip's previous LIB001 PyPI map was almost entirely wrong** — it named packages like `loki-k8s-lib`, `traefik-k8s-lib`, `data-platform-libs`, `grafana-k8s-lib` that **do not exist on PyPI**, so LIB001 was telling users to install ghosts. The real picture: (a) the `charmlibs-*` monorepo publishes `charmlibs-pathops`, `-apt`, `-snap`, `-passwd`, `-sysctl`, `-systemd`, `-nginx-k8s` plus the `charmlibs-interfaces-*` set (`-tls-certificates`, `-certificate-transfer`, `-otlp`, `-mcp`, `-sloth`, `-k8s-backup-target`, `-gateway-metadata`) — imports become `from charmlibs import …` or `from charmlibs.interfaces import …`; (b) `cosl` ships COS utilities on PyPI; (c) the big observability libs (`charms.loki_k8s`, `charms.grafana_k8s`, `charms.prometheus_k8s`, `charms.traefik_k8s`, `charms.tempo_*`, `charms.catalogue_k8s`, `charms.observability_libs`), `charms.data_platform_libs`, and `charms.sdcore_nms_k8s` are **still not on PyPI** — `charmcraft fetch-libs` remains the only route. `dpcharmlibs` is a reserved namespace (not installable yet). Both Python and Rust charmlint rules rewritten to match; `operator_libs_linux` now splits by submodule (each → its own `charmlibs-*` package). Skills (`charmcraft`, `observability`, `ingress`) updated. System prompt's Libraries bullet rewritten. |
 
 ## Re-running the operator audit
@@ -74,6 +76,28 @@ repo lives at ``canonical/concierge``; Jubilant at
 ``canonical/jubilant``.  Neither has a ``docs:``-prefix convention, so
 walk the full commit list and rely on the conventional-commits
 ``feat:``/``fix!:`` prefixes to pick out actionable items.
+
+## Re-running the canonical/skills audit
+
+The repo is too small for a commit-prefix filter — walk every commit
+and every open PR.
+
+```bash
+git clone --depth=200 https://github.com/canonical/skills.git /tmp/skills-audit
+cd /tmp/skills-audit
+git log --oneline <CUTOFF>..HEAD
+gh pr list --repo canonical/skills --state open
+```
+
+For each new or merged skill: read the ``SKILL.md`` body and skim any
+``scripts/`` siblings.  The two questions to answer are (a) does this
+encode operational rigour Cantrip handles implicitly today (rules
+worth lifting into a Cantrip skill body), and (b) is the script
+self-contained enough to port as a Cantrip tool (subprocess-free,
+filesystem-only is the easiest case).  Apache-2.0 attribution is
+required on any port — cite ``canonical/skills@<sha>:<path>`` in a
+header comment.  Update the cutoff to the newest commit / PR HEAD you
+reviewed.
 
 ## What this log is *not*
 
