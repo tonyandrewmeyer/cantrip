@@ -1378,10 +1378,15 @@ class CantripApp(App):
         if not self._agent:
             return
 
+        # The triage task description carries embedded GitHub issue
+        # markup (headings, bullet points, fenced code blocks).  Render
+        # as Markdown so the user sees formatting instead of literal
+        # ``##`` and ``-`` characters in the chat.
         chat = self.query_one("#chat", chat_widget.ChatWidget)
         chat.add_system_message(
             f"**Issue triage:**\n\n{task.description}\n\n"
-            f"Reply **approve** to work on this issue, or **skip** to dismiss."
+            f"Reply **approve** to work on this issue, or **skip** to dismiss.",
+            markdown=True,
         )
         # The confirm task stays blocked; the user's next message in
         # _on_agent_response_done or the chat handler will match

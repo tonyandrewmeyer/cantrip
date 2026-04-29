@@ -918,10 +918,21 @@ class TestPresentConfirmations:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 task = MagicMock()
-                task.description = "Issue #7: Login broken"
+                task.description = "## Issue #7\n\n- Login broken\n- 500 on /auth"
                 pilot.app._present_triage_confirmation(task)
                 await pilot.pause()
                 assert "Issue triage" in _system_messages(pilot)
+                # The triage description carries GitHub-issue markup
+                # (headings, lists, fences); the system message must be
+                # flagged ``markdown=True`` so the chat renders it as
+                # formatting instead of dumping raw ``##`` and ``-``.
+                chat = pilot.app.query_one("#chat", chat_widget.ChatWidget)
+                triage_msg = next(
+                    m
+                    for m in chat._messages
+                    if m.role == chat_widget.MessageRole.SYSTEM and "Issue triage" in m.content
+                )
+                assert triage_msg.markdown is True
 
 
 # ---------------------------------------------------------------------------
