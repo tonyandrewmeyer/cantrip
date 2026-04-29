@@ -438,19 +438,23 @@ class TaskChecklistWidget(Widget):
                     and not has_opened_detail
                 )
 
-                container.mount(Static(label, classes="task-header"))
-                container.mount(Static("\u2500" * 20, classes="task-divider"))
-
+                # A fully-DONE category collapses to a single self-describing
+                # row \u2014 header + divider + summary would be three lines for
+                # one piece of information, and at end-of-session every
+                # category is in this state at once.
                 if collapsed:
                     count = len(group)
                     plural = "task" if count == 1 else "tasks"
                     summary = _CollapsedGroupRow(
                         category,
-                        f"\u2713 {count} {plural} done (click to show)",
+                        f"\u2713 {label} \u00b7 {count} {plural} done",
                         classes="task-row task-done task-collapsed",
                     )
                     container.mount(summary)
                     continue
+
+                container.mount(Static(label, classes="task-header"))
+                container.mount(Static("\u2500" * 20, classes="task-divider"))
 
                 for task in group:
                     char, css_class = _status_display(task.status)

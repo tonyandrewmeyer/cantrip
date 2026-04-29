@@ -453,13 +453,23 @@ class TestTaskChecklistWidget:
 
             container = checklist.query_one("#task-container")
             statics = container.query("Static")
-            combined = " ".join(str(s.render()) for s in statics)
+            texts = [str(s.render()) for s in statics]
+            combined = " ".join(texts)
             # Individual research titles are hidden behind the summary.
             assert "Analyse" not in combined
             assert "Survey" not in combined
-            assert "2 tasks done" in combined
+            # The collapsed row is self-describing: "Research" appears in the
+            # summary row text, *not* as a separate header above it.  And no
+            # divider precedes it either.
+            assert "✓ Research · 2 tasks done" in texts
+            assert "Research" not in texts, "Collapsed category must not render a separate header"
+            # The Research collapsed row should sit at the head of the list
+            # — no header or divider in front of it.
+            research_idx = texts.index("✓ Research · 2 tasks done")
+            assert texts[research_idx - 1] != "─" * 20 if research_idx > 0 else True
             # Build is still rendered normally.
             assert "Scaffold" in combined
+            assert "Build" in texts  # header still present for the open category
 
     @pytest.mark.asyncio
     async def test_mixed_category_renders_normally(self):
