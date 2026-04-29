@@ -153,6 +153,7 @@ def build_tools(
     from cantrip.agent.tools.oracle import OracleTool
     from cantrip.agent.tools.planning import PlanTasksTool
     from cantrip.agent.tools.pr_review import PrReviewReplyTool, PrReviewTool
+    from cantrip.agent.tools.preflight import PreflightTargetsTool
     from cantrip.agent.tools.publishing import (
         CharmcraftReleaseTool,
         CharmcraftUploadTool,
@@ -253,6 +254,7 @@ def build_tools(
         ConciergePrepareTool(),
         ConciergeStatusTool(),
         ConciergeRestoreTool(),
+        PreflightTargetsTool(),
         # Git operations — bundled behind a single ``git`` tool so the
         # OpenAI-compatible 128-tool cap is never threatened.  Each
         # subcommand keeps its full per-action argument schema (visible

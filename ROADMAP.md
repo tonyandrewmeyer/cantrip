@@ -4360,7 +4360,7 @@ attribution header citing the upstream path.
   (Python, JS, Go, Java, Spring ``${…}``, ``.env``) with
   framework-aware contract hints.  Useful for charm⇄rock
   contract validation even outside the 12-factor path.
-- [ ] ``preflight_targets.py`` (212 lines, ``12factor-fit/
+- [x] ``preflight_targets.py`` (212 lines, ``12factor-fit/
   scripts/``) → adapt as a session-start environment
   snapshot tool (kubectl context, juju controller,
   rockcraft/charmcraft snap channel, registry reachability,

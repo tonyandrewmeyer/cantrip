@@ -41,6 +41,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   live in ``design/RIGHT_PANEL_AUDIT.md``.
 
 ### Added
+- **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness
+  sweep ported from canonical/skills PR #4 (Apache-2.0).  Probes
+  kubectl (current + named context), the juju controllers list,
+  ``rockcraft`` / ``charmcraft`` / ``skopeo`` presence and snap
+  channel, the ``ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS`` /
+  ``CHARMCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS`` env vars when the
+  framework needs them, and (optionally) an OCI registry's TCP +
+  ``/v2/`` reachability.  Returns a single ``ok`` flag plus a
+  structured ``checks`` tree so the agent can call out *which* gate
+  failed instead of the user staring at a generic "preflight failed"
+  line.  Cantrip-specific changes: each check is split into its own
+  pure-ish function so tests monkeypatch one symbol at a time; the
+  upstream's rockcraft-embedded skopeo path detection is dropped
+  (Cantrip's registry tools call ``shutil.which("skopeo")`` directly
+  with no rockcraft-snap fallback); upstream ``expressjs`` becomes
+  ``express`` everywhere.  This was the last of the four
+  canonical/skills 12-factor scripts called out in Phase 91.1, so
+  the script-port portion of the phase is now complete.
 - **``inspect_env_keys`` tool (Phase 91.1).**  Multi-language
   env-var auditor ported from canonical/skills PR #4
   (Apache-2.0).  Sweeps Python (``os.getenv`` /
