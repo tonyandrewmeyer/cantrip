@@ -320,7 +320,7 @@ class TestTuiWidgets:
         """
         p1, p2, _ = _patch_app()
         with p1, p2, patch("cantrip.tui.app.slash_commands.dispatch") as dispatch:
-            from cantrip.agent.slash_commands import SlashResult
+            from cantrip.agent.commands.slash import SlashResult
 
             dispatch.return_value = SlashResult(text="slash-help-response")
             async with CantripApp().run_test() as pilot:
@@ -772,6 +772,47 @@ class TestTuiWidgets:
                 assert "grafana-dashboards" in rendered
                 assert "prometheus_scrape" in rendered
                 assert "grafana_dashboard" in rendered
+
+    @pytest.mark.asyncio
+    async def test_cos_expanded_reactive_repaints_on_direct_set(self):
+        """Setting ``cos_expanded`` directly must repaint, not just via toggle.
+
+        ``cos_expanded`` is a reactive — without a ``watch_cos_expanded``
+        handler, mutating the attribute outside the click toggle would
+        leave the previous render on screen.  Guard that the watcher
+        wires the redraw so a future refactor doesn't drop it silently.
+        """
+        from cantrip.tui.widgets.status import JujuStatusWidget
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                widget = pilot.app.query_one("#juju-status", MultiModelStatusWidget)
+
+                def _mock_app(name: str) -> MagicMock:
+                    m = MagicMock()
+                    m.app_status.current = "active"
+                    m.app_status.message = ""
+                    m.units = {f"{name}/0": MagicMock(workload_status=MagicMock(current="active"))}
+                    m.relations = {}
+                    return m
+
+                mock_status = MagicMock()
+                mock_status.model.name = "cos"
+                mock_status.model.cloud = "k8s"
+                mock_status.apps = {"grafana": _mock_app("grafana")}
+                widget.cos_status = mock_status
+                await pilot.pause()
+
+                assert widget.cos_expanded is False
+                # Direct assignment, not via the click-driven toggle.
+                widget.cos_expanded = True
+                await pilot.pause()
+                # The expanded JujuStatusWidget for COS should now exist.
+                inner = widget.query(JujuStatusWidget)
+                assert any(j.status is not None and j.status.model.name == "cos" for j in inner), (
+                    "Direct cos_expanded=True must repaint to show the COS pane"
+                )
 
     @pytest.mark.asyncio
     async def test_juju_status_pane_is_scrollable(self):

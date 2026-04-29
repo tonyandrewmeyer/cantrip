@@ -507,6 +507,16 @@ class MultiModelStatusWidget(Widget):
         """React to COS status changes."""
         self._refresh_display()
 
+    def watch_cos_expanded(self, _expanded: bool) -> None:
+        """React to COS expand / collapse toggles.
+
+        Without this watcher, setting ``cos_expanded`` outside
+        :meth:`toggle_cos_expanded` (the click handler's only entry
+        point) would not repaint — the reactive declaration alone
+        doesn't drive a refresh.
+        """
+        self._refresh_display()
+
     def _refresh_display(self) -> None:
         """Refresh the display."""
         # Dev model section
@@ -553,5 +563,6 @@ class MultiModelStatusWidget(Widget):
 
     def toggle_cos_expanded(self) -> None:
         """Toggle COS section expansion."""
+        # Setting the reactive triggers ``watch_cos_expanded`` which
+        # re-renders.  No explicit refresh needed here.
         self.cos_expanded = not self.cos_expanded
-        self._refresh_display()
