@@ -122,7 +122,22 @@ class TestPythonDocstring:
         assert _python_module_docstring(source) == "Top-level docstring.\n\nMore detail."
 
     def test_none_when_missing(self) -> None:
-        assert _python_module_docstring("x = 1\n") is None
+        # A file with no module / class / function docstrings.
+        assert _python_module_docstring("x = 1\ny = 2\n") is None
+
+    def test_falls_back_to_first_class_docstring(self) -> None:
+        source = 'import os\n\n\nclass Foo:\n    """Foo does something useful."""\n    pass\n'
+        result = _python_module_docstring(source)
+        assert result is not None
+        assert "Foo does something useful" in result
+        assert "class Foo" in result
+
+    def test_falls_back_to_first_function_docstring(self) -> None:
+        source = '\ndef bar():\n    """Bar returns a thing."""\n    return 1\n'
+        result = _python_module_docstring(source)
+        assert result is not None
+        assert "Bar returns a thing" in result
+        assert "function bar" in result
 
     def test_none_when_syntax_error(self) -> None:
         assert _python_module_docstring("def (\n") is None
@@ -521,3 +536,39 @@ class TestFileDetailScreenPilot:
                 screen.action_refresh()
                 await pilot.pause(delay=0.3)
                 assert run.call_count > before
+
+    @pytest.mark.asyncio
+    async def test_clicking_refresh_button_reruns_git_log(self, tmp_path: pathlib.Path) -> None:
+        """Clicking the ``[ r Refresh ]`` footer triggers a refresh too.
+
+        Regression for "the buttons don't work" — the visible labels
+        looked like buttons but only the keybindings were wired up;
+        clicking did nothing.
+        """
+        f = tmp_path / "x.py"
+        f.write_text('"""x"""\n')
+        mock_result = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as run:
+            async with _Host().run_test() as pilot:
+                screen = FileDetailScreen(f, charm_root=tmp_path)
+                await pilot.app.push_screen(screen)
+                await pilot.pause(delay=0.3)
+                before = run.call_count
+                await pilot.click("#file-refresh-btn")
+                await pilot.pause(delay=0.3)
+                assert run.call_count > before
+
+    @pytest.mark.asyncio
+    async def test_clicking_close_button_dismisses(self, tmp_path: pathlib.Path) -> None:
+        """Clicking the ``[ Esc Close ]`` footer dismisses the modal."""
+        f = tmp_path / "x.py"
+        f.write_text('"""x"""\n')
+        mock_result = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=mock_result):
+            async with _Host().run_test() as pilot:
+                screen = FileDetailScreen(f, charm_root=tmp_path)
+                await pilot.app.push_screen(screen)
+                await pilot.pause(delay=0.3)
+                await pilot.click("#file-close-btn")
+                await pilot.pause(delay=0.3)
+                assert pilot.app.screen is not screen

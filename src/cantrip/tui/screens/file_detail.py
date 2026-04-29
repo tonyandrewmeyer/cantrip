@@ -19,6 +19,7 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.events import Click
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 from textual.worker import Worker, WorkerState
@@ -84,6 +85,16 @@ class FileDetailScreen(ModalScreen):
         padding: 0 1;
     }
 
+    #file-footer .clickable {
+        margin-right: 2;
+        width: auto;
+    }
+
+    .clickable:hover {
+        background: $surface-darken-1;
+        color: $text;
+    }
+
     #file-output {
         height: 1fr;
     }
@@ -115,12 +126,15 @@ class FileDetailScreen(ModalScreen):
         with Vertical(id="file-container"):
             with Horizontal(id="file-title"):
                 yield Static(self._display_path, classes="title-text")
-                yield Static("[Esc Close]", classes="title-hint")
+                # Two clickable footer-like widgets in the title bar so
+                # mouse users have a button-shaped target.  The visible
+                # text reads "[ Esc Close ]" so keyboard users still
+                # see the binding.
+                yield Static("[ Esc Close ]", id="file-close", classes="title-hint clickable")
             yield RichLog(id="file-output", wrap=True, markup=True)
-            yield Static(
-                "[r] Refresh  [Esc] Close",
-                id="file-footer",
-            )
+            with Horizontal(id="file-footer"):
+                yield Static("[ r Refresh ]", id="file-refresh-btn", classes="clickable")
+                yield Static("[ Esc Close ]", id="file-close-btn", classes="clickable")
 
     def on_mount(self) -> None:
         """Populate everything that's cheap, then fire git log in a worker."""
@@ -131,6 +145,25 @@ class FileDetailScreen(ModalScreen):
         """Re-read the file and re-fetch git log."""
         self._render_all()
         self._fetch_git_log()
+
+    def on_click(self, event: Click) -> None:
+        """Route clicks on the footer Statics to the matching action.
+
+        Bindings carry the ``r`` and ``Esc`` keyboard shortcuts; this
+        handler makes the text-shaped "buttons" actually behave like
+        buttons when clicked, which is the affordance the user expects
+        when the visible string is wrapped in square brackets.
+        """
+        widget = event.widget
+        if widget is None:
+            return
+        wid = getattr(widget, "id", None)
+        if wid == "file-refresh-btn":
+            self.action_refresh()
+            event.stop()
+        elif wid in ("file-close-btn", "file-close"):
+            self.dismiss()
+            event.stop()
 
     # ------------------------------------------------------------------
     # Rendering
@@ -317,15 +350,27 @@ def _infer_purpose(path: pathlib.Path) -> str:
 
 
 def _python_module_docstring(text: str) -> str | None:
-    """Return the first module docstring, or ``None`` if absent."""
+    """Return the first available docstring as the module's purpose.
+
+    Tries module → first top-level class → first top-level function so
+    a file like ``charm.py`` whose only docstring lives on the
+    ``MyCharm`` class still surfaces a meaningful summary instead of
+    falling through to "no structured summary available".
+    """
     try:
         tree = ast.parse(text)
     except SyntaxError:
         return None
-    doc = ast.get_docstring(tree)
-    if doc is None:
-        return None
-    return doc.strip()
+    module_doc = ast.get_docstring(tree)
+    if module_doc:
+        return module_doc.strip()
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            doc = ast.get_docstring(node)
+            if doc:
+                kind = "class" if isinstance(node, ast.ClassDef) else "function"
+                return f"**{kind} {node.name}** — {doc.strip()}"
+    return None
 
 
 def _markdown_first_section(text: str) -> str | None:
