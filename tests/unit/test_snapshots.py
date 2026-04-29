@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
+from cantrip.agent.commands.slash import handle_redo, handle_undo
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.slash_commands import handle_redo, handle_undo
 from cantrip.agent.snapshots import (
     ENV_SNAPSHOTS,
     SnapshotManager,

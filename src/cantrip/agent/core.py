@@ -16,11 +16,11 @@ from cantrip.agent import (
     auto_commit,
     context_providers,
     context_providers_builtin,
-    custom_commands,
     sandbox,
 )
 from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.cache_monitor import CacheCascadeDetector
+from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.emotions import ParliamentResult, run_parliament

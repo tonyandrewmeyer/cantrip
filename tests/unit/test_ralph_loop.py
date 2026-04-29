@@ -557,7 +557,7 @@ class TestRalphSlashCommand:
         return CantripAgent(provider=FakeProvider())
 
     def test_bare_ralph_reports_off_when_disabled(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = self._agent()
         result = slash_commands.dispatch(agent, "/ralph")
@@ -565,7 +565,7 @@ class TestRalphSlashCommand:
         assert "off" in result.text.lower()
 
     def test_set_positive_cap(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = self._agent()
         result = slash_commands.dispatch(agent, "/ralph 5")
@@ -574,7 +574,7 @@ class TestRalphSlashCommand:
         assert "cap = 5" in result.text
 
     def test_set_unlimited(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = self._agent()
         result = slash_commands.dispatch(agent, "/ralph -1")
@@ -583,7 +583,7 @@ class TestRalphSlashCommand:
         assert "unlimited" in result.text.lower()
 
     def test_disable_via_off(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = self._agent()
         agent.state.ralph_max_iterations = 5
@@ -593,7 +593,7 @@ class TestRalphSlashCommand:
         assert "off" in result.text.lower()
 
     def test_disable_via_zero(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = self._agent()
         agent.state.ralph_max_iterations = 5
@@ -602,7 +602,7 @@ class TestRalphSlashCommand:
         assert agent.state.ralph_max_iterations == 0
 
     def test_bare_ralph_reports_current_cap(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = self._agent()
         agent.state.ralph_max_iterations = 7
@@ -611,7 +611,7 @@ class TestRalphSlashCommand:
         assert "7" in result.text
 
     def test_bad_argument_returns_usage(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = self._agent()
         result = slash_commands.dispatch(agent, "/ralph maybe")
@@ -620,12 +620,12 @@ class TestRalphSlashCommand:
         assert agent.state.ralph_max_iterations == 0
 
     def test_help_text_mentions_ralph(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         assert "/ralph" in slash_commands.help_text()
 
     def test_catalogue_includes_ralph(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         verbs = {entry.verb for entry in slash_commands.COMMAND_CATALOGUE}
         assert "/ralph" in verbs

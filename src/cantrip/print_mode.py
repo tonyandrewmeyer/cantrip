@@ -28,7 +28,7 @@ import pathlib
 import sys
 from typing import TYPE_CHECKING
 
-from cantrip.agent import slash_commands
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import TaskCategory, TaskStatus
 from cantrip.agent.ralph import RalphConfig, RalphOutcome, run_ralph

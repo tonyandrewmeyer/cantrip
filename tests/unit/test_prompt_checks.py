@@ -507,7 +507,8 @@ class TestSlashReview:
     ) -> None:
         from types import SimpleNamespace
 
-        from cantrip.agent import lint_context, slash_commands
+        from cantrip.agent import lint_context
+        from cantrip.agent.commands import slash as slash_commands
 
         monkeypatch.setattr(
             lint_context,
@@ -557,7 +558,7 @@ class TestSlashReview:
     ) -> None:
         from types import SimpleNamespace
 
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         monkeypatch.setattr(
             checks.CheckIndex,
@@ -577,7 +578,7 @@ class TestSlashReview:
     def test_handler_rejects_unknown_args(self) -> None:
         from types import SimpleNamespace
 
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = SimpleNamespace(
             state=SimpleNamespace(charm_path=pathlib.Path("/tmp")),
@@ -590,7 +591,7 @@ class TestSlashReview:
     def test_handler_without_charm_path(self) -> None:
         from types import SimpleNamespace
 
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = SimpleNamespace(
             state=SimpleNamespace(charm_path=None),

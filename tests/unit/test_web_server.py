@@ -572,7 +572,7 @@ class TestLogInputValidation:
                     resp = await client.get("/api/logs?lines=-50")
                     assert resp.status == 200
                     cmd = mock_run.call_args[0][0]
-                    assert cmd[cmd.index("-n") + 1] == "1"
+                    assert cmd[cmd.index("--limit") + 1] == "1"
 
                 # Excessively large lines should be clamped to _MAX_LOG_LINES.
                 with (
@@ -582,7 +582,7 @@ class TestLogInputValidation:
                     resp = await client.get("/api/logs?lines=999999")
                     assert resp.status == 200
                     cmd = mock_run.call_args[0][0]
-                    assert cmd[cmd.index("-n") + 1] == str(_MAX_LOG_LINES)
+                    assert cmd[cmd.index("--limit") + 1] == str(_MAX_LOG_LINES)
 
         asyncio.run(_run())
 
@@ -2035,9 +2035,9 @@ class TestApiLogsEdgeCases:
                     data = await resp.json()
                     assert resp.status == 200
                     assert data["lines"] == ["one", "two"]
-                    # Default was used: "-n 100".
+                    # Default was used: "--limit 100".
                     cmd = run_mock.call_args[0][0]
-                    assert cmd[cmd.index("-n") + 1] == "100"
+                    assert cmd[cmd.index("--limit") + 1] == "100"
 
         asyncio.run(_run())
 

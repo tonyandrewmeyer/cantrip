@@ -469,7 +469,7 @@ class TestRepoMap:
         # block and contains the bracketed tokens unescaped.
         from unittest.mock import MagicMock
 
-        from cantrip.agent.slash_commands import dispatch, handle_map
+        from cantrip.agent.commands.slash import dispatch, handle_map
 
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
@@ -486,7 +486,7 @@ class TestRepoMap:
         # Dispatcher attaches markdown=True so the surface renders it.
         # Use a fully mocked agent + custom_commands so dispatch's
         # fall-through doesn't try real registry lookups.
-        from cantrip.agent.custom_commands import CustomCommandRegistry
+        from cantrip.agent.commands.custom import CustomCommandRegistry
 
         agent.custom_commands = CustomCommandRegistry(commands=())
         result = dispatch(agent, "/map full")
@@ -502,7 +502,7 @@ class TestRepoMap:
         # the exception or leak the stack into the chat.
         from unittest.mock import MagicMock
 
-        from cantrip.agent.slash_commands import handle_map
+        from cantrip.agent.commands.slash import handle_map
 
         # Redirect the diagnostics log into tmp_path.
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -594,7 +594,7 @@ class TestRepoMap:
         # footer pointing at ``/map full`` for the wall-of-text view.
         from unittest.mock import MagicMock
 
-        from cantrip.agent.slash_commands import handle_map
+        from cantrip.agent.commands.slash import handle_map
 
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
@@ -616,7 +616,7 @@ class TestRepoMap:
         # wall once scrolled past the top.
         from unittest.mock import MagicMock
 
-        from cantrip.agent.slash_commands import handle_map
+        from cantrip.agent.commands.slash import handle_map
 
         _make_charm(tmp_path)
         rm = RepoMap(tmp_path)
@@ -647,7 +647,7 @@ class TestRepoMap:
         # SlashResult instead of letting the exception escape.
         from unittest.mock import MagicMock, PropertyMock
 
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 

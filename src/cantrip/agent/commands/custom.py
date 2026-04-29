@@ -21,7 +21,7 @@ The module owns three things: the :class:`CustomCommand` data
 class, a discovery helper that walks both dirs, and an async
 :func:`expand` function that produces the final prompt string
 the slash dispatcher feeds into the agent.  Dispatch itself
-lives in :mod:`cantrip.agent.slash_commands` — we stay
+lives in :mod:`cantrip.agent.commands.slash` — we stay
 dispatch-agnostic here so tests can round-trip expansion
 without constructing a full agent.
 """
@@ -90,7 +90,7 @@ class CustomCommand:
     """One user-defined slash command loaded from disk.
 
     ``verb`` carries the leading slash (``/relation-check``) so it
-    drops straight into :data:`~cantrip.agent.slash_commands
+    drops straight into :data:`~cantrip.agent.commands.slash
     .COMMAND_CATALOGUE`.  ``body`` is the raw prompt template with
     placeholders unsubstituted; expansion happens at dispatch time
     via :func:`expand` so the same template can be used multiple

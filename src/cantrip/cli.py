@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable, Sequence
 
 from cantrip import notifications, update
-from cantrip.agent import slash_commands
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import TaskStatus

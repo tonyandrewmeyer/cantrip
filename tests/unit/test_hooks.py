@@ -1115,14 +1115,14 @@ class TestFormatHooksStatus:
         return agent
 
     def test_empty_runner_shows_empty_message(self):
-        from cantrip.agent.slash_commands import format_hooks_status
+        from cantrip.agent.commands.slash import format_hooks_status
 
         text = format_hooks_status(self._agent(HookRunner([])))
         assert "No hooks configured" in text
         assert "cantrip.hooks.yaml" in text
 
     def test_lists_hooks_grouped_by_event(self):
-        from cantrip.agent.slash_commands import format_hooks_status
+        from cantrip.agent.commands.slash import format_hooks_status
 
         hooks = [
             HookConfig(
@@ -1148,7 +1148,7 @@ class TestFormatHooksStatus:
         assert "not invoked yet" in text
 
     def test_invoked_hook_shows_stats(self):
-        from cantrip.agent.slash_commands import format_hooks_status
+        from cantrip.agent.commands.slash import format_hooks_status
 
         hooks = [HookConfig(name="gofer", event=HookEvent.PRE_TOOL_CALL, run="true")]
         agent = self._agent(HookRunner(hooks))

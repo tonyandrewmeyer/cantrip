@@ -108,7 +108,7 @@ def _resolve_within(
     """Resolve *raw* under *base*, refusing absolute paths and ``..`` traversal.
 
     Mirrors the safety contract of
-    :func:`cantrip.agent.custom_commands._resolve_file_reference`: a
+    :func:`cantrip.agent.commands.custom._resolve_file_reference`: a
     user typing ``@file ../../etc/passwd`` is rejected before any I/O.
     """
     candidate = pathlib.Path(raw)

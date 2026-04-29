@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from cantrip.agent import slash_commands
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.permissions import PermissionAskRequest, PermissionManager
 from cantrip.ui import events

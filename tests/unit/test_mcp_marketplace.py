@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from cantrip.agent.mcp_commands import (
+from cantrip.agent.commands.mcp import (
     handle_mcp,
     handle_mcp_async,
     is_marketplace_subcommand,

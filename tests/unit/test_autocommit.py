@@ -24,7 +24,8 @@ import subprocess
 
 import pytest
 
-from cantrip.agent import auto_commit, slash_commands
+from cantrip.agent import auto_commit
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.llm.base import Message, Response, Role, ToolCall
 from tests.conftest import FakeProvider

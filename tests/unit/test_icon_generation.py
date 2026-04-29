@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cantrip.agent import slash_commands
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.state import AgentState
 from cantrip.agent.tools.icon import (
     _GENERATED_MARKER,

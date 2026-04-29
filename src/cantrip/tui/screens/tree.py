@@ -15,7 +15,7 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
-from cantrip.agent.slash_commands import TreeNode
+from cantrip.agent.commands.slash import TreeNode
 
 
 class TreePickerScreen(ModalScreen[int | None]):

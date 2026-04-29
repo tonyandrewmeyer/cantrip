@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from cantrip.agent import slash_commands
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.queue import TaskCategory
 from cantrip.agent.subagent import _CATEGORY_GUIDANCE, _CATEGORY_TOOLS, _LIGHT_CATEGORIES
 from cantrip.agent.tools import charm_library

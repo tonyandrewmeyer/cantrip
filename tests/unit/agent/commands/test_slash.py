@@ -10,9 +10,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cantrip.agent import slash_commands
+from cantrip.agent.commands import slash as slash_commands
+from cantrip.agent.commands.slash import SlashResult, dispatch
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
-from cantrip.agent.slash_commands import SlashResult, dispatch
 from cantrip.agent.store import SessionStore
 
 
@@ -516,8 +516,8 @@ class TestShare:
         with (
             patch("cantrip.transcript.export.load_transcript", return_value={}),
             patch("cantrip.transcript.html.render_html", return_value="<html/>"),
-            patch("cantrip.agent.slash_commands.shutil.which", return_value="/usr/bin/gh"),
-            patch("cantrip.agent.slash_commands.asyncio.create_subprocess_exec") as mock_exec,
+            patch("cantrip.agent.commands.slash.shutil.which", return_value="/usr/bin/gh"),
+            patch("cantrip.agent.commands.slash.asyncio.create_subprocess_exec") as mock_exec,
         ):
             mock_proc = MagicMock()
             mock_proc.returncode = 0
@@ -548,7 +548,7 @@ class TestShare:
         with (
             patch("cantrip.transcript.export.load_transcript", return_value={}),
             patch("cantrip.transcript.html.render_html", return_value="<html/>"),
-            patch("cantrip.agent.slash_commands.shutil.which", return_value=None),
+            patch("cantrip.agent.commands.slash.shutil.which", return_value=None),
         ):
             result = await slash_commands._run_share_to_gist(
                 charm_path / ".cantrip",
@@ -576,8 +576,8 @@ class TestShare:
         with (
             patch("cantrip.transcript.export.load_transcript", return_value={}),
             patch("cantrip.transcript.html.render_html", return_value="<html/>"),
-            patch("cantrip.agent.slash_commands.shutil.which", return_value="/usr/bin/gh"),
-            patch("cantrip.agent.slash_commands.asyncio.create_subprocess_exec") as mock_exec,
+            patch("cantrip.agent.commands.slash.shutil.which", return_value="/usr/bin/gh"),
+            patch("cantrip.agent.commands.slash.asyncio.create_subprocess_exec") as mock_exec,
         ):
             mock_proc = MagicMock()
             mock_proc.returncode = 4

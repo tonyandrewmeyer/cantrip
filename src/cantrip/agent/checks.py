@@ -11,7 +11,7 @@ so the report aggregator can surface a uniform view next to the
 deterministic ``charmlint`` output.
 
 This module is the loader + runner; the ``/review`` slash command in
-:mod:`cantrip.agent.slash_commands` is the user-facing surface that
+:mod:`cantrip.agent.commands.slash` is the user-facing surface that
 ties them together.
 
 **Discovery precedence** (later wins on name conflict):

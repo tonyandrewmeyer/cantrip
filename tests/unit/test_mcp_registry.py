@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from cantrip.agent.mcp_commands import handle_mcp, mcp_help_text
+from cantrip.agent.commands.mcp import handle_mcp, mcp_help_text
 from cantrip.mcp import MCPRegistry, ServerConfig, ServerStatus
 from cantrip.mcp.types import TransportKind
 

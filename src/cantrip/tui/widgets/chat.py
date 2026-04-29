@@ -17,8 +17,8 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Input, LoadingIndicator, Static
 
+from cantrip.agent.commands.slash import CommandInfo
 from cantrip.agent.context_providers import ProviderInfo
-from cantrip.agent.slash_commands import CommandInfo
 
 # Duration below which a tool-block widget does not display the
 # parenthesised timing — fast calls shouldn't clutter the chat.

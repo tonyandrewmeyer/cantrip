@@ -31,7 +31,9 @@ from typing import TYPE_CHECKING
 
 from cantrip import diagnostics
 from cantrip import update as update_module
-from cantrip.agent import custom_commands, mcp_commands, sandbox
+from cantrip.agent import sandbox
+from cantrip.agent.commands import custom as custom_commands
+from cantrip.agent.commands import mcp as mcp_commands
 from cantrip.agent.goal_budget import GoalBudget, format_summary, measure_usage
 from cantrip.agent.memory import commands as memory_commands
 from cantrip.agent.queue import AgentTask, TaskCategory

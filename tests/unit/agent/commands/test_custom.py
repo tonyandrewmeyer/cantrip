@@ -7,7 +7,7 @@ import textwrap
 
 import pytest
 
-from cantrip.agent.custom_commands import (
+from cantrip.agent.commands.custom import (
     CustomCommand,
     CustomCommandError,
     CustomCommandRegistry,
@@ -371,7 +371,7 @@ class TestDispatcherIntegration:
     """The slash dispatcher falls through to custom commands."""
 
     def test_unknown_verb_passes_to_custom(self, tmp_path: pathlib.Path):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
         from cantrip.agent.core import CantripAgent
         from tests.conftest import FakeProvider
 
@@ -395,7 +395,7 @@ class TestDispatcherIntegration:
             result.followup.close()
 
     def test_catalogue_for_includes_custom_commands(self, tmp_path: pathlib.Path):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
         from cantrip.agent.core import CantripAgent
         from tests.conftest import FakeProvider
 
@@ -413,7 +413,7 @@ class TestDispatcherIntegration:
         assert "/help" in verbs
 
     def test_help_text_lists_custom_commands(self, tmp_path: pathlib.Path):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
         from cantrip.agent.core import CantripAgent
         from tests.conftest import FakeProvider
 
@@ -430,7 +430,7 @@ class TestDispatcherIntegration:
         assert "User commands" in help_block
 
     def test_help_text_without_agent_matches_builtin_only(self):
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         text = slash_commands.help_text()
         assert "User commands" not in text

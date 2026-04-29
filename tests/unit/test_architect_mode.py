@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from cantrip.agent import slash_commands
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.llm.base import Message, Response, Role, ToolCall, ToolResult
 from cantrip.ui import events

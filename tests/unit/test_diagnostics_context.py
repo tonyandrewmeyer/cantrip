@@ -382,7 +382,7 @@ class TestSlashDiagnostics:
     ) -> None:
         from types import SimpleNamespace
 
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         stub_block = lint_context.DiagnosticsBlock(diagnostics=(_diag(message="banner-line"),))
 
@@ -405,7 +405,7 @@ class TestSlashDiagnostics:
     def test_handler_returns_error_text_without_charm_path(self) -> None:
         from types import SimpleNamespace
 
-        from cantrip.agent import slash_commands
+        from cantrip.agent.commands import slash as slash_commands
 
         agent = SimpleNamespace(state=SimpleNamespace(charm_path=None))
         result = slash_commands._handle_diagnostics(agent, args="")  # type: ignore[arg-type]
