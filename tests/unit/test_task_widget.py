@@ -406,6 +406,11 @@ class TestTaskChecklistWidget:
             assert progress_idx < research_idx
             # The active task is tagged with its category for context.
             assert any("Build" in t and "Scaffold charm" in t for t in texts)
+            # Pinned header carries its own emphasis class so it doesn't
+            # blend into the category-header column below it.
+            pinned_header = next(s for s in statics if str(s.render()) == "In progress")
+            assert "task-pinned-header" in pinned_header.classes
+            assert "task-header" not in pinned_header.classes
 
     @pytest.mark.asyncio
     async def test_active_task_not_duplicated_in_category(self):

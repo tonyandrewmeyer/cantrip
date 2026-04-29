@@ -161,6 +161,12 @@ class TaskChecklistWidget(Widget):
         margin-bottom: 1;
     }
 
+    TaskChecklistWidget .task-pinned-header {
+        text-style: bold reverse;
+        color: $accent;
+        margin-bottom: 1;
+    }
+
     TaskChecklistWidget .task-divider {
         color: $primary;
         margin-bottom: 1;
@@ -395,8 +401,10 @@ class TaskChecklistWidget(Widget):
             # the top so they aren't hidden by finished or queued work below.
             pinned = [t for t in self._tasks if t.status in _PINNED_STATUSES]
             if pinned:
-                container.mount(Static("In progress", classes="task-header"))
-                container.mount(Static("\u2500" * 20, classes="task-divider"))
+                # The pinned header carries its own emphasis class so the
+                # live block is visually distinct from the category sections
+                # that follow; the underline divider would only add noise.
+                container.mount(Static("In progress", classes="task-pinned-header"))
                 for task in pinned:
                     char, css_class = _status_display(task.status)
                     cat_label = _CATEGORY_LABELS.get(task.category, task.category.value)
