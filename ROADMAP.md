@@ -4185,6 +4185,135 @@ the data is helpful rather than noise.
 
 ---
 
+## Phase 90: Topology as a First-Class View — Visual Model Pane and Graph Screen
+
+**Goal:** Two community visualisations of the Juju ecosystem
+have set a higher bar than what Cantrip currently shows.  The
+Figma "COS solution" page (``bobbin-froth-37640366.figma.site/
+solutions/cos``) treats each *integration line* as a clickable
+object that reveals the interface name, what flows across it
+(``alertmanager:alerting``, ``prometheus:metrics-endpoint``),
+sample endpoints, and prose describing the relationship.  It
+also fades unrelated charms when one is focused, and groups
+charms into semantic layers (Data Layer, Control Plane, …).
+CharmGraph (``charm-graph-hub.base44.app``) leans on a
+"preset deployments" library so users start from a known-good
+shape rather than an empty canvas, and exports the result as a
+``bundle.yaml``.
+
+Cantrip already owns the underlying data (``app.relations``,
+the F8 ``GraphScreen`` in ``src/cantrip/tui/screens/graph.py``,
+``MultiModelStatusWidget`` in ``src/cantrip/tui/widgets/
+status.py``).  What's missing is treating the topology as a
+first-class artefact rather than a status table with a separate
+modal.  This phase rethinks both surfaces: the right-panel
+multi-model pane (currently a dense text status block) and the
+F8 graph screen (currently bordered panels + a flat dedup'd
+relation list with no edge interaction).
+
+### 90.1 Decide the surface mix
+
+- [ ] Score the three borrowable ideas against Cantrip's
+  agent-driven (not click-to-build) shape:
+  - **Edge-as-object** — clicking a relation reveals interface
+    name, direction, sample databag keys, prose description.
+  - **Focus + fade** — selecting an app dims unconnected apps
+    and unrelated edges in the same view.
+  - **Preset solutions** — a small library of known-good
+    bundle shapes (COS Lite, 12-Factor + COS, CKF, …) the
+    *agent* can reference when composing relations; the user
+    sees them as an overlay on the topology view, not as a
+    palette to drag from.
+- [ ] Decide which of the three lands in 90.x and which is
+  deferred behind named triggers.  The agent-driven framing is
+  the deciding question — drag-from-palette UX is explicitly
+  out of scope; surfacing structure the agent already reasons
+  about is in scope.
+- [ ] Side-finding: capture the "edge data is the interesting
+  data" insight as a context-provider candidate (``@relation
+  prometheus:alertmanager``) for ``design/CONTEXT_PROVIDERS.md``
+  if the survey shows the agent re-derives this every turn.
+
+### 90.2 Rethink the right-panel multi-model pane
+
+- [ ] ``MultiModelStatusWidget`` today renders each model as a
+  collapsed/expanded text block of unit lines.  Replace the
+  expanded-model body with a compact topology sketch: nodes
+  for apps (single-glyph + name + status colour), edges for
+  relations (one line per pair, regardless of how many
+  endpoints), grouped by relation interface where it reduces
+  clutter.  The collapsed summary stays text — a one-line
+  ``model · N apps · M relations · status`` line.
+- [ ] Honour terminal width: below a threshold, fall back to
+  the current text view.  Above it, the sketch should fit the
+  pane without horizontal scroll for a typical COS-Lite-sized
+  model (≈6 apps, ≈10 relations).
+- [ ] Selecting an app in the sketch is the entry point to the
+  full F8 view focused on that app — not a modal of its own.
+
+### 90.3 Rethink the F8 graph screen
+
+- [ ] Edges become first-class.  The dedup'd relation list at
+  the bottom of ``GraphScreen`` is replaced by an inline edge
+  layer between the app panels; each edge carries its
+  interface name as a label.  Selecting an edge opens an
+  inline detail strip (not a new modal) showing: interface
+  name, provider/requirer roles, observed databag keys (from
+  ``app.relations`` and any cached ``juju show-unit`` data),
+  and a one-paragraph description sourced from the
+  agent's relation knowledge (skill or context provider).
+- [ ] Focus + fade: selecting an app dims unconnected apps and
+  unrelated edges.  Escape / re-selecting clears the focus.
+- [ ] Layer hint: when the model matches a known preset
+  (90.4), render apps grouped by the preset's semantic layer
+  ("Data", "Routing", "User Access").  When it doesn't, fall
+  back to the current alphabetical layout.  No layer
+  invention — the grouping comes from the preset, not from
+  guessing.
+
+### 90.4 Preset bundle library (knowledge, not UX)
+
+- [ ] Author a small JSON/YAML catalogue of known bundles
+  under ``src/cantrip/agent/skills/`` (or the closest existing
+  skill home — confirm with ``design/SKILLS.md``) that records
+  for each preset: the apps, their semantic layer, the
+  expected relation edges with interface names, and a one-line
+  description per edge.  Initial set: COS Lite, Charmed
+  Kubeflow (subset), 12-Factor + COS, Identity Platform
+  (cross-reference Phase 88).
+- [ ] Expose the catalogue to the agent as a context provider
+  or tool — when the agent is composing relations or
+  diagnosing a deployment, it can fetch the canonical edge
+  list rather than rebuilding it from web docs every turn.
+- [ ] The graph screen uses the catalogue *only* for layer
+  grouping and edge prose; it does not prescribe deployment
+  steps.
+
+### What this phase is *not*
+
+- Not a click-to-build deployment editor.  Cantrip is
+  agent-driven; users describe charms, the agent composes the
+  bundle.  CharmGraph's drag-from-palette UX is out of scope.
+- Not a replacement for ``juju status``.  The text pane stays
+  available; this phase adds a visual layer that earns its
+  space, not a forced re-skin.
+- Not new graph-layout machinery.  Stick to Textual primitives
+  and Rich renderables; do not pull in a graph-drawing
+  dependency.  If a clean layout requires more than that, log
+  it as a Phase 90b trigger.
+
+**Exit criteria:** the right-panel multi-model pane shows a
+readable topology sketch for an expanded model at typical
+terminal widths; the F8 screen renders edges as labelled,
+selectable objects with an inline detail strip and focus-fade
+behaviour; a preset catalogue exists and is wired into both
+the agent (as knowledge) and the graph screen (as layer
+grouping).  A live walk-through against COS Lite confirms the
+visual surfaces are read more often than the underlying text
+status during a representative session.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -4246,6 +4375,7 @@ the data is helpful rather than noise.
 | M63: Self-Update Check | 63 ✓ | PyPI polled at startup; TUI, Web, and CLI surface a non-blocking notice with filtered changelog and an installer-aware upgrade command when a newer Cantrip is published |
 | M64: Polite Repo Bootstrap | 64 ✓ | Create-GitHub-repo offer moved out of the main chat and suggests ``<workload>-operator`` by default |
 | M65: Right-Panel Tidy | 65 | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
+| M90: Visual Topology | 90 | Right-panel multi-model pane and F8 graph screen treat the model as a visual topology — edges are first-class clickable objects with interface details, focus-fade dims unconnected apps, and a preset-bundle catalogue grounds layer grouping |
 | M66: Transcript/Log Visible | 66 ✓ | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
 | M67: Pi-Inspired Sessions | 67 ✓ | Session tree rewind/branch, mid-session ``/model``, ``cantrip run --print --json`` for scripts, and ``/share`` to secret gist — four gaps the Pi coding agent fills that charm authors also hit |
 | M68: OpenCode Safety Rails | 68 ✓ | Snapshot-backed ``/undo``/``/redo`` for file changes, declarative ask/allow/deny permissions, markdown-defined user slash commands, and a session-level plan mode — four guardrails adopted from OpenCode that map onto Cantrip's existing subsystems |
