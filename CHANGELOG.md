@@ -158,6 +158,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   them.
 
 ### Changed
+- **``BackgroundExecutor`` split into a subpackage (Phase 85.5).**
+  ``src/cantrip/agent/executor.py`` (was 1 722 lines) is now
+  ``src/cantrip/agent/executor/`` with four modules:
+  ``git_service.py`` (``_DefaultGitService``),
+  ``policies.py`` (``_DefaultEnvironmentChecker`` and
+  ``_DefaultFollowupPlanner``),
+  ``store_adapter.py`` (``_SessionStoreAdapter``), and
+  ``core.py`` (the ``BackgroundExecutor`` orchestrator).
+  ``__init__.py`` re-exports the same public surface so
+  ``from cantrip.agent.executor import …`` callers do not move.
+  Pure refactor — no behaviour change; ``make check`` and
+  ``make unit`` (6 412 passed, 8 skipped) still green.  Test
+  patches that target executor module-private symbols moved to
+  ``cantrip.agent.executor.core.<name>`` (or
+  ``cantrip.agent.executor.git_service.<name>`` for git-service
+  internals) to follow the binding into the right submodule.
 - **``generate_docs_scaffold`` now drives Jinja2 templates (Phase 85.6).**
   The 502-line f-string concatenation that built ~30 generated docs
   files (``docs/index.rst``, the Diátaxis tutorial / how-to / reference

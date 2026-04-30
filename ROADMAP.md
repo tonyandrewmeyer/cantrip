@@ -3891,15 +3891,31 @@ decomposition last.
 
 ### 85.5 Decompose — `BackgroundExecutor` and `CantripApp`
 
-- [ ] `agent/executor.py` (1 713 lines) already shows clean
-  internal cohorts: split `_DefaultGitService` (lines 146-258)
-  to `agent/executor/git_service.py`,
-  `_DefaultEnvironmentChecker` (260-285) and
-  `_DefaultFollowupPlanner` (287-298) to
-  `agent/executor/policies.py`, `_SessionStoreAdapter`
-  (299-330) to `agent/executor/store_adapter.py`.  Leave
-  `BackgroundExecutor` itself in `agent/executor/core.py`
-  (or `agent/executor.py` if the rest is small enough).
+- [x] `agent/executor.py` (was 1 722 lines) split into a
+  subpackage: `agent/executor/git_service.py` holds
+  `_DefaultGitService`; `agent/executor/policies.py` holds
+  `_DefaultEnvironmentChecker` and `_DefaultFollowupPlanner`;
+  `agent/executor/store_adapter.py` holds
+  `_SessionStoreAdapter`; `agent/executor/core.py` holds the
+  `BackgroundExecutor` orchestrator (1 543 lines —
+  comprehensible enough that further decomposition would just
+  shuffle methods).  `__init__.py` re-exports the public
+  surface (`BackgroundExecutor`, `_candidate_id_for`, the
+  module-level constants `_POLL_INTERVAL`,
+  `_DEFAULT_TASK_TIMEOUT`, `_ERROR_COOLDOWN`,
+  `_MAX_NOOP_COUNT`, `_MAX_CONSECUTIVE_ERRORS`,
+  `_TASK_TIMEOUTS`, `DEFAULT_MAX_CONCURRENCY`, plus the four
+  default-service classes) so `from cantrip.agent.executor
+  import …` callers do not move.  Test patches that targeted
+  `cantrip.agent.executor.<name>` for module-private symbols
+  (`Subagent`, `_POLL_INTERVAL`, `_ERROR_COOLDOWN`,
+  `_DEFAULT_TASK_TIMEOUT`, `log` for `_check_uncommitted`)
+  retargeted to `cantrip.agent.executor.core.<name>`; patches
+  for git-service-private names (`subprocess`, `log` for
+  `revert_to_clean`) retargeted to
+  `cantrip.agent.executor.git_service.<name>`.  Pure refactor
+  — `make check` and `make unit` (6 412 passed, 8 skipped)
+  green.
 - [ ] `tui/app.py` (1 859 lines) is one `CantripApp` class
   with 83 methods.  Group action handlers by surface — chat
   actions, status actions, screen-switching actions,

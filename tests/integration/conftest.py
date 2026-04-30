@@ -302,7 +302,7 @@ via the PING command. Clustering is handled through Redis Sentinel.
 @pytest.fixture
 def fast_executor(monkeypatch: pytest.MonkeyPatch):
     """Speed up executor polling and reduce task timeout for tests."""
-    import cantrip.agent.executor as executor_mod
+    from cantrip.agent.executor import core as executor_mod
 
     monkeypatch.setattr(executor_mod, "_POLL_INTERVAL", 0.01)
     monkeypatch.setattr(executor_mod, "_DEFAULT_TASK_TIMEOUT", 5)

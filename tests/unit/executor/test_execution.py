@@ -152,7 +152,7 @@ class TestExecuteTask:
 
         executor = _make_executor(queue=queue)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(side_effect=RuntimeError("LLM exploded"))
             await executor._execute_task(task)
@@ -169,7 +169,7 @@ class TestExecuteTask:
 
         executor = _make_executor(queue=queue)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(side_effect=ValueError("bad data"))
             await executor._execute_task(task)
@@ -186,7 +186,7 @@ class TestExecuteTask:
 
         executor = _make_executor(queue=queue)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(side_effect=KeyError("missing_key"))
             await executor._execute_task(task)
@@ -201,7 +201,7 @@ class TestExecuteTask:
 
         executor = _make_executor(queue=queue)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(side_effect=TimeoutError)
             await executor._execute_task(task)
@@ -232,7 +232,7 @@ class TestExecuteTask:
         store = MagicMock()
         executor = _make_executor(queue=queue, store=store)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(side_effect=RuntimeError("boom"))
             await executor._execute_task(task)
@@ -349,7 +349,7 @@ class TestCategorySpecificTimeouts:
             coro.close()
             return mock_result
 
-        with patch("cantrip.agent.executor.asyncio.wait_for", side_effect=fake_wait_for):
+        with patch("cantrip.agent.executor.core.asyncio.wait_for", side_effect=fake_wait_for):
             await executor._execute_task(task)
 
         assert captured_timeout == 900

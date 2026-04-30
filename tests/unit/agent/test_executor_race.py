@@ -482,7 +482,7 @@ class TestExecuteTaskGateIntegration:
         )
         merge = AsyncMock(return_value=None)
         with (
-            patch("cantrip.agent.executor.Subagent", return_value=subagent_mock),
+            patch("cantrip.agent.executor.core.Subagent", return_value=subagent_mock),
             patch.object(executor, "_merge_worktree", merge),
         ):
             await executor._execute_task(task)
@@ -755,7 +755,7 @@ class TestSubagentFactoryTranscript:
             candidate_id="gemini-pro",
             provider=executor._provider,
         )
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             mock_cls.return_value = object()
             await factory(spec, tmp_path, None)
 
@@ -776,7 +776,7 @@ class TestSubagentFactoryTranscript:
 
         factory = executor._build_race_subagent_factory(parent)
         spec = race.CandidateSpec(candidate_id="m1", provider=executor._provider)
-        with patch("cantrip.agent.executor.Subagent"):
+        with patch("cantrip.agent.executor.core.Subagent"):
             await factory(spec, tmp_path, None)
 
         assert dataclasses.asdict(parent) == snapshot

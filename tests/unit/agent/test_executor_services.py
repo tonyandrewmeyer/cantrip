@@ -180,7 +180,7 @@ class TestExecuteTaskWithFakes:
             summary="Built charm",
             detail="Charm built successfully",
         )
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             mock_instance = AsyncMock()
             mock_instance.run.return_value = result
             mock_cls.return_value = mock_instance
@@ -233,7 +233,7 @@ class TestExecuteTaskWithFakes:
             summary="Done",
             detail="Completed work",
         )
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             mock_instance = AsyncMock()
             mock_instance.run.return_value = result
             mock_cls.return_value = mock_instance
@@ -255,7 +255,7 @@ class TestExecuteTaskWithFakes:
 
         executor = _make_executor(queue=queue, state=state, git_service=git)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             mock_instance = AsyncMock()
             mock_instance.run.side_effect = RuntimeError("build broke")
             mock_cls.return_value = mock_instance
@@ -289,7 +289,7 @@ class TestExecuteTaskWithFakes:
             summary="Built",
             detail="OK",
         )
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             mock_instance = AsyncMock()
             mock_instance.run.return_value = result
             mock_cls.return_value = mock_instance

@@ -37,7 +37,7 @@ class TestExitStateHandling:
 
         result = SubagentResult(ExitState.BLOCKED, "Need database credentials")
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
             instance = mock_cls.return_value
@@ -61,7 +61,7 @@ class TestExitStateHandling:
 
         result = SubagentResult(ExitState.FAILED, "charmcraft pack error", "Full error details")
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
             instance = mock_cls.return_value
@@ -85,7 +85,7 @@ class TestExitStateHandling:
 
         result = SubagentResult(ExitState.NOOP, "Nothing to do")
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_fingerprint", return_value="different"),
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
@@ -109,7 +109,7 @@ class TestExitStateHandling:
 
         result = SubagentResult(ExitState.COMPLETED, "Research complete", "Found 3 sources")
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_fingerprint", side_effect=["a", "b"]),
         ):
             instance = mock_cls.return_value
@@ -140,7 +140,7 @@ class TestExecutorErrorResilience:
             """Simulate a loop that raises TypeError once then stops."""
             nonlocal call_count
             # Re-use the real _run_loop but patch `route` to raise once.
-            import cantrip.agent.executor as mod
+            from cantrip.agent.executor import core as mod
 
             nonlocal original_route
             original_route = mod.route
@@ -156,7 +156,7 @@ class TestExecutorErrorResilience:
 
             with (
                 patch.object(mod, "route", side_effect=_bad_route),
-                patch("cantrip.agent.executor._ERROR_COOLDOWN", 0),
+                patch("cantrip.agent.executor.core._ERROR_COOLDOWN", 0),
             ):
                 await executor._run_loop()
 
@@ -172,7 +172,7 @@ class TestExecutorErrorResilience:
         """The executor stops after reaching the max consecutive error threshold."""
         executor = _make_executor()
 
-        import cantrip.agent.executor as mod
+        from cantrip.agent.executor import core as mod
 
         def _always_fail(snapshot: Any) -> Any:  # noqa: ARG001
             raise ValueError("persistent failure")
@@ -180,7 +180,7 @@ class TestExecutorErrorResilience:
         executor._running = True
         with (
             patch.object(mod, "route", side_effect=_always_fail),
-            patch("cantrip.agent.executor._ERROR_COOLDOWN", 0),
+            patch("cantrip.agent.executor.core._ERROR_COOLDOWN", 0),
         ):
             await executor._run_loop()
 
@@ -193,7 +193,7 @@ class TestExecutorErrorResilience:
         """The error counter resets to zero after a successful iteration."""
         executor = _make_executor()
 
-        import cantrip.agent.executor as mod
+        from cantrip.agent.executor import core as mod
 
         call_count = 0
 
@@ -211,8 +211,8 @@ class TestExecutorErrorResilience:
         executor._running = True
         with (
             patch.object(mod, "route", side_effect=_fail_then_succeed),
-            patch("cantrip.agent.executor._ERROR_COOLDOWN", 0),
-            patch("cantrip.agent.executor._POLL_INTERVAL", 0),
+            patch("cantrip.agent.executor.core._ERROR_COOLDOWN", 0),
+            patch("cantrip.agent.executor.core._POLL_INTERVAL", 0),
         ):
             await executor._run_loop()
 

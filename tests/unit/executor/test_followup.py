@@ -121,7 +121,7 @@ class TestFollowupTaskCreation:
         state = AgentState(dev_model="dev", charm_path=tmp_path)
         executor = _make_executor(queue=queue, state=state)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(side_effect=RuntimeError("verification failed"))
             await executor._execute_task(task)
@@ -190,7 +190,7 @@ class TestNoopDetection:
         executor = _make_executor(queue=queue, state=state)
 
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_fingerprint", return_value="same-hash"),
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
@@ -219,7 +219,7 @@ class TestNoopDetection:
         executor = _make_executor(queue=queue, state=state, on_task_failed=on_failed)
 
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_fingerprint", return_value="same-hash"),
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
@@ -250,7 +250,7 @@ class TestNoopDetection:
             return f"hash-{call_count}"
 
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_fingerprint", side_effect=_changing_fingerprint),
             patch.object(executor, "_snapshot_head", return_value="abc123"),
         ):
@@ -274,7 +274,7 @@ class TestNoopDetection:
 
         executor = _make_executor(queue=queue, state=state)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(
                 return_value=SubagentResult(ExitState.COMPLETED, "research done")

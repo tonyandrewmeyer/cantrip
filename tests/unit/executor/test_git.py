@@ -37,8 +37,8 @@ class TestCheckUncommitted:
             stderr="",
         )
         with (
-            patch("cantrip.agent.executor.subprocess.run", return_value=completed),
-            patch("cantrip.agent.executor.log") as mock_log,
+            patch("cantrip.agent.executor.git_service.subprocess.run", return_value=completed),
+            patch("cantrip.agent.executor.core.log") as mock_log,
         ):
             executor._check_uncommitted(task)
 
@@ -61,8 +61,8 @@ class TestCheckUncommitted:
             stderr="",
         )
         with (
-            patch("cantrip.agent.executor.subprocess.run", return_value=completed),
-            patch("cantrip.agent.executor.log") as mock_log,
+            patch("cantrip.agent.executor.git_service.subprocess.run", return_value=completed),
+            patch("cantrip.agent.executor.core.log") as mock_log,
         ):
             executor._check_uncommitted(task)
 
@@ -77,7 +77,7 @@ class TestCheckUncommitted:
 
         executor = _make_executor(queue=queue, state=state)
 
-        with patch("cantrip.agent.executor.subprocess.run") as mock_run:
+        with patch("cantrip.agent.executor.git_service.subprocess.run") as mock_run:
             executor._check_uncommitted(task)
 
         mock_run.assert_not_called()
@@ -188,7 +188,7 @@ class TestPreCheckEnvironment:
         failed_cb = MagicMock()
         executor = _make_executor(queue=queue, state=state, on_task_failed=failed_cb)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             await executor._execute_task(task)
             mock_cls.assert_not_called()
 
@@ -228,7 +228,7 @@ class TestSnapshotHead:
             stdout="abc123def456\n",
             stderr="",
         )
-        with patch("cantrip.agent.executor.subprocess.run", return_value=completed):
+        with patch("cantrip.agent.executor.git_service.subprocess.run", return_value=completed):
             result = executor._snapshot_head()
 
         assert result == "abc123def456"
@@ -244,7 +244,7 @@ class TestSnapshotHead:
             stdout="",
             stderr="fatal: not a git repository",
         )
-        with patch("cantrip.agent.executor.subprocess.run", return_value=completed):
+        with patch("cantrip.agent.executor.git_service.subprocess.run", return_value=completed):
             result = executor._snapshot_head()
 
         assert result is None
@@ -279,10 +279,10 @@ class TestRevertOnFailure:
 
         with (
             patch(
-                "cantrip.agent.executor.subprocess.run",
+                "cantrip.agent.executor.git_service.subprocess.run",
                 side_effect=[diff_result, checkout_result, clean_result],
             ),
-            patch("cantrip.agent.executor.log") as mock_log,
+            patch("cantrip.agent.executor.git_service.log") as mock_log,
         ):
             executor._revert_on_failure("abc123def456", task)
 
@@ -313,7 +313,7 @@ class TestRevertOnFailure:
         )
 
         with patch(
-            "cantrip.agent.executor.subprocess.run",
+            "cantrip.agent.executor.git_service.subprocess.run",
             side_effect=[diff_result, checkout_result, clean_result],
         ):
             executor._revert_on_failure("abc123def456", task)
@@ -342,7 +342,7 @@ class TestGitRevertOnTaskFailure:
         executor = _make_executor(queue=queue, state=state)
 
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_snapshot_head", return_value="abc123") as mock_snap,
             patch.object(executor, "_revert_on_failure") as mock_revert,
         ):
@@ -364,7 +364,7 @@ class TestGitRevertOnTaskFailure:
         executor = _make_executor(queue=queue, state=state)
 
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_snapshot_head", return_value="abc123"),
             patch.object(executor, "_revert_on_failure") as mock_revert,
         ):
@@ -384,7 +384,7 @@ class TestGitRevertOnTaskFailure:
         executor = _make_executor(queue=queue)
 
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_snapshot_head") as mock_snap,
             patch.object(executor, "_revert_on_failure") as mock_revert,
         ):
@@ -406,7 +406,7 @@ class TestGitRevertOnTaskFailure:
         executor = _make_executor(queue=queue, state=state)
 
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_revert_on_failure") as mock_revert,
         ):
             instance = mock_cls.return_value
@@ -436,7 +436,7 @@ class TestRevertCleansUntrackedFiles:
             # Return a clean result for all commands.
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("cantrip.agent.executor.subprocess.run", side_effect=tracking_run):
+        with patch("cantrip.agent.executor.git_service.subprocess.run", side_effect=tracking_run):
             git_service.revert_to_clean("/tmp/test-charm", task, "abc123")
 
         # Verify git checkout . was called.

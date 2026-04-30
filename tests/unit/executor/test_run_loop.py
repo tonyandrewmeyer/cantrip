@@ -146,7 +146,7 @@ class TestCallbacks:
         callback = MagicMock()
         executor = _make_executor(queue=queue, on_task_failed=callback)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(side_effect=RuntimeError("fail"))
             await executor._execute_task(task)
@@ -162,7 +162,7 @@ class TestCallbacks:
         callback = MagicMock()
         executor = _make_executor(queue=queue, on_task_failed=callback)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(side_effect=TimeoutError)
             await executor._execute_task(task)

@@ -146,7 +146,7 @@ class TestAllocateFallback:
         executor._queue.add_task(task)
         executor._queue.set_active(task.id)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             instance = mock_cls.return_value
             instance.run = AsyncMock(return_value=SubagentResult(ExitState.COMPLETED, "done"))
             await executor._execute_task(task)
@@ -190,7 +190,7 @@ class TestAllocateFallback:
         executor._queue.add_task(task)
         executor._queue.set_active(task.id)
 
-        with patch("cantrip.agent.executor.Subagent") as mock_cls:
+        with patch("cantrip.agent.executor.core.Subagent") as mock_cls:
             mock_cls.return_value.run = AsyncMock(
                 return_value=SubagentResult(ExitState.COMPLETED, "ok")
             )
@@ -212,7 +212,7 @@ class TestAllocateAndRelease:
         executor._queue.set_active(task.id)
 
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_merge_worktree", new=AsyncMock(return_value=None)),
         ):
             mock_cls.return_value.run = AsyncMock(
@@ -242,7 +242,7 @@ class TestAllocateAndRelease:
         executor._queue._on_task_changed = _record
 
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_merge_worktree", new=AsyncMock(return_value=None)),
         ):
             mock_cls.return_value.run = AsyncMock(
@@ -266,7 +266,7 @@ class TestAllocateAndRelease:
 
         merge = AsyncMock(return_value=None)
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_merge_worktree", new=merge),
         ):
             mock_cls.return_value.run = AsyncMock(
@@ -288,7 +288,7 @@ class TestAllocateAndRelease:
 
         merge = AsyncMock(return_value="Main tree has uncommitted changes")
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_merge_worktree", new=merge),
         ):
             mock_cls.return_value.run = AsyncMock(
@@ -311,7 +311,7 @@ class TestAllocateAndRelease:
 
         merge = AsyncMock(return_value=None)
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_merge_worktree", new=merge),
         ):
             mock_cls.return_value.run = AsyncMock(side_effect=RuntimeError("boom"))
@@ -332,7 +332,7 @@ class TestAllocateAndRelease:
 
         merge = AsyncMock(return_value=None)
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_merge_worktree", new=merge),
         ):
             mock_cls.return_value.run = AsyncMock(
@@ -362,7 +362,7 @@ class TestSnapshotInteraction:
 
         snapshot = MagicMock(return_value="abc123")
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_snapshot_head", snapshot),
             patch.object(executor, "_merge_worktree", new=AsyncMock(return_value=None)),
         ):
@@ -386,7 +386,7 @@ class TestSnapshotInteraction:
 
         snapshot = MagicMock(return_value="abc123")
         with (
-            patch("cantrip.agent.executor.Subagent") as mock_cls,
+            patch("cantrip.agent.executor.core.Subagent") as mock_cls,
             patch.object(executor, "_snapshot_head", snapshot),
         ):
             mock_cls.return_value.run = AsyncMock(
