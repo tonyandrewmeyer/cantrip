@@ -4942,6 +4942,13 @@ confidence that Cantrip keeps working when reality is messy.
 - [ ] Where a "fuzz" or property style makes more sense than examples
   (workspace paths, provider payload normalisation, queue/task invariants),
   prefer that style over adding another list of hand-authored cases.
+- [ ] Add **targeted traditional fuzzing** alongside the Hypothesis suite
+  where coverage-guided or byte-oriented exploration is higher leverage than
+  property tests alone: start with ``cargo-fuzz`` harnesses for
+  ``charmlint-rs`` / ``quickpack-rs``, then add a small set of Python parser /
+  export entrypoints such as transcript fence/export rendering and raw
+  HTML/search-result parsers.  Keep this as an advisory or nightly lane rather
+  than a default per-PR requirement unless it proves cheap enough.
 
 ### What this phase is *not*
 
