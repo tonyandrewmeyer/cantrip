@@ -37,17 +37,17 @@ class TestExecutorLifecycle:
         fake_executor.running = False
 
         with patch(
-            "cantrip.agent.core.BackgroundExecutor",
+            "cantrip.agent.executor_controller.BackgroundExecutor",
             return_value=fake_executor,
         ) as cls:
             agent.start_executor()
         cls.assert_called_once()
         fake_executor.start.assert_called_once()
-        assert agent._executor is fake_executor
+        assert agent._executor_ctl._executor is fake_executor
 
     def test_start_max_concurrency_threaded_to_executor(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
-        with patch("cantrip.agent.core.BackgroundExecutor") as cls:
+        with patch("cantrip.agent.executor_controller.BackgroundExecutor") as cls:
             cls.return_value.running = False
             agent.start_executor(max_concurrency=5)
         kwargs = cls.call_args.kwargs
@@ -57,14 +57,14 @@ class TestExecutorLifecycle:
         agent = _agent(tmp_path)
         existing = MagicMock()
         existing.running = True
-        agent._executor = existing
-        with patch("cantrip.agent.core.BackgroundExecutor") as cls:
+        agent._executor_ctl._executor = existing
+        with patch("cantrip.agent.executor_controller.BackgroundExecutor") as cls:
             agent.start_executor()
         cls.assert_not_called()
 
     def test_work_queue_publishes_to_bus_after_start(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
-        with patch("cantrip.agent.core.BackgroundExecutor") as cls:
+        with patch("cantrip.agent.executor_controller.BackgroundExecutor") as cls:
             cls.return_value.running = False
             agent.start_executor()
 
@@ -81,9 +81,9 @@ class TestExecutorLifecycle:
         agent = _agent(tmp_path)
         fake = MagicMock()
         fake.stop = AsyncMock()
-        agent._executor = fake
+        agent._executor_ctl._executor = fake
         await agent.stop_executor()
-        assert agent._executor is None
+        assert agent._executor_ctl._executor is None
 
     @pytest.mark.asyncio
     async def test_stop_executor_noop_when_none(self) -> None:

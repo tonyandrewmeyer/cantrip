@@ -3860,9 +3860,25 @@ decomposition last.
      `agent._mcp._registry_cache` / `_started`.  Pure refactor —
      `make check` and `make unit` (6 412 passed, 8 skipped)
      green.
-  2. **Executor lifecycle** (2786-2910) — `executor_running`,
-     `start_executor`, `stop_executor`, plus the wrapper
-     callbacks.
+  2. ✓ **Executor lifecycle** — extracted to
+     `agent/executor_controller.py` as `ExecutorController`, held
+     on `CantripAgent` as `self._executor_ctl`.  Public surface
+     unchanged: `executor_running`, `start_executor`,
+     `stop_executor` stay as one-line delegators;
+     `_pause_executor` / `_resume_executor` delegate likewise.
+     The six callback closures (`_notify_bus`,
+     `_purge_task_checkpoints`, `_forward_subagent_tool_invoked`,
+     `_forward_subagent_tool_invoked_pending`,
+     `_forward_budget_exceeded`, `_forward_rate_limited`) and
+     `_forward_permission_auto_approved` moved wholesale.  Test
+     patches of `cantrip.agent.core.BackgroundExecutor`
+     retargeted to `cantrip.agent.executor_controller.
+     BackgroundExecutor`; tests injecting `agent._executor`
+     retargeted to `agent._executor_ctl._executor`.  Fixed a
+     pre-existing bug in `/yolo` where `getattr(agent,
+     "executor")` never resolved — now accesses
+     `_executor_ctl.set_yolo()`.  Pure refactor — `make check`
+     and `make unit` (6 412 passed, 8 skipped) green.
   3. **Watcher lifecycle** (2023-2150) — `watcher_running`,
      `start_watcher`, `stop_watcher`, `route_watcher_event`,
      `process_watcher_event`.

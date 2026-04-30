@@ -4,6 +4,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Extracted executor lifecycle from `CantripAgent` (Phase 85.4 cohort 2).**
+  `ExecutorController` in `agent/executor_controller.py` now owns the
+  background-executor start/stop/pause/resume lifecycle and the six
+  event-bus callback closures.  `CantripAgent` keeps thin delegators.
+  Fixed a pre-existing bug in `/yolo` where `getattr(agent, "executor")`
+  never resolved, so toggling yolo mid-session had no effect on in-flight
+  subagents.
+
 ### Added
 - **Identity-platform acceptance harness wiring + verdict (Phase 88.3).**
   ``RelationSmokeTool`` (Phase 17.2) now exercises identity-platform

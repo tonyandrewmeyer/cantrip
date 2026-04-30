@@ -24,7 +24,7 @@ from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.context import ContextManager, VirtualFileStore
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.emotions import ParliamentResult, run_parliament
-from cantrip.agent.executor import BackgroundExecutor
+from cantrip.agent.executor_controller import ExecutorController
 from cantrip.agent.git_branch import (
     BOOTSTRAP_CONFIRM_PREFIX,
     PUSH_CONFIRM_PREFIX,
@@ -441,7 +441,12 @@ class CantripAgent:
         )
 
         self._watcher: EventWatcher | None = None
-        self._executor: BackgroundExecutor | None = None
+        self._executor_ctl = ExecutorController(
+            state=self.state,
+            event_bus=self._event_bus,
+            publish_tool_invoked=self._publish_tool_invoked,
+            publish_tool_invoked_pending=self._publish_tool_invoked_pending,
+        )
         self._issue_triage: IssueTriage | None = None
 
         # Session-level prompt cache accumulators (Claude-specific).
@@ -1766,13 +1771,11 @@ class CantripAgent:
 
     def _pause_executor(self) -> None:
         """Pause the background executor while handling a user message."""
-        if self._executor and self._executor.running:
-            self._executor.pause()
+        self._executor_ctl.pause()
 
     def _resume_executor(self) -> None:
         """Resume the background executor after handling a user message."""
-        if self._executor and self._executor.running:
-            self._executor.resume()
+        self._executor_ctl.resume()
 
     async def run_parliament(self, enabled: list[str]) -> ParliamentResult:
         """Convene the inner parliament over the current charm state.
@@ -3343,145 +3346,29 @@ class CantripAgent:
     @property
     def executor_running(self) -> bool:
         """Whether the background executor is currently running."""
-        return self._executor is not None and self._executor.running
+        return self._executor_ctl.running
 
     def start_executor(
         self,
         max_concurrency: int | None = None,
     ) -> None:
-        """Create and start the background executor.
-
-        Every task mutation is published to the shared ``event_bus`` so
-        that both UIs receive updates.  *max_concurrency* controls how
-        many subagent tasks run in parallel (default 3).
-        """
-        if self._executor is not None and self._executor.running:
-            return
-        self._ensure_store()
-
-        def _notify_bus(task: AgentTask) -> None:
-            self._event_bus.publish(ui_events.task_updated_from_task(task))
-
-        self._work_queue._on_task_changed = _notify_bus
-
-        # Phase 52.1: purge a task's step checkpoints on successful
-        # completion so a long-running session doesn't leak rows.
-        # Failed / blocked tasks keep their checkpoints so 52.3's
-        # resume path can reuse them.  Honours
-        # ``$CANTRIP_KEEP_CHECKPOINTS`` via
-        # :meth:`CheckpointStore.on_task_done` for debugging.
-        def _purge_task_checkpoints(task: AgentTask) -> None:
-            if self._store is None:
-                return
-            from cantrip.agent.durability import CheckpointStore
-
-            try:
-                CheckpointStore(self._store).on_task_done(task.id)
-            except sqlite3.Error:
-                log.debug(
-                    "Failed to purge step checkpoints for task %s",
-                    task.id,
-                    exc_info=True,
-                )
-
-        # Phase 75: forward subagent tool calls to the chat surfaces
-        # via the shared event bus.  Mirrors the main-agent emission in
-        # ``_publish_tool_invoked`` but tagged ``source="subagent"`` so
-        # subscribers can tell where each call came from.
-        def _forward_subagent_tool_invoked(
-            tool_name: str,
-            arguments: dict[str, Any],
-            result: ToolResult,
-            duration_ms: int,
-            tool_call_id: str,
-        ) -> None:
-            self._publish_tool_invoked(
-                tool_name,
-                arguments,
-                result,
-                source="subagent",
-                duration_ms=duration_ms,
-                tool_call_id=tool_call_id,
-            )
-
-        # Phase 82: forward subagent "running now" events so the chat
-        # renders a pending block before each subagent tool returns —
-        # mirrors the main-agent pre-dispatch emission above.
-        def _forward_subagent_tool_invoked_pending(
-            tool_name: str,
-            arguments: dict[str, Any],
-            tool_call_id: str,
-        ) -> None:
-            self._publish_tool_invoked_pending(
-                tool_name,
-                arguments,
-                source="subagent",
-                tool_call_id=tool_call_id,
-            )
-
-        # Phase 55.3: forward goal-budget trips to both the transcript
-        # (as a SYSTEM chat message) and the shared event bus so TUI
-        # and Web show the stop in-band rather than leaving the user
-        # to work out why the queue stalled.
-        def _forward_budget_exceeded(task: AgentTask, reason: str) -> None:
-            self.state.messages.append(Message(role=Role.SYSTEM, content=reason))
-            self._event_bus.publish(ui_events.goal_budget_exceeded(task_id=task.id, reason=reason))
-            self._event_bus.publish(ui_events.chat_message(role="system", content=reason))
-
-        # Phase 80.3: same shape for per-goal rate-limit trips.  Fires
-        # a ``POLICY_RATE_LIMITED`` event carrying count / cap / the
-        # composed-policy-name so observability consumers can
-        # distinguish rate-limit stops from goal-budget stops.
-        def _forward_rate_limited(task: AgentTask, count: int, cap: int, policy_name: str) -> None:
-            reason = (
-                f"Policy rate limit exceeded: {count} tool calls "
-                f"(cap: {cap}) under policy {policy_name!r}."
-            )
-            self.state.messages.append(Message(role=Role.SYSTEM, content=reason))
-            self._event_bus.publish(
-                ui_events.policy_rate_limited(
-                    task_id=task.id,
-                    tool_calls_made=count,
-                    cap=cap,
-                    policy_name=policy_name,
-                )
-            )
-            self._event_bus.publish(ui_events.chat_message(role="system", content=reason))
-
-        kwargs: dict[str, object] = {
-            "queue": self._work_queue,
-            "tools": self._tools,
-            "provider": self.provider,
-            "state": self.state,
-            "store": self._store,
-            "light_provider": self._light_provider,
-            "hook_runner": self._hook_runner,
-            "on_task_done": _purge_task_checkpoints,
-            "on_tool_invoked": _forward_subagent_tool_invoked,
-            "on_tool_invoked_pending": _forward_subagent_tool_invoked_pending,
-            "on_budget_exceeded": _forward_budget_exceeded,
-            "on_rate_limited": _forward_rate_limited,
-        }
-        if max_concurrency is not None:
-            kwargs["max_concurrency"] = max_concurrency
-        self._executor = BackgroundExecutor(**kwargs)
-        # Phase 69.2: forward auto-approvals to the event bus so the
-        # transcript and any UI surface can render the audit line.
-        self._executor.permission_manager.set_on_auto_approve(
-            self._forward_permission_auto_approved
+        """Create and start the background executor."""
+        self._executor_ctl.start(
+            queue=self._work_queue,
+            tools=self._tools,
+            provider=self.provider,
+            store=self._store,
+            light_provider=self._light_provider,
+            hook_runner=self._hook_runner,
+            ensure_store=self._ensure_store,
+            max_concurrency=max_concurrency,
         )
-        # If the session started with --yolo already set on state,
-        # push it onto the freshly-built manager so subagents pick it
-        # up from the first dispatch.
-        if self.state.yolo_mode:
-            self._executor.set_yolo(True)
-        self._executor.start()
 
     async def stop_executor(self) -> None:
         """Stop the background executor if it is running."""
-        if self._executor:
-            await self._executor.stop()
-            self._executor = None
+        await self._executor_ctl.stop()
+
+    # -- MCP integration ------------------------------------------------------
 
     @property
     def mcp_registry(self) -> "MCPRegistry":
@@ -3501,31 +3388,6 @@ class CantripAgent:
     async def start_mcp(self) -> None:
         """Open every configured MCP connection.  Idempotent."""
         await self._mcp.start()
-
-    def _forward_permission_auto_approved(self, request: object) -> None:
-        """Phase 69.2: publish a ``permission_auto_approved`` UI event.
-
-        Receives a :class:`PermissionAskRequest` from the executor's
-        manager every time yolo mode turns an ``ask`` into an
-        auto-approval.  Defensive attribute access so a malformed
-        payload can't break the dispatch loop — worst case the event
-        is dropped.
-        """
-        request_id = getattr(request, "request_id", None)
-        tool_name = getattr(request, "tool_name", "")
-        reason = getattr(request, "reason", "")
-        command = getattr(request, "command", None)
-        try:
-            self._event_bus.publish(
-                ui_events.permission_auto_approved(
-                    tool_name=str(tool_name),
-                    reason=str(reason),
-                    request_id=request_id if isinstance(request_id, str) else None,
-                    command=command if isinstance(command, str) else None,
-                )
-            )
-        except (TypeError, ValueError, RuntimeError, AttributeError):
-            log.debug("permission_auto_approved publish failed", exc_info=True)
 
     def _on_mcp_elicitation(self, request: object) -> None:
         """Forward an MCP elicitation request to the UI event bus."""

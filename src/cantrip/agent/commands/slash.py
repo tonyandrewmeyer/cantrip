@@ -1237,12 +1237,12 @@ def handle_yolo(agent: CantripAgent, args: str) -> str:
         return f"Already in yolo mode {state_text}."
 
     agent.state.yolo_mode = target
-    executor = getattr(agent, "executor", None)
-    if executor is not None:
+    executor_ctl = getattr(agent, "_executor_ctl", None)
+    if executor_ctl is not None:
         try:
-            executor.set_yolo(target)
+            executor_ctl.set_yolo(target)
         except AttributeError:
-            log.debug("executor has no set_yolo method", exc_info=True)
+            log.debug("executor_ctl has no set_yolo method", exc_info=True)
 
     try:
         agent.event_bus.publish(ui_events.status_bar_changed(mode="yolo" if target else "build"))
