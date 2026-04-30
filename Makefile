@@ -55,10 +55,14 @@ all: format check
 coverage:
 	uv run pytest tests/unit -n auto --cov=cantrip --cov-report=term-missing --cov-report=html --cov-report=annotate:cov_annotate
 
-# Run cargo test for each Rust crate
+# Run cargo test for each Rust crate (skip gracefully when cargo is absent)
 rust-test:
-	cd src/charmlint-rs && cargo test
-	cd src/quickpack-rs && cargo test
+	@if command -v cargo >/dev/null 2>&1; then \
+		cd src/charmlint-rs && cargo test && \
+		cd ../quickpack-rs && cargo test; \
+	else \
+		echo "cargo not found — skipping Rust tests"; \
+	fi
 
 # Run cargo-llvm-cov for each Rust crate (advisory — see Phase 58.4).
 # Install once: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview
